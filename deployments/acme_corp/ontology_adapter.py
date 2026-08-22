@@ -24,7 +24,7 @@ from pathlib import Path
 
 from connectors.sqlite_connector import connect, run_query, run_query_one
 from core.ontology.schema import get_field_info, is_link_field, get_link_target
-from deployments.acme_corp.ontology_schema import SCHEMA
+from deployments.acme_corp.deployment import SCHEMA
 
 DB_PATH = Path(__file__).resolve().parent / "dev_fixtures" / "mediator.db"
 
