@@ -90,10 +90,22 @@ message. Never request a field you have already gathered for the same
 object -- if you find yourself about to repeat something, respond with
 finish instead.
 
+IMPORTANT: If a previous get_field result is a LIST of IDs (this means
+you followed a link with multiple targets), your next steps should be
+get_field calls on those INDIVIDUAL IDs to read the actual data you
+need (e.g. amount, date) -- do NOT request the same link field again.
+
 Example: to answer "What is cust_001's email", the correct sequence is:
   1. {{"step": "search_object", "object_type": "Customer", "filter": {{"customer_id": "cust_001"}}}}
   2. {{"step": "get_field", "object_type": "Customer", "object_id": "cust_001", "field_name": "email"}}
   3. {{"step": "finish"}}  <- stop here, do NOT request "email" or any other field again.
+
+Example: to answer "What are cust_001's transaction amounts", after you
+get_field "transactions" on Customer cust_001 and receive [1, 2], the
+correct next steps are:
+  {{"step": "get_field", "object_type": "Transaction", "object_id": 1, "field_name": "amount"}}
+  {{"step": "get_field", "object_type": "Transaction", "object_id": 2, "field_name": "amount"}}
+  then {{"step": "finish"}} -- NOT another get_field on "transactions".
 """
 
 

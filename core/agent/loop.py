@@ -41,9 +41,11 @@ def _step_signature(step: dict):
 
 
 def run_agent_loop(user_region: str, query_text: str, schema: dict,
-                    search_fn, get_field_fn, max_hops: int = 8) -> list[dict]:
+                    search_fn, get_field_fn, max_hops: int = 8,
+                    max_consecutive_duplicates: int = 2) -> list[dict]:
     gathered = []
     seen_signatures = set()
+    consecutive_duplicates = 0
 
     for hop_count in range(1, max_hops + 1):
         step = next_step(query_text, schema, gathered)
@@ -53,8 +55,25 @@ def run_agent_loop(user_region: str, query_text: str, schema: dict,
 
         signature = _step_signature(step)
         if signature in seen_signatures:
-            print(f"[agent loop] duplicate step requested, treating as finish: {step}")
-            break
+            consecutive_duplicates += 1
+            print(f"[agent loop] duplicate step ({consecutive_duplicates}/"
+                  f"{max_consecutive_duplicates}): {step}")
+
+            if consecutive_duplicates >= max_consecutive_duplicates:
+                print("[agent loop] too many consecutive duplicates, stopping")
+                break
+
+            # Give the model a corrective nudge instead of ending outright --
+            # a duplicate means "confused", not "done". Visible in the next
+            # gathered_so_far so the model sees its request was rejected.
+            gathered.append({
+                "step": "rejected_duplicate",
+                "note": f"You already have this: {step}. Choose something "
+                        f"different, or finish if you have enough.",
+            })
+            continue
+
+        consecutive_duplicates = 0
         seen_signatures.add(signature)
 
         try:
