@@ -15,6 +15,20 @@ exactly matches one already done, that's treated as an implicit "out of
 new ideas" signal and the loop stops -- same fail-safe philosophy as
 everything else here: a mechanical backstop, not just an instruction.
 
+COMPLETENESS CHECK: similar idea, applied to finishing too early. When
+the model tries to finish, this checks whether sibling objects of the
+same type (e.g. two transactions) have uneven data gathered about them.
+If so, it gets ONE corrective nudge before being allowed to finish for
+real -- soft, not a hard rule, since some asymmetry is legitimate if a
+question only needs certain fields for certain items.
+
+INVALID STEP RECOVERY: same recoverable-mistake philosophy applied to
+schema validation errors (e.g. requesting a field that doesn't exist on
+that object type). Previously this ended the loop outright, discarding
+everything gathered -- now it's treated the same as a duplicate: the
+model sees exactly what was invalid and gets a capped number of retries
+before the loop actually gives up.
+
 search_fn and get_field_fn are passed in by the caller (e.g. a specific
 deployment's ontology_adapter.py functions) -- this file has no idea
 which org's data it's touching, same principle as gateway.py.
@@ -71,10 +85,12 @@ def run_agent_loop(user_region: str, query_text: str, schema: dict,
                     search_fn, get_field_fn,
                     model: str, ollama_url: str, timeout_seconds: int = 180,
                     max_hops: int = 8,
-                    max_consecutive_duplicates: int = 2) -> list[dict]:
+                    max_consecutive_duplicates: int = 2,
+                    max_consecutive_invalid_steps: int = 2) -> list[dict]:
     gathered = []
     seen_signatures = set()
     consecutive_duplicates = 0
+    consecutive_invalid = 0
     asymmetry_nudged = False
 
     for hop_count in range(1, max_hops + 1):
@@ -128,9 +144,25 @@ def run_agent_loop(user_region: str, query_text: str, schema: dict,
                 break  # shouldn't happen -- agent_step_prompt already validates this
 
             gathered.append({**step, "result": result})
+            consecutive_invalid = 0
         except ValueError as e:
-            print(f"[agent loop] step failed, stopping: {e}")
-            break
+            consecutive_invalid += 1
+            print(f"[agent loop] invalid step ({consecutive_invalid}/"
+                  f"{max_consecutive_invalid_steps}): {step} -- {e}")
+
+            if consecutive_invalid >= max_consecutive_invalid_steps:
+                print("[agent loop] too many consecutive invalid steps, stopping")
+                break
+
+            # Same recoverable-mistake treatment as duplicates: tell the
+            # model exactly what was wrong and let it try something else,
+            # rather than discarding everything gathered so far.
+            gathered.append({
+                "step": "rejected_invalid_step",
+                "note": f"That step was invalid: {step} -- {e}. "
+                        f"Check the schema above and try something valid, "
+                        f"or finish if you have enough already.",
+            })
     else:
         print(f"[agent loop] hit max_hops ({max_hops}), stopping")
 
