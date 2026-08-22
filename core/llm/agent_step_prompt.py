@@ -25,7 +25,9 @@ import json
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL = "qwen2.5:3b"
+MODEL = "qwen2.5:7b"  # step selection needs more reliable reasoning than
+                       # synthesis does -- bumped up after 3b showed
+                       # inconsistent behavior on otherwise-identical queries
 
 FINISH_STEP = {"step": "finish"}
 
