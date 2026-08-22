@@ -84,6 +84,16 @@ get_field on it next):
 If you have gathered enough to answer the question, or nothing further
 would help:
   {{"step": "finish"}}
+
+IMPORTANT: Before choosing a step, check "Gathered so far" in the user
+message. Never request a field you have already gathered for the same
+object -- if you find yourself about to repeat something, respond with
+finish instead.
+
+Example: to answer "What is cust_001's email", the correct sequence is:
+  1. {{"step": "search_object", "object_type": "Customer", "filter": {{"customer_id": "cust_001"}}}}
+  2. {{"step": "get_field", "object_type": "Customer", "object_id": "cust_001", "field_name": "email"}}
+  3. {{"step": "finish"}}  <- stop here, do NOT request "email" or any other field again.
 """
 
 
