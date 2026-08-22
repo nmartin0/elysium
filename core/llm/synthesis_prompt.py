@@ -25,6 +25,15 @@ Relative or qualitative words in the question (e.g. "recent", "latest",
 "main") describe what the person wants, not a literal field to match --
 if the data contains transactions, treat those as the answer to
 "recent transactions" rather than looking for a field named "recent".
+
+IMPORTANT: If an object (e.g. a specific transaction) appears ANYWHERE
+in the data -- even with only one field known about it -- it EXISTS.
+Never say something "doesn't exist" or "isn't listed" if any data point
+references it. Instead, report what IS known about it and explicitly
+note which specific details are missing (e.g. "a second transaction of
+$199.00 was made, though its date wasn't available"). Denying an
+object's existence because of a missing field is worse than omitting
+that one detail.
 """
 
 
