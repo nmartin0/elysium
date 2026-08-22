@@ -1,0 +1,17 @@
+# config.yaml  (acme_corp-specific operational settings)
+#
+# Which LLM each call uses, where Ollama lives, and agent-loop tuning.
+# Different deployments can run entirely different models/hardware by
+# editing only this file -- core/ code never hardcodes any of this.
+
+ollama:
+  base_url: "http://localhost:11434/api/chat"
+
+llm:
+  step_model: "phi4-mini"      # used by core/llm/agent_step_prompt.py
+  synthesis_model: "qwen2.5:3b"  # used by core/llm/synthesis_prompt.py
+  request_timeout_seconds: 180
+
+agent:
+  max_hops: 8
+  max_consecutive_duplicates: 2

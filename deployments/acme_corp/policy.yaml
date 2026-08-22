@@ -1,0 +1,17 @@
+# policy.yaml  (acme_corp-specific -- NOT portable to other orgs)
+#
+# Which users exist, their region, and which actions they're allowed to
+# call. Replaces the old hardcoded USERS dict in policy.py.
+
+users:
+  user_alice:
+    region: us-west
+    allowed_actions:
+      - get_customer_transactions
+  user_bob:
+    region: us-east
+    allowed_actions:
+      - get_customer_transactions
+  user_carol:
+    region: eu
+    allowed_actions: []

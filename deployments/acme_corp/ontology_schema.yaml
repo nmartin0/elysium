@@ -1,0 +1,36 @@
+# ontology_schema.yaml  (acme_corp-specific -- NOT portable to other orgs)
+#
+# Describes the object types this deployment exposes, their identifying
+# field, and their other fields. Each field is either "data" (a plain
+# value) or "link" (its value is another object's ID, pointing at
+# "target"). Replaces the old hardcoded SCHEMA dict in ontology_schema.py.
+
+object_types:
+  Customer:
+    id_field: customer_id
+    fields:
+      region:
+        type: data
+      name:
+        type: data
+      email:
+        type: data
+      transactions:
+        type: link
+        target: Transaction
+        cardinality: many
+  Transaction:
+    id_field: transaction_id
+    fields:
+      amount:
+        type: data
+      currency:
+        type: data
+      category:
+        type: data
+      transaction_date:
+        type: data
+      customer_id:
+        type: link
+        target: Customer
+        cardinality: one
