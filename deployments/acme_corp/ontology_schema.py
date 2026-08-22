@@ -1,19 +1,23 @@
 """
 ontology_schema.py  (acme_corp-specific -- NOT portable to other orgs)
 
-Describes the object types this deployment exposes and their fields --
-pure data, no query logic. Each field is either "data" (a plain value)
-or "link" (its value is another object's ID, pointing at "target").
+Describes the object types this deployment exposes, their identifying
+field, and their other fields -- pure data, no query logic. Each field
+is either "data" (a plain value) or "link" (its value is another
+object's ID, pointing at "target").
 
-This is what makes get_field() generic: the ontology layer doesn't need
-to know in advance which fields are links -- it looks it up here.
+id_field tells the ontology layer (and the agent, via the prompt) which
+field to use when calling search_object() -- without this, nothing
+distinguishes an object's identifier from its other fields.
 
 Used by: core/ontology/ (schema introspection)
+         core/llm/agent_step_prompt.py (renders this into the agent's prompt)
          deployments/acme_corp/ontology_adapter.py (actual query logic)
 """
 
 SCHEMA = {
     "Customer": {
+        "id_field": "customer_id",
         "fields": {
             "region":       {"type": "data"},
             "name":         {"type": "data"},
@@ -22,6 +26,7 @@ SCHEMA = {
         },
     },
     "Transaction": {
+        "id_field": "transaction_id",
         "fields": {
             "amount":           {"type": "data"},
             "currency":         {"type": "data"},

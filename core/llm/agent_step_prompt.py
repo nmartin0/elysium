@@ -33,13 +33,20 @@ FINISH_STEP = {"step": "finish"}
 def _describe_schema(schema: dict) -> str:
     lines = []
     for object_type, definition in schema.items():
+        id_field = definition["id_field"]
         field_descriptions = []
         for field_name, info in definition["fields"].items():
             if info["type"] == "link":
                 field_descriptions.append(f"{field_name} (link -> {info['target']})")
             else:
                 field_descriptions.append(f"{field_name} (data)")
-        lines.append(f"- {object_type}: " + ", ".join(field_descriptions))
+        lines.append(
+            f"- {object_type}: identified by {id_field!r}. "
+            f"Fields: " + ", ".join(field_descriptions) + "\n"
+            f"  To search for a {object_type}, use exactly: "
+            f'{{"step": "search_object", "object_type": "{object_type}", '
+            f'"filter": {{"{id_field}": "<the id value>"}}}}'
+        )
     return "\n".join(lines)
 
 
