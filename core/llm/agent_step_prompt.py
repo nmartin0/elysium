@@ -34,19 +34,34 @@ def _describe_schema(schema: dict) -> str:
     lines = []
     for object_type, definition in schema.items():
         id_field = definition["id_field"]
+        searchable = [id_field]
+        link_only = []
         field_descriptions = []
+
         for field_name, info in definition["fields"].items():
             if info["type"] == "link":
                 field_descriptions.append(f"{field_name} (link -> {info['target']})")
+                if info.get("cardinality") == "one":
+                    searchable.append(field_name)
+                else:
+                    link_only.append(field_name)
             else:
                 field_descriptions.append(f"{field_name} (data)")
-        lines.append(
+                searchable.append(field_name)
+
+        block = (
             f"- {object_type}: identified by {id_field!r}. "
             f"Fields: " + ", ".join(field_descriptions) + "\n"
-            f"  To search for a {object_type}, use exactly: "
-            f'{{"step": "search_object", "object_type": "{object_type}", '
-            f'"filter": {{"{id_field}": "<the id value>"}}}}'
+            f"  You may search_object using any of: {searchable} "
+            f'(e.g. {{"step": "search_object", "object_type": "{object_type}", '
+            f'"filter": {{"{searchable[-1]}": "<value>"}}}})'
         )
+        if link_only:
+            block += (
+                f"\n  {link_only} cannot be searched directly -- reach them with "
+                f"get_field on an object you already have the ID for."
+            )
+        lines.append(block)
     return "\n".join(lines)
 
 
@@ -58,8 +73,8 @@ using ONLY these object types and fields:
 
 At each step, respond with ONLY one JSON object, in one of these shapes:
 
-To find an object by its ID field:
-  {{"step": "search_object", "object_type": "<type>", "filter": {{"<id_field>": "<value>"}}}}
+To find object(s) by any of their searchable fields listed above:
+  {{"step": "search_object", "object_type": "<type>", "filter": {{"<field>": "<value>"}}}}
 
 To read one field of an object you already have the ID for (a link
 field's value is another object's ID -- you can search_object or
@@ -89,6 +104,7 @@ def next_step(query_text: str, schema: dict, gathered_so_far: list[dict]) -> dic
                     {"role": "user", "content": user_message},
                 ],
                 "format": "json",
+                "options": {"temperature": 0},
                 "stream": False,
             },
             timeout=120,

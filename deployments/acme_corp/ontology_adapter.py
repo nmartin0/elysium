@@ -7,17 +7,17 @@ actual database:
   search_object(user_region, object_type, filter) -> list of object IDs
   get_field(user_region, object_type, object_id, field_name) -> value
 
-Region scoping is re-checked on EVERY call to either function, based on
-the object actually being touched -- not just once at the start of a
-request. This is what stops a link hop from being used to route around
-the boundary: whether you reach a Transaction by searching for it
-directly or by following a link from a Customer, get_field() checks that
-specific transaction's owning customer's region every time.
+search_object() accepts a filter on the object's id_field OR any "data"
+field OR any "link" field with cardinality "one" (a real foreign-key
+column on this table). Fields with cardinality "many" (e.g.
+Customer.transactions) are NOT filterable here -- they're computed
+relationships, not real columns, and can only be reached via get_field().
 
-Uses connectors/sqlite_connector.py (generic) + deployments/acme_corp/
-ontology_schema.py (this deployment's field shape) together.
+Region scoping is re-checked on EVERY object returned/touched, whether
+by search_object() or get_field() -- this is what stops a link hop (or
+now, a broader search) from being used to route around the boundary.
 
-Called by: core/ontology/ (via the agent loop, once that exists)
+Called by: core/agent/loop.py (via core/ontology/, once that exists)
 """
 
 from pathlib import Path
@@ -28,7 +28,6 @@ from deployments.acme_corp.ontology_schema import SCHEMA
 
 DB_PATH = Path(__file__).resolve().parent / "dev_fixtures" / "mediator.db"
 
-# object_type -> its table and primary key column
 TABLE_MAP = {
     "Customer": {"table": "customers", "id_column": "customer_id"},
     "Transaction": {"table": "transactions", "id_column": "transaction_id"},
@@ -36,7 +35,8 @@ TABLE_MAP = {
 
 
 def _region_allowed(conn, object_type: str, object_id, requesting_user_region: str) -> bool:
-    """The per-hop enforcement check. Re-run on every field access."""
+    """The per-hop enforcement check. Re-run on every field access AND
+    on every candidate returned by search_object()."""
     if object_type == "Customer":
         row = run_query_one(
             conn, "SELECT region FROM customers WHERE customer_id = ?", (object_id,)
@@ -55,42 +55,62 @@ def _region_allowed(conn, object_type: str, object_id, requesting_user_region: s
     return row is not None and row["region"] == requesting_user_region
 
 
+def _filterable_columns(object_type: str) -> set:
+    """id_field + data fields + link fields with cardinality 'one'
+    (real FK columns). Excludes cardinality 'many' -- those are
+    computed reverse relationships, not real columns."""
+    obj = SCHEMA[object_type]
+    columns = {obj["id_field"]}
+    for field_name, info in obj["fields"].items():
+        if info["type"] == "data":
+            columns.add(field_name)
+        elif info["type"] == "link" and info.get("cardinality") == "one":
+            columns.add(field_name)
+    return columns
+
+
 def search_object(requesting_user_region: str, object_type: str, filter: dict) -> list:
-    """
-    Minimal version: only supports looking up one object by its own ID
-    column (e.g. {"customer_id": "cust_001"}). Returns [] if the object
-    doesn't exist OR is outside the requesting user's region -- the two
-    cases are deliberately indistinguishable from the caller's side.
-    """
     if object_type not in TABLE_MAP:
         raise ValueError(f"Unknown object_type: {object_type}")
 
-    id_column = TABLE_MAP[object_type]["id_column"]
-    if list(filter.keys()) != [id_column]:
-        raise ValueError(f"search_object only supports filtering by {id_column!r} for now")
+    valid_columns = _filterable_columns(object_type)
+    for key in filter:
+        if key not in valid_columns:
+            raise ValueError(
+                f"Cannot filter {object_type} by {key!r} "
+                f"(valid: {sorted(valid_columns)})"
+            )
 
-    candidate_id = filter[id_column]
+    table = TABLE_MAP[object_type]["table"]
+    id_column = TABLE_MAP[object_type]["id_column"]
+
+    # Column NAMES are whitelisted above before ever touching this string;
+    # VALUES are always passed as bound parameters, never interpolated.
+    where_clause = " AND ".join(f"{key} = ?" for key in filter.keys())
+    values = tuple(filter.values())
 
     conn = connect(DB_PATH)
     try:
-        if not _region_allowed(conn, object_type, candidate_id, requesting_user_region):
-            return []
-        return [candidate_id]
+        if where_clause:
+            rows = run_query(
+                conn, f"SELECT {id_column} FROM {table} WHERE {where_clause}", values
+            )
+        else:
+            rows = run_query(conn, f"SELECT {id_column} FROM {table}")
+
+        candidate_ids = [row[id_column] for row in rows]
+
+        # Per-result region enforcement -- a broader search doesn't bypass
+        # the same boundary a single-ID lookup already enforced.
+        return [
+            cid for cid in candidate_ids
+            if _region_allowed(conn, object_type, cid, requesting_user_region)
+        ]
     finally:
         conn.close()
 
 
 def get_field(requesting_user_region: str, object_type: str, object_id, field_name: str):
-    """
-    Returns one field's value. If it's a link field, the value is another
-    object's ID (or list of IDs) -- the caller can immediately pass that
-    into search_object() or get_field() again, which is what makes link
-    traversal fall out of this one function rather than needing a
-    separate "follow link" primitive.
-    """
-    # Validated against the schema FIRST -- field_name below is only ever
-    # one of a fixed, known set of column names by the time it reaches
-    # any SQL, never arbitrary caller input.
     field_info = get_field_info(SCHEMA, object_type, field_name)
 
     conn = connect(DB_PATH)
@@ -117,8 +137,6 @@ def get_field(requesting_user_region: str, object_type: str, object_id, field_na
 
             raise ValueError(f"No resolver for link field {object_type}.{field_name}")
 
-        # Plain data field -- id_column/table come from TABLE_MAP (not
-        # user input); field_name was already whitelisted above.
         table = TABLE_MAP[object_type]["table"]
         id_column = TABLE_MAP[object_type]["id_column"]
         row = run_query_one(
