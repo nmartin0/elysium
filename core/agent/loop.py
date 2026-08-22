@@ -40,17 +40,58 @@ def _step_signature(step: dict):
     return None
 
 
+def _detect_asymmetry(gathered: list[dict]) -> str | None:
+    """Looks for uneven data gathered across sibling objects of the same
+    type (e.g. two transactions where one has 3 fields fetched and the
+    other has 1). Returns a description if found, else None. This is a
+    soft signal, not a rule -- some asymmetry is legitimate if a
+    question only needs certain fields for certain items."""
+    fields_by_type_id: dict = {}
+    for item in gathered:
+        if item.get("step") != "get_field":
+            continue
+        result = item.get("result")
+        if isinstance(result, list):
+            continue  # this was a link fetch (a list of IDs), not a data field
+        obj_type = item["object_type"]
+        obj_id = item["object_id"]
+        fields_by_type_id.setdefault(obj_type, {}).setdefault(obj_id, set()).add(item["field_name"])
+
+    for obj_type, id_map in fields_by_type_id.items():
+        if len(id_map) < 2:
+            continue
+        field_sets = [frozenset(f) for f in id_map.values()]
+        if len(set(field_sets)) > 1:
+            details = ", ".join(f"{oid}: {sorted(fields)}" for oid, fields in id_map.items())
+            return f"Uneven data gathered across {obj_type} objects -- {details}."
+    return None
+
+
 def run_agent_loop(user_region: str, query_text: str, schema: dict,
-                    search_fn, get_field_fn, max_hops: int = 8,
+                    search_fn, get_field_fn,
+                    model: str, ollama_url: str, timeout_seconds: int = 180,
+                    max_hops: int = 8,
                     max_consecutive_duplicates: int = 2) -> list[dict]:
     gathered = []
     seen_signatures = set()
     consecutive_duplicates = 0
+    asymmetry_nudged = False
 
     for hop_count in range(1, max_hops + 1):
-        step = next_step(query_text, schema, gathered)
+        step = next_step(query_text, schema, gathered, model, ollama_url, timeout_seconds)
 
         if step["step"] == "finish":
+            if not asymmetry_nudged:
+                asymmetry = _detect_asymmetry(gathered)
+                if asymmetry:
+                    print(f"[agent loop] asymmetry detected at finish, one nudge: {asymmetry}")
+                    asymmetry_nudged = True
+                    gathered.append({
+                        "step": "completeness_check",
+                        "note": f"{asymmetry} If this gap matters for the "
+                                f"question, fill it in; otherwise finish is fine.",
+                    })
+                    continue
             break
 
         signature = _step_signature(step)

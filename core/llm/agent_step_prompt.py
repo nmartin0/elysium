@@ -14,20 +14,20 @@ prompt dynamically from whatever `schema` dict is passed in -- no object
 type names are hardcoded here, so this file works unchanged for any
 deployment's ontology.
 
-Same fail-closed principle as router_prompt.py: anything malformed or
-unrecognized returns {"step": "finish"} rather than guessing, so the
-loop stops cleanly instead of doing something uncertain.
+model, ollama_url, and timeout_seconds are all passed in by the caller
+(ultimately traced back to a deployment's config.yaml) -- this file has
+no hardcoded model name or URL, same principle as gateway.py taking
+users/actions as arguments rather than importing them.
+
+Same fail-closed principle as before: anything malformed or unrecognized
+returns {"step": "finish"} rather than guessing, so the loop stops
+cleanly instead of doing something uncertain.
 
 Called by: core/agent/loop.py
 """
 
 import json
 import requests
-
-OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL = "qwen2.5:7b"  # step selection needs more reliable reasoning than
-                       # synthesis does -- bumped up after 3b showed
-                       # inconsistent behavior on otherwise-identical queries
 
 FINISH_STEP = {"step": "finish"}
 
@@ -108,10 +108,17 @@ correct next steps are:
   {{"step": "get_field", "object_type": "Transaction", "object_id": 1, "field_name": "amount"}}
   {{"step": "get_field", "object_type": "Transaction", "object_id": 2, "field_name": "amount"}}
   then {{"step": "finish"}} -- NOT another get_field on "transactions".
+
+IMPORTANT: Before you finish, check EVERY ID from a list result (like
+[1, 2] above) has been asked about EQUALLY. If you fetched a field for
+ID 1 but not the same field for ID 2, that's incomplete -- go back and
+get it for ID 2 too before finishing. Do not answer about some items in
+a list and silently skip others.
 """
 
 
-def next_step(query_text: str, schema: dict, gathered_so_far: list[dict]) -> dict:
+def next_step(query_text: str, schema: dict, gathered_so_far: list[dict],
+              model: str, ollama_url: str, timeout_seconds: int = 180) -> dict:
     user_message = (
         f"Question: {query_text}\n\n"
         f"Gathered so far: {json.dumps(gathered_so_far)}\n\n"
@@ -120,9 +127,9 @@ def next_step(query_text: str, schema: dict, gathered_so_far: list[dict]) -> dic
 
     try:
         response = requests.post(
-            OLLAMA_URL,
+            ollama_url,
             json={
-                "model": MODEL,
+                "model": model,
                 "messages": [
                     {"role": "system", "content": _build_system_prompt(schema)},
                     {"role": "user", "content": user_message},
@@ -131,7 +138,7 @@ def next_step(query_text: str, schema: dict, gathered_so_far: list[dict]) -> dic
                 "options": {"temperature": 0},
                 "stream": False,
             },
-            timeout=120,
+            timeout=timeout_seconds,
         )
         response.raise_for_status()
         raw_content = response.json()["message"]["content"]
