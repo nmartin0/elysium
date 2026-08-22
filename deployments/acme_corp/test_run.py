@@ -44,7 +44,6 @@ def run_example(user_id: str, query_text: str) -> None:
     # Process bookkeeping (e.g. rejected_duplicate) isn't real data --
     # keep it out of what synthesis sees.
     real_data = [item for item in gathered if item["step"] != "rejected_duplicate"]
-
     insight = synthesize_insight(query_text, real_data)
     print(insight)
     print()
