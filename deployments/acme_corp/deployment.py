@@ -3,8 +3,8 @@ deployment.py  (acme_corp-specific -- supplies this org's own path, nothing else
 
 All the actual loading logic lives in core/deployment_loader.py, which is
 fully generic. This file's only job is to say WHERE acme_corp's config
-files live and re-expose the results under the same names test_run.py
-already expects.
+files live and re-expose the results under names other acme_corp files
+already expect.
 """
 
 from pathlib import Path
@@ -19,5 +19,8 @@ SYNTHESIS_MODEL = _deployment.SYNTHESIS_MODEL
 REQUEST_TIMEOUT_SECONDS = _deployment.REQUEST_TIMEOUT_SECONDS
 MAX_HOPS = _deployment.MAX_HOPS
 MAX_CONSECUTIVE_DUPLICATES = _deployment.MAX_CONSECUTIVE_DUPLICATES
+MAX_CONSECUTIVE_INVALID_STEPS = _deployment.MAX_CONSECUTIVE_INVALID_STEPS
+DB_PATH = _deployment.DB_PATH
 SCHEMA = _deployment.SCHEMA
 USERS = _deployment.USERS
+SECURITY_ATTRIBUTE = _deployment.SECURITY_ATTRIBUTE

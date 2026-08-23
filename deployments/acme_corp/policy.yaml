@@ -1,7 +1,12 @@
 # policy.yaml  (acme_corp-specific -- NOT portable to other orgs)
 #
 # Which users exist, their region, and which actions they're allowed to
-# call. Replaces the old hardcoded USERS dict in policy.py.
+# call. security_attribute declares which field on each user record
+# represents the row-level access-control value -- this deployment calls
+# it "region", but another org's policy.yaml could use any attribute
+# name (e.g. "department", "clearance_level") without core/ code caring.
+
+security_attribute: region
 
 users:
   user_alice:

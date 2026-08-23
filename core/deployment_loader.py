@@ -32,6 +32,9 @@ def load_deployment(base_path: Path) -> SimpleNamespace:
         REQUEST_TIMEOUT_SECONDS=config["llm"]["request_timeout_seconds"],
         MAX_HOPS=config["agent"]["max_hops"],
         MAX_CONSECUTIVE_DUPLICATES=config["agent"]["max_consecutive_duplicates"],
+        MAX_CONSECUTIVE_INVALID_STEPS=config["agent"]["max_consecutive_invalid_steps"],
+        DB_PATH=base_path / config["database"]["path"],
         SCHEMA=schema_raw["object_types"],
         USERS=policy_raw["users"],
+        SECURITY_ATTRIBUTE=policy_raw["security_attribute"],
     )

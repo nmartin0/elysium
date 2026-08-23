@@ -1,18 +1,17 @@
 """
 auth.py  (the policy CHECK -- generic mechanism, no org data)
 
-Answers exactly one question: given a user registry and (user_id,
-action_id), is this user allowed to do this?
+Answers two questions, given a user registry:
+  - authorize(): can this user call this action at all?
+  - get_user_security_value(): what's this user's row-level access
+    value, for whatever attribute the deployment's policy.yaml declares
+    (e.g. "region") -- this file doesn't assume the attribute is called
+    "region" specifically; the deployment supplies that name.
 
-This file used to also hold the hardcoded user data itself -- that was a
-mistake once org-specific data entered the picture. Which users exist,
-their regions, and their permissions is data that belongs to a specific
-deployment (see deployments/acme_corp/policy.py), not to portable core
-code. This file only knows the SHAPE that data must have, never its
-actual contents.
+This file only knows the SHAPE user data must have, never its actual
+contents -- that's deployments/<org>/policy.yaml's job.
 
-Called by: gateway.py (step 1, before anything else happens), passed the
-           calling deployment's own user registry as an argument.
+Called by: gateway.py, and (for get_user_security_value) test_run.py
 """
 
 
@@ -23,8 +22,8 @@ def authorize(users: dict, user_id: str, action_id: str) -> bool:
     return action_id in user["allowed_actions"]
 
 
-def get_user_region(users: dict, user_id: str) -> str | None:
+def get_user_security_value(users: dict, user_id: str, security_attribute: str) -> str | None:
     user = users.get(user_id)
     if user is None:
         return None
-    return user["region"]
+    return user.get(security_attribute)

@@ -1,17 +1,27 @@
 # config.yaml  (acme_corp-specific operational settings)
 #
-# Which LLM each call uses, where Ollama lives, and agent-loop tuning.
-# Different deployments can run entirely different models/hardware by
-# editing only this file -- core/ code never hardcodes any of this.
+# Which LLM each call uses, where Ollama lives, agent-loop tuning, and
+# where this deployment's database file is. Different deployments can
+# run entirely different models/hardware/storage by editing only this
+# file -- core/ code never hardcodes any of this.
 
 ollama:
   base_url: "http://localhost:11434/api/chat"
 
 llm:
-  step_model: "phi4-mini"      # used by core/llm/agent_step_prompt.py
+  step_model: "phi4-mini"        # used by core/llm/agent_step_prompt.py --
+                                  # best correctness/speed tradeoff found so
+                                  # far; qwen2.5:3b tried and reverted after
+                                  # it got stuck repeating its first step in
+                                  # every test case, even with recovery
+                                  # mechanisms in place (see git history)
   synthesis_model: "qwen2.5:3b"  # used by core/llm/synthesis_prompt.py
   request_timeout_seconds: 180
 
 agent:
   max_hops: 8
   max_consecutive_duplicates: 2
+  max_consecutive_invalid_steps: 2
+
+database:
+  path: "dev_fixtures/mediator.db"   # relative to this deployment's own folder
