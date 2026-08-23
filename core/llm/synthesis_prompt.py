@@ -60,6 +60,7 @@ def synthesize_insight(original_query: str, records: list[dict],
                 ],
                 # No "format" constraint and no tools -- plain prose out,
                 # nothing for the model to invoke.
+                "options": {"temperature": 0},
                 "stream": False,
             },
             timeout=timeout_seconds,
