@@ -1,13 +1,25 @@
 # ontology_schema.yaml  (acme_corp-specific -- NOT portable to other orgs)
 #
-# Describes the object types this deployment exposes, their identifying
-# field, and their other fields. Each field is either "data" (a plain
-# value) or "link" (its value is another object's ID, pointing at
-# "target"). Replaces the old hardcoded SCHEMA dict in ontology_schema.py.
+# Describes everything the generic core/ontology/sql_adapter.py needs to
+# fully drive queries for this deployment -- no Python logic here at all,
+# purely declarative:
+#   - table/id_column: where this object type actually lives in SQL
+#   - fields: data vs. link, and for links, cardinality + target
+#   - via_table/via_column (reverse links only): where to find rows that
+#     point back at this object (a "many" link isn't a real column, so
+#     it needs to say where else to look)
+#   - security: how to find this object's row-level access-control value
+#       - "field": it's a plain column on this object's own table
+#       - "via_field": follow this (forward) link field to another
+#         object, and resolve its security value instead
 
 object_types:
   Customer:
     id_field: customer_id
+    table: customers
+    id_column: customer_id
+    security:
+      field: region
     fields:
       region:
         type: data
@@ -19,8 +31,14 @@ object_types:
         type: link
         target: Transaction
         cardinality: many
+        via_table: transactions
+        via_column: customer_id
   Transaction:
     id_field: transaction_id
+    table: transactions
+    id_column: transaction_id
+    security:
+      via_field: customer_id
     fields:
       amount:
         type: data
