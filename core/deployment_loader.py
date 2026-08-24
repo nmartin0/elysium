@@ -13,15 +13,19 @@ named, related data together. Every field is declared with a type, so
 an editor can autocomplete deployment.step_model and flag a typo like
 deployment.setp_model immediately, instead of failing at runtime.
 
-Called by: each deployment's own thin entry point (e.g.
-           deployments/acme_corp/deployment.py), passed that
-           deployment's own directory.
+load_deployment_bundle() and load_example_queries() exist so that NO
+deployment needs its own Python file just to say "here's my path" --
+deployments/<org>/ contains only YAML/data; callers (e.g.
+scripts/run_deployment.py) pass the deployment's path in directly.
+
+Called by: scripts/run_deployment.py, tests/integration/conftest.py
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
 from core.config import load_yaml
+from core.ontology.sql_adapter import OntologyEngine
 
 
 @dataclass
@@ -73,3 +77,23 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             f"or policy.yaml under {base_path} -- check for typos or a "
             f"missing section."
         ) from e
+
+
+def load_deployment_bundle(deployment_dir: Path) -> tuple[DeploymentConfig, OntologyEngine]:
+    # Everything a caller needs to actually RUN queries against one
+    # deployment, in one call -- loads the config, then constructs the
+    # engine from it. This is what makes deployments/<org>/ pure data:
+    # no org needs its own Python file just to do this construction.
+    config = load_deployment(deployment_dir)
+    engine = OntologyEngine(config.db_path, config.schema)
+    return config, engine
+
+
+def load_example_queries(deployment_dir: Path) -> list[dict]:
+    # Reads deployments/<org>/example_queries.yaml -- a list of
+    # {"user_id": ..., "query": ...} entries. Demo/example content is
+    # itself org-specific DATA (which queries make sense depends on
+    # what that org's dev fixtures actually contain), so it lives here
+    # as YAML rather than as hardcoded Python in a runner script.
+    raw = load_yaml(deployment_dir / "example_queries.yaml")
+    return raw["examples"]

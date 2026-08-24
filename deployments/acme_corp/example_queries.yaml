@@ -1,0 +1,15 @@
+# example_queries.yaml  (acme_corp-specific -- pure data)
+#
+# Demo queries for scripts/run_deployment.py, matching acme_corp's own
+# seeded dev fixture data (see dev_fixtures/schema.sql for what
+# cust_001/003/004 and user_alice/carol actually are). A different
+# deployment would list its own users/queries here -- the runner script
+# itself never needs to change.
+
+examples:
+  - user_id: user_alice
+    query: "What are cust_001's recent transactions?"
+  - user_id: user_alice
+    query: "What are cust_003's recent transactions?"
+  - user_id: user_carol
+    query: "What are cust_004's recent transactions?"

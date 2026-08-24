@@ -7,28 +7,44 @@ exists), but can be overridden with the TEST_DEPLOYMENT env var so
 these same test files work against any future deployment without
 editing them.
 
+Uses a PATH lookup (Path("deployments") / name), not a Python import --
+deployments/<org>/ contains no Python files at all, so there's nothing
+to import. load_deployment_bundle() does the actual loading.
+
+_bundle() is a private fixture so a test requesting BOTH `deployment`
+and `engine` only loads the YAML and constructs the engine ONCE --
+pytest caches a fixture's result per test, so deployment/engine below
+both reuse the same _bundle() call rather than each reloading from disk.
+
 What CANNOT be made generic: the actual assertions in each test still
 reference specific known values (e.g. "$49.99") that only make sense
 for acme_corp's dev fixture data.
 """
 
-import importlib
 import os
+from pathlib import Path
 
 import pytest
 
-
-def _deployment_name() -> str:
-    return os.environ.get("TEST_DEPLOYMENT", "acme_corp")
+from core.deployment_loader import load_deployment_bundle
 
 
-@pytest.fixture
-def deployment():
-    module = importlib.import_module(f"deployments.{_deployment_name()}.deployment")
-    return module.config
+def _deployment_dir() -> Path:
+    return Path("deployments") / os.environ.get("TEST_DEPLOYMENT", "acme_corp")
 
 
 @pytest.fixture
-def engine():
-    module = importlib.import_module(f"deployments.{_deployment_name()}.ontology_adapter")
-    return module.engine
+def _bundle():
+    return load_deployment_bundle(_deployment_dir())
+
+
+@pytest.fixture
+def deployment(_bundle):
+    config, _ = _bundle
+    return config
+
+
+@pytest.fixture
+def engine(_bundle):
+    _, engine = _bundle
+    return engine
