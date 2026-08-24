@@ -74,9 +74,9 @@ INSERT INTO books (author_id, title, year) VALUES
 
 @pytest.fixture
 def test_db_path(tmp_path: Path) -> Path:
-    """A fresh, isolated SQLite database for one test, built from
-    TEST_SCHEMA_SQL. tmp_path is a pytest builtin -- a unique temp
-    directory per test, cleaned up automatically."""
+    # A fresh, isolated SQLite database for one test, built from
+    # TEST_SCHEMA_SQL. tmp_path is a pytest builtin -- a unique temp
+    # directory per test, cleaned up automatically.
     db_path = tmp_path / "test.db"
     conn = sqlite3.connect(db_path)
     conn.executescript(TEST_SCHEMA_SQL)

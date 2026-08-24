@@ -9,9 +9,7 @@ editing them.
 
 What CANNOT be made generic: the actual assertions in each test still
 reference specific known values (e.g. "$49.99") that only make sense
-for acme_corp's dev fixture data. Full assertion-level portability
-would require each deployment to declare its own expected test
-scenarios as data -- a real future enhancement, out of scope for now.
+for acme_corp's dev fixture data.
 """
 
 import importlib
@@ -26,9 +24,11 @@ def _deployment_name() -> str:
 
 @pytest.fixture
 def deployment():
-    return importlib.import_module(f"deployments.{_deployment_name()}.deployment")
+    module = importlib.import_module(f"deployments.{_deployment_name()}.deployment")
+    return module.config
 
 
 @pytest.fixture
-def ontology_adapter():
-    return importlib.import_module(f"deployments.{_deployment_name()}.ontology_adapter")
+def engine():
+    module = importlib.import_module(f"deployments.{_deployment_name()}.ontology_adapter")
+    return module.engine

@@ -1,9 +1,11 @@
 """
-Tests for the pure-logic helper functions inside core/agent/loop.py --
+Tests for the pure-logic helper functions inside core/agent/agentic_loop.py --
 no LLM, no I/O, just the duplicate/asymmetry detection logic itself.
+These stayed module-level functions (not AgentLoop methods) since they
+need no instance state -- pure functions of their arguments only.
 """
 
-from core.agent.loop import _step_signature, _detect_asymmetry
+from core.agent.agentic_loop import _step_signature, _detect_asymmetry
 
 
 def test_step_signature_search_object_is_order_independent():
@@ -49,8 +51,6 @@ def test_detect_asymmetry_found_when_fields_differ():
 
 
 def test_detect_asymmetry_ignores_link_results():
-    # A link field's result is a LIST of IDs -- not a data field, must
-    # not be counted toward asymmetry detection.
     gathered = [
         {"step": "get_field", "object_type": "Customer", "object_id": "c1",
          "field_name": "transactions", "result": [1, 2]},

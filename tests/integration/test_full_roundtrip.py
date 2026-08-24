@@ -4,54 +4,32 @@ Integration test: real Ollama, full agent loop -> synthesis. SLOW
 configured model already pulled.
 
 Deployment is dynamic (see conftest.py) -- defaults to acme_corp.
-Assertions still reference acme_corp's known dev-fixture data, since
-fully deployment-agnostic assertions would require each deployment to
-declare its own expected test scenarios (a future enhancement).
+Assertions still reference acme_corp's known dev-fixture data.
 
-Run with: TEST_DEPLOYMENT=acme_corp python3 -m pytest tests/integration/ -v -m integration
-(TEST_DEPLOYMENT is optional -- acme_corp is the default)
-
-Promoted from scratch/scratch_full_roundtrip.py.
+Run with: python3 -m pytest tests/integration/ -v -m integration
 """
 
 import pytest
 
-from core.agent.loop import run_agent_loop
-from core.llm.synthesis_prompt import synthesize_insight
+from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import get_user_security_value
+from core.llm.ollama_client import OllamaClient
+from core.llm.synthesis_prompt import synthesize_insight
 
 
-def _run(deployment, ontology_adapter, user_id: str, query_text: str) -> str:
-    user_security_value = get_user_security_value(
-        deployment.USERS, user_id, deployment.SECURITY_ATTRIBUTE
-    )
-    gathered = run_agent_loop(
-        user_region=user_security_value,
-        query_text=query_text,
-        schema=deployment.SCHEMA,
-        search_fn=ontology_adapter.search_object,
-        get_field_fn=ontology_adapter.get_field,
-        model=deployment.STEP_MODEL,
-        ollama_url=deployment.OLLAMA_URL,
-        timeout_seconds=deployment.REQUEST_TIMEOUT_SECONDS,
-        max_hops=deployment.MAX_HOPS,
-        max_consecutive_duplicates=deployment.MAX_CONSECUTIVE_DUPLICATES,
-        max_consecutive_invalid_steps=deployment.MAX_CONSECUTIVE_INVALID_STEPS,
-    )
-    real_data = [
-        item for item in gathered
-        if item["step"] not in ("rejected_duplicate", "completeness_check", "rejected_invalid_step")
-    ]
-    return synthesize_insight(
-        query_text, real_data,
-        model=deployment.SYNTHESIS_MODEL,
-        ollama_url=deployment.OLLAMA_URL,
-        timeout_seconds=deployment.REQUEST_TIMEOUT_SECONDS,
-    )
+def _run(deployment, engine, user_id: str, query_text: str) -> str:
+    loop = AgentLoop.from_deployment(deployment, engine)
+    synthesis_client = OllamaClient.for_synthesis(deployment)
+
+    user_security_value = get_user_security_value(deployment.users, user_id, deployment.security_attribute)
+    gathered = loop.run(user_security_value, query_text)
+    real_data = AgentLoop.filter_real_data(gathered)
+
+    return synthesize_insight(synthesis_client, query_text, real_data)
 
 
 @pytest.mark.integration
-def test_same_region_query_returns_correct_transactions(deployment, ontology_adapter):
-    answer = _run(deployment, ontology_adapter, "user_alice", "What are cust_001's recent transactions?")
+def test_same_region_query_returns_correct_transactions(deployment, engine):
+    answer = _run(deployment, engine, "user_alice", "What are cust_001's recent transactions?")
     assert "49.99" in answer
-    assert "199" in answer  # allow "199.00" or "199"
+    assert "199" in answer

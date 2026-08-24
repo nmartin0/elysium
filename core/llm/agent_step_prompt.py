@@ -1,8 +1,8 @@
 """
 agent_step_prompt.py  (the agent loop's per-hop LLM call -- org-agnostic)
 
-Unlike router_prompt.py (which picks ONE action, once), this is called
-repeatedly by core/agent/loop.py. Each call sees the original question
+Unlike a single-shot router, this is called repeatedly by
+core/agent/agentic_loop.py's AgentLoop. Each call sees the original question
 plus everything gathered so far, and returns exactly one of:
 
   {"step": "search_object", "object_type": ..., "filter": {...}}
@@ -14,57 +14,75 @@ prompt dynamically from whatever `schema` dict is passed in -- no object
 type names are hardcoded here, so this file works unchanged for any
 deployment's ontology.
 
-model, ollama_url, and timeout_seconds are all passed in by the caller
-(ultimately traced back to a deployment's config.yaml) -- this file has
-no hardcoded model name or URL, same principle as gateway.py taking
-users/actions as arguments rather than importing them.
+Takes an OllamaClient explicitly (not a model/url/timeout triple) --
+callers own one client and hand it in, same explicit-dependency style
+used throughout core/.
 
-Same fail-closed principle as before: anything malformed or unrecognized
-returns {"step": "finish"} rather than guessing, so the loop stops
-cleanly instead of doing something uncertain.
+Fails CLOSED: any uncertainty (bad JSON, unknown action, missing
+params) results in returning "no action" rather than guessing or
+passing through something we're not sure about.
 
-Called by: core/agent/loop.py
+Called by: core/agent/agentic_loop.py
 """
 
 import json
+import logging
+
 import requests
+
+from core.llm.ollama_client import OllamaClient
+from core.ontology.schema import is_searchable_field
+
+logger = logging.getLogger(__name__)
 
 FINISH_STEP = {"step": "finish"}
 
 
-def _describe_schema(schema: dict) -> str:
-    lines = []
-    for object_type, definition in schema.items():
-        id_field = definition["id_field"]
-        searchable = [id_field]
-        link_only = []
-        field_descriptions = []
+def _describe_object_type(object_type: str, definition: dict) -> str:
+    # Builds the prompt block for ONE object type: its fields (data vs
+    # link), which of them are searchable, and a note about any
+    # link-only (reverse link) fields that can't be searched directly.
+    id_field = definition["id_field"]
+    searchable = [id_field]
+    link_only = []
+    field_descriptions = []
 
-        for field_name, info in definition["fields"].items():
-            if info["type"] == "link":
-                field_descriptions.append(f"{field_name} (link -> {info['target']})")
-                if info.get("cardinality") == "one":
-                    searchable.append(field_name)
-                else:
-                    link_only.append(field_name)
-            else:
-                field_descriptions.append(f"{field_name} (data)")
-                searchable.append(field_name)
+    for field_name, field_info in definition["fields"].items():
+        if field_info["type"] == "link":
+            field_descriptions.append(f"{field_name} (link -> {field_info['target']})")
+        else:
+            field_descriptions.append(f"{field_name} (data)")
 
-        block = (
-            f"- {object_type}: identified by {id_field!r}. "
-            f"Fields: " + ", ".join(field_descriptions) + "\n"
-            f"  You may search_object using any of: {searchable} "
-            f'(e.g. {{"step": "search_object", "object_type": "{object_type}", '
-            f'"filter": {{"{searchable[-1]}": "<value>"}}}})'
+        # Same rule core/ontology/sql_adapter.py enforces for real --
+        # see is_searchable_field()'s docstring for why this can't be
+        # computed independently in two places.
+        if is_searchable_field(field_info):
+            searchable.append(field_name)
+        elif field_info["type"] == "link":
+            link_only.append(field_name)
+
+    block = (
+        f"- {object_type}: identified by {id_field!r}. "
+        f"Fields: " + ", ".join(field_descriptions) + "\n"
+        f"  You may search_object using any of: {searchable} "
+        f'(e.g. {{"step": "search_object", "object_type": "{object_type}", '
+        f'"filter": {{"{searchable[-1]}": "<value>"}}}})'
+    )
+    if link_only:
+        block += (
+            f"\n  {link_only} cannot be searched directly -- reach them with "
+            f"get_field on an object you already have the ID for."
         )
-        if link_only:
-            block += (
-                f"\n  {link_only} cannot be searched directly -- reach them with "
-                f"get_field on an object you already have the ID for."
-            )
-        lines.append(block)
-    return "\n".join(lines)
+    return block
+
+
+def _describe_schema(schema: dict) -> str:
+    # Renders the schema into plain-English prompt text: one block per
+    # object type, built by _describe_object_type().
+    return "\n".join(
+        _describe_object_type(object_type, definition)
+        for object_type, definition in schema.items()
+    )
 
 
 def _build_system_prompt(schema: dict) -> str:
@@ -117,8 +135,15 @@ a list and silently skip others.
 """
 
 
-def next_step(query_text: str, schema: dict, gathered_so_far: list[dict],
-              model: str, ollama_url: str, timeout_seconds: int = 180) -> dict:
+def next_step(client: OllamaClient, query_text: str, schema: dict,
+              gathered_so_far: list[dict]) -> dict:
+    # Asks the model for exactly one next step, and validates that the
+    # JSON response has the right KEYS for its step type -- NOT that
+    # object_type/field_name are real entries in the ontology schema
+    # (that check happens later, inside OntologyEngine; a bad value here
+    # surfaces back to core/agent/agentic_loop.py as a caught ValueError). Fails
+    # closed (returns finish) on ANY uncertainty -- malformed JSON, an
+    # unrecognized step, missing keys.
     user_message = (
         f"Question: {query_text}\n\n"
         f"Gathered so far: {json.dumps(gathered_so_far)}\n\n"
@@ -126,25 +151,13 @@ def next_step(query_text: str, schema: dict, gathered_so_far: list[dict],
     )
 
     try:
-        response = requests.post(
-            ollama_url,
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": _build_system_prompt(schema)},
-                    {"role": "user", "content": user_message},
-                ],
-                "format": "json",
-                "options": {"temperature": 0},
-                "stream": False,
-            },
-            timeout=timeout_seconds,
+        raw_content = client.chat(
+            _build_system_prompt(schema), user_message,
+            json_mode=True, temperature=0,
         )
-        response.raise_for_status()
-        raw_content = response.json()["message"]["content"]
         parsed = json.loads(raw_content)
     except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
-        print(f"[agent_step_prompt] request/parse failed, finishing: {e}")
+        logger.warning(f"request/parse failed, finishing: {e}")
         return FINISH_STEP
 
     step = parsed.get("step")
@@ -154,14 +167,14 @@ def next_step(query_text: str, schema: dict, gathered_so_far: list[dict],
 
     if step == "search_object":
         if "object_type" not in parsed or "filter" not in parsed:
-            print("[agent_step_prompt] malformed search_object step, finishing")
+            logger.warning("malformed search_object step, finishing")
             return FINISH_STEP
         return {"step": "search_object", "object_type": parsed["object_type"], "filter": parsed["filter"]}
 
     if step == "get_field":
         required = {"object_type", "object_id", "field_name"}
         if not required.issubset(parsed.keys()):
-            print("[agent_step_prompt] malformed get_field step, finishing")
+            logger.warning("malformed get_field step, finishing")
             return FINISH_STEP
         return {
             "step": "get_field",
@@ -170,5 +183,5 @@ def next_step(query_text: str, schema: dict, gathered_so_far: list[dict],
             "field_name": parsed["field_name"],
         }
 
-    print(f"[agent_step_prompt] unrecognized step {step!r}, finishing")
+    logger.warning(f"unrecognized step {step!r}, finishing")
     return FINISH_STEP

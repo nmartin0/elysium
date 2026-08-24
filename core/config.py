@@ -10,8 +10,12 @@ SECURITY: always yaml.safe_load(), never yaml.load(). Plain load() can
 execute arbitrary Python via YAML tags if the file is ever untrusted --
 safe_load() only ever produces plain data structures.
 
-Called by: deployments/<org>/deployment.py (the one place config gets
-           read and turned into explicit parameters for core/ functions)
+No error handling here on purpose -- a missing file or malformed YAML
+should surface as Python's own clear FileNotFoundError/yaml.YAMLError,
+not get wrapped in a vaguer catch-and-reraise that adds nothing.
+
+Called by: core/deployment_loader.py (the one place config gets read
+           and turned into explicit values for core/ functions)
 """
 
 from pathlib import Path

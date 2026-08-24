@@ -12,6 +12,7 @@ This file only knows the SHAPE user data must have, never its actual
 contents -- that's deployments/<org>/policy.yaml's job.
 
 Called by: gateway.py, and (for get_user_security_value) test_run.py
+           and tests/integration/ directly
 """
 
 

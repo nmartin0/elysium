@@ -1,18 +1,15 @@
 """
-ontology_adapter.py  (acme_corp-specific -- binds this org's db + schema)
+ontology_adapter.py  (acme_corp-specific -- one line, binds this org's engine)
 
 All the actual query/security logic is generic, in
-core/ontology/sql_adapter.py. This file's only job is to supply
-acme_corp's own database path and schema (both sourced from
-deployment.py, which loaded them from YAML) -- producing functions that
-match the (user_security_value, object_type, ...) calling convention
-core/agent/loop.py already expects.
+core/ontology/sql_adapter.py's OntologyEngine class. This file's only
+job is to construct the engine with acme_corp's own database and
+schema -- `engine.search_object` and `engine.get_field` are bound
+methods, which work as drop-in callables anywhere a plain function was
+expected before (e.g. core/agent/agentic_loop.py's AgentLoop).
 """
 
-from functools import partial
+from core.ontology.sql_adapter import OntologyEngine
+from deployments.acme_corp.deployment import config
 
-from core.ontology.sql_adapter import search_object as _search_object, get_field as _get_field
-from deployments.acme_corp.deployment import DB_PATH, SCHEMA
-
-search_object = partial(_search_object, DB_PATH, SCHEMA)
-get_field = partial(_get_field, DB_PATH, SCHEMA)
+engine = OntologyEngine(config.db_path, config.schema)
