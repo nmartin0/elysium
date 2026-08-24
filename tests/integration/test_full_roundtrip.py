@@ -13,13 +13,13 @@ import pytest
 
 from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import get_user_security_value
-from core.llm.ollama_client import OllamaClient
+from core.deployment_loader import build_llm_adapter
 from core.llm.synthesis_prompt import synthesize_insight
 
 
 def _run(deployment, mediator, user_id: str, query_text: str) -> str:
     loop = AgentLoop.from_deployment(deployment, mediator)
-    synthesis_client = OllamaClient.for_synthesis(deployment)
+    synthesis_client = build_llm_adapter(deployment, deployment.synthesis_model)
 
     user_security_value = get_user_security_value(deployment.users, user_id, deployment.security_attribute)
     gathered = loop.run(user_security_value, query_text)

@@ -14,7 +14,7 @@ prompt dynamically from whatever `schema` dict is passed in -- no object
 type names are hardcoded here, so this file works unchanged for any
 deployment's ontology.
 
-Takes an OllamaClient explicitly (not a model/url/timeout triple) --
+Takes an LLMAdapter explicitly (not a model/url/timeout triple) --
 callers own one client and hand it in, same explicit-dependency style
 used throughout core/.
 
@@ -30,7 +30,7 @@ import logging
 
 import requests
 
-from core.llm.ollama_client import OllamaClient
+from core.llm.interface import LLMAdapter
 from core.ontology.schema import is_searchable_field
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ def _describe_object_type(object_type: str, definition: dict) -> str:
         else:
             field_descriptions.append(f"{field_name} (data)")
 
-        # Same rule core/ontology/sql_adapter.py enforces for real --
+        # Same rule core/ontology/mediator.py enforces for real --
         # see is_searchable_field()'s docstring for why this can't be
         # computed independently in two places.
         if is_searchable_field(field_info):
@@ -135,12 +135,12 @@ a list and silently skip others.
 """
 
 
-def next_step(client: OllamaClient, query_text: str, schema: dict,
+def next_step(client: LLMAdapter, query_text: str, schema: dict,
               gathered_so_far: list[dict]) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that
     # object_type/field_name are real entries in the ontology schema
-    # (that check happens later, inside OntologyEngine; a bad value here
+    # (that check happens later, inside DataMediator; a bad value here
     # surfaces back to core/agent/agentic_loop.py as a caught ValueError). Fails
     # closed (returns finish) on ANY uncertainty -- malformed JSON, an
     # unrecognized step, missing keys.

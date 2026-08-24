@@ -7,11 +7,11 @@ DeploymentConfig object. Contains zero knowledge of any specific
 organization -- only the fixed file names and key names this project's
 deployment convention expects.
 
-load_deployment_bundle() is where the adapter REGISTRY lives -- the
-hardcoded {"sqlite": SQLiteAdapter} mapping below is exactly the place
-a future entry-points-based third-party discovery mechanism would
-replace, without changing anything else in this file or in
-DataMediator.
+Two registries live here -- _ADAPTER_REGISTRY (data silos) and
+_LLM_ADAPTER_REGISTRY (LLM backends) -- both hardcoded dicts today,
+both exactly the place a future entry-points-based third-party
+discovery mechanism would replace, without changing anything else in
+this file, DataMediator, or AgentLoop.
 
 Called by: scripts/run_deployment.py, tests/integration/conftest.py
 """
@@ -22,24 +22,26 @@ from pathlib import Path
 from core.config import load_yaml
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.mediator import DataMediator
+from core.llm.interface import LLMAdapter
 from adapters.sqlite_adapter import SQLiteAdapter
+from adapters.ollama_adapter import OllamaAdapter
 
-# The adapter registry. Third-party adapters would be discovered via
-# Python packaging entry points instead of a hardcoded dict -- this is
-# the one place that swap would happen; nothing else in this file or in
-# DataMediator needs to change to support it.
 _ADAPTER_REGISTRY: dict[str, type] = {
     "sqlite": SQLiteAdapter,
+}
+
+_LLM_ADAPTER_REGISTRY: dict[str, type] = {
+    "ollama": OllamaAdapter,
 }
 
 
 @dataclass
 class DeploymentConfig:
     base_path: Path
-    ollama_url: str
+    llm_provider: str            # e.g. "ollama" -- key into _LLM_ADAPTER_REGISTRY
+    llm_connection: dict           # opaque to core/ -- e.g. {"base_url": ..., "request_timeout_seconds": ...}
     step_model: str
     synthesis_model: str
-    request_timeout_seconds: int
     max_hops: int
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
@@ -57,10 +59,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     try:
         return DeploymentConfig(
             base_path=base_path,
-            ollama_url=config["ollama"]["base_url"],
+            llm_provider=config["llm"]["provider"],
+            llm_connection=config["llm"]["connection"],
             step_model=config["llm"]["step_model"],
             synthesis_model=config["llm"]["synthesis_model"],
-            request_timeout_seconds=config["llm"]["request_timeout_seconds"],
             max_hops=config["agent"]["max_hops"],
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
@@ -75,6 +77,19 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             f"or policy.yaml under {base_path} -- check for typos or a "
             f"missing section."
         ) from e
+
+
+def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
+    # The one place an LLM adapter gets constructed -- used for BOTH the
+    # step-selection and synthesis clients (same provider/connection,
+    # different model name each time).
+    adapter_class = _LLM_ADAPTER_REGISTRY.get(config.llm_provider)
+    if adapter_class is None:
+        raise ValueError(
+            f"Unknown LLM provider {config.llm_provider!r} -- registered "
+            f"providers: {sorted(_LLM_ADAPTER_REGISTRY.keys())}"
+        )
+    return adapter_class(model, config.llm_connection)
 
 
 def _build_adapters(silo_configs: dict) -> dict[str, DataSiloAdapter]:

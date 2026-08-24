@@ -1,24 +1,24 @@
 # config.yaml  (acme_corp-specific operational settings)
 #
-# Which LLM each call uses, where Ollama lives, agent-loop tuning, and
+# Which LLM backend and model each call uses, agent-loop tuning, and
 # which data silo(s) this deployment reads from. Different deployments
 # can run entirely different models/hardware/silos by editing only this
 # file -- core/ code never hardcodes any of this.
 
-ollama:
-  base_url: "http://localhost:11434/api/chat"
-
 llm:
-  step_model: "phi4-mini"        # used by core/llm/agent_step_prompt.py --
-                                  # best correctness/speed tradeoff found so
-                                  # far; qwen2.5:3b tried and reverted after
-                                  # it got stuck repeating its first step in
-                                  # every test case, even with recovery
-                                  # mechanisms in place (see git history)
-  synthesis_model: "qwen2.5:3b"  # used by core/llm/synthesis_prompt.py
-  request_timeout_seconds: 240   # bumped from 180 -- occasional slow calls
-                                  # on this CPU-only hardware need headroom,
-                                  # especially under integration test load
+  provider: ollama                 # key into deployment_loader's LLM adapter
+                                    # registry -- adapters/ollama_adapter.py
+  connection:
+    base_url: "http://localhost:11434/api/chat"
+    request_timeout_seconds: 240   # bumped from 180 -- occasional slow calls
+                                    # on this CPU-only hardware need headroom,
+                                    # especially under integration test load
+  step_model: "phi4-mini"          # best correctness/speed tradeoff found so
+                                    # far; qwen2.5:3b tried and reverted after
+                                    # it got stuck repeating its first step in
+                                    # every test case, even with recovery
+                                    # mechanisms in place (see git history)
+  synthesis_model: "qwen2.5:3b"
 
 agent:
   max_hops: 8

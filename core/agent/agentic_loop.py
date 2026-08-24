@@ -2,7 +2,7 @@
 agentic_loop.py  (the agentic loop -- org-agnostic)
 
 AgentLoop bundles everything that stays FIXED across every query for a
-given deployment -- the OllamaClient, the DataMediator, and the hop/
+given deployment -- the LLMAdapter, the DataMediator, and the hop/
 retry limits -- into one object, constructed once. Only run() takes the
 truly per-call arguments (user_security_value, query_text). This used to be a
 single function re-passed all seven of these on every call; per-call
@@ -43,14 +43,15 @@ holds -- that enforcement lives inside DataMediator itself, not in
 the gateway. Reconnecting this loop to auth/audit is a real task for
 later, not automatic.
 
-Used by: deployments/<org>/test_run.py, and directly by
-         tests/integration/ (or whatever replaces test_run.py)
+Used by: scripts/run_deployment.py, and directly by
+         tests/integration/ (or whatever replaces it)
 """
 
 import logging
 
 from core.llm.agent_step_prompt import next_step
-from core.llm.ollama_client import OllamaClient
+from core.deployment_loader import build_llm_adapter
+from core.llm.interface import LLMAdapter
 from core.ontology.mediator import DataMediator
 
 logger = logging.getLogger(__name__)
@@ -122,7 +123,7 @@ class AgentLoop:
         "rejected_duplicate", "completeness_check", "rejected_invalid_step",
     })
 
-    def __init__(self, client: OllamaClient, mediator: DataMediator,
+    def __init__(self, client: LLMAdapter, mediator: DataMediator,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
                  max_consecutive_invalid_steps: int = 2):
         # These five stay fixed across every query this loop instance
@@ -138,10 +139,10 @@ class AgentLoop:
     def from_deployment(cls, deployment, mediator: DataMediator) -> "AgentLoop":
         # The standard way every caller should build an AgentLoop -- one
         # authoritative place reading deployment.max_hops etc., instead
-        # of every call site (test_run.py, integration tests) separately
-        # copy-pasting the same construction and risking drift if a new
-        # tuning parameter is ever added.
-        client = OllamaClient(deployment.step_model, deployment.ollama_url, deployment.request_timeout_seconds)
+        # of every call site (scripts/run_deployment.py, integration
+        # tests) separately copy-pasting the same construction and
+        # risking drift if a new tuning parameter is ever added.
+        client = build_llm_adapter(deployment, deployment.step_model)
         return cls(
             client, mediator,
             max_hops=deployment.max_hops,

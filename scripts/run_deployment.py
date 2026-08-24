@@ -16,9 +16,8 @@ import sys
 from pathlib import Path
 
 from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import load_deployment_bundle, load_example_queries
+from core.deployment_loader import load_deployment_bundle, load_example_queries, build_llm_adapter
 from core.intermediate_layer.auth import get_user_security_value
-from core.llm.ollama_client import OllamaClient
 from core.llm.synthesis_prompt import synthesize_insight
 from core.logging_config import configure_logging
 
@@ -29,7 +28,7 @@ def run_deployment(deployment_name: str) -> None:
     examples = load_example_queries(deployment_dir)
 
     loop = AgentLoop.from_deployment(config, mediator)
-    synthesis_client = OllamaClient.for_synthesis(config)
+    synthesis_client = build_llm_adapter(config, config.synthesis_model)
 
     for example in examples:
         user_id = example["user_id"]
