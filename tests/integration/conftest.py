@@ -12,8 +12,8 @@ deployments/<org>/ contains no Python files at all, so there's nothing
 to import. load_deployment_bundle() does the actual loading.
 
 _bundle() is a private fixture so a test requesting BOTH `deployment`
-and `engine` only loads the YAML and constructs the engine ONCE --
-pytest caches a fixture's result per test, so deployment/engine below
+and `mediator` only loads the YAML and constructs the mediator ONCE --
+pytest caches a fixture's result per test, so deployment/mediator below
 both reuse the same _bundle() call rather than each reloading from disk.
 
 What CANNOT be made generic: the actual assertions in each test still
@@ -45,6 +45,6 @@ def deployment(_bundle):
 
 
 @pytest.fixture
-def engine(_bundle):
-    _, engine = _bundle
-    return engine
+def mediator(_bundle):
+    _, mediator = _bundle
+    return mediator

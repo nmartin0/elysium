@@ -1,7 +1,7 @@
 """
 run_deployment.py  (generic -- works for ANY deployment, unmodified)
 
-Loads one deployment's config+engine, loads its example queries, runs
+Loads one deployment's config+mediator, loads its example queries, runs
 each one through the real pipeline, and prints the answer. This file
 must never gain org-specific content -- if a deployment ever needs
 something this script can't express generically, that's a sign the
@@ -25,10 +25,10 @@ from core.logging_config import configure_logging
 
 def run_deployment(deployment_name: str) -> None:
     deployment_dir = Path("deployments") / deployment_name
-    config, engine = load_deployment_bundle(deployment_dir)
+    config, mediator = load_deployment_bundle(deployment_dir)
     examples = load_example_queries(deployment_dir)
 
-    loop = AgentLoop.from_deployment(config, engine)
+    loop = AgentLoop.from_deployment(config, mediator)
     synthesis_client = OllamaClient.for_synthesis(config)
 
     for example in examples:

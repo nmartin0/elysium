@@ -17,8 +17,8 @@ from core.llm.ollama_client import OllamaClient
 from core.llm.synthesis_prompt import synthesize_insight
 
 
-def _run(deployment, engine, user_id: str, query_text: str) -> str:
-    loop = AgentLoop.from_deployment(deployment, engine)
+def _run(deployment, mediator, user_id: str, query_text: str) -> str:
+    loop = AgentLoop.from_deployment(deployment, mediator)
     synthesis_client = OllamaClient.for_synthesis(deployment)
 
     user_security_value = get_user_security_value(deployment.users, user_id, deployment.security_attribute)
@@ -29,7 +29,7 @@ def _run(deployment, engine, user_id: str, query_text: str) -> str:
 
 
 @pytest.mark.integration
-def test_same_region_query_returns_correct_transactions(deployment, engine):
-    answer = _run(deployment, engine, "user_alice", "What are cust_001's recent transactions?")
+def test_same_region_query_returns_correct_transactions(deployment, mediator):
+    answer = _run(deployment, mediator, "user_alice", "What are cust_001's recent transactions?")
     assert "49.99" in answer
     assert "199" in answer

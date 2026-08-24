@@ -20,6 +20,7 @@ import pytest
 
 TEST_SCHEMA = {
     "Author": {
+        "silo": "test_silo",
         "id_field": "author_id",
         "table": "authors",
         "id_column": "author_id",
@@ -37,6 +38,7 @@ TEST_SCHEMA = {
         },
     },
     "Book": {
+        "silo": "test_silo",
         "id_field": "book_id",
         "table": "books",
         "id_column": "book_id",

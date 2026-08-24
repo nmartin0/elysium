@@ -1,8 +1,8 @@
 # config.yaml  (acme_corp-specific operational settings)
 #
 # Which LLM each call uses, where Ollama lives, agent-loop tuning, and
-# where this deployment's database file is. Different deployments can
-# run entirely different models/hardware/storage by editing only this
+# which data silo(s) this deployment reads from. Different deployments
+# can run entirely different models/hardware/silos by editing only this
 # file -- core/ code never hardcodes any of this.
 
 ollama:
@@ -25,5 +25,11 @@ agent:
   max_consecutive_duplicates: 2
   max_consecutive_invalid_steps: 2
 
-database:
-  path: "dev_fixtures/mediator.db"   # relative to this deployment's own folder
+# Named data-silo instances. Each object type in ontology_schema.yaml
+# declares which of these named silos it lives in via its own `silo:`
+# key -- this is what lets a deployment span more than one adapter.
+data_silos:
+  primary_sql:
+    adapter: sqlite
+    connection:
+      path: "dev_fixtures/mediator.db"

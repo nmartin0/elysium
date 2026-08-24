@@ -2,7 +2,7 @@
 agentic_loop.py  (the agentic loop -- org-agnostic)
 
 AgentLoop bundles everything that stays FIXED across every query for a
-given deployment -- the OllamaClient, the OntologyEngine, and the hop/
+given deployment -- the OllamaClient, the DataMediator, and the hop/
 retry limits -- into one object, constructed once. Only run() takes the
 truly per-call arguments (user_security_value, query_text). This used to be a
 single function re-passed all seven of these on every call; per-call
@@ -11,7 +11,7 @@ class fits better than a function.
 
 Repeatedly asks core/llm/agent_step_prompt.py for the next step
 (search_object, get_field, or finish), executes it against the
-OntologyEngine, and accumulates results until the model signals
+DataMediator, and accumulates results until the model signals
 "finish", asks for something it already has (duplicate detection), asks
 for something invalid (invalid-step recovery), or max_hops is reached.
 
@@ -39,7 +39,7 @@ everything gathered so far on the first mistake.
 KNOWN GAP (flagged deliberately, not an oversight): this loop does NOT
 go through core/intermediate_layer/gateway.py, so auth.authorize() and
 audit logging are bypassed here for now. Region/security scoping still
-holds -- that enforcement lives inside OntologyEngine itself, not in
+holds -- that enforcement lives inside DataMediator itself, not in
 the gateway. Reconnecting this loop to auth/audit is a real task for
 later, not automatic.
 
@@ -51,7 +51,7 @@ import logging
 
 from core.llm.agent_step_prompt import next_step
 from core.llm.ollama_client import OllamaClient
-from core.ontology.sql_adapter import OntologyEngine
+from core.ontology.mediator import DataMediator
 
 logger = logging.getLogger(__name__)
 
@@ -122,20 +122,20 @@ class AgentLoop:
         "rejected_duplicate", "completeness_check", "rejected_invalid_step",
     })
 
-    def __init__(self, client: OllamaClient, engine: OntologyEngine,
+    def __init__(self, client: OllamaClient, mediator: DataMediator,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
                  max_consecutive_invalid_steps: int = 2):
         # These five stay fixed across every query this loop instance
         # ever runs -- constructed once per deployment, then run()
         # called once per actual user question.
         self.client = client
-        self.engine = engine
+        self.mediator = mediator
         self.max_hops = max_hops
         self.max_consecutive_duplicates = max_consecutive_duplicates
         self.max_consecutive_invalid_steps = max_consecutive_invalid_steps
 
     @classmethod
-    def from_deployment(cls, deployment, engine: OntologyEngine) -> "AgentLoop":
+    def from_deployment(cls, deployment, mediator: DataMediator) -> "AgentLoop":
         # The standard way every caller should build an AgentLoop -- one
         # authoritative place reading deployment.max_hops etc., instead
         # of every call site (test_run.py, integration tests) separately
@@ -143,7 +143,7 @@ class AgentLoop:
         # tuning parameter is ever added.
         client = OllamaClient(deployment.step_model, deployment.ollama_url, deployment.request_timeout_seconds)
         return cls(
-            client, engine,
+            client, mediator,
             max_hops=deployment.max_hops,
             max_consecutive_duplicates=deployment.max_consecutive_duplicates,
             max_consecutive_invalid_steps=deployment.max_consecutive_invalid_steps,
@@ -178,16 +178,16 @@ class AgentLoop:
 
     def _execute_step(self, step: dict, user_security_value: str,
                        gathered: list[dict], consecutive_invalid: int) -> tuple[int, bool]:
-        # Runs one search_object/get_field step against the engine,
+        # Runs one search_object/get_field step against the mediator,
         # appending the result to `gathered` on success. On a schema
         # validation error (ValueError), hands off to the shared
         # recoverable-mistake handler. Returns (new_consecutive_invalid,
         # should_stop_loop).
         try:
             if step["step"] == "search_object":
-                result = self.engine.search_object(user_security_value, step["object_type"], step["filter"])
+                result = self.mediator.search_object(user_security_value, step["object_type"], step["filter"])
             elif step["step"] == "get_field":
-                result = self.engine.get_field(
+                result = self.mediator.get_field(
                     user_security_value, step["object_type"], step["object_id"], step["field_name"]
                 )
             else:
@@ -226,7 +226,7 @@ class AgentLoop:
         # -- max_hops caps how many times this can run, but the count
         # itself is never read inside the loop.
         for _ in range(1, self.max_hops + 1):
-            step = next_step(self.client, query_text, self.engine.schema, gathered)
+            step = next_step(self.client, query_text, self.mediator.schema, gathered)
 
             if step["step"] == "finish":
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)

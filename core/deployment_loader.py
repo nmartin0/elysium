@@ -7,16 +7,11 @@ DeploymentConfig object. Contains zero knowledge of any specific
 organization -- only the fixed file names and key names this project's
 deployment convention expects.
 
-Returns a @dataclass rather than a plain dict or SimpleNamespace --
-per Python's own docs, dataclasses are the idiomatic way to bundle
-named, related data together. Every field is declared with a type, so
-an editor can autocomplete deployment.step_model and flag a typo like
-deployment.setp_model immediately, instead of failing at runtime.
-
-load_deployment_bundle() and load_example_queries() exist so that NO
-deployment needs its own Python file just to say "here's my path" --
-deployments/<org>/ contains only YAML/data; callers (e.g.
-scripts/run_deployment.py) pass the deployment's path in directly.
+load_deployment_bundle() is where the adapter REGISTRY lives -- the
+hardcoded {"sqlite": SQLiteAdapter} mapping below is exactly the place
+a future entry-points-based third-party discovery mechanism would
+replace, without changing anything else in this file or in
+DataMediator.
 
 Called by: scripts/run_deployment.py, tests/integration/conftest.py
 """
@@ -25,30 +20,36 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.config import load_yaml
-from core.ontology.sql_adapter import OntologyEngine
+from core.ontology.interface import DataSiloAdapter
+from core.ontology.mediator import DataMediator
+from adapters.sqlite_adapter import SQLiteAdapter
+
+# The adapter registry. Third-party adapters would be discovered via
+# Python packaging entry points instead of a hardcoded dict -- this is
+# the one place that swap would happen; nothing else in this file or in
+# DataMediator needs to change to support it.
+_ADAPTER_REGISTRY: dict[str, type] = {
+    "sqlite": SQLiteAdapter,
+}
 
 
 @dataclass
 class DeploymentConfig:
-    # Everything a deployment needs, in one bundle -- see field-level
-    # comments below for what each one means and where it's used.
     base_path: Path
-    ollama_url: str            # where core/llm/ollama_client.py sends requests
-    step_model: str            # model used for core/agent/agentic_loop.py's step selection
-    synthesis_model: str       # model used for final answer synthesis
+    ollama_url: str
+    step_model: str
+    synthesis_model: str
     request_timeout_seconds: int
-    max_hops: int               # hard cap on agent loop iterations
+    max_hops: int
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
-    db_path: Path                # this deployment's actual SQLite file
-    schema: dict                  # object types/fields, see core/ontology/schema.py
-    users: dict                    # who exists and their security attribute value + permissions
-    security_attribute: str         # which field on a user record is the security value
+    schema: dict
+    users: dict
+    security_attribute: str
+    silo_configs: dict          # silo name -> {"adapter": ..., "connection": {...}}
 
 
 def load_deployment(base_path: Path) -> DeploymentConfig:
-    # Reads all three YAML files for one deployment and returns every
-    # value the rest of the project needs, bundled into one object.
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
     policy_raw = load_yaml(base_path / "policy.yaml")
@@ -63,13 +64,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             max_hops=config["agent"]["max_hops"],
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
-            # database.path in config.yaml is relative to this deployment's
-            # own folder, not absolute -- e.g. "dev_fixtures/mediator.db"
-            # resolves to <base_path>/dev_fixtures/mediator.db.
-            db_path=base_path / config["database"]["path"],
             schema=schema_raw["object_types"],
             users=policy_raw["users"],
             security_attribute=policy_raw["security_attribute"],
+            silo_configs=config["data_silos"],
         )
     except KeyError as e:
         raise ValueError(
@@ -79,21 +77,46 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
         ) from e
 
 
-def load_deployment_bundle(deployment_dir: Path) -> tuple[DeploymentConfig, OntologyEngine]:
-    # Everything a caller needs to actually RUN queries against one
-    # deployment, in one call -- loads the config, then constructs the
-    # engine from it. This is what makes deployments/<org>/ pure data:
-    # no org needs its own Python file just to do this construction.
+def _build_adapters(silo_configs: dict) -> dict[str, DataSiloAdapter]:
+    adapters = {}
+    for silo_name, silo_config in silo_configs.items():
+        adapter_key = silo_config["adapter"]
+        adapter_class = _ADAPTER_REGISTRY.get(adapter_key)
+        if adapter_class is None:
+            raise ValueError(
+                f"Unknown adapter type {adapter_key!r} for silo {silo_name!r} "
+                f"-- registered adapters: {sorted(_ADAPTER_REGISTRY.keys())}"
+            )
+        adapters[silo_name] = adapter_class(silo_config["connection"])
+    return adapters
+
+
+def _build_silo_for_type(schema: dict) -> dict[str, str]:
+    return {object_type: type_def["silo"] for object_type, type_def in schema.items()}
+
+
+def load_deployment_bundle(deployment_dir: Path) -> tuple[DeploymentConfig, DataMediator]:
+    # Loads config, builds one adapter instance per declared silo (see
+    # _ADAPTER_REGISTRY above), and wires them into a DataMediator that
+    # knows which object types route to which silo.
     config = load_deployment(deployment_dir)
-    engine = OntologyEngine(config.db_path, config.schema)
-    return config, engine
+
+    # base_path resolves database.path-equivalent connection fields
+    # (e.g. SQLite's "path") relative to this deployment's own folder,
+    # same convention as everything else in the config.
+    resolved_silo_configs = {}
+    for silo_name, silo_config in config.silo_configs.items():
+        connection = dict(silo_config["connection"])
+        if "path" in connection:
+            connection["path"] = deployment_dir / connection["path"]
+        resolved_silo_configs[silo_name] = {**silo_config, "connection": connection}
+
+    adapters = _build_adapters(resolved_silo_configs)
+    silo_for_type = _build_silo_for_type(config.schema)
+    mediator = DataMediator(config.schema, adapters, silo_for_type)
+    return config, mediator
 
 
 def load_example_queries(deployment_dir: Path) -> list[dict]:
-    # Reads deployments/<org>/example_queries.yaml -- a list of
-    # {"user_id": ..., "query": ...} entries. Demo/example content is
-    # itself org-specific DATA (which queries make sense depends on
-    # what that org's dev fixtures actually contain), so it lives here
-    # as YAML rather than as hardcoded Python in a runner script.
     raw = load_yaml(deployment_dir / "example_queries.yaml")
     return raw["examples"]
