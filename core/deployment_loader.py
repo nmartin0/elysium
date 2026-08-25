@@ -49,12 +49,20 @@ class DeploymentConfig:
     users: dict
     security_attribute: str
     silo_configs: dict          # silo name -> {"adapter": ..., "connection": {...}}
+    enabled_tools: list[str]      # from config.yaml tools.enabled -- GENUINELY optional,
+                                   # unlike everything else here (see load_deployment())
 
 
 def load_deployment(base_path: Path) -> DeploymentConfig:
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
     policy_raw = load_yaml(base_path / "policy.yaml")
+
+    # tools.enabled is genuinely OPTIONAL -- a deployment with no tools
+    # declared (or no "tools" section at all) is completely valid, unlike
+    # every other field below. Uses .get() with a default specifically
+    # so this stays outside the strict required-key error handling.
+    enabled_tools = config.get("tools", {}).get("enabled", [])
 
     try:
         return DeploymentConfig(
@@ -70,6 +78,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             users=policy_raw["users"],
             security_attribute=policy_raw["security_attribute"],
             silo_configs=config["data_silos"],
+            enabled_tools=enabled_tools,
         )
     except KeyError as e:
         raise ValueError(

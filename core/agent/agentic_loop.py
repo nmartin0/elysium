@@ -47,12 +47,15 @@ Used by: scripts/run_deployment.py, and directly by
          tests/integration/ (or whatever replaces it)
 """
 
+import json
 import logging
 
 from core.llm.agent_step_prompt import next_step
 from core.deployment_loader import build_llm_adapter
 from core.llm.interface import LLMAdapter
 from core.ontology.mediator import DataMediator
+from core.tools.interface import Tool
+from core.tools.registry import get_enabled_tools
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,13 @@ def _step_signature(step: dict):
         return ("search_object", step["object_type"], frozenset(step["filter"].items()))
     if step["step"] == "get_field":
         return ("get_field", step["object_type"], step["object_id"], step["field_name"])
+    if step["step"] == "use_tool":
+        # Tool args can contain UNHASHABLE values (e.g. lists for
+        # x_values/y_values) -- frozenset(dict.items()), used for the
+        # other step types, would crash on these. JSON serialization
+        # (sort_keys=True for determinism) handles nested lists/dicts
+        # safely and still produces a stable, hashable signature.
+        return ("use_tool", step["tool_name"], json.dumps(step["args"], sort_keys=True))
     return None
 
 
@@ -123,14 +133,20 @@ class AgentLoop:
         "rejected_duplicate", "completeness_check", "rejected_invalid_step",
     })
 
-    def __init__(self, client: LLMAdapter, mediator: DataMediator,
+    def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Tool] | None = None,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
                  max_consecutive_invalid_steps: int = 2):
-        # These five stay fixed across every query this loop instance
-        # ever runs -- constructed once per deployment, then run()
-        # called once per actual user question.
+        # These stay fixed across every query this loop instance ever
+        # runs -- constructed once per deployment, then run() called
+        # once per actual user question. tools defaults to None, not []
+        # -- the classic Python mutable-default-argument trap: a literal
+        # [] default would be created ONCE at function definition and
+        # silently shared across every AgentLoop that didn't pass its
+        # own tools list.
         self.client = client
         self.mediator = mediator
+        self.tools = tools if tools is not None else []
+        self._tools_by_name = {tool.name: tool for tool in self.tools}
         self.max_hops = max_hops
         self.max_consecutive_duplicates = max_consecutive_duplicates
         self.max_consecutive_invalid_steps = max_consecutive_invalid_steps
@@ -143,8 +159,9 @@ class AgentLoop:
         # tests) separately copy-pasting the same construction and
         # risking drift if a new tuning parameter is ever added.
         client = build_llm_adapter(deployment, deployment.step_model)
+        tools = get_enabled_tools(deployment.enabled_tools)
         return cls(
-            client, mediator,
+            client, mediator, tools=tools,
             max_hops=deployment.max_hops,
             max_consecutive_duplicates=deployment.max_consecutive_duplicates,
             max_consecutive_invalid_steps=deployment.max_consecutive_invalid_steps,
@@ -179,10 +196,14 @@ class AgentLoop:
 
     def _execute_step(self, step: dict, user_security_value: str,
                        gathered: list[dict], consecutive_invalid: int) -> tuple[int, bool]:
-        # Runs one search_object/get_field step against the mediator,
-        # appending the result to `gathered` on success. On a schema
-        # validation error (ValueError), hands off to the shared
-        # recoverable-mistake handler. Returns (new_consecutive_invalid,
+        # Runs one search_object/get_field/use_tool step, appending the
+        # result to `gathered` on success. On a recoverable failure
+        # (ValueError from mediator/tool validation, or TypeError from a
+        # tool called with the wrong argument names), hands off to the
+        # shared recoverable-mistake handler -- a tool execution failure
+        # is treated as the SAME conceptual event as an invalid schema
+        # step ("the model attempted an action and it failed"), not a
+        # separately-tracked failure mode. Returns (new_consecutive_invalid,
         # should_stop_loop).
         try:
             if step["step"] == "search_object":
@@ -191,12 +212,17 @@ class AgentLoop:
                 result = self.mediator.get_field(
                     user_security_value, step["object_type"], step["object_id"], step["field_name"]
                 )
+            elif step["step"] == "use_tool":
+                tool = self._tools_by_name.get(step["tool_name"])
+                if tool is None:
+                    raise ValueError(f"Unknown tool: {step['tool_name']!r}")
+                result = tool.run(**step["args"])
             else:
                 return consecutive_invalid, True  # shouldn't happen -- agent_step_prompt already validates this
 
             gathered.append({**step, "result": result})
             return 0, False
-        except ValueError as e:
+        except (ValueError, TypeError) as e:
             return _handle_recoverable_mistake(
                 gathered, consecutive_invalid, self.max_consecutive_invalid_steps,
                 detail=f"{step} -- {e}",
@@ -227,7 +253,7 @@ class AgentLoop:
         # -- max_hops caps how many times this can run, but the count
         # itself is never read inside the loop.
         for _ in range(1, self.max_hops + 1):
-            step = next_step(self.client, query_text, self.mediator.schema, gathered)
+            step = next_step(self.client, query_text, self.mediator.schema, gathered, self.tools)
 
             if step["step"] == "finish":
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)

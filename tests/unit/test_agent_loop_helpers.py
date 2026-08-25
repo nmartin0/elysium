@@ -20,6 +20,23 @@ def test_step_signature_get_field_distinguishes_different_fields():
     assert _step_signature(step_a) != _step_signature(step_b)
 
 
+def test_step_signature_use_tool_handles_unhashable_args():
+    # Tool args can contain lists (e.g. x_values/y_values for a
+    # regression tool) -- frozenset(dict.items()), used for the other
+    # step types, would crash on these. This confirms the JSON-based
+    # signature handles it without error.
+    step = {"step": "use_tool", "tool_name": "linear_regression",
+            "args": {"x_values": [1, 2, 3], "y_values": [4, 5, 6]}}
+    signature = _step_signature(step)  # must not raise
+    assert signature is not None
+
+
+def test_step_signature_use_tool_ignores_arg_key_order():
+    step_a = {"step": "use_tool", "tool_name": "linear_regression", "args": {"x_values": [1], "y_values": [2]}}
+    step_b = {"step": "use_tool", "tool_name": "linear_regression", "args": {"y_values": [2], "x_values": [1]}}
+    assert _step_signature(step_a) == _step_signature(step_b)
+
+
 def test_detect_asymmetry_none_when_only_one_sibling():
     gathered = [
         {"step": "get_field", "object_type": "Transaction", "object_id": 1,

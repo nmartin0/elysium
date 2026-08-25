@@ -32,6 +32,7 @@ import requests
 
 from core.llm.interface import LLMAdapter
 from core.ontology.schema import is_searchable_field
+from core.tools.interface import Tool
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +86,39 @@ def _describe_schema(schema: dict) -> str:
     )
 
 
-def _build_system_prompt(schema: dict) -> str:
+def _describe_tools(tools: list[Tool]) -> str:
+    # Renders available tools into prompt text, generated from each
+    # Tool's own name/description/parameters -- never hardcoded, so
+    # this works unchanged for any deployment's enabled tool set.
+    blocks = []
+    for tool in tools:
+        params_desc = ", ".join(f'"{p}": <{info["type"]}>' for p, info in tool.parameters.items())
+        param_notes = "\n".join(f"    {p}: {info['description']}" for p, info in tool.parameters.items())
+        blocks.append(
+            f"- {tool.name}: {tool.description}\n"
+            f"  Parameters:\n{param_notes}\n"
+            f'  (e.g. {{"step": "use_tool", "tool_name": "{tool.name}", "args": {{{params_desc}}}}})'
+        )
+    return "\n".join(blocks)
+
+
+def _build_system_prompt(schema: dict, tools: list[Tool]) -> str:
+    tools_section = ""
+    if tools:
+        tools_section = f"""
+
+You also have access to these computational tools:
+
+{_describe_tools(tools)}
+
+To use one:
+  {{"step": "use_tool", "tool_name": "<name>", "args": {{...}}}}
+"""
     return f"""You gather information step by step to answer a question,
 using ONLY these object types and fields:
 
 {_describe_schema(schema)}
-
+{tools_section}
 At each step, respond with ONLY one JSON object, in one of these shapes:
 
 To find object(s) by any of their searchable fields listed above:
@@ -136,14 +164,15 @@ a list and silently skip others.
 
 
 def next_step(client: LLMAdapter, query_text: str, schema: dict,
-              gathered_so_far: list[dict]) -> dict:
+              gathered_so_far: list[dict], tools: list[Tool]) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that
     # object_type/field_name are real entries in the ontology schema
     # (that check happens later, inside DataMediator; a bad value here
     # surfaces back to core/agent/agentic_loop.py as a caught ValueError). Fails
     # closed (returns finish) on ANY uncertainty -- malformed JSON, an
-    # unrecognized step, missing keys.
+    # unrecognized step, missing keys. tools is required (not defaulted
+    # to []) to avoid the classic Python mutable-default-argument trap.
     user_message = (
         f"Question: {query_text}\n\n"
         f"Gathered so far: {json.dumps(gathered_so_far)}\n\n"
@@ -152,7 +181,7 @@ def next_step(client: LLMAdapter, query_text: str, schema: dict,
 
     try:
         raw_content = client.chat(
-            _build_system_prompt(schema), user_message,
+            _build_system_prompt(schema, tools), user_message,
             json_mode=True, temperature=0,
         )
         parsed = json.loads(raw_content)
@@ -182,6 +211,12 @@ def next_step(client: LLMAdapter, query_text: str, schema: dict,
             "object_id": parsed["object_id"],
             "field_name": parsed["field_name"],
         }
+
+    if step == "use_tool":
+        if "tool_name" not in parsed or "args" not in parsed:
+            logger.warning("malformed use_tool step, finishing")
+            return FINISH_STEP
+        return {"step": "use_tool", "tool_name": parsed["tool_name"], "args": parsed["args"]}
 
     logger.warning(f"unrecognized step {step!r}, finishing")
     return FINISH_STEP

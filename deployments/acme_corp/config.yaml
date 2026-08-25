@@ -33,3 +33,11 @@ data_silos:
     adapter: sqlite
     connection:
       path: "dev_fixtures/mediator.db"
+
+# Tools the LLM may call, by name -- entirely optional; omitting this
+# section (or listing none) is completely valid, unlike llm:/data_silos:
+# which every deployment needs. Registered tools live in
+# core/tools/registry.py.
+tools:
+  enabled:
+    - linear_regression
