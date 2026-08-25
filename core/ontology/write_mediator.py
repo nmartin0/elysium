@@ -9,10 +9,18 @@ mediator.py's docstring for why a semaphore alone can't do this.
 PendingWrite is frozen -- nothing about a proposed write can change
 between human approval and execution.
 
-Called: authorize() then (for updates) _security_allowed() -- RBAC
-short-circuits before MAC, both logged via audit.log_access(). Writes
-are also logged via log_pre()/log_post() -- the attempt and its outcome,
-a different question from the MAC/RBAC breakdown.
+RBAC is now field-level, matching reads: EVERY field in `changes` needs
+its own explicit write:{object_type}.{field_name} grant -- there is no
+blanket write:{object_type} action anymore. A create additionally needs
+create:{object_type} -- otherwise "create a new object" would be an
+undocumented loophole to set a field's value (including a sensitive
+one) without the write grant an UPDATE to that same field would
+require. ALL required actions for one proposed write are evaluated
+together (not short-circuited on the first failure) and each logged
+individually via audit.log_access(), so a denial shows EXACTLY which
+field(s) lacked a grant, not just "denied." Only after every required
+action passes does MAC get checked (updates only -- no existing object
+to check a region boundary on for a create).
 
 Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
          confirm_write callback, both None if writes are disabled)
@@ -52,18 +60,31 @@ class WriteMediator:
 
     def propose_write(self, user_id: str, object_type: str, object_id: Any | None,
                        action: str, changes: dict) -> PendingWrite:
-        action_id = f"write:{object_type}"
-        rbac_allowed = authorize(self.users, self.roles, user_id, action_id)
+        # Every action this write needs, field-level -- create: once,
+        # plus one write:{type}.{field} per field being set.
+        action_ids = []
+        if action == "create":
+            action_ids.append(f"create:{object_type}")
+        action_ids.extend(f"write:{object_type}.{field_name}" for field_name in changes)
+
+        rbac_results = {aid: authorize(self.users, self.roles, user_id, aid) for aid in action_ids}
+        rbac_allowed = all(rbac_results.values())
 
         if not rbac_allowed:
-            # Short-circuit BEFORE the MAC check -- both for the
-            # "don't leak capability existence" reason from the design
-            # conversation, and because computing MAC here would mean a
-            # real database query (and, for a malformed/None object_id
-            # on a create, a possible confusing crash) for a user who
-            # was never going to be allowed regardless of the result.
-            log_access(user_id, object_type, object_id, action_id, mac_allowed=None, rbac_allowed=False)
-            raise PermissionError(f"{user_id!r} is not authorized for {action_id!r}")
+            # Logged individually, one line per action -- an auditor can
+            # see EXACTLY which grant(s) were missing, not just "denied."
+            # Short-circuits BEFORE MAC (mac_allowed=None, not evaluated)
+            # -- same reasoning as before: a request that's already
+            # going to be denied shouldn't trigger a real database query.
+            for aid, allowed in rbac_results.items():
+                log_access(user_id, object_type, object_id, aid, mac_allowed=None, rbac_allowed=allowed)
+            denied = [aid for aid, allowed in rbac_results.items() if not allowed]
+            # Naming the specific denied field(s) here isn't new
+            # information leaked TO the user -- they're the ones who
+            # proposed writing to those exact fields; this only
+            # confirms what they already attempted, not anything about
+            # fields they never mentioned.
+            raise PermissionError(f"{user_id!r} is not authorized for: {denied}")
 
         if action == "create":
             # No existing object to check a region boundary on -- see
@@ -77,7 +98,8 @@ class WriteMediator:
                 and self.mediator._security_allowed(object_type, object_id, user_security_value)
             )
 
-        log_access(user_id, object_type, object_id, action_id, mac_allowed, rbac_allowed)
+        for aid in action_ids:
+            log_access(user_id, object_type, object_id, aid, mac_allowed, rbac_results[aid])
 
         if not mac_allowed:
             raise PermissionError(f"{user_id!r} cannot modify this {object_type}")

@@ -10,9 +10,13 @@ plus everything gathered so far, and returns exactly one of:
   {"step": "finish"}
 
 The schema describing available object types/fields is rendered into the
-prompt dynamically from whatever `schema` dict is passed in -- no object
-type names are hardcoded here, so this file works unchanged for any
-deployment's ontology.
+prompt dynamically from whatever ALREADY-FILTERED `visible_schema` dict
+is passed in -- see core/ontology/mediator.py's visible_schema() method,
+the single source of truth for what a given user is authorized to know
+exists at all. No object type names are hardcoded here, so this file
+works unchanged for any deployment's ontology, and it never sees an
+object type or field the caller didn't already decide this user may
+know about.
 
 Takes an LLMAdapter explicitly (not a model/url/timeout triple) --
 callers own one client and hand it in, same explicit-dependency style
@@ -43,8 +47,15 @@ def _describe_object_type(object_type: str, definition: dict) -> str:
     # Builds the prompt block for ONE object type: its fields (data vs
     # link), which of them are searchable, and a note about any
     # link-only (reverse link) fields that can't be searched directly.
+    #
+    # id_field may be None -- the identifier itself needs its own
+    # explicit grant like any other field (see DataMediator.
+    # visible_schema()'s docstring for why an identifier isn't
+    # automatically safe to expose). Handled explicitly here rather
+    # than assumed present, since the example filter line below would
+    # otherwise crash on an empty searchable list.
     id_field = definition["id_field"]
-    searchable = [id_field]
+    searchable = [id_field] if id_field is not None else []
     link_only = []
     field_descriptions = []
 
@@ -62,13 +73,23 @@ def _describe_object_type(object_type: str, definition: dict) -> str:
         elif field_info["type"] == "link":
             link_only.append(field_name)
 
-    block = (
-        f"- {object_type}: identified by {id_field!r}. "
-        f"Fields: " + ", ".join(field_descriptions) + "\n"
-        f"  You may search_object using any of: {searchable} "
-        f'(e.g. {{"step": "search_object", "object_type": "{object_type}", '
-        f'"filter": {{"{searchable[-1]}": "<value>"}}}})'
-    )
+    identifier_note = f"identified by {id_field!r}. " if id_field is not None else ""
+    field_list = ", ".join(field_descriptions) if field_descriptions else "(none visible)"
+
+    if searchable:
+        search_example = (
+            f"\n  You may search_object using any of: {searchable} "
+            f'(e.g. {{"step": "search_object", "object_type": "{object_type}", '
+            f'"filter": {{"{searchable[-1]}": "<value>"}}}})'
+        )
+    else:
+        # No id_field grant AND no searchable data/link fields -- this
+        # type can still be reached via a link FROM another object
+        # (get_field on something else that points to it), just not
+        # discovered directly via search_object.
+        search_example = "\n  Cannot be searched directly -- reachable only via a link from another object."
+
+    block = f"- {object_type}: {identifier_note}Fields: {field_list}{search_example}"
     if link_only:
         block += (
             f"\n  {link_only} cannot be searched directly -- reach them with "
@@ -77,12 +98,14 @@ def _describe_object_type(object_type: str, definition: dict) -> str:
     return block
 
 
-def _describe_schema(schema: dict) -> str:
-    # Renders the schema into plain-English prompt text: one block per
-    # object type, built by _describe_object_type().
+def _describe_schema(visible_schema: dict) -> str:
+    # Renders the ALREADY-FILTERED schema into plain-English prompt
+    # text -- one block per object type, built by _describe_object_type().
+    # The caller (next_step()) is responsible for filtering; this
+    # function simply describes whatever it is given, hidden or not.
     return "\n".join(
         _describe_object_type(object_type, definition)
-        for object_type, definition in schema.items()
+        for object_type, definition in visible_schema.items()
     )
 
 
@@ -102,7 +125,7 @@ def _describe_tools(tools: list[Tool]) -> str:
     return "\n".join(blocks)
 
 
-def _build_system_prompt(schema: dict, tools: list[Tool], writes_enabled: bool) -> str:
+def _build_system_prompt(visible_schema: dict, tools: list[Tool], writes_enabled: bool) -> str:
     tools_section = ""
     if tools:
         tools_section = f"""
@@ -132,7 +155,7 @@ To propose creating a new object:
     return f"""You gather information step by step to answer a question,
 using ONLY these object types and fields:
 
-{_describe_schema(schema)}
+{_describe_schema(visible_schema)}
 {tools_section}{writes_section}
 At each step, respond with ONLY one JSON object, in one of these shapes:
 
@@ -178,7 +201,7 @@ a list and silently skip others.
 """
 
 
-def next_step(client: LLMAdapter, query_text: str, schema: dict,
+def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
               gathered_so_far: list[dict], tools: list[Tool], writes_enabled: bool) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that
@@ -198,7 +221,7 @@ def next_step(client: LLMAdapter, query_text: str, schema: dict,
 
     try:
         raw_content = client.chat(
-            _build_system_prompt(schema, tools, writes_enabled), user_message,
+            _build_system_prompt(visible_schema, tools, writes_enabled), user_message,
             json_mode=True, temperature=0,
         )
         parsed = json.loads(raw_content)

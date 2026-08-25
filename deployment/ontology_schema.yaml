@@ -1,3 +1,13 @@
+# ontology_schema.yaml  (this deployment's object model)
+#
+# Declares what data EXISTS and how it's structured -- it does NOT by
+# itself make anything visible to the LLM. Every field listed here,
+# including each object type's own id_field, needs a matching
+# read:<Type>.<field> grant in policy.yaml before any user can ever see
+# it. A field declared here with no matching grant anywhere simply
+# never appears to the LLM at all -- see core/ontology/mediator.py's
+# visible_schema() docstring for the full reasoning.
+
 object_types:
   Customer:
     silo: primary_sql

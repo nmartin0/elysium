@@ -54,6 +54,8 @@ import logging
 from typing import Callable
 
 from core.concurrency import ConcurrencyLimiter
+from core.intermediate_layer.audit import log_access
+from core.intermediate_layer.auth import authorize
 from core.llm.agent_step_prompt import next_step
 from core.deployment_loader import build_llm_adapter
 from core.llm.interface import LLMAdapter
@@ -257,8 +259,28 @@ class AgentLoop:
                 )
             elif step["step"] == "use_tool":
                 tool = self._tools_by_name.get(step["tool_name"])
+                tool_name = step["tool_name"]
                 if tool is None:
-                    raise ValueError(f"Unknown tool: {step['tool_name']!r}")
+                    # Same message whether the tool genuinely doesn't
+                    # exist in this deployment's enabled set, or exists
+                    # but this user lacks tool:<name> -- checked next.
+                    # No audit entry here: there's genuinely nothing to
+                    # log yet, since the name isn't even a real,
+                    # resolvable tool in this deployment.
+                    raise ValueError(f"Unknown tool: {tool_name!r}")
+                action = f"tool:{tool_name}"
+                rbac_allowed = authorize(self.mediator.users, self.mediator.roles, user_id, action)
+                # Tools have no MAC dimension (no region/org boundary to
+                # check) -- mac_allowed=True is "not applicable," the
+                # same convention already used for create: actions.
+                log_access(user_id, "tool", tool_name, action, mac_allowed=True, rbac_allowed=rbac_allowed)
+                if not rbac_allowed:
+                    # DELIBERATELY the exact same message as "tool
+                    # doesn't exist" above -- distinguishing the two
+                    # would let a user probe which tools exist in this
+                    # deployment by testing names and watching which
+                    # error differs.
+                    raise ValueError(f"Unknown tool: {tool_name!r}")
                 with self._tool_limiters[tool.name].limit():
                     result = tool.run(**step["args"])
             elif step["step"] == "propose_write":
@@ -307,11 +329,18 @@ class AgentLoop:
         asymmetry_nudged = False
         writes_enabled = self.write_mediator is not None and self.confirm_write is not None
 
+        # Computed ONCE per run(), not per hop -- a role isn't expected
+        # to change mid-request, and this is what the LLM's prompt is
+        # built from for every hop of this one query. THE canonical
+        # "what does this user get to know exists" -- see
+        # DataMediator.visible_schema()'s own docstring.
+        visible_schema = self.mediator.visible_schema(user_id)
+
         # `_` is idiomatic Python for "intentionally unused loop variable"
         # -- max_hops caps how many times this can run, but the count
         # itself is never read inside the loop.
         for _ in range(1, self.max_hops + 1):
-            step = next_step(self.client, query_text, self.mediator.schema, gathered, self.tools, writes_enabled)
+            step = next_step(self.client, query_text, visible_schema, gathered, self.tools, writes_enabled)
 
             if step["step"] == "finish":
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)
