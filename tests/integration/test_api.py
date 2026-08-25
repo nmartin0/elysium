@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api.app as app_module
+from core.intermediate_layer.auth import UserRecord
 from core.user_directory import create_user
 
 
@@ -151,3 +152,33 @@ def test_query_end_to_end_with_mocked_llm(client):
 
     assert response.status_code == 200
     assert response.json()["answer"] == "Here is your answer."
+
+
+def test_query_refuses_if_permissions_changed_during_processing(client):
+    # Simulates a role revoked WHILE a query was running -- deterministic,
+    # not a real timing-dependent race: mocks the re-verification's own
+    # lookup (api.routes.get_user_record) to return a DIFFERENT record
+    # than what actually authenticated the request, proving the
+    # comparison logic itself refuses to return data in that case,
+    # rather than relying on a flaky real race condition to occur.
+    db_path = app_module.app.state.credentials_db_path
+    roles = app_module.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    def fake_post(*args, **kwargs):
+        response = MagicMock()
+        response.json.return_value = {"message": {"content": json.dumps({"step": "finish"})}}
+        response.raise_for_status.return_value = None
+        return response
+
+    # A DIFFERENT record (role changed from customer_service to None)
+    # than what the request actually authenticated with.
+    changed_record = UserRecord(user_id="alice", security_value="us-west", role_name=None)
+
+    with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post), \
+         patch("api.routes.get_user_record", return_value=changed_record):
+        response = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 409
+    assert "answer" not in response.json()

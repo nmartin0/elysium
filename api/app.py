@@ -33,7 +33,17 @@ config_dir and data_dir independent throughout core/deployment_loader.py.
 
 Logging is configured here too, via configure_audit_log() -- api/ is a
 real entry point, same as scripts/run_deployment.py.
+
+app.state.executor is OUR OWN explicit ThreadPoolExecutor, sized from
+config.max_concurrent_requests -- the SAME config value and the SAME
+mechanism scripts/serve_requests.py already uses, deliberately NOT
+relying on Starlette's own separate, differently-sized internal thread
+pool (the one it uses automatically for synchronous route handlers).
+An explicit, understood concurrency boundary, not an ambient default --
+see api/routes.py's /query for where this actually gets used.
 """
+
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI
 
@@ -58,6 +68,7 @@ def create_app() -> FastAPI:
     # reconstructed per request.
     app.state.loop = AgentLoop.from_deployment(config, mediator)
     app.state.synthesis_client = build_llm_adapter(config, config.synthesis_model)
+    app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
 
     from api.routes import router
     app.include_router(router)
