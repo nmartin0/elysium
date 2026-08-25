@@ -18,9 +18,10 @@ call order, matching sqlite_adapter.py's "fresh connection per call, no
 persistent pooling" pattern.
 """
 
-import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+
+from core.sqlite_connection import open_connection
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS credentials (
@@ -39,8 +40,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 @contextmanager
 def connection(db_path: Path):
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = open_connection(db_path)
     try:
         conn.executescript(SCHEMA)
         yield conn

@@ -4,7 +4,7 @@ agentic_loop.py  (the agentic loop -- org-agnostic)
 AgentLoop bundles everything that stays FIXED across every query for a
 given deployment -- the LLMAdapter, the DataMediator, and the hop/
 retry limits -- into one object, constructed once. Only run() takes the
-truly per-call arguments (user_id, query_text). This used to be a
+truly per-call arguments (user_record, query_text). This used to be a
 single function re-passed all seven of these on every call; per-call
 that's the same "same parameters, many calls" pattern that means a
 class fits better than a function.
@@ -55,7 +55,7 @@ from typing import Callable
 
 from core.concurrency import ConcurrencyLimiter
 from core.intermediate_layer.audit import log_access
-from core.intermediate_layer.auth import authorize
+from core.intermediate_layer.auth import authorize, UserRecord
 from core.llm.agent_step_prompt import next_step
 from core.deployment_loader import build_llm_adapter
 from core.llm.interface import LLMAdapter
@@ -235,7 +235,7 @@ class AgentLoop:
         })
         return False, True
 
-    def _execute_step(self, step: dict, user_id: str,
+    def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
                        gathered: list[dict], consecutive_invalid: int) -> tuple[int, bool]:
         # Runs one search_object/get_field/use_tool/propose_write step,
         # appending the result to `gathered` on success. On a recoverable
@@ -252,10 +252,15 @@ class AgentLoop:
         # (new_consecutive_invalid, should_stop_loop).
         try:
             if step["step"] == "search_object":
-                result = self.mediator.search_object(user_id, step["object_type"], step["filter"])
+                # visible_schema passed through explicitly -- already
+                # computed ONCE for this whole request by run(), not
+                # recomputed on every search_object call.
+                result = self.mediator.search_object(
+                    user_record, step["object_type"], step["filter"], visible_schema=visible_schema
+                )
             elif step["step"] == "get_field":
                 result = self.mediator.get_field(
-                    user_id, step["object_type"], step["object_id"], step["field_name"]
+                    user_record, step["object_type"], step["object_id"], step["field_name"]
                 )
             elif step["step"] == "use_tool":
                 tool = self._tools_by_name.get(step["tool_name"])
@@ -269,11 +274,11 @@ class AgentLoop:
                     # resolvable tool in this deployment.
                     raise ValueError(f"Unknown tool: {tool_name!r}")
                 action = f"tool:{tool_name}"
-                rbac_allowed = authorize(self.mediator.users, self.mediator.roles, user_id, action)
+                rbac_allowed = authorize(user_record, self.mediator.roles, action)
                 # Tools have no MAC dimension (no region/org boundary to
                 # check) -- mac_allowed=True is "not applicable," the
                 # same convention already used for create: actions.
-                log_access(user_id, "tool", tool_name, action, mac_allowed=True, rbac_allowed=rbac_allowed)
+                log_access(user_record.user_id, "tool", tool_name, action, mac_allowed=True, rbac_allowed=rbac_allowed)
                 if not rbac_allowed:
                     # DELIBERATELY the exact same message as "tool
                     # doesn't exist" above -- distinguishing the two
@@ -287,7 +292,7 @@ class AgentLoop:
                 if self.write_mediator is None or self.confirm_write is None:
                     raise ValueError("Writes are not enabled for this deployment")
                 pending = self.write_mediator.propose_write(
-                    user_id, step["object_type"], step.get("object_id"), step["action"], step["changes"]
+                    user_record, step["object_type"], step.get("object_id"), step["action"], step["changes"]
                 )
                 approved = self.confirm_write(pending)
                 result = self.write_mediator.confirm_and_execute(pending, approved)
@@ -308,7 +313,7 @@ class AgentLoop:
                      f"or finish if you have enough already.",
             )
 
-    def run(self, user_id: str, query_text: str) -> list[dict]:
+    def run(self, user_record: UserRecord, query_text: str) -> list[dict]:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # max_hops -- whichever comes first. Returns everything gathered,
@@ -318,10 +323,9 @@ class AgentLoop:
         # _execute_step() -- so this loop reads as a sequence of named
         # decisions rather than one long block.
         #
-        # user_id is now the ONLY identity parameter -- DataMediator
-        # resolves everything else (the MAC security value, the RBAC
-        # role) internally via check_access(). Callers no longer
-        # separately pre-resolve a security value before calling in.
+        # user_record is a pre-resolved UserRecord, not a raw user_id --
+        # the caller resolves identity ONCE (see core/intermediate_layer/
+        # auth.py's resolve_user_record()), this loop just uses it.
         gathered = []
         seen_signatures = set()
         consecutive_duplicates = 0
@@ -331,10 +335,10 @@ class AgentLoop:
 
         # Computed ONCE per run(), not per hop -- a role isn't expected
         # to change mid-request, and this is what the LLM's prompt is
-        # built from for every hop of this one query. THE canonical
-        # "what does this user get to know exists" -- see
-        # DataMediator.visible_schema()'s own docstring.
-        visible_schema = self.mediator.visible_schema(user_id)
+        # built from for every hop of this one query, AND passed
+        # through to search_object() (via _execute_step) so it's never
+        # recomputed within this one traversal either.
+        visible_schema = self.mediator.visible_schema(user_record)
 
         # `_` is idiomatic Python for "intentionally unused loop variable"
         # -- max_hops caps how many times this can run, but the count
@@ -367,7 +371,7 @@ class AgentLoop:
             seen_signatures.add(signature)
 
             consecutive_invalid, should_stop = self._execute_step(
-                step, user_id, gathered, consecutive_invalid
+                step, user_record, visible_schema, gathered, consecutive_invalid
             )
             if should_stop:
                 break

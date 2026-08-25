@@ -1,48 +1,55 @@
 """
-auth.py  (the RBAC layer -- generic mechanism, no org data)
+auth.py  (identity resolution + RBAC -- generic mechanism, no org data)
 
-Three functions:
-  - get_user_role(): which named role does this user have?
-  - authorize(): does that role's allowed_actions include this specific
-    action? This is RBAC -- role-based, not per-user. A user with no
-    role, or a role not present in `roles`, is denied by default.
-  - get_user_security_value(): unchanged from before -- the row-level
-    (MAC-style) access value, for whatever attribute policy.yaml's
-    security_attribute names.
+UserRecord is an immutable snapshot of one user's identity, resolved
+ONCE per request (resolve_user_record()), threaded explicitly through
+everything downstream (DataMediator, WriteMediator, MemoryGuard,
+AgentLoop) instead of a raw user_id string re-looked-up on every check.
 
-This file only knows the SHAPE user/role data must have, never its
-actual contents -- that's deployment/policy.yaml's job.
+This replaced an earlier design (a dict-like object whose .get()
+queried live on every call) that looked cheap but wasn't: a real
+database lookup disguised as a free dict access, paid ONCE PER OBJECT
+TOUCHED rather than once per request, and vulnerable to a role changing
+mid-request and different checks within the same traversal seeing
+different answers. Resolving once, up front, and using that one
+immutable snapshot for the whole request closes both problems -- same
+principle AgentLoop.run() already uses for visible_schema().
 
-RBAC and MAC are DELIBERATELY separate checks, never merged into one
-function here -- core/intermediate_layer/access_control.py's
-check_access() is the one place that combines both, so there is exactly
-one canonical enforcement point rather than each caller reimplementing
-"both must pass" slightly differently.
+resolve_user_record() ALWAYS returns a record, even for an unknown
+user_id -- both fields None. An unknown user fails every downstream
+check through the exact SAME path as a known-but-unprivileged one,
+rather than a special early-exit case scattered across callers.
+
+authorize() is RBAC -- role-based, not per-user. A user with no role,
+or a role not present in `roles`, is denied by default. RBAC and MAC
+are DELIBERATELY separate checks, never merged into one function here
+-- core/intermediate_layer/access_control.py's check_access() is the
+one place that combines both.
 
 Called by: core/intermediate_layer/access_control.py,
-           core/ontology/write_mediator.py
+           core/ontology/mediator.py, core/ontology/write_mediator.py,
+           core/agent/agentic_loop.py
 """
 
-
-def get_user_role(users: dict, user_id: str) -> str | None:
-    user = users.get(user_id)
-    if user is None:
-        return None
-    return user.get("role")
+from dataclasses import dataclass
 
 
-def authorize(users: dict, roles: dict, user_id: str, action_id: str) -> bool:
-    role_name = get_user_role(users, user_id)
-    if role_name is None:
+@dataclass(frozen=True)
+class UserRecord:
+    user_id: str
+    security_value: str | None    # MAC value, e.g. this user's region -- None if unknown/unset
+    role_name: str | None          # RBAC role -- None if unknown/unassigned
+
+
+def resolve_user_record(users: dict, user_id: str, security_attribute: str) -> UserRecord:
+    user = users.get(user_id, {})
+    return UserRecord(user_id, user.get(security_attribute), user.get("role"))
+
+
+def authorize(user_record: UserRecord, roles: dict, action_id: str) -> bool:
+    if user_record.role_name is None:
         return False
-    role = roles.get(role_name)
+    role = roles.get(user_record.role_name)
     if role is None:
         return False
-    return action_id in role.get("allowed_actions", [])
-
-
-def get_user_security_value(users: dict, user_id: str, security_attribute: str) -> str | None:
-    user = users.get(user_id)
-    if user is None:
-        return None
-    return user.get(security_attribute)
+    return action_id in role.get("allowed_actions", frozenset())

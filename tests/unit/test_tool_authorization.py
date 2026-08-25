@@ -4,6 +4,8 @@ AgentLoop._execute_step(). Uses LinearRegressionTool directly (real,
 not mocked) plus a real DataMediator/AgentLoop, but mocks the LLM
 client itself -- these tests are about the AUTHORIZATION gate around a
 tool call, not about the model's own step-selection.
+
+AgentLoop.run() takes a pre-resolved UserRecord now, not a raw user_id.
 """
 
 import json
@@ -13,6 +15,7 @@ import pytest
 
 from adapters.sqlite_adapter import SQLiteAdapter
 from core.agent.agentic_loop import AgentLoop
+from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 from tools.linear_regression import LinearRegressionTool
 
@@ -27,11 +30,15 @@ TEST_ROLES = {
 }
 
 
+def _record(user_id):
+    return resolve_user_record(TEST_USERS, user_id, "org_id")
+
+
 @pytest.fixture
 def mediator(test_db_path, test_schema) -> DataMediator:
     adapter = SQLiteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["silo"] for object_type, type_def in test_schema.items()}
-    return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_USERS, TEST_ROLES, "org_id")
+    return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
 
 
 def _loop_with_mocked_llm(mediator, scripted_steps):
@@ -52,7 +59,7 @@ def test_authorized_user_can_use_tool(mediator):
         {"step": "use_tool", "tool_name": "linear_regression", "args": {"x_values": [1, 2], "y_values": [2, 4]}},
         {"step": "finish"},
     ])
-    gathered = loop.run("alice", "test query")
+    gathered = loop.run(_record("alice"), "test query")
     real_data = AgentLoop.filter_real_data(gathered)
     assert real_data[0]["result"]["slope"] == pytest.approx(2.0)
 
@@ -66,7 +73,7 @@ def test_unauthorized_user_gets_same_error_as_nonexistent_tool(mediator):
         {"step": "use_tool", "tool_name": "linear_regression", "args": {"x_values": [1, 2], "y_values": [2, 4]}},
         {"step": "finish"},
     ])
-    gathered = loop.run("bob", "test query")
+    gathered = loop.run(_record("bob"), "test query")
     real_data = AgentLoop.filter_real_data(gathered)
     # No successful tool result should appear -- the loop should have
     # treated it as a recoverable invalid step, not executed the tool.
@@ -78,6 +85,6 @@ def test_nonexistent_tool_name_produces_identical_shape_of_failure(mediator):
         {"step": "use_tool", "tool_name": "totally_fake_tool_xyz", "args": {}},
         {"step": "finish"},
     ])
-    gathered = loop.run("alice", "test query")  # alice, even though authorized for linear_regression, not this fake one
+    gathered = loop.run(_record("alice"), "test query")  # alice, even though authorized for linear_regression, not this fake one
     real_data = AgentLoop.filter_real_data(gathered)
     assert not any("slope" in str(item.get("result", "")) for item in real_data)

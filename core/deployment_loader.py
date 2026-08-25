@@ -56,6 +56,20 @@ class DeploymentConfig:
                                    # unlike everything else here (see load_deployment())
 
 
+def _freeze_roles(roles_raw: dict) -> dict:
+    # Converts each role's allowed_actions from a plain list to a
+    # frozenset, ONCE, here, at load time -- authorize() is called on
+    # every object touched, every field read, every write, every tool
+    # call, so a real role's allowed_actions (a dozen-plus entries in
+    # a typical deployment) being a list would mean a genuine O(n)
+    # linear scan on every single one of those checks. Converting once
+    # here makes every downstream authorize() call real O(1), for free.
+    return {
+        role_name: {**role_def, "allowed_actions": frozenset(role_def.get("allowed_actions", []))}
+        for role_name, role_def in roles_raw.items()
+    }
+
+
 def load_deployment(base_path: Path) -> DeploymentConfig:
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
@@ -80,7 +94,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             max_concurrent_requests=config["agent"].get("max_concurrent_requests", 4),
             schema=schema_raw["object_types"],
             users=policy_raw["users"],
-            roles=policy_raw["roles"],
+            roles=_freeze_roles(policy_raw["roles"]),
             security_attribute=policy_raw["security_attribute"],
             silo_configs=config["data_silos"],
             enabled_tools=enabled_tools,
@@ -143,8 +157,11 @@ def load_deployment_bundle(deployment_dir: Path) -> tuple[DeploymentConfig, Data
 
     adapters = _build_adapters(resolved_silo_configs)
     silo_for_type = _build_silo_for_type(config.schema)
-    mediator = DataMediator(config.schema, adapters, silo_for_type,
-                             config.users, config.roles, config.security_attribute)
+    # DataMediator no longer takes users/security_attribute -- identity
+    # is resolved ONCE per request by the caller (see core/
+    # intermediate_layer/auth.py's resolve_user_record()), not held by
+    # the long-lived mediator itself.
+    mediator = DataMediator(config.schema, adapters, silo_for_type, config.roles)
     return config, mediator
 
 

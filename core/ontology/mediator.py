@@ -1,42 +1,43 @@
 """
 mediator.py  (the data-silo router + security enforcer -- generic, org-agnostic)
 
-Takes user_id directly -- DataMediator holds users/roles/security_attribute
-itself and resolves everything internally via check_access(), the single
-canonical enforcement point (see core/intermediate_layer/access_control.py).
+Takes a pre-resolved UserRecord, not a raw user_id -- DataMediator no
+longer holds users/security_attribute at all (dropped entirely, a real
+reduction in responsibility, not a relocation): resolving a user's
+identity happens ONCE per request, in the caller (see core/
+intermediate_layer/auth.py's resolve_user_record()), and this class
+only ever USES that resolved record. This also means DataMediator
+itself never needs to look anyone up.
 
 THREE gates, all fully explicit -- nothing implied by anything else:
-  1. MAC (region/org boundary) -- _security_allowed(), re-derived live,
-     never trusted from anywhere else.
+  1. MAC (region/org boundary) -- _security_allowed(), re-derived live
+     from the OBJECT's own data on every call, never trusted from
+     anywhere else.
   2. RBAC, object-type level -- "read:{object_type}". Governs DISCOVERY
      only (may this user search_object/find IDs of this type at all).
-     Does NOT grant field visibility -- see #3.
   3. RBAC, field level -- "read:{object_type}.{field_name}". Governs
      seeing ONE specific field's value. Required for EVERY field,
      including the object type's own id_field -- an identifier is
      USUALLY just an opaque reference, but isn't always (a
      PasswordReset keyed by its own reset_token has a genuinely
-     sensitive identifier), so it gets no special exemption. A field
-     is invisible by default, never inherited from the object-type
-     grant, so a schema author forgetting to restrict a new field can
-     never silently expose it.
+     sensitive identifier), so it gets no special exemption.
 
 UNIFORM DENIAL, deliberately: search_object()/get_field() NEVER raise a
 distinguishing error for "doesn't exist" vs "exists but not authorized"
--- both look identical to the caller (empty list / None). This closes a
-real probing channel: if the two cases looked different, an attacker
-(via the LLM) could reconstruct the hidden schema by testing field/type
-names and watching which ones raise vs which return quietly. The real
-reason is always in the audit log, never in the return value.
+-- both look identical to the caller (empty list / None).
 
 visible_schema() is what core/llm/agent_step_prompt.py calls to build
-the LLM's prompt -- it and search_object()'s/get_field()'s own
-enforcement share this ONE function, so what the LLM is told exists and
-what it's actually allowed to touch can never drift apart.
+the LLM's prompt -- and AgentLoop.run() computes it ONCE per request
+and passes it into search_object() explicitly (the optional
+visible_schema parameter below) so a multi-step traversal doesn't
+recompute the same authorize()-for-every-field-and-type work on every
+single search_object call within one request. A caller without an
+already-computed one (a direct/test caller) still works correctly --
+search_object() computes it itself if none is passed in.
 
 Used by: scripts/run_deployment.py (via core/deployment_loader.py),
          core/llm/agent_step_prompt.py, core/ontology/write_mediator.py,
-         core/memory/guard.py
+         core/memory/guard.py, core/agent/agentic_loop.py
 """
 
 import threading
@@ -44,20 +45,18 @@ from typing import Any
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
-from core.intermediate_layer.auth import authorize
+from core.intermediate_layer.auth import authorize, UserRecord
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import is_link_field, get_link_target, is_searchable_field
 
 
 class DataMediator:
-    def __init__(self, schema: dict, adapters: dict[str, DataSiloAdapter], silo_for_type: dict[str, str],
-                 users: dict, roles: dict, security_attribute: str):
+    def __init__(self, schema: dict, adapters: dict[str, DataSiloAdapter],
+                 silo_for_type: dict[str, str], roles: dict):
         self.schema = schema
         self.adapters = adapters
         self.silo_for_type = silo_for_type
-        self.users = users
         self.roles = roles
-        self.security_attribute = security_attribute
 
         self._write_limiters = {
             silo_name: ConcurrencyLimiter(adapter.max_concurrent_writes)
@@ -95,8 +94,7 @@ class DataMediator:
         # a via_field link if this object type doesn't hold it directly.
         # PURE MAC mechanics -- a mechanical internal lookup core/ needs
         # to make ITS OWN decision, not something gated by the acting
-        # user's own field-level permissions (those govern what's SHOWN
-        # to the user, not what core/ itself is allowed to look up).
+        # user's own field-level permissions.
         type_schema = self._type_schema(object_type)
         security = type_schema["security"]
         adapter = self._adapter_for(object_type)
@@ -120,47 +118,30 @@ class DataMediator:
         security_value = self._get_security_value(object_type, object_id)
         return security_value is not None and security_value == requesting_user_security_value
 
-    def visible_schema(self, user_id: str) -> dict:
+    def visible_schema(self, user_record: UserRecord) -> dict:
         # THE single source of truth for "what does this user get to
-        # know exists" -- called both to build the LLM's prompt and (via
-        # search_object's valid-columns check) to validate requests.
-        # A type is included whenever read:{object_type} is granted --
-        # even with zero visible DATA fields (discovery-only access is
-        # a real, legitimate state).
-        #
-        # id_field REQUIRES ITS OWN EXPLICIT read:{object_type}.{id_field}
-        # grant, same as any other field -- no special case. An id_field
-        # is USUALLY just an opaque reference, but isn't always: a
-        # PasswordReset keyed by its own reset_token, or an
-        # EmailVerification keyed by its verification_code, has a
-        # genuinely sensitive identifier. Treating "the identifier" as
-        # implicitly safe would be exactly the kind of unstated
-        # assumption full explicitness exists to eliminate. Since
-        # id_field isn't itself an entry in type_def["fields"] (it's
-        # separate metadata naming WHICH field is the identifier), it
-        # needs its own check here rather than being caught by the
-        # fields-dict comprehension below.
+        # know exists." A type is included whenever read:{object_type}
+        # is granted -- even with zero visible DATA fields (discovery-
+        # only access is a real, legitimate state). id_field requires
+        # its own explicit read:{object_type}.{id_field} grant, same as
+        # any other field -- no special case.
         visible = {}
         for object_type, type_def in self.schema.items():
-            if not authorize(self.users, self.roles, user_id, f"read:{object_type}"):
+            if not authorize(user_record, self.roles, f"read:{object_type}"):
                 continue
 
             visible_fields = {
                 field_name: field_info
                 for field_name, field_info in type_def["fields"].items()
-                if authorize(self.users, self.roles, user_id, f"read:{object_type}.{field_name}")
+                if authorize(user_record, self.roles, f"read:{object_type}.{field_name}")
             }
 
             id_field = type_def["id_field"]
-            id_field_visible = authorize(self.users, self.roles, user_id, f"read:{object_type}.{id_field}")
+            id_field_visible = authorize(user_record, self.roles, f"read:{object_type}.{id_field}")
 
             visible[object_type] = {
                 **type_def,
                 "fields": visible_fields,
-                # None -- not just omitted -- so every consumer of this
-                # dict is forced to explicitly handle "no visible
-                # identifier" rather than accidentally falling back to
-                # the real (unauthorized) id_field name via .get()/KeyError.
                 "id_field": id_field if id_field_visible else None,
             }
         return visible
@@ -174,11 +155,18 @@ class DataMediator:
                 columns.add(field_name)
         return columns
 
-    def search_object(self, user_id: str, object_type: str, criteria: dict) -> list:
+    def search_object(self, user_record: UserRecord, object_type: str, criteria: dict,
+                       visible_schema: dict | None = None) -> list:
+        # visible_schema is OPTIONAL -- pass the already-computed one
+        # (AgentLoop.run() does, once per request) to avoid recomputing
+        # it on every search_object call within one traversal. A direct
+        # caller with no pre-computed schema still works correctly;
+        # this just computes it itself in that case.
+        #
         # NEVER raises for "doesn't exist" or "not authorized to
-        # discover" -- both return an empty list, indistinguishable from
-        # a real search that legitimately matched nothing.
-        visible = self.visible_schema(user_id)
+        # discover" -- both return an empty list, indistinguishable
+        # from a real search that legitimately matched nothing.
+        visible = visible_schema if visible_schema is not None else self.visible_schema(user_record)
         visible_type_def = visible.get(object_type)
         if visible_type_def is None:
             return []
@@ -186,13 +174,9 @@ class DataMediator:
         valid_columns = self._filterable_columns(object_type, visible_type_def)
         for key in criteria:
             if key not in valid_columns:
-                # Generic, no field list -- revealing "valid: [...]" here
-                # would hand back exactly the schema visible_schema()
-                # just deliberately hid. Still raises (rather than
-                # silently returning []) so AgentLoop's existing
-                # recoverable-mistake mechanism can give the model a
-                # corrective nudge -- the message just carries zero
-                # information about what's actually valid.
+                # Generic, no field list -- revealing "valid: [...]"
+                # here would hand back exactly the schema visible_schema()
+                # just deliberately hid.
                 raise ValueError("Invalid search criteria")
 
         adapter = self._adapter_for(object_type)
@@ -202,30 +186,19 @@ class DataMediator:
 
         return [
             candidate_id for candidate_id in candidate_ids
-            if check_access(self, self.users, self.roles, self.security_attribute,
-                             user_id, object_type, candidate_id, action)
+            if check_access(self, user_record, self.roles, object_type, candidate_id, action)
         ]
 
-    def get_field(self, user_id: str, object_type: str, object_id: Any, field_name: str):
+    def get_field(self, user_record: UserRecord, object_type: str, object_id: Any, field_name: str):
         # NEVER raises for "field/type doesn't exist" or "not authorized"
-        # -- both return None. The field-level action alone gates this
-        # (read:{object_type}.{field_name}) -- it does NOT additionally
-        # require read:{object_type}; that's a genuinely separate grant
-        # (discovery) from this one (seeing a specific field's value).
+        # -- both return None.
         if object_type not in self.schema:
             return None
 
         action = f"read:{object_type}.{field_name}"
-        if not check_access(self, self.users, self.roles, self.security_attribute,
-                             user_id, object_type, object_id, action):
+        if not check_access(self, user_record, self.roles, object_type, object_id, action):
             return None
 
-        # Reaching here means check_access() found this EXACT field
-        # action granted by some role -- in practice this means the
-        # field genuinely exists (a role can't grant a string that
-        # doesn't correspond to anything meaningful without a
-        # policy.yaml/schema mismatch, a config error, not a security
-        # concern). Real schema lookup now, safely.
         type_schema = self._type_schema(object_type)
         field_info = type_schema["fields"].get(field_name)
         if field_info is None:

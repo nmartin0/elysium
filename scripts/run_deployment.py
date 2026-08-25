@@ -19,6 +19,7 @@ from pathlib import Path
 
 from core.agent.agentic_loop import AgentLoop
 from core.deployment_loader import load_deployment_bundle, load_example_queries, build_llm_adapter
+from core.intermediate_layer.auth import resolve_user_record
 from core.llm.synthesis_prompt import synthesize_insight
 from core.logging_config import configure_logging
 from core.ontology.write_mediator import WriteMediator, PendingWrite
@@ -48,7 +49,9 @@ def run_deployment() -> None:
     # write: permission (the default) simply sees every proposed write
     # denied via the same PermissionError path already covered by
     # tests/unit/test_write_mediator.py -- harmless either way.
-    write_mediator = WriteMediator(mediator, config.users, config.roles, config.security_attribute)
+    # WriteMediator no longer takes users/security_attribute -- see
+    # core/ontology/write_mediator.py's docstring.
+    write_mediator = WriteMediator(mediator, config.roles)
     loop = AgentLoop.from_deployment(
         config, mediator, write_mediator=write_mediator, confirm_write=_terminal_confirm_write
     )
@@ -67,10 +70,11 @@ def run_deployment() -> None:
             print("Unknown user -- not in policy.yaml.\n")
             continue
 
-        # No separate security-value resolution needed anymore --
-        # DataMediator resolves both the MAC value and the RBAC role
-        # internally, per object, via check_access().
-        gathered = loop.run(user_id, query_text)
+        # Identity resolved ONCE, here, at the top of the request --
+        # see core/intermediate_layer/auth.py's resolve_user_record()
+        # docstring for why this replaced a per-check lookup.
+        user_record = resolve_user_record(config.users, user_id, config.security_attribute)
+        gathered = loop.run(user_record, query_text)
         real_data = AgentLoop.filter_real_data(gathered)
 
         insight = synthesize_insight(synthesis_client, query_text, real_data)

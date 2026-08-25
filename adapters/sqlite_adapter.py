@@ -31,11 +31,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-
-def _connect(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+from core.sqlite_connection import open_connection as _connect
 
 
 def _run_query(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
