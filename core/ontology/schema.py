@@ -2,7 +2,7 @@
 schema.py  (generic schema introspection -- org-agnostic)
 
 Given a deployment's own schema dict (loaded from
-deployment/ontology_schema.yaml via core/deployment_loader.py),
+ontology_schema.yaml via core/deployment_loader.py),
 answers questions about object types and fields: does this field exist,
 is it a link or plain data, what does a link point to, and which field
 is the object's identifier.

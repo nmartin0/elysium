@@ -2,7 +2,7 @@
 conftest.py  (shared pytest fixtures)
 
 Unit tests get their own ISOLATED temp SQLite database, never the real
-deployment/dev_fixtures/mediator.db -- that file is for your
+deployment/var/lib/dev_fixtures/mediator.db -- that file is for your
 own manual exploration, and a test suite that depends on its exact
 current contents would be fragile and could interfere with what you're
 doing by hand.

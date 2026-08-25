@@ -26,26 +26,30 @@ Authentication/authorization here is ENTIRELY database-backed
 (a simple demo/dev tool) uses. The two are intentionally not unified:
 api/ is the real, running service; run_deployment.py is not.
 
-CREDENTIALS_DB_PATH lives inside deployment/ (deployment/credentials.db)
--- same "one fixed location, no config needed" convention already used
-for deployment/logs/.
-"""
+CREDENTIALS_DB_PATH lives in the DATA directory (deployment/var/lib/
+credentials.db locally; /var/lib/elysium/credentials.db under a real
+install) -- runtime state, not config, same reasoning that keeps
+config_dir and data_dir independent throughout core/deployment_loader.py.
 
-from pathlib import Path
+Logging is configured here too, via configure_audit_log() -- api/ is a
+real entry point, same as scripts/run_deployment.py.
+"""
 
 from fastapi import FastAPI
 
 from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import build_llm_adapter, load_deployment_bundle
+from core.deployment_loader import build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
+from core.intermediate_layer.audit import configure_audit_log
 
-DEPLOYMENT_DIR = Path("deployment")
-CREDENTIALS_DB_PATH = DEPLOYMENT_DIR / "credentials.db"
+RUNTIME_PATHS = resolve_runtime_paths()
+CREDENTIALS_DB_PATH = RUNTIME_PATHS.data_dir / "credentials.db"
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="LLM Data Mediator")
 
-    config, mediator = load_deployment_bundle(DEPLOYMENT_DIR)
+    configure_audit_log(RUNTIME_PATHS.log_dir)
+    config, mediator = load_deployment_bundle(RUNTIME_PATHS.config_dir, RUNTIME_PATHS.data_dir)
 
     app.state.config = config
     app.state.mediator = mediator

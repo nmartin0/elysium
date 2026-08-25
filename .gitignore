@@ -2,13 +2,11 @@ __pycache__/
 *.pyc
 venv/
 .pytest_cache/
-
 # generated at runtime -- not source
-logs/
-
+deployment/var/log/
+deployment/var/lib/credentials.db
 # secrets, if you ever add a .env for a real API key
 .env
-
 # editor/OS noise
 .DS_Store
 *.swp

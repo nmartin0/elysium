@@ -2,10 +2,18 @@
 deployment_loader.py  (generic -- org-agnostic)
 
 Reads a deployment's config.yaml, ontology_schema.yaml, and policy.yaml
-from a given base directory and returns them bundled into one
+from a given directory and returns them bundled into one
 DeploymentConfig object. Contains zero knowledge of any specific
 organization -- only the fixed file names and key names this project's
 deployment convention expects.
+
+resolve_runtime_paths() is THE single source of truth for where
+config, data, and logs live -- three genuinely independent locations,
+always, not "one folder with environment variables as a special
+override." Local development's own defaults (deployment/etc,
+deployment/var/lib, deployment/var/log) already mirror the exact same
+structure a real install uses (/etc/elysium, /var/lib/elysium,
+/var/log/elysium) -- see that function's own docstring.
 
 Two registries live here -- _ADAPTER_REGISTRY (data silos) and
 _LLM_ADAPTER_REGISTRY (LLM backends) -- both hardcoded dicts today,
@@ -13,9 +21,11 @@ both exactly the place a future entry-points-based third-party
 discovery mechanism would replace, without changing anything else in
 this file, DataMediator, or AgentLoop.
 
-Called by: scripts/run_deployment.py, tests/integration/conftest.py
+Called by: scripts/run_deployment.py, scripts/serve_requests.py,
+           api/app.py, tests/integration/conftest.py
 """
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -139,20 +149,59 @@ def _build_silo_for_type(schema: dict) -> dict[str, str]:
     return {object_type: type_def["silo"] for object_type, type_def in schema.items()}
 
 
-def load_deployment_bundle(deployment_dir: Path) -> tuple[DeploymentConfig, DataMediator]:
+@dataclass(frozen=True)
+class RuntimePaths:
+    config_dir: Path
+    data_dir: Path
+    log_dir: Path
+
+
+def resolve_runtime_paths() -> RuntimePaths:
+    # THE one place any of Elysium's three runtime locations get
+    # decided -- config, data, and logs are three genuinely
+    # independent locations ALWAYS, not "one deployment/ folder, with
+    # environment variables as a special production-only override."
+    # deployment/etc, deployment/var/lib, and deployment/var/log (local
+    # development's own defaults) already mirror the SAME structure a
+    # real install uses (/etc/elysium, /var/lib/elysium,
+    # /var/log/elysium) -- local dev isn't a different, older
+    # convention env vars deviate from; it's the same three-location
+    # model, just with defaults that happen to live under one
+    # project-relative root.
+    config_dir = Path(os.environ["ELYSIUM_CONFIG_DIR"]) if "ELYSIUM_CONFIG_DIR" in os.environ \
+        else Path("deployment/etc")
+    data_dir = Path(os.environ["ELYSIUM_DATA_DIR"]) if "ELYSIUM_DATA_DIR" in os.environ \
+        else Path("deployment/var/lib")
+    log_dir = Path(os.environ["ELYSIUM_LOG_DIR"]) if "ELYSIUM_LOG_DIR" in os.environ \
+        else Path("deployment/var/log")
+    return RuntimePaths(config_dir, data_dir, log_dir)
+
+
+def load_deployment_bundle(config_dir: Path, data_dir: Path | None = None) -> tuple[DeploymentConfig, DataMediator]:
     # Loads config, builds one adapter instance per declared silo (see
     # _ADAPTER_REGISTRY above), and wires them into a DataMediator that
     # knows which object types route to which silo.
-    config = load_deployment(deployment_dir)
+    #
+    # data_dir defaults to config_dir if not given at all -- a
+    # defensive fallback for a caller that doesn't go through
+    # resolve_runtime_paths() (e.g. a quick script or test constructing
+    # paths directly), not the normal case. Normally config_dir and
+    # data_dir are genuinely different directories even in local
+    # development -- see resolve_runtime_paths()'s own docstring for
+    # why they're never meant to collapse to one "deployment/" folder.
+    if data_dir is None:
+        data_dir = config_dir
 
-    # base_path resolves database.path-equivalent connection fields
-    # (e.g. SQLite's "path") relative to this deployment's own folder,
-    # same convention as everything else in the config.
+    config = load_deployment(config_dir)
+
+    # database.path-equivalent connection fields (e.g. SQLite's "path")
+    # resolve against data_dir, NOT config_dir -- the one place those
+    # two directories genuinely need to differ.
     resolved_silo_configs = {}
     for silo_name, silo_config in config.silo_configs.items():
         connection = dict(silo_config["connection"])
         if "path" in connection:
-            connection["path"] = deployment_dir / connection["path"]
+            connection["path"] = data_dir / connection["path"]
         resolved_silo_configs[silo_name] = {**silo_config, "connection": connection}
 
     adapters = _build_adapters(resolved_silo_configs)
@@ -165,6 +214,9 @@ def load_deployment_bundle(deployment_dir: Path) -> tuple[DeploymentConfig, Data
     return config, mediator
 
 
-def load_example_queries(deployment_dir: Path) -> list[dict]:
-    raw = load_yaml(deployment_dir / "example_queries.yaml")
+def load_example_queries(config_dir: Path) -> list[dict]:
+    # example_queries.yaml is config-like (ships with the deployment,
+    # human-authored), not real runtime data -- always resolved against
+    # config_dir, never data_dir.
+    raw = load_yaml(config_dir / "example_queries.yaml")
     return raw["examples"]

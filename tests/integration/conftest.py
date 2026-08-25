@@ -1,12 +1,16 @@
 """
 conftest.py  (integration tests -- deployment selection)
 
-Single-tenant: tests run against the one real deployment/ folder by
-default. TEST_DEPLOYMENT_DIR exists purely as a test-infrastructure
-convenience -- e.g. pointing CI at a scratch copy without touching the
-real deployment/ -- NOT a mechanism for switching between orgs.
+Single-tenant: tests run against the real deployment by default, using
+the SAME resolve_runtime_paths() every entry point uses -- config,
+data, and logs are three independent locations, always (see
+core/deployment_loader.py's docstring), not something this file
+special-cases. Setting ELYSIUM_CONFIG_DIR/ELYSIUM_DATA_DIR (the SAME
+variables a real install's systemd unit sets) points these tests at a
+scratch copy instead of the real deployment/ -- no separate
+test-specific mechanism exists, or needs to.
 
-Uses a PATH lookup, not a Python import -- deployment/ contains no
+Uses a PATH lookup, not a Python import -- deployment/etc/ contains no
 Python files at all, so there's nothing to import. load_deployment_bundle()
 does the actual loading.
 
@@ -20,21 +24,15 @@ reference specific known values (e.g. "$49.99") that only make sense
 for this deployment's dev fixture data.
 """
 
-import os
-from pathlib import Path
-
 import pytest
 
-from core.deployment_loader import load_deployment_bundle
-
-
-def _deployment_dir() -> Path:
-    return Path(os.environ.get("TEST_DEPLOYMENT_DIR", "deployment"))
+from core.deployment_loader import load_deployment_bundle, resolve_runtime_paths
 
 
 @pytest.fixture
 def _bundle():
-    return load_deployment_bundle(_deployment_dir())
+    paths = resolve_runtime_paths()
+    return load_deployment_bundle(paths.config_dir, paths.data_dir)
 
 
 @pytest.fixture

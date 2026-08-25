@@ -1,0 +1,41 @@
+# elysium.service  (systemd unit -- LINUX-SPECIFIC, no POSIX equivalent)
+#
+# systemd itself is not part of POSIX and has no portable equivalent --
+# a non-Linux POSIX system would need an entirely different service
+# supervision mechanism here, not just a translated version of this file.
+#
+# RuntimeDirectory=elysium is systemd's own built-in mechanism for
+# managing /run/elysium -- it creates the directory (with the given
+# mode, owned by User=/Group=) when the service starts and removes it
+# when the service stops. This is the idiomatic systemd way to handle
+# /run/<name>, which is why scripts/install.sh does NOT create
+# /run/elysium itself.
+
+[Unit]
+Description=Elysium LLM Data Mediator
+After=network.target
+
+[Service]
+Type=simple
+User=elysium
+Group=elysium
+WorkingDirectory=/opt/elysium
+
+# Local by default -- binding beyond 127.0.0.1 (a real network
+# interface, 0.0.0.0) is a deliberate choice for whoever operates this
+# service to make explicitly, typically behind a reverse proxy that
+# terminates TLS; not something this unit does by default.
+ExecStart=/opt/elysium/venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000
+
+Environment=ELYSIUM_CONFIG_DIR=/etc/elysium
+Environment=ELYSIUM_DATA_DIR=/var/lib/elysium
+Environment=ELYSIUM_LOG_DIR=/var/log/elysium
+
+RuntimeDirectory=elysium
+RuntimeDirectoryMode=0750
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

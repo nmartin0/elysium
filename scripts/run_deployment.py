@@ -1,5 +1,5 @@
 """
-run_deployment.py  (single-tenant -- always runs the one deployment/ folder)
+run_deployment.py  (single-tenant -- one Elysium instance, one organization)
 
 Loads the deployment's config+mediator, loads its example queries, runs
 each one through the real pipeline, and prints the answer. This file
@@ -8,23 +8,27 @@ something this script can't express generically, that's a sign the
 data format (config.yaml / example_queries.yaml) needs a new field,
 not that this script needs a special case for that org.
 
-One server instance, one organization -- there is exactly one
-deployment/ folder, never a name to choose between several.
+Config, data, and logs are three genuinely independent locations,
+always -- resolve_runtime_paths() decides where each actually is
+(deployment/etc, deployment/var/lib, deployment/var/log for local
+development; /etc/elysium, /var/lib/elysium, /var/log/elysium for a
+real install, via ELYSIUM_CONFIG_DIR/ELYSIUM_DATA_DIR/ELYSIUM_LOG_DIR --
+see scripts/install.sh). This script itself never needs to know which
+mode it's running in.
 
 Run from the project root:
     python3 -m scripts.run_deployment
 """
 
-from pathlib import Path
-
 from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import load_deployment_bundle, load_example_queries, build_llm_adapter
+from core.deployment_loader import load_deployment_bundle, load_example_queries, build_llm_adapter, resolve_runtime_paths
+from core.intermediate_layer.audit import configure_audit_log
 from core.intermediate_layer.auth import resolve_user_record
 from core.llm.synthesis_prompt import synthesize_insight
 from core.logging_config import configure_logging
 from core.ontology.write_mediator import WriteMediator, PendingWrite
 
-DEPLOYMENT_DIR = Path("deployment")
+RUNTIME_PATHS = resolve_runtime_paths()
 
 
 def _terminal_confirm_write(pending: PendingWrite) -> bool:
@@ -41,8 +45,8 @@ def _terminal_confirm_write(pending: PendingWrite) -> bool:
 
 
 def run_deployment() -> None:
-    config, mediator = load_deployment_bundle(DEPLOYMENT_DIR)
-    examples = load_example_queries(DEPLOYMENT_DIR)
+    config, mediator = load_deployment_bundle(RUNTIME_PATHS.config_dir, RUNTIME_PATHS.data_dir)
+    examples = load_example_queries(RUNTIME_PATHS.config_dir)
 
     # Always wired up -- the actual gate is policy.yaml's roles, not
     # whether write plumbing exists. A deployment granting no role any
@@ -84,4 +88,5 @@ def run_deployment() -> None:
 
 if __name__ == "__main__":
     configure_logging()
+    configure_audit_log(RUNTIME_PATHS.log_dir)
     run_deployment()

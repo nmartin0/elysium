@@ -1,8 +1,7 @@
 """
 audit.py  (the paper trail -- generic, org-agnostic)
 
-Writes one JSON line per event to logs/audit.log at the project root.
-Three kinds of entries:
+Writes one JSON line per event. Three kinds of entries:
 
   log_access() -- ONE line per access decision, on EVERY read/write/
                memory check, whether allowed OR denied. Breaks out the
@@ -19,6 +18,19 @@ Three kinds of entries:
   log_post() -- written AFTER a write actually executes. Record ID
                only, never the full data itself.
 
+LOG_PATH has a real, working default (deployment/var/log/audit.log,
+matching local development's own default layout -- see
+core/deployment_loader.py's resolve_runtime_paths()) so this module
+works correctly even if nothing ever calls configure_audit_log()
+explicitly. configure_audit_log() is how an entry point (scripts/
+run_deployment.py, api/app.py) points this at a real install's actual
+log directory -- this module never reads an environment variable
+itself; that would be exactly the kind of implicit, ambient
+configuration core/logging_config.py's configure_logging() already
+established the pattern of avoiding. One canonical resolver
+(resolve_runtime_paths()) decides the real path; every module that
+needs it is told explicitly, once, by whichever entry point is running.
+
 No org-specific data lives here -- deployments call these same
 functions with their own details as arguments.
 
@@ -31,7 +43,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-LOG_PATH = Path(__file__).resolve().parent.parent.parent / "deployment" / "logs" / "audit.log"
+LOG_PATH = Path(__file__).resolve().parent.parent.parent / "deployment" / "var" / "log" / "audit.log"
+
+
+def configure_audit_log(log_dir: Path) -> None:
+    # Called once, at the start of a real entry point -- same pattern
+    # as core/logging_config.py's configure_logging(). Library code
+    # never calls this itself.
+    global LOG_PATH
+    LOG_PATH = log_dir / "audit.log"
 
 
 def _write(entry: dict) -> None:
