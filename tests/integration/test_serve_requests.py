@@ -14,6 +14,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from scripts.serve_requests import serve
+from core.agent.agentic_loop import AgentLoopResult
 
 
 def test_serve_dispatches_multiple_users_concurrently_without_crashing():
@@ -30,4 +31,4 @@ def test_serve_dispatches_multiple_users_concurrently_without_crashing():
 
     assert len(results) == 3
     for result in results:
-        assert isinstance(result, list)
+        assert isinstance(result, AgentLoopResult)

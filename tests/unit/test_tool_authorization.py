@@ -59,8 +59,8 @@ def test_authorized_user_can_use_tool(mediator):
         {"step": "use_tool", "tool_name": "linear_regression", "args": {"x_values": [1, 2], "y_values": [2, 4]}},
         {"step": "finish"},
     ])
-    gathered = loop.run(_record("alice"), "test query")
-    real_data = AgentLoop.filter_real_data(gathered)
+    result = loop.run(_record("alice"), "test query")
+    real_data = AgentLoop.filter_real_data(result.gathered)
     assert real_data[0]["result"]["slope"] == pytest.approx(2.0)
 
 
@@ -73,11 +73,13 @@ def test_unauthorized_user_gets_same_error_as_nonexistent_tool(mediator):
         {"step": "use_tool", "tool_name": "linear_regression", "args": {"x_values": [1, 2], "y_values": [2, 4]}},
         {"step": "finish"},
     ])
-    gathered = loop.run(_record("bob"), "test query")
-    real_data = AgentLoop.filter_real_data(gathered)
+    result = loop.run(_record("bob"), "test query")
     # No successful tool result should appear -- the loop should have
     # treated it as a recoverable invalid step, not executed the tool.
-    assert not any(item.get("step") == "use_tool" and "slope" in str(item.get("result", "")) for item in gathered)
+    assert not any(
+        item.get("step") == "use_tool" and "slope" in str(item.get("result", ""))
+        for item in result.gathered
+    )
 
 
 def test_nonexistent_tool_name_produces_identical_shape_of_failure(mediator):
@@ -85,6 +87,6 @@ def test_nonexistent_tool_name_produces_identical_shape_of_failure(mediator):
         {"step": "use_tool", "tool_name": "totally_fake_tool_xyz", "args": {}},
         {"step": "finish"},
     ])
-    gathered = loop.run(_record("alice"), "test query")  # alice, even though authorized for linear_regression, not this fake one
-    real_data = AgentLoop.filter_real_data(gathered)
+    result = loop.run(_record("alice"), "test query")  # alice, even though authorized for linear_regression, not this fake one
+    real_data = AgentLoop.filter_real_data(result.gathered)
     assert not any("slope" in str(item.get("result", "")) for item in real_data)

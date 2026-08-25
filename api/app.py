@@ -12,13 +12,14 @@ whole mechanism. One instance, reused, is required for the concurrency
 protections already built to mean anything -- same pattern
 scripts/serve_requests.py already uses.
 
-WRITES ARE NOT WIRED UP YET, deliberately: scripts/run_deployment.py's
-confirm_write is a blocking terminal input() call -- a human physically
-at the same machine. That has no sensible meaning for a remote HTTP
-caller. A real HTTP write flow needs its own two-phase design (propose,
-return a pending-write reference, a separate confirm endpoint) -- built
-out, not improvised inline here. Flagged as a genuine, deliberate gap,
-not a forgotten one.
+WRITES: proposing a write over HTTP is now real (see api/routes.py's
+/query and /writes/{write_id}/confirm) -- app.state.write_mediator and
+app.state.pending_writes (a PendingWriteStore, see core/
+pending_write_store.py) are both built here, once, same lifecycle as
+everything else. Confirmation is ALWAYS a separate, later HTTP request
+from the one that proposed the write -- see core/agent/agentic_loop.py's
+module docstring for why AgentLoop itself was changed to never confirm
+a write on its own.
 
 Authentication/authorization here is ENTIRELY database-backed
 (core/user_directory.py + core/auth/), never policy.yaml's static
@@ -50,6 +51,8 @@ from fastapi import FastAPI
 from core.agent.agentic_loop import AgentLoop
 from core.deployment_loader import build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
 from core.intermediate_layer.audit import configure_audit_log
+from core.ontology.write_mediator import WriteMediator
+from core.pending_write_store import PendingWriteStore
 
 RUNTIME_PATHS = resolve_runtime_paths()
 CREDENTIALS_DB_PATH = RUNTIME_PATHS.data_dir / "credentials.db"
@@ -66,9 +69,11 @@ def create_app() -> FastAPI:
     app.state.credentials_db_path = CREDENTIALS_DB_PATH
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request.
-    app.state.loop = AgentLoop.from_deployment(config, mediator)
+    app.state.write_mediator = WriteMediator(mediator, config.roles)
+    app.state.loop = AgentLoop.from_deployment(config, mediator, write_mediator=app.state.write_mediator)
     app.state.synthesis_client = build_llm_adapter(config, config.synthesis_model)
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
+    app.state.pending_writes = PendingWriteStore()
 
     from api.routes import router
     app.include_router(router)

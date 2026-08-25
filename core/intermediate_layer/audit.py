@@ -101,3 +101,31 @@ def log_post(request_id: str, status: str, returned_record_ids: list) -> None:
         "returned_record_ids": returned_record_ids,
         "returned_count": len(returned_record_ids),
     })
+
+
+def log_query_cancelled(user_id: str, query_text: str, items_gathered: int) -> None:
+    # A query that stopped early because the caller detected the
+    # requester was gone (e.g. api/routes.py's disconnect watcher) --
+    # worth its own clear entry, distinct from normal per-step logging,
+    # so it's visible something was cut SHORT, not just silently absent
+    # from any results.
+    _write({
+        "stage": "query_cancelled",
+        "user_id": user_id,
+        "query_text": query_text,
+        "items_gathered": items_gathered,
+    })
+
+
+def log_write_expired(write_id: str, user_id: str, description: str) -> None:
+    # A write that was proposed and never confirmed, until its TTL ran
+    # out (see core/pending_write_store.py). Without this, an
+    # unconfirmed proposal would simply vanish with no trace once it
+    # expires -- a security reviewer should be able to see that this
+    # happened, not just find it absent.
+    _write({
+        "stage": "write_expired",
+        "write_id": write_id,
+        "user_id": user_id,
+        "description": description,
+    })

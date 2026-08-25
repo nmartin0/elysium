@@ -53,12 +53,12 @@ def run_deployment() -> None:
     # write: permission (the default) simply sees every proposed write
     # denied via the same PermissionError path already covered by
     # tests/unit/test_write_mediator.py -- harmless either way.
-    # WriteMediator no longer takes users/security_attribute -- see
-    # core/ontology/write_mediator.py's docstring.
     write_mediator = WriteMediator(mediator, config.roles)
-    loop = AgentLoop.from_deployment(
-        config, mediator, write_mediator=write_mediator, confirm_write=_terminal_confirm_write
-    )
+    # confirm_write is NOT passed to AgentLoop anymore -- a proposed
+    # write stops the loop and comes back via AgentLoopResult.
+    # pending_write; THIS script confirms it, right here, after run()
+    # returns -- see core/agent/agentic_loop.py's module docstring.
+    loop = AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator)
     synthesis_client = build_llm_adapter(config, config.synthesis_model)
 
     for example in examples:
@@ -78,11 +78,16 @@ def run_deployment() -> None:
         # see core/intermediate_layer/auth.py's resolve_user_record()
         # docstring for why this replaced a per-check lookup.
         user_record = resolve_user_record(config.users, user_id, config.security_attribute)
-        gathered = loop.run(user_record, query_text)
-        real_data = AgentLoop.filter_real_data(gathered)
+        result = loop.run(user_record, query_text)
 
-        insight = synthesize_insight(synthesis_client, query_text, real_data)
-        print(insight)
+        if result.pending_write is not None:
+            approved = _terminal_confirm_write(result.pending_write)
+            outcome = write_mediator.confirm_and_execute(result.pending_write, approved)
+            print(outcome)
+        else:
+            real_data = AgentLoop.filter_real_data(result.gathered)
+            insight = synthesize_insight(synthesis_client, query_text, real_data)
+            print(insight)
         print()
 
 

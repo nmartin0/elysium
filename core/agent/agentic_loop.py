@@ -13,7 +13,30 @@ Repeatedly asks core/llm/agent_step_prompt.py for the next step
 (search_object, get_field, or finish), executes it against the
 DataMediator, and accumulates results until the model signals
 "finish", asks for something it already has (duplicate detection), asks
-for something invalid (invalid-step recovery), or max_hops is reached.
+for something invalid (invalid-step recovery), proposes a write, is
+cancelled, or max_hops is reached.
+
+WRITES ARE PROPOSE-ONLY, NEVER CONFIRMED HERE: run() used to take a
+confirm_write callback and both propose AND execute a write within one
+call -- that assumed something HTTP callers can't provide, a
+synchronous pause for a human decision mid-request. A proposed write
+now STOPS the loop immediately and is returned via AgentLoopResult.
+pending_write; confirming it (or not) is always the CALLER's job,
+done separately, at whatever time makes sense for that caller (a
+terminal prompt for scripts/run_deployment.py; a completely separate
+HTTP request for api/). This also means a second write proposal in the
+same run() can genuinely never happen -- the first one always stops
+the loop -- which is why _step_signature() no longer has special
+propose_write deduplication logic; that branch would have been
+unreachable dead code once this changed.
+
+CANCELLATION: an optional cancel_event (threading.Event) is checked
+once at the TOP of each hop, never mid-hop -- this is about skipping
+FURTHER hops after a caller has decided to give up (e.g. api/'s /query
+detecting the client disconnected), not about aborting a single
+already-in-flight LLM call. AgentLoopResult.cancelled tells the caller
+this happened, so it can log the fact rather than silently discard
+partial work with no trace.
 
 DUPLICATE DETECTION: small models don't always reliably notice they
 already have what they're asking for again, even when told to check.
@@ -36,22 +59,14 @@ The model sees exactly what was invalid and gets a capped number of
 retries before the loop actually gives up, rather than discarding
 everything gathered so far on the first mistake.
 
-GAP CLOSED (this used to be documented here as a KNOWN GAP -- worth
-keeping the history visible): every read this loop performs goes
-through DataMediator, which enforces BOTH MAC (region/org boundary) and
-RBAC (role -> allowed_actions) on every object touched, and audits every
-decision via core/intermediate_layer/access_control.py's check_access().
-The old core/intermediate_layer/gateway.py/action_registry.py files,
-which auth/audit were never actually connected to, are gone -- their
-entire purpose is now handled correctly, per-object, inline.
-
-Used by: scripts/run_deployment.py, and directly by
-         tests/integration/ (or whatever replaces it)
+Used by: scripts/run_deployment.py, api/routes.py, and directly by
+         tests/integration/
 """
 
 import json
 import logging
-from typing import Callable
+import threading
+from dataclasses import dataclass
 
 from core.concurrency import ConcurrencyLimiter
 from core.intermediate_layer.audit import log_access
@@ -67,8 +82,18 @@ from core.tools.registry import get_enabled_tools
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class AgentLoopResult:
+    gathered: list[dict]
+    pending_write: PendingWrite | None = None
+    cancelled: bool = False
+
+
 def _step_signature(step: dict):
     # A hashable fingerprint of one step, used to detect exact repeats.
+    # propose_write has NO entry here -- see module docstring for why a
+    # second proposal in one run() is now structurally impossible, not
+    # just discouraged.
     if step["step"] == "search_object":
         return ("search_object", step["object_type"], frozenset(step["filter"].items()))
     if step["step"] == "get_field":
@@ -80,19 +105,6 @@ def _step_signature(step: dict):
         # (sort_keys=True for determinism) handles nested lists/dicts
         # safely and still produces a stable, hashable signature.
         return ("use_tool", step["tool_name"], json.dumps(step["args"], sort_keys=True))
-    if step["step"] == "propose_write":
-        # Same unhashable-values concern as use_tool -- changes can
-        # contain arbitrary values. Deliberately NOT deduplicating
-        # identical write proposals across a whole run() the way other
-        # steps are -- a user might legitimately want to update the
-        # same object twice with different values in one conversation.
-        # This only catches an EXACT repeat (same object, same action,
-        # same literal changes), which is still worth blocking (almost
-        # certainly a stuck model, not an intentional double-write).
-        return (
-            "propose_write", step["object_type"], step.get("object_id"),
-            step["action"], json.dumps(step["changes"], sort_keys=True),
-        )
     return None
 
 
@@ -128,13 +140,9 @@ def _handle_recoverable_mistake(gathered: list[dict], count: int, cap: int, deta
     # Shared logic for BOTH duplicate-step and invalid-step recovery: log
     # progress toward the cap, and either inject a corrective bookkeeping
     # note (giving the model another chance) or signal the caller to stop
-    # if the cap is hit. `detail`/`attempt_label`/`stop_message` are each
-    # passed in verbatim rather than derived (e.g. by pluralizing
-    # attempt_label) -- the two original messages never shared a
-    # consistent grammar rule ("duplicate step" vs "duplicates" at the
-    # cap), so deriving one from the other would silently change the text.
-    # Returns (new_count, should_stop) -- the caller does the actual
-    # break, since a function can't break its caller's loop directly.
+    # if the cap is hit. Returns (new_count, should_stop) -- the caller
+    # does the actual break, since a function can't break its caller's
+    # loop directly.
     count += 1
     logger.warning(f"{attempt_label} ({count}/{cap}): {detail}")
 
@@ -155,21 +163,18 @@ class AgentLoop:
 
     def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Tool] | None = None,
                  write_mediator: WriteMediator | None = None,
-                 confirm_write: Callable[[PendingWrite], bool] | None = None,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
                  max_consecutive_invalid_steps: int = 2):
         # These stay fixed across every query this loop instance ever
         # runs -- constructed once per deployment, then run() called
         # once per actual user question. tools defaults to None, not []
-        # -- the classic Python mutable-default-argument trap: a literal
-        # [] default would be created ONCE at function definition and
-        # silently shared across every AgentLoop that didn't pass its
-        # own tools list.
+        # -- the classic Python mutable-default-argument trap.
         #
-        # write_mediator/confirm_write default to None/None -- writes
-        # are OPT-IN, unlike data/LLM/tools which every deployment
-        # needs. Both None means this loop simply never proposes writes
-        # (see agent_step_prompt.py's writes_enabled flag).
+        # write_mediator defaults to None -- writes are OPT-IN, unlike
+        # data/LLM/tools which every deployment needs. None means this
+        # loop simply never proposes writes (see agent_step_prompt.py's
+        # writes_enabled flag). Confirming/executing a proposed write
+        # is NEVER this class's job -- see module docstring.
         self.client = client
         self.mediator = mediator
         self.tools = tools if tools is not None else []
@@ -178,31 +183,23 @@ class AgentLoop:
             tool.name: ConcurrencyLimiter(tool.max_concurrent_calls) for tool in self.tools
         }
         self.write_mediator = write_mediator
-        self.confirm_write = confirm_write
         self.max_hops = max_hops
         self.max_consecutive_duplicates = max_consecutive_duplicates
         self.max_consecutive_invalid_steps = max_consecutive_invalid_steps
 
     @classmethod
     def from_deployment(cls, deployment, mediator: DataMediator,
-                         write_mediator: WriteMediator | None = None,
-                         confirm_write: Callable[[PendingWrite], bool] | None = None) -> "AgentLoop":
+                         write_mediator: WriteMediator | None = None) -> "AgentLoop":
         # The standard way every caller should build an AgentLoop -- one
-        # authoritative place reading deployment.max_hops etc., instead
-        # of every call site (scripts/run_deployment.py, integration
-        # tests) separately copy-pasting the same construction and
-        # risking drift if a new tuning parameter is ever added.
-        # write_mediator/confirm_write are NOT built here automatically
-        # (unlike tools) -- constructing a WriteMediator needs a real
-        # confirm_write implementation (a terminal prompt, a UI callback,
-        # etc.) that only the caller can supply; a caller not passing
-        # them gets a loop with writes fully disabled, which is the
-        # correct default.
+        # authoritative place reading deployment.max_hops etc. write_mediator
+        # is NOT built here automatically (unlike tools) -- a caller not
+        # passing one gets a loop with writes fully disabled, the correct
+        # default.
         client = build_llm_adapter(deployment, deployment.step_model)
         tools = get_enabled_tools(deployment.enabled_tools)
         return cls(
             client, mediator, tools=tools,
-            write_mediator=write_mediator, confirm_write=confirm_write,
+            write_mediator=write_mediator,
             max_hops=deployment.max_hops,
             max_consecutive_duplicates=deployment.max_consecutive_duplicates,
             max_consecutive_invalid_steps=deployment.max_consecutive_invalid_steps,
@@ -236,20 +233,13 @@ class AgentLoop:
         return False, True
 
     def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
-                       gathered: list[dict], consecutive_invalid: int) -> tuple[int, bool]:
-        # Runs one search_object/get_field/use_tool/propose_write step,
-        # appending the result to `gathered` on success. On a recoverable
-        # failure (ValueError from mediator/tool validation, TypeError
-        # from a tool called with wrong argument names, or PermissionError
-        # from a denied write proposal), hands off to the shared
-        # recoverable-mistake handler -- ALL of these are the SAME
-        # conceptual event ("the model attempted an action and it
-        # failed"), not separately-tracked failure modes. A permission
-        # denial reported this way is a UX choice about how the loop
-        # informs the model, not a security weakening -- the actual
-        # blocking already happened correctly inside DataMediator/
-        # WriteMediator before this ever runs. Returns
-        # (new_consecutive_invalid, should_stop_loop).
+                       gathered: list[dict], consecutive_invalid: int
+                       ) -> tuple[int, bool, PendingWrite | None]:
+        # Runs one search_object/get_field/use_tool/propose_write step.
+        # Returns (new_consecutive_invalid, should_stop_loop,
+        # pending_write_or_None). A non-None pending_write ALWAYS means
+        # should_stop_loop is also True -- proposing a write is a
+        # terminal action for this run(), same as finishing.
         try:
             if step["step"] == "search_object":
                 # visible_schema passed through explicitly -- already
@@ -269,40 +259,33 @@ class AgentLoop:
                     # Same message whether the tool genuinely doesn't
                     # exist in this deployment's enabled set, or exists
                     # but this user lacks tool:<name> -- checked next.
-                    # No audit entry here: there's genuinely nothing to
-                    # log yet, since the name isn't even a real,
-                    # resolvable tool in this deployment.
                     raise ValueError(f"Unknown tool: {tool_name!r}")
                 action = f"tool:{tool_name}"
                 rbac_allowed = authorize(user_record, self.mediator.roles, action)
-                # Tools have no MAC dimension (no region/org boundary to
-                # check) -- mac_allowed=True is "not applicable," the
-                # same convention already used for create: actions.
                 log_access(user_record.user_id, "tool", tool_name, action, mac_allowed=True, rbac_allowed=rbac_allowed)
                 if not rbac_allowed:
                     # DELIBERATELY the exact same message as "tool
                     # doesn't exist" above -- distinguishing the two
-                    # would let a user probe which tools exist in this
-                    # deployment by testing names and watching which
-                    # error differs.
+                    # would let a user probe which tools exist.
                     raise ValueError(f"Unknown tool: {tool_name!r}")
                 with self._tool_limiters[tool.name].limit():
                     result = tool.run(**step["args"])
             elif step["step"] == "propose_write":
-                if self.write_mediator is None or self.confirm_write is None:
+                if self.write_mediator is None:
                     raise ValueError("Writes are not enabled for this deployment")
                 pending = self.write_mediator.propose_write(
                     user_record, step["object_type"], step.get("object_id"), step["action"], step["changes"]
                 )
-                approved = self.confirm_write(pending)
-                result = self.write_mediator.confirm_and_execute(pending, approved)
+                # Stops the loop -- confirmation/execution is always the
+                # CALLER's job, done separately (see module docstring).
+                return 0, True, pending
             else:
-                return consecutive_invalid, True  # shouldn't happen -- agent_step_prompt already validates this
+                return consecutive_invalid, True, None  # shouldn't happen -- agent_step_prompt already validates this
 
             gathered.append({**step, "result": result})
-            return 0, False
+            return 0, False, None
         except (ValueError, TypeError, PermissionError) as e:
-            return _handle_recoverable_mistake(
+            new_count, should_stop = _handle_recoverable_mistake(
                 gathered, consecutive_invalid, self.max_consecutive_invalid_steps,
                 detail=f"{step} -- {e}",
                 rejected_step_name="rejected_invalid_step",
@@ -312,38 +295,34 @@ class AgentLoop:
                      f"Check the schema above and try something valid, "
                      f"or finish if you have enough already.",
             )
+            return new_count, should_stop, None
 
-    def run(self, user_record: UserRecord, query_text: str) -> list[dict]:
+    def run(self, user_record: UserRecord, query_text: str,
+            cancel_event: threading.Event | None = None) -> AgentLoopResult:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
-        # max_hops -- whichever comes first. Returns everything gathered,
-        # including process bookkeeping entries the caller should filter
-        # out before handing this to synthesis. Each phase (finishing,
-        # executing) is its own method -- _handle_finish_attempt() and
-        # _execute_step() -- so this loop reads as a sequence of named
-        # decisions rather than one long block.
+        # a proposed write/cancellation/max_hops -- whichever comes
+        # first. Each phase is its own method -- _handle_finish_attempt()
+        # and _execute_step() -- so this loop reads as a sequence of
+        # named decisions rather than one long block.
         #
         # user_record is a pre-resolved UserRecord, not a raw user_id --
-        # the caller resolves identity ONCE (see core/intermediate_layer/
-        # auth.py's resolve_user_record()), this loop just uses it.
+        # the caller resolves identity ONCE. cancel_event is checked
+        # only at the top of each hop -- see module docstring.
         gathered = []
         seen_signatures = set()
         consecutive_duplicates = 0
         consecutive_invalid = 0
         asymmetry_nudged = False
-        writes_enabled = self.write_mediator is not None and self.confirm_write is not None
+        writes_enabled = self.write_mediator is not None
 
-        # Computed ONCE per run(), not per hop -- a role isn't expected
-        # to change mid-request, and this is what the LLM's prompt is
-        # built from for every hop of this one query, AND passed
-        # through to search_object() (via _execute_step) so it's never
-        # recomputed within this one traversal either.
+        # Computed ONCE per run(), not per hop.
         visible_schema = self.mediator.visible_schema(user_record)
 
-        # `_` is idiomatic Python for "intentionally unused loop variable"
-        # -- max_hops caps how many times this can run, but the count
-        # itself is never read inside the loop.
         for _ in range(1, self.max_hops + 1):
+            if cancel_event is not None and cancel_event.is_set():
+                return AgentLoopResult(gathered=gathered, cancelled=True)
+
             step = next_step(self.client, query_text, visible_schema, gathered, self.tools, writes_enabled)
 
             if step["step"] == "finish":
@@ -353,7 +332,7 @@ class AgentLoop:
                 continue
 
             signature = _step_signature(step)
-            if signature in seen_signatures:
+            if signature is not None and signature in seen_signatures:
                 consecutive_duplicates, should_stop = _handle_recoverable_mistake(
                     gathered, consecutive_duplicates, self.max_consecutive_duplicates,
                     detail=f"{step}",
@@ -368,14 +347,17 @@ class AgentLoop:
                 continue
 
             consecutive_duplicates = 0
-            seen_signatures.add(signature)
+            if signature is not None:
+                seen_signatures.add(signature)
 
-            consecutive_invalid, should_stop = self._execute_step(
+            consecutive_invalid, should_stop, pending_write = self._execute_step(
                 step, user_record, visible_schema, gathered, consecutive_invalid
             )
+            if pending_write is not None:
+                return AgentLoopResult(gathered=gathered, pending_write=pending_write)
             if should_stop:
                 break
         else:
             logger.warning(f"hit max_hops ({self.max_hops}), stopping")
 
-        return gathered
+        return AgentLoopResult(gathered=gathered)
