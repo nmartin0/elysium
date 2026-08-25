@@ -1,0 +1,83 @@
+# policy.yaml  (TEMPLATE -- copy into deployment/etc/ and edit)
+#
+# TWO independent, both-required gates for any access (see
+# core/intermediate_layer/access_control.py's check_access()):
+#
+#   MAC (mandatory, non-negotiable): security_attribute below names
+#   which field on a user record is the row-level boundary -- a user
+#   can NEVER see data outside their own value for this field, no
+#   matter what role they hold.
+#
+#   RBAC (role-based, FULLY EXPLICIT): each user has ONE named role,
+#   defined below in `roles`. Nothing is implied or inherited --
+#   EVERY field a role may see needs its own listed grant, including
+#   the object type's own identifier field (e.g. read:Employee.
+#   employee_id) -- an identifier isn't automatically safe to expose;
+#   some deployments use identifiers that are themselves sensitive
+#   (a password-reset token, a verification code). A role with
+#   read:Employee but zero field grants can still search/discover
+#   Employee objects (if it also grants the id_field specifically) but
+#   sees none of their data -- a genuinely narrower, valid capability,
+#   not an error.
+#
+#   Action naming convention:
+#     read:<Type>            -- may discover/search this type at all
+#     read:<Type>.<field>     -- may see this ONE field's value
+#     write:<Type>.<field>    -- may change this ONE field on an
+#                                existing object (every field in a
+#                                write needs its own grant --
+#                                all-or-nothing for the whole write)
+#     create:<Type>           -- may bring a NEW object of this type
+#                                into existence (separate from any
+#                                field grant -- a create also still
+#                                needs write:<Type>.<field> for every
+#                                field being set)
+#     tool:<name>             -- may invoke this specific tool
+#     manage:users             -- may create new database-backed users
+#                                via api/'s /users endpoint (see
+#                                scripts/install.sh's root bootstrap)
+#
+# This is deliberately verbose. That verbosity is the point: nothing
+# about what an LLM-driven agent can see or do on your organization's
+# data should ever be implicit.
+#
+# This example (Employee/ExpenseReport, matching ontology_schema.yaml's
+# template) is a REAL, working policy -- replace analyst/hr_admin and
+# the users below with your own once you've confirmed the pipeline
+# works end to end.
+
+security_attribute: department
+
+roles:
+  admin:
+    allowed_actions:
+      - manage:users
+  analyst:
+    allowed_actions:
+      - read:Employee
+      - read:Employee.employee_id
+      - read:Employee.full_name
+      - read:Employee.department
+      - read:Employee.expense_reports
+      - read:ExpenseReport
+      - read:ExpenseReport.report_id
+      - read:ExpenseReport.amount
+      - read:ExpenseReport.status
+      - read:ExpenseReport.employee_id
+  hr_admin:
+    allowed_actions:
+      - read:Employee
+      - read:Employee.employee_id
+      - read:Employee.full_name
+      - read:Employee.department
+      - write:Employee.department
+      - create:Employee
+      - tool:linear_regression
+
+users:
+  alice:
+    department: engineering
+    role: analyst
+  bob:
+    department: hr
+    role: hr_admin

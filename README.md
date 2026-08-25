@@ -22,8 +22,9 @@ adapters/        Concrete backends -- one file per real technology
 tools/           Stateless computational capabilities the LLM may
                  invoke (e.g. linear regression) -- zero data access.
 api/             The HTTP layer -- session-based auth, user
-                 management, the query endpoint. Knows FastAPI exists;
-                 core/ never does.
+                 management, the query endpoint, and the two-phase
+                 write-confirmation flow. Knows FastAPI exists; core/
+                 never does.
 deployment/      YOUR organization's configuration and data, for local
                  development -- laid out to mirror a real install
                  exactly:
@@ -35,12 +36,17 @@ deployment/      YOUR organization's configuration and data, for local
                  /var/lib/elysium, /var/log/elysium instead -- the SAME
                  three-location model, not a different one. See
                  core/deployment_loader.py's resolve_runtime_paths().
+templates/       Copy-and-edit starting points for the four deployment/
+                 YAML files, using a realistic Employee/ExpenseReport
+                 example -- genuinely runnable, not just illustrative
+                 prose. See section 8.
 scripts/         Runnable entry points.
 install/         install.sh (fresh-install script) and elysium.service
                  (systemd unit) for a real, running install.
-tests/           Unit tests (fast, no LLM) and integration tests (slow,
-                 real LLM calls, or the api/ layer via a real
-                 TestClient).
+tests/           Unit tests (fast, no LLM) and integration tests --
+                 tests/integration/fixtures/ is its OWN, fully
+                 independent test deployment, deliberately decoupled
+                 from deployment/'s real, shipped demo data.
 ```
 
 The core idea: **`core/` never changes for your organization, and never
@@ -61,7 +67,7 @@ simply don't appear to exist. Every actual decision — what's visible,
 what's writable, what's callable — is made by plain Python code the LLM
 never touches, checked fresh on every single access, and logged whether
 allowed or denied. Section 8 explains exactly how to configure this for
-your organization; section 11 explains why it's built this way.
+your organization; section 12 explains why it's built this way.
 
 ---
 
@@ -96,7 +102,6 @@ ollama pull phi4-mini      # example: step-selection model
 ollama pull qwen2.5:3b     # example: answer-synthesis model
 ```
 
-The included example uses two different models for two different jobs.
 Smaller, "reasoning-flavored" models have generally worked better for
 step-selection than larger general-purpose ones — this is genuinely
 trial-and-error; try a model, run the test suite, see how it does.
@@ -109,9 +114,9 @@ trial-and-error; try a model, run the test suite, see how it does.
 python3 -m scripts.run_deployment
 ```
 
-No arguments — config, data, and logs are all resolved automatically
-(see section 8's note on `resolve_runtime_paths()`). Runs a few example
-questions through the full pipeline and prints the answers.
+No arguments — config, data, and logs are all resolved automatically.
+Runs a few example questions through the full pipeline and prints the
+answers.
 
 ---
 
@@ -121,7 +126,7 @@ questions through the full pipeline and prints the answers.
 # Fast -- no LLM, no network, run these constantly while developing
 python3 -m pytest tests/unit/ -v
 
-# Slow -- real LLM calls against the real deployment, run before trusting a change
+# Slow -- real LLM calls against tests/integration/'s own isolated fixture
 python3 -m pytest tests/integration/ -v -m integration
 
 # api/ layer -- real FastAPI TestClient, mocked LLM, no Ollama needed
@@ -132,18 +137,21 @@ python3 -m pytest tests/integration/test_api.py -v
 
 ## 8. Configuring your organization's deployment
 
+**Start from `templates/`** — four genuinely runnable YAML files (an
+Employee/ExpenseReport example, verified end to end, not just
+illustrative snippets) with the same explanatory comments this section
+walks through. Copy them into `deployment/etc/`, confirm the pipeline
+works with the example data, then replace the content with your own.
+
 Everything lives under `deployment/etc/`, `deployment/var/lib/`, and
 `deployment/var/log/` locally — the exact same three-way split a real
 install uses, just rooted under one project-relative folder instead of
 `/etc/elysium`, `/var/lib/elysium`, `/var/log/elysium`. Nothing in
 `core/` treats one of these as more "real" than the other —
 `resolve_runtime_paths()` (in `core/deployment_loader.py`) is the one
-place that decides where each actually is, defaulting to the
-`deployment/` layout, overridable via `ELYSIUM_CONFIG_DIR`,
-`ELYSIUM_DATA_DIR`, `ELYSIUM_LOG_DIR` (which is exactly what a real
-install's systemd unit sets — see section 10).
+place that decides where each actually is.
 
-### 8.1 `deployment/etc/config.yaml` — operational settings
+### 8.1 `config.yaml` — operational settings
 
 ```yaml
 llm:
@@ -176,86 +184,29 @@ tools:
 | `llm.provider` / `llm.connection` | Which LLM adapter, and its own connection details (opaque to `core/`). |
 | `llm.step_model` / `synthesis_model` | Which model handles step-selection vs. final answer writing. |
 | `agent.max_hops` | Hard ceiling on steps per question. |
-| `agent.max_concurrent_requests` | Thread pool size for `scripts/serve_requests.py`. |
-| `data_silos` | Named data-silo instances — technology + connection details. `path`-style connection fields resolve against the DATA directory (`deployment/var/lib/` locally, `/var/lib/elysium/` under a real install), never the config directory. |
+| `agent.max_concurrent_requests` | Thread pool size for `api/` and `scripts/serve_requests.py`. |
+| `data_silos` | Named data-silo instances — technology + connection details. `path`-style connection fields resolve against the DATA directory, never the config directory. |
 | `tools.enabled` | Which registered tools the LLM may call, by name. |
 
-### 8.2 `deployment/etc/ontology_schema.yaml` — what data exists
+### 8.2 `ontology_schema.yaml` — what data exists
 
-```yaml
-object_types:
-  Employee:
-    silo: primary_sql
-    id_field: employee_id
-    table: employees
-    id_column: employee_id
-    security:
-      field: department
-    fields:
-      department:
-        type: data
-      full_name:
-        type: data
-      expense_reports:
-        type: link
-        target: ExpenseReport
-        cardinality: many
-        via_table: expense_reports
-        via_column: employee_id
-```
-
-This declares what data **exists** and how it's structured — it does
-**not** by itself make anything visible. Every field here, including
-each type's own `id_field`, needs a matching grant in `policy.yaml`
-before any user can see it. A field declared here with no matching
-grant anywhere simply never appears to the LLM at all.
+Declares what data **exists** and how it's structured — it does
+**not** by itself make anything visible. Every field, including each
+type's own `id_field`, needs a matching grant in `policy.yaml` before
+any user can see it.
 
 - **`silo`** — which named entry in `config.yaml`'s `data_silos`.
 - **`id_field`** — the identifier's name. **Not automatically safe to expose** — some deployments use identifiers that are themselves sensitive (a password-reset token, a verification code), so this needs its own explicit grant like any other field.
 - **`security`** — the MAC boundary for this type: `field: <column>` (carries its own boundary value) or `via_field: <link>` (inherits the linked object's).
 - **`fields`** — `type: data` (plain value) or `type: link` (points to another object; `cardinality: one` is a real foreign key, `cardinality: many` is a reverse relationship needing `via_table`/`via_column`).
 
-### 8.3 `deployment/etc/policy.yaml` — who your users are, and exactly what they can do
+See `templates/ontology_schema.yaml` for a complete, working example
+demonstrating every one of these.
+
+### 8.3 `policy.yaml` — who your users are, and exactly what they can do
 
 Two independent, both-required gates, and **everything is fully
 explicit — nothing is inherited from anything else**:
-
-```yaml
-security_attribute: department
-
-roles:
-  admin:
-    allowed_actions:
-      - manage:users
-  analyst:
-    allowed_actions:
-      - read:Employee
-      - read:Employee.employee_id
-      - read:Employee.full_name
-      - read:Employee.department
-  hr_admin:
-    allowed_actions:
-      - read:Employee
-      - read:Employee.employee_id
-      - read:Employee.full_name
-      - read:Employee.department
-      - read:Employee.ssn
-      - write:Employee.department
-      - create:Employee
-      - tool:linear_regression
-
-users:
-  alice:
-    department: engineering
-    role: analyst
-  bob:
-    department: hr
-    role: hr_admin
-```
-
-- **`security_attribute`** — the *mandatory* boundary (MAC). A user can never see data outside their own value for this field, regardless of role.
-- **`roles`** — the *role-based* layer (RBAC), always static and human-authored here — see the table below. `manage:users` (the `admin` role above) is what lets someone create real, database-backed logins via `api/`'s `/users` endpoint — see section 9.
-- **`users`** — this static section is what `scripts/run_deployment.py` (a simple demo/dev tool) uses directly. The real, running service (`api/`) never reads this section at all — see section 9 for why.
 
 | Action pattern | Grants |
 |---|---|
@@ -266,20 +217,21 @@ users:
 | `tool:<name>` | May invoke this specific tool. |
 | `manage:users` | May create new database-backed users via `api/`'s `/users` endpoint. |
 
-This is deliberately verbose. That verbosity is the point — every one
-of those lines is a decision someone made on purpose, not a default
-nobody thought about.
+- **`security_attribute`** — the *mandatory* boundary (MAC). A user can never see data outside their own value for this field, regardless of role.
+- **`users`** — static, only used by `scripts/run_deployment.py` (a simple demo/dev tool). The real running service (`api/`) never reads this section — see section 9.
 
-### 8.4 `deployment/etc/example_queries.yaml` and `deployment/var/lib/`
+This is deliberately verbose. A role touching a dozen fields needs a
+dozen lines. That verbosity is the actual point — every one of those
+lines is a decision someone made on purpose, not a default nobody
+thought about.
+
+### 8.4 `example_queries.yaml` and your database
 
 `example_queries.yaml` is `user_id`/`query` pairs for
-`scripts/run_deployment.py`'s demo. `deployment/var/lib/dev_fixtures/`
-holds the local SQLite fixture — see `schema.sql` there for the
-`CREATE TABLE`/`INSERT` pattern to follow for your own data.
-`credentials.db` (real login credentials, real sessions) lives here
-too, created fresh the first time anything writes to it — never
-shipped, never copied between environments (see section 10's note on
-why the install script is careful about this specifically).
+`scripts/run_deployment.py`'s demo. Your database is whatever your
+chosen adapter's `connection` in `config.yaml` points at — for SQLite
+locally, see `deployment/var/lib/dev_fixtures/schema.sql` for the
+fixture pattern.
 
 ---
 
@@ -287,26 +239,24 @@ why the install script is careful about this specifically).
 
 These are **intentionally not unified**:
 
-- **`scripts/run_deployment.py`** is a simple demo/dev tool. It reads
-  users directly from `policy.yaml`'s static `users:` section — no
-  login, no password, just a list of example questions run as each
-  named user in turn.
-- **`api/`** is the real, running HTTP service. It never reads
-  `policy.yaml`'s `users:` section at all — every user is a real
-  login, created via `core/user_directory.py` (database-backed,
-  runtime-mutable) and authenticated via `core/auth/` (argon2id
-  password hashing, session tokens). See section 10 for how the very
-  first user gets created.
+- **`scripts/run_deployment.py`** is a simple demo/dev tool. It reads users directly from `policy.yaml`'s static `users:` section — no login, no password, just a list of example questions run as each named user in turn.
+- **`api/`** is the real, running HTTP service. Every user is a real login, created via `core/user_directory.py` (database-backed, runtime-mutable) and authenticated via `core/auth/` (argon2id password hashing, session tokens).
 
 ```bash
 # Local dev, against the venv from section 4:
 uvicorn api.app:app --reload
 ```
 
-Writes are **not** wired up in `api/` yet — a real HTTP write flow
-needs its own two-phase design (propose, then a separate confirm
-step), deliberately deferred rather than improvised on top of a
-terminal `input()` prompt that has no meaning for a remote caller.
+**Writes are real, and genuinely two-phase.** `POST /query` may return
+a `202 Accepted` with a `pending_write` reference instead of an answer
+— nothing has been written yet. A separate, later request,
+`POST /writes/{write_id}/confirm` (`{"approved": true}` or `false`),
+is what actually approves or rejects it. This mirrors
+`scripts/run_deployment.py`'s terminal confirmation prompt, adapted for
+a remote caller — a synchronous "type y/n" pause has no meaning over
+HTTP, so proposing and confirming are genuinely separate requests,
+possibly minutes apart. Proposed writes expire on their own (15
+minutes) if never confirmed.
 
 ---
 
@@ -317,22 +267,16 @@ repository) sets up a genuine production install:
 
 - A dedicated **system user and group** (`elysium`), no login shell —
   the service runs unprivileged, under its own identity, never as the
-  human who ran the install. That human is added to the `elysium`
-  *group* instead, so they can inspect logs/config without being the
-  service account.
+  human who ran the install.
 - The **FHS layout** — `/opt/elysium` (code + venv), `/etc/elysium`
   (config), `/var/lib/elysium` (data — `700` permissions, no group
   access at all, since this is where `credentials.db` lives),
   `/var/log/elysium` (logs).
 - A **systemd service** (`install/elysium.service`) running
   `uvicorn api.app:app` under the `elysium` user, bound to
-  `127.0.0.1` by default (put a real reverse proxy in front for
-  anything beyond localhost).
-- **Root bootstrap** — since there's no existing user who could call
-  the `/users` endpoint to create the first one, the install script
-  runs `scripts/bootstrap_root.py` once, generating a real,
-  cryptographically random password (never a hardcoded default) and
-  printing it exactly once.
+  `127.0.0.1` by default.
+- **Root bootstrap** — a real, cryptographically random password,
+  generated once, printed once (never a hardcoded default).
 
 ```bash
 sudo ./install/install.sh
@@ -341,21 +285,12 @@ sudo systemctl start elysium.service
 
 ### Where this deviates from POSIX, explicitly
 
-This install script's **shell syntax** is POSIX `sh` throughout — no
-bash-only features — but several of the **commands** it calls are
-Linux-specific, with no POSIX equivalent:
-
-- **systemd** — not part of POSIX at all; other Unix-likes use
-  entirely different service-supervision mechanisms.
-- **The FHS layout itself** — a Linux Foundation convention, not a
-  POSIX-mandated directory hierarchy.
-- **`useradd`/`groupadd`/`getent`** — from `shadow-utils`/glibc,
-  near-universal on Linux, but not POSIX-specified; BSD and macOS use
-  different tools entirely (`pw`, `dscl`).
-- **`$SUDO_USER`** — a `sudo`-specific mechanism, absent under `su`/`doas`.
-
-Porting this install to a non-Linux POSIX system means rewriting these
-specific sections, not just adapting syntax.
+This install script's **shell syntax** is POSIX `sh` throughout, but
+several **commands** it calls are Linux-specific, with no POSIX
+equivalent: **systemd** (not part of POSIX at all), **the FHS layout
+itself** (a Linux Foundation convention, not POSIX-mandated),
+**`useradd`/`groupadd`/`getent`** (from `shadow-utils`/glibc, not
+POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 
 ---
 
@@ -367,17 +302,14 @@ specific sections, not just adapting syntax.
 | A new LLM backend | `core/llm/interface.py`'s `LLMAdapter` | `core/deployment_loader.py`'s `_LLM_ADAPTER_REGISTRY` |
 | A new tool | `core/tools/interface.py`'s `Tool` | `core/tools/registry.py`'s `_TOOL_REGISTRY` |
 
-Tools must be strictly stateless — pure data in, data out, zero access
-to the database, network, or filesystem.
-
 ---
 
 ## 12. Why it's built this way — the untrusted-LLM design, point by point
 
-- **The LLM never sees a schema element it isn't authorized for.** `DataMediator.visible_schema()` filters every object type and every field, per user, before the prompt is even built. An unauthorized field isn't marked hidden — it's absent.
+- **The LLM never sees a schema element it isn't authorized for.**
 - **"Doesn't exist" and "exists but denied" are indistinguishable**, on purpose, everywhere.
 - **Error messages never reveal what's actually valid.**
-- **Tools require their own explicit authorization**, separate from data access — a user lacking it sees the identical error a genuinely nonexistent tool would produce.
+- **Tools require their own explicit authorization**, separate from data access.
 - **Every access decision is logged**, allowed or denied, with MAC and RBAC broken out independently.
 - **All I/O is gated.** The LLM only ever receives text back from `LLMAdapter.chat()`.
 - **No inference of intent.** Malformed or unrecognized model output fails closed.
@@ -389,9 +321,8 @@ to the database, network, or filesystem.
 
 - **Memory security infrastructure exists but isn't wired into the live query path.** `core/memory/guard.py`'s `MemoryGuard` is built and tested, but `AgentLoop` doesn't currently construct or use one.
 - **Cross-silo links aren't supported.** Linked object types must currently share a data silo.
-- **Single OS process.** Concurrency protections coordinate threads within one process, not across separate processes.
-- **Writes aren't wired up in `api/` yet.** See section 9.
-- **`install.sh` is a fresh-install script, not an upgrade mechanism.** Re-running it will not corrupt existing data, but it isn't designed to migrate an existing install.
+- **Single OS process.** Concurrency protections coordinate threads within one process, not across separate processes. The pending-write store is also in-process memory — a multi-worker deployment would need a shared store instead.
+- **`install.sh` is a fresh-install script, not an upgrade mechanism.**
 
 None of these are silent gaps — each is a deliberate, documented scope
 decision.

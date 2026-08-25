@@ -1,0 +1,9 @@
+# example_queries.yaml  (TEMPLATE -- copy into deployment/etc/ and edit)
+#
+# Optional demo queries for scripts/run_deployment.py -- a different
+# deployment lists its own users/queries here; the runner script
+# itself never needs to change. Each user_id must exist in policy.yaml.
+
+examples:
+  - user_id: alice
+    query: "What is Alice's own department?"

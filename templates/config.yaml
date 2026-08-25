@@ -1,0 +1,54 @@
+# config.yaml  (TEMPLATE -- copy into deployment/etc/ and edit)
+#
+# Operational settings: which LLM backend and model each call uses,
+# agent-loop tuning, and which data silo(s) this deployment reads from.
+
+llm:
+  provider: ollama                 # key into core/deployment_loader.py's LLM
+                                    # adapter registry -- see that file's
+                                    # _LLM_ADAPTER_REGISTRY for what's built in
+  connection:
+    base_url: "http://localhost:11434/api/chat"
+    request_timeout_seconds: 240   # local CPU-only inference can be genuinely
+                                    # slow -- raise this if you see timeouts
+  step_model: "phi4-mini"          # handles step-by-step decisions -- smaller,
+                                    # "reasoning-flavored" models have generally
+                                    # worked better here than larger general-
+                                    # purpose ones; this is real trial-and-error
+  synthesis_model: "qwen2.5:3b"    # writes the final answer from already-
+                                    # gathered data -- less demanding than
+                                    # step_model, doesn't need to follow a
+                                    # strict output format
+
+agent:
+  max_hops: 8                       # hard ceiling on steps per question
+  max_consecutive_duplicates: 2     # corrective nudges before giving up if the
+                                     # model keeps repeating an identical step
+  max_consecutive_invalid_steps: 2  # same, for requesting something invalid
+  max_concurrent_requests: 4        # thread pool size for api/ and
+                                     # scripts/serve_requests.py
+
+# Named data-silo instances -- YOU MUST CHANGE THIS to point at your
+# real database. Each object type in ontology_schema.yaml declares
+# which of these named silos it lives in via its own `silo:` key --
+# this is what lets a deployment span more than one adapter/database.
+data_silos:
+  primary_sql:
+    adapter: sqlite                 # see adapters/ for what's built in;
+                                     # register a new one in
+                                     # core/deployment_loader.py's
+                                     # _ADAPTER_REGISTRY
+    connection:
+      path: "dev_fixtures/mediator.db"   # relative to the DATA directory
+                                          # (deployment/var/lib/ locally,
+                                          # /var/lib/elysium/ under a real
+                                          # install) -- never the config
+                                          # directory
+
+# Tools the LLM may call, by name -- entirely optional; omitting this
+# section (or listing none) is completely valid, unlike llm:/data_silos:
+# which every deployment needs. Registered tools live in
+# core/tools/registry.py.
+tools:
+  enabled:
+    - linear_regression

@@ -1,0 +1,58 @@
+# ontology_schema.yaml  (TEMPLATE -- copy into deployment/etc/ and edit)
+#
+# Declares what data EXISTS and how it's structured -- it does NOT by
+# itself make anything visible to the LLM. Every field listed here,
+# including each object type's own id_field, needs a matching
+# read:<Type>.<field> grant in policy.yaml before any user can ever see
+# it. A field declared here with no matching grant anywhere simply
+# never appears to the LLM at all -- see core/ontology/mediator.py's
+# visible_schema() docstring for the full reasoning.
+#
+# This example (Employee/ExpenseReport) is a REAL, working schema --
+# replace it with your own object types once you've confirmed the
+# pipeline works end to end.
+
+object_types:
+  Employee:
+    silo: primary_sql               # must match a name under config.yaml's data_silos
+    id_field: employee_id           # the identifier's name -- see policy.yaml's
+                                     # header for why this ISN'T automatically
+                                     # safe to expose without its own grant
+    table: employees                # the real table name
+    id_column: employee_id
+    security:
+      field: department             # MAC boundary -- this object type carries
+                                     # its own boundary value directly. The
+                                     # OTHER option is `via_field: <link>` (see
+                                     # ExpenseReport below) -- follow a link to
+                                     # find the object that carries it instead.
+    fields:
+      department:
+        type: data
+      full_name:
+        type: data
+      expense_reports:
+        type: link                  # a reverse relationship -- NOT a real
+        target: ExpenseReport       # column on this table, needs via_table/
+        cardinality: many           # via_column to say where to find the rows
+        via_table: expense_reports
+        via_column: employee_id
+
+  ExpenseReport:
+    silo: primary_sql
+    id_field: report_id
+    table: expense_reports
+    id_column: report_id
+    security:
+      via_field: employee_id        # this type doesn't carry its own boundary
+                                     # value -- it inherits the linked
+                                     # Employee's department instead
+    fields:
+      amount:
+        type: data
+      status:
+        type: data
+      employee_id:
+        type: link                  # a forward reference -- a real foreign-key
+        target: Employee             # column on THIS table (cardinality: one)
+        cardinality: one
