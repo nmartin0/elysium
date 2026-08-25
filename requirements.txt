@@ -2,8 +2,8 @@
 # Python packages this project needs installed (run: pip install -r requirements.txt)
 #
 # sqlite3 is NOT listed here -- it ships built into Python itself.
-
-anthropic   # calls Claude for router_prompt.py and synthesis_prompt.py (unused for now, no paid key)
-requests    # HTTP calls to the local Ollama API
-pyyaml      # reading deployment config/schema/policy YAML files
-pytest      # test suite (tests/unit -- fast; tests/integration -- slow, needs Ollama running)
+anthropic       # unused for now, no paid key -- kept for a possible future LLM adapter
+requests        # HTTP calls to the local Ollama API
+pyyaml          # reading deployment config/schema/policy YAML files
+pytest          # test suite (tests/unit -- fast; tests/integration -- slow, needs Ollama running)
+argon2-cffi     # password hashing for core/auth/ -- argon2id, the current OWASP-recommended algorithm
