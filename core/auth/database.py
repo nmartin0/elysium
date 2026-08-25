@@ -1,11 +1,17 @@
 """
-database.py  (the ONE shared connection/schema for credentials + sessions)
+database.py  (the ONE shared connection/schema for credentials,
+sessions, and the runtime user directory)
 
 Deliberately NOT a DataSiloAdapter, NOT part of the swappable registry --
 a deployer chooses their own business-data backend, but never "which
 database stores passwords." This is fixed, private infrastructure, same
 reasoning that kept action tools out of adapters/: pluggability is for
 things a deployer should genuinely get to choose.
+
+Three tables, one physical database, THIS file is the single source of
+truth for what tables exist -- credential_store.py, session_store.py,
+and core/user_directory.py each own the QUERIES against their own
+table, but none of them declares schema independently.
 
 db_path is always an explicit parameter, never a hardcoded global path --
 same dependency-injection discipline as every other adapter in this
@@ -34,6 +40,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     username TEXT NOT NULL,
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    mac_value TEXT,
+    role_name TEXT NOT NULL
 );
 """
 
