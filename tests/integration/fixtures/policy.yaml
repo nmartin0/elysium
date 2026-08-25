@@ -1,0 +1,52 @@
+# policy.yaml  (tests/integration/'s OWN policy -- see config.yaml's
+# header for why this is a fully separate fixture)
+#
+# Roles used by test_api.py's DYNAMICALLY created users (editor,
+# customer_service, admin) are defined PERMANENTLY here, rather than
+# mutated at runtime by individual tests -- the earlier design
+# (reassigning/mutating app.state.config.roles mid-test) is exactly
+# the kind of test/deployment-data entanglement this whole fixture
+# split exists to eliminate. users: below (user_alice/bob/carol) are
+# for test_full_roundtrip.py/test_region_enforcement_e2e.py, which use
+# the static, policy.yaml-backed identity path (resolve_user_record),
+# not the database-backed one test_api.py exercises.
+
+security_attribute: region
+
+roles:
+  admin:
+    allowed_actions:
+      - manage:users
+  customer_service:
+    allowed_actions:
+      - read:Customer
+      - read:Customer.customer_id
+      - read:Customer.region
+      - read:Customer.name
+      - read:Customer.email
+      - read:Customer.transactions
+      - read:Transaction
+      - read:Transaction.transaction_id
+      - read:Transaction.amount
+      - read:Transaction.currency
+      - read:Transaction.category
+      - read:Transaction.transaction_date
+      - read:Transaction.customer_id
+  editor:
+    allowed_actions:
+      - read:Customer
+      - read:Customer.customer_id
+      - read:Customer.name
+      - write:Customer.name
+
+users:
+  user_alice:
+    region: us-west
+    role: customer_service
+  user_bob:
+    region: us-east
+    role: customer_service
+  # user_carol deliberately has NO role -- proves RBAC denial
+  # independent of MAC (see test_region_enforcement_e2e.py).
+  user_carol:
+    region: eu

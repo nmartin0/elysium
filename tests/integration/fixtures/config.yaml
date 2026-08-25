@@ -1,0 +1,32 @@
+# config.yaml  (tests/integration/'s OWN, fully isolated test deployment)
+#
+# Deliberately NOT the same file as deployment/etc/config.yaml -- this
+# is a genuinely separate deployment, used ONLY by the test suite, so
+# nothing a test does can ever affect (or be affected by) the real
+# deployment a human explores by running scripts/run_deployment.py or
+# a real install. Same principle tests/conftest.py's Author/Book test
+# schema already established for tests/unit/, applied here too:
+# decoupled from the real deployment, not accidentally coupled to it.
+
+llm:
+  provider: ollama
+  connection:
+    base_url: "http://localhost:11434/api/chat"
+    request_timeout_seconds: 240
+  step_model: "phi4-mini"
+  synthesis_model: "qwen2.5:3b"
+
+agent:
+  max_hops: 8
+  max_consecutive_duplicates: 2
+  max_consecutive_invalid_steps: 2
+
+data_silos:
+  primary_sql:
+    adapter: sqlite
+    connection:
+      path: "dev_fixtures/mediator.db"
+
+tools:
+  enabled:
+    - linear_regression

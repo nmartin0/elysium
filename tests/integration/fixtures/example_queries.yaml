@@ -1,0 +1,7 @@
+# example_queries.yaml  (tests/integration/'s OWN demo queries --
+# only used if a test happens to call load_example_queries() directly;
+# most integration tests build their own queries inline)
+
+examples:
+  - user_id: user_alice
+    query: "What are cust_001's recent transactions?"

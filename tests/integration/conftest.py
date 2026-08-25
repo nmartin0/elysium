@@ -1,38 +1,42 @@
 """
-conftest.py  (integration tests -- deployment selection)
+conftest.py  (integration tests -- a FULLY isolated test deployment)
 
-Single-tenant: tests run against the real deployment by default, using
-the SAME resolve_runtime_paths() every entry point uses -- config,
-data, and logs are three independent locations, always (see
-core/deployment_loader.py's docstring), not something this file
-special-cases. Setting ELYSIUM_CONFIG_DIR/ELYSIUM_DATA_DIR (the SAME
-variables a real install's systemd unit sets) points these tests at a
-scratch copy instead of the real deployment/ -- no separate
-test-specific mechanism exists, or needs to.
+tests/integration/fixtures/ is a genuinely separate deployment used
+ONLY by this test suite -- config, schema, policy, and data all live
+here, never in the real deployment/ folder a human explores. Same
+principle tests/conftest.py's Author/Book test schema already
+established for tests/unit/, applied here too.
 
-Uses a PATH lookup, not a Python import -- deployment/etc/ contains no
-Python files at all, so there's nothing to import. load_deployment_bundle()
-does the actual loading.
-
-_bundle() is a private fixture so a test requesting BOTH `deployment`
-and `mediator` only loads the YAML and constructs the mediator ONCE --
-pytest caches a fixture's result per test, so deployment/mediator below
-both reuse the same _bundle() call rather than each reloading from disk.
-
-What CANNOT be made generic: the actual assertions in each test still
-reference specific known values (e.g. "$49.99") that only make sense
-for this deployment's dev fixture data.
+A FRESH SQLite database is built from fixtures/schema.sql into
+pytest's tmp_path for EVERY test -- matching tests/conftest.py's own
+per-test isolation pattern exactly. Nothing a test does here can ever
+affect another test, a future test run, or the real deployment/'s
+shipped demo data.
 """
+
+import sqlite3
+from pathlib import Path
 
 import pytest
 
-from core.deployment_loader import load_deployment_bundle, resolve_runtime_paths
+from core.deployment_loader import load_deployment_bundle
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
-def _bundle():
-    paths = resolve_runtime_paths()
-    return load_deployment_bundle(paths.config_dir, paths.data_dir)
+def _bundle(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    dev_fixtures_dir = data_dir / "dev_fixtures"
+    dev_fixtures_dir.mkdir(parents=True)
+
+    db_path = dev_fixtures_dir / "mediator.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript((FIXTURES_DIR / "schema.sql").read_text())
+    conn.commit()
+    conn.close()
+
+    return load_deployment_bundle(FIXTURES_DIR, data_dir)
 
 
 @pytest.fixture

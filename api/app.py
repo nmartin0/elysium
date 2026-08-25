@@ -42,6 +42,18 @@ relying on Starlette's own separate, differently-sized internal thread
 pool (the one it uses automatically for synchronous route handlers).
 An explicit, understood concurrency boundary, not an ambient default --
 see api/routes.py's /query for where this actually gets used.
+
+create_app() takes an OPTIONAL RuntimePaths -- defaulting to
+resolve_runtime_paths() (the real, running server's normal path) when
+not given. tests/integration/test_api.py passes its OWN, fully
+isolated RuntimePaths (built fresh per test, under pytest's tmp_path)
+to get a genuinely separate app instance -- its own mediator, its own
+credentials database, its own audit log -- rather than mutating
+app.state on the one real, module-level `app` instance. That mutation
+approach was the earlier design; it meant tests could (and once did)
+corrupt the real, shipped demo data. A real app instance per test,
+built from a real but disposable fixture, makes that structurally
+impossible instead of relying on careful cleanup.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -49,24 +61,24 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI
 
 from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
+from core.deployment_loader import build_llm_adapter, load_deployment_bundle, resolve_runtime_paths, RuntimePaths
 from core.intermediate_layer.audit import configure_audit_log
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 
-RUNTIME_PATHS = resolve_runtime_paths()
-CREDENTIALS_DB_PATH = RUNTIME_PATHS.data_dir / "credentials.db"
 
-
-def create_app() -> FastAPI:
+def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app = FastAPI(title="LLM Data Mediator")
 
-    configure_audit_log(RUNTIME_PATHS.log_dir)
-    config, mediator = load_deployment_bundle(RUNTIME_PATHS.config_dir, RUNTIME_PATHS.data_dir)
+    if runtime_paths is None:
+        runtime_paths = resolve_runtime_paths()
+
+    configure_audit_log(runtime_paths.log_dir)
+    config, mediator = load_deployment_bundle(runtime_paths.config_dir, runtime_paths.data_dir)
 
     app.state.config = config
     app.state.mediator = mediator
-    app.state.credentials_db_path = CREDENTIALS_DB_PATH
+    app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request.
     app.state.write_mediator = WriteMediator(mediator, config.roles)

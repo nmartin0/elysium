@@ -1,0 +1,45 @@
+# ontology_schema.yaml  (tests/integration/'s OWN schema -- see
+# config.yaml's header for why this is a fully separate fixture, not
+# the real deployment/etc/ontology_schema.yaml)
+
+object_types:
+  Customer:
+    silo: primary_sql
+    id_field: customer_id
+    table: customers
+    id_column: customer_id
+    security:
+      field: region
+    fields:
+      region:
+        type: data
+      name:
+        type: data
+      email:
+        type: data
+      transactions:
+        type: link
+        target: Transaction
+        cardinality: many
+        via_table: transactions
+        via_column: customer_id
+  Transaction:
+    silo: primary_sql
+    id_field: transaction_id
+    table: transactions
+    id_column: transaction_id
+    security:
+      via_field: customer_id
+    fields:
+      amount:
+        type: data
+      currency:
+        type: data
+      category:
+        type: data
+      transaction_date:
+        type: data
+      customer_id:
+        type: link
+        target: Customer
+        cardinality: one
