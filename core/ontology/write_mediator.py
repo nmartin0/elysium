@@ -1,46 +1,25 @@
 """
 write_mediator.py  (the write path -- generic, org-agnostic)
 
-Every write goes through TWO stages, never one: propose_write() decides
-whether the write is even allowed to be PROPOSED (two separate checks --
-see below), then confirm_and_execute() runs only after a human has
-approved the EXACT PendingWrite the check produced. PendingWrite is
-frozen -- once built, its contents literally cannot change (a
-FrozenInstanceError, not just a convention), so there is no code path
-between "human sees this" and "this executes" where the LLM could alter
-what gets written.
+Two stages: propose_write() checks RBAC+MAC and snapshots the fields
+about to change; confirm_and_execute() re-verifies that snapshot
+ATOMICALLY at write time (per-object lock + adapter.write_fields()'s
+conditional SQL), preventing lost updates -- see core/ontology/
+mediator.py's docstring for why a semaphore alone can't do this.
+PendingWrite is frozen -- nothing about a proposed write can change
+between human approval and execution.
 
-TWO CHECKS in propose_write(), same MAC+RBAC pattern as reads:
-  1. RBAC (auth.authorize()) -- is this user's role allowed to write to
-     this object TYPE at all? Action convention: f"write:{object_type}".
-  2. MAC (DataMediator._security_allowed()) -- for an UPDATE
-     specifically, is THIS particular object within the user's row-level
-     scope? Doesn't apply to a CREATE (no existing object to check the
-     region of yet) -- logged as mac_allowed=True for creates, meaning
-     "no boundary was violated since there was nothing to violate,"
-     not "a boundary check ran and passed."
-Doesn't call core/intermediate_layer/access_control.py's check_access()
-directly -- that function assumes a real, existing object_id, which a
-create doesn't have. Calls authorize()/_security_allowed() itself
-instead, but logs via the SAME audit.log_access() shape so write
-decisions are equally visible and equally broken-out as read decisions.
-A user failing the RBAC check never reaches the MAC check -- per the
-design conversation, a flatly-disallowed user should never see a "here's
-what would happen" confirmation surface at all, since that would leak
-the existence of a capability they don't have.
+Called: authorize() then (for updates) _security_allowed() -- RBAC
+short-circuits before MAC, both logged via audit.log_access(). Writes
+are also logged via log_pre()/log_post() -- the attempt and its outcome,
+a different question from the MAC/RBAC breakdown.
 
-AUDITED TWICE, deliberately: log_access() records the granular MAC/RBAC
-breakdown of the PROPOSAL decision; log_pre()/log_post() (unchanged from
-before) record the write ATTEMPT and its actual outcome. Different
-questions, both worth having on record.
-
-Used by: core/agent/agentic_loop.py's AgentLoop (via a write_mediator +
-         confirm_write callback, both None if a deployment has no
-         write capability enabled)
+Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
+         confirm_write callback, both None if writes are disabled)
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from core.intermediate_layer.audit import log_access, log_pre, log_post
@@ -50,14 +29,13 @@ from core.ontology.mediator import DataMediator
 
 @dataclass(frozen=True)
 class PendingWrite:
-    # Immutable once created -- nothing about a proposed write can be
-    # edited after the fact, only approved or rejected as a whole.
     object_type: str
-    object_id: Any | None       # None for creates
+    object_id: Any | None
     action: Literal["update", "create"]
     changes: dict
     user_id: str
-    description: str             # deterministic, built by core/ -- never LLM output
+    description: str
+    expected_current_values: dict = field(default_factory=dict)  # for update lost-update checks
 
 
 class WriteMediator:
@@ -104,8 +82,23 @@ class WriteMediator:
         if not mac_allowed:
             raise PermissionError(f"{user_id!r} cannot modify this {object_type}")
 
+        # Snapshot for lost-update detection -- captured here, verified
+        # atomically at execute time. Direct adapter read, not
+        # mediator.get_field() -- access was already confirmed above;
+        # re-running check_access() here would blur "did data change"
+        # with "is this still allowed," different questions.
+        expected_current_values = {}
+        if action == "update":
+            adapter = self.mediator._adapter_for(object_type)
+            type_config = self.mediator._type_schema(object_type)
+            expected_current_values = {
+                field_name: adapter.get_raw_field(object_type, object_id, field_name, type_config)
+                for field_name in changes
+            }
+
         description = self._describe(object_type, object_id, action, changes)
-        return PendingWrite(object_type, object_id, action, dict(changes), user_id, description)
+        return PendingWrite(object_type, object_id, action, dict(changes), user_id,
+                             description, expected_current_values)
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
         request_id = str(uuid.uuid4())
@@ -119,13 +112,29 @@ class WriteMediator:
 
         adapter = self.mediator._adapter_for(pending.object_type)
         type_config = self.mediator._type_schema(pending.object_type)
+        write_limiter = self.mediator._write_limiter_for(pending.object_type)
 
         if pending.action == "update":
-            for field_name, value in pending.changes.items():
-                adapter.write_field(pending.object_type, pending.object_id, field_name, value, type_config)
+            # Per-object lock: the PRIMARY correctness mechanism -- two
+            # writers to the SAME object serialize here; different
+            # objects proceed fully concurrently. Write semaphore:
+            # adapter's own declared capacity exception (e.g. SQLite's
+            # whole-file lock), narrower and separate from correctness.
+            object_lock = self.mediator._lock_for_object(pending.object_type, pending.object_id)
+            with object_lock, write_limiter.limit():
+                success = adapter.write_fields(
+                    pending.object_type, pending.object_id, pending.changes,
+                    pending.expected_current_values, type_config,
+                )
+            if not success:
+                raise ValueError(
+                    f"{pending.object_type} {pending.object_id!r} changed since this "
+                    f"write was proposed -- refresh and retry"
+                )
             new_id = pending.object_id
         else:
-            new_id = adapter.create_object(pending.object_type, pending.changes, type_config)
+            with write_limiter.limit():
+                new_id = adapter.create_object(pending.object_type, pending.changes, type_config)
 
         log_post(request_id, "success", [new_id])
         return {"status": "written", "object_id": new_id}

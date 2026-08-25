@@ -15,6 +15,13 @@ contract. It is purely mechanical -- no security logic, no policy
 judgment. core/ontology/mediator.py's DataMediator is the only caller,
 and only ever calls this after its own checks have already passed.
 
+CONCURRENCY: declares max_concurrent_writes=1 (SQLite's write lock is
+whole-FILE -- see interface.py's docstring for why this is a real,
+honest exception, not the default). Reads and multi-field writes are
+otherwise handled by DataMediator's own per-object lock plus this
+adapter's atomic conditional write_fields() -- see that method's
+docstring for the actual lost-update-prevention mechanism.
+
 Used by: core/deployment_loader.py (constructs one instance per silo
          declared in a deployment's config.yaml)
 """
@@ -42,6 +49,14 @@ def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> di
 
 
 class SQLiteAdapter:
+    # SQLite's write lock is whole-FILE -- coarser than DataMediator's
+    # per-object correctness lock, which is why this is a real, honest
+    # exception rather than None (see interface.py's docstring). Reads
+    # are genuinely fine concurrently -- SQLite handles that natively.
+    max_concurrent_reads = None
+    max_concurrent_writes = 1
+    supports_atomic_conditional_write = True
+
     def __init__(self, connection: dict):
         # connection comes straight from this silo's config.yaml block,
         # e.g. {"path": "dev_fixtures/mediator.db"} -- opaque to
@@ -92,14 +107,31 @@ class SQLiteAdapter:
             )
             return [row[target_id_column] for row in rows]
 
-    def write_field(self, object_type: str, object_id: Any, field_name: str,
-                     value: Any, type_config: dict) -> None:
+    def write_fields(self, object_type: str, object_id: Any, changes: dict,
+                      expected_current_values: dict, type_config: dict) -> bool:
+        # ONE atomic SQL statement -- all fields in `changes` written
+        # together, all-or-nothing, AND conditional on every field in
+        # expected_current_values still matching. If another writer
+        # changed the row in between, the WHERE clause simply matches
+        # nothing: rowcount == 0, we return False, nothing is written.
+        # This is a genuine database-level atomicity guarantee -- holds
+        # even across separate OS processes, not just threads within
+        # this one (see interface.py's supports_atomic_conditional_write
+        # docstring for why that distinction matters).
         table = type_config["table"]
         id_column = type_config["id_column"]
 
+        set_clause = ", ".join(f"{key} = ?" for key in changes)
+        condition_clause = " AND ".join(f"{key} = ?" for key in expected_current_values)
+        where_clause = f"{id_column} = ?" + (f" AND {condition_clause}" if condition_clause else "")
+
         with self._connection() as conn:
-            conn.execute(f"UPDATE {table} SET {field_name} = ? WHERE {id_column} = ?", (value, object_id))
+            cursor = conn.execute(
+                f"UPDATE {table} SET {set_clause} WHERE {where_clause}",
+                (*changes.values(), object_id, *expected_current_values.values()),
+            )
             conn.commit()
+            return cursor.rowcount > 0
 
     def create_object(self, object_type: str, fields: dict, type_config: dict) -> Any:
         table = type_config["table"]

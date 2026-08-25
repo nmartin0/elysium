@@ -18,6 +18,10 @@ class OllamaAdapter:
         self.model = model
         self.base_url = connection["base_url"]
         self.timeout_seconds = connection.get("request_timeout_seconds", 180)
+        # Real capacity limit on THIS hardware -- one local model, one
+        # inference at a time. A hosted API adapter would declare a
+        # much higher number, or None.
+        self.max_concurrent_requests = connection.get("max_concurrent_requests", 1)
 
     def chat(self, system_prompt: str, user_message: str,
               json_mode: bool = False, temperature: float | None = None) -> str:

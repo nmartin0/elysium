@@ -53,6 +53,7 @@ import json
 import logging
 from typing import Callable
 
+from core.concurrency import ConcurrencyLimiter
 from core.llm.agent_step_prompt import next_step
 from core.deployment_loader import build_llm_adapter
 from core.llm.interface import LLMAdapter
@@ -171,6 +172,9 @@ class AgentLoop:
         self.mediator = mediator
         self.tools = tools if tools is not None else []
         self._tools_by_name = {tool.name: tool for tool in self.tools}
+        self._tool_limiters = {
+            tool.name: ConcurrencyLimiter(tool.max_concurrent_calls) for tool in self.tools
+        }
         self.write_mediator = write_mediator
         self.confirm_write = confirm_write
         self.max_hops = max_hops
@@ -255,7 +259,8 @@ class AgentLoop:
                 tool = self._tools_by_name.get(step["tool_name"])
                 if tool is None:
                     raise ValueError(f"Unknown tool: {step['tool_name']!r}")
-                result = tool.run(**step["args"])
+                with self._tool_limiters[tool.name].limit():
+                    result = tool.run(**step["args"])
             elif step["step"] == "propose_write":
                 if self.write_mediator is None or self.confirm_write is None:
                     raise ValueError("Writes are not enabled for this deployment")

@@ -23,6 +23,7 @@ from core.config import load_yaml
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.mediator import DataMediator
 from core.llm.interface import LLMAdapter
+from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from adapters.sqlite_adapter import SQLiteAdapter
 from adapters.ollama_adapter import OllamaAdapter
 
@@ -45,6 +46,7 @@ class DeploymentConfig:
     max_hops: int
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
+    max_concurrent_requests: int   # dispatch-layer thread pool size
     schema: dict
     users: dict
     roles: dict                    # role name -> {"allowed_actions": [...]} -- RBAC
@@ -75,6 +77,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             max_hops=config["agent"]["max_hops"],
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
+            max_concurrent_requests=config["agent"].get("max_concurrent_requests", 4),
             schema=schema_raw["object_types"],
             users=policy_raw["users"],
             roles=policy_raw["roles"],
@@ -92,15 +95,16 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
 
 def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
     # The one place an LLM adapter gets constructed -- used for BOTH the
-    # step-selection and synthesis clients (same provider/connection,
-    # different model name each time).
+    # step-selection and synthesis clients. Always wrapped in
+    # ConcurrencyLimitedLLMAdapter -- concrete adapters never throttle
+    # themselves, core/ enforces uniformly based on what each declares.
     adapter_class = _LLM_ADAPTER_REGISTRY.get(config.llm_provider)
     if adapter_class is None:
         raise ValueError(
             f"Unknown LLM provider {config.llm_provider!r} -- registered "
             f"providers: {sorted(_LLM_ADAPTER_REGISTRY.keys())}"
         )
-    return adapter_class(model, config.llm_connection)
+    return ConcurrencyLimitedLLMAdapter(adapter_class(model, config.llm_connection))
 
 
 def _build_adapters(silo_configs: dict) -> dict[str, DataSiloAdapter]:

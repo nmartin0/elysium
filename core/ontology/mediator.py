@@ -24,12 +24,31 @@ a real behavior change: a user with no role, or a role missing the
 right allowed_actions entry, now gets nothing back from ANY read, where
 previously only the region check gated access.
 
+CONCURRENCY -- two genuinely different mechanisms, not one:
+  1. Per-object lock (_lock_for_object(), below) -- the PRIMARY
+     correctness mechanism. Prevents lost updates: two writers to the
+     SAME object serialize; two writers to DIFFERENT objects proceed
+     fully concurrently, unaffected by each other. This is what
+     actually protects data correctness.
+  2. Adapter-declared write semaphore (via core.concurrency.
+     ConcurrencyLimiter, built from adapter.max_concurrent_writes) --
+     a narrow, honestly-declared EXCEPTION for backends with a real
+     capacity constraint coarser than per-object (SQLite's whole-file
+     write lock is the concrete example). Most adapters declare None
+     here and never need this second mechanism at all.
+A semaphore alone was an earlier, incorrect design -- it only ever
+addressed capacity, never correctness (throttling WHEN writes run does
+nothing about a write acting on data that went stale in between). See
+core/concurrency.py's docstring for the full reasoning.
+
 Used by: scripts/run_deployment.py (via core/deployment_loader.py),
          core/ontology/write_mediator.py, core/memory/guard.py
 """
 
+import threading
 from typing import Any
 
+from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import get_field_info, is_link_field, get_link_target, is_searchable_field
@@ -49,6 +68,26 @@ class DataMediator:
         self.users = users
         self.roles = roles
         self.security_attribute = security_attribute
+
+        # One semaphore per adapter, built from its declared capacity --
+        # None means genuinely unlimited (most adapters), a real number
+        # is the honest exception (SQLite's whole-file write lock).
+        self._write_limiters = {
+            silo_name: ConcurrencyLimiter(adapter.max_concurrent_writes)
+            for silo_name, adapter in adapters.items()
+        }
+
+        # Per-object locks -- KeyedLockManager (core/concurrency.py)
+        # uses dict.setdefault(), atomic per Python's own thread-safety
+        # docs, so no separate guard lock is needed here.
+        self._object_locks = KeyedLockManager()
+
+    def _lock_for_object(self, object_type: str, object_id: Any) -> threading.Lock:
+        return self._object_locks.lock_for((object_type, object_id))
+
+    def _write_limiter_for(self, object_type: str) -> ConcurrencyLimiter:
+        silo_name = self.silo_for_type[object_type]
+        return self._write_limiters[silo_name]
 
     def _adapter_for(self, object_type: str) -> DataSiloAdapter:
         silo_name = self.silo_for_type[object_type]

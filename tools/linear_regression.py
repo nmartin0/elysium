@@ -11,6 +11,7 @@ producing a meaningless result.
 
 class LinearRegressionTool:
     name = "linear_regression"
+    max_concurrent_calls = None  # pure computation, zero shared state
     description = (
         "Fits a least-squares line to paired (x, y) numeric data and "
         "returns slope, intercept, and R-squared (goodness of fit, 0 to 1)."
