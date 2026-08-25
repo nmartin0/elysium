@@ -7,3 +7,10 @@ requests        # HTTP calls to the local Ollama API
 pyyaml          # reading deployment config/schema/policy YAML files
 pytest          # test suite (tests/unit -- fast; tests/integration -- slow, needs Ollama running)
 argon2-cffi     # password hashing for core/auth/ -- argon2id, the current OWASP-recommended algorithm
+fastapi         # api/ -- the HTTP layer
+uvicorn         # ASGI server to actually run api/app.py
+starlette>=1.0.1  # FastAPI's ASGI layer -- pinned: versions before this had a real, disclosed
+                  # authentication-bypass CVE (CVE-2026-48710), fixed in 1.0.1. Since we're
+                  # building an authentication system on top of this, this floor is load-bearing,
+                  # not a routine version bump.
+httpx2          # test-only -- FastAPI's TestClient (tests/integration/test_api.py) requires it
