@@ -1,22 +1,41 @@
-# policy.yaml  (acme_corp-specific -- NOT portable to other orgs)
+# policy.yaml  (acme_corp-specific access policy)
 #
-# Which users exist, their region, and which actions they're allowed to
-# call. security_attribute declares which field on each user record
-# represents the row-level access-control value -- this deployment calls
-# it "region", but another org's policy.yaml could use any attribute
-# name (e.g. "department", "clearance_level") without core/ code caring.
+# TWO independent gates, both required for any access (see
+# core/intermediate_layer/access_control.py's check_access()):
+#
+#   MAC (mandatory, non-negotiable): security_attribute below names
+#   which field on a user record is the row-level boundary -- a user
+#   can NEVER see data outside their own value for this field, no
+#   matter what role they hold.
+#
+#   RBAC (role-based): each user has ONE named role, defined below in
+#   `roles`, whose allowed_actions list controls WHAT KINDS of actions
+#   they may perform within their MAC boundary. Action naming
+#   convention: "read:<ObjectType>" for reads, "write:<ObjectType>"
+#   for writes -- see core/ontology/mediator.py and
+#   core/ontology/write_mediator.py.
 
 security_attribute: region
+
+roles:
+  customer_service:
+    allowed_actions:
+      - read:Customer
+      - read:Transaction
 
 users:
   user_alice:
     region: us-west
-    allowed_actions:
-      - get_customer_transactions
+    role: customer_service
   user_bob:
     region: us-east
-    allowed_actions:
-      - get_customer_transactions
+    role: customer_service
+  # user_carol deliberately has NO role -- she is denied every read,
+  # regardless of her region matching. Before RBAC was actually
+  # enforced on reads, this was the long-documented "KNOWN GAP": she
+  # had allowed_actions: [] in the old flat-list model, but nothing
+  # ever checked it, so she got real data anyway. That gap is now
+  # actually closed -- this is no longer just documentation, it's
+  # enforced.
   user_carol:
     region: eu
-    allowed_actions: []

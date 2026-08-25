@@ -4,7 +4,7 @@ agentic_loop.py  (the agentic loop -- org-agnostic)
 AgentLoop bundles everything that stays FIXED across every query for a
 given deployment -- the LLMAdapter, the DataMediator, and the hop/
 retry limits -- into one object, constructed once. Only run() takes the
-truly per-call arguments (user_security_value, query_text). This used to be a
+truly per-call arguments (user_id, query_text). This used to be a
 single function re-passed all seven of these on every call; per-call
 that's the same "same parameters, many calls" pattern that means a
 class fits better than a function.
@@ -36,12 +36,14 @@ The model sees exactly what was invalid and gets a capped number of
 retries before the loop actually gives up, rather than discarding
 everything gathered so far on the first mistake.
 
-KNOWN GAP (flagged deliberately, not an oversight): this loop does NOT
-go through core/intermediate_layer/gateway.py, so auth.authorize() and
-audit logging are bypassed here for now. Region/security scoping still
-holds -- that enforcement lives inside DataMediator itself, not in
-the gateway. Reconnecting this loop to auth/audit is a real task for
-later, not automatic.
+GAP CLOSED (this used to be documented here as a KNOWN GAP -- worth
+keeping the history visible): every read this loop performs goes
+through DataMediator, which enforces BOTH MAC (region/org boundary) and
+RBAC (role -> allowed_actions) on every object touched, and audits every
+decision via core/intermediate_layer/access_control.py's check_access().
+The old core/intermediate_layer/gateway.py/action_registry.py files,
+which auth/audit were never actually connected to, are gone -- their
+entire purpose is now handled correctly, per-object, inline.
 
 Used by: scripts/run_deployment.py, and directly by
          tests/integration/ (or whatever replaces it)
@@ -227,7 +229,7 @@ class AgentLoop:
         })
         return False, True
 
-    def _execute_step(self, step: dict, user_security_value: str, user_id: str | None,
+    def _execute_step(self, step: dict, user_id: str,
                        gathered: list[dict], consecutive_invalid: int) -> tuple[int, bool]:
         # Runs one search_object/get_field/use_tool/propose_write step,
         # appending the result to `gathered` on success. On a recoverable
@@ -239,15 +241,15 @@ class AgentLoop:
         # failed"), not separately-tracked failure modes. A permission
         # denial reported this way is a UX choice about how the loop
         # informs the model, not a security weakening -- the actual
-        # blocking already happened correctly inside WriteMediator
-        # before this ever runs. Returns (new_consecutive_invalid,
-        # should_stop_loop).
+        # blocking already happened correctly inside DataMediator/
+        # WriteMediator before this ever runs. Returns
+        # (new_consecutive_invalid, should_stop_loop).
         try:
             if step["step"] == "search_object":
-                result = self.mediator.search_object(user_security_value, step["object_type"], step["filter"])
+                result = self.mediator.search_object(user_id, step["object_type"], step["filter"])
             elif step["step"] == "get_field":
                 result = self.mediator.get_field(
-                    user_security_value, step["object_type"], step["object_id"], step["field_name"]
+                    user_id, step["object_type"], step["object_id"], step["field_name"]
                 )
             elif step["step"] == "use_tool":
                 tool = self._tools_by_name.get(step["tool_name"])
@@ -257,8 +259,6 @@ class AgentLoop:
             elif step["step"] == "propose_write":
                 if self.write_mediator is None or self.confirm_write is None:
                     raise ValueError("Writes are not enabled for this deployment")
-                if user_id is None:
-                    raise ValueError("A write was proposed but no user_id was supplied to run()")
                 pending = self.write_mediator.propose_write(
                     user_id, step["object_type"], step.get("object_id"), step["action"], step["changes"]
                 )
@@ -281,7 +281,7 @@ class AgentLoop:
                      f"or finish if you have enough already.",
             )
 
-    def run(self, user_security_value: str, query_text: str, user_id: str | None = None) -> list[dict]:
+    def run(self, user_id: str, query_text: str) -> list[dict]:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # max_hops -- whichever comes first. Returns everything gathered,
@@ -291,11 +291,10 @@ class AgentLoop:
         # _execute_step() -- so this loop reads as a sequence of named
         # decisions rather than one long block.
         #
-        # user_id defaults to None -- every existing caller that never
-        # needed it (no writes enabled) keeps working unchanged; it's
-        # only actually required if the model proposes a write, checked
-        # at that point, not here, so a read-only deployment never needs
-        # to supply it at all.
+        # user_id is now the ONLY identity parameter -- DataMediator
+        # resolves everything else (the MAC security value, the RBAC
+        # role) internally via check_access(). Callers no longer
+        # separately pre-resolve a security value before calling in.
         gathered = []
         seen_signatures = set()
         consecutive_duplicates = 0
@@ -334,7 +333,7 @@ class AgentLoop:
             seen_signatures.add(signature)
 
             consecutive_invalid, should_stop = self._execute_step(
-                step, user_security_value, user_id, gathered, consecutive_invalid
+                step, user_id, gathered, consecutive_invalid
             )
             if should_stop:
                 break

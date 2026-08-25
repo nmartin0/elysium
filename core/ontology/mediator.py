@@ -1,24 +1,28 @@
 """
 mediator.py  (the data-silo router + security enforcer -- generic, org-agnostic)
 
-DataMediator replaces core/ontology/sql_adapter.py's old OntologyEngine.
-The critical difference: OntologyEngine held BOTH the generic security/
-link-traversal logic AND the SQL-specific mechanics in one class. This
-class holds ONLY the generic logic -- every actual fetch is delegated to
-whichever DataSiloAdapter owns the object type in question, resolved via
-silo_for_type (built from each object type's `silo:` key in
-ontology_schema.yaml).
+Takes user_id directly now (not a pre-resolved security value) --
+DataMediator holds users/roles/security_attribute itself and resolves
+everything it needs internally via check_access(), the single canonical
+enforcement point (see core/intermediate_layer/access_control.py).
+Callers no longer need to separately resolve a security value before
+calling in; the whole system is user_id-based end to end.
 
-SECURITY LIVES HERE, STRUCTURALLY -- not by convention. Adapters only
-ever receive a fetch call AFTER _security_allowed() has already passed;
-they have no way to see data a check hasn't cleared, because core/
-simply never asks them for it otherwise.
+TWO gates enforced on EVERY object touched, per hop -- not once at the
+start of a query:
+  1. MAC (region/org boundary) -- _security_allowed(), re-derived live,
+     never trusted from anywhere else.
+  2. RBAC (role -> allowed_actions) -- via check_access(), action
+     convention "read:{object_type}".
+Both logged, allow or deny, via audit.log_access() -- this is what
+makes RBAC enforcement on reads actually auditable, not just present.
 
-v1 SCOPE DECISION: cross-silo links are not supported. If a security
-chain (via_field) or a data link would need to cross from one silo to
-another, this fails loudly with a specific error rather than silently
-querying the wrong adapter or producing a confusing downstream failure.
-Revisit only with a real, specific need -- see design conversation.
+Replaces the old OntologyEngine (pre-adapter-split) and, before that,
+had NO RBAC at all -- only the MAC check. Extending RBAC to reads was a
+deliberate decision made explicitly, not a silent default, because it's
+a real behavior change: a user with no role, or a role missing the
+right allowed_actions entry, now gets nothing back from ANY read, where
+previously only the region check gated access.
 
 Used by: scripts/run_deployment.py (via core/deployment_loader.py),
          core/ontology/write_mediator.py, core/memory/guard.py
@@ -26,18 +30,25 @@ Used by: scripts/run_deployment.py (via core/deployment_loader.py),
 
 from typing import Any
 
+from core.intermediate_layer.access_control import check_access
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import get_field_info, is_link_field, get_link_target, is_searchable_field
 
 
 class DataMediator:
-    def __init__(self, schema: dict, adapters: dict[str, DataSiloAdapter], silo_for_type: dict[str, str]):
+    def __init__(self, schema: dict, adapters: dict[str, DataSiloAdapter], silo_for_type: dict[str, str],
+                 users: dict, roles: dict, security_attribute: str):
         # schema: the full ontology schema (object types/fields/security).
         # adapters: silo NAME -> adapter instance (e.g. "primary_sql" -> SQLiteAdapter(...)).
         # silo_for_type: object TYPE -> silo name (e.g. "Customer" -> "primary_sql").
+        # users/roles/security_attribute: everything check_access() needs
+        # to enforce MAC+RBAC on every read this mediator ever performs.
         self.schema = schema
         self.adapters = adapters
         self.silo_for_type = silo_for_type
+        self.users = users
+        self.roles = roles
+        self.security_attribute = security_attribute
 
     def _adapter_for(self, object_type: str) -> DataSiloAdapter:
         silo_name = self.silo_for_type[object_type]
@@ -63,6 +74,9 @@ class DataMediator:
         # Resolves the row-level security value for one object, following
         # a via_field link if this object type doesn't hold it directly.
         # Assumes security chains terminate (no circular via_field refs).
+        # PURE MAC mechanics only -- no RBAC, no audit logging here; this
+        # is a low-level helper check_access() calls, not a public entry
+        # point of its own.
         type_schema = self._type_schema(object_type)
         security = type_schema["security"]
         adapter = self._adapter_for(object_type)
@@ -83,9 +97,9 @@ class DataMediator:
         raise ValueError(f"No security resolution declared for object_type {object_type!r}")
 
     def _security_allowed(self, object_type: str, object_id: Any, requesting_user_security_value: str) -> bool:
-        # The per-hop enforcement check. Re-run on every object touched --
-        # by search_object() for every candidate, and by get_field() before
-        # reading any field -- so a link hop can never bypass this boundary.
+        # The MAC check specifically -- called by check_access(), not
+        # meant to be called directly by anything outside this module
+        # and core/intermediate_layer/access_control.py.
         security_value = self._get_security_value(object_type, object_id)
         return security_value is not None and security_value == requesting_user_security_value
 
@@ -97,10 +111,10 @@ class DataMediator:
                 columns.add(field_name)
         return columns
 
-    def search_object(self, requesting_user_security_value: str, object_type: str, criteria: dict) -> list:
+    def search_object(self, user_id: str, object_type: str, criteria: dict) -> list:
         # Finds object(s) of one type matching search criteria, returns
-        # only their IDs -- and only the ones the requesting user is
-        # allowed to see.
+        # only their IDs -- and only the ones check_access() (MAC+RBAC,
+        # audited) allows for this user.
         type_schema = self._type_schema(object_type)
 
         valid_columns = self._filterable_columns(object_type)
@@ -112,19 +126,23 @@ class DataMediator:
 
         adapter = self._adapter_for(object_type)
         candidate_ids = adapter.find_ids(object_type, criteria, type_schema)
+        action = f"read:{object_type}"
 
         return [
             candidate_id for candidate_id in candidate_ids
-            if self._security_allowed(object_type, candidate_id, requesting_user_security_value)
+            if check_access(self, self.users, self.roles, self.security_attribute,
+                             user_id, object_type, candidate_id, action)
         ]
 
-    def get_field(self, requesting_user_security_value: str, object_type: str, object_id: Any, field_name: str):
+    def get_field(self, user_id: str, object_type: str, object_id: Any, field_name: str):
         # Returns one field's value. If it's a link field, the value is
         # another object's ID (or list of IDs for a reverse link).
         field_info = get_field_info(self.schema, object_type, field_name)
         type_schema = self._type_schema(object_type)
+        action = f"read:{object_type}"
 
-        if not self._security_allowed(object_type, object_id, requesting_user_security_value):
+        if not check_access(self, self.users, self.roles, self.security_attribute,
+                             user_id, object_type, object_id, action):
             return None
 
         adapter = self._adapter_for(object_type)

@@ -47,7 +47,8 @@ class DeploymentConfig:
     max_consecutive_invalid_steps: int
     schema: dict
     users: dict
-    security_attribute: str
+    roles: dict                    # role name -> {"allowed_actions": [...]} -- RBAC
+    security_attribute: str         # MAC -- e.g. "region"
     silo_configs: dict          # silo name -> {"adapter": ..., "connection": {...}}
     enabled_tools: list[str]      # from config.yaml tools.enabled -- GENUINELY optional,
                                    # unlike everything else here (see load_deployment())
@@ -76,6 +77,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
             schema=schema_raw["object_types"],
             users=policy_raw["users"],
+            roles=policy_raw["roles"],
             security_attribute=policy_raw["security_attribute"],
             silo_configs=config["data_silos"],
             enabled_tools=enabled_tools,
@@ -137,7 +139,8 @@ def load_deployment_bundle(deployment_dir: Path) -> tuple[DeploymentConfig, Data
 
     adapters = _build_adapters(resolved_silo_configs)
     silo_for_type = _build_silo_for_type(config.schema)
-    mediator = DataMediator(config.schema, adapters, silo_for_type)
+    mediator = DataMediator(config.schema, adapters, silo_for_type,
+                             config.users, config.roles, config.security_attribute)
     return config, mediator
 
 

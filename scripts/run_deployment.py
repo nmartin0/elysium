@@ -17,7 +17,6 @@ from pathlib import Path
 
 from core.agent.agentic_loop import AgentLoop
 from core.deployment_loader import load_deployment_bundle, load_example_queries, build_llm_adapter
-from core.intermediate_layer.auth import get_user_security_value
 from core.llm.synthesis_prompt import synthesize_insight
 from core.logging_config import configure_logging
 from core.ontology.write_mediator import WriteMediator, PendingWrite
@@ -41,12 +40,12 @@ def run_deployment(deployment_name: str) -> None:
     config, mediator = load_deployment_bundle(deployment_dir)
     examples = load_example_queries(deployment_dir)
 
-    # Always wired up -- the actual gate is policy.yaml's allowed_actions,
-    # not whether write plumbing exists. A deployment granting no user
-    # any write: permission (acme_corp's default) simply sees every
+    # Always wired up -- the actual gate is policy.yaml's roles, not
+    # whether write plumbing exists. A deployment granting no role any
+    # write: permission (acme_corp's default) simply sees every
     # proposed write denied via the same PermissionError path already
     # covered by tests/unit/test_write_mediator.py -- harmless either way.
-    write_mediator = WriteMediator(mediator, config.users, config.security_attribute)
+    write_mediator = WriteMediator(mediator, config.users, config.roles, config.security_attribute)
     loop = AgentLoop.from_deployment(
         config, mediator, write_mediator=write_mediator, confirm_write=_terminal_confirm_write
     )
@@ -57,12 +56,18 @@ def run_deployment(deployment_name: str) -> None:
         query_text = example["query"]
         print(f"--- {query_text!r} (as {user_id}) ---")
 
-        user_security_value = get_user_security_value(config.users, user_id, config.security_attribute)
-        if user_security_value is None:
-            print("Unknown user -- no security attribute on record.\n")
+        # Pure UX courtesy, not a security check -- the real enforcement
+        # happens inside DataMediator regardless. Just avoids running a
+        # full (potentially multi-minute) agent loop for a user_id
+        # that's obviously not even in policy.yaml at all.
+        if user_id not in config.users:
+            print("Unknown user -- not in policy.yaml.\n")
             continue
 
-        gathered = loop.run(user_security_value, query_text, user_id=user_id)
+        # No separate security-value resolution needed anymore --
+        # DataMediator resolves both the MAC value and the RBAC role
+        # internally, per object, via check_access().
+        gathered = loop.run(user_id, query_text)
         real_data = AgentLoop.filter_real_data(gathered)
 
         insight = synthesize_insight(synthesis_client, query_text, real_data)
