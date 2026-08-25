@@ -49,11 +49,13 @@ Used by: scripts/run_deployment.py, and directly by
 
 import json
 import logging
+from typing import Callable
 
 from core.llm.agent_step_prompt import next_step
 from core.deployment_loader import build_llm_adapter
 from core.llm.interface import LLMAdapter
 from core.ontology.mediator import DataMediator
+from core.ontology.write_mediator import WriteMediator, PendingWrite
 from core.tools.interface import Tool
 from core.tools.registry import get_enabled_tools
 
@@ -73,6 +75,19 @@ def _step_signature(step: dict):
         # (sort_keys=True for determinism) handles nested lists/dicts
         # safely and still produces a stable, hashable signature.
         return ("use_tool", step["tool_name"], json.dumps(step["args"], sort_keys=True))
+    if step["step"] == "propose_write":
+        # Same unhashable-values concern as use_tool -- changes can
+        # contain arbitrary values. Deliberately NOT deduplicating
+        # identical write proposals across a whole run() the way other
+        # steps are -- a user might legitimately want to update the
+        # same object twice with different values in one conversation.
+        # This only catches an EXACT repeat (same object, same action,
+        # same literal changes), which is still worth blocking (almost
+        # certainly a stuck model, not an intentional double-write).
+        return (
+            "propose_write", step["object_type"], step.get("object_id"),
+            step["action"], json.dumps(step["changes"], sort_keys=True),
+        )
     return None
 
 
@@ -134,6 +149,8 @@ class AgentLoop:
     })
 
     def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Tool] | None = None,
+                 write_mediator: WriteMediator | None = None,
+                 confirm_write: Callable[[PendingWrite], bool] | None = None,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
                  max_consecutive_invalid_steps: int = 2):
         # These stay fixed across every query this loop instance ever
@@ -143,25 +160,41 @@ class AgentLoop:
         # [] default would be created ONCE at function definition and
         # silently shared across every AgentLoop that didn't pass its
         # own tools list.
+        #
+        # write_mediator/confirm_write default to None/None -- writes
+        # are OPT-IN, unlike data/LLM/tools which every deployment
+        # needs. Both None means this loop simply never proposes writes
+        # (see agent_step_prompt.py's writes_enabled flag).
         self.client = client
         self.mediator = mediator
         self.tools = tools if tools is not None else []
         self._tools_by_name = {tool.name: tool for tool in self.tools}
+        self.write_mediator = write_mediator
+        self.confirm_write = confirm_write
         self.max_hops = max_hops
         self.max_consecutive_duplicates = max_consecutive_duplicates
         self.max_consecutive_invalid_steps = max_consecutive_invalid_steps
 
     @classmethod
-    def from_deployment(cls, deployment, mediator: DataMediator) -> "AgentLoop":
+    def from_deployment(cls, deployment, mediator: DataMediator,
+                         write_mediator: WriteMediator | None = None,
+                         confirm_write: Callable[[PendingWrite], bool] | None = None) -> "AgentLoop":
         # The standard way every caller should build an AgentLoop -- one
         # authoritative place reading deployment.max_hops etc., instead
         # of every call site (scripts/run_deployment.py, integration
         # tests) separately copy-pasting the same construction and
         # risking drift if a new tuning parameter is ever added.
+        # write_mediator/confirm_write are NOT built here automatically
+        # (unlike tools) -- constructing a WriteMediator needs a real
+        # confirm_write implementation (a terminal prompt, a UI callback,
+        # etc.) that only the caller can supply; a caller not passing
+        # them gets a loop with writes fully disabled, which is the
+        # correct default.
         client = build_llm_adapter(deployment, deployment.step_model)
         tools = get_enabled_tools(deployment.enabled_tools)
         return cls(
             client, mediator, tools=tools,
+            write_mediator=write_mediator, confirm_write=confirm_write,
             max_hops=deployment.max_hops,
             max_consecutive_duplicates=deployment.max_consecutive_duplicates,
             max_consecutive_invalid_steps=deployment.max_consecutive_invalid_steps,
@@ -194,16 +227,20 @@ class AgentLoop:
         })
         return False, True
 
-    def _execute_step(self, step: dict, user_security_value: str,
+    def _execute_step(self, step: dict, user_security_value: str, user_id: str | None,
                        gathered: list[dict], consecutive_invalid: int) -> tuple[int, bool]:
-        # Runs one search_object/get_field/use_tool step, appending the
-        # result to `gathered` on success. On a recoverable failure
-        # (ValueError from mediator/tool validation, or TypeError from a
-        # tool called with the wrong argument names), hands off to the
-        # shared recoverable-mistake handler -- a tool execution failure
-        # is treated as the SAME conceptual event as an invalid schema
-        # step ("the model attempted an action and it failed"), not a
-        # separately-tracked failure mode. Returns (new_consecutive_invalid,
+        # Runs one search_object/get_field/use_tool/propose_write step,
+        # appending the result to `gathered` on success. On a recoverable
+        # failure (ValueError from mediator/tool validation, TypeError
+        # from a tool called with wrong argument names, or PermissionError
+        # from a denied write proposal), hands off to the shared
+        # recoverable-mistake handler -- ALL of these are the SAME
+        # conceptual event ("the model attempted an action and it
+        # failed"), not separately-tracked failure modes. A permission
+        # denial reported this way is a UX choice about how the loop
+        # informs the model, not a security weakening -- the actual
+        # blocking already happened correctly inside WriteMediator
+        # before this ever runs. Returns (new_consecutive_invalid,
         # should_stop_loop).
         try:
             if step["step"] == "search_object":
@@ -217,12 +254,22 @@ class AgentLoop:
                 if tool is None:
                     raise ValueError(f"Unknown tool: {step['tool_name']!r}")
                 result = tool.run(**step["args"])
+            elif step["step"] == "propose_write":
+                if self.write_mediator is None or self.confirm_write is None:
+                    raise ValueError("Writes are not enabled for this deployment")
+                if user_id is None:
+                    raise ValueError("A write was proposed but no user_id was supplied to run()")
+                pending = self.write_mediator.propose_write(
+                    user_id, step["object_type"], step.get("object_id"), step["action"], step["changes"]
+                )
+                approved = self.confirm_write(pending)
+                result = self.write_mediator.confirm_and_execute(pending, approved)
             else:
                 return consecutive_invalid, True  # shouldn't happen -- agent_step_prompt already validates this
 
             gathered.append({**step, "result": result})
             return 0, False
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError, PermissionError) as e:
             return _handle_recoverable_mistake(
                 gathered, consecutive_invalid, self.max_consecutive_invalid_steps,
                 detail=f"{step} -- {e}",
@@ -234,7 +281,7 @@ class AgentLoop:
                      f"or finish if you have enough already.",
             )
 
-    def run(self, user_security_value: str, query_text: str) -> list[dict]:
+    def run(self, user_security_value: str, query_text: str, user_id: str | None = None) -> list[dict]:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # max_hops -- whichever comes first. Returns everything gathered,
@@ -243,17 +290,24 @@ class AgentLoop:
         # executing) is its own method -- _handle_finish_attempt() and
         # _execute_step() -- so this loop reads as a sequence of named
         # decisions rather than one long block.
+        #
+        # user_id defaults to None -- every existing caller that never
+        # needed it (no writes enabled) keeps working unchanged; it's
+        # only actually required if the model proposes a write, checked
+        # at that point, not here, so a read-only deployment never needs
+        # to supply it at all.
         gathered = []
         seen_signatures = set()
         consecutive_duplicates = 0
         consecutive_invalid = 0
         asymmetry_nudged = False
+        writes_enabled = self.write_mediator is not None and self.confirm_write is not None
 
         # `_` is idiomatic Python for "intentionally unused loop variable"
         # -- max_hops caps how many times this can run, but the count
         # itself is never read inside the loop.
         for _ in range(1, self.max_hops + 1):
-            step = next_step(self.client, query_text, self.mediator.schema, gathered, self.tools)
+            step = next_step(self.client, query_text, self.mediator.schema, gathered, self.tools, writes_enabled)
 
             if step["step"] == "finish":
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)
@@ -280,7 +334,7 @@ class AgentLoop:
             seen_signatures.add(signature)
 
             consecutive_invalid, should_stop = self._execute_step(
-                step, user_security_value, gathered, consecutive_invalid
+                step, user_security_value, user_id, gathered, consecutive_invalid
             )
             if should_stop:
                 break

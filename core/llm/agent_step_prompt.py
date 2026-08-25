@@ -102,7 +102,7 @@ def _describe_tools(tools: list[Tool]) -> str:
     return "\n".join(blocks)
 
 
-def _build_system_prompt(schema: dict, tools: list[Tool]) -> str:
+def _build_system_prompt(schema: dict, tools: list[Tool], writes_enabled: bool) -> str:
     tools_section = ""
     if tools:
         tools_section = f"""
@@ -114,11 +114,26 @@ You also have access to these computational tools:
 To use one:
   {{"step": "use_tool", "tool_name": "<name>", "args": {{...}}}}
 """
+    writes_section = ""
+    if writes_enabled:
+        writes_section = """
+
+You may also propose a WRITE to update an existing object, or create a
+new one. A write only takes effect after a human explicitly confirms
+it -- propose one only when the question genuinely calls for changing
+data, never merely to answer a question.
+
+To propose updating an existing object:
+  {"step": "propose_write", "object_type": "<type>", "object_id": "<id>", "action": "update", "changes": {"<field>": "<new_value>"}}
+
+To propose creating a new object:
+  {"step": "propose_write", "object_type": "<type>", "action": "create", "changes": {"<field>": "<value>", ...}}
+"""
     return f"""You gather information step by step to answer a question,
 using ONLY these object types and fields:
 
 {_describe_schema(schema)}
-{tools_section}
+{tools_section}{writes_section}
 At each step, respond with ONLY one JSON object, in one of these shapes:
 
 To find object(s) by any of their searchable fields listed above:
@@ -164,7 +179,7 @@ a list and silently skip others.
 
 
 def next_step(client: LLMAdapter, query_text: str, schema: dict,
-              gathered_so_far: list[dict], tools: list[Tool]) -> dict:
+              gathered_so_far: list[dict], tools: list[Tool], writes_enabled: bool) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that
     # object_type/field_name are real entries in the ontology schema
@@ -173,6 +188,8 @@ def next_step(client: LLMAdapter, query_text: str, schema: dict,
     # closed (returns finish) on ANY uncertainty -- malformed JSON, an
     # unrecognized step, missing keys. tools is required (not defaulted
     # to []) to avoid the classic Python mutable-default-argument trap.
+    # writes_enabled is likewise required, not defaulted -- an explicit
+    # capability flag, not something to silently infer.
     user_message = (
         f"Question: {query_text}\n\n"
         f"Gathered so far: {json.dumps(gathered_so_far)}\n\n"
@@ -181,7 +198,7 @@ def next_step(client: LLMAdapter, query_text: str, schema: dict,
 
     try:
         raw_content = client.chat(
-            _build_system_prompt(schema, tools), user_message,
+            _build_system_prompt(schema, tools, writes_enabled), user_message,
             json_mode=True, temperature=0,
         )
         parsed = json.loads(raw_content)
@@ -217,6 +234,25 @@ def next_step(client: LLMAdapter, query_text: str, schema: dict,
             logger.warning("malformed use_tool step, finishing")
             return FINISH_STEP
         return {"step": "use_tool", "tool_name": parsed["tool_name"], "args": parsed["args"]}
+
+    if step == "propose_write":
+        required = {"object_type", "action", "changes"}
+        if not required.issubset(parsed.keys()):
+            logger.warning("malformed propose_write step, finishing")
+            return FINISH_STEP
+        if parsed["action"] not in ("update", "create"):
+            logger.warning(f"invalid write action {parsed['action']!r}, finishing")
+            return FINISH_STEP
+        if parsed["action"] == "update" and "object_id" not in parsed:
+            logger.warning("propose_write update missing object_id, finishing")
+            return FINISH_STEP
+        return {
+            "step": "propose_write",
+            "object_type": parsed["object_type"],
+            "object_id": parsed.get("object_id"),
+            "action": parsed["action"],
+            "changes": parsed["changes"],
+        }
 
     logger.warning(f"unrecognized step {step!r}, finishing")
     return FINISH_STEP
