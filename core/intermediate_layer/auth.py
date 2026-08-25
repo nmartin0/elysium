@@ -11,7 +11,7 @@ Three functions:
     security_attribute names.
 
 This file only knows the SHAPE user/role data must have, never its
-actual contents -- that's deployments/<org>/policy.yaml's job.
+actual contents -- that's deployment/policy.yaml's job.
 
 RBAC and MAC are DELIBERATELY separate checks, never merged into one
 function here -- core/intermediate_layer/access_control.py's

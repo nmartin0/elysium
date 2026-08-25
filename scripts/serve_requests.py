@@ -1,5 +1,6 @@
 """
-serve_requests.py  (generic dispatch layer -- proves concurrent safety)
+serve_requests.py  (single-tenant -- always dispatches against the one
+deployment/ folder; proves concurrent safety)
 
 Dispatches multiple (user_id, query_text) requests concurrently via a
 thread pool, sized from config.max_concurrent_requests. This is NOT a
@@ -19,11 +20,13 @@ from pathlib import Path
 from core.agent.agentic_loop import AgentLoop
 from core.deployment_loader import load_deployment_bundle
 
+DEPLOYMENT_DIR = Path("deployment")
 
-def serve(deployment_name: str, requests: list[tuple[str, str]]) -> list[list[dict]]:
+
+def serve(requests: list[tuple[str, str]]) -> list[list[dict]]:
     # requests: list of (user_id, query_text) pairs, dispatched concurrently.
     # Returns each request's raw gathered result, same order as input.
-    config, mediator = load_deployment_bundle(Path("deployments") / deployment_name)
+    config, mediator = load_deployment_bundle(DEPLOYMENT_DIR)
     loop = AgentLoop.from_deployment(config, mediator)
 
     with ThreadPoolExecutor(max_workers=config.max_concurrent_requests) as executor:

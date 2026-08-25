@@ -9,7 +9,7 @@ calling module's own name -- e.g. "core.agent.agentic_loop" -- so no manual
 tagging is needed anywhere once this is configured.
 
 Called once, at the start of a real entry point (e.g.
-deployments/<org>/test_run.py). Library code (agentic_loop.py, etc.) never
+scripts/run_deployment.py). Library code (agentic_loop.py, etc.) never
 calls this itself -- it just does logging.getLogger(__name__) and lets
 whoever configured logging decide the format/level/destination.
 """

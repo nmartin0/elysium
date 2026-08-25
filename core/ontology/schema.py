@@ -2,18 +2,18 @@
 schema.py  (generic schema introspection -- org-agnostic)
 
 Given a deployment's own schema dict (loaded from
-deployments/<org>/ontology_schema.yaml via core/deployment_loader.py),
+deployment/ontology_schema.yaml via core/deployment_loader.py),
 answers questions about object types and fields: does this field exist,
 is it a link or plain data, what does a link point to, and which field
 is the object's identifier.
 
-No SQL, no table names, no acme_corp knowledge -- this file only knows
-the SHAPE a schema dict must have. Pure, stateless functions on purpose:
-core/ontology/sql_adapter.py's OntologyEngine class holds the schema as
-instance state and calls these; wrapping these in their own class too
-would just be indirection with no real payoff.
+No SQL, no table names, no org-specific knowledge -- this file only
+knows the SHAPE a schema dict must have. Pure, stateless functions on
+purpose: core/ontology/mediator.py's DataMediator class holds the
+schema as instance state and calls these; wrapping these in their own
+class too would just be indirection with no real payoff.
 
-Used by: core/ontology/sql_adapter.py, and core/llm/agent_step_prompt.py
+Used by: core/ontology/mediator.py, and core/llm/agent_step_prompt.py
          (specifically is_searchable_field() -- see its own docstring)
 """
 
@@ -57,8 +57,8 @@ def is_searchable_field(field_info: dict) -> bool:
     # object's own table). A reverse link (cardinality "many") is NOT
     # searchable -- it's a computed relationship, not a real column.
     #
-    # Single source of truth for this rule: both core/ontology/sql_adapter.py
-    # (deciding what a real SQL query may filter by) and
+    # Single source of truth for this rule: both core/ontology/mediator.py
+    # (deciding what a real query may filter by) and
     # core/llm/agent_step_prompt.py (deciding what to tell the LLM it may
     # search by) call this -- previously each computed the same rule
     # independently, which risked the two drifting out of sync.

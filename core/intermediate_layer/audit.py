@@ -31,7 +31,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-LOG_PATH = Path(__file__).resolve().parent.parent.parent / "logs" / "audit.log"
+LOG_PATH = Path(__file__).resolve().parent.parent.parent / "deployment" / "logs" / "audit.log"
 
 
 def _write(entry: dict) -> None:

@@ -2,15 +2,15 @@
 conftest.py  (shared pytest fixtures)
 
 Unit tests get their own ISOLATED temp SQLite database, never the real
-deployments/acme_corp/dev_fixtures/mediator.db -- that file is for your
+deployment/dev_fixtures/mediator.db -- that file is for your
 own manual exploration, and a test suite that depends on its exact
 current contents would be fragile and could interfere with what you're
 doing by hand.
 
 They also use a self-contained, made-up schema (Author/Book, not
 Customer/Transaction) -- this is deliberate: it proves core/ontology's
-logic is genuinely generic, not accidentally coupled to acme_corp's
-specific domain.
+logic is genuinely generic, not accidentally coupled to the real
+deployment's specific domain.
 """
 
 import sqlite3
