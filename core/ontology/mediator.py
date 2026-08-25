@@ -81,20 +81,22 @@ class DataMediator:
             raise ValueError(f"Unknown object_type: {object_type}")
         return type_schema
 
-    def _assert_same_silo(self, object_type: str, target_type: str, context: str) -> None:
-        if self.silo_for_type[object_type] != self.silo_for_type[target_type]:
-            raise ValueError(
-                f"{context} from {object_type!r} crosses into {target_type!r}, "
-                f"which lives in a different data silo -- cross-silo "
-                f"resolution isn't supported yet."
-            )
-
     def _get_security_value(self, object_type: str, object_id: Any) -> Any:
         # Resolves the row-level security value for one object, following
         # a via_field link if this object type doesn't hold it directly.
         # PURE MAC mechanics -- a mechanical internal lookup core/ needs
         # to make ITS OWN decision, not something gated by the acting
         # user's own field-level permissions.
+        #
+        # A via_field link CAN legitimately cross into a different data
+        # silo -- e.g. a PayrollRecord (silo B) whose security chain
+        # inherits an Employee's (silo A) department. This just works:
+        # the recursive call below re-resolves _adapter_for(target_type)
+        # fresh, from that type's OWN silo declaration, exactly the same
+        # as the top of THIS call did for object_type -- nothing here
+        # assumes the target lives in the same database as the source.
+        # Proven with a real cross-database test, not just reasoned
+        # about -- see tests/unit/test_cross_silo_links.py.
         type_schema = self._type_schema(object_type)
         security = type_schema["security"]
         adapter = self._adapter_for(object_type)
@@ -109,7 +111,6 @@ class DataMediator:
                 return None
 
             target_type = type_schema["fields"][via_field]["target"]
-            self._assert_same_silo(object_type, target_type, "Security chain")
             return self._get_security_value(target_type, linked_id)
 
         raise ValueError(f"No security resolution declared for object_type {object_type!r}")
@@ -204,12 +205,22 @@ class DataMediator:
         if field_info is None:
             return None
 
-        adapter = self._adapter_for(object_type)
-
         if is_link_field(field_info) and field_info.get("cardinality") == "many":
+            # A reverse link's via_table almost always physically lives
+            # in the TARGET type's own database, not the source's --
+            # it's typically the target's own table, holding a foreign
+            # key back to the source. So this query must run against
+            # the TARGET's adapter, not the source object's adapter --
+            # querying the source's adapter here was a real bug (not
+            # just an overcautious guard) until this fix: it would
+            # raise "no such table" the moment source and target lived
+            # in different silos, since the via_table simply doesn't
+            # exist in the source's own database. Proven with a real
+            # cross-database test -- see tests/unit/test_cross_silo_links.py.
             target_type = get_link_target(field_info)
-            self._assert_same_silo(object_type, target_type, "Reverse link")
+            target_adapter = self._adapter_for(target_type)
             target_id_column = self.schema[target_type]["id_column"]
-            return adapter.resolve_reverse_link(object_id, field_info, target_id_column)
+            return target_adapter.resolve_reverse_link(object_id, field_info, target_id_column)
 
+        adapter = self._adapter_for(object_type)
         return adapter.get_raw_field(object_type, object_id, field_name, type_schema)

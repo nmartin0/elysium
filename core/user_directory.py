@@ -22,7 +22,26 @@ a real login credential, atomically, in ONE transaction -- deliberately
 NOT two separate calls. If these were independent operations, a crash
 between them could leave an orphaned credential (can log in, no
 permissions) or an orphaned directory entry (has permissions, can't
-log in). One connection, one commit, both or neither.
+log in). One connection, one commit, both or neither. delete_user()
+mirrors this same discipline in reverse -- users, credentials, AND
+sessions all cleared in one transaction, so a deleted account can
+never be left with a still-valid session token, even if the process
+crashed mid-operation.
+
+disable_user() ALSO invalidates every existing session for that
+username, in the SAME transaction as flipping the flag -- belt and
+suspenders. The per-request check in api/auth_dependency.py (querying
+this flag fresh on every request, before a UserRecord is ever
+resolved) already means a disabled account's existing session would be
+rejected on its very next use regardless; clearing sessions here too
+means there's no reliance on exactly one check point holding correctly
+forever.
+
+`disabled` is DELIBERATELY kept OUT of UserRecord (core/
+intermediate_layer/auth.py) entirely -- UserRecord is a pure
+authorization snapshot (role + MAC value); account status is a
+different KIND of fact, checked once, up front, before authorization
+is even resolved, not folded into the same object.
 
 get_user_record() returns a real UserRecord (see core/
 intermediate_layer/auth.py) -- ALWAYS, even for an unknown username
@@ -30,12 +49,13 @@ intermediate_layer/auth.py) -- ALWAYS, even for an unknown username
 resolve_user_record() (the policy.yaml-backed equivalent) already
 follows.
 
-Used by: the future api/ layer (root-only routes, gated by the caller
-         checking authorize(caller_record, roles, "manage:users")
-         BEFORE ever calling create_user() -- this module does not
-         check that itself; gatekeeping stays at the boundary, not
-         duplicated internally, same pattern as every other layer in
-         this project).
+Used by: api/routes.py (root-only routes, gated by the caller checking
+         authorize(caller_record, roles, "manage:users") BEFORE ever
+         calling any of these -- this module does not check that
+         itself; gatekeeping stays at the boundary, not duplicated
+         internally, same pattern as every other layer in this
+         project), api/auth_dependency.py (is_user_disabled(), on
+         every authenticated request)
 """
 
 import sqlite3
@@ -90,3 +110,84 @@ def get_user_record(db_path: Path, username: str) -> UserRecord:
         return UserRecord(username, None, None)
 
     return UserRecord(username, row["mac_value"], row["role_name"])
+
+
+def is_user_disabled(db_path: Path, username: str) -> bool:
+    # False for an unknown username too -- "doesn't exist" and
+    # "disabled" are different facts, and this function only answers
+    # the second one. A caller checking identity should already be
+    # handling the "doesn't exist" case via get_user_record()'s own
+    # empty-record contract.
+    with connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT disabled FROM users WHERE username = ?", (username,)
+        ).fetchone()
+
+    if row is None:
+        return False
+
+    return bool(row["disabled"])
+
+
+def user_exists(db_path: Path, username: str) -> bool:
+    # Distinct from checking get_user_record().role_name is not None --
+    # a real user CAN legitimately have no role assigned, so that check
+    # alone can't tell "unknown username" apart from "known username,
+    # no role." Used where that distinction has real practical value
+    # (e.g. an admin debugging tool telling a typo apart from a
+    # genuinely empty result) -- not a security-sensitive check, so
+    # uniform-denial doesn't apply here.
+    with connection(db_path) as conn:
+        row = conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone()
+    return row is not None
+
+
+def list_users(db_path: Path) -> list[dict]:
+    # Non-sensitive account metadata ONLY -- username, MAC value, role,
+    # disabled status. NEVER password hashes; core/auth/credential_store.py's
+    # table isn't touched here at all. Safe to expose directly to an
+    # admin UI (see api/routes.py's GET /users, gated by manage:users
+    # same as every other account-management route).
+    with connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT username, mac_value, role_name, disabled FROM users ORDER BY username"
+        ).fetchall()
+
+    return [
+        {
+            "username": row["username"],
+            "mac_value": row["mac_value"],
+            "role_name": row["role_name"],
+            "disabled": bool(row["disabled"]),
+        }
+        for row in rows
+    ]
+
+
+def disable_user(db_path: Path, username: str) -> None:
+    with connection(db_path) as conn:
+        cursor = conn.execute("UPDATE users SET disabled = 1 WHERE username = ?", (username,))
+        # Same transaction, same commit -- see module docstring for
+        # why this isn't a separate invalidate_all_sessions() call.
+        conn.execute("DELETE FROM sessions WHERE username = ?", (username,))
+        conn.commit()
+        if cursor.rowcount == 0:
+            raise ValueError(f"User {username!r} does not exist")
+
+
+def enable_user(db_path: Path, username: str) -> None:
+    with connection(db_path) as conn:
+        cursor = conn.execute("UPDATE users SET disabled = 0 WHERE username = ?", (username,))
+        conn.commit()
+        if cursor.rowcount == 0:
+            raise ValueError(f"User {username!r} does not exist")
+
+
+def delete_user(db_path: Path, username: str) -> None:
+    with connection(db_path) as conn:
+        cursor = conn.execute("DELETE FROM users WHERE username = ?", (username,))
+        conn.execute("DELETE FROM credentials WHERE username = ?", (username,))
+        conn.execute("DELETE FROM sessions WHERE username = ?", (username,))
+        conn.commit()
+        if cursor.rowcount == 0:
+            raise ValueError(f"User {username!r} does not exist")

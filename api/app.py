@@ -54,17 +54,32 @@ approach was the earlier design; it meant tests could (and once did)
 corrupt the real, shipped demo data. A real app instance per test,
 built from a real but disposable fixture, makes that structurally
 impossible instead of relying on careful cleanup.
+
+STATIC UI SERVING: if ui/dist exists (a built React app -- see ui/'s
+own README), it's mounted at "/" and served by this SAME process --
+one systemd unit, not a separate static host, matching this project's
+"minimal ops burden" philosophy (see install/install.sh). Registered
+AFTER the API router, not before -- Starlette matches routes in
+registration order, so every real API path is matched by the router
+first; the static mount only ever handles what's left over. Mounting
+is CONDITIONAL, not required -- a checkout where nobody's run
+`npm run build` yet still runs correctly as a pure API backend; only a
+real install (which does build the UI) gets it served automatically.
 """
 
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from core.agent.agentic_loop import AgentLoop
 from core.deployment_loader import build_llm_adapter, load_deployment_bundle, resolve_runtime_paths, RuntimePaths
 from core.intermediate_layer.audit import configure_audit_log
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
+
+UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
 
 
 def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
@@ -89,6 +104,9 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
 
     from api.routes import router
     app.include_router(router)
+
+    if UI_DIST_DIR.is_dir():
+        app.mount("/", StaticFiles(directory=UI_DIST_DIR, html=True), name="ui")
 
     return app
 

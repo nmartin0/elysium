@@ -60,6 +60,36 @@ field comparisons. Any mismatch refuses the whole response -- 409
 Conflict, distinct from 401 (never authenticated) or 403 (never had
 permission at all).
 
+/logout-all revokes EVERY session for the calling user (self-service --
+a lost device, not sure which token is compromised). /users/{username}/
+logout-all does the same for an admin, targeting anyone -- gated by
+manage:users, same as every other account-management action below.
+Both call the SAME core.auth.session_store.invalidate_all_sessions();
+deliberately revokes ALL sessions including whichever one made the
+request, not "all except this one" -- simpler, and matches the
+project's "if in doubt, everyone re-authenticates" discipline.
+
+/users/{username}/visible-schema is an admin debugging view --
+DataMediator.visible_schema() already computes exactly "what can this
+user see," this just exposes it for a target user instead of only ever
+being used internally for the caller's own request. Lets an admin
+verify a role actually grants what they think it grants, without
+impersonating anyone.
+
+/users/{username}/disable, /enable, and DELETE /users/{username} are
+account lifecycle actions, all gated by manage:users. Disabling
+invalidates existing sessions AND is checked fresh on every subsequent
+request (see api/auth_dependency.py) -- it takes effect immediately,
+not just against future logins. /login itself ALSO checks
+is_user_disabled(), after the credential check, never before -- see
+that route's own comment for why the ordering matters (a timing side
+channel otherwise). Deletion clears the credential, the directory
+entry, and every session in one atomic operation (core.user_directory.
+delete_user()) -- a deleted account can never be left holding a
+still-valid token. Deliberately NOT guarded against an admin disabling
+or deleting their own account, or the last remaining admin -- a real,
+intentionally out-of-scope simplification, not an oversight.
+
 /writes/{write_id}/confirm is the SEPARATE, later request that actually
 approves or rejects a proposed write. Looks the write up by ID AND the
 confirming user's identity together (core.pending_write_store.
@@ -77,13 +107,16 @@ from pydantic import BaseModel
 
 from core.agent.agentic_loop import AgentLoop
 from core.auth.credential_store import verify_credential
-from core.auth.session_store import create_session, invalidate_session
+from core.auth.session_store import create_session, invalidate_session, invalidate_all_sessions
 from core.intermediate_layer.audit import log_query_cancelled
 from core.intermediate_layer.auth import authorize, UserRecord
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
-from core.user_directory import create_user, get_user_record
+from core.user_directory import (
+    create_user, get_user_record, is_user_disabled, disable_user, enable_user, delete_user, user_exists,
+    list_users,
+)
 from api.auth_dependency import get_current_user
 
 router = APIRouter()
@@ -120,8 +153,22 @@ class ConfirmWriteRequest(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, request: Request) -> LoginResponse:
     db_path = request.app.state.credentials_db_path
+
+    # Credential check ALWAYS runs first, unconditionally -- checking
+    # is_user_disabled() before this and short-circuiting for a
+    # disabled account would create a timing side channel (a disabled
+    # account's login would return faster than a real password check,
+    # leaking "this account exists and is disabled" through response
+    # timing alone, even with an identical error message). Same timing-
+    # safety principle verify_credential() itself already follows.
     if not verify_credential(db_path, body.username, body.password):
         # Generic on purpose -- see module docstring.
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    if is_user_disabled(db_path, body.username):
+        # SAME message as a wrong password -- a disabled account must
+        # not be distinguishable from one that simply doesn't exist or
+        # was given the wrong password.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     token = create_session(db_path, body.username)
@@ -141,6 +188,19 @@ def logout(request: Request, authorization: str | None = Header(default=None)) -
     # of a session that isn't valid anyway isn't a meaningful failure.
 
 
+@router.post("/logout-all", status_code=204)
+def logout_all(request: Request, current_user: UserRecord = Depends(get_current_user)) -> None:
+    # Self-service -- revokes EVERY session for the caller, including
+    # whichever one made this request. See module docstring.
+    invalidate_all_sessions(request.app.state.credentials_db_path, current_user.user_id)
+
+
+@router.get("/users")
+def list_users_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    _require_manage_users(request, current_user)
+    return list_users(request.app.state.credentials_db_path)
+
+
 @router.post("/users", status_code=201)
 def create_user_route(body: CreateUserRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:
@@ -155,6 +215,65 @@ def create_user_route(body: CreateUserRequest, request: Request,
         raise HTTPException(status_code=400, detail=str(e))
 
     return {"status": "created", "username": body.username}
+
+
+def _require_manage_users(request: Request, current_user: UserRecord) -> None:
+    # Shared by every account-management route below -- one place for
+    # the check, rather than five copies of the same three lines.
+    roles = request.app.state.config.roles
+    if not authorize(current_user, roles, "manage:users"):
+        raise HTTPException(status_code=403, detail="Not authorized to manage users")
+
+
+@router.get("/users/{username}/visible-schema")
+def visible_schema_route(username: str, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    _require_manage_users(request, current_user)
+
+    db_path = request.app.state.credentials_db_path
+    if not user_exists(db_path, username):
+        raise HTTPException(status_code=404, detail=f"Unknown user {username!r}")
+
+    target_record = get_user_record(db_path, username)
+    mediator = request.app.state.mediator
+    return mediator.visible_schema(target_record)
+
+
+@router.post("/users/{username}/logout-all", status_code=204)
+def logout_all_for_user(username: str, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    invalidate_all_sessions(request.app.state.credentials_db_path, username)
+
+
+@router.post("/users/{username}/disable", status_code=204)
+def disable_user_route(username: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        disable_user(request.app.state.credentials_db_path, username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/users/{username}/enable", status_code=204)
+def enable_user_route(username: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        enable_user(request.app.state.credentials_db_path, username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/users/{username}", status_code=204)
+def delete_user_route(username: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        delete_user(request.app.state.credentials_db_path, username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 async def _watch_for_disconnect(request: Request, cancel_event: threading.Event) -> None:

@@ -292,3 +292,178 @@ def test_confirm_with_wrong_user_and_unknown_id_are_identical(client):
 
     assert wrong_user_response.status_code == unknown_id_response.status_code == 404
     assert wrong_user_response.json() == unknown_id_response.json()
+
+
+def _make_admin(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    roles["admin"] = {"allowed_actions": frozenset(["manage:users"])}
+    create_user(db_path, roles, "admin_user", "adminpass", None, "admin")
+    return _login(client, "admin_user", "adminpass").json()["token"]
+
+
+def test_list_users_requires_manage_users(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    alice_token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/users", headers={"Authorization": f"Bearer {alice_token}"})
+    assert response.status_code == 403
+
+
+def test_list_users_returns_non_sensitive_metadata_only(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", "us-west", "customer_service")
+    admin_token = _make_admin(client)
+
+    response = client.get("/users", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 200
+    body = response.json()
+    usernames = {entry["username"] for entry in body}
+    assert {"alice", "admin_user"} <= usernames
+
+    alice_entry = next(entry for entry in body if entry["username"] == "alice")
+    assert alice_entry["role_name"] == "customer_service"
+    assert alice_entry["mac_value"] == "us-west"
+    assert alice_entry["disabled"] is False
+    assert "password" not in alice_entry and "password_hash" not in alice_entry
+
+
+def test_logout_all_revokes_every_session_for_the_caller(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    token1 = _login(client, "alice", "correct-pw").json()["token"]
+    token2 = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.post("/logout-all", headers={"Authorization": f"Bearer {token1}"})
+    assert response.status_code == 204
+
+    for token in (token1, token2):
+        result = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
+        assert result.status_code == 401
+
+
+def test_admin_logout_all_for_a_target_user_requires_manage_users(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    alice_token = _login(client, "alice", "correct-pw").json()["token"]
+
+    # alice herself has no manage:users grant.
+    response = client.post("/users/alice/logout-all", headers={"Authorization": f"Bearer {alice_token}"})
+    assert response.status_code == 403
+
+
+def test_admin_logout_all_for_a_target_user_works(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    alice_token = _login(client, "alice", "correct-pw").json()["token"]
+    admin_token = _make_admin(client)
+
+    response = client.post("/users/alice/logout-all", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 204
+
+    result = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"})
+    assert result.status_code == 401
+
+
+def test_visible_schema_debug_view_shows_what_the_target_user_can_see(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    roles["customer_service"] = {"allowed_actions": [
+        "read:Customer", "read:Customer.customer_id", "read:Customer.name",
+    ]}
+    create_user(db_path, roles, "alice", "correct-pw", "us-west", "customer_service")
+    admin_token = _make_admin(client)
+
+    response = client.get("/users/alice/visible-schema", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 200
+    body = response.json()
+    assert "Customer" in body
+    assert set(body["Customer"]["fields"].keys()) == {"name"}  # customer_id is the id_field, not a "fields" entry
+
+
+def test_visible_schema_debug_view_requires_manage_users(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    alice_token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/users/alice/visible-schema", headers={"Authorization": f"Bearer {alice_token}"})
+    assert response.status_code == 403
+
+
+def test_visible_schema_debug_view_for_unknown_user_is_404(client):
+    admin_token = _make_admin(client)
+    response = client.get("/users/totally_fake_user/visible-schema", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 404
+
+
+def test_disable_user_blocks_new_logins_and_kills_existing_sessions(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    alice_token = _login(client, "alice", "correct-pw").json()["token"]
+    admin_token = _make_admin(client)
+
+    response = client.post("/users/alice/disable", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 204
+
+    # Existing session immediately rejected -- not just future logins.
+    existing_session_result = client.post(
+        "/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"}
+    )
+    assert existing_session_result.status_code == 401
+
+    # New login attempt also blocked, same generic message as a wrong password.
+    login_attempt = _login(client, "alice", "correct-pw")
+    assert login_attempt.status_code == 401
+    assert login_attempt.json()["detail"] == "Invalid username or password"
+
+
+def test_disable_nonexistent_user_is_404(client):
+    admin_token = _make_admin(client)
+    response = client.post("/users/totally_fake_user/disable", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 404
+
+
+def test_enable_reverses_disable(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    admin_token = _make_admin(client)
+
+    client.post("/users/alice/disable", headers={"Authorization": f"Bearer {admin_token}"})
+    client.post("/users/alice/enable", headers={"Authorization": f"Bearer {admin_token}"})
+
+    login_attempt = _login(client, "alice", "correct-pw")
+    assert login_attempt.status_code == 200
+
+
+def test_delete_user_removes_credential_and_kills_sessions(client):
+    db_path = client.app.state.credentials_db_path
+    roles = client.app.state.config.roles
+    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    alice_token = _login(client, "alice", "correct-pw").json()["token"]
+    admin_token = _make_admin(client)
+
+    response = client.delete("/users/alice", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 204
+
+    existing_session_result = client.post(
+        "/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"}
+    )
+    assert existing_session_result.status_code == 401
+
+    login_attempt = _login(client, "alice", "correct-pw")
+    assert login_attempt.status_code == 401
+
+
+def test_delete_nonexistent_user_is_404(client):
+    admin_token = _make_admin(client)
+    response = client.delete("/users/totally_fake_user", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 404

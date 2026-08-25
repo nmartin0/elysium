@@ -90,6 +90,22 @@ mkdir -p "$OPT_DIR" "$ETC_DIR" "$VAR_LIB_DIR" "$VAR_LOG_DIR"
 cp -r "$SOURCE_DIR/core" "$SOURCE_DIR/adapters" "$SOURCE_DIR/tools" \
       "$SOURCE_DIR/api" "$SOURCE_DIR/scripts" "$SOURCE_DIR/requirements.txt" "$OPT_DIR/"
 
+# --- 3b. Web UI (OPTIONAL -- gracefully skipped if npm isn't available) ---
+#
+# api/app.py only mounts the built UI if ui/dist actually exists (see
+# its own docstring) -- a deployment without Node/npm available still
+# ends up as a completely valid, working, API-only backend. This step
+# is a genuine convenience, not a hard requirement, matching that same
+# "conditional, not required" design on the Python side.
+
+if command -v npm >/dev/null 2>&1; then
+    cp -r "$SOURCE_DIR/ui" "$OPT_DIR/"
+    (cd "$OPT_DIR/ui" && npm install && npm run build)
+    echo "Built the web UI (ui/dist)."
+else
+    echo "npm not found -- skipping the web UI build. This deployment will run as an API-only backend (see api/app.py's docstring -- the UI mount is conditional). Install Node.js/npm and re-run this script to add it later."
+fi
+
 # --- 4. Python virtual environment ---------------------------------------
 
 python3 -m venv "$OPT_DIR/venv"

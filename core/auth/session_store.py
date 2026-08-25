@@ -15,6 +15,16 @@ used everywhere else in this project (a caller learns nothing about
 WHY a token failed, only that it did; the real reason is only ever
 visible in the audit log via whatever calls this).
 
+invalidate_all_sessions() covers TWO real scenarios with the same
+function: a user revoking their own other sessions (a lost device),
+and an admin forcibly revoking someone's access (suspected
+compromise, or as part of disabling/deleting an account -- see
+core/user_directory.py). Deliberately revokes EVERY session for that
+username, including whichever one made the current request -- simpler
+and more conservative than trying to carve out "all except this one,"
+and matches the same "if in doubt, everyone re-authenticates"
+discipline used throughout this project's security design.
+
 Used by: api/'s auth dependency, resolving a request's token into a
          real user_id before anything downstream (AgentLoop,
          WriteMediator, DataMediator) is ever touched.
@@ -61,4 +71,10 @@ def validate_session(db_path: Path, token: str) -> str | None:
 def invalidate_session(db_path: Path, token: str) -> None:
     with connection(db_path) as conn:
         conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        conn.commit()
+
+
+def invalidate_all_sessions(db_path: Path, username: str) -> None:
+    with connection(db_path) as conn:
+        conn.execute("DELETE FROM sessions WHERE username = ?", (username,))
         conn.commit()

@@ -22,8 +22,18 @@ Schema created idempotently on every connection (CREATE TABLE IF NOT
 EXISTS) -- cheap, and guarantees the schema always exists regardless of
 call order, matching sqlite_adapter.py's "fresh connection per call, no
 persistent pooling" pattern.
+
+_MIGRATE_ADD_DISABLED_COLUMN exists because CREATE TABLE IF NOT EXISTS
+is a no-op against an ALREADY-existing users table -- it does NOT add
+new columns to a table that predates this column. Any real, already-
+running deployment's credentials.db needs this column added to its
+EXISTING table, not just a fresh one created correctly going forward.
+SQLite has no "ADD COLUMN IF NOT EXISTS" -- the standard, idiomatic
+pattern is attempting the ALTER and catching the OperationalError it
+raises if the column already exists.
 """
 
+import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -44,9 +54,18 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
     mac_value TEXT,
-    role_name TEXT NOT NULL
+    role_name TEXT NOT NULL,
+    disabled INTEGER NOT NULL DEFAULT 0
 );
 """
+
+
+def _migrate_add_disabled_column(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # already exists -- either a fresh DB (SCHEMA above already
+              # included it) or a previously-migrated one
 
 
 @contextmanager
@@ -54,6 +73,8 @@ def connection(db_path: Path):
     conn = open_connection(db_path)
     try:
         conn.executescript(SCHEMA)
+        _migrate_add_disabled_column(conn)
+        conn.commit()
         yield conn
     finally:
         conn.close()

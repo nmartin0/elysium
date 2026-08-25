@@ -41,3 +41,23 @@ def test_expired_session_returns_none(db_path):
         expired_token = session_store.create_session(db_path, "alice")
 
     assert session_store.validate_session(db_path, expired_token) is None
+
+
+def test_invalidate_all_sessions_revokes_every_session_for_that_user(db_path):
+    token1 = session_store.create_session(db_path, "alice")
+    token2 = session_store.create_session(db_path, "alice")
+
+    session_store.invalidate_all_sessions(db_path, "alice")
+
+    assert session_store.validate_session(db_path, token1) is None
+    assert session_store.validate_session(db_path, token2) is None
+
+
+def test_invalidate_all_sessions_does_not_affect_other_users(db_path):
+    alice_token = session_store.create_session(db_path, "alice")
+    bob_token = session_store.create_session(db_path, "bob")
+
+    session_store.invalidate_all_sessions(db_path, "alice")
+
+    assert session_store.validate_session(db_path, alice_token) is None
+    assert session_store.validate_session(db_path, bob_token) == "bob"
