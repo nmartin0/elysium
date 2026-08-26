@@ -17,9 +17,13 @@ avoid cross-test collision" workarounds.
 /query is the only route needing the LLM -- mocked there the same way
 tests/integration/ already mocks Ollama's HTTP call elsewhere.
 
-NOT marked @pytest.mark.integration (unlike tests/integration/'s other
-files) -- these don't need real Ollama running, only the mocked /query
-case does, and that's isolated to its own test.
+Marked @pytest.mark.mocked_llm, NOT @pytest.mark.integration (unlike
+tests/integration/'s other two files) -- these exercise the full,
+real, wired-together system (FastAPI, AgentLoop, SQLite, sessions) but
+never touch a real LLM, so they stay fast enough to run every time.
+"integration" is reserved specifically for the two files that need a
+real Ollama server. See pytest.ini for both markers' registered
+descriptions.
 """
 
 import json
@@ -34,6 +38,8 @@ from api.app import create_app
 from core.deployment_loader import RuntimePaths
 from core.intermediate_layer.auth import UserRecord
 from core.user_directory import create_user
+
+pytestmark = pytest.mark.mocked_llm
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

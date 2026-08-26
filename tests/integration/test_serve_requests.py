@@ -6,15 +6,21 @@ to require a resolved UserRecord (core/intermediate_layer/auth.py).
 Nothing caught this until it was found by inspection, not by a test --
 this file exists so that never happens silently again.
 
-Not marked @pytest.mark.integration -- the LLM call is mocked, no real
-Ollama needed.
+Marked @pytest.mark.mocked_llm -- exercises the real serve()
+dispatch/concurrency path with a real AgentLoop, but the LLM call
+itself is mocked, so this stays fast enough to run every time. See
+pytest.ini for both markers' registered descriptions.
 """
 
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from scripts.serve_requests import serve
 from core.agent.agentic_loop import AgentLoopResult
+
+pytestmark = pytest.mark.mocked_llm
 
 
 def test_serve_dispatches_multiple_users_concurrently_without_crashing():
