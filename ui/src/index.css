@@ -1,0 +1,166 @@
+/* index.css -- deliberately plain, functional styling for phase one.
+   No design system, no component library -- matches the scope this
+   first version was deliberately kept to (see the project README's
+   Elysium section on the API layer for what this UI is a client of).
+*/
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #f7f7f8;
+  color: #1a1a1a;
+}
+
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.app__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.app__header h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+input,
+textarea {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+button {
+  padding: 0.55rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #2d2d34;
+  color: white;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid #999;
+  color: #333;
+}
+
+.error {
+  color: #b3261e;
+  font-size: 0.9rem;
+}
+
+.answer,
+.pending-write {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e0e0e0;
+}
+
+.pending-write pre {
+  background: #f2f2f2;
+  padding: 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.pending-write__actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.pending-write--resolved {
+  color: #1a1a1a;
+}
+
+.app__nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.create-user-form {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+}
+
+.create-user-form h3 {
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.user-table th,
+.user-table td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #eee;
+  font-size: 0.9rem;
+}
+
+.user-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.user-table__actions button {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.user-table pre {
+  background: #f2f2f2;
+  padding: 0.6rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+}
+
+button.danger {
+  background: #b3261e;
+}
