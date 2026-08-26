@@ -7,6 +7,11 @@ Runs against tests/integration/fixtures/ (see conftest.py) -- a fully
 isolated test deployment, not the real deployment/ folder a human
 explores. Assertions reference this fixture's known dev data.
 
+Requests isolated_audit_log (see conftest.py) so this test's real
+write/read activity doesn't fall back to the actual deployment/var/log/
+audit.log a human might be reading, and can't leak its own logging
+configuration into whatever test runs next in the same pytest process.
+
 Run with: python3 -m pytest tests/integration/ -v -m integration
 """
 
@@ -30,7 +35,7 @@ def _run(deployment, mediator, user_id: str, query_text: str) -> str:
 
 
 @pytest.mark.integration
-def test_same_region_query_returns_correct_transactions(deployment, mediator):
+def test_same_region_query_returns_correct_transactions(deployment, mediator, isolated_audit_log):
     answer = _run(deployment, mediator, "user_alice", "What are cust_001's recent transactions?")
     assert "49.99" in answer
     assert "199" in answer

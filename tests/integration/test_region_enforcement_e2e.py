@@ -7,6 +7,12 @@ covered by tests/unit/test_mediator.py. SLOW, requires Ollama.
 Runs against tests/integration/fixtures/ (see conftest.py) -- a fully
 isolated test deployment, not the real deployment/ folder a human
 explores. The query text ("cust_003") is this fixture's specific data.
+
+Requests isolated_audit_log (see conftest.py) so this test's real
+access-denial activity doesn't fall back to the actual deployment/
+var/log/audit.log a human might be reading, and can't leak its own
+logging configuration into whatever test runs next in the same pytest
+process.
 """
 
 import pytest
@@ -16,7 +22,7 @@ from core.intermediate_layer.auth import resolve_user_record
 
 
 @pytest.mark.integration
-def test_cross_region_query_returns_no_real_transaction_data(deployment, mediator):
+def test_cross_region_query_returns_no_real_transaction_data(deployment, mediator, isolated_audit_log):
     # user_alice is us-west; cust_003 is us-east -- every field access
     # should be blocked, regardless of what the LLM tries.
     loop = AgentLoop.from_deployment(deployment, mediator)
