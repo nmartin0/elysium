@@ -4,8 +4,9 @@ deployment's policy.yaml declares) blocking holds through the full
 LLM-driven agent loop -- not just the direct mediator calls already
 covered by tests/unit/test_mediator.py. SLOW, requires Ollama.
 
-Runs against the real deployment/ folder (see conftest.py). The query
-text ("cust_003") is this deployment's specific dev-fixture data.
+Runs against tests/integration/fixtures/ (see conftest.py) -- a fully
+isolated test deployment, not the real deployment/ folder a human
+explores. The query text ("cust_003") is this fixture's specific data.
 """
 
 import pytest
@@ -20,14 +21,14 @@ def test_cross_region_query_returns_no_real_transaction_data(deployment, mediato
     # should be blocked, regardless of what the LLM tries.
     loop = AgentLoop.from_deployment(deployment, mediator)
     user_record = resolve_user_record(deployment.users, "user_alice", deployment.security_attribute)
-    gathered = loop.run(user_record, "What are cust_003's recent transactions?")
-    real_data = AgentLoop.filter_real_data(gathered)
+    agent_result = loop.run(user_record, "What are cust_003's recent transactions?")
+    real_data = AgentLoop.filter_real_data(agent_result.gathered)
 
     # No matter what the LLM attempted, nothing real about cust_003
     # should ever come back -- every result must be None (a blocked
     # get_field) or an empty list (a blocked search_object).
     for item in real_data:
-        result = item.get("result")
-        assert result is None or result == [], (
+        field_result = item.get("result")
+        assert field_result is None or field_result == [], (
             f"Unexpected non-empty cross-region data leaked: {item}"
         )

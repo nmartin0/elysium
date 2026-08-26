@@ -207,10 +207,29 @@ class AgentLoop:
 
     @staticmethod
     def filter_real_data(gathered: list[dict]) -> list[dict]:
-        # Strips process bookkeeping entries from a run() result, leaving
-        # only real search_object/get_field results -- what should
-        # actually be handed to synthesis.
-        return [item for item in gathered if item["step"] not in AgentLoop.BOOKKEEPING_STEPS]
+        # Strips process bookkeeping entries AND denied/empty field
+        # reads -- what's LEFT is what should actually be handed to
+        # synthesis.
+        #
+        # A get_field() call denied by RBAC/MAC returns None -- same
+        # value as a field that's genuinely NULL in the database,
+        # DELIBERATELY indistinguishable (see core/ontology/mediator.py's
+        # docstring on uniform denial). Without this filter, that literal
+        # None would still reach the synthesis prompt as a real gathered
+        # item, relying ENTIRELY on the model correctly interpreting it
+        # as "omit this" -- pure trust in model behavior, the one thing
+        # this project has been careful never to rely on anywhere else.
+        # Stripping it here means a denied field is structurally ABSENT
+        # from what the model sees, identical to never having asked at
+        # all -- nothing left for the model to be tempted to fill in.
+        #
+        # search_object() results are always lists (possibly empty),
+        # never bare None -- this only ever actually filters get_field
+        # (and, defensively, a tool call that happened to return None).
+        return [
+            item for item in gathered
+            if item["step"] not in AgentLoop.BOOKKEEPING_STEPS and item.get("result") is not None
+        ]
 
     def _handle_finish_attempt(self, gathered: list[dict], asymmetry_nudged: bool) -> tuple[bool, bool]:
         # Called when the model wants to finish. Gives ONE corrective

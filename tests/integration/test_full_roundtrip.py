@@ -3,8 +3,9 @@ Integration test: real Ollama, full agent loop -> synthesis. SLOW
 (multiple LLM calls) and requires Ollama running locally with the
 configured model already pulled.
 
-Runs against the real deployment/ folder (see conftest.py). Assertions
-reference this deployment's known dev-fixture data.
+Runs against tests/integration/fixtures/ (see conftest.py) -- a fully
+isolated test deployment, not the real deployment/ folder a human
+explores. Assertions reference this fixture's known dev data.
 
 Run with: python3 -m pytest tests/integration/ -v -m integration
 """
@@ -22,8 +23,8 @@ def _run(deployment, mediator, user_id: str, query_text: str) -> str:
     synthesis_client = build_llm_adapter(deployment, deployment.synthesis_model)
 
     user_record = resolve_user_record(deployment.users, user_id, deployment.security_attribute)
-    gathered = loop.run(user_record, query_text)
-    real_data = AgentLoop.filter_real_data(gathered)
+    result = loop.run(user_record, query_text)
+    real_data = AgentLoop.filter_real_data(result.gathered)
 
     return synthesize_insight(synthesis_client, query_text, real_data)
 
