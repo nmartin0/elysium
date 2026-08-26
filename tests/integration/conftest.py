@@ -30,8 +30,15 @@ This is PURELY a test-suite hygiene concern -- LOG_PATH lives in one
 process's memory; a real deployment runs as a completely separate OS
 process (uvicorn, or python3 -m scripts.run_deployment) and is never
 touched by anything happening inside a pytest run.
+
+read_audit_log() is a small shared helper (not a fixture -- just a
+plain function both test_full_roundtrip.py and
+test_region_enforcement_e2e.py import) for parsing the JSON-lines
+audit log an isolated_audit_log-using test just produced, so each test
+can assert on its OWN real, specific log entries.
 """
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -78,3 +85,10 @@ def isolated_audit_log(tmp_path: Path):
     configure_audit_log(log_dir)
     yield log_dir
     audit.LOG_PATH = original_log_path
+
+
+def read_audit_log(log_dir: Path) -> list[dict]:
+    log_path = log_dir / "audit.log"
+    if not log_path.exists():
+        return []
+    return [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]

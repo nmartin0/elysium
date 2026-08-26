@@ -12,13 +12,17 @@ Requests isolated_audit_log (see conftest.py) so this test's real
 access-denial activity doesn't fall back to the actual deployment/
 var/log/audit.log a human might be reading, and can't leak its own
 logging configuration into whatever test runs next in the same pytest
-process.
+process. This same isolated log is ALSO what makes the log-content
+assertion below meaningful -- asserting against a commingled log would
+be fragile and order-dependent, exactly what we were careful to avoid.
 """
 
 import pytest
 
 from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import resolve_user_record
+
+from conftest import read_audit_log
 
 
 @pytest.mark.integration
@@ -38,3 +42,15 @@ def test_cross_region_query_returns_no_real_transaction_data(deployment, mediato
         assert field_result is None or field_result == [], (
             f"Unexpected non-empty cross-region data leaked: {item}"
         )
+
+    # THE audit-log proof: the DENIAL itself was genuinely logged with
+    # mac_allowed=False -- not just that no data leaked into the
+    # result, but that the access-control layer's own record shows WHY
+    # it was blocked.
+    log_entries = read_audit_log(isolated_audit_log)
+    cust_003_denials = [
+        entry for entry in log_entries
+        if entry.get("stage") == "access_check" and entry.get("object_id") == "cust_003"
+        and entry.get("mac_allowed") is False
+    ]
+    assert len(cust_003_denials) > 0, "Expected at least one logged MAC denial for cust_003"
