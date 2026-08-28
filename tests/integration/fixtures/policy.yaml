@@ -63,3 +63,10 @@ users:
   user_dave:
     region: us-west
     role: customer_service_no_email
+  # For tests/integration/test_write_proposal_e2e.py -- needs a role
+  # actually granting write:Customer.name to test whether a real model
+  # produces a well-formed propose_write step, not just a scripted one
+  # (already proven by tests/unit/test_write_mediator.py).
+  user_eve:
+    region: us-west
+    role: editor
