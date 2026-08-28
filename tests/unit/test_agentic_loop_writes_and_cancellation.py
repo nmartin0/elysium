@@ -111,3 +111,56 @@ def test_no_cancel_event_behaves_exactly_as_before(mediator_and_write_mediator):
     assert result.cancelled is False
     assert result.pending_write is None
     assert result.gathered[0]["result"] == "Ada Lovelace"
+
+
+def test_hit_max_hops_set_true_when_loop_genuinely_exhausts(mediator_and_write_mediator):
+    mediator, write_mediator = mediator_and_write_mediator
+
+    # A DIFFERENT search_object filter every single call -- this is
+    # deliberate, not incidental: an identical repeated step would
+    # trigger duplicate detection instead, stopping the loop for a
+    # DIFFERENT reason before max_hops is ever reached. Varying the
+    # step each time is what forces a genuine exhaustion. Searches by
+    # "name" -- TEST_ROLES' "editor" role grants read:Author.name but
+    # NOT read:Author.author_id, so author_id isn't a valid search key
+    # for this role at all (the id_field needs its own explicit grant,
+    # same as any other field -- searching by it here would correctly
+    # be rejected as invalid criteria, a different test entirely).
+    call_count = {"n": 0}
+    client = MagicMock()
+
+    def fake_chat(*args, **kwargs):
+        call_count["n"] += 1
+        return json.dumps({"step": "search_object", "object_type": "Author",
+                            "filter": {"name": f"Author Number {call_count['n']}"}})
+
+    client.chat.side_effect = fake_chat
+    loop = AgentLoop(client, mediator, write_mediator=write_mediator, max_hops=3)
+
+    result = loop.run(_record("alice"), "test query")
+
+    assert result.hit_max_hops is True
+    assert len(result.gathered) == 3  # exactly max_hops real hops taken
+
+
+def test_hit_max_hops_stays_false_on_a_normal_finish(mediator_and_write_mediator):
+    mediator, write_mediator = mediator_and_write_mediator
+    loop = _loop_with_mocked_llm(mediator, write_mediator, [{"step": "finish"}])
+
+    result = loop.run(_record("alice"), "test query")
+
+    assert result.hit_max_hops is False
+
+
+def test_hit_max_hops_stays_false_when_stopped_by_duplicate_cap(mediator_and_write_mediator):
+    # A DIFFERENT way the loop can stop early (max_consecutive_duplicates
+    # exceeded) -- hit_max_hops must specifically mean "ran out of hops,"
+    # not become a generic "stopped before finishing cleanly" flag.
+    mediator, write_mediator = mediator_and_write_mediator
+    loop = _loop_with_mocked_llm(mediator, write_mediator, [
+        {"step": "get_field", "object_type": "Author", "object_id": "auth_001", "field_name": "name"},
+    ])
+
+    result = loop.run(_record("alice"), "test query")
+
+    assert result.hit_max_hops is False

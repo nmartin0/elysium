@@ -86,7 +86,7 @@ def run_deployment() -> None:
             print(outcome)
         else:
             real_data = AgentLoop.filter_real_data(result.gathered)
-            insight = synthesize_insight(synthesis_client, query_text, real_data)
+            insight = synthesize_insight(synthesis_client, query_text, real_data, result.hit_max_hops)
             print(insight)
         print()
 

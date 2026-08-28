@@ -36,7 +36,7 @@ def _run(deployment, mediator, user_id: str, query_text: str) -> str:
     result = loop.run(user_record, query_text)
     real_data = AgentLoop.filter_real_data(result.gathered)
 
-    return synthesize_insight(synthesis_client, query_text, real_data)
+    return synthesize_insight(synthesis_client, query_text, real_data, result.hit_max_hops)
 
 
 @pytest.mark.integration

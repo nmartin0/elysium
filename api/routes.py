@@ -21,7 +21,12 @@ same "gatekeeping stays at the boundary" pattern used throughout.
 /query runs on OUR OWN explicit executor (app.state.executor, see
 api/app.py's docstring) via asyncio.run_in_executor(), not Starlette's
 own internal thread pool. It has THREE possible outcomes:
-  - 200: a real answer, synthesized from what was gathered.
+  - 200: a real answer, synthesized from what was gathered. If
+    AgentLoop hit its max_hops limit before finishing (result.
+    hit_max_hops), synthesize_insight() is told explicitly -- the
+    answer itself will say so, rather than reading like a complete
+    result when the search may genuinely have been cut short. See
+    core/llm/synthesis_prompt.py's possibly_incomplete parameter.
   - 202 Accepted: the AI proposed a write. Nothing has happened to the
     data yet -- the response is a REFERENCE (a write_id), which
     /writes/{write_id}/confirm resolves later, in a genuinely separate
@@ -333,7 +338,7 @@ async def query(body: QueryRequest, request: Request,
 
     real_data = AgentLoop.filter_real_data(result.gathered)
     insight = await event_loop.run_in_executor(
-        executor, synthesize_insight, synthesis_client, body.query, real_data
+        executor, synthesize_insight, synthesis_client, body.query, real_data, result.hit_max_hops
     )
     return QueryResponse(answer=insight)
 

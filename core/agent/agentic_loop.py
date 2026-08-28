@@ -87,6 +87,7 @@ class AgentLoopResult:
     gathered: list[dict]
     pending_write: PendingWrite | None = None
     cancelled: bool = False
+    hit_max_hops: bool = False
 
 
 def _step_signature(step: dict):
@@ -377,6 +378,15 @@ class AgentLoop:
             if should_stop:
                 break
         else:
+            # The for loop exhausted every hop without ever break-ing --
+            # the model was never given the chance to decide it was
+            # done. hit_max_hops tells the caller (and, through it,
+            # synthesize_insight()) that whatever WAS gathered may be
+            # genuinely incomplete, not just "as much as was needed" --
+            # a real, different fact from every other way this loop can
+            # end, and one that used to be visible only in a server log
+            # a caller would never see.
             logger.warning(f"hit max_hops ({self.max_hops}), stopping")
+            return AgentLoopResult(gathered=gathered, hit_max_hops=True)
 
         return AgentLoopResult(gathered=gathered)
