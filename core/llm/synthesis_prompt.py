@@ -30,6 +30,22 @@ throughout this project: the whole answer is discarded, not
 surgically edited, since a citation to something nonexistent puts the
 surrounding claim's grounding in doubt too.
 
+EMAIL VERIFICATION: a SEPARATE, independent, isolated check --
+_has_only_verified_emails() -- deliberately NOT merged into the
+citation check or generalized into a multi-pattern framework. Every
+email-shaped string the model wrote must appear verbatim (case-
+insensitive) somewhere in the actual records it was given. This is
+SAFE specifically because an email can only ever be legitimately
+COPIED from a real field, never legitimately COMPUTED the way a
+dollar total could be (e.g. "$49.99 + $199.00 = $248.99" is a
+genuinely correct answer that would never appear verbatim in the
+source records -- a naive verbatim check applied to arithmetic would
+wrongly flag it). Scoped to identifier-shaped fields specifically, not
+generalized to every regex-matchable pattern, until a second concrete
+use case actually exists in this project's real schema -- building a
+generic pattern-registry framework for a single current consumer would
+be guessing at the right abstraction, not responding to a real need.
+
 possibly_incomplete IS A DIFFERENT KIND OF GAP than a denied/null
 field -- that case is a field the model DID ask about and got nothing
 for; possibly_incomplete means AgentLoop hit max_hops (see
@@ -86,6 +102,7 @@ rather than answering as if this were a complete result.
 """
 
 _CITATION_PATTERN = re.compile(r"\[R(\d+)\]")
+_EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
 
 def _has_only_valid_citations(answer: str, record_count: int) -> bool:
@@ -94,6 +111,20 @@ def _has_only_valid_citations(answer: str, record_count: int) -> bool:
     # an uncited answer is a genuinely different, NOT-mechanically-
     # checkable risk this function doesn't attempt to catch.
     return all(1 <= n <= record_count for n in cited_indices)
+
+
+def _has_only_verified_emails(answer: str, records: list[dict]) -> bool:
+    # See module docstring for why a verbatim-presence check is SAFE
+    # for emails specifically (never legitimately computed, only ever
+    # copied) in a way it would NOT be for arithmetic/aggregated
+    # fields. Vacuously True when the answer contains no email-shaped
+    # string at all.
+    found_emails = _EMAIL_PATTERN.findall(answer)
+    if not found_emails:
+        return True
+
+    source_text = " ".join(str(record) for record in records).lower()
+    return all(email.lower() in source_text for email in found_emails)
 
 
 def synthesize_insight(client: LLMAdapter, original_query: str, records: list[dict],
@@ -124,6 +155,14 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
             f'Regarding "{original_query}": the generated answer referenced '
             f"data that could not be verified against what was actually "
             f"retrieved, so it has been withheld rather than shown."
+        )
+
+    if not _has_only_verified_emails(answer, records):
+        logger.warning(f"synthesis answer contained an unverified email address, discarding: {answer!r}")
+        return (
+            f'Regarding "{original_query}": the generated answer contained '
+            f"an email address that could not be verified against what was "
+            f"actually retrieved, so it has been withheld rather than shown."
         )
 
     return answer

@@ -38,6 +38,16 @@ roles:
       - read:Customer.customer_id
       - read:Customer.name
       - write:Customer.name
+  # Deliberately grants name but NOT email -- for
+  # tests/integration/test_field_denial_e2e.py, proving a real model
+  # never sees (and, via the citation/email verification in
+  # core/llm/synthesis_prompt.py, can never leak) a field it was
+  # genuinely never granted access to.
+  customer_service_no_email:
+    allowed_actions:
+      - read:Customer
+      - read:Customer.customer_id
+      - read:Customer.name
 
 users:
   user_alice:
@@ -50,3 +60,6 @@ users:
   # independent of MAC (see test_region_enforcement_e2e.py).
   user_carol:
     region: eu
+  user_dave:
+    region: us-west
+    role: customer_service_no_email

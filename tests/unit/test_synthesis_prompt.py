@@ -153,3 +153,62 @@ def test_synthesize_insight_never_mutates_the_shared_system_prompt_constant():
 
     from core.llm.synthesis_prompt import SYSTEM_PROMPT as system_prompt_after
     assert system_prompt_after == original
+
+
+# --- _has_only_verified_emails() -- isolated, deliberately not merged
+# into the citation check or generalized -- see module docstring.
+
+def test_verified_email_present_in_records_is_valid():
+    from core.llm.synthesis_prompt import _has_only_verified_emails
+    records = [{"name": "Ada Okafor", "email": "ada.okafor@example.com"}]
+    assert _has_only_verified_emails("Contact her at ada.okafor@example.com.", records) is True
+
+
+def test_fabricated_email_not_in_records_is_invalid():
+    from core.llm.synthesis_prompt import _has_only_verified_emails
+    records = [{"name": "Ada Okafor", "department": "engineering"}]  # no email field at all
+    assert _has_only_verified_emails("Her email is ada.okafor@example.com.", records) is False
+
+
+def test_zero_emails_is_vacuously_valid():
+    from core.llm.synthesis_prompt import _has_only_verified_emails
+    records = [{"name": "Ada Okafor"}]
+    assert _has_only_verified_emails("Ada works in engineering.", records) is True
+
+
+def test_multiple_verified_emails_all_present_is_valid():
+    from core.llm.synthesis_prompt import _has_only_verified_emails
+    records = [{"email": "alice@example.com"}, {"email": "bob@example.com"}]
+    assert _has_only_verified_emails("Contact alice@example.com or bob@example.com.", records) is True
+
+
+def test_one_fabricated_email_among_real_ones_is_invalid():
+    # ANY unverified email fails the whole check -- fail closed, not
+    # "salvage the valid parts," matching the citation check's own
+    # all-or-nothing behavior.
+    from core.llm.synthesis_prompt import _has_only_verified_emails
+    records = [{"email": "alice@example.com"}]
+    assert _has_only_verified_emails("Contact alice@example.com or fake@nowhere.com.", records) is False
+
+
+def test_email_verification_is_case_insensitive():
+    from core.llm.synthesis_prompt import _has_only_verified_emails
+    records = [{"email": "Ada.Okafor@Example.com"}]
+    assert _has_only_verified_emails("Contact ada.okafor@example.com.", records) is True
+
+
+def test_synthesize_insight_discards_an_answer_with_a_fabricated_email():
+    # The end-to-end proof: a real model call is mocked to return a
+    # plausible-looking but entirely invented email -- the field was
+    # never even in the records at all -- and the fallback message is
+    # returned instead of leaking it.
+    client = _FakeClient("Her email is ada.okafor@example.com [R1].")
+    answer = synthesize_insight(client, "What is Ada's email?", [{"department": "engineering"}])
+    assert "ada.okafor@example.com" not in answer
+    assert "could not be verified" in answer
+
+
+def test_synthesize_insight_passes_through_a_verified_email_unchanged():
+    client = _FakeClient("Her email is ada.okafor@example.com [R1].")
+    answer = synthesize_insight(client, "What is Ada's email?", [{"email": "ada.okafor@example.com"}])
+    assert answer == "Her email is ada.okafor@example.com [R1]."
