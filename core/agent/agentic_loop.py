@@ -26,9 +26,8 @@ done separately, at whatever time makes sense for that caller (a
 terminal prompt for scripts/run_deployment.py; a completely separate
 HTTP request for api/). This also means a second write proposal in the
 same run() can genuinely never happen -- the first one always stops
-the loop -- which is why _step_signature() no longer has special
-propose_write deduplication logic; that branch would have been
-unreachable dead code once this changed.
+the loop -- which is why _step_signature() has no propose_action
+deduplication logic; that branch would be unreachable dead code.
 
 CANCELLATION: an optional cancel_event (threading.Event) is checked
 once at the TOP of each hop, never mid-hop -- this is about skipping
@@ -93,7 +92,7 @@ class AgentLoopResult:
 
 def _step_signature(step: dict):
     # A hashable fingerprint of one step, used to detect exact repeats.
-    # propose_write has NO entry here -- see module docstring for why a
+    # propose_action has NO entry here -- see module docstring for why a
     # second proposal in one run() is now structurally impossible, not
     # just discouraged.
     if step["step"] == "search_object":
@@ -256,8 +255,8 @@ class AgentLoop:
     def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
                        gathered: list[dict], consecutive_invalid: int, consecutive_business_rule: int
                        ) -> tuple[int, int, bool, PendingWrite | None]:
-        # Runs one search_object/get_field/use_tool/propose_write/
-        # propose_action step. Returns (new_consecutive_invalid,
+        # Runs one search_object/get_field/use_tool/propose_action
+        # step. Returns (new_consecutive_invalid,
         # new_consecutive_business_rule, should_stop_loop,
         # pending_write_or_None). A non-None pending_write ALWAYS means
         # should_stop_loop is also True -- proposing a write is a
@@ -304,20 +303,10 @@ class AgentLoop:
                     raise ValueError(f"Unknown tool: {tool_name!r}")
                 with self._tool_limiters[tool.name].limit():
                     result = tool.run(**step["args"])
-            elif step["step"] == "propose_write":
-                if self.write_mediator is None:
-                    raise ValueError("Writes are not enabled for this deployment")
-                pending = self.write_mediator.propose_write(
-                    user_record, step["object_type"], step.get("object_id"), step["action"], step["changes"]
-                )
-                # Stops the loop -- confirmation/execution is always the
-                # CALLER's job, done separately (see module docstring).
-                return 0, 0, True, pending
             elif step["step"] == "propose_action":
-                # The NAMED-action-type proposal path (action-types-
-                # redesign branch) -- see core/ontology/write_mediator.py's
-                # propose_action() for the full mechanism. Mirrors
-                # propose_write() exactly: stops the loop immediately,
+                # The NAMED-action-type proposal path -- see
+                # core/ontology/write_mediator.py's propose_action() for
+                # the full mechanism. Stops the loop immediately;
                 # confirmation/execution is always the caller's job.
                 if self.write_mediator is None:
                     raise ValueError("Writes are not enabled for this deployment")

@@ -6,37 +6,27 @@ DataMediator: WriteMediator no longer holds users/security_attribute at
 all, only roles (still shared, static config, unaffected by this
 change).
 
-Two stages: propose_write() checks RBAC+MAC and snapshots the fields
-about to change; confirm_and_execute() re-verifies that snapshot
-ATOMICALLY at write time (per-object lock + adapter.write_fields()'s
-conditional SQL), preventing lost updates. PendingWrite is frozen --
-nothing about a proposed write can change between human approval and
-execution.
+Two stages: propose_action() checks RBAC+MAC, validates parameters,
+evaluates submission criteria, and resolves the action's own declared
+mutations into a snapshot of the fields about to change;
+confirm_and_execute() re-verifies that snapshot ATOMICALLY at write
+time (per-object lock + adapter.write_fields()'s conditional SQL),
+preventing lost updates. PendingWrite is frozen -- nothing about a
+proposed write can change between human approval and execution.
 
-RBAC is field-level, matching reads: EVERY field in `changes` needs its
-own explicit write:{object_type}.{field_name} grant -- there is no
-blanket write:{object_type} action. A create additionally needs
-create:{object_type}. ALL required actions for one proposed write are
-evaluated together (not short-circuited on the first failure) and each
-logged individually via audit.log_access(). Only after every required
-action passes does MAC get checked (updates only -- no existing object
-to check a region boundary on for a create).
+NAMED ACTIONS -- matches Palantir Foundry's own action-type model
+directly (verified against their docs, not assumed): a proposal names
+a NAMED, independently-governed operation (execute:{action_name}, one
+grant per action), not a generic CRUD verb with free-form field input.
+See propose_action()'s own docstring for the full mechanism.
 
-TWO SEPARATE PROPOSAL PATHS, DELIBERATELY, on the action-types-redesign
-branch: propose_write() (free-form field grants, above) is the ORIGINAL
-path, untouched here -- and propose_action() (execute: grants, declared
-mutations, below) is genuinely NEW, matching Palantir Foundry's own
-action-type model verified directly against their docs. These are NOT
-meant to coexist long-term -- see propose_action()'s own docstring for
-why a hybrid/dual-path design was considered and rejected. This file
-holds both ONLY during this branch's build-and-prove-in-isolation
-phase; a later, separate migration pass replaces every propose_write()
-call site with propose_action() and removes propose_write() entirely.
-submission_criteria (see core/ontology/submission_criteria.py)
-belongs EXCLUSIVELY to propose_action() for this same reason -- it is
-structurally a property of a named ACTION in Palantir's own model, not
-a generic validation bolted onto whatever "update" happens to mean for
-an object type.
+This file used to hold a SECOND, parallel proposal path (propose_write()
+-- free-form write:{type}.{field}/create:{type} grants, the ORIGINAL
+model before named actions existed) during this project's own
+build-and-prove-in-isolation migration phase. That path has since been
+fully migrated and removed -- see git history on the
+action-types-redesign branch for the migration pass itself. Every real
+schema now declares action_types; there is no remaining fallback.
 
 Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
          confirm_write callback, both None if writes are disabled)
@@ -68,12 +58,12 @@ class WriteMediator:
     def __init__(self, mediator: DataMediator, roles: dict, action_types: dict | None = None):
         self.mediator = mediator
         self.roles = roles
-        # NEW, separate from `mediator` deliberately -- action types are
-        # a WRITE-path concept (governed mutations), and DataMediator is
-        # scoped specifically to reads/routing (see its own docstring).
-        # Optional, defaulting to {} -- every existing caller that never
-        # constructs a WriteMediator with named actions in mind keeps
-        # working completely unchanged.
+        # Optional, defaulting to {} -- a deployment with no action
+        # types declared at all (writes fully disabled, or none
+        # authored yet) is still a valid, legitimate state: propose_action()
+        # simply raises "Unknown action_type" for any name, and
+        # visible_action_types() returns {} for every user, same as
+        # never offering write capability at all.
         self.action_types = action_types or {}
 
     def visible_action_types(self, user_record: UserRecord) -> dict:
@@ -90,11 +80,6 @@ class WriteMediator:
             for action_name, action_def in self.action_types.items()
             if authorize(user_record, self.roles, f"execute:{action_name}")
         }
-
-    def _describe(self, object_type: str, object_id: Any | None, action: str, changes: dict) -> str:
-        if action == "create":
-            return f"Create a new {object_type} with: {changes}"
-        return f"Update {object_type} {object_id!r}: set {changes}"
 
     def _read_current_state_for_criteria(self, object_type: str, object_id: Any,
                                           criteria: list[dict]) -> dict:
@@ -119,81 +104,6 @@ class WriteMediator:
             column = get_column_for_field(resolved_type_config, field_name)
             current_state[field_name] = adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
         return current_state
-
-    def propose_write(self, user_record: UserRecord, object_type: str, object_id: Any | None,
-                       action: str, changes: dict) -> PendingWrite:
-        # Every action this write needs, field-level -- create: once,
-        # plus one write:{type}.{field} per field being set.
-        action_ids = []
-        if action == "create":
-            action_ids.append(f"create:{object_type}")
-        action_ids.extend(f"write:{object_type}.{field_name}" for field_name in changes)
-
-        rbac_results = {aid: authorize(user_record, self.roles, aid) for aid in action_ids}
-        rbac_allowed = all(rbac_results.values())
-
-        if not rbac_allowed:
-            # Logged individually -- an auditor can see EXACTLY which
-            # grant(s) were missing, not just "denied." Short-circuits
-            # BEFORE MAC (mac_allowed=None, not evaluated) -- a request
-            # that's already going to be denied shouldn't trigger a
-            # real database query.
-            for aid, allowed in rbac_results.items():
-                log_access(user_record.user_id, object_type, object_id, aid, mac_allowed=None, rbac_allowed=allowed)
-            denied = [aid for aid, allowed in rbac_results.items() if not allowed]
-            raise PermissionError(f"{user_record.user_id!r} is not authorized for: {denied}")
-
-        if action == "create":
-            # No existing object to check a region boundary on -- see
-            # module docstring for why mac_allowed=True here means "not
-            # applicable," not "a check ran and passed."
-            mac_allowed = True
-        else:
-            mac_allowed = (
-                user_record.security_value is not None
-                and self.mediator._security_allowed(object_type, object_id, user_record.security_value)
-            )
-
-        for aid in action_ids:
-            log_access(user_record.user_id, object_type, object_id, aid, mac_allowed, rbac_results[aid])
-
-        if not mac_allowed:
-            raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
-
-        # MDO: every field in `changes` must share ONE storage -- the
-        # same v1 scope boundary as reads (see DataMediator.
-        # _resolve_shared_storage()'s own docstring). This runs for
-        # BOTH create and update -- a create populating fields from
-        # multiple storages would need multiple separate insert
-        # statements, one per silo, which is real, unsolved multi-
-        # storage-write territory intentionally out of scope for v1,
-        # not just an update-specific concern.
-        adapter, resolved_type_config = self.mediator._resolve_shared_storage(object_type, list(changes.keys()))
-
-        # Snapshot for lost-update detection -- captured here, verified
-        # atomically at execute time. Direct adapter read, not
-        # mediator.get_field() -- access was already confirmed above.
-        # Reads via each field's REAL column name (itself, unless MDO
-        # overrides it, or the id_field's own storage-level id_column --
-        # see get_column_for_field()'s docstring), but
-        # stays keyed by field_name throughout PendingWrite -- field
-        # names are the human/model-facing vocabulary; translation to
-        # raw SQL column names happens once, right before the adapter
-        # call, in confirm_and_execute() below.
-        expected_current_values = {}
-        if action == "update":
-            expected_current_values = {
-                field_name: adapter.get_raw_field(
-                    object_type, object_id,
-                    get_column_for_field(resolved_type_config, field_name),
-                    resolved_type_config,
-                )
-                for field_name in changes
-            }
-
-        description = self._describe(object_type, object_id, action, changes)
-        return PendingWrite(object_type, object_id, action, dict(changes), user_record.user_id,
-                             description, expected_current_values)
 
     def _resolve_mutation_value(self, value_spec, parameters: dict, user_record: UserRecord):
         # A mutation's "value" is one of three kinds:
@@ -235,12 +145,9 @@ class WriteMediator:
 
     def propose_action(self, user_record: UserRecord, action_type_name: str,
                         object_id: Any | None, parameters: dict) -> PendingWrite:
-        # The NEW proposal path -- matches Palantir Foundry's own
-        # action-type model directly (verified against their docs, not
-        # assumed): a NAMED, independently-governed operation, not a
-        # generic CRUD verb. See this module's own docstring for why
-        # this exists alongside (temporarily) propose_write(), and why
-        # submission_criteria belongs here specifically.
+        # Matches Palantir Foundry's own action-type model directly
+        # (verified against their docs, not assumed): a NAMED,
+        # independently-governed operation, not a generic CRUD verb.
         #
         # RBAC is ACTION-level, deliberately NOT a field-grant hybrid --
         # one "execute:{action_type_name}" grant, not one write:{type}.
@@ -267,9 +174,8 @@ class WriteMediator:
         rbac_allowed = authorize(user_record, self.roles, execute_action_id)
         if not rbac_allowed:
             # Logged ONCE here, with mac_allowed=None -- MAC never ran,
-            # short-circuited before a real database query. Matches
-            # propose_write()'s own pattern exactly: never log twice
-            # for the same outcome.
+            # short-circuited before a real database query. Never
+            # logs twice for the same outcome.
             log_access(
                 user_record.user_id, object_type, object_id, execute_action_id,
                 mac_allowed=None, rbac_allowed=False,
@@ -301,13 +207,13 @@ class WriteMediator:
                 f"Unknown parameter(s) for action {action_type_name!r}: {sorted(unknown_params)}"
             )
 
-        # Submission criteria -- reuses evaluate_submission_criteria()
-        # UNCHANGED, fed `parameters` where propose_write() would feed
-        # `changes`. The "parameter" check kind (vs "proposed_value")
-        # is what makes this correct: it reads from the action's own
-        # declared parameter names, a genuinely different namespace
-        # than an object's raw field names -- see submission_criteria.py's
-        # own docstring for the full reasoning.
+        # Submission criteria -- structurally a property of the named
+        # ACTION, not a generic validation bolted onto whatever
+        # "update" happens to mean for an object type (see
+        # submission_criteria.py's own docstring). The "parameter"
+        # check kind reads from the action's own declared parameter
+        # names, a genuinely different namespace than an object's raw
+        # field names.
         criteria = action_def.get("submission_criteria", [])
         if criteria:
             current_state = self._read_current_state_for_criteria(object_type, object_id, criteria) \
@@ -324,10 +230,9 @@ class WriteMediator:
             for mutation in action_def["mutations"]
         }
 
-        # From here, IDENTICAL to propose_write()'s own tail -- MDO
-        # storage resolution, expected_current_values snapshot,
-        # returning the SAME PendingWrite shape confirm_and_execute()
-        # already knows how to execute, completely unchanged.
+        # MDO: every field in `changes` must share ONE storage -- see
+        # DataMediator._resolve_shared_storage()'s own docstring for
+        # the full v1 scope boundary this enforces.
         adapter, resolved_type_config = self.mediator._resolve_shared_storage(object_type, list(changes.keys()))
         expected_current_values = {}
         if operation == "update":
@@ -363,7 +268,7 @@ class WriteMediator:
         # right here -- the only place PendingWrite's field-name-keyed
         # dicts actually reach the adapter/SQL layer. Every field in
         # ONE write already shares one storage/type_config by this
-        # point (validated in propose_write()), so a single resolved
+        # point (validated in propose_action()), so a single resolved
         # type_config correctly covers every field being translated.
         def _to_columns(values_by_field: dict) -> dict:
             return {

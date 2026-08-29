@@ -21,19 +21,17 @@
 #   not an error.
 #
 #   Action naming convention:
-#     read:<Type>            -- may discover/search this type at all
-#     read:<Type>.<field>     -- may see this ONE field's value
-#     write:<Type>.<field>    -- may change this ONE field on an
-#                                existing object (every field in a
-#                                write needs its own grant --
-#                                all-or-nothing for the whole write)
-#     create:<Type>           -- may bring a NEW object of this type
-#                                into existence (separate from any
-#                                field grant -- a create also still
-#                                needs write:<Type>.<field> for every
-#                                field being set)
-#     tool:<name>             -- may invoke this specific tool
-#     manage:users             -- may create new database-backed users
+#     read:<Type>              -- may discover/search this type at all
+#     read:<Type>.<field>      -- may see this ONE field's value
+#     execute:<ActionName>     -- may invoke this specific NAMED ACTION
+#                                (see ontology_schema.yaml's own
+#                                action_types -- one grant covers the
+#                                WHOLE action, however many fields its
+#                                own declared mutations happen to
+#                                touch; there is no separate per-field
+#                                write grant)
+#     tool:<name>              -- may invoke this specific tool
+#     manage:users              -- may create new database-backed users
 #                                via api/'s /users endpoint (see
 #                                scripts/install.sh's root bootstrap)
 #
@@ -70,8 +68,8 @@ roles:
       - read:Employee.employee_id
       - read:Employee.full_name
       - read:Employee.department
-      - write:Employee.department
-      - create:Employee
+      - execute:UpdateEmployeeDepartment
+      - execute:CreateEmployee
       - tool:linear_regression
 
 users:

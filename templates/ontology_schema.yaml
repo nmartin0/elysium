@@ -64,3 +64,52 @@ object_types:
         type: link                  # a forward reference -- a real foreign-key
         target: Employee             # column on THIS table (cardinality: one)
         cardinality: one
+
+# NAMED ACTION TYPES -- the ONLY way an LLM-driven agent may ever
+# change data (see write_mediator.py's own module docstring). Each
+# action is a NAMED, independently-governed operation with its own
+# execute:<ActionName> grant in policy.yaml -- there is no generic,
+# free-form "write this field" mechanism at all.
+#
+# A mutation's "value" is one of three kinds -- the two most important
+# to understand are both demonstrated below, deliberately, so this
+# template teaches the real distinction rather than picking just one
+# (a plain LITERAL, the third kind, is self-explanatory and not shown
+# separately):
+#   - a LITERAL, used as-is
+#   - "parameter.<name>", one of the action's own declared parameters,
+#     supplied by the MODEL at invocation time (UpdateEmployeeDepartment
+#     below lets the caller freely choose the new department)
+#   - "user.security_value", the ACTING user's own MAC value,
+#     substituted automatically -- NEVER model-supplied. The only safe
+#     way to populate a new object's security field on a "create"
+#     action (CreateEmployee below scopes every new hire to the
+#     acting hr_admin's OWN department, matching their existing MAC
+#     boundary) -- a literal would hardcode one department for every
+#     admin; a parameter reference would let the model assign a new
+#     hire to a department the acting user has no authority over at
+#     all.
+action_types:
+  UpdateEmployeeDepartment:
+    object_type: Employee
+    operation: update
+    parameters:
+      new_department:
+        type: string
+        required: true
+    mutations:
+      - set: {property: department, value: parameter.new_department}
+  CreateEmployee:
+    object_type: Employee
+    operation: create
+    parameters:
+      employee_id:
+        type: string
+        required: true
+      full_name:
+        type: string
+        required: true
+    mutations:
+      - set: {property: employee_id, value: parameter.employee_id}
+      - set: {property: full_name, value: parameter.full_name}
+      - set: {property: department, value: user.security_value}

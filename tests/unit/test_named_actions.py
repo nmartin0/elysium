@@ -1,12 +1,11 @@
 """
 Tests for WriteMediator.propose_action() -- the named-action-types
-write path (action-types-redesign branch), matching Palantir Foundry's
-own action-type model directly: a NAMED, independently-governed
-operation with its own execute: grant, declared parameters, and
-declared mutations -- not a generic CRUD verb with free-form field
-input. See core/ontology/write_mediator.py's module docstring for the
-full reasoning, and why propose_write() (still present, untouched)
-exists alongside this only temporarily.
+write path, matching Palantir Foundry's own action-type model
+directly: a NAMED, independently-governed operation with its own
+execute: grant, declared parameters, and declared mutations -- not a
+generic CRUD verb with free-form field input. See
+core/ontology/write_mediator.py's module docstring for the full
+reasoning.
 
 TEST_ACTION_TYPES deliberately exercises the full mechanism, not a
 simplified version: a "current_state" submission criterion (the ticket
@@ -173,22 +172,3 @@ def test_denied_action_does_not_double_log(write_mediator, isolated_audit_log):
     assert len(execute_entries) == 1
     assert execute_entries[0]["mac_allowed"] is False
     assert execute_entries[0]["rbac_allowed"] is True
-
-
-def test_propose_write_still_works_unchanged_alongside_propose_action(write_mediator):
-    # propose_write() is UNTOUCHED by this branch's changes (reverted
-    # back to its original, pre-submission-criteria form) -- proves
-    # BOTH proposal paths genuinely coexist correctly on ONE
-    # WriteMediator instance during this build-and-prove-in-isolation
-    # phase, before the later migration pass removes propose_write().
-    lead = _record("lead")
-    roles_with_write = {**TEST_ROLES, "support_lead": {
-        **TEST_ROLES["support_lead"], "allowed_actions": TEST_ROLES["support_lead"]["allowed_actions"] + ["write:Ticket.status"],
-    }}
-    write_mediator.mediator.roles = roles_with_write
-    write_mediator.roles = roles_with_write
-
-    pending = write_mediator.propose_write(lead, "Ticket", "t1", "update", {"status": "escalated"})
-    outcome = write_mediator.confirm_and_execute(pending, approved=True)
-    assert outcome == {"status": "written", "object_id": "t1"}
-    assert write_mediator.mediator.get_field(lead, "Ticket", "t1", "status") == "escalated"

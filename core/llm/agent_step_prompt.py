@@ -235,13 +235,12 @@ To use one:
   {{"step": "use_tool", "tool_name": "<name>", "args": {{...}}}}
 """
     writes_section = ""
-    if writes_enabled:
-        actions_block = ""
-        if visible_action_types:
-            # Only present at all if this user has at least one visible
-            # named action -- same gating discipline as tools_section
-            # above (an empty section is worse than no section).
-            actions_block = f"""
+    if writes_enabled and visible_action_types:
+        # Only present at all if writes are enabled for this deployment
+        # AND this user has at least one visible named action -- same
+        # gating discipline as tools_section above (an empty section is
+        # worse than no section).
+        writes_section = f"""
 
 You may also invoke a NAMED ACTION on an object you have access to. An
 action only takes effect after a human explicitly confirms it -- invoke
@@ -250,20 +249,7 @@ answer a question. If an action below is marked "Currently blocked"
 for a specific object, invoking it for that object will fail -- prefer
 a different action or a different object instead.
 
-{_describe_actions(visible_action_types, gathered)}"""
-        writes_section = f"""
-
-You may also propose a WRITE to update an existing object, or create a
-new one. A write only takes effect after a human explicitly confirms
-it -- propose one only when the question genuinely calls for changing
-data, never merely to answer a question.
-
-To propose updating an existing object:
-  {{"step": "propose_write", "object_type": "<type>", "object_id": "<id>", "action": "update", "changes": {{"<field>": "<new_value>"}}}}
-
-To propose creating a new object:
-  {{"step": "propose_write", "object_type": "<type>", "action": "create", "changes": {{"<field>": "<value>", ...}}}}
-{actions_block}
+{_describe_actions(visible_action_types, gathered)}
 """
     return f"""You gather information step by step to answer a question,
 using ONLY these object types and fields:
@@ -385,25 +371,6 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
             return FINISH_STEP
         return {"step": "use_tool", "tool_name": parsed["tool_name"], "args": parsed["args"]}
 
-    if step == "propose_write":
-        required = {"object_type", "action", "changes"}
-        if not required.issubset(parsed.keys()):
-            logger.warning("malformed propose_write step, finishing")
-            return FINISH_STEP
-        if parsed["action"] not in ("update", "create"):
-            logger.warning(f"invalid write action {parsed['action']!r}, finishing")
-            return FINISH_STEP
-        if parsed["action"] == "update" and "object_id" not in parsed:
-            logger.warning("propose_write update missing object_id, finishing")
-            return FINISH_STEP
-        return {
-            "step": "propose_write",
-            "object_type": parsed["object_type"],
-            "object_id": parsed.get("object_id"),
-            "action": parsed["action"],
-            "changes": parsed["changes"],
-        }
-
     if step == "propose_action":
         # Structural validation ONLY -- same discipline as every other
         # step above: whether action_type is a real, authorized named
@@ -411,9 +378,8 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # job, surfacing back to core/agent/agentic_loop.py as a caught
         # ValueError/PermissionError exactly like an unknown object_type
         # or field_name already does for the other step kinds.
-        # object_id is genuinely OPTIONAL here (unlike propose_write's
-        # own "update" case) -- a "create"-operation action has no
-        # existing object to reference at all.
+        # object_id is genuinely OPTIONAL here -- a "create"-operation
+        # action has no existing object to reference at all.
         required = {"action_type", "parameters"}
         if not required.issubset(parsed.keys()):
             logger.warning("malformed propose_action step, finishing")

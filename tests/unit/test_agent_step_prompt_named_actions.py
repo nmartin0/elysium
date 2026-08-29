@@ -114,11 +114,10 @@ def test_system_prompt_omits_actions_section_when_no_actions_are_visible():
 
 
 def test_system_prompt_omits_actions_section_when_writes_disabled_even_with_visible_actions():
-    # writes_enabled=False must suppress the ENTIRE writes/actions
-    # section, regardless of what visible_action_types contains.
+    # writes_enabled=False must suppress the ENTIRE actions section,
+    # regardless of what visible_action_types contains.
     prompt = _build_system_prompt({}, [], False, ACTION_TYPES, [])
     assert "propose_action" not in prompt
-    assert "propose_write" not in prompt
 
 
 class _FakeClient:
