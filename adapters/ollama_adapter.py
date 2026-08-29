@@ -10,6 +10,8 @@ deployment's config.yaml llm.connection block (e.g. {"base_url": ...,
 Used by: core/deployment_loader.py's build_llm_adapter() factory
 """
 
+from typing import Any
+
 import requests
 
 
@@ -29,7 +31,18 @@ class OllamaAdapter:
         # callers decide what "failure" should mean for them (e.g. the
         # agent loop fails closed to "finish"; synthesis returns an
         # error string), so this method doesn't swallow the exception.
-        payload = {
+        #
+        # Explicitly dict[str, Any] -- without this, mypy infers a
+        # narrower type from the literal dict below (a mix of str,
+        # list[dict[str, str]], and bool), then the two conditional
+        # assignments further down (adding a str, then a dict[str,
+        # float]) don't structurally fit that inferred type either,
+        # surfacing as an incompatibility against requests.post()'s
+        # own json parameter stub (JsonType) -- a real, environment-
+        # dependent finding: only visible with types-requests actually
+        # installed, which is why this went unnoticed until checked
+        # against an environment that had it.
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
