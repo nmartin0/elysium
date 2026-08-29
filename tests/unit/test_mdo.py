@@ -61,9 +61,47 @@ TEST_ROLES = {
     "full": {"allowed_actions": [
         "read:Customer", "read:Customer.customer_id", "read:Customer.name", "read:Customer.risk_score",
         "read:Customer.preferred_agent_id",
-        "write:Customer.risk_score", "write:Customer.name", "create:Customer",
+        "execute:UpdateRiskScore", "execute:UpdateNameAndRiskScore", "execute:CreateCustomerRiskOnly",
     ]},
     "name_only": {"allowed_actions": ["read:Customer", "read:Customer.customer_id", "read:Customer.name"]},
+}
+
+TEST_ACTION_TYPES = {
+    "UpdateRiskScore": {
+        "object_type": "Customer",
+        "operation": "update",
+        "parameters": {"new_score": {"type": "number", "required": True}},
+        "mutations": [{"set": {"property": "risk_score", "value": "parameter.new_score"}}],
+    },
+    # DELIBERATELY mixes a primary-storage field (name) and an MDO
+    # field (risk_score) in ONE action's mutations -- for
+    # test_write_mixing_fields_from_different_storages_is_rejected,
+    # proving the v1 scope boundary rejects this the SAME way for a
+    # named action's resolved mutations as it did for propose_write()'s
+    # free-form changes.
+    "UpdateNameAndRiskScore": {
+        "object_type": "Customer",
+        "operation": "update",
+        "parameters": {"new_name": {"type": "string", "required": True}, "new_score": {"type": "number", "required": True}},
+        "mutations": [
+            {"set": {"property": "name", "value": "parameter.new_name"}},
+            {"set": {"property": "risk_score", "value": "parameter.new_score"}},
+        ],
+    },
+    # DELIBERATELY touches ONLY the MDO field, nothing primary-storage
+    # -- for test_create_with_only_mdo_fields_produces_an_orphaned_and_
+    # unreadable_row below. Must NOT gain a "user.security_value"
+    # mutation for "region" -- that would change the whole scenario
+    # this test exists to prove (an orphaned, primary-row-less MDO
+    # insert), and "region" lives on PRIMARY storage anyway, which
+    # would trigger the very "cannot combine storages" rejection this
+    # action is specifically NOT testing.
+    "CreateCustomerRiskOnly": {
+        "object_type": "Customer",
+        "operation": "create",
+        "parameters": {"risk_score": {"type": "number", "required": True}},
+        "mutations": [{"set": {"property": "risk_score", "value": "parameter.risk_score"}}],
+    },
 }
 
 TEST_USERS = {
@@ -142,11 +180,11 @@ def test_search_mixing_fields_from_different_storages_is_rejected(mediator):
         mediator.search_object(_record("alice"), "Customer", {"name": "Ada Okafor", "risk_score": 0.42})
 
 
-def test_write_to_an_mdo_field_actually_changes_the_right_database(mediator):
-    write_mediator = WriteMediator(mediator, TEST_ROLES)
+def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
 
-    pending = write_mediator.propose_write(alice, "Customer", "cust_001", "update", {"risk_score": 0.99})
+    pending = write_mediator.propose_action(alice, "UpdateRiskScore", "cust_001", {"new_score": 0.99})
     assert pending.expected_current_values == {"risk_score": 0.42}
 
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
@@ -158,15 +196,18 @@ def test_write_to_an_mdo_field_actually_changes_the_right_database(mediator):
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "Ada Okafor"
 
 
-def test_write_mixing_fields_from_different_storages_is_rejected(mediator):
+def test_action_mixing_fields_from_different_storages_is_rejected(mediator):
     # THE v1 scope boundary for writes -- no atomicity guarantee exists
     # across genuinely separate databases, so this is rejected outright
-    # rather than silently attempted as two non-atomic writes.
-    write_mediator = WriteMediator(mediator, TEST_ROLES)
+    # rather than silently attempted as two non-atomic writes. Proven
+    # here via a named action whose OWN declared mutations mix a
+    # primary field (name) and an MDO field (risk_score) -- the same
+    # rejection propose_write()'s free-form changes used to trigger.
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
     with pytest.raises(ValueError, match="cannot combine fields from multiple storages"):
-        write_mediator.propose_write(alice, "Customer", "cust_001", "update",
-                                      {"name": "New Name", "risk_score": 0.5})
+        write_mediator.propose_action(alice, "UpdateNameAndRiskScore", "cust_001",
+                                       {"new_name": "New Name", "new_score": 0.5})
 
 
 def test_search_with_empty_criteria_defaults_to_primary_storage(mediator):
@@ -325,10 +366,10 @@ def test_create_with_only_mdo_fields_produces_an_orphaned_and_unreadable_row(med
     # addition, this test never actually verified the log entry fires
     # here, only that the return values are correctly None. A genuine
     # gap between what the docstring claimed and what was proven.
-    write_mediator = WriteMediator(mediator, TEST_ROLES)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
 
-    pending = write_mediator.propose_write(alice, "Customer", None, "create", {"risk_score": 0.15})
+    pending = write_mediator.propose_action(alice, "CreateCustomerRiskOnly", None, {"risk_score": 0.15})
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
     # The write itself succeeds -- no error, no guard against this today.
