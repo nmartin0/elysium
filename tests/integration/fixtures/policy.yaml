@@ -37,6 +37,15 @@ roles:
       # access to the target type in the OTHER silo. Without both, a
       # real model could never discover the link exists at all, let
       # alone follow it and see anything once there.
+      #
+      # NOTE: granting read:SupportTicket.ticket_id/customer_id makes
+      # SupportTicket ALSO independently, directly searchable -- a
+      # real model may legitimately reach it via search_object(
+      # "SupportTicket", {"customer_id": ...}) instead of following
+      # Customer.support_tickets, and both are valid, safe paths (see
+      # test_real_model_follows_a_link_across_silos, which allows
+      # either). See customer_service_link_only below for the role
+      # that removes this alternate path specifically.
       - read:Customer.support_tickets
       - read:SupportTicket
       - read:SupportTicket.ticket_id
@@ -64,6 +73,27 @@ roles:
       - read:Customer
       - read:Customer.customer_id
       - read:Customer.name
+  # For tests/integration/test_cross_silo_e2e.py's
+  # test_real_model_is_forced_to_follow_the_link_when_no_alternate_path_exists.
+  # Deliberately grants the reverse link and SupportTicket's DATA
+  # fields, but withholds read:SupportTicket.ticket_id AND
+  # read:SupportTicket.customer_id -- without either, _filterable_columns()
+  # has no id_field and no forward-link field to search by, so
+  # search_object("SupportTicket", ...) can never locate cust_001's
+  # tickets specifically. The ONLY path that can possibly work is
+  # get_field(Customer, cust_001, "support_tickets"). Not a fully
+  # airtight RBAC restriction in the abstract (subject/status are still
+  # technically searchable, since is_searchable_field() allows any
+  # plain-data field) -- but practically unusable as a discovery path,
+  # since it requires already knowing the exact value to search for.
+  customer_service_link_only:
+    allowed_actions:
+      - read:Customer
+      - read:Customer.customer_id
+      - read:Customer.support_tickets
+      - read:SupportTicket
+      - read:SupportTicket.subject
+      - read:SupportTicket.status
 
 users:
   user_alice:
@@ -86,3 +116,9 @@ users:
   user_eve:
     region: us-west
     role: editor
+  # For tests/integration/test_cross_silo_e2e.py's link-only test --
+  # see customer_service_link_only above for exactly what's withheld
+  # and why.
+  user_frank:
+    region: us-west
+    role: customer_service_link_only
