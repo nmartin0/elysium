@@ -36,6 +36,7 @@ import requests
 
 from core.llm.interface import LLMAdapter
 from core.ontology.schema import is_searchable_field
+from core.ontology.submission_criteria import SubmissionCriteriaViolation, evaluate_submission_criteria
 from core.tools.interface import Tool
 
 logger = logging.getLogger(__name__)
@@ -125,7 +126,103 @@ def _describe_tools(tools: list[Tool]) -> str:
     return "\n".join(blocks)
 
 
-def _build_system_prompt(visible_schema: dict, tools: list[Tool], writes_enabled: bool) -> str:
+def _known_state_for_object(gathered: list[dict], object_type: str, object_id) -> dict:
+    # Every field ALREADY read for this specific object during this
+    # same run(), keyed by field_name -- built entirely from real
+    # get_field results already sitting in `gathered`, never a fresh
+    # database read at prompt-build time.
+    return {
+        item["field_name"]: item["result"]
+        for item in gathered
+        if item.get("step") == "get_field"
+        and item.get("object_type") == object_type
+        and item.get("object_id") == object_id
+    }
+
+
+def _action_validity_for_object(action_def: dict, known_state: dict) -> tuple[bool, str] | None:
+    # Returns (is_valid, reason) if `known_state` genuinely covers
+    # EVERY field this action's own current_state criteria reference --
+    # reusing evaluate_submission_criteria() directly, the SAME
+    # function propose_action() itself calls at proposal time, not a
+    # separate reimplementation that could silently drift out of sync
+    # with it over time (the exact risk this project has been careful
+    # to avoid elsewhere -- see is_searchable_field()'s own docstring
+    # for the earlier instance of this same principle). Returns None
+    # if known_state is missing even ONE needed field -- a PARTIAL read
+    # must never produce a confident verdict either way, since
+    # evaluating a missing field as None could silently produce a
+    # WRONG answer depending on the criterion's own operator (e.g. a
+    # "not_equals" criterion would incorrectly read as satisfied
+    # against a field that was simply never read at all).
+    criteria = action_def.get("submission_criteria", [])
+    needed_fields = {c["field"] for c in criteria if c["check"] == "current_state"}
+    if not needed_fields.issubset(known_state.keys()):
+        return None
+    try:
+        evaluate_submission_criteria(criteria, known_state, {})
+        return True, ""
+    except SubmissionCriteriaViolation as e:
+        return False, str(e)
+
+
+def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
+    # Renders the model-facing named-action vocabulary -- one block per
+    # action this user is authorized for (already filtered by
+    # WriteMediator.visible_action_types() BEFORE this is ever called;
+    # this function has no authorization logic of its own).
+    #
+    # For any object the model has ALREADY read enough state for
+    # during this same run, annotates whether the action is currently
+    # valid or blocked (and why) for that specific object -- the
+    # hybrid design: cheap and precise when state is already known
+    # (mirroring how a real UI can disable/hide an action button for
+    # an object already loaded on screen), and silently absent
+    # otherwise (an action with no annotatable objects yet -- the
+    # common case, e.g. at the very start of a request, before any
+    # object's state has been read at all -- is shown with no verdict,
+    # exactly as a UI with nothing loaded yet would show it).
+    blocks = []
+    for action_name, action_def in visible_action_types.items():
+        object_type = action_def["object_type"]
+        params = action_def.get("parameters", {})
+        param_desc = ", ".join(
+            f"{name} ({info['type']}{', required' if info.get('required') else ', optional'})"
+            for name, info in params.items()
+        ) or "no parameters"
+        param_json = ", ".join(f'"{name}": "<value>"' for name in params)
+
+        known_object_ids = sorted({
+            item["object_id"] for item in gathered
+            if item.get("step") == "get_field" and item.get("object_type") == object_type
+        }, key=str)
+
+        valid_for, blocked_for = [], []
+        for object_id in known_object_ids:
+            verdict = _action_validity_for_object(action_def, _known_state_for_object(gathered, object_type, object_id))
+            if verdict is None:
+                continue
+            is_valid, reason = verdict
+            if is_valid:
+                valid_for.append(str(object_id))
+            else:
+                blocked_for.append(f"{object_id} ({reason})")
+
+        block = (
+            f'- {action_name} (on {object_type}): requires {param_desc}\n'
+            f'  {{"step": "propose_action", "action_type": "{action_name}", '
+            f'"object_id": "<id>", "parameters": {{{param_json}}}}}'
+        )
+        if valid_for:
+            block += f"\n  Currently valid for: {', '.join(valid_for)}"
+        if blocked_for:
+            block += f"\n  Currently blocked for: {'; '.join(blocked_for)}"
+        blocks.append(block)
+    return "\n".join(blocks)
+
+
+def _build_system_prompt(visible_schema: dict, tools: list[Tool], writes_enabled: bool,
+                          visible_action_types: dict, gathered: list[dict]) -> str:
     tools_section = ""
     if tools:
         tools_section = f"""
@@ -139,7 +236,22 @@ To use one:
 """
     writes_section = ""
     if writes_enabled:
-        writes_section = """
+        actions_block = ""
+        if visible_action_types:
+            # Only present at all if this user has at least one visible
+            # named action -- same gating discipline as tools_section
+            # above (an empty section is worse than no section).
+            actions_block = f"""
+
+You may also invoke a NAMED ACTION on an object you have access to. An
+action only takes effect after a human explicitly confirms it -- invoke
+one only when the question genuinely calls for it, never merely to
+answer a question. If an action below is marked "Currently blocked"
+for a specific object, invoking it for that object will fail -- prefer
+a different action or a different object instead.
+
+{_describe_actions(visible_action_types, gathered)}"""
+        writes_section = f"""
 
 You may also propose a WRITE to update an existing object, or create a
 new one. A write only takes effect after a human explicitly confirms
@@ -147,10 +259,11 @@ it -- propose one only when the question genuinely calls for changing
 data, never merely to answer a question.
 
 To propose updating an existing object:
-  {"step": "propose_write", "object_type": "<type>", "object_id": "<id>", "action": "update", "changes": {"<field>": "<new_value>"}}
+  {{"step": "propose_write", "object_type": "<type>", "object_id": "<id>", "action": "update", "changes": {{"<field>": "<new_value>"}}}}
 
 To propose creating a new object:
-  {"step": "propose_write", "object_type": "<type>", "action": "create", "changes": {"<field>": "<value>", ...}}
+  {{"step": "propose_write", "object_type": "<type>", "action": "create", "changes": {{"<field>": "<value>", ...}}}}
+{actions_block}
 """
     return f"""You gather information step by step to answer a question,
 using ONLY these object types and fields:
@@ -202,7 +315,8 @@ a list and silently skip others.
 
 
 def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
-              gathered_so_far: list[dict], tools: list[Tool], writes_enabled: bool) -> dict:
+              gathered_so_far: list[dict], tools: list[Tool], writes_enabled: bool,
+              visible_action_types: dict) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that
     # object_type/field_name are real entries in the ontology schema
@@ -211,8 +325,12 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
     # closed (returns finish) on ANY uncertainty -- malformed JSON, an
     # unrecognized step, missing keys. tools is required (not defaulted
     # to []) to avoid the classic Python mutable-default-argument trap.
-    # writes_enabled is likewise required, not defaulted -- an explicit
-    # capability flag, not something to silently infer.
+    # writes_enabled and visible_action_types are likewise required,
+    # not defaulted -- explicit capability flags, not something to
+    # silently infer (an empty {} is a legitimate, common value --
+    # "writes enabled but no named actions declared yet" -- so the
+    # caller must pass it explicitly rather than this function
+    # guessing at an appropriate default).
     user_message = (
         f"Question: {query_text}\n\n"
         f"Gathered so far: {json.dumps(gathered_so_far)}\n\n"
@@ -221,7 +339,8 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
 
     try:
         raw_content = client.chat(
-            _build_system_prompt(visible_schema, tools, writes_enabled), user_message,
+            _build_system_prompt(visible_schema, tools, writes_enabled, visible_action_types, gathered_so_far),
+            user_message,
             json_mode=True, temperature=0,
         )
         # Logs the model's raw response BEFORE any parsing/validation --
@@ -283,6 +402,27 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
             "object_id": parsed.get("object_id"),
             "action": parsed["action"],
             "changes": parsed["changes"],
+        }
+
+    if step == "propose_action":
+        # Structural validation ONLY -- same discipline as every other
+        # step above: whether action_type is a real, authorized named
+        # action is NOT checked here, it's WriteMediator.propose_action()'s
+        # job, surfacing back to core/agent/agentic_loop.py as a caught
+        # ValueError/PermissionError exactly like an unknown object_type
+        # or field_name already does for the other step kinds.
+        # object_id is genuinely OPTIONAL here (unlike propose_write's
+        # own "update" case) -- a "create"-operation action has no
+        # existing object to reference at all.
+        required = {"action_type", "parameters"}
+        if not required.issubset(parsed.keys()):
+            logger.warning("malformed propose_action step, finishing")
+            return FINISH_STEP
+        return {
+            "step": "propose_action",
+            "action_type": parsed["action_type"],
+            "object_id": parsed.get("object_id"),
+            "parameters": parsed["parameters"],
         }
 
     logger.warning(f"unrecognized step {step!r}, finishing")

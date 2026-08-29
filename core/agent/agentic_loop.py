@@ -378,14 +378,24 @@ class AgentLoop:
         asymmetry_nudged = False
         writes_enabled = self.write_mediator is not None
 
-        # Computed ONCE per run(), not per hop.
+        # Computed ONCE per run(), not per hop -- same as visible_schema.
+        # This is the AUTHORIZATION-filtered set of actions this user
+        # may even attempt; it does NOT change mid-request. The
+        # separate, per-OBJECT validity annotations _describe_actions()
+        # computes from `gathered` ARE necessarily fresh every hop --
+        # handled correctly already, since _build_system_prompt() itself
+        # is rebuilt fresh on every call to next_step() below, and
+        # `gathered` is the same list, growing across hops.
         visible_schema = self.mediator.visible_schema(user_record)
+        visible_action_types = self.write_mediator.visible_action_types(user_record) if self.write_mediator else {}
 
         for _ in range(1, self.max_hops + 1):
             if cancel_event is not None and cancel_event.is_set():
                 return AgentLoopResult(gathered=gathered, cancelled=True)
 
-            step = next_step(self.client, query_text, visible_schema, gathered, self.tools, writes_enabled)
+            step = next_step(
+                self.client, query_text, visible_schema, gathered, self.tools, writes_enabled, visible_action_types
+            )
 
             if step["step"] == "finish":
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)

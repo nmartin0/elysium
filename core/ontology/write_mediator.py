@@ -76,6 +76,21 @@ class WriteMediator:
         # working completely unchanged.
         self.action_types = action_types or {}
 
+    def visible_action_types(self, user_record: UserRecord) -> dict:
+        # Mirrors DataMediator.visible_schema() exactly, for the SAME
+        # reason: the model must never be shown an action it isn't
+        # actually authorized to invoke. Filters self.action_types down
+        # to exactly the ones this user holds an execute: grant for --
+        # used by core/llm/agent_step_prompt.py to build the model-
+        # facing action vocabulary, and by core/agent/agentic_loop.py's
+        # run(), which computes this ONCE per request, same as
+        # visible_schema() itself.
+        return {
+            action_name: action_def
+            for action_name, action_def in self.action_types.items()
+            if authorize(user_record, self.roles, f"execute:{action_name}")
+        }
+
     def _describe(self, object_type: str, object_id: Any | None, action: str, changes: dict) -> str:
         if action == "create":
             return f"Create a new {object_type} with: {changes}"
