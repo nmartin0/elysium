@@ -12,8 +12,17 @@ llm:
   provider: ollama
   connection:
     base_url: "http://localhost:11434/api/chat"
-    request_timeout_seconds: 240
-  step_model: "phi4-mini"
+    # 480s, not the more typical 240 -- raised based on real, repeated
+    # evidence, not a guess: this specific VM (2 CPU cores) genuinely,
+    # consistently needed more than 240s for some calls under sustained
+    # load, confirmed directly (a real 134% CPU llama-server process
+    # observed via `ps`, one full core saturated) and reproducibly
+    # (3 consecutive clean timeouts on the same call, surviving even a
+    # full Ollama restart in between -- ruling out a stuck/hung process
+    # as the cause). This is a genuine hardware-capacity accommodation,
+    # not a workaround for a hang or a bug.
+    request_timeout_seconds: 480
+  step_model: "qwen3:4b-instruct-2507-q4_K_M"
   synthesis_model: "qwen2.5:3b"
 
 agent:

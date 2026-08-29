@@ -224,6 +224,14 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
             _build_system_prompt(visible_schema, tools, writes_enabled), user_message,
             json_mode=True, temperature=0,
         )
+        # Logs the model's raw response BEFORE any parsing/validation --
+        # silent by default (DEBUG), but genuinely valuable when a step's
+        # PARSED result looks wrong: this is the only way to tell "the
+        # model generated something subtly different than the parsed
+        # trace suggests" apart from "our own parsing/validation logic
+        # is wrong" -- two very different bugs that look identical from
+        # gathered[] alone. Enable with pytest's --log-cli-level=DEBUG.
+        logger.debug(f"raw model response: {raw_content!r}")
         parsed = json.loads(raw_content)
     except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
         logger.warning(f"request/parse failed, finishing: {e}")
