@@ -33,6 +33,7 @@ from typing import Any, Literal
 from core.intermediate_layer.audit import log_access, log_pre, log_post
 from core.intermediate_layer.auth import authorize, UserRecord
 from core.ontology.mediator import DataMediator
+from core.ontology.schema import get_field_column
 
 
 @dataclass(frozen=True)
@@ -96,15 +97,33 @@ class WriteMediator:
         if not mac_allowed:
             raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
 
+        # MDO: every field in `changes` must share ONE storage -- the
+        # same v1 scope boundary as reads (see DataMediator.
+        # _resolve_shared_storage()'s own docstring). This runs for
+        # BOTH create and update -- a create populating fields from
+        # multiple storages would need multiple separate insert
+        # statements, one per silo, which is real, unsolved multi-
+        # storage-write territory intentionally out of scope for v1,
+        # not just an update-specific concern.
+        adapter, resolved_type_config = self.mediator._resolve_shared_storage(object_type, list(changes.keys()))
+
         # Snapshot for lost-update detection -- captured here, verified
         # atomically at execute time. Direct adapter read, not
         # mediator.get_field() -- access was already confirmed above.
+        # Reads via each field's REAL column name (itself, unless MDO
+        # overrides it -- see get_field_column()'s docstring), but
+        # stays keyed by field_name throughout PendingWrite -- field
+        # names are the human/model-facing vocabulary; translation to
+        # raw SQL column names happens once, right before the adapter
+        # call, in confirm_and_execute() below.
         expected_current_values = {}
         if action == "update":
-            adapter = self.mediator._adapter_for(object_type)
-            type_config = self.mediator._type_schema(object_type)
             expected_current_values = {
-                field_name: adapter.get_raw_field(object_type, object_id, field_name, type_config)
+                field_name: adapter.get_raw_field(
+                    object_type, object_id,
+                    get_field_column(resolved_type_config["fields"][field_name], field_name),
+                    resolved_type_config,
+                )
                 for field_name in changes
             }
 
@@ -122,9 +141,22 @@ class WriteMediator:
         if not approved:
             return None
 
-        adapter = self.mediator._adapter_for(pending.object_type)
-        type_config = self.mediator._type_schema(pending.object_type)
+        adapter, resolved_type_config = self.mediator._resolve_shared_storage(
+            pending.object_type, list(pending.changes.keys())
+        )
         write_limiter = self.mediator._write_limiter_for(pending.object_type)
+
+        # Translates field names to their real SQL column names, once,
+        # right here -- the only place PendingWrite's field-name-keyed
+        # dicts actually reach the adapter/SQL layer. Every field in
+        # ONE write already shares one storage/type_config by this
+        # point (validated in propose_write()), so a single resolved
+        # type_config correctly covers every field being translated.
+        def _to_columns(values_by_field: dict) -> dict:
+            return {
+                get_field_column(resolved_type_config["fields"][field_name], field_name): value
+                for field_name, value in values_by_field.items()
+            }
 
         if pending.action == "update":
             # Per-object lock: the PRIMARY correctness mechanism -- two
@@ -133,8 +165,8 @@ class WriteMediator:
             object_lock = self.mediator._lock_for_object(pending.object_type, pending.object_id)
             with object_lock, write_limiter.limit():
                 success = adapter.write_fields(
-                    pending.object_type, pending.object_id, pending.changes,
-                    pending.expected_current_values, type_config,
+                    pending.object_type, pending.object_id, _to_columns(pending.changes),
+                    _to_columns(pending.expected_current_values), resolved_type_config,
                 )
             if not success:
                 raise ValueError(
@@ -144,7 +176,7 @@ class WriteMediator:
             new_id = pending.object_id
         else:
             with write_limiter.limit():
-                new_id = adapter.create_object(pending.object_type, pending.changes, type_config)
+                new_id = adapter.create_object(pending.object_type, _to_columns(pending.changes), resolved_type_config)
 
         log_post(request_id, "success", [new_id])
         return {"status": "written", "object_id": new_id}

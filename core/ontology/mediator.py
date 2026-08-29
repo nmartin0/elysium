@@ -26,6 +26,29 @@ ever read) via a dedicated "storage" sub-key, not flat sibling keys --
 a human editing what a Customer IS never needs to also see or
 understand SQL table names, and vice versa.
 
+MDO (MULTI-DATASOURCE OBJECT TYPES): one object type's DIFFERENT
+properties can each be backed by a genuinely different silo, matching
+Palantir's own column-wise MDO concept -- see _resolve_shared_storage()
+below for the full mechanism. A field opts in via its own "storage" key
+naming an entry in the type's "additional_storage" block; a field with
+no "storage" key uses the type's own primary "storage" block, exactly
+as every field did before MDO existed -- fully backward compatible,
+zero changes required to any single-silo object type. A field may also
+declare "column" to override the actual SQL column name it maps to
+(defaulting to the field name itself, again matching every field's
+existing behavior before this) -- real external silos won't always
+happen to name a column exactly like our own field name.
+
+DELIBERATE V1 SCOPE BOUNDARY, worth stating explicitly: a single
+search_object() filter, get_field() call, or write may only touch
+fields from ONE storage at a time -- see _resolve_shared_storage()'s
+own docstring for why (federated cross-silo intersection and cross-
+database write atomicity are both real, unsolved problems, intentionally
+left for later, separately-justified work). This mirrors Palantir's own
+MDO scope choice: they support column-wise MDO but explicitly not the
+row-wise case, handled through an entirely different mechanism instead
+of generalizing one to cover both.
+
 Takes a pre-resolved UserRecord, not a raw user_id -- DataMediator no
 longer holds users/security_attribute at all (dropped entirely, a real
 reduction in responsibility, not a relocation): resolving a user's
@@ -72,7 +95,10 @@ from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.auth import authorize, UserRecord
 from core.ontology.interface import DataSiloAdapter
-from core.ontology.schema import is_link_field, get_link_target, is_searchable_field
+from core.ontology.schema import (
+    is_link_field, get_link_target, is_searchable_field,
+    get_field_storage_name, get_field_column,
+)
 
 
 class DataMediator:
@@ -105,6 +131,70 @@ class DataMediator:
         if type_schema is None:
             raise ValueError(f"Unknown object_type: {object_type}")
         return type_schema
+
+    def _resolve_shared_storage(self, object_type: str, field_names) -> tuple[DataSiloAdapter, dict]:
+        # MDO (multi-datasource object types) -- resolves ONE adapter +
+        # synthetic type_config shared by every field in field_names.
+        # A field may declare its own "storage" (an entry in this
+        # type's additional_storage), backing it from a genuinely
+        # different silo than its type's own primary one -- see
+        # ontology_schema.yaml's own MDO comments for the full design.
+        #
+        # DELIBERATE V1 SCOPE BOUNDARY: raises if field_names span more
+        # than one storage. A single search filter, get_field call, or
+        # write may only touch fields from ONE storage at a time --
+        # multi-storage search (federated intersection across adapters)
+        # and multi-storage writes (no atomicity guarantee across
+        # separate databases) are real, unsolved problems, deliberately
+        # left for later, separately-justified work rather than
+        # silently attempted here. This mirrors Palantir's own MDO
+        # scope choice -- they support column-wise MDO but explicitly
+        # not the row-wise case, handling that through an entirely
+        # different mechanism instead of trying to generalize one
+        # mechanism to cover both.
+        #
+        # The type's own id_field ALWAYS resolves to the primary
+        # storage, never an additional_storage entry -- MDO lets
+        # DIFFERENT PROPERTIES live in different places, but there is
+        # still exactly one identity for the object, and every
+        # additional_storage entry's own id_column exists only to say
+        # HOW to join on that shared identity value, not to redefine it.
+        type_schema = self._type_schema(object_type)
+        id_field = type_schema["id_field"]
+
+        storage_names = set()
+        for field_name in field_names:
+            if field_name == id_field:
+                storage_names.add(None)
+            else:
+                storage_names.add(get_field_storage_name(type_schema["fields"][field_name]))
+
+        if not storage_names:
+            # No fields specified at all (e.g. search_object() with an
+            # empty criteria dict, "give me everything") -- the primary
+            # storage is the only sensible default, since that's where
+            # the type's own identity column lives.
+            storage_names = {None}
+
+        if len(storage_names) > 1:
+            raise ValueError(
+                f"{object_type}: cannot combine fields from multiple storages "
+                f"in one operation -- {sorted(field_names)}"
+            )
+
+        storage_name = storage_names.pop()
+        storage_block = (
+            type_schema["storage"] if storage_name is None
+            else type_schema["additional_storage"][storage_name]
+        )
+        adapter = self.adapters[storage_block["silo"]]
+        # A synthetic type_config -- everything from the real one,
+        # EXCEPT storage, which is swapped for whichever block this
+        # specific set of fields actually resolved to. Adapters only
+        # ever read type_config["storage"], never anything else in this
+        # dict, so this is safe -- see adapters/sqlite_adapter.py.
+        synthetic_type_config = {**type_schema, "storage": storage_block}
+        return adapter, synthetic_type_config
 
     def _get_security_value(self, object_type: str, object_id: Any) -> Any:
         # Resolves the row-level security value for one object, following
@@ -205,9 +295,24 @@ class DataMediator:
                 # just deliberately hid.
                 raise ValueError("Invalid search criteria")
 
-        adapter = self._adapter_for(object_type)
         real_type_schema = self._type_schema(object_type)  # adapter needs table/id_column, not the filtered view
-        candidate_ids = adapter.find_ids(object_type, criteria, real_type_schema)
+        adapter, resolved_type_config = self._resolve_shared_storage(object_type, list(criteria.keys()))
+
+        # Translates each criteria KEY (a field name) to its real SQL
+        # column name -- itself, unless MDO overrides it via "column"
+        # (see get_field_column()'s own docstring). The id_field is
+        # handled separately: it isn't a regular entry in
+        # type_schema["fields"] at all, its column is whatever the
+        # RESOLVED storage calls its own id_column.
+        id_field = real_type_schema["id_field"]
+        translated_criteria = {}
+        for key, value in criteria.items():
+            if key == id_field:
+                translated_criteria[resolved_type_config["storage"]["id_column"]] = value
+            else:
+                translated_criteria[get_field_column(real_type_schema["fields"][key], key)] = value
+
+        candidate_ids = adapter.find_ids(object_type, translated_criteria, resolved_type_config)
         action = f"read:{object_type}"
 
         return [
@@ -247,5 +352,6 @@ class DataMediator:
             target_id_column = self.schema[target_type]["storage"]["id_column"]
             return target_adapter.resolve_reverse_link(object_id, field_info, target_id_column)
 
-        adapter = self._adapter_for(object_type)
-        return adapter.get_raw_field(object_type, object_id, field_name, type_schema)
+        adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
+        column = get_field_column(field_info, field_name)
+        return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)

@@ -65,3 +65,26 @@ def is_searchable_field(field_info: dict) -> bool:
     if field_info["type"] == "data":
         return True
     return field_info["type"] == "link" and field_info.get("cardinality") == "one"
+
+
+def get_field_storage_name(field_info: dict) -> str | None:
+    # MDO (multi-datasource object types) -- the named entry in this
+    # type's additional_storage this field is backed by, or None if it
+    # uses the type's own primary "storage" block (the default, and by
+    # far the common case -- every field before MDO existed implicitly
+    # worked this way). Pure lookup, no resolution -- see
+    # DataMediator._resolve_shared_storage() for turning this name into
+    # an actual adapter/table/id_column.
+    return field_info.get("storage")
+
+
+def get_field_column(field_info: dict, field_name: str) -> str:
+    # The actual SQL column name backing this field -- itself, unless
+    # overridden via an explicit "column" key. Needed because MDO
+    # sources won't always happen to name their columns exactly like
+    # our own field names (e.g. a "risk_score" field pulled from a
+    # column actually called "score_value" in someone else's database)
+    # -- see ontology_schema.yaml's own MDO comments for the full
+    # reasoning. Every field before MDO existed implicitly used this
+    # same field_name-equals-column-name default.
+    return field_info.get("column", field_name)
