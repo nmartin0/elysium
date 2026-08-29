@@ -26,9 +26,8 @@ done separately, at whatever time makes sense for that caller (a
 terminal prompt for scripts/run_deployment.py; a completely separate
 HTTP request for api/). This also means a second write proposal in the
 same run() can genuinely never happen -- the first one always stops
-the loop -- which is why _step_signature() no longer has special
-propose_write deduplication logic; that branch would have been
-unreachable dead code once this changed.
+the loop -- which is why _step_signature() has no propose_action
+deduplication logic; that branch would be unreachable dead code.
 
 CANCELLATION: an optional cancel_event (threading.Event) is checked
 once at the TOP of each hop, never mid-hop -- this is about skipping
@@ -75,6 +74,7 @@ from core.llm.agent_step_prompt import next_step
 from core.deployment_loader import build_llm_adapter
 from core.llm.interface import LLMAdapter
 from core.ontology.mediator import DataMediator
+from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import WriteMediator, PendingWrite
 from core.tools.interface import Tool
 from core.tools.registry import get_enabled_tools
@@ -92,7 +92,7 @@ class AgentLoopResult:
 
 def _step_signature(step: dict):
     # A hashable fingerprint of one step, used to detect exact repeats.
-    # propose_write has NO entry here -- see module docstring for why a
+    # propose_action has NO entry here -- see module docstring for why a
     # second proposal in one run() is now structurally impossible, not
     # just discouraged.
     if step["step"] == "search_object":
@@ -159,7 +159,7 @@ class AgentLoop:
     # Step types that are process bookkeeping, not real gathered data --
     # filter_real_data() strips these before handing results to synthesis.
     BOOKKEEPING_STEPS = frozenset({
-        "rejected_duplicate", "completeness_check", "rejected_invalid_step",
+        "rejected_duplicate", "completeness_check", "rejected_invalid_step", "rejected_business_rule",
     })
 
     def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Tool] | None = None,
@@ -253,13 +253,26 @@ class AgentLoop:
         return False, True
 
     def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
-                       gathered: list[dict], consecutive_invalid: int
-                       ) -> tuple[int, bool, PendingWrite | None]:
-        # Runs one search_object/get_field/use_tool/propose_write step.
-        # Returns (new_consecutive_invalid, should_stop_loop,
+                       gathered: list[dict], consecutive_invalid: int, consecutive_business_rule: int
+                       ) -> tuple[int, int, bool, PendingWrite | None]:
+        # Runs one search_object/get_field/use_tool/propose_action
+        # step. Returns (new_consecutive_invalid,
+        # new_consecutive_business_rule, should_stop_loop,
         # pending_write_or_None). A non-None pending_write ALWAYS means
         # should_stop_loop is also True -- proposing a write is a
         # terminal action for this run(), same as finishing.
+        #
+        # TWO independent "consecutive mistake" counters, deliberately
+        # -- a business-rule rejection (SubmissionCriteriaViolation) is
+        # a genuinely different KIND of event than a plain invalid step
+        # (a hallucinated field name, a malformed step): the model was
+        # fully authorized and structurally correct, just blocked by
+        # the object's own current state. A real success resets BOTH
+        # counters; either failure kind leaves the OTHER counter
+        # untouched -- neither resets nor increments it. This is what
+        # actually delivers on the decision that a business-rule
+        # rejection shouldn't count against the same strike cap as
+        # genuine confusion.
         try:
             if step["step"] == "search_object":
                 # visible_schema passed through explicitly -- already
@@ -290,20 +303,37 @@ class AgentLoop:
                     raise ValueError(f"Unknown tool: {tool_name!r}")
                 with self._tool_limiters[tool.name].limit():
                     result = tool.run(**step["args"])
-            elif step["step"] == "propose_write":
+            elif step["step"] == "propose_action":
+                # The NAMED-action-type proposal path -- see
+                # core/ontology/write_mediator.py's propose_action() for
+                # the full mechanism. Stops the loop immediately;
+                # confirmation/execution is always the caller's job.
                 if self.write_mediator is None:
                     raise ValueError("Writes are not enabled for this deployment")
-                pending = self.write_mediator.propose_write(
-                    user_record, step["object_type"], step.get("object_id"), step["action"], step["changes"]
+                pending = self.write_mediator.propose_action(
+                    user_record, step["action_type"], step.get("object_id"), step["parameters"]
                 )
-                # Stops the loop -- confirmation/execution is always the
-                # CALLER's job, done separately (see module docstring).
-                return 0, True, pending
+                return 0, 0, True, pending
             else:
-                return consecutive_invalid, True, None  # shouldn't happen -- agent_step_prompt already validates this
+                return consecutive_invalid, consecutive_business_rule, True, None  # shouldn't happen -- agent_step_prompt already validates this
 
             gathered.append({**step, "result": result})
-            return 0, False, None
+            return 0, 0, False, None
+        except SubmissionCriteriaViolation as e:
+            # MUST be caught before the generic ValueError branch below
+            # -- SubmissionCriteriaViolation IS a ValueError subclass,
+            # and Python matches except clauses in order; the specific
+            # one has to come first or it would never be reached.
+            new_count, should_stop = _handle_recoverable_mistake(
+                gathered, consecutive_business_rule, self.max_consecutive_invalid_steps,
+                detail=f"{step} -- {e}",
+                rejected_step_name="rejected_business_rule",
+                attempt_label="business rule rejection",
+                stop_message="too many consecutive business rule rejections, stopping",
+                note=f"That action is not currently allowed: {e}. "
+                     f"Try a different action, a different object, or finish if you have enough already.",
+            )
+            return consecutive_invalid, new_count, should_stop, None
         except (ValueError, TypeError, PermissionError) as e:
             new_count, should_stop = _handle_recoverable_mistake(
                 gathered, consecutive_invalid, self.max_consecutive_invalid_steps,
@@ -315,7 +345,7 @@ class AgentLoop:
                      f"Check the schema above and try something valid, "
                      f"or finish if you have enough already.",
             )
-            return new_count, should_stop, None
+            return new_count, consecutive_business_rule, should_stop, None
 
     def run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None) -> AgentLoopResult:
@@ -333,17 +363,28 @@ class AgentLoop:
         seen_signatures = set()
         consecutive_duplicates = 0
         consecutive_invalid = 0
+        consecutive_business_rule = 0
         asymmetry_nudged = False
         writes_enabled = self.write_mediator is not None
 
-        # Computed ONCE per run(), not per hop.
+        # Computed ONCE per run(), not per hop -- same as visible_schema.
+        # This is the AUTHORIZATION-filtered set of actions this user
+        # may even attempt; it does NOT change mid-request. The
+        # separate, per-OBJECT validity annotations _describe_actions()
+        # computes from `gathered` ARE necessarily fresh every hop --
+        # handled correctly already, since _build_system_prompt() itself
+        # is rebuilt fresh on every call to next_step() below, and
+        # `gathered` is the same list, growing across hops.
         visible_schema = self.mediator.visible_schema(user_record)
+        visible_action_types = self.write_mediator.visible_action_types(user_record) if self.write_mediator else {}
 
         for _ in range(1, self.max_hops + 1):
             if cancel_event is not None and cancel_event.is_set():
                 return AgentLoopResult(gathered=gathered, cancelled=True)
 
-            step = next_step(self.client, query_text, visible_schema, gathered, self.tools, writes_enabled)
+            step = next_step(
+                self.client, query_text, visible_schema, gathered, self.tools, writes_enabled, visible_action_types
+            )
 
             if step["step"] == "finish":
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)
@@ -370,8 +411,8 @@ class AgentLoop:
             if signature is not None:
                 seen_signatures.add(signature)
 
-            consecutive_invalid, should_stop, pending_write = self._execute_step(
-                step, user_record, visible_schema, gathered, consecutive_invalid
+            consecutive_invalid, consecutive_business_rule, should_stop, pending_write = self._execute_step(
+                step, user_record, visible_schema, gathered, consecutive_invalid, consecutive_business_rule
             )
             if pending_write is not None:
                 return AgentLoopResult(gathered=gathered, pending_write=pending_write)

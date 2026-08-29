@@ -23,7 +23,16 @@ TEST_USERS = {
 }
 
 TEST_ROLES = {
-    "editor": {"allowed_actions": ["read:Author", "read:Author.name", "write:Author.name"]},
+    "editor": {"allowed_actions": ["read:Author", "read:Author.name", "execute:RenameAuthor"]},
+}
+
+TEST_ACTION_TYPES = {
+    "RenameAuthor": {
+        "object_type": "Author",
+        "operation": "update",
+        "parameters": {"new_name": {"type": "string", "required": True}},
+        "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
+    },
 }
 
 
@@ -36,7 +45,7 @@ def mediator_and_write_mediator(test_db_path, test_schema):
     adapter = SQLiteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
     mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
-    write_mediator = WriteMediator(mediator, TEST_ROLES)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     return mediator, write_mediator
 
 
@@ -53,14 +62,14 @@ def _loop_with_mocked_llm(mediator, write_mediator, scripted_steps):
     return AgentLoop(client, mediator, write_mediator=write_mediator)
 
 
-def test_propose_write_stops_the_loop_immediately(mediator_and_write_mediator):
+def test_propose_action_stops_the_loop_immediately(mediator_and_write_mediator):
     mediator, write_mediator = mediator_and_write_mediator
-    # A "finish" step scripted AFTER the propose_write must never be
+    # A "finish" step scripted AFTER the propose_action must never be
     # reached -- the loop should stop at the proposal itself, not
     # continue on to it.
     loop = _loop_with_mocked_llm(mediator, write_mediator, [
-        {"step": "propose_write", "object_type": "Author", "object_id": "auth_001",
-         "action": "update", "changes": {"name": "New Name"}},
+        {"step": "propose_action", "action_type": "RenameAuthor", "object_id": "auth_001",
+         "parameters": {"new_name": "New Name"}},
         {"step": "finish"},
     ])
     result = loop.run(_record("alice"), "test query")
@@ -70,13 +79,13 @@ def test_propose_write_stops_the_loop_immediately(mediator_and_write_mediator):
     assert result.pending_write.changes == {"name": "New Name"}
 
 
-def test_propose_write_does_not_touch_the_database(mediator_and_write_mediator):
+def test_propose_action_does_not_touch_the_database(mediator_and_write_mediator):
     # AgentLoop must NEVER call confirm_and_execute() itself -- proposing
     # is as far as it goes; the database must be completely untouched.
     mediator, write_mediator = mediator_and_write_mediator
     loop = _loop_with_mocked_llm(mediator, write_mediator, [
-        {"step": "propose_write", "object_type": "Author", "object_id": "auth_001",
-         "action": "update", "changes": {"name": "Should Not Apply"}},
+        {"step": "propose_action", "action_type": "RenameAuthor", "object_id": "auth_001",
+         "parameters": {"new_name": "Should Not Apply"}},
     ])
     loop.run(_record("alice"), "test query")
 

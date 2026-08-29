@@ -66,7 +66,10 @@ roles:
       - read:Customer
       - read:Customer.customer_id
       - read:Customer.name
-      - write:Customer.name
+      - read:Customer.email
+      - read:Customer.region
+      - execute:UpdateCustomerName
+      - execute:CreateCustomer
   # Deliberately grants name but NOT email -- for
   # tests/integration/test_field_denial_e2e.py, proving a real model
   # never sees (and, via the citation/email verification in
@@ -113,10 +116,10 @@ users:
   user_dave:
     region: us-west
     role: customer_service_no_email
-  # For tests/integration/test_write_proposal_e2e.py -- needs a role
-  # actually granting write:Customer.name to test whether a real model
-  # produces a well-formed propose_write step, not just a scripted one
-  # (already proven by tests/unit/test_write_mediator.py).
+  # For tests/integration/test_named_actions_e2e.py (UpdateCustomerName),
+  # test_write_proposal_e2e.py and test_write_confirmation_e2e.py
+  # (CreateCustomer) -- editor's execute: grants cover all three real
+  # named-action tests that need write capability on Customer.
   user_eve:
     region: us-west
     role: editor

@@ -103,3 +103,65 @@ object_types:
         type: link
         target: Customer
         cardinality: one
+
+# NAMED ACTION TYPES (action-types-redesign branch) -- for
+# tests/integration/test_named_actions_e2e.py, proving a real model
+# transparently discovers, describes correctly to itself, and invokes
+# a genuinely NEW proposal mechanism (propose_action, execute: grants)
+# it has never been prompted with before this branch existed.
+#
+# Deliberately NO submission_criteria on this one -- that mechanism is
+# already thoroughly proven by tests/unit/test_named_actions.py and
+# tests/unit/test_agent_step_prompt_named_actions.py. This test's one
+# genuinely unproven question is narrower: can a real model correctly
+# read and use the propose_action vocabulary at all. Keeping other
+# variables out keeps that question isolated.
+#
+# Granted to editor (user_eve, see policy.yaml) -- originally built
+# with a dedicated user (user_grace) specifically to avoid changing an
+# EXISTING, already-tested user's prompt mid-branch (the exact kind of
+# silent-drift risk this project caught once already this session, the
+# MDO risk_score addition to customer_service). Once the full
+# migration pass deliberately moved editor onto execute: grants too,
+# that isolation concern no longer applied -- user_grace was
+# consolidated away as genuinely redundant footprint, not a risk
+# reduction anymore.
+action_types:
+  UpdateCustomerName:
+    object_type: Customer
+    operation: update
+    parameters:
+      new_name:
+        type: string
+        required: true
+    mutations:
+      - set: {property: name, value: parameter.new_name}
+  # For tests/integration/test_write_proposal_e2e.py -- the one real,
+  # still-open gap this project had: "user.security_value" and writing
+  # to a type's own id_field (see core/ontology/write_mediator.py's
+  # _resolve_mutation_value() and core/ontology/schema.py's
+  # get_column_for_field()) were both found and fixed while building
+  # named actions, but neither had ever been exercised by a REAL,
+  # freely-reasoning model before -- only unit tests and direct
+  # scratch verification. This action exercises BOTH together: the
+  # model supplies customer_id (id_field) and name/email directly, and
+  # region (the MAC security field) is populated automatically from
+  # the ACTING user's own value, never the model's choice.
+  CreateCustomer:
+    object_type: Customer
+    operation: create
+    parameters:
+      customer_id:
+        type: string
+        required: true
+      name:
+        type: string
+        required: true
+      email:
+        type: string
+        required: true
+    mutations:
+      - set: {property: customer_id, value: parameter.customer_id}
+      - set: {property: name, value: parameter.name}
+      - set: {property: email, value: parameter.email}
+      - set: {property: region, value: user.security_value}

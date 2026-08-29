@@ -128,18 +128,26 @@ def test_rbac_blocks_one_silo_entirely_while_the_other_still_works(mediator):
     assert mediator.search_object(bob, "Widget", {"widget_id": "w1"}) == ["w1"]
 
 
-def test_a_write_to_one_silo_never_touches_the_other(mediator):
+def test_an_action_to_one_silo_never_touches_the_other(mediator):
     from core.ontology.write_mediator import WriteMediator
 
     roles = {**TEST_ROLES, "widget_writer": {"allowed_actions": [
-        "read:Widget", "read:Widget.widget_id", "write:Widget.name",
+        "read:Widget", "read:Widget.widget_id", "execute:RenameWidget",
     ]}}
     users = {**TEST_USERS, "carol": {"owner_team": "team-a", "role": "widget_writer"}}
     mediator.roles = roles
     carol = resolve_user_record(users, "carol", "owner_team")
 
-    write_mediator = WriteMediator(mediator, roles)
-    pending = write_mediator.propose_write(carol, "Widget", "w1", "update", {"name": "Renamed Widget"})
+    action_types = {
+        "RenameWidget": {
+            "object_type": "Widget",
+            "operation": "update",
+            "parameters": {"new_name": {"type": "string", "required": True}},
+            "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
+        },
+    }
+    write_mediator = WriteMediator(mediator, roles, action_types)
+    pending = write_mediator.propose_action(carol, "RenameWidget", "w1", {"new_name": "Renamed Widget"})
     write_mediator.confirm_and_execute(pending, approved=True)
 
     # The widget changed...

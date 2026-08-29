@@ -96,7 +96,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request.
-    app.state.write_mediator = WriteMediator(mediator, config.roles)
+    app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types)
     app.state.loop = AgentLoop.from_deployment(config, mediator, write_mediator=app.state.write_mediator)
     app.state.synthesis_client = build_llm_adapter(config, config.synthesis_model)
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
