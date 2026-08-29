@@ -68,8 +68,8 @@ class SQLiteAdapter:
             conn.close()
 
     def find_ids(self, object_type: str, criteria: dict, type_config: dict) -> list[Any]:
-        table = type_config["table"]
-        id_column = type_config["id_column"]
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
 
         # Column NAMES are validated by DataMediator before this is ever
         # called; VALUES are always bound params, never interpolated.
@@ -84,8 +84,8 @@ class SQLiteAdapter:
             return [row[id_column] for row in rows]
 
     def get_raw_field(self, object_type: str, object_id: Any, field_name: str, type_config: dict) -> Any:
-        table = type_config["table"]
-        id_column = type_config["id_column"]
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
 
         with self._connection() as conn:
             row = _run_query_one(
@@ -114,8 +114,8 @@ class SQLiteAdapter:
         # even across separate OS processes, not just threads within
         # this one (see interface.py's supports_atomic_conditional_write
         # docstring for why that distinction matters).
-        table = type_config["table"]
-        id_column = type_config["id_column"]
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
 
         set_clause = ", ".join(f"{key} = ?" for key in changes)
         condition_clause = " AND ".join(f"{key} = ?" for key in expected_current_values)
@@ -130,8 +130,8 @@ class SQLiteAdapter:
             return cursor.rowcount > 0
 
     def create_object(self, object_type: str, fields: dict, type_config: dict) -> Any:
-        table = type_config["table"]
-        id_column = type_config["id_column"]
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
 
         columns = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)

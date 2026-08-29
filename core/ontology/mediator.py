@@ -1,6 +1,31 @@
 """
 mediator.py  (the data-silo router + security enforcer -- generic, org-agnostic)
 
+ARCHITECTURE, NAMED PRECISELY: this class implements the classic
+mediator-wrapper pattern from federated-database research -- a
+"mediator" holding the semantic schema and routing decisions, talking
+to "wrapper" adapters (adapters/sqlite_adapter.py, and any future one)
+that are purely physical and know nothing about routing. This is the
+SAME family of architecture as virtual knowledge graphs / ontology-
+based data access (e.g. the Ontop system): a schema layer resolved
+LIVE against genuinely separate, un-copied data sources at query time,
+not a materialized/indexed copy of them. Worth naming explicitly
+because it's a meaningfully different mechanism from Palantir Foundry's
+own Ontology, despite the shared "ontology" vocabulary for the schema
+concepts themselves (object types, link types) -- Foundry's Ontology
+is a heavily materialized, pre-indexed layer (a separate ingestion
+pipeline copies source data in before anything is queried); this
+system deliberately never copies anything, resolving every link live
+against whichever silo actually holds it, every time.
+
+Each object type's schema entry (ontology_schema.yaml) separates its
+SEMANTIC shape (fields, security, links -- what core/ontology/schema.py's
+helpers ever read) from its PHYSICAL backing (storage.silo/table/
+id_column -- what ONLY the adapter layer and _build_silo_for_type()
+ever read) via a dedicated "storage" sub-key, not flat sibling keys --
+a human editing what a Customer IS never needs to also see or
+understand SQL table names, and vice versa.
+
 Takes a pre-resolved UserRecord, not a raw user_id -- DataMediator no
 longer holds users/security_attribute at all (dropped entirely, a real
 reduction in responsibility, not a relocation): resolving a user's
@@ -219,7 +244,7 @@ class DataMediator:
             # cross-database test -- see tests/unit/test_cross_silo_links.py.
             target_type = get_link_target(field_info)
             target_adapter = self._adapter_for(target_type)
-            target_id_column = self.schema[target_type]["id_column"]
+            target_id_column = self.schema[target_type]["storage"]["id_column"]
             return target_adapter.resolve_reverse_link(object_id, field_info, target_id_column)
 
         adapter = self._adapter_for(object_type)

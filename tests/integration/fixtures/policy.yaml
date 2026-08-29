@@ -32,6 +32,22 @@ roles:
       - read:Transaction.category
       - read:Transaction.transaction_date
       - read:Transaction.customer_id
+      # For tests/integration/test_cross_silo_e2e.py -- the reverse
+      # link ITSELF (read:Customer.support_tickets) plus real read
+      # access to the target type in the OTHER silo. Without both, a
+      # real model could never discover the link exists at all, let
+      # alone follow it and see anything once there.
+      - read:Customer.support_tickets
+      - read:SupportTicket
+      - read:SupportTicket.ticket_id
+      - read:SupportTicket.subject
+      - read:SupportTicket.status
+      - read:SupportTicket.customer_id
+      # For tests/integration/test_tool_use_e2e.py -- proves a real
+      # model decides to invoke the tool (given real gathered numbers,
+      # not fabricated ones) rather than that RBAC correctly gates it
+      # (already proven by tests/unit/test_tool_authorization.py).
+      - tool:linear_regression
   editor:
     allowed_actions:
       - read:Customer

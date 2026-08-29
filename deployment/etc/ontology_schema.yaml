@@ -7,13 +7,21 @@
 # it. A field declared here with no matching grant anywhere simply
 # never appears to the LLM at all -- see core/ontology/mediator.py's
 # visible_schema() docstring for the full reasoning.
+#
+# Each type's "storage" key holds ONLY its physical backing (which
+# silo/table/id_column) -- everything else in a type's entry is purely
+# SEMANTIC (what it means, how it relates to other types). Keeping
+# these visibly separate means editing what a Customer IS never
+# requires also understanding SQL table names, and vice versa -- see
+# core/ontology/mediator.py's own docstring for the full reasoning.
 
 object_types:
   Customer:
-    silo: primary_sql
+    storage:
+      silo: primary_sql
+      table: customers
+      id_column: customer_id
     id_field: customer_id
-    table: customers
-    id_column: customer_id
     security:
       field: region
     fields:
@@ -30,10 +38,11 @@ object_types:
         via_table: transactions
         via_column: customer_id
   Transaction:
-    silo: primary_sql
+    storage:
+      silo: primary_sql
+      table: transactions
+      id_column: transaction_id
     id_field: transaction_id
-    table: transactions
-    id_column: transaction_id
     security:
       via_field: customer_id
     fields:

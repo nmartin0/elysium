@@ -20,10 +20,8 @@ import pytest
 
 TEST_SCHEMA = {
     "Author": {
-        "silo": "test_silo",
+        "storage": {"silo": "test_silo", "table": "authors", "id_column": "author_id"},
         "id_field": "author_id",
-        "table": "authors",
-        "id_column": "author_id",
         "security": {"field": "org_id"},
         "fields": {
             "org_id": {"type": "data"},
@@ -38,10 +36,8 @@ TEST_SCHEMA = {
         },
     },
     "Book": {
-        "silo": "test_silo",
+        "storage": {"silo": "test_silo", "table": "books", "id_column": "book_id"},
         "id_field": "book_id",
-        "table": "books",
-        "id_column": "book_id",
         "security": {"via_field": "author_id"},
         "fields": {
             "title": {"type": "data"},

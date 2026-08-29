@@ -32,12 +32,14 @@ from core.ontology.mediator import DataMediator
 
 TEST_SCHEMA = {
     "Widget": {
-        "silo": "widget_db", "id_field": "widget_id", "table": "widgets", "id_column": "widget_id",
+        "storage": {"silo": "widget_db", "table": "widgets", "id_column": "widget_id"},
+        "id_field": "widget_id",
         "security": {"field": "owner_team"},
         "fields": {"owner_team": {"type": "data"}, "name": {"type": "data"}},
     },
     "Gadget": {
-        "silo": "gadget_db", "id_field": "gadget_id", "table": "gadgets", "id_column": "gadget_id",
+        "storage": {"silo": "gadget_db", "table": "gadgets", "id_column": "gadget_id"},
+        "id_field": "gadget_id",
         "security": {"field": "owner_team"},
         "fields": {"owner_team": {"type": "data"}, "label": {"type": "data"}},
     },

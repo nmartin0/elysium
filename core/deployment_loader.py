@@ -146,7 +146,7 @@ def _build_adapters(silo_configs: dict) -> dict[str, DataSiloAdapter]:
 
 
 def _build_silo_for_type(schema: dict) -> dict[str, str]:
-    return {object_type: type_def["silo"] for object_type, type_def in schema.items()}
+    return {object_type: type_def["storage"]["silo"] for object_type, type_def in schema.items()}
 
 
 @dataclass(frozen=True)

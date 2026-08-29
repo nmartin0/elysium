@@ -1,13 +1,18 @@
 # ontology_schema.yaml  (tests/integration/'s OWN schema -- see
 # config.yaml's header for why this is a fully separate fixture, not
 # the real deployment/etc/ontology_schema.yaml)
+#
+# Each type's "storage" block holds ONLY its physical backing --
+# everything else in a type's entry is purely SEMANTIC. See
+# core/ontology/mediator.py's own docstring for the full reasoning.
 
 object_types:
   Customer:
-    silo: primary_sql
+    storage:
+      silo: primary_sql
+      table: customers
+      id_column: customer_id
     id_field: customer_id
-    table: customers
-    id_column: customer_id
     security:
       field: region
     fields:
@@ -23,11 +28,23 @@ object_types:
         cardinality: many
         via_table: transactions
         via_column: customer_id
+      # Reverse link into a GENUINELY SEPARATE database (support_crm,
+      # see config.yaml) -- for tests/integration/test_cross_silo_e2e.py,
+      # a real model discovering and following a cross-silo link on its
+      # own, not a scripted one (already proven by tests/unit/
+      # test_cross_silo_links.py).
+      support_tickets:
+        type: link
+        target: SupportTicket
+        cardinality: many
+        via_table: tickets
+        via_column: customer_id
   Transaction:
-    silo: primary_sql
+    storage:
+      silo: primary_sql
+      table: transactions
+      id_column: transaction_id
     id_field: transaction_id
-    table: transactions
-    id_column: transaction_id
     security:
       via_field: customer_id
     fields:
@@ -38,6 +55,30 @@ object_types:
       category:
         type: data
       transaction_date:
+        type: data
+      customer_id:
+        type: link
+        target: Customer
+        cardinality: one
+  SupportTicket:
+    storage:
+      silo: support_crm
+      table: tickets
+      id_column: ticket_id
+    id_field: ticket_id
+    # A SECURITY CHAIN, not a direct field -- MAC is resolved by
+    # following customer_id back to Customer.region, exactly the
+    # pattern already proven in tests/unit/test_cross_silo_links.py.
+    # This chain genuinely crosses the silo boundary at resolution
+    # time: _get_security_value()'s recursive call re-resolves
+    # _adapter_for("Customer") fresh, from primary_sql, even though
+    # THIS type's own data lives in support_crm.
+    security:
+      via_field: customer_id
+    fields:
+      subject:
+        type: data
+      status:
         type: data
       customer_id:
         type: link

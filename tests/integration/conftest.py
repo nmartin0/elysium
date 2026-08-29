@@ -36,6 +36,16 @@ plain function both test_full_roundtrip.py and
 test_region_enforcement_e2e.py import) for parsing the JSON-lines
 audit log an isolated_audit_log-using test just produced, so each test
 can assert on its OWN real, specific log entries.
+
+_bundle builds TWO genuinely separate SQLite databases (schema.sql ->
+mediator.db, support_schema.sql -> support.db), matching
+fixtures/config.yaml's two declared data_silos (primary_sql,
+support_crm) -- for tests/integration/test_cross_silo_e2e.py, proving
+a real model correctly discovers and follows a link that genuinely
+crosses between them, not a scripted one (already proven by
+tests/unit/test_cross_silo_links.py). Both are rebuilt fresh into
+pytest's tmp_path for every single test, same isolation discipline as
+the single-database case this extends.
 """
 
 import json
@@ -51,17 +61,21 @@ from core.intermediate_layer.audit import configure_audit_log
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
+def _build_sqlite_db(sql_file: Path, db_path: Path) -> None:
+    conn = sqlite3.connect(db_path)
+    conn.executescript(sql_file.read_text())
+    conn.commit()
+    conn.close()
+
+
 @pytest.fixture
 def _bundle(tmp_path: Path):
     data_dir = tmp_path / "data"
     dev_fixtures_dir = data_dir / "dev_fixtures"
     dev_fixtures_dir.mkdir(parents=True)
 
-    db_path = dev_fixtures_dir / "mediator.db"
-    conn = sqlite3.connect(db_path)
-    conn.executescript((FIXTURES_DIR / "schema.sql").read_text())
-    conn.commit()
-    conn.close()
+    _build_sqlite_db(FIXTURES_DIR / "schema.sql", dev_fixtures_dir / "mediator.db")
+    _build_sqlite_db(FIXTURES_DIR / "support_schema.sql", dev_fixtures_dir / "support.db")
 
     return load_deployment_bundle(FIXTURES_DIR, data_dir)
 

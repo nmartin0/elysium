@@ -47,7 +47,7 @@ def _record(user_id):
 @pytest.fixture
 def mediator(test_db_path, test_schema) -> DataMediator:
     adapter = SQLiteAdapter({"path": test_db_path})
-    silo_for_type = {object_type: type_def["silo"] for object_type, type_def in test_schema.items()}
+    silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
     return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
 
 
@@ -186,7 +186,8 @@ def test_two_mediators_are_independent():
         conn.close()
 
         schema_a = {"Author": {
-            "silo": "s", "id_field": "author_id", "table": "authors", "id_column": "author_id",
+            "storage": {"silo": "s", "table": "authors", "id_column": "author_id"},
+            "id_field": "author_id",
             "security": {"field": "org_id"},
             "fields": {"org_id": {"type": "data"}, "name": {"type": "data"}},
         }}

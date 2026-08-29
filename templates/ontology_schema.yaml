@@ -8,18 +8,25 @@
 # never appears to the LLM at all -- see core/ontology/mediator.py's
 # visible_schema() docstring for the full reasoning.
 #
+# Each type's "storage" block holds ONLY its physical backing --
+# everything else in a type's entry is purely SEMANTIC (what it means,
+# how it relates to other types). Keeping these visibly separate means
+# editing what an Employee IS never requires also understanding SQL
+# table names, and vice versa.
+#
 # This example (Employee/ExpenseReport) is a REAL, working schema --
 # replace it with your own object types once you've confirmed the
 # pipeline works end to end.
 
 object_types:
   Employee:
-    silo: primary_sql               # must match a name under config.yaml's data_silos
+    storage:
+      silo: primary_sql             # must match a name under config.yaml's data_silos
+      table: employees               # the real table name
+      id_column: employee_id
     id_field: employee_id           # the identifier's name -- see policy.yaml's
                                      # header for why this ISN'T automatically
                                      # safe to expose without its own grant
-    table: employees                # the real table name
-    id_column: employee_id
     security:
       field: department             # MAC boundary -- this object type carries
                                      # its own boundary value directly. The
@@ -39,10 +46,11 @@ object_types:
         via_column: employee_id
 
   ExpenseReport:
-    silo: primary_sql
+    storage:
+      silo: primary_sql
+      table: expense_reports
+      id_column: report_id
     id_field: report_id
-    table: expense_reports
-    id_column: report_id
     security:
       via_field: employee_id        # this type doesn't carry its own boundary
                                      # value -- it inherits the linked

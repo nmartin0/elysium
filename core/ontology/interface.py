@@ -10,9 +10,16 @@ core/ontology/mediator.py's DataMediator for where the actual security
 decisions live.
 
 type_config / field_config are passed through OPAQUE to core/ -- each
-adapter reads whichever keys it needs from them (SQLite reads table/
-id_column; a future REST adapter might instead read an endpoint key from
-the same dict). core/ never inspects these values, only forwards them.
+adapter reads whichever keys it needs from them (SQLite reads
+storage.table/storage.id_column; a future REST adapter might instead
+read an endpoint key from the same dict). core/ never inspects these
+values, only forwards them. type_config's "storage" key is itself a
+convention, not something this interface enforces -- it's how
+ontology_schema.yaml keeps each type's PHYSICAL backing details
+(silo/table/id_column) visibly separate from its SEMANTIC ones
+(fields, security, links), matching the mediator-wrapper pattern
+DataMediator/adapters already implement -- see that class's own
+docstring.
 
 CONCURRENCY DECLARATIONS -- every adapter declares three facts about
 itself; core/ enforces based on what's declared, never assumes:

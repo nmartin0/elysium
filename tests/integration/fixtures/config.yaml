@@ -26,6 +26,13 @@ data_silos:
     adapter: sqlite
     connection:
       path: "dev_fixtures/mediator.db"
+  # A GENUINELY SEPARATE database -- for tests/integration/
+  # test_cross_silo_e2e.py, proving a real model discovers and follows
+  # a link crossing this boundary on its own.
+  support_crm:
+    adapter: sqlite
+    connection:
+      path: "dev_fixtures/support.db"
 
 tools:
   enabled:

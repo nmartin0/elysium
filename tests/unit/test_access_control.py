@@ -35,7 +35,7 @@ def _record(user_id):
 @pytest.fixture
 def mediator(test_db_path, test_schema) -> DataMediator:
     adapter = SQLiteAdapter({"path": test_db_path})
-    silo_for_type = {object_type: type_def["silo"] for object_type, type_def in test_schema.items()}
+    silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
     return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
 
 

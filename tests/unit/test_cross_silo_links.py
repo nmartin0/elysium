@@ -40,7 +40,8 @@ from core.ontology.mediator import DataMediator
 
 TEST_SCHEMA = {
     "Employee": {
-        "silo": "silo_a", "id_field": "employee_id", "table": "employees", "id_column": "employee_id",
+        "storage": {"silo": "silo_a", "table": "employees", "id_column": "employee_id"},
+        "id_field": "employee_id",
         "security": {"field": "department"},
         "fields": {
             "department": {"type": "data"},
@@ -52,7 +53,8 @@ TEST_SCHEMA = {
         },
     },
     "PayrollRecord": {
-        "silo": "silo_b", "id_field": "record_id", "table": "payroll_records", "id_column": "record_id",
+        "storage": {"silo": "silo_b", "table": "payroll_records", "id_column": "record_id"},
+        "id_field": "record_id",
         # MAC boundary genuinely CROSSES from silo_b into silo_a here.
         "security": {"via_field": "employee_id"},
         "fields": {
