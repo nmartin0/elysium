@@ -4,6 +4,7 @@ import pytest
 
 from core.ontology.schema import (
     get_id_field, get_field_info, is_link_field, get_link_target, is_searchable_field,
+    get_field_storage_name, get_field_column,
 )
 
 
@@ -58,3 +59,30 @@ def test_is_searchable_field_false_for_reverse_link(test_schema):
     # real column, NOT searchable.
     field_info = get_field_info(test_schema, "Author", "books")
     assert is_searchable_field(field_info) is False
+
+
+def test_get_field_storage_name_returns_none_for_a_field_with_no_override(test_schema):
+    # test_schema's fields (Author.name, Book.title, etc.) predate MDO
+    # entirely and declare no "storage" key at all -- this is the
+    # overwhelmingly common case, and MUST resolve to None (meaning
+    # "use the type's own primary storage"), not raise or return
+    # something else.
+    field_info = get_field_info(test_schema, "Author", "name")
+    assert get_field_storage_name(field_info) is None
+
+
+def test_get_field_storage_name_returns_the_declared_override():
+    field_info = {"type": "data", "storage": "risk_db", "column": "score_val"}
+    assert get_field_storage_name(field_info) == "risk_db"
+
+
+def test_get_field_column_defaults_to_the_field_name_itself(test_schema):
+    # No "column" override declared -- must default to the field name,
+    # matching every field's behavior before MDO's "column" key existed.
+    field_info = get_field_info(test_schema, "Author", "name")
+    assert get_field_column(field_info, "name") == "name"
+
+
+def test_get_field_column_returns_the_declared_override():
+    field_info = {"type": "data", "storage": "risk_db", "column": "score_val"}
+    assert get_field_column(field_info, "risk_score") == "score_val"
