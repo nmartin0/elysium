@@ -67,6 +67,18 @@ def run_deployment() -> None:
         raise ValueError("mediator.write_log_db_path must be set -- load_deployment_bundle() should have set it")
     write_mediator = WriteMediator(mediator, config.roles, config.action_types,
                                     write_log_db_path=mediator.write_log_db_path)
+    # THE resume-on-startup half of crash recovery -- see
+    # WriteMediator.resume_pending_writes()'s own docstring for the
+    # full mechanism. Runs ONCE, here, before any example query in this
+    # run touches the same objects.
+    resume_summary = write_mediator.resume_pending_writes()
+    if any(resume_summary.values()):
+        print(f"resume_pending_writes() on startup: {resume_summary}")
+    if resume_summary["ambiguous"]:
+        print(
+            f"WARNING: {resume_summary['ambiguous']} write(s) left ambiguous after resume -- "
+            f"see audit.log's write_resume_ambiguous entries for detail; these need manual review."
+        )
     # confirm_write is NOT passed to AgentLoop anymore -- a proposed
     # write stops the loop and comes back via AgentLoopResult.
     # pending_write; THIS script confirms it, right here, after run()

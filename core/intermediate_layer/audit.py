@@ -202,3 +202,34 @@ def log_write_expired(write_id: str, user_id: str, description: str) -> None:
         "user_id": user_id,
         "description": description,
     })
+
+
+def log_write_resume_ambiguous(entry_id: str, object_type: str, object_id, field_name: str,
+                                current_value, expected_old_value, expected_new_value) -> None:
+    # WriteMediator.resume_pending_writes() found a write_log entry
+    # left at status='pending' by a crash mid-apply, and -- for THIS
+    # specific field -- the real backend holds a value that is NEITHER
+    # the pre-write value the write expected NOR the post-write value
+    # it intended to set. Something else touched this field between
+    # the crash and recovery (or the write's own precondition was
+    # already stale before the crash), and resume deliberately does
+    # NOT guess which state is "right" by overwriting either way --
+    # see resume_pending_writes()'s own docstring for the full
+    # reconciliation logic this is one outcome of. The entry is left
+    # 'pending' (get_field() keeps reporting the ORIGINAL intended
+    # value for this field, same as before recovery ran at all -- not
+    # worse, just not resolved), and this is the trace an operator
+    # needs to manually decide what actually happened and fix it by
+    # hand. A genuine data-integrity signal, not routine operation --
+    # same class of "worth its own distinct entry" as
+    # log_security_resolution_failed() above, for the same reason.
+    _write({
+        "stage": "write_resume_ambiguous",
+        "entry_id": entry_id,
+        "object_type": object_type,
+        "object_id": object_id,
+        "field_name": field_name,
+        "current_value": current_value,
+        "expected_old_value": expected_old_value,
+        "expected_new_value": expected_new_value,
+    })

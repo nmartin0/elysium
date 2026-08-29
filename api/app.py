@@ -67,6 +67,7 @@ is CONDITIONAL, not required -- a checkout where nobody's run
 real install (which does build the UI) gets it served automatically.
 """
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -78,6 +79,8 @@ from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deploym
 from core.intermediate_layer.audit import configure_audit_log
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
+
+logger = logging.getLogger(__name__)
 
 UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
 
@@ -110,6 +113,21 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # this directly if it's ever wrong.
     app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types,
                                               write_log_db_path=mediator.write_log_db_path)
+    # THE resume-on-startup half of crash recovery -- see
+    # WriteMediator.resume_pending_writes()'s own docstring for the
+    # full mechanism. Runs ONCE, here, before this app ever serves a
+    # request -- any write left over from a PREVIOUS run of this
+    # process that crashed mid-apply gets reconciled against live
+    # backend state before anything new can be proposed against the
+    # same objects.
+    resume_summary = app.state.write_mediator.resume_pending_writes()
+    if resume_summary["resumed"] or resume_summary["already_applied"] or resume_summary["ambiguous"]:
+        logger.info(f"resume_pending_writes() on startup: {resume_summary}")
+    if resume_summary["ambiguous"]:
+        logger.warning(
+            f"{resume_summary['ambiguous']} write(s) left ambiguous after resume -- "
+            f"see audit.log's write_resume_ambiguous entries for detail; these need manual review."
+        )
     app.state.loop = AgentLoop.from_deployment(config, mediator, write_mediator=app.state.write_mediator)
     app.state.synthesis_client = build_llm_adapter(config, config.synthesis_model)
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)

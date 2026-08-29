@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from core.intermediate_layer.audit import log_access, log_post, log_pre
+from core.intermediate_layer.audit import log_access, log_post, log_pre, log_write_resume_ambiguous
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.ontology import write_log
 from core.ontology.mediator import DataMediator
@@ -207,6 +207,145 @@ class WriteMediator:
             write_log.mark_applied(self.write_log_db_path, log_id)
 
         return pending.object_id
+
+    def resume_pending_writes(self) -> dict:
+        # Called ONCE, at deployment startup (see api/app.py / scripts/
+        # run_deployment.py), before serving any real traffic -- the
+        # "resume-on-startup" half of crash recovery write_log.py's own
+        # module docstring names as this mechanism's next planned piece
+        # of work. Finds every write_log entry still at status='pending'
+        # -- each one a write that was logged but never confirmed
+        # reaching 'applied', meaning either the process that would have
+        # finished it is simply gone (a genuine crash mid-apply), or it
+        # hit the ALREADY-KNOWN partial-failure gap (an earlier group
+        # committed, a later one didn't, see _apply_update_via_log()'s
+        # own comment on this).
+        #
+        # Reconciles each entry's storage groups against LIVE backend
+        # state -- deliberately NOT by blindly re-running write_fields()
+        # for every group, which would incorrectly treat an ALREADY-
+        # applied group as a fresh failure (its real value no longer
+        # matches the OLD expected_current_values the conditional write
+        # checks against, precisely BECAUSE it already succeeded). See
+        # _resume_one_entry()'s own docstring for the full three-way
+        # classification this uses instead.
+        #
+        # Naturally idempotent, safe to call more than once -- every
+        # judgment is re-derived fresh from live backend state each
+        # time; nothing here depends on a "have I already processed
+        # this" flag anywhere. Deliberately STARTUP-TIME only, not a
+        # continuously-running background process -- see write_log.py's
+        # own module docstring for why periodic/continuous resume stays
+        # a further, separately-scoped enhancement, not solved here.
+        summary = {"resumed": 0, "already_applied": 0, "ambiguous": 0}
+        for entry in write_log.get_pending_entries(self.write_log_db_path):
+            object_lock = self.mediator._lock_for_object(entry["object_type"], entry["object_id"])
+            with object_lock:
+                outcome = self._resume_one_entry(entry)
+            summary[outcome] += 1
+        return summary
+
+    def _resume_one_entry(self, entry: dict) -> str:
+        # Returns "resumed" (at least one group was freshly applied
+        # here), "already_applied" (every group already matched the
+        # intended new values -- nothing to apply), or "ambiguous" (at
+        # least one group left genuinely unresolved).
+        #
+        # Per storage group, classifies live backend state into exactly
+        # one of three outcomes, comparing the WHOLE group's fields
+        # together (matching how they were WRITTEN together, in one
+        # atomic SQL statement -- a partial match within one group
+        # would mean something outside this system's own write path
+        # touched it, not an ordinary crash):
+        #   - matches the INTENDED new values -> already applied before
+        #     the crash; nothing to do.
+        #   - matches the ORIGINAL expected (pre-write) values -> never
+        #     applied; safe to apply now, exactly as confirm_and_execute()
+        #     would have.
+        #   - matches NEITHER -> genuinely ambiguous. Something else
+        #     touched this field between the crash and now (or the
+        #     write's own precondition was already stale before the
+        #     crash even happened). NEVER guessed at by overwriting
+        #     either way -- logged via log_write_resume_ambiguous() for
+        #     a human to resolve; this group's fields keep reporting the
+        #     log's own intended value through get_field() (the same
+        #     safe, degraded state as before recovery ran -- not worse).
+        #
+        # An entry is marked 'applied' only when EVERY group resolves
+        # cleanly -- if even one group is ambiguous, the WHOLE entry
+        # stays 'pending', so a caller reading OTHER, genuinely-resolved
+        # fields on the SAME object still sees correct, live data (each
+        # group is judged independently); only the specific ambiguous
+        # field's own group keeps deferring to the log.
+        object_type = entry["object_type"]
+        object_id = entry["object_id"]
+        groups = self._group_changes_by_storage(object_type, entry["changes"])
+        any_applied_here = False
+        any_ambiguous = False
+
+        for adapter, resolved_type_config, group_changes in groups:
+            group_expected = {
+                field_name: entry["expected_current_values"][field_name]
+                for field_name in group_changes
+            }
+            current_values = {
+                field_name: adapter.get_raw_field(
+                    object_type, object_id,
+                    get_column_for_field(resolved_type_config, field_name),
+                    resolved_type_config,
+                )
+                for field_name in group_changes
+            }
+
+            if current_values == group_changes:
+                continue  # already applied before the crash
+
+            if current_values == group_expected:
+                write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
+                with write_limiter.limit():
+                    success = adapter.write_fields(
+                        object_type, object_id,
+                        _fields_to_columns(resolved_type_config, group_changes),
+                        _fields_to_columns(resolved_type_config, group_expected),
+                        resolved_type_config,
+                    )
+                if success:
+                    any_applied_here = True
+                    continue
+                # A genuine race between our read just above and this
+                # write -- something changed the row in between, outside
+                # this per-object-locked sequence entirely (extremely
+                # unlikely, but not impossible -- e.g. a direct write
+                # against the backend from outside this system). Re-read
+                # fresh rather than log the now-stale snapshot that made
+                # us attempt the write in the first place.
+                current_values = {
+                    field_name: adapter.get_raw_field(
+                        object_type, object_id,
+                        get_column_for_field(resolved_type_config, field_name),
+                        resolved_type_config,
+                    )
+                    for field_name in group_changes
+                }
+                if current_values == group_changes:
+                    continue  # someone else applied it in the race window -- fine
+
+            # Ambiguous: neither matched, from the start or after the
+            # race-triggered re-read above. Log per-field, not per-group
+            # -- a group can span several fields, and only some of them
+            # may actually be the ones that don't match either value.
+            any_ambiguous = True
+            for field_name in group_changes:
+                if current_values[field_name] not in (group_changes[field_name], group_expected[field_name]):
+                    log_write_resume_ambiguous(
+                        entry["id"], object_type, object_id, field_name,
+                        current_values[field_name], group_expected[field_name], group_changes[field_name],
+                    )
+
+        if any_ambiguous:
+            return "ambiguous"
+        write_log.mark_applied(self.write_log_db_path, entry["id"])
+        return "resumed" if any_applied_here else "already_applied"
 
     def visible_action_types(self, user_record: UserRecord) -> dict:
         # Mirrors DataMediator.visible_schema() exactly, for the SAME

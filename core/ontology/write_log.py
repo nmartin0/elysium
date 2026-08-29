@@ -42,22 +42,6 @@ separately-scoped follow-up, not silently assumed solved):
   - multi-OBJECT actions (e.g. a transfer touching two different
     objects) -- PendingWrite itself is still single-object; this file
     only ever sees one object_type/object_id per entry.
-  - crash recovery / resume-on-startup -- an entry left at
-    status='pending' because the process died mid-apply is NOT
-    automatically resumed by anything in this file yet. This proves
-    the structural shape (log -> sequential apply -> read-merge) works
-    correctly, not yet the full durability guarantee that's the actual
-    point of this design -- a real, stated limitation, not an
-    oversight, and the next planned piece of work on this mechanism.
-  - a PARTIAL failure within one entry (an earlier storage group's
-    write genuinely, permanently fails -- e.g. a real, non-transient
-    lost-update race -- after an EARLIER group already committed
-    successfully) leaves the entry stuck at status='pending'
-    indefinitely, which means get_field() will keep reporting the
-    LATER group's field as updated even though it never actually was.
-    Solving this properly needs the same resume/retry/reconcile
-    machinery crash recovery needs anyway, so it's folded into that
-    same deferred piece rather than solved separately here.
   - search_object() does NOT check this log at all -- only get_field()
     does. A search filtering on a field mid-update could miss or
     mismatch during the (typically very brief) pending window. A real,
@@ -72,6 +56,34 @@ separately-scoped follow-up, not silently assumed solved):
     unapplied edit from a prior action. Same class of limitation as
     search_object() above, just a different read path; stated
     explicitly here for the same reason, not silently inconsistent.
+
+CRASH RECOVERY / RESUME-ON-STARTUP -- once the "next planned piece of
+work" this docstring itself used to name -- is now solved, via
+WriteMediator.resume_pending_writes() (see its own docstring for the
+full reconciliation logic: comparing each storage group's LIVE state
+against both the intended new values and the original pre-write
+values, never blindly re-applying a group that already committed).
+Called once, at deployment startup, by both real entry points (api/
+app.py's create_app(), scripts/run_deployment.py's run_deployment())
+before either serves a single real request. This ALSO closes the
+PARTIAL-FAILURE gap the earlier version of this docstring described
+separately (an earlier group committing successfully before a later
+one failed, non-transiently) -- it's the exact same reconciliation
+logic, not a second mechanism.
+
+Still deliberately NOT solved: resume is STARTUP-TIME only, not a
+continuously-running background process -- an entry left 'pending'
+by a crash that happens WHILE this process keeps running (rather than
+one that takes the whole process down) waits for the NEXT restart to
+be resolved, same as before. A periodic/background resume loop is a
+real, further enhancement, genuinely separately-scoped from proving
+the reconciliation logic itself works -- not solved here. Also still
+deliberately unsolved: an entry resume finds genuinely AMBIGUOUS
+(neither the old nor the new value, for some field) is never guessed
+at -- logged via core/intermediate_layer/audit.py's
+log_write_resume_ambiguous() and left 'pending' for a human to
+resolve by hand; there is no automatic reconciliation for this case,
+by design, not by omission.
 
 Schema creation is handled by core/sqlite_connection.py's shared
 connection_with_schema() -- cached per db_path within this process,
@@ -179,3 +191,39 @@ def get_pending_changes(db_path: Path, object_type: str, object_id: Any) -> dict
     if row is None:
         return None
     return json.loads(row["changes"])
+
+
+def get_pending_entries(db_path: Path) -> list[dict]:
+    # Used by WriteMediator.resume_pending_writes() -- EVERY entry
+    # still at status='pending', across every object, not scoped to
+    # one object the way get_pending_changes() above is. This is the
+    # actual resume/crash-recovery entry point: a genuine crash mid-
+    # apply leaves an entry here with no further trace anywhere else
+    # (the process that would have called mark_applied() is simply
+    # gone), so resuming after a restart means finding every such
+    # entry and reconciling it against live backend state -- see
+    # WriteMediator.resume_pending_writes()'s own docstring for that
+    # reconciliation logic.
+    #
+    # Returns entry_id/object_type/object_id/changes/
+    # expected_current_values/user_id/description, changes and
+    # expected_current_values already json.loads()'d -- the caller
+    # needs them as real dicts, not JSON strings, to compare against
+    # live field values.
+    with connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, object_type, object_id, changes, expected_current_values, "
+            "user_id, description FROM write_log WHERE status = 'pending'"
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "object_type": row["object_type"],
+            "object_id": row["object_id"],
+            "changes": json.loads(row["changes"]),
+            "expected_current_values": json.loads(row["expected_current_values"]),
+            "user_id": row["user_id"],
+            "description": row["description"],
+        }
+        for row in rows
+    ]
