@@ -12,7 +12,7 @@ failure, since its real value no longer matches the OLD
 expected_current_values a conditional write checks against, precisely
 BECAUSE it already succeeded. Every test here constructs a pending
 log entry directly (bypassing confirm_and_execute() entirely, via
-write_log.log_pending_write()) so the real backend's OWN state --
+write_log.log_pending_update()) so the real backend's OWN state --
 fully unapplied, partially applied, or genuinely ambiguous -- can be
 set up exactly, rather than relying on interrupting a real apply
 mid-sequence.
@@ -123,7 +123,7 @@ def test_resume_completes_a_write_that_never_applied(fixture):
     mediator, write_mediator, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Customer", "cust_001",
         {"name": "New Name", "risk_score": 0.99}, {"name": "Ada Okafor", "risk_score": 0.42},
         "alice", "simulated crash before any group applied",
@@ -152,7 +152,7 @@ def test_resume_skips_already_applied_group_and_completes_the_other(fixture):
     mediator, write_mediator, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Customer", "cust_001",
         {"name": "New Name", "risk_score": 0.99}, {"name": "Ada Okafor", "risk_score": 0.42},
         "alice", "simulated crash after primary group applied, before MDO group",
@@ -176,7 +176,7 @@ def test_resume_when_every_group_already_applied(fixture):
     # gets a redundant write_fields() call.
     mediator, write_mediator, write_log_db_path = fixture
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Customer", "cust_001",
         {"name": "New Name", "risk_score": 0.99}, {"name": "Ada Okafor", "risk_score": 0.42},
         "alice", "simulated crash after both groups applied, before mark_applied",
@@ -195,7 +195,7 @@ def test_resume_leaves_ambiguous_entry_pending_and_logs(fixture, isolated_audit_
     # recovery. Resume must NOT guess by overwriting either way.
     mediator, write_mediator, write_log_db_path = fixture
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Customer", "cust_001",
         {"name": "New Name", "risk_score": 0.99}, {"name": "Ada Okafor", "risk_score": 0.42},
         "alice", "simulated external interference on risk_score",
@@ -231,7 +231,7 @@ def test_resume_leaves_ambiguous_entry_pending_and_logs(fixture, isolated_audit_
 def test_resume_is_idempotent(fixture):
     mediator, write_mediator, write_log_db_path = fixture
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Customer", "cust_001",
         {"risk_score": 0.99}, {"risk_score": 0.42}, "alice", "test",
     )
@@ -249,7 +249,7 @@ def test_resume_handles_a_single_storage_entry(fixture):
     mediator, write_mediator, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Customer", "cust_001",
         {"risk_score": 0.55}, {"risk_score": 0.42}, "alice", "single-storage crash",
     )

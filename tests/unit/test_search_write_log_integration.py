@@ -113,7 +113,7 @@ def test_search_finds_object_by_its_new_pending_value(fixture):
     mediator, _, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
@@ -144,7 +144,7 @@ def test_search_no_longer_finds_object_by_its_old_pending_value(fixture):
     mediator, _, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
@@ -160,7 +160,7 @@ def test_search_reconciliation_considers_full_criteria_not_just_changed_fields(f
     mediator, _, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
@@ -182,7 +182,7 @@ def test_search_reconciliation_respects_rbac(fixture):
     wrong_region_users = {"bob": {"region": "us-east", "role": "full"}}
     bob = resolve_user_record(wrong_region_users, "bob", "region")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
@@ -193,7 +193,7 @@ def test_search_ignores_pending_entries_for_a_different_object_type(fixture):
     mediator, _, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "SomeOtherType", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
@@ -211,7 +211,7 @@ def test_search_ignores_pending_entries_that_dont_touch_criteria_fields(fixture)
     mediator, _, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Ticket", 1, {"priority": "high"}, {"priority": "low"}, "alice", "test",
     )
 
@@ -228,7 +228,7 @@ def test_submission_criteria_sees_pending_value_not_stale_backend_state(fixture,
     mediator, write_mediator, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Ticket", 2, {"status": "open"}, {"status": "closed"}, "alice",
         "simulated in-flight update to ticket 2",
     )

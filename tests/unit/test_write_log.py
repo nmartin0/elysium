@@ -160,7 +160,7 @@ def test_read_during_pending_window_sees_the_intended_value(fixture):
     mediator, write_mediator, write_log_db_path = fixture
     alice = _record("alice")
 
-    write_log.log_pending_write(
+    write_log.log_pending_update(
         write_log_db_path, "Customer", "cust_001",
         {"risk_score": 0.55}, {"risk_score": 0.42}, "alice", "simulated in-flight update",
     )

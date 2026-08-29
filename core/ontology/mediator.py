@@ -152,18 +152,17 @@ class DataMediator:
     def _lock_for_object(self, object_type: str, object_id: Any) -> threading.Lock:
         return self._object_locks.lock_for((object_type, object_id))
 
-    def _write_limiter_for(self, object_type: str) -> ConcurrencyLimiter:
-        silo_name = self.silo_for_type[object_type]
-        return self._write_limiters[silo_name]
-
     def _write_limiter_for_silo(self, silo_name: str) -> ConcurrencyLimiter:
-        # Same limiter registry as _write_limiter_for() above, keyed
-        # directly by silo name instead of object_type -- needed by
-        # WriteMediator._apply_update_via_log() (see write_mediator.py),
-        # which resolves a limiter PER STORAGE GROUP, not per
-        # object_type; _write_limiter_for(object_type) always resolves
-        # to the PRIMARY silo, which is the wrong limiter for a group
-        # writing to a different (e.g. MDO additional_storage) one.
+        # Keyed directly by silo name, not object_type -- needed by
+        # WriteMediator's own log-based apply paths (see
+        # _apply_update_via_log() and _apply_create_via_log() in
+        # write_mediator.py), which resolve a limiter PER STORAGE
+        # GROUP. Resolving by object_type alone would always give back
+        # the PRIMARY silo's limiter, the wrong one for a group writing
+        # to a different (e.g. MDO additional_storage) silo -- a real
+        # bug, caught directly by tracing the actual call chain, not
+        # just reasoned about (see write_mediator.py's own comment on
+        # this at its update-side fix).
         return self._write_limiters[silo_name]
 
     def _adapter_for(self, object_type: str) -> DataSiloAdapter:
@@ -282,14 +281,26 @@ class DataMediator:
         if "field" in security:
             field_name = security["field"]
             adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
-            column = get_column_for_field(resolved_type_config, field_name)
-            return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
+            # Checks the write log FIRST, via the SAME shared
+            # _read_field_with_log_check() get_field() and
+            # search_object() already use -- a real, previously-missed
+            # gap otherwise: for an object still mid-CREATE, nothing
+            # exists in the real backend AT ALL yet (not just this one
+            # field), so a direct adapter read would return None and
+            # incorrectly deny access to the very user who is creating
+            # it, even though the pending write's own security value
+            # would have matched them correctly. Caught directly by a
+            # real test, not assumed -- see
+            # tests/unit/test_write_log_create.py's own
+            # test_get_field_sees_pending_create_value.
+            return self._read_field_with_log_check(object_type, object_id, field_name, adapter, resolved_type_config)
 
         if "via_field" in security:
             via_field = security["via_field"]
             adapter, resolved_type_config = self._resolve_shared_storage(object_type, [via_field])
-            column = get_column_for_field(resolved_type_config, via_field)
-            linked_id = adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
+            linked_id = self._read_field_with_log_check(
+                object_type, object_id, via_field, adapter, resolved_type_config
+            )
             if linked_id is None:
                 return None
 
@@ -506,18 +517,33 @@ class DataMediator:
                 # adapter.find_ids() itself), preserve that type rather
                 # than overwriting it with the log's own string form.
                 # For a genuinely NEW match (not previously a candidate
-                # at all), resolve the REAL, natively-typed id from the
-                # adapter itself -- get_raw_field() already relies on
-                # SQLite's own type coercion to match a string id
-                # against a differently-typed column (the SAME thing
-                # every get_field() call already depends on whenever a
-                # caller supplies a string object_id for an integer-
-                # keyed type), so this is reusing an existing,
-                # already-relied-upon behavior, not introducing a new
-                # fragility.
+                # at all), resolve the REAL, natively-typed id.
                 if object_id not in result_by_str:
-                    id_column = resolved_type_config["storage"]["id_column"]
-                    native_id = adapter.get_raw_field(object_type, object_id, id_column, resolved_type_config)
+                    if entry["operation"] == "create":
+                        # The "sticky note" -- a create's own log entry
+                        # always has the id written down directly (an
+                        # explicit id is REQUIRED for multi-storage
+                        # create -- see WriteMediator.propose_action()'s
+                        # own validation), so this works even if the
+                        # row doesn't exist yet in whichever storage
+                        # THIS search happens to be scoped to. Reading
+                        # it off the real row instead (like the update
+                        # branch below does) would come back None for
+                        # exactly that reason during the pending window.
+                        id_field = self._type_schema(object_type)["id_field"]
+                        native_id = entry["changes"][id_field]
+                    else:
+                        # Ordinary update -- the object already exists
+                        # in every storage, so get_raw_field() already
+                        # relies on SQLite's own type coercion to match
+                        # a string id against a differently-typed
+                        # column (the SAME thing every get_field() call
+                        # already depends on whenever a caller supplies
+                        # a string object_id for an integer-keyed
+                        # type), reusing an existing, already-relied-
+                        # upon behavior, not introducing a new fragility.
+                        id_column = resolved_type_config["storage"]["id_column"]
+                        native_id = adapter.get_raw_field(object_type, object_id, id_column, resolved_type_config)
                     result_by_str[object_id] = native_id
             else:
                 result_by_str.pop(object_id, None)

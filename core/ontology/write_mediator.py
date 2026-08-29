@@ -156,7 +156,7 @@ class WriteMediator:
         # object" assumption depends on this holding.
         object_lock = self.mediator._lock_for_object(pending.object_type, pending.object_id)
         with object_lock:
-            log_id = write_log.log_pending_write(
+            log_id = write_log.log_pending_update(
                 self.write_log_db_path, pending.object_type, pending.object_id,
                 pending.changes, pending.expected_current_values,
                 pending.user_id, pending.description,
@@ -172,15 +172,19 @@ class WriteMediator:
                 # caught by directly tracing this exact call chain, not
                 # just reasoned about: this used to be resolved ONCE,
                 # outside this loop, from pending.object_type alone,
-                # which ALWAYS resolves to the PRIMARY silo (see
-                # DataMediator._write_limiter_for()). A group writing
-                # to a DIFFERENT storage (any MDO additional_storage)
-                # would silently borrow the PRIMARY silo's concurrency
-                # limiter instead of its own -- wrong capacity
-                # accounting in both directions: under-protecting the
-                # real target silo if it has a stricter limit, and
-                # needlessly contending for the primary silo's slots
-                # for a write that never touches it at all.
+                # which ALWAYS resolves to the PRIMARY silo (that
+                # object_type-keyed lookup no longer exists at all --
+                # removed once this fix left it with zero remaining
+                # callers, including the single-storage create path,
+                # which independently hit the identical bug and was
+                # fixed the same way). A group writing to a DIFFERENT
+                # storage (any MDO additional_storage) would silently
+                # borrow the PRIMARY silo's concurrency limiter instead
+                # of its own -- wrong capacity accounting in both
+                # directions: under-protecting the real target silo if
+                # it has a stricter limit, and needlessly contending
+                # for the primary silo's slots for a write that never
+                # touches it at all.
                 write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
                 with write_limiter.limit():
                     success = adapter.write_fields(
@@ -227,8 +231,9 @@ class WriteMediator:
         # applied group as a fresh failure (its real value no longer
         # matches the OLD expected_current_values the conditional write
         # checks against, precisely BECAUSE it already succeeded). See
-        # _resume_one_entry()'s own docstring for the full three-way
-        # classification this uses instead.
+        # _resume_one_entry()'s own docstring for how this dispatches
+        # between update's three-way classification and create's
+        # simpler, two-way one.
         #
         # Naturally idempotent, safe to call more than once -- every
         # judgment is re-derived fresh from live backend state each
@@ -246,6 +251,17 @@ class WriteMediator:
         return summary
 
     def _resume_one_entry(self, entry: dict) -> str:
+        # Dispatches on operation -- an UPDATE entry's resume logic is
+        # genuinely different from a CREATE entry's (three possible
+        # outcomes per group vs two; see each method's own docstring
+        # for why). resume_pending_writes() itself stays completely
+        # unaware of the distinction, same per-object-locked call
+        # either way.
+        if entry["operation"] == "create":
+            return self._resume_one_create_entry(entry)
+        return self._resume_one_update_entry(entry)
+
+    def _resume_one_update_entry(self, entry: dict) -> str:
         # Returns "resumed" (at least one group was freshly applied
         # here), "already_applied" (every group already matched the
         # intended new values -- nothing to apply), or "ambiguous" (at
@@ -344,6 +360,56 @@ class WriteMediator:
 
         if any_ambiguous:
             return "ambiguous"
+        write_log.mark_applied(self.write_log_db_path, entry["id"])
+        return "resumed" if any_applied_here else "already_applied"
+
+    def _resume_one_create_entry(self, entry: dict) -> str:
+        # THE create-side counterpart to _resume_one_update_entry() --
+        # genuinely SIMPLER: a storage group for a create has only TWO
+        # possible states, not three -- the row either already exists
+        # (already applied before the crash) or it doesn't (never
+        # applied, safe to create now). There's no "ambiguous" case the
+        # way update has: update's ambiguous case exists because a
+        # field could hold some THIRD, pre-existing value neither the
+        # old nor new state expected -- but a create has no "before"
+        # state at all to be knocked off course like that. A genuine
+        # collision (a row already existing under this id, from
+        # entirely outside this system's own write path) surfaces as a
+        # real INSERT constraint violation instead -- correctly failing
+        # loud rather than silently guessing, matching the SPIRIT of
+        # update's own ambiguous case (never overwrite blindly), just
+        # enforced by the database itself here rather than by this
+        # code's own comparison logic.
+        #
+        # Checks the type's own id_field specifically to decide "does
+        # this row exist yet" -- not the full field set the way update
+        # compares -- since a primary key is never legitimately NULL
+        # for a real, existing row, regardless of what its OTHER
+        # fields happen to be. Reading the full set back and comparing
+        # it to entry["changes"] would have a genuine, if narrow, edge
+        # case: a create whose group fields are ALL intentionally NULL
+        # would look identical whether or not the row actually exists
+        # yet. Checking the id specifically has no such ambiguity.
+        object_type = entry["object_type"]
+        object_id = entry["object_id"]
+        id_field = self.mediator._type_schema(object_type)["id_field"]
+        groups = self._group_changes_by_storage(object_type, entry["changes"])
+        any_applied_here = False
+
+        for adapter, resolved_type_config, group_changes in groups:
+            id_column = get_column_for_field(resolved_type_config, id_field)
+            existing_id = adapter.get_raw_field(object_type, object_id, id_column, resolved_type_config)
+            if existing_id is not None:
+                continue  # row already exists in this storage -- already applied
+
+            group_with_id = {**group_changes, id_field: entry["changes"][id_field]}
+            write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
+            with write_limiter.limit():
+                adapter.create_object(
+                    object_type, _fields_to_columns(resolved_type_config, group_with_id), resolved_type_config,
+                )
+            any_applied_here = True
+
         write_log.mark_applied(self.write_log_db_path, entry["id"])
         return "resumed" if any_applied_here else "already_applied"
 
@@ -520,14 +586,25 @@ class WriteMediator:
             for mutation in action_def["mutations"]
         }
 
-        # For "create," every field must still share ONE storage --
-        # multi-storage create is a genuinely separate, harder problem
-        # (identity propagation: which storage's row gets the
-        # canonical id, and how does every OTHER storage's row learn
-        # it) not yet solved -- see write_log.py's own module
-        # docstring. This call is the outright rejection guard for
-        # that case; nothing else in this branch needs its result,
-        # since a create has no existing values to snapshot at all.
+        # For "create," an explicit id is ALWAYS required now, matching
+        # update's own precedent of a SINGLE, unified path regardless
+        # of storage count (see confirm_and_execute() below -- update
+        # ALWAYS goes through the log, whether it touches one storage
+        # or several; create now does too). Not required only because
+        # multi-storage needs it structurally -- deliberately unified
+        # rather than maintaining two separate mechanisms (a log-based
+        # path for multi-storage, a log-free direct path for single-
+        # storage), even though a genuinely single-storage create's
+        # own INSERT is already atomic on its own and doesn't NEED the
+        # log to avoid a half-applied state the way multi-storage does.
+        # The real, remaining reason auto-generated ids can't be
+        # supported at all now: the log-first-then-apply ordering this
+        # whole mechanism depends on needs the id known BEFORE any
+        # storage is touched -- an auto-generated id, by definition,
+        # isn't known until AFTER an INSERT already ran. Matches
+        # Palantir Foundry's own MDO requirement that a primary key
+        # already exist, matching, in every backing datasource, not
+        # just the multi-storage case specifically.
         #
         # For "update," expected_current_values is built PER STORAGE
         # GROUP (same _group_changes_by_storage() confirm_and_execute()
@@ -544,7 +621,18 @@ class WriteMediator:
                         resolved_type_config,
                     )
         else:
-            self.mediator._resolve_shared_storage(object_type, list(changes.keys()))
+            # _group_changes_by_storage() also validates every field
+            # name is real (same as update's own branch above) -- an
+            # unknown field in a create's mutations should fail HERE,
+            # at proposal time, not later at confirm_and_execute() time
+            # after a human may have already approved it.
+            self._group_changes_by_storage(object_type, changes)
+            id_field = self.mediator._type_schema(object_type)["id_field"]
+            if id_field not in changes:
+                raise ValueError(
+                    f"Create for {object_type!r} requires an explicit {id_field!r} value "
+                    f"in its own mutations -- auto-generated ids aren't supported"
+                )
 
         description = f"{action_type_name}({object_id!r}, parameters={parameters})"
         return PendingWrite(object_type, object_id, operation, changes, user_record.user_id,
@@ -571,27 +659,69 @@ class WriteMediator:
             log_post(request_id, "success", [new_id])
             return {"status": "written", "object_id": new_id}
 
-        # "create" -- still single-storage only. Multi-storage create
-        # is a genuinely separate, harder problem (identity
-        # propagation: which storage's row gets the canonical id, and
-        # how does every OTHER storage's row learn it) not yet solved
-        # -- see write_log.py's own module docstring. No per-object
-        # lock needed here (unlike "update" above) -- there's no
-        # existing object to race against yet; only the database's own
-        # native INSERT atomicity matters.
-        adapter, resolved_type_config = self.mediator._resolve_shared_storage(
-            pending.object_type, list(pending.changes.keys())
-        )
-        write_limiter = self.mediator._write_limiter_for(pending.object_type)
-
-        def _to_columns(values_by_field: dict) -> dict:
-            return {
-                get_column_for_field(resolved_type_config, field_name): value
-                for field_name, value in values_by_field.items()
-            }
-
-        with write_limiter.limit():
-            new_id = adapter.create_object(pending.object_type, _to_columns(pending.changes), resolved_type_config)
-
+        # "create" -- ALWAYS via the write log now too, matching
+        # "update"'s own precedent immediately above: one unified
+        # mechanism regardless of storage count, not two separately-
+        # maintained paths. propose_action() already enforced that the
+        # object's own id is present in pending.changes before this was
+        # ever proposable -- see its own comment on why this is now
+        # required universally, not just when create happens to span
+        # multiple storages.
+        new_id = self._apply_create_via_log(pending)
         log_post(request_id, "success", [new_id])
         return {"status": "written", "object_id": new_id}
+
+    def _apply_create_via_log(self, pending: PendingWrite) -> Any:
+        # THE create-side counterpart to _apply_update_via_log() -- see
+        # write_log.py's own module docstring for the shared mechanism.
+        # Handles single-storage create too now, same as
+        # _apply_update_via_log() already did for update -- a single-
+        # group `groups` list below is simply the degenerate case,
+        # nothing here needs to special-case it. Requires pending.changes to
+        # already include the type's own id_field, explicitly --
+        # propose_action() enforces this upfront; matches Palantir
+        # Foundry's own MDO requirement that an object's primary key
+        # already exist, matching, in every backing datasource
+        # (verified directly, not assumed -- see
+        # https://www.palantir.com/docs/foundry/object-permissioning/multi-datasource-objects).
+        id_field = self.mediator._type_schema(pending.object_type)["id_field"]
+        object_id = pending.changes[id_field]
+        # NOT pending.object_id -- see this method's own return
+        # statement below for why that's always None for "create."
+        # Using it here would be a real bug, not just an unused
+        # parameter: it would key the per-object lock identically for
+        # EVERY create of this type (needlessly serializing unrelated
+        # concurrent creates against each other), and -- more
+        # seriously -- store the write_log row itself under the wrong
+        # object_id, breaking get_pending_changes()'s own by-id lookup
+        # for the real id during the brief window before mark_applied()
+        # runs, and breaking resume_pending_writes() outright if a
+        # crash happens in that same window.
+        object_lock = self.mediator._lock_for_object(pending.object_type, object_id)
+        with object_lock:
+            log_id = write_log.log_pending_create(
+                self.write_log_db_path, pending.object_type, object_id,
+                pending.changes, pending.user_id, pending.description,
+            )
+
+            groups = self._group_changes_by_storage(pending.object_type, pending.changes)
+            for adapter, resolved_type_config, group_changes in groups:
+                # Every group's own row needs the id as one of its
+                # actual inserted columns -- unlike update, create_
+                # object() has no separate object_id parameter for a
+                # WHERE clause; the id is just another field being
+                # inserted, into EVERY storage, not just whichever ONE
+                # group's mutations happened to place it in naturally
+                # (a no-op overwrite for that one group, a real
+                # injection for every other).
+                group_with_id = {**group_changes, id_field: object_id}
+                write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
+                with write_limiter.limit():
+                    adapter.create_object(
+                        pending.object_type, _fields_to_columns(resolved_type_config, group_with_id),
+                        resolved_type_config,
+                    )
+
+            write_log.mark_applied(self.write_log_db_path, log_id)
+
+        return object_id
