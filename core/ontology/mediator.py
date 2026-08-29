@@ -40,14 +40,23 @@ existing behavior before this) -- real external silos won't always
 happen to name a column exactly like our own field name.
 
 DELIBERATE V1 SCOPE BOUNDARY, worth stating explicitly: a single
-search_object() filter, get_field() call, or write may only touch
-fields from ONE storage at a time -- see _resolve_shared_storage()'s
-own docstring for why (federated cross-silo intersection and cross-
-database write atomicity are both real, unsolved problems, intentionally
-left for later, separately-justified work). This mirrors Palantir's own
-MDO scope choice: they support column-wise MDO but explicitly not the
-row-wise case, handled through an entirely different mechanism instead
-of generalizing one to cover both.
+search_object() filter or get_field() call may only touch fields from
+ONE storage at a time -- see _resolve_shared_storage()'s own docstring
+for why (federated cross-silo intersection is a real, unsolved
+problem, intentionally left for later, separately-justified work).
+This mirrors Palantir's own MDO scope choice -- they support
+column-wise MDO but explicitly not the row-wise case, handled through
+an entirely different mechanism instead of generalizing one to cover
+both.
+
+Cross-database WRITE atomicity for an "update" is now solved, when
+write_log_db_path is configured -- see core/ontology/write_log.py's
+own module docstring for the full mechanism (verified directly against
+Palantir Foundry's own actual approach, not assumed) and its still-real,
+explicitly stated remaining scope boundaries (multi-storage "create,"
+crash recovery, search_object() integration). READS still enforce the
+single-storage boundary above unconditionally; only WRITES gained a
+path around it.
 
 Takes a pre-resolved UserRecord, not a raw user_id -- DataMediator no
 longer holds users/security_attribute at all (dropped entirely, a real
@@ -95,12 +104,14 @@ Used by: scripts/run_deployment.py (via core/deployment_loader.py),
 """
 
 import threading
+from pathlib import Path
 from typing import Any
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import log_access, log_unknown_reference
 from core.intermediate_layer.auth import authorize, UserRecord
+from core.ontology import write_log
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import (
     is_link_field, get_link_target, is_searchable_field,
@@ -110,11 +121,22 @@ from core.ontology.schema import (
 
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, DataSiloAdapter],
-                 silo_for_type: dict[str, str], roles: dict):
+                 silo_for_type: dict[str, str], roles: dict,
+                 write_log_db_path: Path | None = None):
         self.schema = schema
         self.adapters = adapters
         self.silo_for_type = silo_for_type
         self.roles = roles
+        # Optional, defaulting to None -- see core/ontology/write_log.py's
+        # own module docstring for the full mechanism. None means
+        # get_field() below never checks the log at all, identical to
+        # this class's behavior before the log existed -- every
+        # existing caller/test that constructs a DataMediator without
+        # this gets completely unchanged behavior. Threaded through
+        # from the SAME write_log_db_path a caller passes to
+        # WriteMediator -- both need to agree on the same physical
+        # file, since one writes entries and the other reads them.
+        self.write_log_db_path = write_log_db_path
 
         self._write_limiters = {
             silo_name: ConcurrencyLimiter(adapter.max_concurrent_writes)
@@ -148,17 +170,26 @@ class DataMediator:
         # ontology_schema.yaml's own MDO comments for the full design.
         #
         # DELIBERATE V1 SCOPE BOUNDARY: raises if field_names span more
-        # than one storage. A single search filter, get_field call, or
-        # write may only touch fields from ONE storage at a time --
-        # multi-storage search (federated intersection across adapters)
-        # and multi-storage writes (no atomicity guarantee across
-        # separate databases) are real, unsolved problems, deliberately
-        # left for later, separately-justified work rather than
-        # silently attempted here. This mirrors Palantir's own MDO
-        # scope choice -- they support column-wise MDO but explicitly
-        # not the row-wise case, handling that through an entirely
-        # different mechanism instead of trying to generalize one
-        # mechanism to cover both.
+        # than one storage. A single search filter or get_field call
+        # may only touch fields from ONE storage at a time -- multi-
+        # storage search (federated intersection across adapters) is a
+        # real, unsolved problem, deliberately left for later,
+        # separately-justified work rather than silently attempted
+        # here. This mirrors Palantir's own MDO scope choice -- they
+        # support column-wise MDO but explicitly not the row-wise
+        # case, handling that through an entirely different mechanism
+        # instead of trying to generalize one mechanism to cover both.
+        #
+        # WRITE callers (WriteMediator) work AROUND this guard now,
+        # deliberately, rather than being subject to it directly --
+        # see core/ontology/write_log.py's own module docstring for
+        # the mechanism: an "update" whose mutations span multiple
+        # storages resolves each storage's own fields through a
+        # SEPARATE call to this same method (one field at a time, or
+        # grouped by storage), so this guard is simply never invoked
+        # with more than one storage's worth of fields in a single
+        # write anymore. This function itself is completely unchanged
+        # -- it's the CALLING pattern for writes that changed.
         #
         # The type's own id_field ALWAYS resolves to the primary
         # storage, never an additional_storage entry -- MDO lets
@@ -406,6 +437,23 @@ class DataMediator:
             target_adapter = self._adapter_for(target_type)
             target_id_column = self.schema[target_type]["storage"]["id_column"]
             return target_adapter.resolve_reverse_link(object_id, field_info, target_id_column)
+
+        # Checks core/ontology/write_log.py's own store FIRST, before
+        # ever reaching the real adapter -- if an update touching this
+        # exact field is still mid-apply (see WriteMediator.
+        # _apply_update_via_log()), this is what makes that in-flight
+        # window invisible to a reader: they see the INTENDED value
+        # immediately, never a state where some of the update's
+        # storages already reflect it and others don't yet. Only ever
+        # runs when write_log_db_path was actually configured -- see
+        # this class's own __init__ for why None means completely
+        # unchanged, pre-log behavior. Checked BEFORE resolving storage
+        # below -- if the log already has the answer, there's no need
+        # to know which physical storage this field even belongs to.
+        if self.write_log_db_path is not None:
+            pending_changes = write_log.get_pending_changes(self.write_log_db_path, object_type, object_id)
+            if pending_changes is not None and field_name in pending_changes:
+                return pending_changes[field_name]
 
         adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
         column = get_field_column(field_info, field_name)

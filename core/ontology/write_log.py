@@ -1,0 +1,177 @@
+"""
+write_log.py  (durable, single-write atomicity boundary for updates that
+span multiple physical storages)
+
+THE PROBLEM THIS SOLVES: an "update" whose resolved mutations touch
+fields backed by DIFFERENT storages (MDO's column-wise case -- see
+core/ontology/mediator.py's _resolve_shared_storage() docstring) has no
+way to commit atomically across those genuinely separate physical
+databases today -- there is no distributed-transaction coordinator
+here, and building one (two-phase commit) would be slow, blocking, and
+fragile for exactly the reasons the broader distributed-systems
+literature already documents (a coordinator holding locks across
+services during a prepare phase, a single point of failure, poor
+throughput under load).
+
+THE SOLUTION, matching Palantir Foundry's own actual mechanism
+(verified directly against their docs, not assumed -- see
+https://www.palantir.com/docs/foundry/object-edits/how-edits-applied):
+never attempt to write directly across multiple heterogeneous backends
+at all. Write ONE row to THIS single, dedicated, durable store first --
+trivially atomic, since it's one write to one place, regardless of how
+many storages the update's mutations actually span. Then apply each
+storage's own share of the mutations SEQUENTIALLY (matching Palantir's
+own confirmed behavior: edits touching multiple objects/storages are
+"validated and submitted one at a time," never in parallel). While an
+entry is mid-apply (status='pending'), reads (see
+core/ontology/mediator.py's get_field()) check here FIRST and return
+the pending value if this specific field was part of it -- so a caller
+never observes a half-applied state where some storages already
+reflect the update and others don't yet.
+
+SCOPE OF THIS FIRST INCREMENT, DELIBERATELY NARROW -- proves the
+mechanism against "update" only, against the EXISTING single-object
+PendingWrite shape. Explicitly NOT yet covered here (each a real,
+separately-scoped follow-up, not silently assumed solved):
+  - "create" spanning multiple storages -- a genuinely harder, SEPARATE
+    problem (identity propagation: which storage's row gets the
+    canonical id, and how does every OTHER storage's row learn it) --
+    see write_mediator.py's own note on this. "create" is untouched by
+    this file entirely; it still goes through the original, single-
+    storage-only path, exactly as restricted as it is today.
+  - multi-OBJECT actions (e.g. a transfer touching two different
+    objects) -- PendingWrite itself is still single-object; this file
+    only ever sees one object_type/object_id per entry.
+  - crash recovery / resume-on-startup -- an entry left at
+    status='pending' because the process died mid-apply is NOT
+    automatically resumed by anything in this file yet. This proves
+    the structural shape (log -> sequential apply -> read-merge) works
+    correctly, not yet the full durability guarantee that's the actual
+    point of this design -- a real, stated limitation, not an
+    oversight, and the next planned piece of work on this mechanism.
+  - a PARTIAL failure within one entry (an earlier storage group's
+    write genuinely, permanently fails -- e.g. a real, non-transient
+    lost-update race -- after an EARLIER group already committed
+    successfully) leaves the entry stuck at status='pending'
+    indefinitely, which means get_field() will keep reporting the
+    LATER group's field as updated even though it never actually was.
+    Solving this properly needs the same resume/retry/reconcile
+    machinery crash recovery needs anyway, so it's folded into that
+    same deferred piece rather than solved separately here.
+  - search_object() does NOT check this log at all -- only get_field()
+    does. A search filtering on a field mid-update could miss or
+    mismatch during the (typically very brief) pending window. A real,
+    known, stated limitation for now, not an oversight -- see
+    core/ontology/mediator.py's own search_object() for where this
+    would need to be added if it becomes a real problem in practice.
+
+db_path is always an explicit parameter, never a hardcoded global path
+-- same dependency-injection discipline as every other adapter in this
+project (see core/auth/database.py's own docstring for the identical
+reasoning, applied here to a different problem). Uses
+core/sqlite_connection.py's shared open_connection() -- the same
+mechanical connection-opening code core/auth/database.py already uses,
+not a third, independently-written copy of it.
+"""
+
+import json
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from core.sqlite_connection import open_connection
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS write_log (
+    id TEXT PRIMARY KEY,
+    object_type TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    changes TEXT NOT NULL,
+    expected_current_values TEXT NOT NULL,
+    status TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    description TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+
+@contextmanager
+def connection(db_path: Path):
+    # Schema created idempotently on every connection (CREATE TABLE IF
+    # NOT EXISTS) -- cheap, and guarantees the table always exists
+    # regardless of call order, same pattern core/auth/database.py's
+    # own connection() already uses for the exact same reason.
+    conn = open_connection(db_path)
+    try:
+        conn.executescript(SCHEMA)
+        conn.commit()
+        yield conn
+    finally:
+        conn.close()
+
+
+def log_pending_write(db_path: Path, object_type: str, object_id: Any, changes: dict,
+                       expected_current_values: dict, user_id: str, description: str) -> str:
+    # ONE row, ONE write, trivially atomic regardless of how many
+    # storages `changes` will eventually resolve across -- this single
+    # INSERT is the entire mechanism's real atomicity boundary. Takes
+    # the pending write's fields individually rather than a
+    # PendingWrite object directly -- this module has no reason to
+    # depend on write_mediator.py's own dataclass, keeping the
+    # dependency direction strictly one-way (write_mediator depends on
+    # this module, never the reverse).
+    log_id = str(uuid.uuid4())
+    with connection(db_path) as conn:
+        conn.execute(
+            "INSERT INTO write_log (id, object_type, object_id, changes, "
+            "expected_current_values, status, user_id, description, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+            (
+                log_id, object_type, str(object_id), json.dumps(changes),
+                json.dumps(expected_current_values), user_id, description,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        conn.commit()
+    return log_id
+
+
+def mark_applied(db_path: Path, log_id: str) -> None:
+    with connection(db_path) as conn:
+        conn.execute("UPDATE write_log SET status = 'applied' WHERE id = ?", (log_id,))
+        conn.commit()
+
+
+def get_pending_changes(db_path: Path, object_type: str, object_id: Any) -> dict | None:
+    # Used by DataMediator.get_field() -- returns this object's pending
+    # field->value changes if a write_log entry for it is still
+    # mid-apply, else None. A caller merges this OVER whatever the real
+    # backend currently holds, so a read never observes a half-applied
+    # state (some storages already written, others not yet).
+    #
+    # object_id is explicitly str()-converted on both the write side
+    # (log_pending_write above) and here -- SQLite's dynamic typing
+    # would happily store e.g. an int object_id in this TEXT column,
+    # but comparing that stored int against a TEXT literal at query
+    # time depends on SQLite's type-affinity rules in a way that's
+    # easy to get subtly wrong. Converting explicitly, consistently, on
+    # both sides removes that ambiguity entirely rather than relying on
+    # it working out.
+    #
+    # fetchone(), not fetchall() -- assumes at most one pending entry
+    # per object at a time, which holds as long as callers keep this
+    # object's own per-object lock (see DataMediator._lock_for_object())
+    # held across the full log-write-then-apply sequence, not just the
+    # apply portion -- see write_mediator.py's own confirm_and_execute().
+    with connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT changes FROM write_log WHERE object_type = ? AND object_id = ? "
+            "AND status = 'pending'",
+            (object_type, str(object_id)),
+        ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row["changes"])
