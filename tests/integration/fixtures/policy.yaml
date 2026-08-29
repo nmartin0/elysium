@@ -23,6 +23,10 @@ roles:
       - read:Customer.customer_id
       - read:Customer.region
       - read:Customer.name
+      # For tests/integration/test_mdo_e2e.py -- an MDO field, backed
+      # by a genuinely separate silo (risk_sql), with nothing in the
+      # grant itself distinguishing it from any other field.
+      - read:Customer.risk_score
       - read:Customer.email
       - read:Customer.transactions
       - read:Transaction

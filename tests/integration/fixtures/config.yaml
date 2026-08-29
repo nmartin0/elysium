@@ -42,6 +42,14 @@ data_silos:
     adapter: sqlite
     connection:
       path: "dev_fixtures/support.db"
+  # A THIRD, GENUINELY SEPARATE database -- for tests/integration/
+  # test_mdo_e2e.py, backing Customer.risk_score (an MDO field). Unlike
+  # support_crm (a whole separate OBJECT TYPE), this backs ONE
+  # PROPERTY of an object type otherwise backed by primary_sql.
+  risk_sql:
+    adapter: sqlite
+    connection:
+      path: "dev_fixtures/risk.db"
 
 tools:
   enabled:

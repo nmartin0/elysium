@@ -37,13 +37,16 @@ test_region_enforcement_e2e.py import) for parsing the JSON-lines
 audit log an isolated_audit_log-using test just produced, so each test
 can assert on its OWN real, specific log entries.
 
-_bundle builds TWO genuinely separate SQLite databases (schema.sql ->
-mediator.db, support_schema.sql -> support.db), matching
-fixtures/config.yaml's two declared data_silos (primary_sql,
-support_crm) -- for tests/integration/test_cross_silo_e2e.py, proving
-a real model correctly discovers and follows a link that genuinely
-crosses between them, not a scripted one (already proven by
-tests/unit/test_cross_silo_links.py). Both are rebuilt fresh into
+_bundle builds THREE genuinely separate SQLite databases (schema.sql ->
+mediator.db, support_schema.sql -> support.db, risk_schema.sql ->
+risk.db), matching fixtures/config.yaml's three declared data_silos
+(primary_sql, support_crm, risk_sql) -- for tests/integration/
+test_cross_silo_e2e.py (a real model following a link that genuinely
+crosses silos) and test_mdo_e2e.py (a real model transparently reading
+an MDO field backed by a different silo than the rest of its object
+type), neither scripted -- both already proven mechanically, with a
+scripted model, by tests/unit/test_cross_silo_links.py and
+tests/unit/test_mdo.py respectively. All three are rebuilt fresh into
 pytest's tmp_path for every single test, same isolation discipline as
 the single-database case this extends.
 """
@@ -76,6 +79,7 @@ def _bundle(tmp_path: Path):
 
     _build_sqlite_db(FIXTURES_DIR / "schema.sql", dev_fixtures_dir / "mediator.db")
     _build_sqlite_db(FIXTURES_DIR / "support_schema.sql", dev_fixtures_dir / "support.db")
+    _build_sqlite_db(FIXTURES_DIR / "risk_schema.sql", dev_fixtures_dir / "risk.db")
 
     return load_deployment_bundle(FIXTURES_DIR, data_dir)
 

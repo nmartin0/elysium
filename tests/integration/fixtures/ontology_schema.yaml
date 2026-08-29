@@ -12,6 +12,18 @@ object_types:
       silo: primary_sql
       table: customers
       id_column: customer_id
+    # MDO (multi-datasource object types) -- for tests/integration/
+    # test_mdo_e2e.py, proving a real model transparently reads a
+    # field backed by a GENUINELY SEPARATE silo, with no indication in
+    # its own prompt this field is any different from any other. See
+    # core/ontology/mediator.py's own MDO docstring for the mechanism.
+    # Deliberately mismatched naming, same as tests/unit/test_mdo.py --
+    # risk_db's own id_column is "cust_ref", not "customer_id".
+    additional_storage:
+      risk_db:
+        silo: risk_sql
+        table: customer_risk
+        id_column: cust_ref
     id_field: customer_id
     security:
       field: region
@@ -22,6 +34,13 @@ object_types:
         type: data
       email:
         type: data
+      # The MDO field itself -- backed by risk_db, not primary_sql.
+      # Deliberately mismatched column name too (score_val, not
+      # risk_score) -- see get_field_column()'s own docstring for why.
+      risk_score:
+        type: data
+        storage: risk_db
+        column: score_val
       transactions:
         type: link
         target: Transaction
