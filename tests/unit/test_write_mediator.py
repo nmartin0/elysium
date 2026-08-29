@@ -78,11 +78,13 @@ def _record(user_id):
 
 
 @pytest.fixture
-def wm(test_db_path, test_schema) -> WriteMediator:
+def wm(test_db_path, test_schema, tmp_path) -> WriteMediator:
     adapter = SQLiteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
-    mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
-    return WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_log_db_path = tmp_path / "write_log.db"
+    mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES,
+                             write_log_db_path=write_log_db_path)
+    return WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES, write_log_db_path=write_log_db_path)
 
 
 def test_propose_action_denied_without_role_rbac(wm):

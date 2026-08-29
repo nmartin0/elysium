@@ -127,15 +127,17 @@ class DataMediator:
         self.adapters = adapters
         self.silo_for_type = silo_for_type
         self.roles = roles
-        # Optional, defaulting to None -- see core/ontology/write_log.py's
-        # own module docstring for the full mechanism. None means
-        # get_field() below never checks the log at all, identical to
-        # this class's behavior before the log existed -- every
-        # existing caller/test that constructs a DataMediator without
-        # this gets completely unchanged behavior. Threaded through
-        # from the SAME write_log_db_path a caller passes to
-        # WriteMediator -- both need to agree on the same physical
-        # file, since one writes entries and the other reads them.
+        # Optional, defaulting to None -- unlike WriteMediator's own
+        # write_log_db_path (now required, see write_mediator.py's own
+        # __init__), this stays genuinely optional for a real, different
+        # reason: plenty of legitimate DataMediator constructions have
+        # nothing to do with writes at all (a read-only deployment, or
+        # any test exercising only reads). None means get_field() below
+        # never checks the log, identical to this class's behavior
+        # before the log existed. Threaded through from the SAME
+        # write_log_db_path a caller passes to WriteMediator when one
+        # IS constructed -- both must agree on the same physical file;
+        # WriteMediator.__init__() enforces this directly.
         self.write_log_db_path = write_log_db_path
 
         self._write_limiters = {
@@ -149,6 +151,16 @@ class DataMediator:
 
     def _write_limiter_for(self, object_type: str) -> ConcurrencyLimiter:
         silo_name = self.silo_for_type[object_type]
+        return self._write_limiters[silo_name]
+
+    def _write_limiter_for_silo(self, silo_name: str) -> ConcurrencyLimiter:
+        # Same limiter registry as _write_limiter_for() above, keyed
+        # directly by silo name instead of object_type -- needed by
+        # WriteMediator._apply_update_via_log() (see write_mediator.py),
+        # which resolves a limiter PER STORAGE GROUP, not per
+        # object_type; _write_limiter_for(object_type) always resolves
+        # to the PRIMARY silo, which is the wrong limiter for a group
+        # writing to a different (e.g. MDO additional_storage) one.
         return self._write_limiters[silo_name]
 
     def _adapter_for(self, object_type: str) -> DataSiloAdapter:

@@ -70,29 +70,41 @@ class PendingWrite:
 
 
 class WriteMediator:
-    def __init__(self, mediator: DataMediator, roles: dict, action_types: dict | None = None,
-                 write_log_db_path: Path | None = None):
+    def __init__(self, mediator: DataMediator, roles: dict, action_types: dict,
+                 write_log_db_path: Path):
+        # action_types and write_log_db_path are BOTH required, not
+        # optional -- a WriteMediator's only real capability is
+        # propose_action(), which is useless without declared actions,
+        # and confirm_and_execute() now depends entirely on the write
+        # log for "update" (see below). Both used to default to a
+        # None-shaped fallback during this mechanism's OWN
+        # build-and-prove-in-isolation phase, mirroring this project's
+        # already-proven propose_write()->propose_action() transition
+        # shape -- but verified directly, EVERY real construction site
+        # already passed both explicitly; nothing depended on the
+        # defaults. Keeping optionality alive after migration is
+        # actually complete is compat cruft, not a real capability --
+        # removed rather than left as unused, confusing dead weight.
         self.mediator = mediator
         self.roles = roles
-        # Optional, defaulting to {} -- a deployment with no action
-        # types declared at all (writes fully disabled, or none
-        # authored yet) is still a valid, legitimate state: propose_action()
-        # simply raises "Unknown action_type" for any name, and
-        # visible_action_types() returns {} for every user, same as
-        # never offering write capability at all.
-        self.action_types = action_types or {}
-        # Optional, defaulting to None -- see write_log.py's own module
-        # docstring for the full mechanism this enables. None means
-        # confirm_and_execute() below falls back to the ORIGINAL,
-        # direct-write path unchanged (still the only path for
-        # "create," and still what every existing caller/test gets
-        # without any change to their own behavior). This mirrors this
-        # project's own already-proven transition shape for
-        # propose_write() -> propose_action(): build the new mechanism
-        # as an opt-in addition, prove it in isolation, migrate every
-        # real caller, THEN remove the fallback and this parameter's
-        # optionality entirely -- not a permanent second path.
+        self.action_types = action_types
         self.write_log_db_path = write_log_db_path
+        # Catches a REAL, easy-to-make configuration mistake outright,
+        # at construction time, rather than letting it fail silently
+        # and dangerously later: writes would go through the log
+        # correctly, but reads (DataMediator.get_field()) would never
+        # check it, since it's checking ITS OWN write_log_db_path, not
+        # this one. Both must point at the SAME physical file.
+        # Deliberately a real, explicit check (not assert) -- assert
+        # statements are stripped entirely under python -O, and this
+        # guards a genuine, dangerous-if-silent misconfiguration, not
+        # a debugging aid.
+        if mediator.write_log_db_path != write_log_db_path:
+            raise ValueError(
+                f"WriteMediator's write_log_db_path ({write_log_db_path!r}) must match "
+                f"the DataMediator it wraps ({mediator.write_log_db_path!r}) -- otherwise "
+                f"writes go through the log but reads never check it."
+            )
 
     def _group_changes_by_storage(self, object_type: str, changes: dict) -> list[tuple]:
         # Resolves EACH field individually (a list of exactly one field
@@ -143,7 +155,6 @@ class WriteMediator:
         # get_pending_changes()'s own "at most one pending entry per
         # object" assumption depends on this holding.
         object_lock = self.mediator._lock_for_object(pending.object_type, pending.object_id)
-        write_limiter = self.mediator._write_limiter_for(pending.object_type)
         with object_lock:
             log_id = write_log.log_pending_write(
                 self.write_log_db_path, pending.object_type, pending.object_id,
@@ -157,6 +168,20 @@ class WriteMediator:
                     field_name: pending.expected_current_values[field_name]
                     for field_name in group_changes
                 }
+                # THE limiter for THIS group's own silo -- a real bug,
+                # caught by directly tracing this exact call chain, not
+                # just reasoned about: this used to be resolved ONCE,
+                # outside this loop, from pending.object_type alone,
+                # which ALWAYS resolves to the PRIMARY silo (see
+                # DataMediator._write_limiter_for()). A group writing
+                # to a DIFFERENT storage (any MDO additional_storage)
+                # would silently borrow the PRIMARY silo's concurrency
+                # limiter instead of its own -- wrong capacity
+                # accounting in both directions: under-protecting the
+                # real target silo if it has a stricter limit, and
+                # needlessly contending for the primary silo's slots
+                # for a write that never touches it at all.
+                write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
                 with write_limiter.limit():
                     success = adapter.write_fields(
                         pending.object_type, pending.object_id,
@@ -347,19 +372,22 @@ class WriteMediator:
             for mutation in action_def["mutations"]
         }
 
-        # MDO: every field in `changes` must share ONE storage, UNLESS
-        # write_log_db_path is configured -- see write_log.py's own
-        # module docstring for the full mechanism. When it's set,
-        # expected_current_values is built PER STORAGE GROUP (same
-        # _group_changes_by_storage() confirm_and_execute() itself
-        # uses), so this never hits the single, whole-dict resolution
-        # call's outright rejection. When it's None (the original,
-        # still-valid fallback), this keeps the EXACT original
-        # behavior -- one call, one storage, reject anything spanning
-        # more than one -- see DataMediator._resolve_shared_storage()'s
-        # own docstring for that v1 scope boundary.
+        # For "create," every field must still share ONE storage --
+        # multi-storage create is a genuinely separate, harder problem
+        # (identity propagation: which storage's row gets the
+        # canonical id, and how does every OTHER storage's row learn
+        # it) not yet solved -- see write_log.py's own module
+        # docstring. This call is the outright rejection guard for
+        # that case; nothing else in this branch needs its result,
+        # since a create has no existing values to snapshot at all.
+        #
+        # For "update," expected_current_values is built PER STORAGE
+        # GROUP (same _group_changes_by_storage() confirm_and_execute()
+        # itself uses) -- this is what makes a multi-storage update
+        # possible at all; see write_log.py's own module docstring for
+        # the full mechanism.
         expected_current_values = {}
-        if operation == "update" and self.write_log_db_path is not None:
+        if operation == "update":
             for adapter, resolved_type_config, group_changes in self._group_changes_by_storage(object_type, changes):
                 for field_name in group_changes:
                     expected_current_values[field_name] = adapter.get_raw_field(
@@ -368,16 +396,7 @@ class WriteMediator:
                         resolved_type_config,
                     )
         else:
-            adapter, resolved_type_config = self.mediator._resolve_shared_storage(object_type, list(changes.keys()))
-            if operation == "update":
-                expected_current_values = {
-                    field_name: adapter.get_raw_field(
-                        object_type, object_id,
-                        get_column_for_field(resolved_type_config, field_name),
-                        resolved_type_config,
-                    )
-                    for field_name in changes
-                }
+            self.mediator._resolve_shared_storage(object_type, list(changes.keys()))
 
         description = f"{action_type_name}({object_id!r}, parameters={parameters})"
         return PendingWrite(object_type, object_id, operation, changes, user_record.user_id,
@@ -393,61 +412,38 @@ class WriteMediator:
         if not approved:
             return None
 
-        if pending.action == "update" and self.write_log_db_path is not None:
-            # THE new write-log path -- see write_log.py's own module
-            # docstring for the full mechanism and its current,
-            # deliberate scope boundary. Handles multi-storage updates
-            # the direct-write path below genuinely cannot: it fails
-            # outright the instant _resolve_shared_storage() is asked
-            # to resolve fields spanning more than one storage in a
-            # single call, exactly what happens two lines below it.
+        if pending.action == "update":
+            # ALWAYS via the write log now -- see write_log.py's own
+            # module docstring for the full mechanism. Handles
+            # multi-storage updates the old, single-call
+            # _resolve_shared_storage() approach genuinely could not
+            # (it fails outright the instant it's asked to resolve
+            # fields spanning more than one storage).
             new_id = self._apply_update_via_log(pending)
             log_post(request_id, "success", [new_id])
             return {"status": "written", "object_id": new_id}
 
-        # ORIGINAL, direct-write path -- UNCHANGED. Still the only path
-        # for "create" (see write_log.py's own docstring for why
-        # multi-storage create is a separate, harder, not-yet-solved
-        # problem), and still the fallback for "update" whenever no
-        # write_log_db_path was configured -- see this class's own
-        # __init__ for why that remains a valid, TEMPORARY, transitional
-        # state right now, not a permanent second path.
+        # "create" -- still single-storage only. Multi-storage create
+        # is a genuinely separate, harder problem (identity
+        # propagation: which storage's row gets the canonical id, and
+        # how does every OTHER storage's row learn it) not yet solved
+        # -- see write_log.py's own module docstring. No per-object
+        # lock needed here (unlike "update" above) -- there's no
+        # existing object to race against yet; only the database's own
+        # native INSERT atomicity matters.
         adapter, resolved_type_config = self.mediator._resolve_shared_storage(
             pending.object_type, list(pending.changes.keys())
         )
         write_limiter = self.mediator._write_limiter_for(pending.object_type)
 
-        # Translates field names to their real SQL column names, once,
-        # right here -- the only place PendingWrite's field-name-keyed
-        # dicts actually reach the adapter/SQL layer. Every field in
-        # ONE write already shares one storage/type_config by this
-        # point (validated in propose_action()), so a single resolved
-        # type_config correctly covers every field being translated.
         def _to_columns(values_by_field: dict) -> dict:
             return {
                 get_column_for_field(resolved_type_config, field_name): value
                 for field_name, value in values_by_field.items()
             }
 
-        if pending.action == "update":
-            # Per-object lock: the PRIMARY correctness mechanism -- two
-            # writers to the SAME object serialize here; different
-            # objects proceed fully concurrently.
-            object_lock = self.mediator._lock_for_object(pending.object_type, pending.object_id)
-            with object_lock, write_limiter.limit():
-                success = adapter.write_fields(
-                    pending.object_type, pending.object_id, _to_columns(pending.changes),
-                    _to_columns(pending.expected_current_values), resolved_type_config,
-                )
-            if not success:
-                raise ValueError(
-                    f"{pending.object_type} {pending.object_id!r} changed since this "
-                    f"write was proposed -- refresh and retry"
-                )
-            new_id = pending.object_id
-        else:
-            with write_limiter.limit():
-                new_id = adapter.create_object(pending.object_type, _to_columns(pending.changes), resolved_type_config)
+        with write_limiter.limit():
+            new_id = adapter.create_object(pending.object_type, _to_columns(pending.changes), resolved_type_config)
 
         log_post(request_id, "success", [new_id])
         return {"status": "written", "object_id": new_id}

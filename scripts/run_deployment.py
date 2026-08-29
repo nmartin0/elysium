@@ -52,8 +52,13 @@ def run_deployment() -> None:
     # whether write plumbing exists. A deployment granting no role any
     # write: permission (the default) simply sees every proposed write
     # denied via the same PermissionError path already covered by
-    # tests/unit/test_write_mediator.py -- harmless either way.
-    write_mediator = WriteMediator(mediator, config.roles, config.action_types)
+    # tests/unit/test_write_mediator.py -- harmless either way. Reads
+    # write_log_db_path directly off `mediator` -- it was already
+    # constructed with it inside load_deployment_bundle(); this
+    # guarantees a match rather than separately recomputing the same
+    # path expression and hoping it stays consistent.
+    write_mediator = WriteMediator(mediator, config.roles, config.action_types,
+                                    write_log_db_path=mediator.write_log_db_path)
     # confirm_write is NOT passed to AgentLoop anymore -- a proposed
     # write stops the loop and comes back via AgentLoopResult.
     # pending_write; THIS script confirms it, right here, after run()

@@ -64,24 +64,39 @@ separately-scoped follow-up, not silently assumed solved):
     known, stated limitation for now, not an oversight -- see
     core/ontology/mediator.py's own search_object() for where this
     would need to be added if it becomes a real problem in practice.
+  - write_mediator.py's own _read_current_state_for_criteria() has the
+    SAME gap, for the SAME reason -- it reads directly from the
+    adapter, not through get_field(), so submission_criteria
+    evaluation during a NEW propose_action() call could evaluate
+    against stale state if the object already has a pending,
+    unapplied edit from a prior action. Same class of limitation as
+    search_object() above, just a different read path; stated
+    explicitly here for the same reason, not silently inconsistent.
+
+Schema creation is handled by core/sqlite_connection.py's shared
+connection_with_schema() -- cached per db_path within this process,
+so this table's own CREATE TABLE IF NOT EXISTS only actually runs
+once, not on every single call the way it originally did here (a real
+cost on a genuinely hot path -- get_pending_changes() runs on every
+single DataMediator.get_field() call once this log is enabled).
 
 db_path is always an explicit parameter, never a hardcoded global path
 -- same dependency-injection discipline as every other adapter in this
 project (see core/auth/database.py's own docstring for the identical
 reasoning, applied here to a different problem). Uses
-core/sqlite_connection.py's shared open_connection() -- the same
-mechanical connection-opening code core/auth/database.py already uses,
-not a third, independently-written copy of it.
+core/sqlite_connection.py's shared connection_with_schema() -- the
+SAME mechanical connection-opening-and-schema-verification code
+core/auth/database.py now also uses, not a second, independently-
+written copy of the same pattern.
 """
 
 import json
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from core.sqlite_connection import open_connection
+from core.sqlite_connection import connection_with_schema
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS write_log (
@@ -98,19 +113,8 @@ CREATE TABLE IF NOT EXISTS write_log (
 """
 
 
-@contextmanager
 def connection(db_path: Path):
-    # Schema created idempotently on every connection (CREATE TABLE IF
-    # NOT EXISTS) -- cheap, and guarantees the table always exists
-    # regardless of call order, same pattern core/auth/database.py's
-    # own connection() already uses for the exact same reason.
-    conn = open_connection(db_path)
-    try:
-        conn.executescript(SCHEMA)
-        conn.commit()
-        yield conn
-    finally:
-        conn.close()
+    return connection_with_schema(db_path, SCHEMA)
 
 
 def log_pending_write(db_path: Path, object_type: str, object_id: Any, changes: dict,

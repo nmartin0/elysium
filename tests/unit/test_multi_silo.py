@@ -90,7 +90,8 @@ def mediator(tmp_path):
         "gadget_db": {"adapter": "sqlite", "connection": {"path": gadget_db_path}},
     })
     silo_for_type = {"Widget": "widget_db", "Gadget": "gadget_db"}
-    return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES)
+    return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES,
+                         write_log_db_path=tmp_path / "write_log.db")
 
 
 def test_two_silos_get_genuinely_separate_adapter_instances(mediator):
@@ -146,7 +147,7 @@ def test_an_action_to_one_silo_never_touches_the_other(mediator):
             "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
         },
     }
-    write_mediator = WriteMediator(mediator, roles, action_types)
+    write_mediator = WriteMediator(mediator, roles, action_types, write_log_db_path=mediator.write_log_db_path)
     pending = write_mediator.propose_action(carol, "RenameWidget", "w1", {"new_name": "Renamed Widget"})
     write_mediator.confirm_and_execute(pending, approved=True)
 

@@ -95,8 +95,12 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.mediator = mediator
     app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
     # Built ONCE -- see module docstring for why this must not be
-    # reconstructed per request.
-    app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types)
+    # reconstructed per request. Must be the SAME write_log_db_path
+    # `mediator` was already constructed with, inside
+    # load_deployment_bundle() -- WriteMediator.__init__() enforces
+    # this directly if it's ever wrong.
+    app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types,
+                                              write_log_db_path=mediator.write_log_db_path)
     app.state.loop = AgentLoop.from_deployment(config, mediator, write_mediator=app.state.write_mediator)
     app.state.synthesis_client = build_llm_adapter(config, config.synthesis_model)
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)

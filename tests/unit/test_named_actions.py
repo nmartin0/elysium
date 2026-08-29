@@ -97,8 +97,10 @@ def write_mediator(tmp_path):
     conn.close()
 
     adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}})
-    mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES)
-    return WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_log_db_path = tmp_path / "write_log.db"
+    mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES,
+                             write_log_db_path=write_log_db_path)
+    return WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES, write_log_db_path=write_log_db_path)
 
 
 def test_valid_action_call_succeeds_end_to_end(write_mediator):

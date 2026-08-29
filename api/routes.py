@@ -100,7 +100,13 @@ approves or rejects a proposed write. Looks the write up by ID AND the
 confirming user's identity together (core.pending_write_store.
 PendingWriteStore.pop() is uniform-denial -- wrong user, unknown ID,
 and expired ID all produce the identical 404, never a distinguishing
-message).
+message). Also runs on app.state.executor now, same as /query --
+confirm_and_execute() stopped being "a single, already-atomic SQL
+statement" once an update could span multiple storages (see
+core/ontology/write_log.py's own module docstring): it can now be a
+log INSERT, several sequential cross-file write_fields() calls under a
+lock, and a log UPDATE, real I/O that could otherwise block the event
+loop for meaningfully longer than intended.
 """
 
 import asyncio
@@ -344,8 +350,8 @@ async def query(body: QueryRequest, request: Request,
 
 
 @router.post("/writes/{write_id}/confirm")
-def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request: Request,
-                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request: Request,
+                               current_user: UserRecord = Depends(get_current_user)) -> dict:
     store: PendingWriteStore = request.app.state.pending_writes
     pending = store.pop(write_id, current_user.user_id)
     if pending is None:
@@ -354,8 +360,16 @@ def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request: Reque
         raise HTTPException(status_code=404, detail="Unknown or expired pending write")
 
     write_mediator: WriteMediator = request.app.state.write_mediator
-    # A single, already-atomic SQL statement -- fast, not offloaded to
-    # the executor the way the slow LLM calls are, same reasoning
-    # already applied to get_user_record() above.
-    outcome = write_mediator.confirm_and_execute(pending, body.approved)
+    # Offloaded to the SAME executor /query uses -- no longer "a
+    # single, already-atomic SQL statement," which used to be why this
+    # ran synchronously on the request-handling thread. Once an update
+    # spans multiple storages (see core/ontology/write_log.py's own
+    # module docstring), this can now be a log INSERT, several
+    # sequential cross-file write_fields() calls under a lock, and a
+    # log UPDATE -- real, sequential I/O that could otherwise block
+    # the event loop for meaningfully longer than intended. Caught by
+    # directly tracing this call chain, not just reasoned about.
+    executor = request.app.state.executor
+    event_loop = asyncio.get_running_loop()
+    outcome = await event_loop.run_in_executor(executor, write_mediator.confirm_and_execute, pending, body.approved)
     return outcome if outcome is not None else {"status": "rejected"}

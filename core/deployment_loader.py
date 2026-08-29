@@ -224,7 +224,17 @@ def load_deployment_bundle(config_dir: Path, data_dir: Path | None = None) -> tu
     # is resolved ONCE per request by the caller (see core/
     # intermediate_layer/auth.py's resolve_user_record()), not held by
     # the long-lived mediator itself.
-    mediator = DataMediator(config.schema, adapters, silo_for_type, config.roles)
+    #
+    # write_log_db_path lives alongside credentials.db, under the same
+    # data_dir -- see core/ontology/write_log.py's own module
+    # docstring for the mechanism. A caller building a WriteMediator
+    # around this same DataMediator MUST pass this identical path --
+    # WriteMediator.__init__() enforces this directly, rather than
+    # letting a mismatch fail silently and dangerously later (writes
+    # going through the log correctly, reads never checking it).
+    write_log_db_path = data_dir / "write_log.db"
+    mediator = DataMediator(config.schema, adapters, silo_for_type, config.roles,
+                             write_log_db_path=write_log_db_path)
     return config, mediator
 
 

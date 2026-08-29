@@ -61,7 +61,7 @@ TEST_ROLES = {
     "full": {"allowed_actions": [
         "read:Customer", "read:Customer.customer_id", "read:Customer.name", "read:Customer.risk_score",
         "read:Customer.preferred_agent_id",
-        "execute:UpdateRiskScore", "execute:UpdateNameAndRiskScore", "execute:CreateCustomerRiskOnly",
+        "execute:UpdateRiskScore", "execute:CreateCustomerWithNameAndRiskScore", "execute:CreateCustomerRiskOnly",
     ]},
     "name_only": {"allowed_actions": ["read:Customer", "read:Customer.customer_id", "read:Customer.name"]},
 }
@@ -75,13 +75,17 @@ TEST_ACTION_TYPES = {
     },
     # DELIBERATELY mixes a primary-storage field (name) and an MDO
     # field (risk_score) in ONE action's mutations -- for
-    # test_write_mixing_fields_from_different_storages_is_rejected,
-    # proving the v1 scope boundary rejects this the SAME way for a
-    # named action's resolved mutations as it did for propose_write()'s
-    # free-form changes.
-    "UpdateNameAndRiskScore": {
+    # test_create_mixing_fields_from_different_storages_is_rejected.
+    # A "create" specifically, not "update" -- multi-storage UPDATE is
+    # no longer rejected at all once write_log_db_path is configured
+    # (see core/ontology/write_log.py's own module docstring for the
+    # mechanism that makes it succeed instead); "create" is the ONE
+    # remaining case that's still genuinely, correctly rejected, since
+    # multi-storage create is a separate, harder, not-yet-solved
+    # problem (identity propagation across storages).
+    "CreateCustomerWithNameAndRiskScore": {
         "object_type": "Customer",
-        "operation": "update",
+        "operation": "create",
         "parameters": {"new_name": {"type": "string", "required": True}, "new_score": {"type": "number", "required": True}},
         "mutations": [
             {"set": {"property": "name", "value": "parameter.new_name"}},
@@ -140,7 +144,8 @@ def mediator(tmp_path):
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
     })
     silo_for_type = {"Customer": "primary_sql"}
-    return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES)
+    return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES,
+                         write_log_db_path=tmp_path / "write_log.db")
 
 
 def test_reads_a_primary_storage_field_normally(mediator):
@@ -181,7 +186,8 @@ def test_search_mixing_fields_from_different_storages_is_rejected(mediator):
 
 
 def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES,
+                                    write_log_db_path=mediator.write_log_db_path)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "UpdateRiskScore", "cust_001", {"new_score": 0.99})
@@ -196,17 +202,21 @@ def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "Ada Okafor"
 
 
-def test_action_mixing_fields_from_different_storages_is_rejected(mediator):
-    # THE v1 scope boundary for writes -- no atomicity guarantee exists
-    # across genuinely separate databases, so this is rejected outright
-    # rather than silently attempted as two non-atomic writes. Proven
-    # here via a named action whose OWN declared mutations mix a
-    # primary field (name) and an MDO field (risk_score) -- the same
-    # rejection propose_write()'s free-form changes used to trigger.
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+def test_create_mixing_fields_from_different_storages_is_rejected(mediator):
+    # THE one remaining v1 scope boundary for writes -- multi-storage
+    # UPDATE is no longer rejected at all once write_log_db_path is
+    # configured (see core/ontology/write_log.py's own module
+    # docstring), but multi-storage CREATE still genuinely is: it's a
+    # separate, harder, not-yet-solved problem (identity propagation
+    # across storages -- which storage's row gets the canonical id,
+    # and how does every OTHER storage's row learn it). Proven here via
+    # a named "create" action whose OWN declared mutations mix a
+    # primary field (name) and an MDO field (risk_score).
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES,
+                                    write_log_db_path=mediator.write_log_db_path)
     alice = _record("alice")
     with pytest.raises(ValueError, match="cannot combine fields from multiple storages"):
-        write_mediator.propose_action(alice, "UpdateNameAndRiskScore", "cust_001",
+        write_mediator.propose_action(alice, "CreateCustomerWithNameAndRiskScore", None,
                                        {"new_name": "New Name", "new_score": 0.5})
 
 
@@ -366,7 +376,8 @@ def test_create_with_only_mdo_fields_produces_an_orphaned_and_unreadable_row(med
     # addition, this test never actually verified the log entry fires
     # here, only that the return values are correctly None. A genuine
     # gap between what the docstring claimed and what was proven.
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES,
+                                    write_log_db_path=mediator.write_log_db_path)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "CreateCustomerRiskOnly", None, {"risk_score": 0.15})

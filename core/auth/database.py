@@ -18,12 +18,14 @@ same dependency-injection discipline as every other adapter in this
 project. The real path (e.g. /var/lib/OUR-SOFTWARE/credentials.db in a
 real install) is the caller's decision; tests pass a temp path.
 
-Schema created idempotently on every connection (CREATE TABLE IF NOT
-EXISTS) -- cheap, and guarantees the schema always exists regardless of
-call order, matching sqlite_adapter.py's "fresh connection per call, no
-persistent pooling" pattern.
+Schema creation and migration are handled by core/sqlite_connection.py's
+shared connection_with_schema() -- cached per db_path within THIS
+process, so CREATE TABLE IF NOT EXISTS and the migration below only
+actually run once, not on literally every single connection the way
+they used to (a real, previously-unnoticed cost on what can be a hot
+path, e.g. every login/session check).
 
-_MIGRATE_ADD_DISABLED_COLUMN exists because CREATE TABLE IF NOT EXISTS
+_migrate_add_disabled_column exists because CREATE TABLE IF NOT EXISTS
 is a no-op against an ALREADY-existing users table -- it does NOT add
 new columns to a table that predates this column. Any real, already-
 running deployment's credentials.db needs this column added to its
@@ -34,10 +36,9 @@ raises if the column already exists.
 """
 
 import sqlite3
-from contextlib import contextmanager
 from pathlib import Path
 
-from core.sqlite_connection import open_connection
+from core.sqlite_connection import connection_with_schema
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS credentials (
@@ -68,13 +69,5 @@ def _migrate_add_disabled_column(conn: sqlite3.Connection) -> None:
               # included it) or a previously-migrated one
 
 
-@contextmanager
 def connection(db_path: Path):
-    conn = open_connection(db_path)
-    try:
-        conn.executescript(SCHEMA)
-        _migrate_add_disabled_column(conn)
-        conn.commit()
-        yield conn
-    finally:
-        conn.close()
+    return connection_with_schema(db_path, SCHEMA, migrations=(_migrate_add_disabled_column,))
