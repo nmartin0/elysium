@@ -64,6 +64,13 @@ class DeploymentConfig:
     silo_configs: dict          # silo name -> {"adapter": ..., "connection": {...}}
     enabled_tools: list[str]      # from config.yaml tools.enabled -- GENUINELY optional,
                                    # unlike everything else here (see load_deployment())
+    action_types: dict            # NAMED action types (action-types-redesign branch) --
+                                   # a deployment with none declared (the overwhelmingly
+                                   # common case today) gets {} here, populated explicitly
+                                   # by load_deployment() below via schema_raw.get(...),
+                                   # not a dataclass-level default -- same "explicit, not
+                                   # silently inferred" discipline as writes_enabled/
+                                   # visible_action_types in agent_step_prompt.py.
 
 
 def _freeze_roles(roles_raw: dict) -> dict:
@@ -108,6 +115,13 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             security_attribute=policy_raw["security_attribute"],
             silo_configs=config["data_silos"],
             enabled_tools=enabled_tools,
+            # GENUINELY optional in the YAML itself -- .get() with a {}
+            # default, same as enabled_tools above, NOT inside the
+            # strict required-key try/except: a deployment predating
+            # named actions entirely (or simply not using them) has no
+            # "action_types:" key in ontology_schema.yaml at all, and
+            # that must remain completely valid.
+            action_types=schema_raw.get("action_types", {}),
         )
     except KeyError as e:
         raise ValueError(

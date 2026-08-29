@@ -103,3 +103,35 @@ object_types:
         type: link
         target: Customer
         cardinality: one
+
+# NAMED ACTION TYPES (action-types-redesign branch) -- for
+# tests/integration/test_named_actions_e2e.py, proving a real model
+# transparently discovers, describes correctly to itself, and invokes
+# a genuinely NEW proposal mechanism (propose_action, execute: grants)
+# it has never been prompted with before this branch existed.
+#
+# Deliberately NO submission_criteria on this one -- that mechanism is
+# already thoroughly proven by tests/unit/test_named_actions.py and
+# tests/unit/test_agent_step_prompt_named_actions.py. This test's one
+# genuinely unproven question is narrower: can a real model correctly
+# read and use the propose_action vocabulary at all. Keeping other
+# variables out keeps that question isolated.
+#
+# Granted ONLY to a dedicated new user (user_grace, see policy.yaml) --
+# deliberately NOT added to user_eve's existing write:Customer.name
+# capability, even though both touch Customer.name. Adding a NEW grant
+# to an EXISTING, already-tested role/user would change what THAT
+# user's prompt shows, exactly the kind of silent, unverified risk
+# this project was careful to catch once already this session (the
+# MDO risk_score addition to customer_service). A dedicated user means
+# zero existing real-Ollama test's prompt changes at all.
+action_types:
+  UpdateCustomerName:
+    object_type: Customer
+    operation: update
+    parameters:
+      new_name:
+        type: string
+        required: true
+    mutations:
+      - set: {property: name, value: parameter.new_name}

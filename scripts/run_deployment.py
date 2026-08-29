@@ -53,7 +53,7 @@ def run_deployment() -> None:
     # write: permission (the default) simply sees every proposed write
     # denied via the same PermissionError path already covered by
     # tests/unit/test_write_mediator.py -- harmless either way.
-    write_mediator = WriteMediator(mediator, config.roles)
+    write_mediator = WriteMediator(mediator, config.roles, config.action_types)
     # confirm_write is NOT passed to AgentLoop anymore -- a proposed
     # write stops the loop and comes back via AgentLoopResult.
     # pending_write; THIS script confirms it, right here, after run()

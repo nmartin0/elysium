@@ -98,6 +98,22 @@ roles:
       - read:SupportTicket
       - read:SupportTicket.subject
       - read:SupportTicket.status
+  # For tests/integration/test_named_actions_e2e.py -- execute:
+  # ONLY, deliberately NOT write:Customer.name too. Proves the
+  # NAMED-action path works entirely on its own authorization model
+  # (execute:, not a field grant) -- read:Customer.customer_id is
+  # needed so a real model can search_object to FIND cust_001 in the
+  # first place (propose_action() itself never checks read: grants at
+  # all -- see WriteMediator.propose_action()'s own docstring for that
+  # real, considered trade-off); read:Customer.name is needed only so
+  # the TEST can verify the real database change afterward, matching
+  # test_write_confirmation_e2e.py's own verification pattern.
+  name_updater:
+    allowed_actions:
+      - read:Customer
+      - read:Customer.customer_id
+      - read:Customer.name
+      - execute:UpdateCustomerName
 
 users:
   user_alice:
@@ -126,3 +142,13 @@ users:
   user_frank:
     region: us-west
     role: customer_service_link_only
+  # For tests/integration/test_named_actions_e2e.py -- a DEDICATED
+  # user, deliberately NOT reusing user_eve, even though both end up
+  # touching Customer.name. See ontology_schema.yaml's action_types
+  # comment for why: a NEW grant added to an EXISTING, already-tested
+  # user would change what that user's prompt shows to every test
+  # already relying on it -- exactly the silent-drift risk this
+  # project caught once already this session.
+  user_grace:
+    region: us-west
+    role: name_updater
