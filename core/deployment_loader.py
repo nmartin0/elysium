@@ -29,13 +29,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from adapters.ollama_adapter import OllamaAdapter
+from adapters.sqlite_adapter import SQLiteAdapter
 from core.config import load_yaml
+from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
+from core.llm.interface import LLMAdapter
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.mediator import DataMediator
-from core.llm.interface import LLMAdapter
-from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
-from adapters.sqlite_adapter import SQLiteAdapter
-from adapters.ollama_adapter import OllamaAdapter
 
 _ADAPTER_REGISTRY: dict[str, type] = {
     "sqlite": SQLiteAdapter,

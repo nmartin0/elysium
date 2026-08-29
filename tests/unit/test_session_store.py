@@ -1,9 +1,10 @@
 """Tests for core/auth/session_store.py."""
 
-import pytest
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from core.auth import session_store
 

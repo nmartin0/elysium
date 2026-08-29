@@ -87,6 +87,7 @@ def test_nonexistent_tool_name_produces_identical_shape_of_failure(mediator):
         {"step": "use_tool", "tool_name": "totally_fake_tool_xyz", "args": {}},
         {"step": "finish"},
     ])
-    result = loop.run(_record("alice"), "test query")  # alice, even though authorized for linear_regression, not this fake one
+    # alice, even though authorized for linear_regression, not this fake one
+    result = loop.run(_record("alice"), "test query")
     real_data = AgentLoop.filter_real_data(result.gathered)
     assert not any("slope" in str(item.get("result", "")) for item in real_data)

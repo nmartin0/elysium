@@ -66,7 +66,7 @@ Called by: core/intermediate_layer/access_control.py (log_access,
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 LOG_PATH = Path(__file__).resolve().parent.parent.parent / "deployment" / "var" / "log" / "audit.log"
@@ -82,7 +82,7 @@ def configure_audit_log(log_dir: Path) -> None:
 
 def _write(entry: dict) -> None:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    entry["timestamp"] = datetime.now(timezone.utc).isoformat()
+    entry["timestamp"] = datetime.now(UTC).isoformat()
     with open(LOG_PATH, "a") as f:
         f.write(json.dumps(entry) + "\n")
 

@@ -67,14 +67,14 @@ is CONDITIONAL, not required -- a checkout where nobody's run
 real install (which does build the UI) gets it served automatically.
 """
 
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import build_llm_adapter, load_deployment_bundle, resolve_runtime_paths, RuntimePaths
+from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
 from core.intermediate_layer.audit import configure_audit_log
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
@@ -94,6 +94,15 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.config = config
     app.state.mediator = mediator
     app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
+    # mediator.write_log_db_path is typed Path | None generally
+    # (DataMediator's own copy is genuinely optional -- see its own
+    # docstring), but load_deployment_bundle() ALWAYS sets a real one
+    # for every deployment it builds -- this check makes that
+    # guarantee explicit and real (not assert, which strips under
+    # python -O) rather than silently relying on it, and satisfies
+    # WriteMediator's own required, non-optional parameter type.
+    if mediator.write_log_db_path is None:
+        raise ValueError("mediator.write_log_db_path must be set -- load_deployment_bundle() should have set it")
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request. Must be the SAME write_log_db_path
     # `mediator` was already constructed with, inside

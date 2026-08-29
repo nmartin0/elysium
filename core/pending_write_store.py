@@ -38,7 +38,7 @@ Used by: api/app.py (one instance, stored on app.state, same lifecycle
 import threading
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from core.intermediate_layer.audit import log_write_expired
 from core.ontology.write_mediator import PendingWrite
@@ -61,7 +61,7 @@ class PendingWriteStore:
 
     def _expire_stale_locked(self) -> None:
         # Called with self._lock already held.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired_ids = [write_id for write_id, stored in self._writes.items() if now >= stored.expires_at]
         for write_id in expired_ids:
             stored = self._writes.pop(write_id)
@@ -69,7 +69,7 @@ class PendingWriteStore:
 
     def store(self, pending: PendingWrite) -> str:
         write_id = str(uuid.uuid4())
-        expires_at = datetime.now(timezone.utc) + self._ttl
+        expires_at = datetime.now(UTC) + self._ttl
         with self._lock:
             self._expire_stale_locked()
             self._writes[write_id] = _StoredWrite(pending, pending.user_id, expires_at)

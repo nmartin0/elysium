@@ -31,7 +31,7 @@ Used by: api/'s auth dependency, resolving a request's token into a
 """
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from core.auth.database import connection
@@ -41,7 +41,7 @@ SESSION_LIFETIME = timedelta(hours=24)
 
 def create_session(db_path: Path, username: str) -> str:
     token = secrets.token_urlsafe(32)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now + SESSION_LIFETIME
     with connection(db_path) as conn:
         conn.execute(
@@ -62,7 +62,7 @@ def validate_session(db_path: Path, token: str) -> str | None:
         return None
 
     expires_at = datetime.fromisoformat(row["expires_at"])
-    if datetime.now(timezone.utc) >= expires_at:
+    if datetime.now(UTC) >= expires_at:
         return None
 
     return row["username"]

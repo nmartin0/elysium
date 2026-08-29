@@ -114,7 +114,8 @@ def test_create_user_with_manage_users_grant_succeeds_and_new_user_can_log_in(cl
 
     create_response = client.post(
         "/users",
-        json={"username": "newperson", "password": "newpass123", "mac_value": "us-west", "role_name": "customer_service"},
+        json={"username": "newperson", "password": "newpass123",
+              "mac_value": "us-west", "role_name": "customer_service"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert create_response.status_code == 201

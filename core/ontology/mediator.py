@@ -110,12 +110,16 @@ from typing import Any
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import log_access, log_unknown_reference
-from core.intermediate_layer.auth import authorize, UserRecord
+from core.intermediate_layer.auth import UserRecord, authorize
 from core.ontology import write_log
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import (
-    is_link_field, get_link_target, is_searchable_field,
-    get_field_storage_name, get_field_column, get_column_for_field,
+    get_column_for_field,
+    get_field_column,
+    get_field_storage_name,
+    get_link_target,
+    is_link_field,
+    is_searchable_field,
 )
 
 
@@ -212,7 +216,7 @@ class DataMediator:
         type_schema = self._type_schema(object_type)
         id_field = type_schema["id_field"]
 
-        storage_names = set()
+        storage_names: set[str | None] = set()
         for field_name in field_names:
             if field_name == id_field:
                 storage_names.add(None)

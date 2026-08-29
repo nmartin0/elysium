@@ -13,14 +13,21 @@ every session, in one transaction, so a disabled or deleted account
 can never be left holding a still-valid token.
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from core.auth.credential_store import verify_credential
 from core.auth.session_store import create_session, validate_session
 from core.user_directory import (
-    create_user, get_user_record, is_user_disabled, disable_user, enable_user,
-    delete_user, user_exists, list_users,
+    create_user,
+    delete_user,
+    disable_user,
+    enable_user,
+    get_user_record,
+    is_user_disabled,
+    list_users,
+    user_exists,
 )
 
 TEST_ROLES = {"analyst": {"allowed_actions": ["read:Employee"]}}

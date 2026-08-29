@@ -5,7 +5,7 @@ AgentLoop.filter_real_data() -- all genuinely pure functions of their
 arguments only, none needing instance state.
 """
 
-from core.agent.agentic_loop import AgentLoop, _step_signature, _detect_asymmetry
+from core.agent.agentic_loop import AgentLoop, _detect_asymmetry, _step_signature
 
 
 def test_step_signature_search_object_is_order_independent():
@@ -83,7 +83,9 @@ def test_filter_real_data_strips_bookkeeping_entries():
         {"step": "rejected_invalid_step", "note": "..."},
     ]
     real_data = AgentLoop.filter_real_data(gathered)
-    assert real_data == [{"step": "get_field", "object_type": "T", "object_id": 1, "field_name": "amount", "result": 10}]
+    assert real_data == [
+        {"step": "get_field", "object_type": "T", "object_id": 1, "field_name": "amount", "result": 10}
+    ]
 
 
 def test_filter_real_data_strips_denied_or_null_field_reads():

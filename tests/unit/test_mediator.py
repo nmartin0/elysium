@@ -172,8 +172,8 @@ def test_id_field_itself_requires_its_own_explicit_grant(mediator):
 
 def test_two_mediators_are_independent():
     import sqlite3
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
 
     with tempfile.TemporaryDirectory() as tmp:
         db_a = Path(tmp) / "a.db"

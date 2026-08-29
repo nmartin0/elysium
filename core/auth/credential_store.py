@@ -34,11 +34,11 @@ Used by: api/routes.py (via the auth dependency), core/user_directory.py
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from core.auth.database import connection
-from core.auth.password_hashing import hash_password, verify_password, DUMMY_HASH
+from core.auth.password_hashing import DUMMY_HASH, hash_password, verify_password
 
 
 def insert_credential_using_connection(conn: sqlite3.Connection, username: str, password_hash: str) -> None:
@@ -47,7 +47,7 @@ def insert_credential_using_connection(conn: sqlite3.Connection, username: str, 
     # or none at all (see core/user_directory.py's create_user()).
     conn.execute(
         "INSERT INTO credentials (username, password_hash, created_at) VALUES (?, ?, ?)",
-        (username, password_hash, datetime.now(timezone.utc).isoformat()),
+        (username, password_hash, datetime.now(UTC).isoformat()),
     )
 
 
@@ -58,7 +58,7 @@ def create_credential(db_path: Path, username: str, password: str) -> None:
             insert_credential_using_connection(conn, username, password_hash)
             conn.commit()
         except sqlite3.IntegrityError:
-            raise ValueError(f"User {username!r} already exists")
+            raise ValueError(f"User {username!r} already exists") from None
 
 
 def update_credential(db_path: Path, username: str, new_password: str) -> None:

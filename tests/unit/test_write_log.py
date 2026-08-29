@@ -58,7 +58,9 @@ TEST_ACTION_TYPES = {
     "UpdateNameAndRiskScore": {
         "object_type": "Customer",
         "operation": "update",
-        "parameters": {"new_name": {"type": "string", "required": True}, "new_score": {"type": "number", "required": True}},
+        "parameters": {
+            "new_name": {"type": "string", "required": True}, "new_score": {"type": "number", "required": True}
+        },
         "mutations": [
             {"set": {"property": "name", "value": "parameter.new_name"}},
             {"set": {"property": "risk_score", "value": "parameter.new_score"}},

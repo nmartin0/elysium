@@ -112,23 +112,29 @@ loop for meaningfully longer than intended.
 import asyncio
 import threading
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from api.auth_dependency import get_current_user
 from core.agent.agentic_loop import AgentLoop
 from core.auth.credential_store import verify_credential
-from core.auth.session_store import create_session, invalidate_session, invalidate_all_sessions
+from core.auth.session_store import create_session, invalidate_all_sessions, invalidate_session
 from core.intermediate_layer.audit import log_query_cancelled
-from core.intermediate_layer.auth import authorize, UserRecord
+from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 from core.user_directory import (
-    create_user, get_user_record, is_user_disabled, disable_user, enable_user, delete_user, user_exists,
+    create_user,
+    delete_user,
+    disable_user,
+    enable_user,
+    get_user_record,
+    is_user_disabled,
     list_users,
+    user_exists,
 )
-from api.auth_dependency import get_current_user
 
 router = APIRouter()
 
@@ -223,7 +229,7 @@ def create_user_route(body: CreateUserRequest, request: Request,
     try:
         create_user(db_path, roles, body.username, body.password, body.mac_value, body.role_name)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     return {"status": "created", "username": body.username}
 
@@ -264,7 +270,7 @@ def disable_user_route(username: str, request: Request,
     try:
         disable_user(request.app.state.credentials_db_path, username)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.post("/users/{username}/enable", status_code=204)
@@ -274,7 +280,7 @@ def enable_user_route(username: str, request: Request,
     try:
         enable_user(request.app.state.credentials_db_path, username)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.delete("/users/{username}", status_code=204)
@@ -284,7 +290,7 @@ def delete_user_route(username: str, request: Request,
     try:
         delete_user(request.app.state.credentials_db_path, username)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 async def _watch_for_disconnect(request: Request, cancel_event: threading.Event) -> None:

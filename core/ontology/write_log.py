@@ -92,7 +92,7 @@ written copy of the same pattern.
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -136,7 +136,7 @@ def log_pending_write(db_path: Path, object_type: str, object_id: Any, changes: 
             (
                 log_id, object_type, str(object_id), json.dumps(changes),
                 json.dumps(expected_current_values), user_id, description,
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
             ),
         )
         conn.commit()

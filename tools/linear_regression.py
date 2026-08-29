@@ -68,7 +68,7 @@ class LinearRegressionTool:
         mean_x = sum(x_values) / n
         mean_y = sum(y_values) / n
 
-        numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(x_values, y_values))
+        numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(x_values, y_values, strict=True))
         denominator = sum((x - mean_x) ** 2 for x in x_values)
 
         if denominator == 0:
@@ -78,7 +78,7 @@ class LinearRegressionTool:
         intercept = mean_y - slope * mean_x
 
         predicted = [slope * x + intercept for x in x_values]
-        ss_res = sum((y - pred) ** 2 for y, pred in zip(y_values, predicted))
+        ss_res = sum((y - pred) ** 2 for y, pred in zip(y_values, predicted, strict=True))
         ss_tot = sum((y - mean_y) ** 2 for y in y_values)
         r_squared = 1.0 if ss_tot == 0 else 1 - (ss_res / ss_tot)
 

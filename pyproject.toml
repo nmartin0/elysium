@@ -1,0 +1,70 @@
+[tool.ruff]
+# 120, not the tool defaults' 79/88 -- matches this project's own,
+# already-established line-length practice (confirmed directly: nearly
+# the entire codebase already sits under 120, with only a couple of
+# genuine outliers), not an arbitrarily chosen number.
+line-length = 120
+target-version = "py312"
+# vulture_whitelist.py is deliberately NOT ordinary executable Python
+# -- it's a sequence of bare name references, Vulture's own required
+# whitelist format (each line marks a name as "used" for Vulture's
+# purposes). Ruff, scanning it as normal code, correctly-from-its-own-
+# perspective flags every single line as F821 (undefined name) and
+# B018 (useless expression) -- a real, confirmed false-positive class
+# specific to this one file's special format, not a reason to weaken
+# F821/B018 project-wide.
+exclude = ["vulture_whitelist.py"]
+
+[tool.ruff.lint]
+# Four genuinely different, non-overlapping concerns, not picked
+# arbitrarily -- each verified directly against this codebase before
+# being added:
+#   E, W  -- pycodestyle (real style errors/warnings)
+#   F     -- pyflakes (unused imports/names, undefined names -- the
+#            same real signal Flake8 provided, ground-tested here:
+#            found 3 genuine unused imports, zero noise)
+#   I     -- import sorting (isort-equivalent) -- cosmetic but free,
+#            auto-fixable, no judgment calls involved
+#   B     -- flake8-bugbear -- real Python gotchas (mutable defaults,
+#            swallowed exception context, non-strict zip()) -- ground-
+#            tested here: found 6 genuine "raise ... from" sites and 1
+#            genuine zip(strict=) gap, both real, worth fixing
+#   UP    -- pyupgrade -- modernize syntax to the target Python version
+# Deliberately NOT pylint-equivalent rules (C901 complexity, docstring
+# conventions, naming conventions) -- this project's own style
+# (long, deliberately explanatory docstrings; multi-clause function
+# signatures) would generate persistent, subjective noise against
+# choices that are intentional here, not oversights.
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 ("don't call functions in argument defaults") is a real,
+# valuable check in general -- but FastAPI's Depends()/Header() are
+# THE idiomatic, required way to declare a route's dependencies, and
+# FastAPI itself evaluates them fresh per-request, not once at
+# definition time the way B008 assumes. Ground-tested directly: every
+# single B008 hit in this codebase was exactly this FastAPI pattern,
+# zero genuine mutable-default-argument bugs -- allowlisting these two
+# callables keeps B008 fully active for everything else.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header"]
+
+[tool.mypy]
+# core/, api/, and adapters/ are where this project's real logic and
+# type contracts live -- scripts/ are throwaway entry points. Not
+# scanning tests/ deliberately: test fixtures lean on dynamic patterns
+# (MagicMock, pytest fixture parameter-name matching) that produce
+# type-checker noise disproportionate to the value here.
+#
+# api/ was verified worth including, not assumed -- running mypy
+# against it directly surfaced a real, previously-unnoticed issue from
+# this project's own write-log work: WriteMediator.write_log_db_path
+# is typed as a required Path, but api/app.py was passing
+# mediator.write_log_db_path, itself typed Path | None (DataMediator's
+# own copy is genuinely optional) -- a real, if currently benign,
+# type-contract gap between the two.
+files = ["core", "api", "adapters"]
+ignore_missing_imports = true
+
+[tool.vulture]
+paths = ["core", "api", "adapters", "scripts", "tests", "vulture_whitelist.py"]
+min_confidence = 60

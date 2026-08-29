@@ -92,7 +92,7 @@ def create_user(db_path: Path, roles: dict, username: str, password: str,
             # (the transaction is never committed) means neither an
             # orphaned users row nor an orphaned credential can result,
             # regardless of which INSERT actually failed.
-            raise ValueError(f"User {username!r} already exists")
+            raise ValueError(f"User {username!r} already exists") from None
 
 
 def get_user_record(db_path: Path, username: str) -> UserRecord:

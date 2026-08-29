@@ -68,14 +68,14 @@ import threading
 from dataclasses import dataclass
 
 from core.concurrency import ConcurrencyLimiter
-from core.intermediate_layer.audit import log_access
-from core.intermediate_layer.auth import authorize, UserRecord
-from core.llm.agent_step_prompt import next_step
 from core.deployment_loader import build_llm_adapter
+from core.intermediate_layer.audit import log_access
+from core.intermediate_layer.auth import UserRecord, authorize
+from core.llm.agent_step_prompt import next_step
 from core.llm.interface import LLMAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
-from core.ontology.write_mediator import WriteMediator, PendingWrite
+from core.ontology.write_mediator import PendingWrite, WriteMediator
 from core.tools.interface import Tool
 from core.tools.registry import get_enabled_tools
 
@@ -315,7 +315,8 @@ class AgentLoop:
                 )
                 return 0, 0, True, pending
             else:
-                return consecutive_invalid, consecutive_business_rule, True, None  # shouldn't happen -- agent_step_prompt already validates this
+                # shouldn't happen -- agent_step_prompt already validates this
+                return consecutive_invalid, consecutive_business_rule, True, None
 
             gathered.append({**step, "result": result})
             return 0, 0, False, None
@@ -359,7 +360,7 @@ class AgentLoop:
         # user_record is a pre-resolved UserRecord, not a raw user_id --
         # the caller resolves identity ONCE. cancel_event is checked
         # only at the top of each hop -- see module docstring.
-        gathered = []
+        gathered: list[dict] = []
         seen_signatures = set()
         consecutive_duplicates = 0
         consecutive_invalid = 0

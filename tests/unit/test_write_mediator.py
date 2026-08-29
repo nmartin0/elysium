@@ -22,13 +22,14 @@ carol: org-a, NO role           -- same org as alice -- RBAC-only denial test
 dave:  org-a, role=rename_only  -- execute:RenameAuthor but NOT execute:CreateAuthor
 """
 
-import pytest
 from dataclasses import FrozenInstanceError
+
+import pytest
 
 from adapters.sqlite_adapter import SQLiteAdapter
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
-from core.ontology.write_mediator import WriteMediator, PendingWrite
+from core.ontology.write_mediator import WriteMediator
 
 TEST_USERS = {
     "alice": {"org_id": "org-a", "role": "editor"},

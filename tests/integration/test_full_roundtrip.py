@@ -19,13 +19,12 @@ Run with: python3 -m pytest tests/integration/ -v -m integration
 """
 
 import pytest
+from conftest import read_audit_log
 
 from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
 from core.deployment_loader import build_llm_adapter
+from core.intermediate_layer.auth import resolve_user_record
 from core.llm.synthesis_prompt import synthesize_insight
-
-from conftest import read_audit_log
 
 
 def _run(deployment, mediator, user_id: str, query_text: str) -> str:

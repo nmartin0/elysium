@@ -37,8 +37,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from core.intermediate_layer.audit import log_access, log_pre, log_post
-from core.intermediate_layer.auth import authorize, UserRecord
+from core.intermediate_layer.audit import log_access, log_post, log_pre
+from core.intermediate_layer.auth import UserRecord, authorize
 from core.ontology import write_log
 from core.ontology.mediator import DataMediator
 from core.ontology.schema import get_column_for_field

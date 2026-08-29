@@ -33,7 +33,6 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteAdapter
 from core.deployment_loader import _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator

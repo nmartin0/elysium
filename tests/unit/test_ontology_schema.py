@@ -3,8 +3,13 @@
 import pytest
 
 from core.ontology.schema import (
-    get_id_field, get_field_info, is_link_field, get_link_target, is_searchable_field,
-    get_field_storage_name, get_field_column,
+    get_field_column,
+    get_field_info,
+    get_field_storage_name,
+    get_id_field,
+    get_link_target,
+    is_link_field,
+    is_searchable_field,
 )
 
 

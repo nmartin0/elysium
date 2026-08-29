@@ -24,8 +24,8 @@ is checked loosely, not exactly -- see the assertion's own comment.
 import pytest
 
 from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
 from core.deployment_loader import build_llm_adapter
+from core.intermediate_layer.auth import resolve_user_record
 from core.llm.synthesis_prompt import synthesize_insight
 
 

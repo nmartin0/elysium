@@ -43,6 +43,6 @@ def serve(requests: list[tuple[str, str]]) -> list[list[dict]]:
     with ThreadPoolExecutor(max_workers=config.max_concurrent_requests) as executor:
         futures = [
             executor.submit(loop.run, user_record, query_text)
-            for user_record, (_, query_text) in zip(user_records, requests)
+            for user_record, (_, query_text) in zip(user_records, requests, strict=True)
         ]
         return [f.result() for f in futures]

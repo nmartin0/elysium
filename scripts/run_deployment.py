@@ -21,12 +21,17 @@ Run from the project root:
 """
 
 from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import load_deployment_bundle, load_example_queries, build_llm_adapter, resolve_runtime_paths
+from core.deployment_loader import (
+    build_llm_adapter,
+    load_deployment_bundle,
+    load_example_queries,
+    resolve_runtime_paths,
+)
 from core.intermediate_layer.audit import configure_audit_log
 from core.intermediate_layer.auth import resolve_user_record
 from core.llm.synthesis_prompt import synthesize_insight
 from core.logging_config import configure_logging
-from core.ontology.write_mediator import WriteMediator, PendingWrite
+from core.ontology.write_mediator import PendingWrite, WriteMediator
 
 RUNTIME_PATHS = resolve_runtime_paths()
 
@@ -52,11 +57,14 @@ def run_deployment() -> None:
     # whether write plumbing exists. A deployment granting no role any
     # write: permission (the default) simply sees every proposed write
     # denied via the same PermissionError path already covered by
-    # tests/unit/test_write_mediator.py -- harmless either way. Reads
-    # write_log_db_path directly off `mediator` -- it was already
-    # constructed with it inside load_deployment_bundle(); this
-    # guarantees a match rather than separately recomputing the same
-    # path expression and hoping it stays consistent.
+    # tests/unit/test_write_mediator.py -- harmless either way.
+    # mediator.write_log_db_path is typed Path | None generally
+    # (DataMediator's own copy is genuinely optional), but
+    # load_deployment_bundle() ALWAYS sets a real one -- this check
+    # makes that guarantee explicit rather than silently relying on
+    # it, and satisfies WriteMediator's own required parameter type.
+    if mediator.write_log_db_path is None:
+        raise ValueError("mediator.write_log_db_path must be set -- load_deployment_bundle() should have set it")
     write_mediator = WriteMediator(mediator, config.roles, config.action_types,
                                     write_log_db_path=mediator.write_log_db_path)
     # confirm_write is NOT passed to AgentLoop anymore -- a proposed

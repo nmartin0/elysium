@@ -1,6 +1,6 @@
 """Tests for core/auth/password_hashing.py -- pure, no I/O, no fixtures needed."""
 
-from core.auth.password_hashing import hash_password, verify_password, DUMMY_HASH
+from core.auth.password_hashing import DUMMY_HASH, hash_password, verify_password
 
 
 def test_hash_is_not_the_plaintext():

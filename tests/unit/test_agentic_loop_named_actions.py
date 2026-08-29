@@ -23,9 +23,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from core.agent.agentic_loop import AgentLoop
 from core.deployment_loader import _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
-from core.agent.agentic_loop import AgentLoop
 from core.ontology.mediator import DataMediator
 from core.ontology.write_mediator import WriteMediator
 

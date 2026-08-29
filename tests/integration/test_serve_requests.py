@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.serve_requests import serve
 from core.agent.agentic_loop import AgentLoopResult
+from scripts.serve_requests import serve
 
 pytestmark = pytest.mark.mocked_llm
 

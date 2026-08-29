@@ -23,7 +23,6 @@ import pytest
 from adapters.sqlite_adapter import SQLiteAdapter
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
-from core.ontology.write_mediator import WriteMediator
 from tests.conftest import read_audit_log
 
 TEST_ROLES = {
@@ -143,7 +142,9 @@ def test_orphaned_mdo_style_record_logs_security_resolution_failed(tmp_path, iso
     conn = sqlite3.connect(db_path)
     conn.executescript("""
         CREATE TABLE authors (author_id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL);
-        CREATE TABLE books (book_id INTEGER PRIMARY KEY, author_id TEXT NOT NULL, title TEXT NOT NULL, year INTEGER NOT NULL);
+        CREATE TABLE books (
+            book_id INTEGER PRIMARY KEY, author_id TEXT NOT NULL, title TEXT NOT NULL, year INTEGER NOT NULL
+        );
     """)
     conn.commit()
     conn.close()

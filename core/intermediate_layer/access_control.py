@@ -36,7 +36,7 @@ Used by: core/ontology/mediator.py (every read), core/ontology/
 """
 
 from core.intermediate_layer.audit import log_access, log_security_resolution_failed
-from core.intermediate_layer.auth import authorize, UserRecord
+from core.intermediate_layer.auth import UserRecord, authorize
 
 
 def check_access(mediator, user_record: UserRecord, roles: dict,

@@ -14,8 +14,11 @@ propose_action validation), not a retroactive full-module test pass.
 """
 
 from core.llm.agent_step_prompt import (
-    _action_validity_for_object, _build_system_prompt, _describe_actions,
-    _known_state_for_object, next_step,
+    _action_validity_for_object,
+    _build_system_prompt,
+    _describe_actions,
+    _known_state_for_object,
+    next_step,
 )
 
 ACTION_TYPES = {
@@ -78,13 +81,17 @@ def test_describe_actions_shows_no_verdict_with_no_known_state():
 
 
 def test_describe_actions_annotates_a_known_valid_object():
-    gathered = [{"step": "get_field", "object_type": "Ticket", "object_id": "t1", "field_name": "status", "result": "closed"}]
+    gathered = [
+        {"step": "get_field", "object_type": "Ticket", "object_id": "t1", "field_name": "status", "result": "closed"}
+    ]
     text = _describe_actions(ACTION_TYPES, gathered)
     assert "Currently valid for: t1" in text
 
 
 def test_describe_actions_annotates_a_known_blocked_object_with_reason():
-    gathered = [{"step": "get_field", "object_type": "Ticket", "object_id": "t2", "field_name": "status", "result": "open"}]
+    gathered = [
+        {"step": "get_field", "object_type": "Ticket", "object_id": "t2", "field_name": "status", "result": "open"}
+    ]
     text = _describe_actions(ACTION_TYPES, gathered)
     assert "Currently blocked for: t2 (Ticket must currently be closed to reopen it)" in text
 

@@ -4,9 +4,10 @@ isolated temp directory per test) for the SQLite file -- no shared state
 between tests, no risk of one test's data leaking into another's.
 """
 
-import pytest
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from core.auth import credential_store
 from core.auth.password_hashing import DUMMY_HASH
