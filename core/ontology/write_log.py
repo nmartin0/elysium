@@ -42,20 +42,17 @@ separately-scoped follow-up, not silently assumed solved):
   - multi-OBJECT actions (e.g. a transfer touching two different
     objects) -- PendingWrite itself is still single-object; this file
     only ever sees one object_type/object_id per entry.
-  - search_object() does NOT check this log at all -- only get_field()
-    does. A search filtering on a field mid-update could miss or
-    mismatch during the (typically very brief) pending window. A real,
-    known, stated limitation for now, not an oversight -- see
-    core/ontology/mediator.py's own search_object() for where this
-    would need to be added if it becomes a real problem in practice.
-  - write_mediator.py's own _read_current_state_for_criteria() has the
-    SAME gap, for the SAME reason -- it reads directly from the
-    adapter, not through get_field(), so submission_criteria
-    evaluation during a NEW propose_action() call could evaluate
-    against stale state if the object already has a pending,
-    unapplied edit from a prior action. Same class of limitation as
-    search_object() above, just a different read path; stated
-    explicitly here for the same reason, not silently inconsistent.
+
+SEARCH_OBJECT() INTEGRATION -- once a real, stated gap this docstring
+used to name explicitly (a search could MISS an object for its own
+new, intended value, or WRONGLY include it for the old value it's
+about to stop having) -- is now solved too, via DataMediator.
+_reconcile_search_with_pending_writes() (see its own docstring for the
+full reconciliation logic). write_mediator.py's own
+_read_current_state_for_criteria() -- the SAME class of gap, for
+submission_criteria evaluation specifically -- is solved the same way,
+via the SAME shared DataMediator._read_field_with_log_check() get_field()
+itself already used.
 
 CRASH RECOVERY / RESUME-ON-STARTUP -- once the "next planned piece of
 work" this docstring itself used to name -- is now solved, via

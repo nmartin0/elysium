@@ -115,7 +115,6 @@ from core.ontology import write_log
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import (
     get_column_for_field,
-    get_field_column,
     get_field_storage_name,
     get_link_target,
     is_link_field,
@@ -331,6 +330,36 @@ class DataMediator:
             }
         return visible
 
+    def _read_field_with_log_check(self, object_type: str, object_id: Any, field_name: str,
+                                    adapter: DataSiloAdapter, resolved_type_config: dict) -> Any:
+        # THE shared "check the write log first, else the real adapter"
+        # merge -- factored out of get_field() so search_object()'s
+        # write-log reconciliation (_reconcile_search_with_pending_writes()
+        # below) and write_mediator.py's own _read_current_state_for_
+        # criteria() can reuse the EXACT same logic, rather than each
+        # growing its own, possibly-diverging copy. Takes an ALREADY-
+        # resolved adapter/resolved_type_config rather than resolving
+        # them itself -- every caller already has these in hand from
+        # its own _resolve_shared_storage() call, and re-resolving here
+        # would be redundant, not safer.
+        #
+        # Uses get_column_for_field() (not get_field_column()) --
+        # unlike get_field() itself, callers here may legitimately ask
+        # about the type's own id_field (e.g. a search criterion
+        # naming it), which get_field_column() alone cannot resolve
+        # (see get_column_for_field()'s own docstring for why the
+        # id_field needs its own handling). For every OTHER field the
+        # two produce an identical result -- get_column_for_field()
+        # delegates to get_field_column() for anything that isn't the
+        # id_field -- so this is a behavior-preserving generalization,
+        # not a divergence, for get_field()'s own existing use.
+        if self.write_log_db_path is not None:
+            pending_changes = write_log.get_pending_changes(self.write_log_db_path, object_type, object_id)
+            if pending_changes is not None and field_name in pending_changes:
+                return pending_changes[field_name]
+        column = get_column_for_field(resolved_type_config, field_name)
+        return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
+
     def _filterable_columns(self, object_type: str, visible_type_def: dict) -> set:
         columns = set()
         if visible_type_def["id_field"] is not None:
@@ -395,12 +424,104 @@ class DataMediator:
         }
 
         candidate_ids = adapter.find_ids(object_type, translated_criteria, resolved_type_config)
+        candidate_ids = self._reconcile_search_with_pending_writes(
+            object_type, criteria, candidate_ids, adapter, resolved_type_config
+        )
         action = f"read:{object_type}"
 
         return [
             candidate_id for candidate_id in candidate_ids
             if check_access(self, user_record, self.roles, object_type, candidate_id, action)
         ]
+
+    def _reconcile_search_with_pending_writes(self, object_type: str, criteria: dict, candidate_ids: list,
+                                               adapter: DataSiloAdapter, resolved_type_config: dict) -> list:
+        # Closes the gap write_log.py's own module docstring used to
+        # name explicitly: search_object() queries the REAL backend
+        # directly (via adapter.find_ids() above), which for an object
+        # with a still-pending write reflects whatever it held BEFORE
+        # that write, not the INTENDED value the write log already
+        # promises get_field() will show. Left alone, that means an
+        # object mid-update could be MISSING from a search for its own
+        # new, intended value (the real row doesn't match yet), or
+        # WRONGLY included in a search for the old value it's about to
+        # stop having (the real row still matches, transiently).
+        #
+        # Only ever runs when write_log_db_path is configured -- see
+        # this class's own __init__ for why None means completely
+        # unchanged, pre-log behavior, same as get_field()'s own guard.
+        if self.write_log_db_path is None:
+            return candidate_ids
+
+        # Every entry system-wide, not scoped to this object_type --
+        # deliberately simple for this first pass: write_log entries
+        # are expected to be rare (the pending window is normally
+        # brief) and get_pending_entries() has no object_type filter
+        # today (see its own docstring -- built for
+        # resume_pending_writes(), which genuinely needs every entry
+        # regardless of type). A real, stated cost if this ever proves
+        # too slow in practice, not a correctness concern -- worth a
+        # type-scoped query later if it matters, not assumed to matter
+        # now.
+        relevant_entries = [
+            entry for entry in write_log.get_pending_entries(self.write_log_db_path)
+            if entry["object_type"] == object_type and set(entry["changes"]) & set(criteria)
+        ]
+        if not relevant_entries:
+            return candidate_ids
+
+        # Keyed by str(id), not the id itself -- a pending entry's own
+        # object_id is ALWAYS a string (see write_log.py's own
+        # get_pending_entries() docstring), but a real, native id from
+        # adapter.find_ids() might not be (e.g. an integer id column).
+        # A plain set().discard(entry_object_id) would then silently
+        # fail to remove an existing INTEGER match, since "1" != 1 --
+        # keying by string form on BOTH sides makes add/remove correct
+        # regardless of the id column's real type. Existing candidates
+        # keep their own, already-correctly-typed value; a genuinely
+        # NEW match (see the loop below) gets its native type resolved
+        # fresh from the adapter, so nothing returned from here is ever
+        # a bare string standing in for what should be e.g. an int.
+        result_by_str = {str(candidate_id): candidate_id for candidate_id in candidate_ids}
+        for entry in relevant_entries:
+            object_id = entry["object_id"]
+            # Re-derives this object's FULL match against criteria from
+            # scratch, field by field, merging the log's pending value
+            # over the real backend's current one exactly the way
+            # get_field() itself would (via the SAME shared
+            # _read_field_with_log_check()) -- not just the fields THIS
+            # entry happens to change, since criteria can span fields
+            # the entry never touches at all, and those still need
+            # their (unaffected, real) current value included in the
+            # match.
+            matches = all(
+                self._read_field_with_log_check(
+                    object_type, object_id, field_name, adapter, resolved_type_config
+                ) == expected_value
+                for field_name, expected_value in criteria.items()
+            )
+            if matches:
+                # setdefault, not a plain assignment -- if this id was
+                # ALREADY a candidate (with its real, native type from
+                # adapter.find_ids() itself), preserve that type rather
+                # than overwriting it with the log's own string form.
+                # For a genuinely NEW match (not previously a candidate
+                # at all), resolve the REAL, natively-typed id from the
+                # adapter itself -- get_raw_field() already relies on
+                # SQLite's own type coercion to match a string id
+                # against a differently-typed column (the SAME thing
+                # every get_field() call already depends on whenever a
+                # caller supplies a string object_id for an integer-
+                # keyed type), so this is reusing an existing,
+                # already-relied-upon behavior, not introducing a new
+                # fragility.
+                if object_id not in result_by_str:
+                    id_column = resolved_type_config["storage"]["id_column"]
+                    native_id = adapter.get_raw_field(object_type, object_id, id_column, resolved_type_config)
+                    result_by_str[object_id] = native_id
+            else:
+                result_by_str.pop(object_id, None)
+        return list(result_by_str.values())
 
     def get_field(self, user_record: UserRecord, object_type: str, object_id: Any, field_name: str):
         # NEVER raises for "field/type doesn't exist" or "not authorized"
@@ -460,17 +581,9 @@ class DataMediator:
         # _apply_update_via_log()), this is what makes that in-flight
         # window invisible to a reader: they see the INTENDED value
         # immediately, never a state where some of the update's
-        # storages already reflect it and others don't yet. Only ever
-        # runs when write_log_db_path was actually configured -- see
-        # this class's own __init__ for why None means completely
-        # unchanged, pre-log behavior. Checked BEFORE resolving storage
-        # below -- if the log already has the answer, there's no need
-        # to know which physical storage this field even belongs to.
-        if self.write_log_db_path is not None:
-            pending_changes = write_log.get_pending_changes(self.write_log_db_path, object_type, object_id)
-            if pending_changes is not None and field_name in pending_changes:
-                return pending_changes[field_name]
-
+        # storages already reflect it and others don't yet. Delegated
+        # to _read_field_with_log_check() -- the SAME shared logic
+        # search_object()'s own write-log reconciliation uses, see its
+        # own docstring for the full reasoning.
         adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
-        column = get_field_column(field_info, field_name)
-        return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
+        return self._read_field_with_log_check(object_type, object_id, field_name, adapter, resolved_type_config)

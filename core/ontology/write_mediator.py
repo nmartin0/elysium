@@ -373,17 +373,26 @@ class WriteMediator:
         # batching would incorrectly trigger the "cannot combine
         # fields from multiple storages" guard for two field sets that
         # were never meant to be resolved together in the first place.
-        # Direct adapter reads, not mediator.get_field() -- same
-        # reasoning as expected_current_values below: this is a
-        # mechanical, internal check the system makes on its own
-        # authority, not something gated by the acting user's own
-        # field-level read grants.
+        #
+        # Uses DataMediator._read_field_with_log_check() -- the SAME
+        # shared "check the write log first, else the real adapter"
+        # merge get_field() and search_object() already use. Closes a
+        # real, previously-stated gap: this used to read straight from
+        # the adapter, meaning submission_criteria evaluation during a
+        # NEW propose_action() call could evaluate against stale state
+        # if the object already had a pending, unapplied edit from a
+        # prior action (see write_log.py's own module docstring, which
+        # used to name this exact limitation). Not mediator.get_field()
+        # directly, though -- still a mechanical, internal check the
+        # system makes on its own authority, not something gated by
+        # the acting user's own field-level read grants.
         needed_fields = {c["field"] for c in criteria if c["check"] == "current_state"}
         current_state = {}
         for field_name in needed_fields:
             adapter, resolved_type_config = self.mediator._resolve_shared_storage(object_type, [field_name])
-            column = get_column_for_field(resolved_type_config, field_name)
-            current_state[field_name] = adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
+            current_state[field_name] = self.mediator._read_field_with_log_check(
+                object_type, object_id, field_name, adapter, resolved_type_config
+            )
         return current_state
 
     def _resolve_mutation_value(self, value_spec, parameters: dict, user_record: UserRecord):
