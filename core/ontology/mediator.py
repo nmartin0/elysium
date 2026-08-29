@@ -212,16 +212,31 @@ class DataMediator:
         # assumes the target lives in the same database as the source.
         # Proven with a real cross-database test, not just reasoned
         # about -- see tests/unit/test_cross_silo_links.py.
+        #
+        # ALSO goes through _resolve_shared_storage(), same as every
+        # other field read in this file -- the security-bearing field
+        # ITSELF can be MDO-backed (unusual, but not disallowed by the
+        # schema format), and this method used to bypass MDO entirely,
+        # always querying the type's PRIMARY adapter/table regardless
+        # of where security["field"]/["via_field"] actually lived. A
+        # real, confirmed bug (a raw OperationalError, "no such
+        # column") until this fix -- caught directly, not just reasoned
+        # about, before being fixed. See tests/unit/test_mdo.py's
+        # security-field-is-itself-MDO test.
         type_schema = self._type_schema(object_type)
         security = type_schema["security"]
-        adapter = self._adapter_for(object_type)
 
         if "field" in security:
-            return adapter.get_raw_field(object_type, object_id, security["field"], type_schema)
+            field_name = security["field"]
+            adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
+            column = get_field_column(type_schema["fields"][field_name], field_name)
+            return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
 
         if "via_field" in security:
             via_field = security["via_field"]
-            linked_id = adapter.get_raw_field(object_type, object_id, via_field, type_schema)
+            adapter, resolved_type_config = self._resolve_shared_storage(object_type, [via_field])
+            column = get_field_column(type_schema["fields"][via_field], via_field)
+            linked_id = adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
             if linked_id is None:
                 return None
 
