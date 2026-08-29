@@ -72,7 +72,13 @@ THREE gates, all fully explicit -- nothing implied by anything else:
 
 UNIFORM DENIAL, deliberately: search_object()/get_field() NEVER raise a
 distinguishing error for "doesn't exist" vs "exists but not authorized"
--- both look identical to the caller (empty list / None).
+-- both look identical to the caller (empty list / None). This is a
+CALLER-FACING guarantee only -- internally, both methods additionally
+log_unknown_reference() (core/intermediate_layer/audit.py) whenever a
+name genuinely doesn't exist in the schema, alongside (never instead
+of) the normal access-check log entry. A standard security pattern,
+not a project-specific invention: fail uniformly to the requester,
+log the real reason for an operator -- see audit.py's own docstring.
 
 visible_schema() is what core/llm/agent_step_prompt.py calls to build
 the LLM's prompt -- and AgentLoop.run() computes it ONCE per request
@@ -93,6 +99,7 @@ from typing import Any
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
+from core.intermediate_layer.audit import log_access, log_unknown_reference
 from core.intermediate_layer.auth import authorize, UserRecord
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import (
@@ -300,6 +307,25 @@ class DataMediator:
         visible = visible_schema if visible_schema is not None else self.visible_schema(user_record)
         visible_type_def = visible.get(object_type)
         if visible_type_def is None:
+            # Distinguishes, for auditing, TWO genuinely different
+            # reasons this returns empty -- the object_type ITSELF
+            # doesn't exist in the schema at all (log_unknown_reference,
+            # a real, useful signal a model may be guessing at type
+            # names), vs a real type this user simply never had
+            # read:{object_type} granted for. The latter is a genuine,
+            # meaningful RBAC decision, previously never logged at all
+            # (there's no object_id yet at this point, so check_access()
+            # -- which needs one -- is never reached for this specific
+            # gate). Reuses log_access()'s existing shape directly
+            # (object_id=None, mac_allowed=None -- MAC genuinely never
+            # applies without a specific object) rather than inventing
+            # a third log shape for what's still fundamentally the same
+            # kind of access decision.
+            if object_type not in self.schema:
+                log_unknown_reference(user_record.user_id, object_type)
+            else:
+                log_access(user_record.user_id, object_type, None, f"read:{object_type}",
+                           mac_allowed=None, rbac_allowed=False)
             return []
 
         valid_columns = self._filterable_columns(object_type, visible_type_def)
@@ -339,16 +365,36 @@ class DataMediator:
         # NEVER raises for "field/type doesn't exist" or "not authorized"
         # -- both return None.
         if object_type not in self.schema:
+            # Distinguishes, for auditing, a genuinely unknown
+            # object_type from an ordinary RBAC/MAC denial -- see
+            # log_unknown_reference()'s own docstring.
+            log_unknown_reference(user_record.user_id, object_type)
             return None
 
         action = f"read:{object_type}.{field_name}"
-        if not check_access(self, user_record, self.roles, object_type, object_id, action):
-            return None
+        access_allowed = check_access(self, user_record, self.roles, object_type, object_id, action)
 
         type_schema = self._type_schema(object_type)
-        field_info = type_schema["fields"].get(field_name)
-        if field_info is None:
+        field_exists = field_name in type_schema["fields"]
+
+        if not field_exists:
+            # ALWAYS logged, regardless of what check_access() just
+            # decided -- this is the fix for a real ordering bug found
+            # while verifying this mechanism directly: a made-up field
+            # name almost always makes check_access() itself return
+            # False (no role grants a nonexistent action string), which
+            # means an early "if not access_allowed: return None" here
+            # would make this branch effectively unreachable in the
+            # COMMON case -- exactly the case (a model guessing at a
+            # field name) this logging exists to catch. Determining
+            # field_exists independently, and logging it independently
+            # of access_allowed, is what actually achieves that.
+            log_unknown_reference(user_record.user_id, object_type, field_name)
+
+        if not access_allowed or not field_exists:
             return None
+
+        field_info = type_schema["fields"][field_name]
 
         if is_link_field(field_info) and field_info.get("cardinality") == "many":
             # A reverse link's via_table almost always physically lives

@@ -11,12 +11,25 @@ They also use a self-contained, made-up schema (Author/Book, not
 Customer/Transaction) -- this is deliberate: it proves core/ontology's
 logic is genuinely generic, not accidentally coupled to the real
 deployment's specific domain.
+
+isolated_audit_log / read_audit_log mirror
+tests/integration/conftest.py's own fixture exactly -- the same
+isolation need exists at the unit level: core.intermediate_layer.audit's
+LOG_PATH is module-level, in-process state, not scoped per-test on its
+own. Without this, a test asserting on audit-log CONTENT (not just a
+function's return value) would fall back to whatever LOG_PATH's
+default resolves to, and could leak its own logging configuration into
+whatever test runs next in the same pytest process.
 """
 
+import json
 import sqlite3
 from pathlib import Path
 
 import pytest
+
+from core.intermediate_layer import audit
+from core.intermediate_layer.audit import configure_audit_log
 
 TEST_SCHEMA = {
     "Author": {
@@ -86,3 +99,19 @@ def test_db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def test_schema() -> dict:
     return TEST_SCHEMA
+
+
+@pytest.fixture
+def isolated_audit_log(tmp_path: Path):
+    original_log_path = audit.LOG_PATH
+    log_dir = tmp_path / "log"
+    configure_audit_log(log_dir)
+    yield log_dir
+    audit.LOG_PATH = original_log_path
+
+
+def read_audit_log(log_dir: Path) -> list[dict]:
+    log_path = log_dir / "audit.log"
+    if not log_path.exists():
+        return []
+    return [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]

@@ -22,14 +22,20 @@ role (RBAC) pattern:
   2. RBAC -- auth.authorize(), using user_record.role_name.
 
 LOGS EVERY DECISION, allow or deny, with the MAC/RBAC breakdown visible
-independently.
+independently. On a MAC denial specifically, ALSO distinguishes (via a
+second, direct call to _get_security_value(), only on this uncommon
+denial path) whether the object's own security value simply didn't
+match this user's own -- the normal, expected case -- or couldn't be
+resolved AT ALL, a genuine data-integrity signal (e.g. an orphaned MDO
+record). See log_security_resolution_failed()'s own docstring in
+core/intermediate_layer/audit.py for the full reasoning.
 
 Used by: core/ontology/mediator.py (every read), core/ontology/
          write_mediator.py (every write proposal), core/memory/guard.py
          (every memory read)
 """
 
-from core.intermediate_layer.audit import log_access
+from core.intermediate_layer.audit import log_access, log_security_resolution_failed
 from core.intermediate_layer.auth import authorize, UserRecord
 
 
@@ -40,6 +46,19 @@ def check_access(mediator, user_record: UserRecord, roles: dict,
         and mediator._security_allowed(object_type, object_id, user_record.security_value)
     )
     rbac_allowed = authorize(user_record, roles, action)
+
+    if not mac_allowed and user_record.security_value is not None:
+        # Distinguishes WHY MAC failed -- the object's own security
+        # value could not be resolved AT ALL (e.g. an orphaned MDO
+        # record with no primary-storage row to read it from), vs a
+        # genuine, expected mismatch (a real value that simply differs
+        # from this user's own). A second, direct call to
+        # _get_security_value() -- only on this already-uncommon
+        # denial path, never on the common allow path -- to make that
+        # distinction. See log_security_resolution_failed()'s own
+        # docstring for the full reasoning.
+        if mediator._get_security_value(object_type, object_id) is None:
+            log_security_resolution_failed(user_record.user_id, object_type, object_id)
 
     log_access(user_record.user_id, object_type, object_id, action, mac_allowed, rbac_allowed)
 
