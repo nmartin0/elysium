@@ -202,14 +202,16 @@ def test_query_refuses_if_permissions_changed_during_processing(client):
     assert "answer" not in response.json()
 
 
-def _propose_write(client, token, new_name="Updated Name"):
-    # Helper: a real query that proposes a real write against the
-    # fixture's own Customer schema (cust_001), returns the 202 response.
+def _propose_action(client, token, new_name="Updated Name"):
+    # Helper: a real query that proposes a real named-action invocation
+    # against the fixture's own Customer schema (cust_001), returns the
+    # 202 response. Uses the same UpdateCustomerName action editor's
+    # own execute: grant covers -- see policy.yaml's own comment.
     def fake_post(*args, **kwargs):
         response = MagicMock()
         response.json.return_value = {"message": {"content": json.dumps({
-            "step": "propose_write", "object_type": "Customer", "object_id": "cust_001",
-            "action": "update", "changes": {"name": new_name},
+            "step": "propose_action", "action_type": "UpdateCustomerName", "object_id": "cust_001",
+            "parameters": {"new_name": new_name},
         })}}
         response.raise_for_status.return_value = None
         return response
@@ -218,13 +220,13 @@ def _propose_write(client, token, new_name="Updated Name"):
         return client.post("/query", json={"query": "update the name"}, headers={"Authorization": f"Bearer {token}"})
 
 
-def test_query_proposing_a_write_returns_202_with_a_reference(client):
+def test_query_proposing_an_action_returns_202_with_a_reference(client):
     db_path = client.app.state.credentials_db_path
     roles = client.app.state.config.roles
     create_user(db_path, roles, "alice", "correct-pw", "us-west", "editor")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = _propose_write(client, token)
+    response = _propose_action(client, token)
 
     assert response.status_code == 202
     body = response.json()
@@ -232,13 +234,13 @@ def test_query_proposing_a_write_returns_202_with_a_reference(client):
     assert body["pending_write"]["changes"] == {"name": "Updated Name"}
 
 
-def test_confirming_an_approved_write_actually_changes_the_database(client):
+def test_confirming_an_approved_action_actually_changes_the_database(client):
     db_path = client.app.state.credentials_db_path
     roles = client.app.state.config.roles
     create_user(db_path, roles, "alice", "correct-pw", "us-west", "editor")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    write_id = _propose_write(client, token).json()["pending_write"]["id"]
+    write_id = _propose_action(client, token).json()["pending_write"]["id"]
 
     confirm_response = client.post(
         f"/writes/{write_id}/confirm", json={"approved": True},
@@ -256,13 +258,13 @@ def test_confirming_an_approved_write_actually_changes_the_database(client):
     assert actual_value == "Updated Name"
 
 
-def test_confirming_a_rejected_write_does_not_change_the_database(client):
+def test_confirming_a_rejected_action_does_not_change_the_database(client):
     db_path = client.app.state.credentials_db_path
     roles = client.app.state.config.roles
     create_user(db_path, roles, "alice", "correct-pw", "us-west", "editor")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    write_id = _propose_write(client, token).json()["pending_write"]["id"]
+    write_id = _propose_action(client, token).json()["pending_write"]["id"]
 
     confirm_response = client.post(
         f"/writes/{write_id}/confirm", json={"approved": False},
@@ -285,7 +287,7 @@ def test_confirm_with_wrong_user_and_unknown_id_are_identical(client):
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
     eve_token = _login(client, "eve", "correct-pw").json()["token"]
 
-    write_id = _propose_write(client, alice_token).json()["pending_write"]["id"]
+    write_id = _propose_action(client, alice_token).json()["pending_write"]["id"]
 
     wrong_user_response = client.post(
         f"/writes/{write_id}/confirm", json={"approved": True},

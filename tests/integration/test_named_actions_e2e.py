@@ -17,10 +17,13 @@ confirmed, actually changes the real database), just through the NEW
 proposal path instead of the old one. SLOW, requires Ollama.
 
 Runs against tests/integration/fixtures/ (see conftest.py) -- a fully
-isolated test deployment, a fresh database per test. user_grace has
-the "name_updater" role, granting ONLY execute:UpdateCustomerName (not
-write:Customer.name at all) -- see policy.yaml's own comment for why
-this is a dedicated user, not a reuse of user_eve.
+isolated test deployment, a fresh database per test. user_eve has the
+"editor" role, granting execute:UpdateCustomerName (originally proven
+with a dedicated user_grace/name_updater, specifically to avoid
+changing an existing, already-tested user's prompt mid-branch -- see
+ontology_schema.yaml's own comment for why that isolation concern no
+longer applied once the full migration pass deliberately moved editor
+onto the same execute: grant, and user_grace was consolidated away).
 """
 
 import pytest
@@ -35,7 +38,7 @@ QUERY_TEXT = "Update cust_001's name to 'Ada Lovelace'."
 def _propose(deployment, mediator):
     write_mediator = WriteMediator(mediator, deployment.roles, deployment.action_types)
     loop = AgentLoop.from_deployment(deployment, mediator, write_mediator=write_mediator)
-    user_record = resolve_user_record(deployment.users, "user_grace", deployment.security_attribute)
+    user_record = resolve_user_record(deployment.users, "user_eve", deployment.security_attribute)
 
     result = loop.run(user_record, QUERY_TEXT)
     print(f"\n[diagnostic] pending_write: {result.pending_write}")
