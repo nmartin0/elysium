@@ -88,3 +88,37 @@ def get_field_column(field_info: dict, field_name: str) -> str:
     # reasoning. Every field before MDO existed implicitly used this
     # same field_name-equals-column-name default.
     return field_info.get("column", field_name)
+
+
+def get_column_for_field(resolved_type_config: dict, field_name: str) -> str:
+    # Resolves ANY field name -- including the type's own id_field,
+    # which is NOT a regular entry in resolved_type_config["fields"]
+    # at all (a separate, top-level schema key) -- to its real SQL
+    # column name. The id_field's own column always comes from
+    # resolved_type_config["storage"]["id_column"] directly, never
+    # MDO-overridden -- an object's identity always lives on its
+    # primary storage (see DataMediator._resolve_shared_storage()'s
+    # own docstring). Every other field goes through get_field_column()
+    # as before.
+    #
+    # A REAL, confirmed gap this closes: writing to a type's own
+    # id_field (e.g. a named action's "create" mutations supplying the
+    # new object's own ID) previously hit a raw KeyError the moment
+    # any of write_mediator.py's four field-to-column call sites tried
+    # resolved_type_config["fields"][id_field] -- caught directly while
+    # testing a real "create" action end to end, not assumed.
+    # DataMediator.search_object() already solved this EXACT problem
+    # correctly, inline, for its own criteria-translation needs; this
+    # extracts that same logic into one shared, reusable place instead
+    # of leaving it duplicated (or re-solved slightly differently) at
+    # every call site that needs it -- the same discipline already
+    # applied to is_searchable_field() and evaluate_submission_criteria().
+    #
+    # resolved_type_config is expected to be the SYNTHETIC config
+    # _resolve_shared_storage() returns ({**type_schema, "storage":
+    # storage_block}) -- id_field is always present on it unchanged,
+    # since MDO resolution only ever swaps "storage", never "id_field".
+    id_field = resolved_type_config["id_field"]
+    if field_name == id_field:
+        return resolved_type_config["storage"]["id_column"]
+    return get_field_column(resolved_type_config["fields"][field_name], field_name)

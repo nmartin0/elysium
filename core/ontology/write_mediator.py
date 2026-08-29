@@ -49,7 +49,7 @@ from typing import Any, Literal
 from core.intermediate_layer.audit import log_access, log_pre, log_post
 from core.intermediate_layer.auth import authorize, UserRecord
 from core.ontology.mediator import DataMediator
-from core.ontology.schema import get_field_column
+from core.ontology.schema import get_column_for_field
 from core.ontology.submission_criteria import evaluate_submission_criteria
 
 
@@ -112,12 +112,11 @@ class WriteMediator:
         # mechanical, internal check the system makes on its own
         # authority, not something gated by the acting user's own
         # field-level read grants.
-        type_schema = self.mediator._type_schema(object_type)
         needed_fields = {c["field"] for c in criteria if c["check"] == "current_state"}
         current_state = {}
         for field_name in needed_fields:
             adapter, resolved_type_config = self.mediator._resolve_shared_storage(object_type, [field_name])
-            column = get_field_column(type_schema["fields"][field_name], field_name)
+            column = get_column_for_field(resolved_type_config, field_name)
             current_state[field_name] = adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
         return current_state
 
@@ -175,7 +174,8 @@ class WriteMediator:
         # atomically at execute time. Direct adapter read, not
         # mediator.get_field() -- access was already confirmed above.
         # Reads via each field's REAL column name (itself, unless MDO
-        # overrides it -- see get_field_column()'s docstring), but
+        # overrides it, or the id_field's own storage-level id_column --
+        # see get_column_for_field()'s docstring), but
         # stays keyed by field_name throughout PendingWrite -- field
         # names are the human/model-facing vocabulary; translation to
         # raw SQL column names happens once, right before the adapter
@@ -185,7 +185,7 @@ class WriteMediator:
             expected_current_values = {
                 field_name: adapter.get_raw_field(
                     object_type, object_id,
-                    get_field_column(resolved_type_config["fields"][field_name], field_name),
+                    get_column_for_field(resolved_type_config, field_name),
                     resolved_type_config,
                 )
                 for field_name in changes
@@ -195,11 +195,25 @@ class WriteMediator:
         return PendingWrite(object_type, object_id, action, dict(changes), user_record.user_id,
                              description, expected_current_values)
 
-    def _resolve_mutation_value(self, value_spec, parameters: dict):
-        # A mutation's "value" is either a LITERAL (used as-is) or a
-        # reference to one of the action's own declared parameters,
-        # written "parameter.<name>" -- resolved here, once, at
-        # proposal time. Deliberately a plain string-prefix convention,
+    def _resolve_mutation_value(self, value_spec, parameters: dict, user_record: UserRecord):
+        # A mutation's "value" is one of three kinds:
+        #   - a LITERAL, used as-is
+        #   - "parameter.<name>", a reference to one of the action's own
+        #     declared parameters, resolved here at proposal time
+        #   - "user.security_value", the ACTING user's own MAC value,
+        #     substituted automatically -- NEVER model-supplied. This is
+        #     the only safe way for a "create" action to set an object's
+        #     security field: a literal would hardcode one tenant's
+        #     value for every user; a parameter.<name> reference would
+        #     let the model (or a hallucinated/injected value) choose
+        #     ANY security value, including one that doesn't belong to
+        #     the user actually authorized to perform this action.
+        #     Discovered as a REAL, necessary gap while testing a
+        #     "create" action end to end -- not a hypothetical: the
+        #     INSERT itself failed (a real NOT NULL constraint on the
+        #     security column) the moment a create action's mutations
+        #     had no way to populate it safely at all.
+        # Deliberately a small, fixed set of string-prefix conventions,
         # not a general expression language -- same reasoning as
         # submission_criteria's own fixed operator set (see that
         # module's docstring): a small, safe, easily-validated surface
@@ -215,6 +229,8 @@ class WriteMediator:
                 # substitute None.
                 raise ValueError(f"Mutation references undeclared or missing parameter: {param_name!r}")
             return parameters[param_name]
+        if value_spec == "user.security_value":
+            return user_record.security_value
         return value_spec
 
     def propose_action(self, user_record: UserRecord, action_type_name: str,
@@ -304,7 +320,7 @@ class WriteMediator:
         # supplies typed parameters; it never directly names a raw
         # field to change.
         changes = {
-            mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"], parameters)
+            mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"], parameters, user_record)
             for mutation in action_def["mutations"]
         }
 
@@ -318,7 +334,7 @@ class WriteMediator:
             expected_current_values = {
                 field_name: adapter.get_raw_field(
                     object_type, object_id,
-                    get_field_column(resolved_type_config["fields"][field_name], field_name),
+                    get_column_for_field(resolved_type_config, field_name),
                     resolved_type_config,
                 )
                 for field_name in changes
@@ -351,7 +367,7 @@ class WriteMediator:
         # type_config correctly covers every field being translated.
         def _to_columns(values_by_field: dict) -> dict:
             return {
-                get_field_column(resolved_type_config["fields"][field_name], field_name): value
+                get_column_for_field(resolved_type_config, field_name): value
                 for field_name, value in values_by_field.items()
             }
 

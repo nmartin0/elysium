@@ -104,7 +104,7 @@ from core.intermediate_layer.auth import authorize, UserRecord
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import (
     is_link_field, get_link_target, is_searchable_field,
-    get_field_storage_name, get_field_column,
+    get_field_storage_name, get_field_column, get_column_for_field,
 )
 
 
@@ -236,13 +236,13 @@ class DataMediator:
         if "field" in security:
             field_name = security["field"]
             adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
-            column = get_field_column(type_schema["fields"][field_name], field_name)
+            column = get_column_for_field(resolved_type_config, field_name)
             return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
 
         if "via_field" in security:
             via_field = security["via_field"]
             adapter, resolved_type_config = self._resolve_shared_storage(object_type, [via_field])
-            column = get_field_column(type_schema["fields"][via_field], via_field)
+            column = get_column_for_field(resolved_type_config, via_field)
             linked_id = adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
             if linked_id is None:
                 return None
@@ -336,22 +336,16 @@ class DataMediator:
                 # just deliberately hid.
                 raise ValueError("Invalid search criteria")
 
-        real_type_schema = self._type_schema(object_type)  # adapter needs table/id_column, not the filtered view
         adapter, resolved_type_config = self._resolve_shared_storage(object_type, list(criteria.keys()))
 
         # Translates each criteria KEY (a field name) to its real SQL
-        # column name -- itself, unless MDO overrides it via "column"
-        # (see get_field_column()'s own docstring). The id_field is
-        # handled separately: it isn't a regular entry in
-        # type_schema["fields"] at all, its column is whatever the
-        # RESOLVED storage calls its own id_column.
-        id_field = real_type_schema["id_field"]
-        translated_criteria = {}
-        for key, value in criteria.items():
-            if key == id_field:
-                translated_criteria[resolved_type_config["storage"]["id_column"]] = value
-            else:
-                translated_criteria[get_field_column(real_type_schema["fields"][key], key)] = value
+        # column name -- see get_column_for_field()'s own docstring for
+        # why the id_field needs its own handling (it isn't a regular
+        # entry in type_schema["fields"] at all).
+        translated_criteria = {
+            get_column_for_field(resolved_type_config, key): value
+            for key, value in criteria.items()
+        }
 
         candidate_ids = adapter.find_ids(object_type, translated_criteria, resolved_type_config)
         action = f"read:{object_type}"
