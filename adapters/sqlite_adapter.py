@@ -118,7 +118,18 @@ class SQLiteAdapter:
         id_column = type_config["storage"]["id_column"]
 
         set_clause = ", ".join(f"{key} = ?" for key in changes)
-        condition_clause = " AND ".join(f"{key} = ?" for key in expected_current_values)
+        # "IS ?", not "= ?" -- a REAL, confirmed bug otherwise: in SQL,
+        # "column = NULL" always evaluates to NULL/unknown, never TRUE,
+        # even when the actual stored value genuinely IS NULL. This
+        # made the lost-update check silently, always fail for any
+        # field whose CURRENT value happens to be NULL -- confirmed
+        # directly (a real ValueError, "changed since this write was
+        # proposed," on a field that had never actually changed at
+        # all) while testing propose_action() against a field that
+        # legitimately started NULL. SQLite's "IS" is null-safe
+        # equality -- identical to "=" for non-NULL values, but
+        # correctly treats NULL as a real, comparable value.
+        condition_clause = " AND ".join(f"{key} IS ?" for key in expected_current_values)
         where_clause = f"{id_column} = ?" + (f" AND {condition_clause}" if condition_clause else "")
 
         with self._connection() as conn:

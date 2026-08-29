@@ -29,6 +29,7 @@ from core.deployment_loader import _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 from core.ontology.write_mediator import WriteMediator
+from tests.conftest import read_audit_log
 
 TEST_SCHEMA = {
     "Customer": {
@@ -82,6 +83,7 @@ def mediator(tmp_path):
     conn.executescript("""
         CREATE TABLE customers (customer_id TEXT PRIMARY KEY, region TEXT, name TEXT);
         INSERT INTO customers VALUES ('cust_001', 'us-west', 'Ada Okafor');
+        INSERT INTO customers VALUES ('cust_002', 'us-west', 'Ben Carter');
     """)
     conn.commit()
     conn.close()
@@ -170,9 +172,14 @@ def test_write_mixing_fields_from_different_storages_is_rejected(mediator):
 def test_search_with_empty_criteria_defaults_to_primary_storage(mediator):
     # No fields specified at all -- "give me everything" -- must not
     # crash trying to resolve a shared storage across zero fields; the
-    # primary storage is the only sensible default.
+    # primary storage is the only sensible default. Set comparison,
+    # not list equality -- SQLite doesn't guarantee row order without
+    # an explicit ORDER BY, and this fixture now has two customers
+    # (cust_002 added specifically so the missing-row-on-the-MDO-side
+    # test below can exercise a REAL existing primary customer, not a
+    # completely nonexistent one).
     result = mediator.search_object(_record("alice"), "Customer", {})
-    assert result == ["cust_001"]
+    assert set(result) == {"cust_001", "cust_002"}
 
 
 def test_reads_an_mdo_backed_forward_link_field(mediator):
@@ -195,14 +202,34 @@ def test_search_mixing_id_field_with_an_mdo_field_is_rejected(mediator):
         mediator.search_object(_record("alice"), "Customer", {"customer_id": "cust_001", "risk_score": 0.42})
 
 
-def test_missing_row_on_the_mdo_side_returns_none_not_a_crash(mediator):
-    # A customer that exists in primary_sql but has no corresponding
-    # row in risk_db at all (e.g. never risk-scored yet) -- must
-    # behave like any other missing value in this system (None), not
-    # raise. Matches get_field()'s existing "doesn't exist" semantics,
-    # just exercised for the MDO side specifically.
-    result = mediator.get_field(_record("alice"), "Customer", "cust_999_never_scored", "risk_score")
+def test_missing_row_on_the_mdo_side_returns_none_not_a_crash(mediator, isolated_audit_log):
+    # A REAL, GENUINELY EXISTING primary customer (cust_002) that has
+    # no corresponding row in risk_db at all (e.g. never risk-scored
+    # yet) -- must behave like any other missing value in this system
+    # (None), not raise. Matches get_field()'s existing "doesn't
+    # exist" semantics, just exercised for the MDO side specifically.
+    #
+    # DELIBERATELY uses cust_002, not a made-up id -- an earlier
+    # version of this test used a completely nonexistent customer_id,
+    # which meant check_access() itself denied via MAC (the row
+    # genuinely doesn't exist in the PRIMARY table either) BEFORE ever
+    # reaching the MDO resolution code this test claims to exercise.
+    # That version passed for the wrong reason -- it never actually
+    # tested the MDO-side missing-row path at all. Confirmed directly:
+    # a fresh, real access_check entry with mac_allowed=True below
+    # proves the request genuinely reached MDO resolution this time,
+    # not an earlier MAC denial standing in for it.
+    result = mediator.get_field(_record("alice"), "Customer", "cust_002", "risk_score")
     assert result is None
+
+    entries = read_audit_log(isolated_audit_log)
+    access_check_entries = [e for e in entries if e["stage"] == "access_check"]
+    assert access_check_entries[0]["mac_allowed"] is True
+    assert access_check_entries[0]["rbac_allowed"] is True
+    # And genuinely NOT a security-resolution failure -- cust_002's
+    # region resolves just fine from the PRIMARY table; it's only the
+    # risk_db side that's missing a row.
+    assert not any(e["stage"] == "security_resolution_failed" for e in entries)
 
 
 def test_security_field_that_is_itself_mdo_backed(tmp_path):
@@ -269,7 +296,7 @@ def test_security_field_that_is_itself_mdo_backed(tmp_path):
     assert mediator.search_object(wrong_region, "Customer", {"customer_id": "cust_001"}) == []
 
 
-def test_create_with_only_mdo_fields_produces_an_orphaned_and_unreadable_row(mediator):
+def test_create_with_only_mdo_fields_produces_an_orphaned_and_unreadable_row(mediator, isolated_audit_log):
     # DOCUMENTS a real, known limitation, deliberately not guarded
     # against in v1 -- nothing currently stops a "create" whose
     # changes ONLY touch additional_storage fields, which inserts a
@@ -290,6 +317,14 @@ def test_create_with_only_mdo_fields_produces_an_orphaned_and_unreadable_row(med
     # the read before RBAC on risk_score is even reached. A real
     # accidental fail-closed outcome, not a deliberately engineered
     # one -- worth confirming directly rather than assuming.
+    #
+    # THIS is also the ACTUAL, real-world example
+    # log_security_resolution_failed() (core/intermediate_layer/
+    # audit.py) was built for, and its own docstring names this test
+    # by name as "the clearest real example" -- but until this
+    # addition, this test never actually verified the log entry fires
+    # here, only that the return values are correctly None. A genuine
+    # gap between what the docstring claimed and what was proven.
     write_mediator = WriteMediator(mediator, TEST_ROLES)
     alice = _record("alice")
 
@@ -305,3 +340,13 @@ def test_create_with_only_mdo_fields_produces_an_orphaned_and_unreadable_row(med
     # resolve "region" (the security field) from at all.
     assert mediator.get_field(alice, "Customer", new_id, "risk_score") is None
     assert mediator.get_field(alice, "Customer", new_id, "name") is None
+
+    # And THIS is the actual, real MDO scenario log_security_resolution_failed()
+    # was built for -- confirmed to actually fire here, not just assumed.
+    entries = read_audit_log(isolated_audit_log)
+    resolution_failed_entries = [
+        e for e in entries
+        if e["stage"] == "security_resolution_failed" and e["object_id"] == new_id
+    ]
+    assert len(resolution_failed_entries) >= 1
+    assert resolution_failed_entries[0]["object_type"] == "Customer"
