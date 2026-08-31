@@ -48,7 +48,7 @@ def test_real_model_invokes_named_action_and_it_actually_changes_the_database(de
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
     print(f"[diagnostic] confirm_and_execute outcome: {outcome}")
 
-    assert outcome == {"status": "written", "object_id": pending.object_id}
+    assert outcome == {"status": "written", "object_ids": [pending.sub_writes[0].object_id]}
 
     # THE second, real thing this test exists to prove: the REAL
     # database, read back independently of the write path, reflects

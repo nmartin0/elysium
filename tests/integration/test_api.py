@@ -231,7 +231,9 @@ def test_query_proposing_an_action_returns_202_with_a_reference(client):
     assert response.status_code == 202
     body = response.json()
     assert "id" in body["pending_write"]
-    assert body["pending_write"]["changes"] == {"name": "Updated Name"}
+    assert body["pending_write"]["sub_writes"] == [
+        {"object_type": "Customer", "object_id": "cust_001", "changes": {"name": "Updated Name"}}
+    ]
 
 
 def test_confirming_an_approved_action_actually_changes_the_database(client):

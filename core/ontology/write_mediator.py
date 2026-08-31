@@ -88,17 +88,28 @@ class PendingWrite:
     # sub_writes is ALWAYS at least one entry, even for what looks like
     # an ordinary single-object action -- there is deliberately no
     # separate "single-object" representation living alongside a
-    # "multi-object" one. Every action_type today still only ever
-    # produces exactly one, since ontology_schema.yaml has no way to
-    # DECLARE a multi-object action yet (a later, separate piece of
-    # work) -- but the shape here is already the one multi-object
-    # actions will use unchanged: nothing about propose_action()'s own
-    # RBAC/MAC/validation/mutation-resolution logic, or
-    # confirm_and_execute()'s own apply logic, needs to change AGAIN
-    # once declaring more than one sub-write becomes possible.
+    # "multi-object" one. propose_action() and core/ontology/
+    # action_types.py's own schema-load validation already fully
+    # support declaring and resolving more than one -- the one piece
+    # still catching up is confirm_and_execute()'s own apply logic
+    # (still only ever applies sub_writes[0] as of this writing; see
+    # this file's own AI-notes at the bottom for exactly where that
+    # stands).
+    #
+    # action_type_name is the action's own real, raw name (e.g.
+    # "TransferFunds") -- distinct from description, which is a
+    # human-formatted string that HAPPENS to embed this name but isn't
+    # meant to be parsed back apart by anything. Added specifically so
+    # confirm_and_execute()'s own audit logging (log_pre()'s action_id)
+    # has a real identifier for the ACTION itself to use, the same way
+    # propose_action()'s own earliest RBAC-denial log_access() call
+    # already does -- neither needs, or should ever need, to fall back
+    # to guessing at a single object_type the way the pre-sub_writes
+    # design used to.
     sub_writes: tuple[SubWrite, ...]
     user_id: str
     description: str
+    action_type_name: str
 
 
 class WriteMediator:
@@ -217,7 +228,7 @@ class WriteMediator:
         # concurrency limiter, then call write_fields() under it" --
         # was duplicated at both places an update group's write is
         # actually attempted (the fresh-apply path in
-        # _apply_update_via_log(), and the resume path in
+        # _apply_one_update(), and the resume path in
         # _resume_one_update_entry()), identical shape at each.
         #
         # Resolving per-GROUP's own silo here, not once per pending
@@ -246,94 +257,24 @@ class WriteMediator:
                                      resolved_type_config: dict, values: dict) -> None:
         # THE create-side counterpart to _write_fields_with_limiter()
         # above -- was likewise duplicated at both places a create
-        # group's row is actually inserted (_apply_create_via_log()'s
+        # group's row is actually inserted (_apply_one_create()'s
         # fresh-apply path, and _resume_one_create_entry()'s resume
         # path), identical shape at each.
         write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
         with write_limiter.limit():
             adapter.create_object(object_type, _fields_to_columns(resolved_type_config, values), resolved_type_config)
 
-    def _apply_update_via_log(self, pending: PendingWrite) -> Any:
-        # THE actual atomicity boundary -- see write_log.py's own
-        # module docstring for the full mechanism and its current,
-        # deliberate scope boundary (update only; crash recovery and
-        # partial-failure reconciliation both explicitly deferred).
-        # Logs ONE row (trivially atomic regardless of how many
-        # storages sub_write.changes spans), THEN applies each
-        # storage's own share of the mutations SEQUENTIALLY, THEN marks
-        # the entry applied.
-        #
-        # pending.sub_writes[0] -- exactly one entry always, for now
-        # (see PendingWrite's own docstring for why the shape already
-        # supports more without this method needing to change again
-        # once it does; today, nothing can construct more than one).
-        #
-        # The per-object lock is held across the WHOLE sequence -- not
-        # just the apply portion -- so a second, concurrent write to
-        # the SAME object can never see this entry as anything other
-        # than fully absent or fully applied; write_log.
-        # get_pending_changes()'s own "at most one pending entry per
-        # object" assumption depends on this holding.
-        sub_write = pending.sub_writes[0]
-        object_lock = self.mediator._lock_for_object(sub_write.object_type, sub_write.object_id)
-        with object_lock:
-            log_id = self.write_log.log_pending_update(
-                sub_write.object_type, sub_write.object_id,
-                sub_write.changes, sub_write.expected_current_values,
-                pending.user_id, pending.description,
-            )
-
-            groups = self._group_changes_by_storage(sub_write.object_type, sub_write.changes)
-            for adapter, resolved_type_config, group_changes in groups:
-                group_expected = {
-                    field_name: sub_write.expected_current_values[field_name]
-                    for field_name in group_changes
-                }
-                success = self._write_fields_with_limiter(
-                    sub_write.object_type, sub_write.object_id, adapter, resolved_type_config,
-                    group_changes, group_expected,
-                )
-                if not success:
-                    # See write_log.py's own docstring for the known,
-                    # stated limitation this leaves: if an EARLIER
-                    # group already committed successfully before this
-                    # one failed, the log entry stays 'pending'
-                    # indefinitely, and get_field() will keep reporting
-                    # the LATER group's field as updated even though it
-                    # never was -- deferred, folded into the same
-                    # crash-recovery work rather than solved separately
-                    # here.
-                    raise ValueError(
-                        f"{sub_write.object_type} {sub_write.object_id!r} changed since this "
-                        f"write was proposed -- refresh and retry"
-                    )
-
-            self.write_log.mark_applied(log_id)
-
-        return sub_write.object_id
-
     def resume_pending_writes(self) -> dict:
         # Called ONCE, at deployment startup (see api/app.py / scripts/
         # run_deployment.py), before serving any real traffic -- the
         # "resume-on-startup" half of crash recovery write_log.py's own
         # module docstring names as this mechanism's next planned piece
-        # of work. Finds every write_log entry still at status='pending'
-        # -- each one a write that was logged but never confirmed
-        # reaching 'applied', meaning either the process that would have
-        # finished it is simply gone (a genuine crash mid-apply), or it
-        # hit the ALREADY-KNOWN partial-failure gap (an earlier group
-        # committed, a later one didn't, see _apply_update_via_log()'s
-        # own comment on this).
-        #
-        # Reconciles each entry's storage groups against LIVE backend
-        # state -- deliberately NOT by blindly re-running write_fields()
-        # for every group, which would incorrectly treat an ALREADY-
-        # applied group as a fresh failure (its real value no longer
-        # matches the OLD expected_current_values the conditional write
-        # checks against, precisely BECAUSE it already succeeded). See
-        # _resume_one_entry()'s own docstring for how this dispatches
-        # between update's three-way classification and create's
-        # simpler, two-way one.
+        # of work. Scans EVERY still-INCOMPLETE batch (write_log.
+        # get_pending_batches()) -- ALWAYS batches now, one sub_write
+        # or many, since confirm_and_execute() always goes through
+        # _apply_batch() (see that method's own docstring) -- and
+        # walks each one's own sub_writes, resolving each via
+        # _resume_one_batch() below.
         #
         # Naturally idempotent, safe to call more than once -- every
         # judgment is re-derived fresh from live backend state each
@@ -343,12 +284,76 @@ class WriteMediator:
         # own module docstring for why periodic/continuous resume stays
         # a further, separately-scoped enhancement, not solved here.
         summary = {"resumed": 0, "already_applied": 0, "ambiguous": 0}
-        for entry in self.write_log.get_pending_entries():
-            object_lock = self.mediator._lock_for_object(entry["object_type"], entry["object_id"])
-            with object_lock:
-                outcome = self._resume_one_entry(entry)
+        for batch in self.write_log.get_pending_batches():
+            object_refs = [(sw["object_type"], sw["object_id"]) for sw in batch["sub_writes"]]
+            with self.mediator._locks_for_objects(object_refs):
+                outcome = self._resume_one_batch(batch)
             summary[outcome] += 1
         return summary
+
+    def _resume_one_batch(self, batch: dict) -> str:
+        # Walks ONE incomplete batch's own sub_writes, each in one of
+        # three states, determined via write_log.get_sub_write_entry():
+        #   - No row exists yet -- the process crashed before even
+        #     STARTING this sub_write. Applied fresh now, via the SAME
+        #     _apply_one_update()/_apply_one_create() _apply_batch()
+        #     itself calls -- resuming from nothing is, correctly,
+        #     indistinguishable from a fresh apply that simply hadn't
+        #     happened yet when the crash occurred.
+        #   - Row exists, status='applied' -- already done; nothing to
+        #     do.
+        #   - Row exists, status='pending' -- genuinely crashed MID-
+        #     apply on THIS specific sub_write. Handed off to the
+        #     EXISTING, completely unchanged _resume_one_entry() --
+        #     its own three-way per-storage-group classification
+        #     (already applied / safe to apply / genuinely ambiguous)
+        #     needs no knowledge of batches at all; a sub_write's own
+        #     write_log row looks identical whether it's standalone or
+        #     batch-owned.
+        #
+        # Returns "resumed" (at least one sub_write was freshly
+        # applied or resumed here), "already_applied" (every sub_write
+        # was already done), or "ambiguous" (at least one sub_write
+        # left genuinely unresolved) -- the SAME three-way aggregation
+        # _resume_one_update_entry() already uses one level down, for
+        # storage GROUPS within one sub_write; this is the identical
+        # principle one level up, for sub_writes within one batch. The
+        # WHOLE batch stays 'pending' if even one sub_write is
+        # ambiguous, so a caller reading OTHER, genuinely-resolved
+        # objects in the SAME batch still sees correct, live data.
+        any_applied_here = False
+        any_ambiguous = False
+
+        for sub_write_def in batch["sub_writes"]:
+            object_type = sub_write_def["object_type"]
+            object_id = sub_write_def["object_id"]
+            existing_entry = self.write_log.get_sub_write_entry(batch["id"], object_type, object_id)
+
+            if existing_entry is None:
+                sub_write = SubWrite(
+                    object_type, object_id, sub_write_def["operation"],
+                    sub_write_def["changes"], sub_write_def["expected_current_values"],
+                )
+                if sub_write.operation == "update":
+                    self._apply_one_update(sub_write, batch["id"], batch["user_id"], batch["description"])
+                else:
+                    self._apply_one_create(sub_write, batch["id"], batch["user_id"], batch["description"])
+                any_applied_here = True
+                continue
+
+            if existing_entry["status"] == "applied":
+                continue
+
+            outcome = self._resume_one_entry(existing_entry)
+            if outcome == "resumed":
+                any_applied_here = True
+            elif outcome == "ambiguous":
+                any_ambiguous = True
+
+        if any_ambiguous:
+            return "ambiguous"
+        self.write_log.mark_batch_applied(batch["id"])
+        return "resumed" if any_applied_here else "already_applied"
 
     def _resume_one_entry(self, entry: dict) -> str:
         # Dispatches on operation -- an UPDATE entry's resume logic is
@@ -796,86 +801,250 @@ class WriteMediator:
             resolved_sub_writes.append(SubWrite(object_type, object_id, operation, changes, expected_current_values))
 
         description = f"{action_type_name}(parameters={parameters})"
-        return PendingWrite(tuple(resolved_sub_writes), user_record.user_id, description)
+        return PendingWrite(tuple(resolved_sub_writes), user_record.user_id, description, action_type_name)
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
-        # pending.sub_writes[0] -- exactly one entry always, for now;
-        # see PendingWrite's own docstring.
-        sub_write = pending.sub_writes[0]
+        # ALWAYS goes through _apply_batch() below, one sub_write or
+        # many -- see this file's own AI-notes at the bottom, and
+        # write_log.py's own MULTI-OBJECT BATCHES docstring section,
+        # for why: uniform REPRESENTATION (a write_log_batches row
+        # exists for every write, not just multi-object ones) is what
+        # lets the CODE stay genuinely branch-free, the same way
+        # _group_changes_by_storage() already lets a single-storage
+        # object apply through the exact same loop as a multi-storage
+        # one, with no special case for either.
         request_id = str(uuid.uuid4())
         self.audit_log.log_pre(
-            request_id, pending.user_id, pending.description,
-            f"write:{sub_write.object_type}", sub_write.changes, approved,
+            request_id, pending.user_id, pending.description, f"write:{pending.action_type_name}",
+            {
+                # An explicit, computed field stating what happened,
+                # not something a reader has to infer by counting --
+                # same "explicit signal, not implicit inference"
+                # principle log_access() already follows by reporting
+                # mac_allowed/rbac_allowed independently rather than
+                # only a combined allow/deny bit.
+                "sub_write_count": len(pending.sub_writes),
+                "sub_writes": [
+                    {"object_type": sw.object_type, "object_id": sw.object_id, "changes": sw.changes}
+                    for sw in pending.sub_writes
+                ],
+            },
+            approved,
         )
 
         if not approved:
             return None
 
-        if sub_write.operation == "update":
-            # ALWAYS via the write log now -- see write_log.py's own
-            # module docstring for the full mechanism. Handles
-            # multi-storage updates the old, single-call
-            # _resolve_shared_storage() approach genuinely could not
-            # (it fails outright the instant it's asked to resolve
-            # fields spanning more than one storage).
-            new_id = self._apply_update_via_log(pending)
-            self.audit_log.log_post(request_id, "success", [new_id])
-            return {"status": "written", "object_id": new_id}
+        object_ids = self._apply_batch(pending)
+        self.audit_log.log_post(request_id, "success", object_ids)
+        return {"status": "written", "object_ids": object_ids}
 
-        # "create" -- ALWAYS via the write log now too, matching
-        # "update"'s own precedent immediately above: one unified
-        # mechanism regardless of storage count, not two separately-
-        # maintained paths. propose_action() already enforced that the
-        # object's own id is present in sub_write.changes before this
-        # was ever proposable -- see its own comment on why this is now
-        # required universally, not just when create happens to span
-        # multiple storages.
-        new_id = self._apply_create_via_log(pending)
-        self.audit_log.log_post(request_id, "success", [new_id])
-        return {"status": "written", "object_id": new_id}
+    def _apply_batch(self, pending: PendingWrite) -> list:
+        # THE actual atomicity boundary for the WHOLE write, one
+        # sub_write or many -- see write_log.py's own MULTI-OBJECT
+        # BATCHES docstring section for the full mechanism this
+        # implements: log the batch's COMPLETE, already-resolved intent
+        # FIRST (trivially atomic, one INSERT, regardless of how many
+        # sub_writes it describes), THEN apply each sub_write's own
+        # share SEQUENTIALLY, in the batch's own declared LIST order
+        # (referential correctness -- a sub_write creating an object
+        # must apply before another sub_write that references it),
+        # THEN mark the whole batch applied.
+        #
+        # Locks for EVERY object in this batch, acquired ONCE, up
+        # front, in SORTED order (deadlock avoidance -- see
+        # DataMediator._locks_for_objects()'s own docstring), held for
+        # the WHOLE sequence, released together at the end -- NOT
+        # acquired per-sub_write inside the loop below. This is why
+        # _apply_one_update()/_apply_one_create() below no longer
+        # acquire their own lock the way the pre-batch
+        # _apply_update_via_log()/_apply_create_via_log() used to:
+        # threading.Lock is not reentrant, so acquiring the SAME
+        # object's lock twice from the same thread (once here, once
+        # again inside a per-sub_write helper) would deadlock outright,
+        # not just be redundant.
+        object_refs = [(sw.object_type, sw.object_id) for sw in pending.sub_writes]
+        with self.mediator._locks_for_objects(object_refs):
+            batch_id = self.write_log.log_pending_batch(
+                [
+                    {
+                        "object_type": sw.object_type, "object_id": sw.object_id, "operation": sw.operation,
+                        "changes": sw.changes, "expected_current_values": sw.expected_current_values,
+                    }
+                    for sw in pending.sub_writes
+                ],
+                pending.user_id, pending.description,
+            )
 
-    def _apply_create_via_log(self, pending: PendingWrite) -> Any:
-        # THE create-side counterpart to _apply_update_via_log() -- see
-        # write_log.py's own module docstring for the shared mechanism.
-        # Handles single-storage create too now, same as
-        # _apply_update_via_log() already did for update -- a single-
-        # group `groups` list below is simply the degenerate case,
-        # nothing here needs to special-case it. Requires
+            object_ids = []
+            for sub_write in pending.sub_writes:
+                if sub_write.operation == "update":
+                    object_ids.append(self._apply_one_update(sub_write, batch_id, pending.user_id, pending.description))
+                else:
+                    object_ids.append(self._apply_one_create(sub_write, batch_id, pending.user_id, pending.description))
+
+            self.write_log.mark_batch_applied(batch_id)
+
+        return object_ids
+
+    def _apply_one_update(self, sub_write: SubWrite, batch_id: str, user_id: str, description: str) -> Any:
+        # ONE sub_write's own share of a (possibly multi-object) batch
+        # -- see _apply_batch() above for the locking and batch-logging
+        # this is always called from within, and for why this no
+        # longer acquires its own per-object lock the way the pre-
+        # batch _apply_update_via_log() used to. Logs this ONE sub_
+        # write's own write_log row, batch_id set, THEN applies each
+        # storage's own share of the mutations SEQUENTIALLY (same
+        # _group_changes_by_storage() mechanism as before -- a single-
+        # group `groups` list is simply the degenerate case), THEN
+        # marks this row applied.
+        log_id = self.write_log.log_pending_update(
+            sub_write.object_type, sub_write.object_id,
+            sub_write.changes, sub_write.expected_current_values,
+            user_id, description, batch_id=batch_id,
+        )
+
+        groups = self._group_changes_by_storage(sub_write.object_type, sub_write.changes)
+        for adapter, resolved_type_config, group_changes in groups:
+            group_expected = {
+                field_name: sub_write.expected_current_values[field_name]
+                for field_name in group_changes
+            }
+            success = self._write_fields_with_limiter(
+                sub_write.object_type, sub_write.object_id, adapter, resolved_type_config,
+                group_changes, group_expected,
+            )
+            if not success:
+                # See write_log.py's own docstring for the known,
+                # stated limitation this leaves: if an EARLIER group
+                # already committed successfully before this one
+                # failed, the log entry stays 'pending' indefinitely,
+                # and get_field() will keep reporting the LATER
+                # group's field as updated even though it never was --
+                # deferred, folded into the same crash-recovery work
+                # rather than solved separately here.
+                raise ValueError(
+                    f"{sub_write.object_type} {sub_write.object_id!r} changed since this "
+                    f"write was proposed -- refresh and retry"
+                )
+
+        self.write_log.mark_applied(log_id)
+        return sub_write.object_id
+
+    def _apply_one_create(self, sub_write: SubWrite, batch_id: str, user_id: str, description: str) -> Any:
+        # THE create-side counterpart to _apply_one_update() above --
+        # see write_log.py's own module docstring for the shared
+        # mechanism, and _apply_batch() above for the locking and
+        # batch-logging this is always called from within. Requires
         # sub_write.changes to already include the type's own id_field,
         # explicitly -- propose_action() enforces this upfront; matches
         # Palantir Foundry's own MDO requirement that an object's
         # primary key already exist, matching, in every backing
         # datasource (verified directly, not assumed -- see
         # https://www.palantir.com/docs/foundry/object-permissioning/multi-datasource-objects).
-        #
-        # sub_write.object_id -- ALREADY the real id here, resolved
-        # once by propose_action() (see SubWrite's own docstring). The
-        # old version of this method used to separately re-derive it
-        # from pending.changes[id_field] every time, specifically
-        # because PendingWrite.object_id itself stayed None for
-        # "create" -- that workaround no longer exists to work around.
-        sub_write = pending.sub_writes[0]
         id_field = self.mediator._type_schema(sub_write.object_type)["id_field"]
-        object_lock = self.mediator._lock_for_object(sub_write.object_type, sub_write.object_id)
-        with object_lock:
-            log_id = self.write_log.log_pending_create(
-                sub_write.object_type, sub_write.object_id,
-                sub_write.changes, pending.user_id, pending.description,
-            )
+        log_id = self.write_log.log_pending_create(
+            sub_write.object_type, sub_write.object_id,
+            sub_write.changes, user_id, description, batch_id=batch_id,
+        )
 
-            groups = self._group_changes_by_storage(sub_write.object_type, sub_write.changes)
-            for adapter, resolved_type_config, group_changes in groups:
-                # Every group's own row needs the id as one of its
-                # actual inserted columns -- unlike update, create_
-                # object() has no separate object_id parameter for a
-                # WHERE clause; the id is just another field being
-                # inserted, into EVERY storage, not just whichever ONE
-                # group's mutations happened to place it in naturally
-                # (a no-op overwrite for that one group, a real
-                # injection for every other).
-                group_with_id = {**group_changes, id_field: sub_write.object_id}
-                self._create_object_with_limiter(sub_write.object_type, adapter, resolved_type_config, group_with_id)
+        groups = self._group_changes_by_storage(sub_write.object_type, sub_write.changes)
+        for adapter, resolved_type_config, group_changes in groups:
+            # Every group's own row needs the id as one of its actual
+            # inserted columns -- unlike update, create_object() has no
+            # separate object_id parameter for a WHERE clause; the id
+            # is just another field being inserted, into EVERY
+            # storage, not just whichever ONE group's mutations
+            # happened to place it in naturally (a no-op overwrite for
+            # that one group, a real injection for every other).
+            group_with_id = {**group_changes, id_field: sub_write.object_id}
+            self._create_object_with_limiter(sub_write.object_type, adapter, resolved_type_config, group_with_id)
 
-            self.write_log.mark_applied(log_id)
-
+        self.write_log.mark_applied(log_id)
         return sub_write.object_id
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# RESOLVED (kept for history -- was previously the URGENT / read-this-
+# first item):
+# - resume_pending_writes() was NOT rebuilt for the "always batch"
+#   world confirm_and_execute()/_apply_batch() moved to -- it used to
+#   scan ONLY write_log.get_pending_entries() (batch_id IS NULL),
+#   which meant it silently found nothing for any real, confirm_and_
+#   execute()-originated crash. NOW FIXED: resume_pending_writes()
+#   scans write_log.get_pending_batches() and walks each incomplete
+#   batch's own sub_writes via the new _resume_one_batch(), using
+#   write_log.get_sub_write_entry() for the per-sub-write three-way
+#   dispatch (never started / mid-apply / already done) exactly as
+#   originally designed below. get_pending_entries() itself is
+#   RETIRED entirely (see write_log.py's own docstring) -- replaced by
+#   get_all_pending_writes() (for DataMediator._reconcile_search_
+#   with_pending_writes(), which had the IDENTICAL silent-no-op bug,
+#   found and fixed at the same time, not a separate issue) and
+#   get_sub_write_entry() (for resume's own per-sub-write lookup).
+#   Full new test coverage: tests/unit/test_write_log_resume.py
+#   (rebuilt, including two genuinely new tests: a sub-write that
+#   never even started, and the first test in this whole effort
+#   exercising two real, different objects within one batch) and
+#   tests/unit/test_write_log_create.py's own resume tests (rebuilt
+#   the same way, create-side).
+#
+# DEFERRED (known, intentional, not yet built):
+# - Real multi-object action_types still don't exist anywhere. Every
+#   test in this file, test_confirm_and_execute_batches.py, and
+#   test_write_log_resume.py's own multi-sub-write test uses
+#   SYNTHETIC multi-object scenarios (constructed write_log rows/
+#   batches directly, not a real action_type any real caller could
+#   invoke) -- proving the mechanism itself is correct, not yet
+#   proving a real, schema-authored multi-object action works end to
+#   end through propose_action() and a real model. Worth a real,
+#   deliberately-authored multi-object action_type (a fund transfer,
+#   most likely) as the genuine end-to-end proof, now that both the
+#   apply path AND resume are ready to handle it correctly.
+#
+# REJECTED ALTERNATIVES (considered and ruled out -- don't re-propose
+# without reading why):
+# - Creating a write_log_batches row ONLY when len(sub_writes) > 1
+#   (skip it for the single-object case, keep the old, batch-free
+#   direct path for that case specifically) was seriously considered
+#   and explicitly rejected, after real back-and-forth with the user.
+#   The rejected reasoning: it looked like uniform CODE (no branch in
+#   the apply logic) but wasn't uniform REPRESENTATION -- every reader
+#   of write_log/write_log_batches (get_pending_changes(), a future
+#   admin audit viewer, resume) would still need to know and handle
+#   "sometimes there's a batch row, sometimes there isn't" as a real
+#   distinction. The MDO precedent (_group_changes_by_storage() always
+#   produces at least one group, never a special "single-storage, no
+#   grouping" path) is what settled this: uniform representation is
+#   what LETS the code have no branch anywhere, not the other way
+#   around. The accepted cost -- one extra INSERT and one extra UPDATE
+#   per write, forever, even for the overwhelmingly common single-
+#   object case -- was judged worth it, consistent with every other
+#   uniformity trade-off made this same session (the sub_writes YAML
+#   shape, object_id's full retirement, the object_ids-always-a-list
+#   API response).
+# - Palantir's OWN real architecture (a separate Funnel queue plus a
+#   live, always-current index, with the real backing dataset lagging
+#   behind via periodic/triggered flush) was researched directly and
+#   deliberately NOT built here -- see write_log.py's own AI-notes
+#   (once it has this same section) for the full reasoning: the
+#   GUARANTEE matches (no reader ever sees a torn multi-object state),
+#   the MECHANISM is a simpler analog suited to this project's much
+#   smaller, single-process scale. Palantir's own "a single
+#   modification instruction, always, regardless of object count" was
+#   real, direct confirmation FOR the always-batch decision above,
+#   even though the underlying machinery differs.
+#
+# KNOWN LIMITATIONS:
+# - log_pre()'s own audit entry now embeds every sub_write's full
+#   changes dict, for every write -- a real, if usually small, size
+#   increase per audit entry compared to the old, single-object-only
+#   shape, bounded by MAX_SUB_WRITES (core/ontology/action_types.py)
+#   at 20. Not expected to matter at this project's scale; worth
+#   knowing if audit log size or write throughput are ever profiled
+#   and this shows up.

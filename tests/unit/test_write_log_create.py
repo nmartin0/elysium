@@ -5,7 +5,7 @@ be supplied EXPLICITLY (never auto-generated, matching Palantir
 Foundry's own MDO requirement that a primary key already exist,
 matching, in every backing datasource), logged first via
 write_log.log_pending_create(), then applied to each storage group
-sequentially via WriteMediator._apply_create_via_log(), with the id
+sequentially via WriteMediator._apply_one_create(), with the id
 injected into every group's own fields, not just whichever one
 group's mutations happened to place it in naturally.
 
@@ -185,6 +185,26 @@ def _direct_write(mediator, silo, table, columns: dict):
         conn.commit()
 
 
+def _log_create_batch_and_started_entry(write_log, object_type, object_id, changes,
+                                         user_id="alice", description="test"):
+    # The create-side analog of tests/unit/test_write_log_resume.py's
+    # own _log_batch_and_started_entry() -- see that function's own
+    # docstring for the full reasoning (a crash AFTER this sub_write's
+    # own write_log row was created, but before mark_applied() ran).
+    # No expected_current_values parameter -- log_pending_create()
+    # itself has none either; nothing exists yet for this object to
+    # compare against.
+    batch_id = write_log.log_pending_batch(
+        [{
+            "object_type": object_type, "object_id": object_id, "operation": "create",
+            "changes": changes, "expected_current_values": {},
+        }],
+        user_id, description,
+    )
+    write_log.log_pending_create(object_type, object_id, changes, user_id, description, batch_id=batch_id)
+    return batch_id
+
+
 def test_single_storage_create_still_requires_an_explicit_id(fixture):
     # Genuinely NEW behavior -- single-storage create used to allow
     # auto-generated ids (the pre-this-session default). Now unified
@@ -219,10 +239,16 @@ def test_single_storage_create_also_goes_through_the_log(fixture):
     )
     result = write_mediator.confirm_and_execute(pending, approved=True)
 
-    new_id = result["object_id"]
+    new_id = result["object_ids"][0]
     assert new_id == "cust_solo"
     assert mediator.get_field(alice, "Customer", new_id, "name") == "Solo Customer"
-    assert write_log.get_pending_entries() == []
+    # NOT get_pending_entries() -- that method is RETIRED entirely now
+    # (see write_log.py's own docstring, and this file's own AI-notes
+    # at the bottom), not just narrowed: every write_log row is
+    # batch-owned now (see write_mediator.py's own _apply_batch()).
+    # This checks the SAME "did it resolve" fact the way get_field()
+    # itself effectively already does, just directly.
+    assert write_log.get_pending_changes("Customer", new_id) is None
 
 
 def test_apply_create_via_log_logs_under_the_real_id_not_none(fixture, monkeypatch):
@@ -278,7 +304,7 @@ def test_multi_storage_create_applies_to_every_storage(fixture):
         {"new_id": "cust_001", "new_name": "Ada Okafor", "new_score": 0.42},
     )
     result = write_mediator.confirm_and_execute(pending, approved=True)
-    assert result == {"status": "written", "object_id": "cust_001"}
+    assert result == {"status": "written", "object_ids": ["cust_001"]}
 
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "Ada Okafor"
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.42
@@ -295,8 +321,11 @@ def test_multi_storage_create_applies_to_every_storage(fixture):
                                             {"storage": {"table": "customer_risk", "id_column": "cust_ref"}})
     assert raw_score == 0.42
 
-    # The log entry is genuinely resolved, not left pending.
-    assert write_log.get_pending_entries() == []
+    # The log entry is genuinely resolved, not left pending -- NOT
+    # get_pending_entries(), which is RETIRED entirely now (see
+    # write_log.py's own docstring, and this file's own AI-notes at
+    # the bottom).
+    assert write_log.get_pending_changes("Customer", "cust_001") is None
 
 
 def test_resume_completes_a_create_that_never_applied(fixture):
@@ -306,10 +335,10 @@ def test_resume_completes_a_create_that_never_applied(fixture):
     mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
-    write_log.log_pending_create(
-        "Customer", "cust_001",
+    _log_create_batch_and_started_entry(
+        write_log, "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
-        "alice", "simulated crash before any group applied",
+        description="simulated crash before any group applied",
     )
 
     summary = write_mediator.resume_pending_writes()
@@ -317,7 +346,7 @@ def test_resume_completes_a_create_that_never_applied(fixture):
 
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "New Customer"
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.55
-    assert write_log.get_pending_entries() == []
+    assert write_log.get_pending_batches() == []
 
 
 def test_resume_skips_already_created_group_and_completes_the_other(fixture):
@@ -330,10 +359,10 @@ def test_resume_skips_already_created_group_and_completes_the_other(fixture):
     # re-insert the already-existing primary row.
     mediator, write_mediator, write_log = fixture
 
-    write_log.log_pending_create(
-        "Customer", "cust_001",
+    _log_create_batch_and_started_entry(
+        write_log, "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
-        "alice", "simulated crash after primary group applied, before MDO group",
+        description="simulated crash after primary group applied, before MDO group",
     )
     _direct_write(mediator, "primary_sql", "customers",
                   {"customer_id": "cust_001", "region": "us-west", "name": "New Customer"})
@@ -344,7 +373,7 @@ def test_resume_skips_already_created_group_and_completes_the_other(fixture):
     alice = _record("alice")
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "New Customer"
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.55
-    assert write_log.get_pending_entries() == []
+    assert write_log.get_pending_batches() == []
 
 
 def test_resume_when_every_group_already_created(fixture):
@@ -354,10 +383,10 @@ def test_resume_when_every_group_already_created(fixture):
     # gets a redundant, constraint-violating create_object() call.
     mediator, write_mediator, write_log = fixture
 
-    write_log.log_pending_create(
-        "Customer", "cust_001",
+    _log_create_batch_and_started_entry(
+        write_log, "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
-        "alice", "simulated crash after both groups applied, before mark_applied",
+        description="simulated crash after both groups applied, before mark_applied",
     )
     _direct_write(mediator, "primary_sql", "customers",
                   {"customer_id": "cust_001", "region": "us-west", "name": "New Customer"})
@@ -365,16 +394,15 @@ def test_resume_when_every_group_already_created(fixture):
 
     summary = write_mediator.resume_pending_writes()
     assert summary == {"resumed": 0, "already_applied": 1, "ambiguous": 0}
-    assert write_log.get_pending_entries() == []
+    assert write_log.get_pending_batches() == []
 
 
 def test_resume_create_is_idempotent(fixture):
     mediator, write_mediator, write_log = fixture
 
-    write_log.log_pending_create(
-        "Customer", "cust_001",
+    _log_create_batch_and_started_entry(
+        write_log, "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
-        "alice", "test",
     )
 
     first = write_mediator.resume_pending_writes()

@@ -41,7 +41,7 @@ def test_real_model_create_action_approved_actually_creates_the_row(deployment, 
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
     print(f"[diagnostic] confirm_and_execute outcome: {outcome}")
 
-    assert outcome == {"status": "written", "object_id": proposed_customer_id}
+    assert outcome == {"status": "written", "object_ids": [proposed_customer_id]}
 
     # THE thing this test exists to prove: the REAL database, read back
     # independently of the write path, reflects the model's OWN chosen

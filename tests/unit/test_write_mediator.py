@@ -152,7 +152,7 @@ def test_approved_action_actually_updates_the_database(wm):
         _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada, Countess of Lovelace"}
     )
     result = wm.confirm_and_execute(pending, approved=True)
-    assert result == {"status": "written", "object_id": "auth_001"}
+    assert result == {"status": "written", "object_ids": ["auth_001"]}
 
     real_value = wm.mediator.get_field(_record("alice"), "Author", "auth_001", "name")
     assert real_value == "Ada, Countess of Lovelace"
@@ -174,7 +174,7 @@ def test_approved_create_action_actually_creates_a_new_row(wm):
     assert pending.sub_writes[0].operation == "create"
 
     result = wm.confirm_and_execute(pending, approved=True)
-    assert result == {"status": "written", "object_id": "auth_003"}
+    assert result == {"status": "written", "object_ids": ["auth_003"]}
 
     real_value = wm.mediator.get_field(_record("alice"), "Author", "auth_003", "name")
     assert real_value == "Grace Hopper"

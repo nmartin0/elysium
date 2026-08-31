@@ -227,7 +227,7 @@ def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
     assert pending.sub_writes[0].expected_current_values == {"risk_score": 0.42}
 
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
-    assert outcome == {"status": "written", "object_id": "cust_001"}
+    assert outcome == {"status": "written", "object_ids": ["cust_001"]}
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.99
 
     # And the PRIMARY storage's own field is provably untouched --
@@ -427,7 +427,7 @@ def test_create_without_setting_security_field_produces_an_unreadable_row(mediat
 
     # The write itself succeeds -- no error, no guard against this today.
     assert outcome["status"] == "written"
-    new_id = outcome["object_id"]
+    new_id = outcome["object_ids"][0]
     assert new_id == "cust_incomplete"
 
     # A real primary row DOES exist now (unlike before this session's

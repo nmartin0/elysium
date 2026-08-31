@@ -140,7 +140,7 @@ def test_multi_storage_update_succeeds_via_the_log(fixture):
     )
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
-    assert outcome == {"status": "written", "object_id": "cust_001"}
+    assert outcome == {"status": "written", "object_ids": ["cust_001"]}
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "New Name"
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.99
 
@@ -156,7 +156,7 @@ def test_single_storage_update_still_works_via_the_log_path(fixture):
     pending = write_mediator.propose_action(alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.77})
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
-    assert outcome == {"status": "written", "object_id": "cust_001"}
+    assert outcome == {"status": "written", "object_ids": ["cust_001"]}
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.77
     # And the field on the OTHER storage is provably untouched.
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "Ada Okafor"

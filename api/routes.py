@@ -326,18 +326,28 @@ async def query(body: QueryRequest, request: Request,
 
     if result.pending_write is not None:
         write_id = request.app.state.pending_writes.store(result.pending_write)
-        # sub_writes[0] -- exactly one entry always, for now (see
-        # PendingWrite's own docstring). The external response shape
-        # here ("changes": {...}, a flat dict) stays exactly as it was
-        # before this internal restructuring -- ui/src/components/
-        # PendingWriteCard.jsx isn't touched by this change at all.
+        # ALWAYS a list of sub_writes now, one entry or many -- matches
+        # confirm_and_execute()'s own object_ids response shape (see
+        # its own docstring: uniform representation, not a shape that
+        # changes based on how much happened). object_type included on
+        # each entry too -- the old flat "changes" dict never named
+        # which object it belonged to at all, meaningless once a
+        # response can describe more than one. ui/src/components/
+        # PendingWriteCard.jsx updated to match, minimally -- loops
+        # over sub_writes and renders each; a real, polished multi-
+        # object confirmation UI is deliberately deferred (see this
+        # file's own AI-notes at the bottom) until a real multi-object
+        # action exists to design it against.
         return JSONResponse(
             status_code=202,
             content={
                 "pending_write": {
                     "id": write_id,
                     "description": result.pending_write.description,
-                    "changes": result.pending_write.sub_writes[0].changes,
+                    "sub_writes": [
+                        {"object_type": sw.object_type, "object_id": sw.object_id, "changes": sw.changes}
+                        for sw in result.pending_write.sub_writes
+                    ],
                 }
             },
         )
@@ -373,3 +383,25 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
     event_loop = asyncio.get_running_loop()
     outcome = await event_loop.run_in_executor(executor, write_mediator.confirm_and_execute, pending, body.approved)
     return outcome if outcome is not None else {"status": "rejected"}
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# DEFERRED (known, intentional, not yet built):
+# - The pending-write response's "sub_writes" list, and confirm_write_
+#   route's own passthrough "object_ids" list, are both correct and
+#   tested (see tests/integration/test_api.py) but only ever contain
+#   ONE entry in practice -- no real multi-object action_type exists
+#   anywhere yet (see core/ontology/write_mediator.py's own AI-notes
+#   for where that stands). ui/src/components/PendingWriteCard.jsx was
+#   updated to READ this shape correctly (loops over sub_writes) but
+#   deliberately NOT given real multi-object UI design (separate
+#   labeled sections per object, etc.) -- see that file's own
+#   AI-notes. Both sides of this were an explicit, agreed split with
+#   the user: real shape now, minimal-but-correct rendering now,
+#   polished multi-object UI later, once there's a real action to
+#   design it against.

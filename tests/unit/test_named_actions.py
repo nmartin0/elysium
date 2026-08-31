@@ -116,7 +116,7 @@ def test_valid_action_call_succeeds_end_to_end(write_mediator):
     pending = write_mediator.propose_action(lead, "ReopenTicket", {"ticket_id": "t1", "reason": "customer followup"})
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
-    assert outcome == {"status": "written", "object_id": "t1"}
+    assert outcome == {"status": "written", "object_ids": ["t1"]}
     # Including the field that started genuinely NULL -- the real
     # adapter-level fix, proven here through the FULL WriteMediator path.
     assert write_mediator.mediator.get_field(lead, "Ticket", "t1", "status") == "open"

@@ -104,6 +104,7 @@ Used by: scripts/run_deployment.py (via core/deployment_loader.py),
 """
 
 import threading
+from contextlib import contextmanager
 from typing import Any
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
@@ -162,10 +163,48 @@ class DataMediator:
     def _lock_for_object(self, object_type: str, object_id: Any) -> threading.Lock:
         return self._object_locks.lock_for((object_type, object_id))
 
+    @contextmanager
+    def _locks_for_objects(self, object_refs: list[tuple[str, Any]]):
+        # Multi-object counterpart to _lock_for_object() above -- used
+        # by WriteMediator.confirm_and_execute() when applying a batch
+        # (see write_mediator.py's own docstring for the full
+        # sub_writes/write_log_batches mechanism this supports).
+        #
+        # SORTED acquisition order, deliberately -- the standard,
+        # well-known deadlock-avoidance technique: two concurrent
+        # multi-object batches that happen to share some objects can
+        # never deadlock against each other as long as EVERY caller
+        # acquiring more than one lock at once uses this SAME canonical
+        # order (breaks circular wait, one of the four Coffman
+        # conditions). str(object_id) in the sort key for the same
+        # reason WriteLog's own object_id columns are consistently
+        # str()-converted -- comparing a mix of int and str ids directly
+        # would raise in Python 3, not just behave surprisingly.
+        #
+        # NOT the same as the order sub_writes actually APPLY in --
+        # deliberately. Apply order stays the batch's own declared LIST
+        # order (referential correctness: a sub_write creating an
+        # object must apply before another sub_write that references
+        # it). Lock ACQUISITION order is sorted for deadlock avoidance
+        # ONLY -- these are two genuinely different orderings serving
+        # two different purposes; conflating them would be a real bug,
+        # not just a style inconsistency.
+        sorted_refs = sorted(object_refs, key=lambda ref: (ref[0], str(ref[1])))
+        locks = [self._lock_for_object(object_type, object_id) for object_type, object_id in sorted_refs]
+        acquired = []
+        try:
+            for lock in locks:
+                lock.acquire()
+                acquired.append(lock)
+            yield
+        finally:
+            for lock in reversed(acquired):
+                lock.release()
+
     def _write_limiter_for_silo(self, silo_name: str) -> ConcurrencyLimiter:
         # Keyed directly by silo name, not object_type -- needed by
         # WriteMediator's own log-based apply paths (see
-        # _apply_update_via_log() and _apply_create_via_log() in
+        # _apply_one_update() and _apply_one_create() in
         # write_mediator.py), which resolve a limiter PER STORAGE
         # GROUP. Resolving by object_type alone would always give back
         # the PRIMARY silo's limiter, the wrong one for a group writing
@@ -477,15 +516,21 @@ class DataMediator:
         # Every entry system-wide, not scoped to this object_type --
         # deliberately simple for this first pass: write_log entries
         # are expected to be rare (the pending window is normally
-        # brief) and get_pending_entries() has no object_type filter
-        # today (see its own docstring -- built for
+        # brief) and get_all_pending_writes() has no object_type
+        # filter today (built for both this caller and WriteMediator.
         # resume_pending_writes(), which genuinely needs every entry
         # regardless of type). A real, stated cost if this ever proves
         # too slow in practice, not a correctness concern -- worth a
         # type-scoped query later if it matters, not assumed to matter
-        # now.
+        # now. get_all_pending_writes(), NOT the old, retired get_
+        # pending_entries() -- this must see a NOT-YET-STARTED
+        # sub-write's own pending intent too, not just an already-
+        # mid-apply one; see write_log.py's own docstring for why a
+        # genuine gap here would let a search miss or wrongly include
+        # an object for exactly the torn-state reason this whole
+        # reconciliation mechanism exists to prevent.
         relevant_entries = [
-            entry for entry in self.write_log.get_pending_entries()
+            entry for entry in self.write_log.get_all_pending_writes()
             if entry["object_type"] == object_type and set(entry["changes"]) & set(criteria)
         ]
         if not relevant_entries:
@@ -493,12 +538,12 @@ class DataMediator:
 
         # Keyed by str(id), not the id itself -- a pending entry's own
         # object_id is ALWAYS a string (see write_log.py's own
-        # get_pending_entries() docstring), but a real, native id from
-        # adapter.find_ids() might not be (e.g. an integer id column).
-        # A plain set().discard(entry_object_id) would then silently
-        # fail to remove an existing INTEGER match, since "1" != 1 --
-        # keying by string form on BOTH sides makes add/remove correct
-        # regardless of the id column's real type. Existing candidates
+        # get_all_pending_writes() docstring), but a real, native id
+        # from adapter.find_ids() might not be (e.g. an integer id
+        # column). A plain set().discard(entry_object_id) would then
+        # silently fail to remove an existing INTEGER match, since "1"
+        # != 1 -- keying by string form on both sides makes add/remove
+        # correct regardless of the id column's real type. Existing candidates
         # keep their own, already-correctly-typed value; a genuinely
         # NEW match (see the loop below) gets its native type resolved
         # fresh from the adapter, so nothing returned from here is ever
@@ -614,7 +659,7 @@ class DataMediator:
         # Checks core/ontology/write_log.py's own store FIRST, before
         # ever reaching the real adapter -- if an update touching this
         # exact field is still mid-apply (see WriteMediator.
-        # _apply_update_via_log()), this is what makes that in-flight
+        # _apply_one_update()), this is what makes that in-flight
         # window invisible to a reader: they see the INTENDED value
         # immediately, never a state where some of the update's
         # storages already reflect it and others don't yet. Delegated
@@ -623,3 +668,29 @@ class DataMediator:
         # own docstring for the full reasoning.
         adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
         return self._read_field_with_log_check(object_type, object_id, field_name, adapter, resolved_type_config)
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# DEFERRED (known, intentional, not yet built):
+# - (UPDATED -- was "only ever exercised with a single-element
+#   object_refs list," no longer true) _locks_for_objects() is now
+#   used by BOTH WriteMediator._apply_batch() and resume_pending_
+#   writes() (core/ontology/write_mediator.py), and IS exercised with
+#   a genuine, 2-element object_refs list -- see tests/unit/
+#   test_write_log_resume.py's own test_resume_with_multiple_sub_
+#   writes_aggregates_correctly, the first test in this whole effort
+#   to touch two real, different objects within one batch. What's
+#   STILL not proven: genuine multi-THREADED contention -- two
+#   different batches, running concurrently on different threads,
+#   whose own object sets genuinely overlap, actually avoiding
+#   deadlock in practice, not just by construction. No dedicated
+#   concurrency test exists anywhere in this codebase yet for EITHER
+#   the single-object (KeyedLockManager itself, core/concurrency.py)
+#   or multi-object locking case -- worth adding for both, not just
+#   this one, once a real multi-object action_type exists to motivate
+#   it (see write_mediator.py's own AI-notes for where that stands).
