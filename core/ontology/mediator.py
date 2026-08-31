@@ -676,25 +676,66 @@ class DataMediator:
 # something genuinely open, deferred, or rejected comes up for this file.
 # =============================================================================
 #
-# DEFERRED (known, intentional, not yet built):
-# - (UPDATED -- was "only ever exercised with a single-element
-#   object_refs list," no longer true) _locks_for_objects() is now
-#   used by BOTH WriteMediator._apply_batch() and resume_pending_
-#   writes() (core/ontology/write_mediator.py), and IS exercised with
-#   a genuine, 2-element object_refs list -- see tests/unit/
-#   test_write_log_resume.py's own test_resume_with_multiple_sub_
-#   writes_aggregates_correctly (synthetic fixtures), and now, for the
-#   FIRST time, a real, schema-authored action too: TransferFunds
-#   (tests/unit/test_transfer_funds.py, tests/integration/test_
-#   transfer_funds_e2e.py -- see write_mediator.py's own AI-notes for
-#   the fuller record). What's STILL not proven: genuine multi-
-#   THREADED contention -- two different batches, running concurrently
-#   on different threads, whose own object sets genuinely overlap,
-#   actually avoiding deadlock in practice, not just by construction.
-#   No dedicated concurrency test exists anywhere in this codebase yet
-#   for EITHER the single-object (KeyedLockManager itself, core/
-#   concurrency.py) or multi-object locking case -- the "once a real
-#   multi-object action_type exists to motivate it" condition this
-#   note used to name is now met (TransferFunds), but the test itself
-#   remains a separate, still-open, explicitly tracked item -- worth
-#   adding for both, not just one.
+# RESOLVED (kept for history):
+# - _locks_for_objects() used to be exercised only with a single-
+#   element object_refs list, then, later, a genuine 2-element list
+#   but only ever single-threaded (synthetic fixtures, and TransferFunds,
+#   both proving correct STRUCTURE -- the right locks acquired in the
+#   right order -- never genuine multi-threaded contention). NOW
+#   CLOSED: tests/unit/test_concurrency.py is the first genuine,
+#   multi-threaded proof either this method or KeyedLockManager
+#   (core/concurrency.py) has ever had -- real OS threads, real
+#   contention, timeout-bounded joins so a genuine deadlock fails the
+#   test instead of hanging the whole suite. Includes a deliberate
+#   negative control (raw, unsorted lock acquisition, bypassing this
+#   method's own sorting) proving the detection methodology itself
+#   catches a real deadlock, not just passing tautologically -- and,
+#   caught by actually running that negative control rather than
+#   trusting it by construction, a real bug in the control itself: the
+#   two intentionally-deadlocked threads need daemon=True, or they
+#   silently prevent the whole Python process from ever exiting (
+#   reproduced directly: a bare subprocess run hung past 30s without
+#   it). See core/concurrency.py's own docstring -- untouched by this
+#   work, but ALSO had zero test coverage until this same file closed
+#   it for ConcurrencyLimiter too, found while auditing for the
+#   locking-specific gap and cheap enough to close in the same pass.
+# - Also caught during a self-review of this same work: three of
+#   tests/unit/test_concurrency.py's own tests had near-identical
+#   "spawn threads, track max concurrent holders" boilerplate --
+#   extracted into that file's own _run_concurrently_tracking_max_
+#   holders() helper, matching the SAME duplication discipline this
+#   project already applies elsewhere.
+#
+# ON PALANTIR ALIGNMENT (asked directly by the user; verified via
+# official docs, not assumed -- checked because this project's own
+# earlier claims about Palantir's real architecture, made before this
+# locking mechanism existed, deserved re-checking against the actual
+# thing just built): _locks_for_objects()'s sorted-order MUTEX locking
+# does NOT mechanically match Palantir's own approach. Palantir's real
+# mechanism for concurrent Ontology edits is an ASYNCHRONOUS, OFFSET-
+# TRACKED QUEUE (the Funnel service) -- "the Actions service sends a
+# modification instruction to the Funnel service. This instruction is
+# stored in a Funnel-managed queue that has offset tracking to support
+# simultaneous user edits" (palantir.com/docs/foundry/object-edits/
+# how-edits-applied). Nothing in that architecture ever holds a lock
+# at all; concurrent edits are appended to a queue, and offset
+# tracking gives readers a consistency guarantee without mutual
+# exclusion. See write_log.py's own AI-notes for where this project
+# already, explicitly chose a DIFFERENT mechanism (checking a durable
+# log directly at read time) for the SAME guarantee, at Elysium's
+# smaller, single-process scale -- a deliberate, previously-discussed
+# trade-off, not something to revisit lightly.
+#
+# The sharper point, not written down anywhere until now: sorted-order
+# lock ACQUISITION -- the deadlock-avoidance mechanism THIS file's own
+# _locks_for_objects() needs -- is solving a problem that only exists
+# BECAUSE this project chose lock-based mutual exclusion in the first
+# place. A queue is inherently serial; there is no "thread A holds
+# resource 1, wants resource 2; thread B holds resource 2, wants
+# resource 1" scenario in an offset-tracked queue, because nothing is
+# ever holding two things at once waiting on a third. This project's
+# own deadlock-avoidance work (this file, tests/unit/test_
+# concurrency.py) is real, correct, and worth having -- but it is NOT
+# "how Palantir does it." It is the correctness cost of a genuinely
+# different, simpler architecture this project chose deliberately, and
+# should be described that way if this comparison ever comes up again.

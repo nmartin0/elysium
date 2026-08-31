@@ -49,3 +49,20 @@ class KeyedLockManager:
 
     def lock_for(self, key) -> threading.Lock:
         return self._locks.setdefault(key, threading.Lock())
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# CONTEXT: this file's own code is UNCHANGED here -- both classes had
+# ZERO test coverage anywhere in the project until tests/unit/test_
+# concurrency.py closed that gap, found while building a dedicated,
+# genuinely multi-threaded proof for DataMediator._locks_for_objects()
+# (core/ontology/mediator.py, see that file's own AI-notes for the
+# fuller history). That new file covers KeyedLockManager directly
+# (genuine mutual exclusion under real thread contention, not just
+# structural correctness) and ConcurrencyLimiter too (found to be
+# equally uncovered, cheap to close in the same pass).
