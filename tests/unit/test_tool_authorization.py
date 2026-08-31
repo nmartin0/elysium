@@ -8,15 +8,13 @@ tool call, not about the model's own step-selection.
 AgentLoop.run() takes a pre-resolved UserRecord now, not a raw user_id.
 """
 
-import json
-from unittest.mock import MagicMock
-
 import pytest
 
 from adapters.sqlite_adapter import SQLiteAdapter
 from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
+from tests.conftest import scripted_llm_client
 from tools.linear_regression import LinearRegressionTool
 
 TEST_USERS = {
@@ -42,16 +40,7 @@ def mediator(test_db_path, test_schema) -> DataMediator:
 
 
 def _loop_with_mocked_llm(mediator, scripted_steps):
-    client = MagicMock()
-    call_count = {"n": 0}
-
-    def fake_chat(*args, **kwargs):
-        idx = min(call_count["n"], len(scripted_steps) - 1)
-        call_count["n"] += 1
-        return json.dumps(scripted_steps[idx])
-
-    client.chat.side_effect = fake_chat
-    return AgentLoop(client, mediator, tools=[LinearRegressionTool()])
+    return AgentLoop(scripted_llm_client(scripted_steps), mediator, tools=[LinearRegressionTool()])
 
 
 def test_authorized_user_can_use_tool(mediator):

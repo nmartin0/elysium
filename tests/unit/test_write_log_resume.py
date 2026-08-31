@@ -31,9 +31,10 @@ import sqlite3
 import pytest
 
 from core.deployment_loader import _build_adapters
+from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
-from core.ontology import write_log
 from core.ontology.mediator import DataMediator
+from core.ontology.write_log import WriteLog
 from core.ontology.write_mediator import WriteMediator
 from tests.conftest import read_audit_log
 
@@ -69,7 +70,7 @@ def _record(user_id):
 
 
 @pytest.fixture
-def fixture(tmp_path):
+def fixture(tmp_path, isolated_audit_log):
     db_primary = tmp_path / "primary.db"
     conn = sqlite3.connect(db_primary)
     conn.executescript("""
@@ -88,16 +89,17 @@ def fixture(tmp_path):
     conn.commit()
     conn.close()
 
-    write_log_db_path = tmp_path / "write_log.db"
+    write_log = WriteLog(tmp_path / "write_log.db")
+    audit_log = AuditLog(isolated_audit_log / "audit.log")
 
     adapters = _build_adapters({
         "primary_sql": {"adapter": "sqlite", "connection": {"path": db_primary}},
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
     })
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Customer": "primary_sql"}, TEST_ROLES,
-                             write_log_db_path=write_log_db_path)
-    write_mediator = WriteMediator(mediator, TEST_ROLES, {}, write_log_db_path=write_log_db_path)
-    return mediator, write_mediator, write_log_db_path
+                             write_log=write_log, audit_log=audit_log)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, {})
+    return mediator, write_mediator, write_log
 
 
 def _direct_write(mediator, silo, table, id_column, id_value, column, value):
@@ -120,11 +122,11 @@ def test_resume_completes_a_write_that_never_applied(fixture):
     # Simulates the cleanest crash: the log entry was written, but the
     # process died before EITHER storage group's write_fields() call
     # ever ran -- both groups still hold their original, pre-write values.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"name": "New Name", "risk_score": 0.99}, {"name": "Ada Okafor", "risk_score": 0.42},
         "alice", "simulated crash before any group applied",
     )
@@ -138,7 +140,7 @@ def test_resume_completes_a_write_that_never_applied(fixture):
     # ...and the log entry is genuinely resolved, not just masking via
     # the read-merge -- get_field() would show the SAME values even if
     # the log were wiped entirely.
-    assert write_log.get_pending_changes(write_log_db_path, "Customer", "cust_001") is None
+    assert write_log.get_pending_changes("Customer", "cust_001") is None
 
 
 def test_resume_skips_already_applied_group_and_completes_the_other(fixture):
@@ -149,11 +151,11 @@ def test_resume_skips_already_applied_group_and_completes_the_other(fixture):
     # re-ran write_fields() for BOTH groups would incorrectly treat the
     # name group as a failure (its real value no longer matches the
     # OLD expected_current_values the conditional write checks against).
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"name": "New Name", "risk_score": 0.99}, {"name": "Ada Okafor", "risk_score": 0.42},
         "alice", "simulated crash after primary group applied, before MDO group",
     )
@@ -166,7 +168,7 @@ def test_resume_skips_already_applied_group_and_completes_the_other(fixture):
 
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "New Name"
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.99
-    assert write_log.get_pending_changes(write_log_db_path, "Customer", "cust_001") is None
+    assert write_log.get_pending_changes("Customer", "cust_001") is None
 
 
 def test_resume_when_every_group_already_applied(fixture):
@@ -174,10 +176,10 @@ def test_resume_when_every_group_already_applied(fixture):
     # write already committed, but BEFORE mark_applied() ran. Resume
     # should recognize this and simply close the entry out -- no group
     # gets a redundant write_fields() call.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
 
     write_log.log_pending_update(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"name": "New Name", "risk_score": 0.99}, {"name": "Ada Okafor", "risk_score": 0.42},
         "alice", "simulated crash after both groups applied, before mark_applied",
     )
@@ -186,17 +188,17 @@ def test_resume_when_every_group_already_applied(fixture):
 
     summary = write_mediator.resume_pending_writes()
     assert summary == {"resumed": 0, "already_applied": 1, "ambiguous": 0}
-    assert write_log.get_pending_changes(write_log_db_path, "Customer", "cust_001") is None
+    assert write_log.get_pending_changes("Customer", "cust_001") is None
 
 
 def test_resume_leaves_ambiguous_entry_pending_and_logs(fixture, isolated_audit_log):
     # The backend holds NEITHER the old nor the new value for
     # risk_score -- something else touched it between the crash and
     # recovery. Resume must NOT guess by overwriting either way.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
 
     write_log.log_pending_update(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"name": "New Name", "risk_score": 0.99}, {"name": "Ada Okafor", "risk_score": 0.42},
         "alice", "simulated external interference on risk_score",
     )
@@ -211,7 +213,7 @@ def test_resume_leaves_ambiguous_entry_pending_and_logs(fixture, isolated_audit_
     # OWN intended value for risk_score (the same safe, degraded state
     # as before recovery ran), and the real, unexpected 0.77 is left
     # completely untouched, not silently overwritten either direction.
-    assert write_log.get_pending_changes(write_log_db_path, "Customer", "cust_001") == {
+    assert write_log.get_pending_changes("Customer", "cust_001") == {
         "name": "New Name", "risk_score": 0.99
     }
     real_adapter = mediator.adapters["risk_sql"]
@@ -229,10 +231,10 @@ def test_resume_leaves_ambiguous_entry_pending_and_logs(fixture, isolated_audit_
 
 
 def test_resume_is_idempotent(fixture):
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
 
     write_log.log_pending_update(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"risk_score": 0.99}, {"risk_score": 0.42}, "alice", "test",
     )
 
@@ -246,11 +248,11 @@ def test_resume_is_idempotent(fixture):
 def test_resume_handles_a_single_storage_entry(fixture):
     # Not every pending entry spans multiple storages -- the common,
     # single-group case must resume correctly too, not just the MDO one.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"risk_score": 0.55}, {"risk_score": 0.42}, "alice", "single-storage crash",
     )
 

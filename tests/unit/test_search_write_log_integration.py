@@ -29,9 +29,10 @@ import sqlite3
 import pytest
 
 from core.deployment_loader import _build_adapters
+from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
-from core.ontology import write_log
 from core.ontology.mediator import DataMediator
+from core.ontology.write_log import WriteLog
 from core.ontology.write_mediator import WriteMediator
 
 TEST_SCHEMA = {
@@ -79,7 +80,7 @@ def _record(user_id):
 
 
 @pytest.fixture
-def fixture(tmp_path):
+def fixture(tmp_path, isolated_audit_log):
     # INTEGER ticket_id, deliberately -- see module docstring.
     db_path = tmp_path / "primary.db"
     conn = sqlite3.connect(db_path)
@@ -91,12 +92,13 @@ def fixture(tmp_path):
     conn.commit()
     conn.close()
 
-    write_log_db_path = tmp_path / "write_log.db"
+    write_log = WriteLog(tmp_path / "write_log.db")
+    audit_log = AuditLog(isolated_audit_log / "audit.log")
     adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db_path}}})
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES,
-                             write_log_db_path=write_log_db_path)
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES, write_log_db_path=write_log_db_path)
-    return mediator, write_mediator, write_log_db_path
+                             write_log=write_log, audit_log=audit_log)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    return mediator, write_mediator, write_log
 
 
 def test_search_with_no_pending_writes_is_unaffected(fixture):
@@ -110,11 +112,11 @@ def test_search_finds_object_by_its_new_pending_value(fixture):
     # Ticket 1 has a pending write changing status "open" -> "closed",
     # not yet applied to the real backend -- searching for "closed"
     # must find it anyway, matching what get_field() would already show.
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
+        "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
     # Confirmed: the REAL backend still has the old value.
@@ -141,11 +143,11 @@ def test_search_no_longer_finds_object_by_its_old_pending_value(fixture):
     # id bug caught during design: ticket 1 still matches "open" in the
     # REAL backend (transiently, until the write applies), but must NOT
     # be returned once its pending write says otherwise.
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
+        "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
     result = mediator.search_object(alice, "Ticket", {"status": "open"})
@@ -157,11 +159,11 @@ def test_search_reconciliation_considers_full_criteria_not_just_changed_fields(f
     # untouched. A multi-field search must merge the PENDING value for
     # status with the REAL, current value for priority, not just check
     # the field the pending write happens to change.
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
+        "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
     # Matches on BOTH the pending status AND the real, unaffected
@@ -178,23 +180,23 @@ def test_search_reconciliation_respects_rbac(fixture):
     # A newly-discovered match (via a pending write) must still go
     # through the SAME check_access() filter as any other candidate --
     # it doesn't bypass RBAC/MAC just because it was found via the log.
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     wrong_region_users = {"bob": {"region": "us-east", "role": "full"}}
     bob = resolve_user_record(wrong_region_users, "bob", "region")
 
     write_log.log_pending_update(
-        write_log_db_path, "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
+        "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
     assert mediator.search_object(bob, "Ticket", {"status": "closed"}) == []
 
 
 def test_search_ignores_pending_entries_for_a_different_object_type(fixture):
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "SomeOtherType", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
+        "SomeOtherType", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
     # Ticket 1's real status is genuinely "open" -- the OTHER type's
@@ -208,11 +210,11 @@ def test_search_ignores_pending_entries_for_a_different_object_type(fixture):
 def test_search_ignores_pending_entries_that_dont_touch_criteria_fields(fixture):
     # Ticket 1 has a pending write touching ONLY "priority" -- a search
     # on "status" alone has nothing to reconcile against it at all.
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Ticket", 1, {"priority": "high"}, {"priority": "low"}, "alice", "test",
+        "Ticket", 1, {"priority": "high"}, {"priority": "low"}, "alice", "test",
     )
 
     assert mediator.search_object(alice, "Ticket", {"status": "open"}) == [1]
@@ -225,11 +227,11 @@ def test_submission_criteria_sees_pending_value_not_stale_backend_state(fixture,
     # currently be closed" must see the PENDING "open" value and
     # correctly REJECT the reopen attempt, not the stale, real "closed"
     # that would incorrectly allow it.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Ticket", 2, {"status": "open"}, {"status": "closed"}, "alice",
+        "Ticket", 2, {"status": "open"}, {"status": "closed"}, "alice",
         "simulated in-flight update to ticket 2",
     )
 

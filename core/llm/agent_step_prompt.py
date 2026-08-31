@@ -41,7 +41,31 @@ from core.tools.interface import Tool
 
 logger = logging.getLogger(__name__)
 
-FINISH_STEP = {"step": "finish"}
+
+def _finish_step() -> dict:
+    # A fresh dict on every call, deliberately -- NOT a shared
+    # module-level constant returned by reference from every call site
+    # below (the earlier design). Every current caller only ever reads
+    # this (never mutates it), so nothing is broken by that design
+    # today -- but a single shared, mutable dict object handed out from
+    # SEVEN different call sites is a real, latent risk: one future
+    # in-place mutation anywhere would silently corrupt this "finish"
+    # signal for every subsequent call, for the rest of the process's
+    # lifetime, not just the one caller that mutated it. A fresh dict
+    # each time costs nothing and removes that risk entirely.
+    return {"step": "finish"}
+
+
+def _has_required_keys(parsed: dict, required: set, step_name: str) -> bool:
+    # THE single home for "does this parsed step have every key its own
+    # shape requires, else warn and fail closed" -- was repeated at
+    # every branch of next_step() below (search_object, get_field,
+    # use_tool, propose_action), identical decision each time, only the
+    # required set and step_name differing.
+    if not required.issubset(parsed.keys()):
+        logger.warning(f"malformed {step_name} step, finishing")
+        return False
+    return True
 
 
 def _describe_object_type(object_type: str, definition: dict) -> str:
@@ -340,24 +364,22 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         parsed = json.loads(raw_content)
     except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
         logger.warning(f"request/parse failed, finishing: {e}")
-        return FINISH_STEP
+        return _finish_step()
 
     step = parsed.get("step")
 
     if step == "finish":
-        return FINISH_STEP
+        return _finish_step()
 
     if step == "search_object":
-        if "object_type" not in parsed or "filter" not in parsed:
-            logger.warning("malformed search_object step, finishing")
-            return FINISH_STEP
+        if not _has_required_keys(parsed, {"object_type", "filter"}, "search_object"):
+            return _finish_step()
         return {"step": "search_object", "object_type": parsed["object_type"], "filter": parsed["filter"]}
 
     if step == "get_field":
         required = {"object_type", "object_id", "field_name"}
-        if not required.issubset(parsed.keys()):
-            logger.warning("malformed get_field step, finishing")
-            return FINISH_STEP
+        if not _has_required_keys(parsed, required, "get_field"):
+            return _finish_step()
         return {
             "step": "get_field",
             "object_type": parsed["object_type"],
@@ -366,9 +388,8 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         }
 
     if step == "use_tool":
-        if "tool_name" not in parsed or "args" not in parsed:
-            logger.warning("malformed use_tool step, finishing")
-            return FINISH_STEP
+        if not _has_required_keys(parsed, {"tool_name", "args"}, "use_tool"):
+            return _finish_step()
         return {"step": "use_tool", "tool_name": parsed["tool_name"], "args": parsed["args"]}
 
     if step == "propose_action":
@@ -381,9 +402,8 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # object_id is genuinely OPTIONAL here -- a "create"-operation
         # action has no existing object to reference at all.
         required = {"action_type", "parameters"}
-        if not required.issubset(parsed.keys()):
-            logger.warning("malformed propose_action step, finishing")
-            return FINISH_STEP
+        if not _has_required_keys(parsed, required, "propose_action"):
+            return _finish_step()
         return {
             "step": "propose_action",
             "action_type": parsed["action_type"],
@@ -392,4 +412,4 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         }
 
     logger.warning(f"unrecognized step {step!r}, finishing")
-    return FINISH_STEP
+    return _finish_step()

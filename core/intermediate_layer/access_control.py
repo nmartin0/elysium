@@ -35,7 +35,6 @@ Used by: core/ontology/mediator.py (every read), core/ontology/
          (every memory read)
 """
 
-from core.intermediate_layer.audit import log_access, log_security_resolution_failed
 from core.intermediate_layer.auth import UserRecord, authorize
 
 
@@ -58,8 +57,8 @@ def check_access(mediator, user_record: UserRecord, roles: dict,
         # distinction. See log_security_resolution_failed()'s own
         # docstring for the full reasoning.
         if mediator._get_security_value(object_type, object_id) is None:
-            log_security_resolution_failed(user_record.user_id, object_type, object_id)
+            mediator.audit_log.log_security_resolution_failed(user_record.user_id, object_type, object_id)
 
-    log_access(user_record.user_id, object_type, object_id, action, mac_allowed, rbac_allowed)
+    mediator.audit_log.log_access(user_record.user_id, object_type, object_id, action, mac_allowed, rbac_allowed)
 
     return mac_allowed and rbac_allowed

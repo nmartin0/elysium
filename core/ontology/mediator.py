@@ -50,7 +50,7 @@ an entirely different mechanism instead of generalizing one to cover
 both.
 
 Cross-database WRITE atomicity for an "update" is now solved, when
-write_log_db_path is configured -- see core/ontology/write_log.py's
+write_log is configured -- see core/ontology/write_log.py's
 own module docstring for the full mechanism (verified directly against
 Palantir Foundry's own actual approach, not assumed) and its still-real,
 explicitly stated remaining scope boundaries (multi-storage "create,"
@@ -104,14 +104,12 @@ Used by: scripts/run_deployment.py (via core/deployment_loader.py),
 """
 
 import threading
-from pathlib import Path
 from typing import Any
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
-from core.intermediate_layer.audit import log_access, log_unknown_reference
+from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
-from core.ontology import write_log
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.schema import (
     get_column_for_field,
@@ -120,28 +118,40 @@ from core.ontology.schema import (
     is_link_field,
     is_searchable_field,
 )
+from core.ontology.write_log import WriteLog
 
 
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, DataSiloAdapter],
                  silo_for_type: dict[str, str], roles: dict,
-                 write_log_db_path: Path | None = None):
+                 write_log: WriteLog | None = None,
+                 audit_log: AuditLog | None = None):
         self.schema = schema
         self.adapters = adapters
         self.silo_for_type = silo_for_type
         self.roles = roles
-        # Optional, defaulting to None -- unlike WriteMediator's own
-        # write_log_db_path (now required, see write_mediator.py's own
-        # __init__), this stays genuinely optional for a real, different
-        # reason: plenty of legitimate DataMediator constructions have
-        # nothing to do with writes at all (a read-only deployment, or
-        # any test exercising only reads). None means get_field() below
-        # never checks the log, identical to this class's behavior
-        # before the log existed. Threaded through from the SAME
-        # write_log_db_path a caller passes to WriteMediator when one
-        # IS constructed -- both must agree on the same physical file;
-        # WriteMediator.__init__() enforces this directly.
-        self.write_log_db_path = write_log_db_path
+        # Optional, defaulting to None -- plenty of legitimate
+        # DataMediator constructions have nothing to do with writes at
+        # all (a read-only deployment, or any test exercising only
+        # reads). None means get_field() below never checks the log,
+        # identical to this class's behavior before the log existed.
+        # The SAME instance a caller passes to WriteMediator when one
+        # IS constructed -- WriteMediator now reads self.mediator.write_log
+        # directly rather than taking its own, separately-passed copy,
+        # so there is only ever one WriteLog per deployment, not two
+        # values that could accidentally drift apart.
+        self.write_log = write_log
+        # UNLIKE write_log above, this is NEVER None -- audit logging is
+        # a core security requirement this project treats as always-on,
+        # not an opt-in capability (see AuditLog's own module docstring
+        # for the full reasoning, and why its class-level default path
+        # is a deliberate, narrower exception to this project's usual
+        # "no defaults for per-deployment stores" rule). A caller not
+        # providing one still gets a real, working AuditLog, writing to
+        # a sensible default location, rather than every method below
+        # needing an "if audit_log is not None" guard the way write_log
+        # genuinely does.
+        self.audit_log = audit_log if audit_log is not None else AuditLog()
 
         self._write_limiters = {
             silo_name: ConcurrencyLimiter(adapter.max_concurrent_writes)
@@ -364,8 +374,8 @@ class DataMediator:
         # delegates to get_field_column() for anything that isn't the
         # id_field -- so this is a behavior-preserving generalization,
         # not a divergence, for get_field()'s own existing use.
-        if self.write_log_db_path is not None:
-            pending_changes = write_log.get_pending_changes(self.write_log_db_path, object_type, object_id)
+        if self.write_log is not None:
+            pending_changes = self.write_log.get_pending_changes(object_type, object_id)
             if pending_changes is not None and field_name in pending_changes:
                 return pending_changes[field_name]
         column = get_column_for_field(resolved_type_config, field_name)
@@ -409,10 +419,10 @@ class DataMediator:
             # a third log shape for what's still fundamentally the same
             # kind of access decision.
             if object_type not in self.schema:
-                log_unknown_reference(user_record.user_id, object_type)
+                self.audit_log.log_unknown_reference(user_record.user_id, object_type)
             else:
-                log_access(user_record.user_id, object_type, None, f"read:{object_type}",
-                           mac_allowed=None, rbac_allowed=False)
+                self.audit_log.log_access(user_record.user_id, object_type, None, f"read:{object_type}",
+                                           mac_allowed=None, rbac_allowed=False)
             return []
 
         valid_columns = self._filterable_columns(object_type, visible_type_def)
@@ -458,10 +468,10 @@ class DataMediator:
         # WRONGLY included in a search for the old value it's about to
         # stop having (the real row still matches, transiently).
         #
-        # Only ever runs when write_log_db_path is configured -- see
+        # Only ever runs when write_log is configured -- see
         # this class's own __init__ for why None means completely
         # unchanged, pre-log behavior, same as get_field()'s own guard.
-        if self.write_log_db_path is None:
+        if self.write_log is None:
             return candidate_ids
 
         # Every entry system-wide, not scoped to this object_type --
@@ -475,7 +485,7 @@ class DataMediator:
         # type-scoped query later if it matters, not assumed to matter
         # now.
         relevant_entries = [
-            entry for entry in write_log.get_pending_entries(self.write_log_db_path)
+            entry for entry in self.write_log.get_pending_entries()
             if entry["object_type"] == object_type and set(entry["changes"]) & set(criteria)
         ]
         if not relevant_entries:
@@ -556,7 +566,7 @@ class DataMediator:
             # Distinguishes, for auditing, a genuinely unknown
             # object_type from an ordinary RBAC/MAC denial -- see
             # log_unknown_reference()'s own docstring.
-            log_unknown_reference(user_record.user_id, object_type)
+            self.audit_log.log_unknown_reference(user_record.user_id, object_type)
             return None
 
         action = f"read:{object_type}.{field_name}"
@@ -577,7 +587,7 @@ class DataMediator:
             # field name) this logging exists to catch. Determining
             # field_exists independently, and logging it independently
             # of access_allowed, is what actually achieves that.
-            log_unknown_reference(user_record.user_id, object_type, field_name)
+            self.audit_log.log_unknown_reference(user_record.user_id, object_type, field_name)
 
         if not access_allowed or not field_exists:
             return None

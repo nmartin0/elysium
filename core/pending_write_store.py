@@ -24,12 +24,20 @@ touch rather than on a fixed timer, costs nothing real, and avoids
 needing a genuine asyncio background task (which would need a real
 startup hook to launch correctly, adding real complexity for no
 practical benefit at this volume). Every expiry found this way is
-logged via audit.log_write_expired() -- a proposal that's abandoned
+logged via audit_log.log_write_expired() -- a proposal that's abandoned
 still leaves a real trace, not silent disappearance.
 
 pop() is uniform-denial on purpose: wrong user, unknown ID, and
 expired ID all return the SAME None -- same principle used everywhere
 else in this project (see core/ontology/mediator.py's docstring).
+
+audit_log is genuinely explicit here, not read back from a mediator
+the way WriteMediator/AgentLoop now do (see their own audit_log
+properties) -- this store has no mediator reference at all, nothing
+to read one back from; defaults to a fresh AuditLog() (its own
+class-level default path) the same way DataMediator itself does when
+not given one explicitly, for the identical reason -- see AuditLog's
+own module docstring.
 
 Used by: api/app.py (one instance, stored on app.state, same lifecycle
          as everything else built once at startup), api/routes.py
@@ -40,7 +48,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from core.intermediate_layer.audit import log_write_expired
+from core.intermediate_layer.audit import AuditLog
 from core.ontology.write_mediator import PendingWrite
 
 DEFAULT_TTL = timedelta(minutes=15)
@@ -54,8 +62,9 @@ class _StoredWrite:
 
 
 class PendingWriteStore:
-    def __init__(self, ttl: timedelta = DEFAULT_TTL):
+    def __init__(self, ttl: timedelta = DEFAULT_TTL, audit_log: AuditLog | None = None):
         self._ttl = ttl
+        self._audit_log = audit_log if audit_log is not None else AuditLog()
         self._lock = threading.Lock()
         self._writes: dict[str, _StoredWrite] = {}
 
@@ -65,7 +74,7 @@ class PendingWriteStore:
         expired_ids = [write_id for write_id, stored in self._writes.items() if now >= stored.expires_at]
         for write_id in expired_ids:
             stored = self._writes.pop(write_id)
-            log_write_expired(write_id, stored.owner_user_id, stored.pending.description)
+            self._audit_log.log_write_expired(write_id, stored.owner_user_id, stored.pending.description)
 
     def store(self, pending: PendingWrite) -> str:
         write_id = str(uuid.uuid4())

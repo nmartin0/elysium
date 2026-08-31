@@ -32,8 +32,13 @@ credentials.db locally; /var/lib/elysium/credentials.db under a real
 install) -- runtime state, not config, same reasoning that keeps
 config_dir and data_dir independent throughout core/deployment_loader.py.
 
-Logging is configured here too, via configure_audit_log() -- api/ is a
-real entry point, same as scripts/run_deployment.py.
+Logging is now wired through directly, not configured separately --
+load_deployment_bundle() below builds the ONE shared AuditLog instance
+mediator itself owns; app.state.pending_writes reads it back from
+mediator, same "shared instance, not a separate copy" discipline as
+write_log/credential_store/session_store/user_directory. See
+core/intermediate_layer/audit.py's own module docstring for why this
+replaced the old module-level configure_audit_log() global entirely.
 
 app.state.executor is OUR OWN explicit ThreadPoolExecutor, sized from
 config.max_concurrent_requests -- the SAME config value and the SAME
@@ -75,10 +80,12 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from core.agent.agentic_loop import AgentLoop
+from core.auth.credential_store import CredentialStore
+from core.auth.session_store import SessionStore
 from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
-from core.intermediate_layer.audit import configure_audit_log
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
+from core.user_directory import UserDirectory
 
 logger = logging.getLogger(__name__)
 
@@ -91,28 +98,34 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
-    configure_audit_log(runtime_paths.log_dir)
-    config, mediator = load_deployment_bundle(runtime_paths.config_dir, runtime_paths.data_dir)
+    config, mediator = load_deployment_bundle(
+        runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
+    )
 
     app.state.config = config
     app.state.mediator = mediator
+    # Kept alongside the three stores below for tests/integration/
+    # test_api.py's own direct, HTTP-bypassing test-setup DB access --
+    # a genuinely different, legitimate need from route handlers, which
+    # should use the shared store instances instead of re-deriving this
+    # path and calling a free function on every single request.
     app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
-    # mediator.write_log_db_path is typed Path | None generally
-    # (DataMediator's own copy is genuinely optional -- see its own
-    # docstring), but load_deployment_bundle() ALWAYS sets a real one
-    # for every deployment it builds -- this check makes that
-    # guarantee explicit and real (not assert, which strips under
-    # python -O) rather than silently relying on it, and satisfies
-    # WriteMediator's own required, non-optional parameter type.
-    if mediator.write_log_db_path is None:
-        raise ValueError("mediator.write_log_db_path must be set -- load_deployment_bundle() should have set it")
     # Built ONCE -- see module docstring for why this must not be
-    # reconstructed per request. Must be the SAME write_log_db_path
-    # `mediator` was already constructed with, inside
-    # load_deployment_bundle() -- WriteMediator.__init__() enforces
-    # this directly if it's ever wrong.
-    app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types,
-                                              write_log_db_path=mediator.write_log_db_path)
+    # reconstructed per request, same reasoning as write_mediator
+    # below. Every route now goes through these instances rather than
+    # re-deriving credentials_db_path and calling a free function each
+    # time -- see core/auth/credential_store.py, core/auth/session_store.py,
+    # and core/user_directory.py's own docstrings for the full reasoning.
+    app.state.credential_store = CredentialStore(app.state.credentials_db_path)
+    app.state.session_store = SessionStore(app.state.credentials_db_path)
+    app.state.user_directory = UserDirectory(app.state.credentials_db_path, config.roles)
+    # Built ONCE -- see module docstring for why this must not be
+    # reconstructed per request. Reads its own write_log directly from
+    # mediator (see WriteMediator's own write_log property) -- nothing
+    # to pass or verify matches here; load_deployment_bundle() always
+    # constructs mediator with a real write_log, and WriteMediator's
+    # own __init__ raises a clear error if that were ever not true.
+    app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types)
     # THE resume-on-startup half of crash recovery -- see
     # WriteMediator.resume_pending_writes()'s own docstring for the
     # full mechanism. Runs ONCE, here, before this app ever serves a
@@ -131,7 +144,12 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.loop = AgentLoop.from_deployment(config, mediator, write_mediator=app.state.write_mediator)
     app.state.synthesis_client = build_llm_adapter(config, config.synthesis_model)
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
-    app.state.pending_writes = PendingWriteStore()
+    # Shares the SAME AuditLog instance mediator itself holds -- not a
+    # second, separately-constructed one that happens to point at the
+    # same file, matching the "one shared instance" discipline this
+    # whole app.state build already uses for write_log/credential_store/
+    # session_store/user_directory.
+    app.state.pending_writes = PendingWriteStore(audit_log=mediator.audit_log)
 
     from api.routes import router
     app.include_router(router)

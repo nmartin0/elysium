@@ -16,24 +16,31 @@ real install, via ELYSIUM_CONFIG_DIR/ELYSIUM_DATA_DIR/ELYSIUM_LOG_DIR --
 see scripts/install.sh). This script itself never needs to know which
 mode it's running in.
 
+run_deployment() takes an OPTIONAL runtime_paths, resolved lazily
+inside it when not given, rather than a module-level global resolved
+once at import time -- see scripts/serve_requests.py's own docstring
+for the identical reasoning (matches api/app.py's own
+create_app(runtime_paths) pattern). resolve_runtime_paths() is called
+exactly once either way -- inside run_deployment() itself when
+__main__ below calls it with no arguments, the normal case -- not
+baked in at import time before a caller could ever override it.
+
 Run from the project root:
     python3 -m scripts.run_deployment
 """
 
 from core.agent.agentic_loop import AgentLoop
 from core.deployment_loader import (
+    RuntimePaths,
     build_llm_adapter,
     load_deployment_bundle,
     load_example_queries,
     resolve_runtime_paths,
 )
-from core.intermediate_layer.audit import configure_audit_log
 from core.intermediate_layer.auth import resolve_user_record
 from core.llm.synthesis_prompt import synthesize_insight
 from core.logging_config import configure_logging
 from core.ontology.write_mediator import PendingWrite, WriteMediator
-
-RUNTIME_PATHS = resolve_runtime_paths()
 
 
 def _terminal_confirm_write(pending: PendingWrite) -> bool:
@@ -49,24 +56,23 @@ def _terminal_confirm_write(pending: PendingWrite) -> bool:
     return answer == "y"
 
 
-def run_deployment() -> None:
-    config, mediator = load_deployment_bundle(RUNTIME_PATHS.config_dir, RUNTIME_PATHS.data_dir)
-    examples = load_example_queries(RUNTIME_PATHS.config_dir)
+def run_deployment(runtime_paths: RuntimePaths | None = None) -> None:
+    if runtime_paths is None:
+        runtime_paths = resolve_runtime_paths()
+    config, mediator = load_deployment_bundle(
+        runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
+    )
+    examples = load_example_queries(runtime_paths.config_dir)
 
     # Always wired up -- the actual gate is policy.yaml's roles, not
     # whether write plumbing exists. A deployment granting no role any
     # write: permission (the default) simply sees every proposed write
     # denied via the same PermissionError path already covered by
-    # tests/unit/test_write_mediator.py -- harmless either way.
-    # mediator.write_log_db_path is typed Path | None generally
-    # (DataMediator's own copy is genuinely optional), but
-    # load_deployment_bundle() ALWAYS sets a real one -- this check
-    # makes that guarantee explicit rather than silently relying on
-    # it, and satisfies WriteMediator's own required parameter type.
-    if mediator.write_log_db_path is None:
-        raise ValueError("mediator.write_log_db_path must be set -- load_deployment_bundle() should have set it")
-    write_mediator = WriteMediator(mediator, config.roles, config.action_types,
-                                    write_log_db_path=mediator.write_log_db_path)
+    # tests/unit/test_write_mediator.py -- harmless either way. Reads
+    # its own write_log directly from mediator (see WriteMediator's
+    # own write_log property) -- nothing to pass or verify matches
+    # here.
+    write_mediator = WriteMediator(mediator, config.roles, config.action_types)
     # THE resume-on-startup half of crash recovery -- see
     # WriteMediator.resume_pending_writes()'s own docstring for the
     # full mechanism. Runs ONCE, here, before any example query in this
@@ -118,5 +124,4 @@ def run_deployment() -> None:
 
 if __name__ == "__main__":
     configure_logging()
-    configure_audit_log(RUNTIME_PATHS.log_dir)
     run_deployment()

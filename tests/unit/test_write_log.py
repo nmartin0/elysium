@@ -2,19 +2,18 @@
 Tests for core/ontology/write_log.py's atomicity mechanism -- proves
 the NEW capability directly: an "update" whose mutations touch fields
 on genuinely DIFFERENT storages (MDO's column-wise case) now succeeds,
-rather than being rejected outright, when write_log_db_path is
-configured. See write_log.py's own module docstring for the full
-mechanism and its current, deliberate scope boundary (update only;
-"create," crash recovery, and search_object() integration all
-explicitly deferred).
+rather than being rejected outright, when write_log is configured. See
+write_log.py's own module docstring for the full mechanism and its
+current, deliberate scope boundary (update only; "create," crash
+recovery, and search_object() integration all explicitly deferred).
 
 Deliberately a SEPARATE fixture from tests/unit/test_mdo.py, not a
-reuse of it -- this one threads write_log_db_path through both
-DataMediator and WriteMediator, which test_mdo.py's fixture does NOT
-do on purpose: test_mdo.py's own test_action_mixing_fields_from_
+reuse of it -- this one threads write_log through both DataMediator
+and WriteMediator, which test_mdo.py's fixture does NOT do on purpose:
+test_mdo.py's own test_action_mixing_fields_from_
 different_storages_is_rejected specifically proves the ORIGINAL,
 direct-write fallback still correctly rejects multi-storage writes
-when no write_log_db_path is configured -- that test's correctness
+when no write_log is configured -- that test's correctness
 depends on this file's new capability NOT leaking into it.
 
 alice: region us-west, full grants across both storages -- same
@@ -27,8 +26,8 @@ import pytest
 
 from core.deployment_loader import _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
-from core.ontology import write_log
 from core.ontology.mediator import DataMediator
+from core.ontology.write_log import WriteLog
 from core.ontology.write_mediator import WriteMediator
 
 TEST_SCHEMA = {
@@ -103,17 +102,15 @@ def fixture(tmp_path):
     conn.commit()
     conn.close()
 
-    write_log_db_path = tmp_path / "write_log.db"
+    write_log = WriteLog(tmp_path / "write_log.db")
 
     adapters = _build_adapters({
         "primary_sql": {"adapter": "sqlite", "connection": {"path": db_primary}},
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
     })
-    mediator = DataMediator(TEST_SCHEMA, adapters, {"Customer": "primary_sql"}, TEST_ROLES,
-                             write_log_db_path=write_log_db_path)
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES,
-                                    write_log_db_path=write_log_db_path)
-    return mediator, write_mediator, write_log_db_path
+    mediator = DataMediator(TEST_SCHEMA, adapters, {"Customer": "primary_sql"}, TEST_ROLES, write_log=write_log)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    return mediator, write_mediator, write_log
 
 
 def test_multi_storage_update_succeeds_via_the_log(fixture):
@@ -135,7 +132,7 @@ def test_multi_storage_update_succeeds_via_the_log(fixture):
 
 def test_single_storage_update_still_works_via_the_log_path(fixture):
     # The common case (one storage) must keep working correctly when
-    # write_log_db_path IS configured, not just the multi-storage case
+    # write_log IS configured, not just the multi-storage case
     # -- _group_changes_by_storage() should produce exactly one group
     # here, and the whole flow should behave identically to before.
     mediator, write_mediator, _ = fixture
@@ -157,11 +154,11 @@ def test_read_during_pending_window_sees_the_intended_value(fixture):
     # groups' own writes), then confirms get_field() returns the
     # LOGGED, intended value for a field that has NOT actually been
     # written to its real backend yet at all.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_update(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"risk_score": 0.55}, {"risk_score": 0.42}, "alice", "simulated in-flight update",
     )
 
@@ -180,13 +177,13 @@ def test_read_after_apply_no_longer_consults_the_log(fixture):
     # After a full, successful confirm_and_execute(), the log entry is
     # marked applied -- a subsequent read must reflect the REAL
     # backend, not linger on the log at all.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "UpdateRiskScore", "cust_001", {"new_score": 0.88})
     write_mediator.confirm_and_execute(pending, approved=True)
 
-    assert write_log.get_pending_changes(write_log_db_path, "Customer", "cust_001") is None
+    assert write_log.get_pending_changes("Customer", "cust_001") is None
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.88
 
 
@@ -209,11 +206,11 @@ def test_expected_current_values_lost_update_check_still_works(fixture):
 
 
 def test_log_entry_marked_applied_not_left_pending(fixture):
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "UpdateNameAndRiskScore", "cust_001",
                                              {"new_name": "Another Name", "new_score": 0.33})
     write_mediator.confirm_and_execute(pending, approved=True)
 
-    assert write_log.get_pending_changes(write_log_db_path, "Customer", "cust_001") is None
+    assert write_log.get_pending_changes("Customer", "cust_001") is None

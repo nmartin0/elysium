@@ -16,7 +16,9 @@ from adapters.sqlite_adapter import SQLiteAdapter
 from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
+from core.ontology.write_log import WriteLog
 from core.ontology.write_mediator import WriteMediator
+from tests.conftest import scripted_llm_client
 
 TEST_USERS = {
     "alice": {"org_id": "org-a", "role": "editor"},
@@ -44,24 +46,14 @@ def _record(user_id):
 def mediator_and_write_mediator(test_db_path, test_schema, tmp_path):
     adapter = SQLiteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
-    write_log_db_path = tmp_path / "write_log.db"
-    mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES,
-                             write_log_db_path=write_log_db_path)
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES, write_log_db_path=write_log_db_path)
+    write_log = WriteLog(tmp_path / "write_log.db")
+    mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES, write_log=write_log)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     return mediator, write_mediator
 
 
 def _loop_with_mocked_llm(mediator, write_mediator, scripted_steps):
-    client = MagicMock()
-    call_count = {"n": 0}
-
-    def fake_chat(*args, **kwargs):
-        idx = min(call_count["n"], len(scripted_steps) - 1)
-        call_count["n"] += 1
-        return json.dumps(scripted_steps[idx])
-
-    client.chat.side_effect = fake_chat
-    return AgentLoop(client, mediator, write_mediator=write_mediator)
+    return AgentLoop(scripted_llm_client(scripted_steps), mediator, write_mediator=write_mediator)
 
 
 def test_propose_action_stops_the_loop_immediately(mediator_and_write_mediator):

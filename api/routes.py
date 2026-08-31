@@ -69,7 +69,7 @@ permission at all).
 a lost device, not sure which token is compromised). /users/{username}/
 logout-all does the same for an admin, targeting anyone -- gated by
 manage:users, same as every other account-management action below.
-Both call the SAME core.auth.session_store.invalidate_all_sessions();
+Both call the SAME SessionStore.invalidate_all_sessions();
 deliberately revokes ALL sessions including whichever one made the
 request, not "all except this one" -- simpler, and matches the
 project's "if in doubt, everyone re-authenticates" discipline.
@@ -118,23 +118,10 @@ from pydantic import BaseModel
 
 from api.auth_dependency import get_current_user
 from core.agent.agentic_loop import AgentLoop
-from core.auth.credential_store import verify_credential
-from core.auth.session_store import create_session, invalidate_all_sessions, invalidate_session
-from core.intermediate_layer.audit import log_query_cancelled
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
-from core.user_directory import (
-    create_user,
-    delete_user,
-    disable_user,
-    enable_user,
-    get_user_record,
-    is_user_disabled,
-    list_users,
-    user_exists,
-)
 
 router = APIRouter()
 
@@ -169,7 +156,9 @@ class ConfirmWriteRequest(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, request: Request) -> LoginResponse:
-    db_path = request.app.state.credentials_db_path
+    credential_store = request.app.state.credential_store
+    session_store = request.app.state.session_store
+    user_directory = request.app.state.user_directory
 
     # Credential check ALWAYS runs first, unconditionally -- checking
     # is_user_disabled() before this and short-circuiting for a
@@ -178,17 +167,17 @@ def login(body: LoginRequest, request: Request) -> LoginResponse:
     # leaking "this account exists and is disabled" through response
     # timing alone, even with an identical error message). Same timing-
     # safety principle verify_credential() itself already follows.
-    if not verify_credential(db_path, body.username, body.password):
+    if not credential_store.verify_credential(body.username, body.password):
         # Generic on purpose -- see module docstring.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    if is_user_disabled(db_path, body.username):
+    if user_directory.is_user_disabled(body.username):
         # SAME message as a wrong password -- a disabled account must
         # not be distinguishable from one that simply doesn't exist or
         # was given the wrong password.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    token = create_session(db_path, body.username)
+    token = session_store.create_session(body.username)
     return LoginResponse(token=token)
 
 
@@ -200,7 +189,7 @@ def logout(request: Request, authorization: str | None = Header(default=None)) -
     # the shared auth dependency for one caller.
     if authorization is not None and authorization.startswith("Bearer "):
         token = authorization.removeprefix("Bearer ")
-        invalidate_session(request.app.state.credentials_db_path, token)
+        request.app.state.session_store.invalidate_session(token)
     # No error even if the header was missing/malformed -- logging out
     # of a session that isn't valid anyway isn't a meaningful failure.
 
@@ -209,25 +198,24 @@ def logout(request: Request, authorization: str | None = Header(default=None)) -
 def logout_all(request: Request, current_user: UserRecord = Depends(get_current_user)) -> None:
     # Self-service -- revokes EVERY session for the caller, including
     # whichever one made this request. See module docstring.
-    invalidate_all_sessions(request.app.state.credentials_db_path, current_user.user_id)
+    request.app.state.session_store.invalidate_all_sessions(current_user.user_id)
 
 
 @router.get("/users")
 def list_users_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
     _require_manage_users(request, current_user)
-    return list_users(request.app.state.credentials_db_path)
+    return request.app.state.user_directory.list_users()
 
 
 @router.post("/users", status_code=201)
 def create_user_route(body: CreateUserRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:
-    roles = request.app.state.config.roles
-    if not authorize(current_user, roles, "manage:users"):
-        raise HTTPException(status_code=403, detail="Not authorized to manage users")
+    _require_manage_users(request, current_user)
 
-    db_path = request.app.state.credentials_db_path
     try:
-        create_user(db_path, roles, body.username, body.password, body.mac_value, body.role_name)
+        request.app.state.user_directory.create_user(
+            body.username, body.password, body.mac_value, body.role_name
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -247,11 +235,11 @@ def visible_schema_route(username: str, request: Request,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
     _require_manage_users(request, current_user)
 
-    db_path = request.app.state.credentials_db_path
-    if not user_exists(db_path, username):
+    user_directory = request.app.state.user_directory
+    if not user_directory.user_exists(username):
         raise HTTPException(status_code=404, detail=f"Unknown user {username!r}")
 
-    target_record = get_user_record(db_path, username)
+    target_record = user_directory.get_user_record(username)
     mediator = request.app.state.mediator
     return mediator.visible_schema(target_record)
 
@@ -260,7 +248,7 @@ def visible_schema_route(username: str, request: Request,
 def logout_all_for_user(username: str, request: Request,
                          current_user: UserRecord = Depends(get_current_user)) -> None:
     _require_manage_users(request, current_user)
-    invalidate_all_sessions(request.app.state.credentials_db_path, username)
+    request.app.state.session_store.invalidate_all_sessions(username)
 
 
 @router.post("/users/{username}/disable", status_code=204)
@@ -268,7 +256,7 @@ def disable_user_route(username: str, request: Request,
                         current_user: UserRecord = Depends(get_current_user)) -> None:
     _require_manage_users(request, current_user)
     try:
-        disable_user(request.app.state.credentials_db_path, username)
+        request.app.state.user_directory.disable_user(username)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
@@ -278,7 +266,7 @@ def enable_user_route(username: str, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> None:
     _require_manage_users(request, current_user)
     try:
-        enable_user(request.app.state.credentials_db_path, username)
+        request.app.state.user_directory.enable_user(username)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
@@ -288,7 +276,7 @@ def delete_user_route(username: str, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> None:
     _require_manage_users(request, current_user)
     try:
-        delete_user(request.app.state.credentials_db_path, username)
+        request.app.state.user_directory.delete_user(username)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
@@ -322,13 +310,14 @@ async def query(body: QueryRequest, request: Request,
         watcher_task.cancel()
 
     if result.cancelled:
-        log_query_cancelled(current_user.user_id, body.query, len(result.gathered))
+        request.app.state.mediator.audit_log.log_query_cancelled(
+            current_user.user_id, body.query, len(result.gathered)
+        )
         raise HTTPException(status_code=499, detail="Client disconnected")
 
     # THE re-verification -- see module docstring. Applies before
     # EITHER branch below.
-    db_path = request.app.state.credentials_db_path
-    current_record_now = get_user_record(db_path, current_user.user_id)
+    current_record_now = request.app.state.user_directory.get_user_record(current_user.user_id)
     if current_record_now != current_user:
         raise HTTPException(
             status_code=409,

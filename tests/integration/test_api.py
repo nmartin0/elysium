@@ -37,7 +37,6 @@ from fastapi.testclient import TestClient
 from api.app import create_app
 from core.deployment_loader import RuntimePaths
 from core.intermediate_layer.auth import UserRecord
-from core.user_directory import create_user
 
 pytestmark = pytest.mark.mocked_llm
 
@@ -67,9 +66,7 @@ def _login(client, username, password):
 
 
 def test_login_wrong_password_and_nonexistent_username_are_identical(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
 
     wrong_pw = _login(client, "alice", "wrong-pw")
     nonexistent = _login(client, "totally_fake_user", "anything")
@@ -79,9 +76,7 @@ def test_login_wrong_password_and_nonexistent_username_are_identical(client):
 
 
 def test_login_success_returns_a_real_token(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
 
     response = _login(client, "alice", "correct-pw")
     assert response.status_code == 200
@@ -94,9 +89,7 @@ def test_query_without_token_is_rejected(client):
 
 
 def test_create_user_without_manage_users_grant_is_rejected(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.post(
@@ -107,9 +100,7 @@ def test_create_user_without_manage_users_grant_is_rejected(client):
 
 
 def test_create_user_with_manage_users_grant_succeeds_and_new_user_can_log_in(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "admin_user", "adminpass", None, "admin")
+    client.app.state.user_directory.create_user("admin_user", "adminpass", None, "admin")
     token = _login(client, "admin_user", "adminpass").json()["token"]
 
     create_response = client.post(
@@ -125,9 +116,7 @@ def test_create_user_with_manage_users_grant_succeeds_and_new_user_can_log_in(cl
 
 
 def test_logout_invalidates_the_token(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     logout_response = client.post("/logout", headers={"Authorization": f"Bearer {token}"})
@@ -138,11 +127,9 @@ def test_logout_invalidates_the_token(client):
 
 
 def test_query_end_to_end_with_mocked_llm(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
     # fixtures/policy.yaml's customer_service role already includes
     # read:Customer.name -- no runtime role patching needed.
-    create_user(db_path, roles, "alice", "correct-pw", "us-west", "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     # Real data must actually be gathered for synthesis to call the LLM
@@ -176,13 +163,22 @@ def test_query_end_to_end_with_mocked_llm(client):
 def test_query_refuses_if_permissions_changed_during_processing(client):
     # Simulates a role revoked WHILE a query was running -- deterministic,
     # not a real timing-dependent race: mocks the re-verification's own
-    # lookup (api.routes.get_user_record) to return a DIFFERENT record
+    # lookup (UserDirectory.get_user_record) to return a DIFFERENT record
     # than what actually authenticated the request, proving the
     # comparison logic itself refuses to return data in that case,
     # rather than relying on a flaky real race condition to occur.
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", "us-west", "customer_service")
+    #
+    # get_user_record() is now called TWICE per request -- once by
+    # get_current_user() (authentication, BEFORE the route handler even
+    # runs) and once by the route's own re-verification check -- both
+    # through the SAME UserDirectory instance/method. A plain
+    # return_value mock would make BOTH calls see the changed record,
+    # including authentication itself, which would silently defeat this
+    # test (the re-verification would then compare the changed record
+    # against ITSELF, never catching a real mismatch). side_effect with
+    # two distinct values makes the first call (auth) see the REAL
+    # record and only the second (re-verification) see the changed one.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     def fake_post(*args, **kwargs):
@@ -191,12 +187,13 @@ def test_query_refuses_if_permissions_changed_during_processing(client):
         response.raise_for_status.return_value = None
         return response
 
+    real_record = UserRecord(user_id="alice", security_value="us-west", role_name="customer_service")
     # A DIFFERENT record (role changed from customer_service to None)
     # than what the request actually authenticated with.
     changed_record = UserRecord(user_id="alice", security_value="us-west", role_name=None)
 
     with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post), \
-         patch("api.routes.get_user_record", return_value=changed_record):
+         patch("core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]):
         response = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 409
@@ -222,9 +219,7 @@ def _propose_action(client, token, new_name="Updated Name"):
 
 
 def test_query_proposing_an_action_returns_202_with_a_reference(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", "us-west", "editor")
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = _propose_action(client, token)
@@ -236,9 +231,7 @@ def test_query_proposing_an_action_returns_202_with_a_reference(client):
 
 
 def test_confirming_an_approved_action_actually_changes_the_database(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", "us-west", "editor")
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     write_id = _propose_action(client, token).json()["pending_write"]["id"]
@@ -260,9 +253,7 @@ def test_confirming_an_approved_action_actually_changes_the_database(client):
 
 
 def test_confirming_a_rejected_action_does_not_change_the_database(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", "us-west", "editor")
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     write_id = _propose_action(client, token).json()["pending_write"]["id"]
@@ -281,10 +272,8 @@ def test_confirming_a_rejected_action_does_not_change_the_database(client):
 
 
 def test_confirm_with_wrong_user_and_unknown_id_are_identical(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", "us-west", "editor")
-    create_user(db_path, roles, "eve", "correct-pw", "us-west", "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    client.app.state.user_directory.create_user("eve", "correct-pw", "us-west", "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
     eve_token = _login(client, "eve", "correct-pw").json()["token"]
 
@@ -304,17 +293,13 @@ def test_confirm_with_wrong_user_and_unknown_id_are_identical(client):
 
 
 def _make_admin(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    roles["admin"] = {"allowed_actions": frozenset(["manage:users"])}
-    create_user(db_path, roles, "admin_user", "adminpass", None, "admin")
+    client.app.state.config.roles["admin"] = {"allowed_actions": frozenset(["manage:users"])}
+    client.app.state.user_directory.create_user("admin_user", "adminpass", None, "admin")
     return _login(client, "admin_user", "adminpass").json()["token"]
 
 
 def test_list_users_requires_manage_users(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.get("/users", headers={"Authorization": f"Bearer {alice_token}"})
@@ -322,9 +307,7 @@ def test_list_users_requires_manage_users(client):
 
 
 def test_list_users_returns_non_sensitive_metadata_only(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", "us-west", "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     admin_token = _make_admin(client)
 
     response = client.get("/users", headers={"Authorization": f"Bearer {admin_token}"})
@@ -341,9 +324,7 @@ def test_list_users_returns_non_sensitive_metadata_only(client):
 
 
 def test_logout_all_revokes_every_session_for_the_caller(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     token1 = _login(client, "alice", "correct-pw").json()["token"]
     token2 = _login(client, "alice", "correct-pw").json()["token"]
 
@@ -356,9 +337,7 @@ def test_logout_all_revokes_every_session_for_the_caller(client):
 
 
 def test_admin_logout_all_for_a_target_user_requires_manage_users(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
 
     # alice herself has no manage:users grant.
@@ -367,9 +346,7 @@ def test_admin_logout_all_for_a_target_user_requires_manage_users(client):
 
 
 def test_admin_logout_all_for_a_target_user_works(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
     admin_token = _make_admin(client)
 
@@ -381,12 +358,10 @@ def test_admin_logout_all_for_a_target_user_works(client):
 
 
 def test_visible_schema_debug_view_shows_what_the_target_user_can_see(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    roles["customer_service"] = {"allowed_actions": [
+    client.app.state.config.roles["customer_service"] = {"allowed_actions": [
         "read:Customer", "read:Customer.customer_id", "read:Customer.name",
     ]}
-    create_user(db_path, roles, "alice", "correct-pw", "us-west", "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     admin_token = _make_admin(client)
 
     response = client.get("/users/alice/visible-schema", headers={"Authorization": f"Bearer {admin_token}"})
@@ -397,9 +372,7 @@ def test_visible_schema_debug_view_shows_what_the_target_user_can_see(client):
 
 
 def test_visible_schema_debug_view_requires_manage_users(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.get("/users/alice/visible-schema", headers={"Authorization": f"Bearer {alice_token}"})
@@ -413,9 +386,7 @@ def test_visible_schema_debug_view_for_unknown_user_is_404(client):
 
 
 def test_disable_user_blocks_new_logins_and_kills_existing_sessions(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
     admin_token = _make_admin(client)
 
@@ -441,9 +412,7 @@ def test_disable_nonexistent_user_is_404(client):
 
 
 def test_enable_reverses_disable(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     admin_token = _make_admin(client)
 
     client.post("/users/alice/disable", headers={"Authorization": f"Bearer {admin_token}"})
@@ -454,9 +423,7 @@ def test_enable_reverses_disable(client):
 
 
 def test_delete_user_removes_credential_and_kills_sessions(client):
-    db_path = client.app.state.credentials_db_path
-    roles = client.app.state.config.roles
-    create_user(db_path, roles, "alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
     admin_token = _make_admin(client)
 

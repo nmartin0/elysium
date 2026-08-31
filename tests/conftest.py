@@ -14,22 +14,35 @@ deployment's specific domain.
 
 isolated_audit_log / read_audit_log mirror
 tests/integration/conftest.py's own fixture exactly -- the same
-isolation need exists at the unit level: core.intermediate_layer.audit's
-LOG_PATH is module-level, in-process state, not scoped per-test on its
-own. Without this, a test asserting on audit-log CONTENT (not just a
-function's return value) would fall back to whatever LOG_PATH's
-default resolves to, and could leak its own logging configuration into
-whatever test runs next in the same pytest process.
+isolation need exists at the unit level: each test needs its own,
+separate audit.log file, not one shared across the whole test
+process. This USED TO require saving, mutating, and restoring
+core.intermediate_layer.audit's own module-level LOG_PATH global by
+hand -- exactly the kind of fragile, easy-to-get-wrong test-isolation
+workaround a real global forces (see AuditLog's own module docstring
+for the full reasoning behind eliminating it). Now that AuditLog is a
+real, per-instance object, this fixture is just an isolated directory
+-- nothing to save or restore, since there's no shared global left to
+corrupt in the first place. Callers construct their own
+AuditLog(isolated_audit_log / "audit.log") to pass into DataMediator
+explicitly.
+
+scripted_llm_client() is a shared helper for scripting AgentLoop's
+model responses without touching the real HTTP layer -- was
+duplicated near-verbatim (identical mocking logic, only the final
+AgentLoop construction differing) across
+test_agentic_loop_writes_and_cancellation.py and
+test_tool_authorization.py before this extraction, caught during a
+full pass over every test helper function looking for exactly this
+kind of duplication.
 """
 
 import json
 import sqlite3
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
-
-from core.intermediate_layer import audit
-from core.intermediate_layer.audit import configure_audit_log
 
 TEST_SCHEMA = {
     "Author": {
@@ -102,12 +115,32 @@ def test_schema() -> dict:
 
 
 @pytest.fixture
-def isolated_audit_log(tmp_path: Path):
-    original_log_path = audit.LOG_PATH
-    log_dir = tmp_path / "log"
-    configure_audit_log(log_dir)
-    yield log_dir
-    audit.LOG_PATH = original_log_path
+def isolated_audit_log(tmp_path: Path) -> Path:
+    # Just an isolated directory now -- nothing to save or restore, no
+    # global left to corrupt. See this file's own module docstring.
+    return tmp_path / "log"
+
+
+def scripted_llm_client(scripted_steps: list[dict]) -> MagicMock:
+    # A MagicMock standing in for an LLMAdapter, whose .chat() replays
+    # a fixed sequence of JSON-encoded step responses -- shared by
+    # every unit test that needs to script AgentLoop's model behavior
+    # deterministically, without touching the real HTTP layer at all.
+    # Once the scripted sequence is exhausted, repeats the LAST entry
+    # rather than raising IndexError -- a test scripting "propose the
+    # action, then optionally get asked for one more hop" doesn't need
+    # to pad its own list with a redundant final entry just to survive
+    # an extra call.
+    client = MagicMock()
+    call_count = {"n": 0}
+
+    def fake_chat(*args, **kwargs):
+        idx = min(call_count["n"], len(scripted_steps) - 1)
+        call_count["n"] += 1
+        return json.dumps(scripted_steps[idx])
+
+    client.chat.side_effect = fake_chat
+    return client
 
 
 def read_audit_log(log_dir: Path) -> list[dict]:

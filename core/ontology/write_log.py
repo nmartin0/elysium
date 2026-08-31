@@ -112,7 +112,6 @@ by design, not by omission. A CREATE entry has no equivalent ambiguous
 case -- see _resume_one_create_entry()'s own docstring for why a
 genuine collision surfaces as a real database error instead.
 
-
 Schema creation is handled by core/sqlite_connection.py's shared
 connection_with_schema() -- cached per db_path within this process,
 so this table's own CREATE TABLE IF NOT EXISTS only actually runs
@@ -120,14 +119,21 @@ once, not on every single call the way it originally did here (a real
 cost on a genuinely hot path -- get_pending_changes() runs on every
 single DataMediator.get_field() call once this log is enabled).
 
-db_path is always an explicit parameter, never a hardcoded global path
--- same dependency-injection discipline as every other adapter in this
-project (see core/auth/database.py's own docstring for the identical
-reasoning, applied here to a different problem). Uses
-core/sqlite_connection.py's shared connection_with_schema() -- the
-SAME mechanical connection-opening-and-schema-verification code
-core/auth/database.py now also uses, not a second, independently-
-written copy of the same pattern.
+A CLASS, not a bare module of functions taking db_path on every call
+-- refactored deliberately, not incidentally: db_path is genuinely
+this mechanism's own persistent state (which file every operation
+reads and writes), so it belongs on self, encapsulated the same way
+DataMediator and WriteMediator already encapsulate their own state,
+rather than re-threaded through every single call's own argument list.
+One instance, constructed once at deployment-load time, shared by
+DataMediator and WriteMediator alike -- see core/deployment_loader.py.
+Sharing the SAME instance (not two separately-constructed ones
+pointed at the same path) also structurally eliminates a whole prior
+class of misconfiguration: WriteMediator used to take its own,
+separate write_log_db_path and explicitly check it matched
+DataMediator's own copy at construction time; with one shared
+instance there is only ever one value to begin with, nothing left to
+accidentally mismatch.
 """
 
 import json
@@ -138,148 +144,154 @@ from typing import Any
 
 from core.sqlite_connection import connection_with_schema
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS write_log (
-    id TEXT PRIMARY KEY,
-    object_type TEXT NOT NULL,
-    object_id TEXT NOT NULL,
-    operation TEXT NOT NULL,
-    changes TEXT NOT NULL,
-    expected_current_values TEXT NOT NULL,
-    status TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    description TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-"""
 
+class WriteLog:
+    """
+    Durable persistence and read-masking for pending writes -- see this
+    module's own docstring for the full mechanism, history, and scope.
+    One instance per deployment, shared by DataMediator and
+    WriteMediator.
+    """
 
-def connection(db_path: Path):
-    return connection_with_schema(db_path, SCHEMA)
+    SCHEMA = """
+    CREATE TABLE IF NOT EXISTS write_log (
+        id TEXT PRIMARY KEY,
+        object_type TEXT NOT NULL,
+        object_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        changes TEXT NOT NULL,
+        expected_current_values TEXT NOT NULL,
+        status TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        description TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """
 
+    def __init__(self, db_path: Path):
+        self._db_path = db_path
 
-def log_pending_update(db_path: Path, object_type: str, object_id: Any, changes: dict,
-                        expected_current_values: dict, user_id: str, description: str) -> str:
-    # ONE row, ONE write, trivially atomic regardless of how many
-    # storages `changes` will eventually resolve across -- this single
-    # INSERT is the entire mechanism's real atomicity boundary. Takes
-    # the pending write's fields individually rather than a
-    # PendingWrite object directly -- this module has no reason to
-    # depend on write_mediator.py's own dataclass, keeping the
-    # dependency direction strictly one-way (write_mediator depends on
-    # this module, never the reverse).
-    log_id = str(uuid.uuid4())
-    with connection(db_path) as conn:
-        conn.execute(
-            "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
-            "expected_current_values, status, user_id, description, created_at) "
-            "VALUES (?, ?, ?, 'update', ?, ?, 'pending', ?, ?, ?)",
-            (
-                log_id, object_type, str(object_id), json.dumps(changes),
-                json.dumps(expected_current_values), user_id, description,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-        conn.commit()
-    return log_id
+    def _connection(self):
+        return connection_with_schema(self._db_path, self.SCHEMA)
 
+    def log_pending_update(self, object_type: str, object_id: Any, changes: dict,
+                            expected_current_values: dict, user_id: str, description: str) -> str:
+        # ONE row, ONE write, trivially atomic regardless of how many
+        # storages `changes` will eventually resolve across -- this single
+        # INSERT is the entire mechanism's real atomicity boundary. Takes
+        # the pending write's fields individually rather than a
+        # PendingWrite object directly -- this class has no reason to
+        # depend on write_mediator.py's own dataclass, keeping the
+        # dependency direction strictly one-way (write_mediator depends on
+        # this class, never the reverse).
+        log_id = str(uuid.uuid4())
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
+                "expected_current_values, status, user_id, description, created_at) "
+                "VALUES (?, ?, ?, 'update', ?, ?, 'pending', ?, ?, ?)",
+                (
+                    log_id, object_type, str(object_id), json.dumps(changes),
+                    json.dumps(expected_current_values), user_id, description,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            conn.commit()
+        return log_id
 
-def log_pending_create(db_path: Path, object_type: str, object_id: Any, changes: dict,
-                        user_id: str, description: str) -> str:
-    # THE create-side counterpart to log_pending_update() above -- no
-    # expected_current_values parameter at all, unlike update: there's
-    # nothing to compare against or protect from a lost update, since
-    # nothing exists yet for this object anywhere. Stored as an empty
-    # JSON object in that same column rather than giving create its own
-    # separate table -- every other piece of this mechanism
-    # (get_pending_changes(), get_pending_entries(), the schema itself)
-    # stays genuinely shared between both operations; only what gets
-    # written into that one column differs.
-    log_id = str(uuid.uuid4())
-    with connection(db_path) as conn:
-        conn.execute(
-            "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
-            "expected_current_values, status, user_id, description, created_at) "
-            "VALUES (?, ?, ?, 'create', ?, '{}', 'pending', ?, ?, ?)",
-            (
-                log_id, object_type, str(object_id), json.dumps(changes),
-                user_id, description, datetime.now(UTC).isoformat(),
-            ),
-        )
-        conn.commit()
-    return log_id
+    def log_pending_create(self, object_type: str, object_id: Any, changes: dict,
+                            user_id: str, description: str) -> str:
+        # THE create-side counterpart to log_pending_update() above -- no
+        # expected_current_values parameter at all, unlike update: there's
+        # nothing to compare against or protect from a lost update, since
+        # nothing exists yet for this object anywhere. Stored as an empty
+        # JSON object in that same column rather than giving create its own
+        # separate table -- every other piece of this mechanism
+        # (get_pending_changes(), get_pending_entries(), the schema itself)
+        # stays genuinely shared between both operations; only what gets
+        # written into that one column differs.
+        log_id = str(uuid.uuid4())
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
+                "expected_current_values, status, user_id, description, created_at) "
+                "VALUES (?, ?, ?, 'create', ?, '{}', 'pending', ?, ?, ?)",
+                (
+                    log_id, object_type, str(object_id), json.dumps(changes),
+                    user_id, description, datetime.now(UTC).isoformat(),
+                ),
+            )
+            conn.commit()
+        return log_id
 
+    def mark_applied(self, log_id: str) -> None:
+        with self._connection() as conn:
+            conn.execute("UPDATE write_log SET status = 'applied' WHERE id = ?", (log_id,))
+            conn.commit()
 
-def mark_applied(db_path: Path, log_id: str) -> None:
-    with connection(db_path) as conn:
-        conn.execute("UPDATE write_log SET status = 'applied' WHERE id = ?", (log_id,))
-        conn.commit()
+    def get_pending_changes(self, object_type: str, object_id: Any) -> dict | None:
+        # Used by DataMediator.get_field() -- returns this object's pending
+        # field->value changes if a write_log entry for it is still
+        # mid-apply, else None. A caller merges this OVER whatever the real
+        # backend currently holds, so a read never observes a half-applied
+        # state (some storages already written, others not yet).
+        #
+        # object_id is explicitly str()-converted on both the write side
+        # (log_pending_update/log_pending_create above) and here -- SQLite's
+        # dynamic typing would happily store e.g. an int object_id in this
+        # TEXT column, but comparing that stored int against a TEXT literal
+        # at query time depends on SQLite's type-affinity rules in a way
+        # that's easy to get subtly wrong. Converting explicitly,
+        # consistently, on both sides removes that ambiguity entirely
+        # rather than relying on it working out.
+        #
+        # fetchone(), not fetchall() -- assumes at most one pending entry
+        # per object at a time, which holds as long as callers keep this
+        # object's own per-object lock (see DataMediator._lock_for_object())
+        # held across the full log-write-then-apply sequence, not just the
+        # apply portion -- see write_mediator.py's own confirm_and_execute().
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT changes FROM write_log WHERE object_type = ? AND object_id = ? "
+                "AND status = 'pending'",
+                (object_type, str(object_id)),
+            ).fetchone()
+        if row is None:
+            return None
+        return json.loads(row["changes"])
 
-
-def get_pending_changes(db_path: Path, object_type: str, object_id: Any) -> dict | None:
-    # Used by DataMediator.get_field() -- returns this object's pending
-    # field->value changes if a write_log entry for it is still
-    # mid-apply, else None. A caller merges this OVER whatever the real
-    # backend currently holds, so a read never observes a half-applied
-    # state (some storages already written, others not yet).
-    #
-    # object_id is explicitly str()-converted on both the write side
-    # (log_pending_write above) and here -- SQLite's dynamic typing
-    # would happily store e.g. an int object_id in this TEXT column,
-    # but comparing that stored int against a TEXT literal at query
-    # time depends on SQLite's type-affinity rules in a way that's
-    # easy to get subtly wrong. Converting explicitly, consistently, on
-    # both sides removes that ambiguity entirely rather than relying on
-    # it working out.
-    #
-    # fetchone(), not fetchall() -- assumes at most one pending entry
-    # per object at a time, which holds as long as callers keep this
-    # object's own per-object lock (see DataMediator._lock_for_object())
-    # held across the full log-write-then-apply sequence, not just the
-    # apply portion -- see write_mediator.py's own confirm_and_execute().
-    with connection(db_path) as conn:
-        row = conn.execute(
-            "SELECT changes FROM write_log WHERE object_type = ? AND object_id = ? "
-            "AND status = 'pending'",
-            (object_type, str(object_id)),
-        ).fetchone()
-    if row is None:
-        return None
-    return json.loads(row["changes"])
-
-
-def get_pending_entries(db_path: Path) -> list[dict]:
-    # Used by WriteMediator.resume_pending_writes() -- EVERY entry
-    # still at status='pending', across every object, not scoped to
-    # one object the way get_pending_changes() above is. This is the
-    # actual resume/crash-recovery entry point: a genuine crash mid-
-    # apply leaves an entry here with no further trace anywhere else
-    # (the process that would have called mark_applied() is simply
-    # gone), so resuming after a restart means finding every such
-    # entry and reconciling it against live backend state -- see
-    # WriteMediator.resume_pending_writes()'s own docstring for that
-    # reconciliation logic.
-    #
-    # Returns entry_id/object_type/object_id/operation/changes/
-    # expected_current_values/user_id/description, changes and
-    # expected_current_values already json.loads()'d -- the caller
-    # needs them as real dicts, not JSON strings, to compare against
-    # live field values.
-    with connection(db_path) as conn:
-        rows = conn.execute(
-            "SELECT id, object_type, object_id, operation, changes, expected_current_values, "
-            "user_id, description FROM write_log WHERE status = 'pending'"
-        ).fetchall()
-    return [
-        {
-            "id": row["id"],
-            "object_type": row["object_type"],
-            "object_id": row["object_id"],
-            "operation": row["operation"],
-            "changes": json.loads(row["changes"]),
-            "expected_current_values": json.loads(row["expected_current_values"]),
-            "user_id": row["user_id"],
-            "description": row["description"],
-        }
-        for row in rows
-    ]
+    def get_pending_entries(self) -> list[dict]:
+        # Used by WriteMediator.resume_pending_writes() -- EVERY entry
+        # still at status='pending', across every object, not scoped to
+        # one object the way get_pending_changes() above is. This is the
+        # actual resume/crash-recovery entry point: a genuine crash mid-
+        # apply leaves an entry here with no further trace anywhere else
+        # (the process that would have called mark_applied() is simply
+        # gone), so resuming after a restart means finding every such
+        # entry and reconciling it against live backend state -- see
+        # WriteMediator.resume_pending_writes()'s own docstring for that
+        # reconciliation logic.
+        #
+        # Returns entry_id/object_type/object_id/operation/changes/
+        # expected_current_values/user_id/description, changes and
+        # expected_current_values already json.loads()'d -- the caller
+        # needs them as real dicts, not JSON strings, to compare against
+        # live field values.
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT id, object_type, object_id, operation, changes, expected_current_values, "
+                "user_id, description FROM write_log WHERE status = 'pending'"
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "object_type": row["object_type"],
+                "object_id": row["object_id"],
+                "operation": row["operation"],
+                "changes": json.loads(row["changes"]),
+                "expected_current_values": json.loads(row["expected_current_values"]),
+                "user_id": row["user_id"],
+                "description": row["description"],
+            }
+            for row in rows
+        ]

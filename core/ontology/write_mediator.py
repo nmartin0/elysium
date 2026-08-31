@@ -34,24 +34,21 @@ Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
 
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Literal
 
-from core.intermediate_layer.audit import log_access, log_post, log_pre, log_write_resume_ambiguous
+from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
-from core.ontology import write_log
+from core.ontology.interface import DataSiloAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.schema import get_column_for_field
 from core.ontology.submission_criteria import evaluate_submission_criteria
+from core.ontology.write_log import WriteLog
 
 
 def _fields_to_columns(resolved_type_config: dict, values_by_field: dict) -> dict:
     # Standalone, not a method -- needs no WriteMediator state, and is
-    # called once per storage GROUP now (see _group_changes_by_storage()),
-    # each with its own resolved_type_config, rather than once per call
-    # with a single, closure-captured one the way confirm_and_execute()'s
-    # own inline _to_columns() below still does for its unchanged,
-    # single-storage direct-write path.
+    # called once per storage GROUP (see _group_changes_by_storage()),
+    # each with its own resolved_type_config.
     return {
         get_column_for_field(resolved_type_config, field_name): value
         for field_name, value in values_by_field.items()
@@ -70,41 +67,62 @@ class PendingWrite:
 
 
 class WriteMediator:
-    def __init__(self, mediator: DataMediator, roles: dict, action_types: dict,
-                 write_log_db_path: Path):
-        # action_types and write_log_db_path are BOTH required, not
-        # optional -- a WriteMediator's only real capability is
-        # propose_action(), which is useless without declared actions,
-        # and confirm_and_execute() now depends entirely on the write
-        # log for "update" (see below). Both used to default to a
-        # None-shaped fallback during this mechanism's OWN
-        # build-and-prove-in-isolation phase, mirroring this project's
-        # already-proven propose_write()->propose_action() transition
-        # shape -- but verified directly, EVERY real construction site
-        # already passed both explicitly; nothing depended on the
-        # defaults. Keeping optionality alive after migration is
-        # actually complete is compat cruft, not a real capability --
-        # removed rather than left as unused, confusing dead weight.
+    def __init__(self, mediator: DataMediator, roles: dict, action_types: dict):
+        # action_types is required, not optional -- a WriteMediator's
+        # only real capability is propose_action(), which is useless
+        # without declared actions. Verified directly: EVERY real
+        # construction site already passes it explicitly; nothing
+        # depends on a None-shaped default. Keeping optionality alive
+        # after migration is actually complete is compat cruft, not a
+        # real capability -- removed rather than left as unused,
+        # confusing dead weight.
         self.mediator = mediator
         self.roles = roles
         self.action_types = action_types
-        self.write_log_db_path = write_log_db_path
-        # Catches a REAL, easy-to-make configuration mistake outright,
-        # at construction time, rather than letting it fail silently
-        # and dangerously later: writes would go through the log
-        # correctly, but reads (DataMediator.get_field()) would never
-        # check it, since it's checking ITS OWN write_log_db_path, not
-        # this one. Both must point at the SAME physical file.
-        # Deliberately a real, explicit check (not assert) -- assert
-        # statements are stripped entirely under python -O, and this
-        # guards a genuine, dangerous-if-silent misconfiguration, not
-        # a debugging aid.
-        if mediator.write_log_db_path != write_log_db_path:
+        # write_log is NOT taken as a separate parameter and stored
+        # independently -- see this class's own write_log property.
+        # WriteMediator has no legitimate reason to use a DIFFERENT
+        # write_log than the DataMediator it wraps reads from; reading
+        # the SAME shared instance from mediator makes that
+        # structurally true rather than something enforced by a
+        # runtime "do these two values match" check (which used to
+        # exist here, and no longer needs to -- there's only ever one
+        # value to begin with now).
+        if mediator.write_log is None:
             raise ValueError(
-                f"WriteMediator's write_log_db_path ({write_log_db_path!r}) must match "
-                f"the DataMediator it wraps ({mediator.write_log_db_path!r}) -- otherwise "
-                f"writes go through the log but reads never check it."
+                "WriteMediator requires its DataMediator to be constructed with a "
+                "write_log -- confirm_and_execute() depends on it entirely for both "
+                "'update' and 'create'."
             )
+
+    @property
+    def write_log(self) -> WriteLog:
+        # Always the SAME instance self.mediator itself holds -- never
+        # a separately-stored copy, so there is nothing here that could
+        # ever drift out of sync with it.
+        #
+        # The assert below is a type-narrowing hint for mypy only, not
+        # the real runtime guard -- mediator.write_log is typed
+        # WriteLog | None (genuinely optional on DataMediator itself,
+        # see its own docstring), but this class's own __init__ already
+        # raises a real, non-stripped ValueError if it were None,
+        # before a WriteMediator claiming this property exists at all.
+        # mypy can't trace that guarantee across to a different
+        # object's attribute, so it's restated here, in the one place
+        # that needs it, rather than loosening this property's own
+        # return type for every caller.
+        assert self.mediator.write_log is not None
+        return self.mediator.write_log
+
+    @property
+    def audit_log(self) -> AuditLog:
+        # Always the SAME instance self.mediator itself holds -- never
+        # a separately-stored copy, matching this class's own
+        # write_log property immediately above, for the identical
+        # reason. No type-narrowing assert needed here, unlike that
+        # one -- mediator.audit_log is never Optional in the first
+        # place (see DataMediator's own docstring on why).
+        return self.mediator.audit_log
 
     def _group_changes_by_storage(self, object_type: str, changes: dict) -> list[tuple]:
         # Resolves EACH field individually (a list of exactly one field
@@ -138,6 +156,68 @@ class WriteMediator:
             groups[key][2][field_name] = changes[field_name]
         return list(groups.values())
 
+    def _read_group_fields(self, object_type: str, object_id: Any, adapter: DataSiloAdapter,
+                            resolved_type_config: dict, field_names) -> dict:
+        # THE single home for "read the current, live value of each
+        # field in one already-resolved storage group, straight from
+        # the adapter" -- was duplicated three times before this
+        # refactor (propose_action()'s own pre-write snapshot,
+        # _resume_one_update_entry()'s initial read, and that SAME
+        # method's own post-race re-read), identical logic every time.
+        # Direct adapter reads, not DataMediator._read_field_with_log_check()
+        # -- every caller here is deliberately reading the REAL,
+        # physical backend state to compare against, not the log's own
+        # masked value; using the log-aware read would be self-
+        # defeating for exactly what these callers need to know.
+        return {
+            field_name: adapter.get_raw_field(
+                object_type, object_id, get_column_for_field(resolved_type_config, field_name), resolved_type_config,
+            )
+            for field_name in field_names
+        }
+
+    def _write_fields_with_limiter(self, object_type: str, object_id: Any, adapter: DataSiloAdapter,
+                                    resolved_type_config: dict, new_values: dict, expected_values: dict) -> bool:
+        # THE single home for "resolve THIS group's own silo's
+        # concurrency limiter, then call write_fields() under it" --
+        # was duplicated at both places an update group's write is
+        # actually attempted (the fresh-apply path in
+        # _apply_update_via_log(), and the resume path in
+        # _resume_one_update_entry()), identical shape at each.
+        #
+        # Resolving per-GROUP's own silo here, not once per pending
+        # write from object_type alone, closed a real bug caught by
+        # directly tracing this exact call chain, not just reasoned
+        # about: object_type alone ALWAYS resolves to the PRIMARY
+        # silo's limiter (that lookup no longer exists at all --
+        # removed once this fix left it with zero remaining callers).
+        # A group writing to a DIFFERENT storage (any MDO
+        # additional_storage) would silently borrow the PRIMARY silo's
+        # concurrency limiter instead of its own -- wrong capacity
+        # accounting in both directions: under-protecting the real
+        # target silo if it has a stricter limit, and needlessly
+        # contending for the primary silo's slots for a write that
+        # never touches it at all.
+        write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
+        with write_limiter.limit():
+            return adapter.write_fields(
+                object_type, object_id,
+                _fields_to_columns(resolved_type_config, new_values),
+                _fields_to_columns(resolved_type_config, expected_values),
+                resolved_type_config,
+            )
+
+    def _create_object_with_limiter(self, object_type: str, adapter: DataSiloAdapter,
+                                     resolved_type_config: dict, values: dict) -> None:
+        # THE create-side counterpart to _write_fields_with_limiter()
+        # above -- was likewise duplicated at both places a create
+        # group's row is actually inserted (_apply_create_via_log()'s
+        # fresh-apply path, and _resume_one_create_entry()'s resume
+        # path), identical shape at each.
+        write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
+        with write_limiter.limit():
+            adapter.create_object(object_type, _fields_to_columns(resolved_type_config, values), resolved_type_config)
+
     def _apply_update_via_log(self, pending: PendingWrite) -> Any:
         # THE actual atomicity boundary -- see write_log.py's own
         # module docstring for the full mechanism and its current,
@@ -156,8 +236,8 @@ class WriteMediator:
         # object" assumption depends on this holding.
         object_lock = self.mediator._lock_for_object(pending.object_type, pending.object_id)
         with object_lock:
-            log_id = write_log.log_pending_update(
-                self.write_log_db_path, pending.object_type, pending.object_id,
+            log_id = self.write_log.log_pending_update(
+                pending.object_type, pending.object_id,
                 pending.changes, pending.expected_current_values,
                 pending.user_id, pending.description,
             )
@@ -168,31 +248,10 @@ class WriteMediator:
                     field_name: pending.expected_current_values[field_name]
                     for field_name in group_changes
                 }
-                # THE limiter for THIS group's own silo -- a real bug,
-                # caught by directly tracing this exact call chain, not
-                # just reasoned about: this used to be resolved ONCE,
-                # outside this loop, from pending.object_type alone,
-                # which ALWAYS resolves to the PRIMARY silo (that
-                # object_type-keyed lookup no longer exists at all --
-                # removed once this fix left it with zero remaining
-                # callers, including the single-storage create path,
-                # which independently hit the identical bug and was
-                # fixed the same way). A group writing to a DIFFERENT
-                # storage (any MDO additional_storage) would silently
-                # borrow the PRIMARY silo's concurrency limiter instead
-                # of its own -- wrong capacity accounting in both
-                # directions: under-protecting the real target silo if
-                # it has a stricter limit, and needlessly contending
-                # for the primary silo's slots for a write that never
-                # touches it at all.
-                write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
-                with write_limiter.limit():
-                    success = adapter.write_fields(
-                        pending.object_type, pending.object_id,
-                        _fields_to_columns(resolved_type_config, group_changes),
-                        _fields_to_columns(resolved_type_config, group_expected),
-                        resolved_type_config,
-                    )
+                success = self._write_fields_with_limiter(
+                    pending.object_type, pending.object_id, adapter, resolved_type_config,
+                    group_changes, group_expected,
+                )
                 if not success:
                     # See write_log.py's own docstring for the known,
                     # stated limitation this leaves: if an EARLIER
@@ -208,7 +267,7 @@ class WriteMediator:
                         f"write was proposed -- refresh and retry"
                     )
 
-            write_log.mark_applied(self.write_log_db_path, log_id)
+            self.write_log.mark_applied(log_id)
 
         return pending.object_id
 
@@ -243,7 +302,7 @@ class WriteMediator:
         # own module docstring for why periodic/continuous resume stays
         # a further, separately-scoped enhancement, not solved here.
         summary = {"resumed": 0, "already_applied": 0, "ambiguous": 0}
-        for entry in write_log.get_pending_entries(self.write_log_db_path):
+        for entry in self.write_log.get_pending_entries():
             object_lock = self.mediator._lock_for_object(entry["object_type"], entry["object_id"])
             with object_lock:
                 outcome = self._resume_one_entry(entry)
@@ -304,27 +363,16 @@ class WriteMediator:
                 field_name: entry["expected_current_values"][field_name]
                 for field_name in group_changes
             }
-            current_values = {
-                field_name: adapter.get_raw_field(
-                    object_type, object_id,
-                    get_column_for_field(resolved_type_config, field_name),
-                    resolved_type_config,
-                )
-                for field_name in group_changes
-            }
+            current_values = self._read_group_fields(object_type, object_id, adapter, resolved_type_config,
+                                                       group_changes)
 
             if current_values == group_changes:
                 continue  # already applied before the crash
 
             if current_values == group_expected:
-                write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
-                with write_limiter.limit():
-                    success = adapter.write_fields(
-                        object_type, object_id,
-                        _fields_to_columns(resolved_type_config, group_changes),
-                        _fields_to_columns(resolved_type_config, group_expected),
-                        resolved_type_config,
-                    )
+                success = self._write_fields_with_limiter(
+                    object_type, object_id, adapter, resolved_type_config, group_changes, group_expected,
+                )
                 if success:
                     any_applied_here = True
                     continue
@@ -335,14 +383,8 @@ class WriteMediator:
                 # against the backend from outside this system). Re-read
                 # fresh rather than log the now-stale snapshot that made
                 # us attempt the write in the first place.
-                current_values = {
-                    field_name: adapter.get_raw_field(
-                        object_type, object_id,
-                        get_column_for_field(resolved_type_config, field_name),
-                        resolved_type_config,
-                    )
-                    for field_name in group_changes
-                }
+                current_values = self._read_group_fields(object_type, object_id, adapter, resolved_type_config,
+                                                           group_changes)
                 if current_values == group_changes:
                     continue  # someone else applied it in the race window -- fine
 
@@ -353,14 +395,14 @@ class WriteMediator:
             any_ambiguous = True
             for field_name in group_changes:
                 if current_values[field_name] not in (group_changes[field_name], group_expected[field_name]):
-                    log_write_resume_ambiguous(
+                    self.audit_log.log_write_resume_ambiguous(
                         entry["id"], object_type, object_id, field_name,
                         current_values[field_name], group_expected[field_name], group_changes[field_name],
                     )
 
         if any_ambiguous:
             return "ambiguous"
-        write_log.mark_applied(self.write_log_db_path, entry["id"])
+        self.write_log.mark_applied(entry["id"])
         return "resumed" if any_applied_here else "already_applied"
 
     def _resume_one_create_entry(self, entry: dict) -> str:
@@ -403,14 +445,10 @@ class WriteMediator:
                 continue  # row already exists in this storage -- already applied
 
             group_with_id = {**group_changes, id_field: entry["changes"][id_field]}
-            write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
-            with write_limiter.limit():
-                adapter.create_object(
-                    object_type, _fields_to_columns(resolved_type_config, group_with_id), resolved_type_config,
-                )
+            self._create_object_with_limiter(object_type, adapter, resolved_type_config, group_with_id)
             any_applied_here = True
 
-        write_log.mark_applied(self.write_log_db_path, entry["id"])
+        self.write_log.mark_applied(entry["id"])
         return "resumed" if any_applied_here else "already_applied"
 
     def visible_action_types(self, user_record: UserRecord) -> dict:
@@ -532,7 +570,7 @@ class WriteMediator:
             # Logged ONCE here, with mac_allowed=None -- MAC never ran,
             # short-circuited before a real database query. Never
             # logs twice for the same outcome.
-            log_access(
+            self.audit_log.log_access(
                 user_record.user_id, object_type, object_id, execute_action_id,
                 mac_allowed=None, rbac_allowed=False,
             )
@@ -545,7 +583,8 @@ class WriteMediator:
                 user_record.security_value is not None
                 and self.mediator._security_allowed(object_type, object_id, user_record.security_value)
             )
-        log_access(user_record.user_id, object_type, object_id, execute_action_id, mac_allowed, rbac_allowed)
+        self.audit_log.log_access(user_record.user_id, object_type, object_id, execute_action_id,
+                                   mac_allowed, rbac_allowed)
         if not mac_allowed:
             raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
 
@@ -614,12 +653,9 @@ class WriteMediator:
         expected_current_values = {}
         if operation == "update":
             for adapter, resolved_type_config, group_changes in self._group_changes_by_storage(object_type, changes):
-                for field_name in group_changes:
-                    expected_current_values[field_name] = adapter.get_raw_field(
-                        object_type, object_id,
-                        get_column_for_field(resolved_type_config, field_name),
-                        resolved_type_config,
-                    )
+                expected_current_values.update(
+                    self._read_group_fields(object_type, object_id, adapter, resolved_type_config, group_changes)
+                )
         else:
             # _group_changes_by_storage() also validates every field
             # name is real (same as update's own branch above) -- an
@@ -640,7 +676,7 @@ class WriteMediator:
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
         request_id = str(uuid.uuid4())
-        log_pre(
+        self.audit_log.log_pre(
             request_id, pending.user_id, pending.description,
             f"write:{pending.object_type}", pending.changes, approved,
         )
@@ -656,7 +692,7 @@ class WriteMediator:
             # (it fails outright the instant it's asked to resolve
             # fields spanning more than one storage).
             new_id = self._apply_update_via_log(pending)
-            log_post(request_id, "success", [new_id])
+            self.audit_log.log_post(request_id, "success", [new_id])
             return {"status": "written", "object_id": new_id}
 
         # "create" -- ALWAYS via the write log now too, matching
@@ -668,7 +704,7 @@ class WriteMediator:
         # required universally, not just when create happens to span
         # multiple storages.
         new_id = self._apply_create_via_log(pending)
-        log_post(request_id, "success", [new_id])
+        self.audit_log.log_post(request_id, "success", [new_id])
         return {"status": "written", "object_id": new_id}
 
     def _apply_create_via_log(self, pending: PendingWrite) -> Any:
@@ -699,8 +735,8 @@ class WriteMediator:
         # crash happens in that same window.
         object_lock = self.mediator._lock_for_object(pending.object_type, object_id)
         with object_lock:
-            log_id = write_log.log_pending_create(
-                self.write_log_db_path, pending.object_type, object_id,
+            log_id = self.write_log.log_pending_create(
+                pending.object_type, object_id,
                 pending.changes, pending.user_id, pending.description,
             )
 
@@ -715,13 +751,8 @@ class WriteMediator:
                 # (a no-op overwrite for that one group, a real
                 # injection for every other).
                 group_with_id = {**group_changes, id_field: object_id}
-                write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
-                with write_limiter.limit():
-                    adapter.create_object(
-                        pending.object_type, _fields_to_columns(resolved_type_config, group_with_id),
-                        resolved_type_config,
-                    )
+                self._create_object_with_limiter(pending.object_type, adapter, resolved_type_config, group_with_id)
 
-            write_log.mark_applied(self.write_log_db_path, log_id)
+            self.write_log.mark_applied(log_id)
 
         return object_id

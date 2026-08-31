@@ -21,6 +21,7 @@ import sqlite3
 import pytest
 
 from adapters.sqlite_adapter import SQLiteAdapter
+from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 from tests.conftest import read_audit_log
@@ -42,10 +43,11 @@ def _record(user_id):
 
 
 @pytest.fixture
-def mediator(test_db_path, test_schema) -> DataMediator:
+def mediator(test_db_path, test_schema, isolated_audit_log) -> DataMediator:
     adapter = SQLiteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
-    return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
+    audit_log = AuditLog(isolated_audit_log / "audit.log")
+    return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES, audit_log=audit_log)
 
 
 def test_unknown_field_on_get_field_logs_both_entries(mediator, isolated_audit_log):
@@ -152,7 +154,8 @@ def test_orphaned_mdo_style_record_logs_security_resolution_failed(tmp_path, iso
     from tests.conftest import TEST_SCHEMA
     adapter = SQLiteAdapter({"path": db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in TEST_SCHEMA.items()}
-    empty_mediator = DataMediator(TEST_SCHEMA, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
+    empty_mediator = DataMediator(TEST_SCHEMA, {"test_silo": adapter}, silo_for_type, TEST_ROLES,
+                                   audit_log=AuditLog(isolated_audit_log / "audit.log"))
 
     # auth_999 genuinely does not exist in this empty database at all.
     empty_mediator.get_field(_record("alice"), "Author", "auth_999_nonexistent", "name")

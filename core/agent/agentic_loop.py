@@ -69,7 +69,6 @@ from dataclasses import dataclass
 
 from core.concurrency import ConcurrencyLimiter
 from core.deployment_loader import build_llm_adapter
-from core.intermediate_layer.audit import log_access
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.agent_step_prompt import next_step
 from core.llm.interface import LLMAdapter
@@ -295,7 +294,9 @@ class AgentLoop:
                     raise ValueError(f"Unknown tool: {tool_name!r}")
                 action = f"tool:{tool_name}"
                 rbac_allowed = authorize(user_record, self.mediator.roles, action)
-                log_access(user_record.user_id, "tool", tool_name, action, mac_allowed=True, rbac_allowed=rbac_allowed)
+                self.mediator.audit_log.log_access(
+                    user_record.user_id, "tool", tool_name, action, mac_allowed=True, rbac_allowed=rbac_allowed
+                )
                 if not rbac_allowed:
                     # DELIBERATELY the exact same message as "tool
                     # doesn't exist" above -- distinguishing the two

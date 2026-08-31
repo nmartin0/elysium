@@ -25,9 +25,10 @@ import sqlite3
 import pytest
 
 from core.deployment_loader import _build_adapters
+from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
-from core.ontology import write_log
 from core.ontology.mediator import DataMediator
+from core.ontology.write_log import WriteLog
 from core.ontology.write_mediator import WriteMediator
 
 TEST_SCHEMA = {
@@ -116,7 +117,7 @@ def _record(user_id):
 
 
 @pytest.fixture
-def fixture(tmp_path):
+def fixture(tmp_path, isolated_audit_log):
     db_primary = tmp_path / "primary.db"
     conn = sqlite3.connect(db_primary)
     conn.executescript("""
@@ -133,16 +134,17 @@ def fixture(tmp_path):
     conn.commit()
     conn.close()
 
-    write_log_db_path = tmp_path / "write_log.db"
+    write_log = WriteLog(tmp_path / "write_log.db")
+    audit_log = AuditLog(isolated_audit_log / "audit.log")
 
     adapters = _build_adapters({
         "primary_sql": {"adapter": "sqlite", "connection": {"path": db_primary}},
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
     })
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Customer": "primary_sql"}, TEST_ROLES,
-                             write_log_db_path=write_log_db_path)
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES, write_log_db_path=write_log_db_path)
-    return mediator, write_mediator, write_log_db_path
+                             write_log=write_log, audit_log=audit_log)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    return mediator, write_mediator, write_log
 
 
 def _direct_write(mediator, silo, table, columns: dict):
@@ -188,7 +190,7 @@ def test_single_storage_create_also_goes_through_the_log(fixture):
     # so "no pending entries left" is expected either way; what this
     # test actually proves is that the create still succeeds cleanly
     # through the SHARED mechanism, not that the log was bypassed.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     pending = write_mediator.propose_action(
@@ -199,7 +201,7 @@ def test_single_storage_create_also_goes_through_the_log(fixture):
     new_id = result["object_id"]
     assert new_id == "cust_solo"
     assert mediator.get_field(alice, "Customer", new_id, "name") == "Solo Customer"
-    assert write_log.get_pending_entries(write_log_db_path) == []
+    assert write_log.get_pending_entries() == []
 
 
 def test_apply_create_via_log_logs_under_the_real_id_not_none(fixture, monkeypatch):
@@ -219,7 +221,7 @@ def test_apply_create_via_log_logs_under_the_real_id_not_none(fixture, monkeypat
     # goes through the REAL path specifically to close that gap,
     # intercepting create_object() to inspect the log's own state
     # WHILE still mid-apply (lock held, mark_applied() not yet called).
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     pending = write_mediator.propose_action(
@@ -231,9 +233,7 @@ def test_apply_create_via_log_logs_under_the_real_id_not_none(fixture, monkeypat
     observed = {}
 
     def spy_create_object(*args, **kwargs):
-        observed["pending_changes"] = write_log.get_pending_changes(
-            write_log_db_path, "Customer", "cust_mid_apply"
-        )
+        observed["pending_changes"] = write_log.get_pending_changes("Customer", "cust_mid_apply")
         return original_create_object(*args, **kwargs)
 
     monkeypatch.setattr(mediator.adapters["primary_sql"], "create_object", spy_create_object)
@@ -249,7 +249,7 @@ def test_multi_storage_create_applies_to_every_storage(fixture):
     # possible at all. Both storages end up with a row under the SAME
     # id, despite their genuinely different id column names
     # (customer_id vs cust_ref).
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     pending = write_mediator.propose_action(
@@ -275,18 +275,18 @@ def test_multi_storage_create_applies_to_every_storage(fixture):
     assert raw_score == 0.42
 
     # The log entry is genuinely resolved, not left pending.
-    assert write_log.get_pending_entries(write_log_db_path) == []
+    assert write_log.get_pending_entries() == []
 
 
 def test_resume_completes_a_create_that_never_applied(fixture):
     # Simulates the cleanest crash: the log entry was written, but the
     # process died before EITHER storage group's create_object() call
     # ever ran -- neither storage has the row at all yet.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_create(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
         "alice", "simulated crash before any group applied",
     )
@@ -296,7 +296,7 @@ def test_resume_completes_a_create_that_never_applied(fixture):
 
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "New Customer"
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.55
-    assert write_log.get_pending_entries(write_log_db_path) == []
+    assert write_log.get_pending_entries() == []
 
 
 def test_resume_skips_already_created_group_and_completes_the_other(fixture):
@@ -307,10 +307,10 @@ def test_resume_skips_already_created_group_and_completes_the_other(fixture):
     # A naive resume that just re-ran create_object() for BOTH groups
     # would hit a real PRIMARY KEY constraint violation trying to
     # re-insert the already-existing primary row.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
 
     write_log.log_pending_create(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
         "alice", "simulated crash after primary group applied, before MDO group",
     )
@@ -323,7 +323,7 @@ def test_resume_skips_already_created_group_and_completes_the_other(fixture):
     alice = _record("alice")
     assert mediator.get_field(alice, "Customer", "cust_001", "name") == "New Customer"
     assert mediator.get_field(alice, "Customer", "cust_001", "risk_score") == 0.55
-    assert write_log.get_pending_entries(write_log_db_path) == []
+    assert write_log.get_pending_entries() == []
 
 
 def test_resume_when_every_group_already_created(fixture):
@@ -331,10 +331,10 @@ def test_resume_when_every_group_already_created(fixture):
     # create already committed, but BEFORE mark_applied() ran. Resume
     # should recognize this and simply close the entry out -- no group
     # gets a redundant, constraint-violating create_object() call.
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
 
     write_log.log_pending_create(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
         "alice", "simulated crash after both groups applied, before mark_applied",
     )
@@ -344,14 +344,14 @@ def test_resume_when_every_group_already_created(fixture):
 
     summary = write_mediator.resume_pending_writes()
     assert summary == {"resumed": 0, "already_applied": 1, "ambiguous": 0}
-    assert write_log.get_pending_entries(write_log_db_path) == []
+    assert write_log.get_pending_entries() == []
 
 
 def test_resume_create_is_idempotent(fixture):
-    mediator, write_mediator, write_log_db_path = fixture
+    mediator, write_mediator, write_log = fixture
 
     write_log.log_pending_create(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
         "alice", "test",
     )
@@ -368,11 +368,11 @@ def test_get_field_sees_pending_create_value(fixture):
     # already operation-agnostic (just checks "is this field in the
     # log's own pending changes dict"). Proven explicitly here, not
     # just assumed from that reasoning.
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_create(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
         "alice", "test",
     )
@@ -389,11 +389,11 @@ def test_search_finds_object_by_its_pending_create(fixture, isolated_audit_log):
     # own field (risk_score) would, without the fix, try to read the
     # id back off a row that doesn't exist in risk_db at all, getting
     # None instead of the real id.
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_create(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
         "alice", "test",
     )
@@ -408,11 +408,11 @@ def test_search_finds_object_by_its_pending_create_on_primary_field_too(fixture)
     # Same fix, exercised via the PRIMARY storage's own field instead
     # -- confirms the sticky-note path works regardless of which
     # storage the search happens to be scoped to, not just the MDO one.
-    mediator, _, write_log_db_path = fixture
+    mediator, _, write_log = fixture
     alice = _record("alice")
 
     write_log.log_pending_create(
-        write_log_db_path, "Customer", "cust_001",
+        "Customer", "cust_001",
         {"customer_id": "cust_001", "region": "us-west", "name": "New Customer", "risk_score": 0.55},
         "alice", "test",
     )

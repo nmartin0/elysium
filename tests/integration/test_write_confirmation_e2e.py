@@ -23,9 +23,7 @@ isolated test deployment, a fresh database per test. user_eve has the
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.write_mediator import WriteMediator
+from tests.integration.conftest import propose_named_action
 
 QUERY_TEXT = (
     "Create a new customer with customer_id 'cust_999', "
@@ -33,25 +31,9 @@ QUERY_TEXT = (
 )
 
 
-def _propose(deployment, mediator):
-    write_mediator = WriteMediator(mediator, deployment.roles, deployment.action_types)
-    loop = AgentLoop.from_deployment(deployment, mediator, write_mediator=write_mediator)
-    user_record = resolve_user_record(deployment.users, "user_eve", deployment.security_attribute)
-
-    result = loop.run(user_record, QUERY_TEXT)
-    print(f"\n[diagnostic] pending_write: {result.pending_write}")
-    print(f"[diagnostic] full gathered steps: {result.gathered}")
-
-    assert result.pending_write is not None, (
-        "Expected the real model to produce a well-formed propose_action step "
-        f"for CreateCustomer, but it never reached the pending stage. Gathered: {result.gathered}"
-    )
-    return write_mediator, result.pending_write, user_record
-
-
 @pytest.mark.integration
 def test_real_model_create_action_approved_actually_creates_the_row(deployment, mediator):
-    write_mediator, pending, user_record = _propose(deployment, mediator)
+    write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT)
     proposed_customer_id = pending.changes["customer_id"]
     proposed_name = pending.changes["name"]
     proposed_email = pending.changes["email"]
@@ -75,7 +57,7 @@ def test_real_model_create_action_approved_actually_creates_the_row(deployment, 
 
 @pytest.mark.integration
 def test_real_model_create_action_rejected_creates_nothing(deployment, mediator):
-    write_mediator, pending, user_record = _propose(deployment, mediator)
+    write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT)
     proposed_customer_id = pending.changes["customer_id"]
 
     outcome = write_mediator.confirm_and_execute(pending, approved=False)

@@ -26,8 +26,10 @@ import sqlite3
 import pytest
 
 from core.deployment_loader import _build_adapters
+from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
+from core.ontology.write_log import WriteLog
 from core.ontology.write_mediator import WriteMediator
 from tests.conftest import read_audit_log
 
@@ -127,7 +129,7 @@ def _record(user_id):
 
 
 @pytest.fixture
-def mediator(tmp_path):
+def mediator(tmp_path, isolated_audit_log):
     db_primary = tmp_path / "primary.db"
     conn = sqlite3.connect(db_primary)
     conn.executescript("""
@@ -153,7 +155,8 @@ def mediator(tmp_path):
     })
     silo_for_type = {"Customer": "primary_sql"}
     return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES,
-                         write_log_db_path=tmp_path / "write_log.db")
+                         write_log=WriteLog(tmp_path / "write_log.db"),
+                         audit_log=AuditLog(isolated_audit_log / "audit.log"))
 
 
 def test_reads_a_primary_storage_field_normally(mediator):
@@ -194,8 +197,7 @@ def test_search_mixing_fields_from_different_storages_is_rejected(mediator):
 
 
 def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES,
-                                    write_log_db_path=mediator.write_log_db_path)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "UpdateRiskScore", "cust_001", {"new_score": 0.99})
@@ -223,8 +225,7 @@ def test_create_without_explicit_id_is_rejected(mediator):
     # declared mutations mix a primary field (name) and an MDO field
     # (risk_score) without ever naming customer_id itself -- the
     # multi-storage case still exercises this same, now-universal rule.
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES,
-                                    write_log_db_path=mediator.write_log_db_path)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
     with pytest.raises(ValueError, match="requires an explicit 'customer_id' value"):
         write_mediator.propose_action(alice, "CreateCustomerWithNameAndRiskScore", None,
@@ -294,7 +295,7 @@ def test_missing_row_on_the_mdo_side_returns_none_not_a_crash(mediator, isolated
     assert not any(e["stage"] == "security_resolution_failed" for e in entries)
 
 
-def test_security_field_that_is_itself_mdo_backed(tmp_path):
+def test_security_field_that_is_itself_mdo_backed(tmp_path, isolated_audit_log):
     # A REAL BUG this test guards against: _get_security_value() used
     # to bypass MDO resolution entirely, always querying the type's
     # PRIMARY adapter/table regardless of where security["field"]
@@ -346,7 +347,8 @@ def test_security_field_that_is_itself_mdo_backed(tmp_path):
         "primary_sql": {"adapter": "sqlite", "connection": {"path": db_primary}},
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
     })
-    mediator = DataMediator(schema, adapters, {"Customer": "primary_sql"}, roles)
+    mediator = DataMediator(schema, adapters, {"Customer": "primary_sql"}, roles,
+                             audit_log=AuditLog(isolated_audit_log / "audit.log"))
 
     matching_region = resolve_user_record({"alice": {"region": "us-west", "role": "r"}}, "alice", "region")
     wrong_region = resolve_user_record({"bob": {"region": "us-east", "role": "r"}}, "bob", "region")
@@ -393,8 +395,7 @@ def test_create_without_setting_security_field_produces_an_unreadable_row(mediat
     # addition, this test never actually verified the log entry fires
     # here, only that the return values are correctly None. A genuine
     # gap between what the docstring claimed and what was proven.
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES,
-                                    write_log_db_path=mediator.write_log_db_path)
+    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "CreateCustomerRiskOnly", None,

@@ -28,33 +28,14 @@ onto the same execute: grant, and user_grace was consolidated away).
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.write_mediator import WriteMediator
+from tests.integration.conftest import propose_named_action
 
 QUERY_TEXT = "Update cust_001's name to 'Ada Lovelace'."
 
 
-def _propose(deployment, mediator):
-    write_mediator = WriteMediator(mediator, deployment.roles, deployment.action_types)
-    loop = AgentLoop.from_deployment(deployment, mediator, write_mediator=write_mediator)
-    user_record = resolve_user_record(deployment.users, "user_eve", deployment.security_attribute)
-
-    result = loop.run(user_record, QUERY_TEXT)
-    print(f"\n[diagnostic] pending_write: {result.pending_write}")
-    print(f"[diagnostic] full gathered steps: {result.gathered}")
-
-    assert result.pending_write is not None, (
-        "Expected the real model to discover and produce a well-formed "
-        f"propose_action step, but it never reached the pending stage. "
-        f"Gathered: {result.gathered}"
-    )
-    return write_mediator, result.pending_write, user_record
-
-
 @pytest.mark.integration
 def test_real_model_invokes_named_action_and_it_actually_changes_the_database(deployment, mediator):
-    write_mediator, pending, user_record = _propose(deployment, mediator)
+    write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT)
 
     # THE first real, unproven claim: the PendingWrite this produced
     # genuinely came through the resolved-mutations path, not a raw
@@ -83,7 +64,7 @@ def test_real_model_invokes_named_action_and_it_actually_changes_the_database(de
 
 @pytest.mark.integration
 def test_real_model_proposal_rejected_leaves_database_unchanged(deployment, mediator):
-    write_mediator, pending, user_record = _propose(deployment, mediator)
+    write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT)
 
     outcome = write_mediator.confirm_and_execute(pending, approved=False)
     print(f"[diagnostic] confirm_and_execute outcome: {outcome}")

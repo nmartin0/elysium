@@ -11,7 +11,7 @@ secrets.token_urlsafe() and prints it exactly once -- never a
 hardcoded default, satisfying the project's own standing requirement
 that credentials are never baked into source or config. There is no
 way to recover this password afterward; losing it means resetting it
-via core.auth.credential_store.update_credential() directly.
+via CredentialStore.update_credential() directly.
 
 Used by: scripts/install.sh, immediately after a fresh install, before
          the service is used for real.
@@ -21,7 +21,7 @@ import secrets
 import sys
 
 from core.deployment_loader import load_deployment, resolve_runtime_paths
-from core.user_directory import create_user
+from core.user_directory import UserDirectory
 
 
 def main() -> None:
@@ -34,8 +34,9 @@ def main() -> None:
     config = load_deployment(paths.config_dir)
     password = secrets.token_urlsafe(24)
 
+    user_directory = UserDirectory(paths.data_dir / "credentials.db", config.roles)
     try:
-        create_user(paths.data_dir / "credentials.db", config.roles, username, password, None, role_name)
+        user_directory.create_user(username, password, None, role_name)
     except ValueError as e:
         print(f"Could not create user: {e}")
         sys.exit(1)

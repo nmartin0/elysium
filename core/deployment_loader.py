@@ -32,10 +32,12 @@ from pathlib import Path
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlite_adapter import SQLiteAdapter
 from core.config import load_yaml
+from core.intermediate_layer.audit import AuditLog
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.mediator import DataMediator
+from core.ontology.write_log import WriteLog
 
 _ADAPTER_REGISTRY: dict[str, type] = {
     "sqlite": SQLiteAdapter,
@@ -191,7 +193,8 @@ def resolve_runtime_paths() -> RuntimePaths:
     return RuntimePaths(config_dir, data_dir, log_dir)
 
 
-def load_deployment_bundle(config_dir: Path, data_dir: Path | None = None) -> tuple[DeploymentConfig, DataMediator]:
+def load_deployment_bundle(config_dir: Path, data_dir: Path | None = None,
+                            log_dir: Path | None = None) -> tuple[DeploymentConfig, DataMediator]:
     # Loads config, builds one adapter instance per declared silo (see
     # _ADAPTER_REGISTRY above), and wires them into a DataMediator that
     # knows which object types route to which silo.
@@ -225,16 +228,25 @@ def load_deployment_bundle(config_dir: Path, data_dir: Path | None = None) -> tu
     # intermediate_layer/auth.py's resolve_user_record()), not held by
     # the long-lived mediator itself.
     #
-    # write_log_db_path lives alongside credentials.db, under the same
+    # write_log lives alongside credentials.db, under the same
     # data_dir -- see core/ontology/write_log.py's own module
-    # docstring for the mechanism. A caller building a WriteMediator
-    # around this same DataMediator MUST pass this identical path --
-    # WriteMediator.__init__() enforces this directly, rather than
-    # letting a mismatch fail silently and dangerously later (writes
-    # going through the log correctly, reads never checking it).
-    write_log_db_path = data_dir / "write_log.db"
+    # docstring for the mechanism. This ONE instance is the single
+    # source of truth for the whole deployment -- a caller building a
+    # WriteMediator around this same DataMediator reads it back via
+    # mediator.write_log (see WriteMediator's own __init__), never
+    # constructs or is passed a second, separate one.
+    write_log = WriteLog(data_dir / "write_log.db")
+    # audit_log is genuinely OPTIONAL here, unlike write_log above --
+    # log_dir defaults to None (not resolved against data_dir or
+    # config_dir, since it's a genuinely third, independent location --
+    # see resolve_runtime_paths()'s own docstring). When None,
+    # DataMediator's own constructor supplies a real, working default
+    # AuditLog itself (see its own docstring for why that default
+    # exists and this store is never left without one) -- nothing
+    # further to do here in that case.
+    audit_log = AuditLog(log_dir / "audit.log") if log_dir is not None else None
     mediator = DataMediator(config.schema, adapters, silo_for_type, config.roles,
-                             write_log_db_path=write_log_db_path)
+                             write_log=write_log, audit_log=audit_log)
     return config, mediator
 
 

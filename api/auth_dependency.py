@@ -17,17 +17,16 @@ still-unexpired session token, not just block future logins. It runs
 BEFORE get_user_record() resolves a real UserRecord -- a disabled
 account never gets one at all, same as an invalid token.
 
-Reads db_path/roles from request.app.state, set once at startup by
-api/app.py's create_app() -- never re-derived here.
+Reads the shared session_store/user_directory instances from
+request.app.state, built once at startup by api/app.py's create_app()
+-- never reconstructed or re-derived here.
 
 Used by: api/routes.py (every route requiring a logged-in caller)
 """
 
 from fastapi import Header, HTTPException, Request
 
-from core.auth.session_store import validate_session
 from core.intermediate_layer.auth import UserRecord
-from core.user_directory import get_user_record, is_user_disabled
 
 _INVALID_SESSION_DETAIL = "Invalid or expired session"
 
@@ -37,13 +36,14 @@ def get_current_user(request: Request, authorization: str | None = Header(defaul
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
 
     token = authorization.removeprefix("Bearer ")
-    db_path = request.app.state.credentials_db_path
+    session_store = request.app.state.session_store
+    user_directory = request.app.state.user_directory
 
-    username = validate_session(db_path, token)
+    username = session_store.validate_session(token)
     if username is None:
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
 
-    if is_user_disabled(db_path, username):
+    if user_directory.is_user_disabled(username):
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
 
-    return get_user_record(db_path, username)
+    return user_directory.get_user_record(username)
