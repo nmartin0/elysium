@@ -47,7 +47,7 @@ def test_tool_a_real_enabled_tool_is_valid():
 
 
 def test_tool_not_in_enabled_tools_is_rejected():
-    with pytest.raises(ValueError, match="tool 'unknown_tool'"):
+    with pytest.raises(ValueError, match="tool not in config.yaml"):
         validate_roles(_role("tool:unknown_tool"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 
@@ -56,7 +56,7 @@ def test_read_type_level_grant_for_a_real_type_is_valid():
 
 
 def test_read_type_level_grant_for_unknown_type_is_rejected():
-    with pytest.raises(ValueError, match="unknown object type 'Wigdet'"):
+    with pytest.raises(ValueError, match="unknown type 'Wigdet'"):
         validate_roles(_role("read:Wigdet"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 
@@ -76,7 +76,7 @@ def test_read_field_level_grant_for_unknown_field_is_rejected():
 
 
 def test_read_field_level_grant_for_unknown_type_is_rejected():
-    with pytest.raises(ValueError, match="unknown object type 'Wigdet'"):
+    with pytest.raises(ValueError, match="unknown type 'Wigdet'"):
         validate_roles(_role("read:Wigdet.name"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 
@@ -92,7 +92,7 @@ def test_write_field_level_grant_for_unknown_field_is_rejected():
 def test_write_type_level_grant_with_no_field_is_rejected():
     # write: is only ever constructed as write:<Type>.<field> -- a
     # bare write:<Type> can never match a real authorize() call.
-    with pytest.raises(ValueError, match="never constructed anywhere"):
+    with pytest.raises(ValueError, match="missing '.field'"):
         validate_roles(_role("write:Widget"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 
@@ -112,7 +112,7 @@ def test_one_invalid_role_does_not_hide_behind_a_valid_sibling():
         "fine_role": {"allowed_actions": ["read:Widget"]},
         "broken_role": {"allowed_actions": ["read:Wigdet"]},
     }
-    with pytest.raises(ValueError, match="unknown object type 'Wigdet'"):
+    with pytest.raises(ValueError, match="unknown type 'Wigdet'"):
         validate_roles(roles, OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 

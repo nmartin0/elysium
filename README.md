@@ -143,6 +143,19 @@ illustrative snippets) with the same explanatory comments this section
 walks through. Copy them into `deployment/etc/`, confirm the pipeline
 works with the example data, then replace the content with your own.
 
+**Check your edits are valid before running anything:**
+```
+python3 -m scripts.lint_deployment
+```
+Validates `config.yaml`/`ontology_schema.yaml`/`policy.yaml` — every
+action type's own structure, every role's own grants checked against
+what they actually reference — without opening any real database
+connection or creating any file on disk. Pass a different directory
+(`python3 -m scripts.lint_deployment /path/to/candidate/config`) to
+check a config before ever copying it into `deployment/etc/` at all.
+Exits 0 if valid, 1 if not — usable in a pre-deploy CI step, not just
+interactively.
+
 Everything lives under `deployment/etc/`, `deployment/var/lib/`, and
 `deployment/var/log/` locally — the exact same three-way split a real
 install uses, just rooted under one project-relative folder instead of

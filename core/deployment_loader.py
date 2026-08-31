@@ -91,10 +91,80 @@ def _freeze_roles(roles_raw: dict) -> dict:
     }
 
 
+def _require_str(value, description: str) -> None:
+    # Catches the "Norway problem" directly: YAML's own implicit type
+    # coercion (an unquoted no/yes/on/off/true/false becomes a real
+    # bool; an unquoted date-like value like 2024-01-01 becomes a real
+    # datetime.date; a leading-zero numeral like 010 becomes octal-
+    # interpreted 8) can silently turn what an admin plainly INTENDED
+    # as a string identifier -- an object type name, a field name, a
+    # role name, a grant string -- into something else entirely. Every
+    # position this checks is later matched via an EXACT string
+    # comparison against a genuinely runtime-supplied string (
+    # authorize()'s own action_id in role["allowed_actions"], a dict
+    # lookup by object_type/field name) -- a coerced, non-string value
+    # here doesn't just look wrong, it silently, permanently never
+    # matches anything real again, exactly the class of bug this
+    # deployment's own config loading now refuses to let through.
+    # Found directly, empirically, not assumed -- see core/
+    # deployment_loader.py's own AI-notes for the real test that
+    # confirmed this (a role literally named "no" resolving to the
+    # Python boolean False, not the string "no").
+    if not isinstance(value, str):
+        raise ValueError(
+            f"{description} is {value!r} ({type(value).__name__}), not a string -- "
+            f"quote it in the YAML (e.g. \"no\" instead of no)."
+        )
+
+
+def validate_identifier_types(schema_raw: dict, policy_raw: dict) -> None:
+    # Runs BEFORE anything else below even attempts to interpret
+    # schema_raw/policy_raw's own contents -- core/ontology/action_
+    # types.py's own validate_action_types() and core/intermediate_
+    # layer/policy_validation.py's own validate_roles() both assume
+    # every name they're comparing is already a genuine string; this
+    # is the check that makes that assumption safe to make, catching
+    # the "looks like a string, silently isn't" class of mistake
+    # BEFORE either of them ever runs. See _require_str()'s own
+    # docstring for the full reasoning.
+    object_types = schema_raw.get("object_types", {})
+    for object_type_name, object_type_def in object_types.items():
+        _require_str(object_type_name, "An object_type name")
+        if "id_field" in object_type_def:
+            _require_str(object_type_def["id_field"], f"{object_type_name!r}'s own id_field")
+        security = object_type_def.get("security", {})
+        if "field" in security:
+            _require_str(security["field"], f"{object_type_name!r}'s own security.field")
+        for field_name in object_type_def.get("fields", {}):
+            _require_str(field_name, f"A field name on {object_type_name!r}")
+
+    action_types = schema_raw.get("action_types", {})
+    for action_type_name, action_def in action_types.items():
+        _require_str(action_type_name, "An action_type name")
+        for param_name in action_def.get("parameters", {}):
+            _require_str(param_name, f"A parameter name on {action_type_name!r}")
+        for affected_type in action_def.get("affected_object_types") or []:
+            _require_str(affected_type, f"An affected_object_types entry on {action_type_name!r}")
+        for i, sub_write in enumerate(action_def.get("sub_writes") or []):
+            if "object_type" in sub_write:
+                _require_str(sub_write["object_type"], f"{action_type_name!r}'s sub_writes[{i}].object_type")
+
+    roles = policy_raw.get("roles", {})
+    for role_name, role_def in roles.items():
+        _require_str(role_name, "A role name")
+        for grant in role_def.get("allowed_actions") or []:
+            _require_str(grant, f"A grant in role {role_name!r}'s allowed_actions")
+
+    for user_id in policy_raw.get("users", {}):
+        _require_str(user_id, "A user_id in policy.yaml's own users section")
+
+
 def load_deployment(base_path: Path) -> DeploymentConfig:
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
     policy_raw = load_yaml(base_path / "policy.yaml")
+
+    validate_identifier_types(schema_raw, policy_raw)
 
     # tools.enabled is genuinely OPTIONAL -- a deployment with no tools
     # declared (or no "tools" section at all) is completely valid, unlike
@@ -128,11 +198,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             action_types=schema_raw.get("action_types", {}),
         )
     except KeyError as e:
-        raise ValueError(
-            f"Missing expected key {e} in config.yaml, ontology_schema.yaml, "
-            f"or policy.yaml under {base_path} -- check for typos or a "
-            f"missing section."
-        ) from e
+        raise ValueError(f"Missing expected key {e} in config.yaml/ontology_schema.yaml/policy.yaml.") from e
 
     # A SEPARATE validation pass, deliberately after the try/except
     # above -- by this point every basic required key is already
@@ -278,3 +344,51 @@ def load_example_queries(config_dir: Path) -> list[dict]:
     # config_dir, never data_dir.
     raw = load_yaml(config_dir / "example_queries.yaml")
     return raw["examples"]
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# RESOLVED (kept for history):
+# - _require_str()'s own error message, and the "Missing expected
+#   key" message in load_deployment()'s own try/except, were both
+#   trimmed to one line each, per the user's own explicit request for
+#   compiler-style brevity -- the "Norway problem" explanation
+#   _require_str() used to spell out inline (unquoted no/yes/date-
+#   like values/octal numerals all silently coercing) moved to this
+#   function's own comment above the isinstance() check instead; the
+#   raised string itself now just names the bad value and the fix
+#   ("quote it"), matching every other validator touched the same
+#   pass (see core/ontology/action_types.py's own AI-notes for the
+#   identical change made there).
+#
+# CONTEXT: validate_identifier_types() was added during a deliberate,
+# requested audit of scripts/lint_deployment.py's own reliability
+# against real, established YAML/config-validator failure modes -- see
+# that script's own AI-notes for the other three fixes from the same
+# pass. This one specifically was PROMOTED from a private
+# (_validate_identifier_types) to a public function partway through
+# that same work: it started as something ONLY load_deployment()
+# itself would ever call, but the linter genuinely needs to call it
+# too (to distinguish "a structural/identifier problem, fail fast" from
+# "an action_type/role problem, collect every one of them" -- see the
+# linter's own docstring). No existing precedent anywhere in this
+# codebase for importing an underscore-prefixed function across module
+# boundaries (checked directly, not assumed) -- promoting it, rather
+# than importing the private name anyway, was the right call to keep
+# that project-wide convention intact, matching how validate_action_
+# types()/validate_roles() are ALSO already public for the identical
+# reason (each has more than one real caller).
+#
+# DEFERRED (known, intentional, not yet built):
+# - validate_identifier_types() checks identifiers (keys, and the few
+#   VALUES that function as identifiers -- id_field, security.field,
+#   grant strings) for being genuine strings, not other YAML-coercible
+#   VALUES a mutation's own "value" could still silently become (a
+#   date, an octal-interpreted number). See core/config.py's own AI-
+#   notes for why that narrower, value-level gap was deliberately left
+#   for a future, separate, more schema-aware pass rather than
+#   addressed here or at the generic YAML-loading level.

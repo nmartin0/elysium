@@ -59,7 +59,7 @@ def test_action_type_missing_sub_writes_is_rejected():
     # loudly, at load time -- so this specific gap, in itself, must
     # be rejected here too, not left as the one thing still silent.
     action_types = {"RenameWidget": {"object_type": "Widget", "operation": "update"}}
-    with pytest.raises(ValueError, match="has no 'sub_writes'"):
+    with pytest.raises(ValueError, match="missing required key 'sub_writes'"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -91,7 +91,7 @@ def test_sub_writes_exceeding_the_cap_is_rejected():
             "sub_writes": [_sub_write("Widget", f"parameter.id_{i}") for i in range(MAX_SUB_WRITES + 1)],
         }
     }
-    with pytest.raises(ValueError, match=f"exceeds the maximum of {MAX_SUB_WRITES}"):
+    with pytest.raises(ValueError, match=f"exceeds max of {MAX_SUB_WRITES}"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -108,7 +108,7 @@ def test_sub_writes_at_exactly_the_cap_is_allowed():
 
 def test_affected_object_types_required_when_sub_writes_used():
     action_types = {"Bad": {"sub_writes": [_sub_write()]}}
-    with pytest.raises(ValueError, match="affected_object_types is required"):
+    with pytest.raises(ValueError, match="affected_object_types.* must be a non-empty list"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -116,7 +116,7 @@ def test_affected_object_types_naming_unknown_type_is_rejected():
     action_types = {
         "Bad": {"affected_object_types": ["Sprocket"], "sub_writes": [_sub_write("Widget")]}
     }
-    with pytest.raises(ValueError, match="unknown object type"):
+    with pytest.raises(ValueError, match="unknown type"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -127,7 +127,7 @@ def test_sub_write_missing_a_required_key_is_rejected():
             "sub_writes": [{"object_type": "Widget", "operation": "update"}],  # no object_id, no mutations
         }
     }
-    with pytest.raises(ValueError, match="missing required key"):
+    with pytest.raises(ValueError, match="missing key"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -135,7 +135,7 @@ def test_sub_write_referencing_unknown_object_type_is_rejected():
     action_types = {
         "Bad": {"affected_object_types": ["Widget"], "sub_writes": [_sub_write("Sprocket")]}
     }
-    with pytest.raises(ValueError, match="unknown object type"):
+    with pytest.raises(ValueError, match="unknown type"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -169,7 +169,7 @@ def test_duplicate_identical_object_reference_across_sub_writes_is_rejected():
             ],
         }
     }
-    with pytest.raises(ValueError, match="both reference the IDENTICAL"):
+    with pytest.raises(ValueError, match="duplicates an earlier reference"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -200,7 +200,7 @@ def test_affected_object_types_under_declaration_is_rejected():
             "sub_writes": [_sub_write("Widget", "parameter.widget_id"), _sub_write("Gadget", "parameter.gadget_id")],
         }
     }
-    with pytest.raises(ValueError, match="used but undeclared"):
+    with pytest.raises(ValueError, match="undeclared:"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -213,7 +213,7 @@ def test_affected_object_types_over_declaration_is_rejected():
             "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
         }
     }
-    with pytest.raises(ValueError, match="declared but unused"):
+    with pytest.raises(ValueError, match="unused:"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -244,7 +244,7 @@ def test_object_reference_parameter_without_object_type_is_rejected():
             "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
         }
     }
-    with pytest.raises(ValueError, match="no object_type of its own"):
+    with pytest.raises(ValueError, match="is missing 'object_type'"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -256,7 +256,7 @@ def test_object_reference_parameter_naming_unknown_type_is_rejected():
             "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
         }
     }
-    with pytest.raises(ValueError, match="unknown object type"):
+    with pytest.raises(ValueError, match="unknown type"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -274,7 +274,7 @@ def test_object_reference_parameter_not_used_by_any_sub_write_is_still_validated
             "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
         }
     }
-    with pytest.raises(ValueError, match="unknown object type"):
+    with pytest.raises(ValueError, match="unknown type"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -285,7 +285,7 @@ def test_sub_write_object_id_referencing_undeclared_parameter_is_rejected():
             "sub_writes": [_sub_write("Widget", "parameter.nonexistent_id")],
         }
     }
-    with pytest.raises(ValueError, match="not declared in this action's own parameters"):
+    with pytest.raises(ValueError, match="references undeclared parameter"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -297,7 +297,7 @@ def test_sub_write_object_id_referencing_non_object_reference_parameter_is_rejec
             "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
         }
     }
-    with pytest.raises(ValueError, match="must be declared type 'object_reference'"):
+    with pytest.raises(ValueError, match="must be type 'object_reference'"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
@@ -309,7 +309,7 @@ def test_sub_write_object_id_referencing_mismatched_object_type_is_rejected():
             "sub_writes": [_sub_write("Widget", "parameter.gadget_id")],
         }
     }
-    with pytest.raises(ValueError, match="these must match"):
+    with pytest.raises(ValueError, match="expected 'Widget'"):
         validate_action_types(action_types, OBJECT_TYPES)
 
 
