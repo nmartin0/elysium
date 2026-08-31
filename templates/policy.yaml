@@ -27,9 +27,25 @@
 #                                (see ontology_schema.yaml's own
 #                                action_types -- one grant covers the
 #                                WHOLE action, however many fields its
-#                                own declared mutations happen to
-#                                touch; there is no separate per-field
-#                                write grant)
+#                                own declared mutations touch, AS LONG
+#                                AS every object that action's own
+#                                sub_writes touches is the SAME object
+#                                type. The moment an action's sub_writes
+#                                spans two or more DIFFERENT types, it
+#                                additionally needs its own
+#                                write:<Type>.<field> grant below, for
+#                                EVERY type involved -- execute: alone
+#                                is not enough once one action could
+#                                silently reach into an unrelated
+#                                object type just by having a new
+#                                sub_write added to it later.)
+#     write:<Type>.<field>     -- required ONLY for a cross-object-type
+#                                action's own additional per-type
+#                                grants, described immediately above --
+#                                never a standalone capability of its
+#                                own; there is no generic "write this
+#                                field directly" mechanism outside a
+#                                named action at all.
 #     tool:<name>              -- may invoke this specific tool
 #     manage:users              -- may create new database-backed users
 #                                via api/'s /users endpoint (see

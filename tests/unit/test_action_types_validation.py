@@ -20,9 +20,9 @@ import pytest
 from core.ontology.action_types import MAX_SUB_WRITES, validate_action_types
 
 OBJECT_TYPES = {
-    "Widget": {"fields": {"name": {"type": "data"}}},
-    "Gadget": {"fields": {"name": {"type": "data"}}},
-    "Gizmo": {"fields": {"name": {"type": "data"}}},
+    "Widget": {"id_field": "widget_id", "fields": {"name": {"type": "data"}}},
+    "Gadget": {"id_field": "gadget_id", "fields": {"name": {"type": "data"}}},
+    "Gizmo": {"id_field": "gizmo_id", "fields": {"name": {"type": "data"}}},
 }
 
 
@@ -47,12 +47,20 @@ def _sub_write(object_type="Widget", object_id="parameter.widget_id", operation=
     }
 
 
-def test_old_flat_shape_action_type_is_completely_untouched():
-    # No "sub_writes" key at all -- and otherwise missing everything
-    # this module would require of a sub_writes-shaped action, proving
-    # this branch is genuinely skipped entirely, not just lenient.
+def test_action_type_missing_sub_writes_is_rejected():
+    # Replaces test_old_flat_shape_action_type_is_completely_untouched
+    # -- the old, flat object_type/operation shape used to be silently
+    # SKIPPED entirely here, on the theory it was a still-supported,
+    # separate representation. It isn't: propose_action() does a bare
+    # action_def["sub_writes"] access with no fallback, so a missing
+    # key used to pass load-time validation cleanly and then crash
+    # with a raw KeyError the first time anyone actually proposed it.
+    # This module's whole job is to catch exactly this class of gap
+    # loudly, at load time -- so this specific gap, in itself, must
+    # be rejected here too, not left as the one thing still silent.
     action_types = {"RenameWidget": {"object_type": "Widget", "operation": "update"}}
-    validate_action_types(action_types, OBJECT_TYPES)  # does not raise
+    with pytest.raises(ValueError, match="has no 'sub_writes'"):
+        validate_action_types(action_types, OBJECT_TYPES)
 
 
 def test_valid_two_object_sub_writes_action_passes():
@@ -211,11 +219,15 @@ def test_affected_object_types_over_declaration_is_rejected():
 
 def test_one_invalid_action_type_does_not_hide_behind_a_valid_sibling():
     # Proves validation is per-action-type, not short-circuited or
-    # merged across the whole dict -- a totally fine, older-shape
-    # action_type sitting right next to a broken new-shape one must
-    # still surface the SECOND one's own real error.
+    # merged across the whole dict -- a totally fine action_type
+    # sitting right next to a broken one must still surface the
+    # SECOND one's own real error.
     action_types = {
-        "FineOldShape": {"object_type": "Widget", "operation": "update"},
+        "FineSibling": {
+            "affected_object_types": ["Widget"],
+            "parameters": {"widget_id": _obj_ref_param("Widget")},
+            "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
+        },
         "BrokenNewShape": {"affected_object_types": ["Widget"], "sub_writes": []},
     }
     with pytest.raises(ValueError, match="non-empty list"):
@@ -322,3 +334,57 @@ def test_sub_write_object_id_as_user_security_value_needs_no_parameter_declarati
         }
     }
     validate_action_types(action_types, OBJECT_TYPES)  # does not raise
+
+
+# --- mutation property names -------------------------------------------
+
+def test_mutation_setting_an_unknown_property_is_rejected():
+    action_types = {
+        "Bad": {
+            "affected_object_types": ["Widget"],
+            "sub_writes": [_sub_write("Widget", "w1", mutations=[{"set": {"property": "nmae", "value": "x"}}])],
+        }
+    }
+    with pytest.raises(ValueError, match="unknown property 'nmae'"):
+        validate_action_types(action_types, OBJECT_TYPES)
+
+
+def test_mutation_setting_a_real_declared_field_is_fine():
+    action_types = {
+        "Fine": {
+            "affected_object_types": ["Widget"],
+            "sub_writes": [_sub_write("Widget", "w1", mutations=[{"set": {"property": "name", "value": "x"}}])],
+        }
+    }
+    validate_action_types(action_types, OBJECT_TYPES)  # does not raise
+
+
+def test_mutation_setting_the_type_own_id_field_is_fine():
+    # id_field is a real, settable property (a create's own mutations
+    # set it explicitly) even though it isn't listed under the type's
+    # own "fields" -- must not be flagged as unknown.
+    action_types = {
+        "Fine": {
+            "affected_object_types": ["Widget"],
+            "sub_writes": [_sub_write(
+                "Widget", "w1", operation="create",
+                mutations=[{"set": {"property": "widget_id", "value": "x"}}],
+            )],
+        }
+    }
+    validate_action_types(action_types, OBJECT_TYPES)  # does not raise
+
+
+def test_mutation_property_check_is_scoped_to_the_right_object_type():
+    # "name" is real on Widget, but this sub_write's own object_type
+    # is Gadget -- Gadget also happens to declare "name" too in this
+    # fixture, so use a property that's genuinely Widget-only-shaped
+    # to prove the check doesn't just pass because SOME type has it.
+    action_types = {
+        "Bad": {
+            "affected_object_types": ["Gadget"],
+            "sub_writes": [_sub_write("Gadget", "g1", mutations=[{"set": {"property": "widget_id", "value": "x"}}])],
+        }
+    }
+    with pytest.raises(ValueError, match="unknown property 'widget_id'"):
+        validate_action_types(action_types, OBJECT_TYPES)

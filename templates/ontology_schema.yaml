@@ -71,6 +71,18 @@ object_types:
 # execute:<ActionName> grant in policy.yaml -- there is no generic,
 # free-form "write this field" mechanism at all.
 #
+# Every action_type declares "sub_writes" -- a list of one or more
+# objects it touches, each with its own object_type/object_id/
+# operation/mutations. This is required for EVERY action, even one
+# touching only a single object (like both examples below) -- there
+# is no separate, flatter shorthand: the object(s) an action touches
+# are always just ordinary parameters, matching Palantir Foundry's
+# own action model directly (verified against their own docs: "an
+# existing object whose primary key is derived from object reference
+# parameters" -- never a separate, special field). A parameter that
+# identifies an object is declared with type: object_reference,
+# naming which object_type it refers to.
+#
 # A mutation's "value" is one of three kinds -- the two most important
 # to understand are both demonstrated below, deliberately, so this
 # template teaches the real distinction rather than picking just one
@@ -91,25 +103,36 @@ object_types:
 #     all.
 action_types:
   UpdateEmployeeDepartment:
-    object_type: Employee
-    operation: update
+    affected_object_types: [Employee]
     parameters:
+      employee_id:
+        type: object_reference
+        object_type: Employee
+        required: true
       new_department:
         type: string
         required: true
-    mutations:
-      - set: {property: department, value: parameter.new_department}
+    sub_writes:
+      - object_type: Employee
+        object_id: parameter.employee_id
+        operation: update
+        mutations:
+          - set: {property: department, value: parameter.new_department}
   CreateEmployee:
-    object_type: Employee
-    operation: create
+    affected_object_types: [Employee]
     parameters:
       employee_id:
-        type: string
+        type: object_reference
+        object_type: Employee
         required: true
       full_name:
         type: string
         required: true
-    mutations:
-      - set: {property: employee_id, value: parameter.employee_id}
-      - set: {property: full_name, value: parameter.full_name}
-      - set: {property: department, value: user.security_value}
+    sub_writes:
+      - object_type: Employee
+        object_id: parameter.employee_id
+        operation: create
+        mutations:
+          - set: {property: employee_id, value: parameter.employee_id}
+          - set: {property: full_name, value: parameter.full_name}
+          - set: {property: department, value: user.security_value}

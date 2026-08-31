@@ -1,16 +1,24 @@
 """
-action_types.py  (schema-load-time validation for the sub_writes shape)
+action_types.py  (schema-load-time validation for action_types)
 
-Validates ONLY action_types that use the NEW sub_writes shape -- an
-action_type still using the OLD, flat object_type/operation/mutations
-shape is completely untouched by this module, exactly as before this
-existed. This is deliberately additive: nothing about an existing,
-already-working action_type changes, or is even looked at, by adding
-this. See core/deployment_loader.py's load_deployment() for where
-this actually gets called, right after action_types is parsed.
+Every action_type is REQUIRED to use the sub_writes shape -- there is
+no supported "flat," single-object shorthand anymore (see propose_
+action()'s own docstring for the full reasoning: the object(s) an
+action touches are always just ordinary parameters, matching Palantir
+Foundry's own model directly). An action_type missing "sub_writes"
+entirely is REJECTED here, loudly, at load time -- see this module's
+own AI-notes at the bottom for the real, concrete gap this closes: the
+old version of this module silently SKIPPED validating an action_type
+missing sub_writes (treating it as "the old, deliberately-untouched
+shape"), even though propose_action() itself does a bare
+action_def["sub_writes"] dict access with no fallback -- meaning a
+malformed action_type used to pass schema-load validation cleanly and
+then crash with a raw, confusing KeyError the first time anyone
+actually proposed it. Found while auditing this file for exactly this
+class of gap, not hypothetically.
 
 WHY schema-load time, not propose_action() time: every one of these
-checks depends only on the SCHEMA itself (object_type names,
+checks depends only on the SCHEMA itself (object_type/field names,
 declared affected_object_types, the sub_writes list's own shape) --
 never on a real caller's parameters, which don't exist yet at load
 time. Failing loudly here, once, at startup, is strictly better than
@@ -21,6 +29,16 @@ to be caught before the deployment ever starts serving requests. Same
 "fail loudly at load time" discipline used elsewhere in this project
 (e.g. core/user_directory.py's UserDirectory.create_user() rejecting
 an unknown role_name immediately, not silently).
+
+Each sub_write's own mutations are checked against the target
+object_type's REAL, declared fields (plus its own id_field, settable
+by a create's own mutations even though it isn't listed under
+"fields" itself -- see core/deployment_loader.py's own schema
+handling) -- a typo'd property name (e.g. "nmae" instead of "name")
+used to pass silently at load time and only surface the first time a
+real caller happened to trigger that specific action, the exact same
+class of gap the missing-sub_writes case above closes, just one level
+deeper.
 
 A SEPARATE, later check still exists at propose_action() time and is
 NOT replaced by this: two sub_writes with DIFFERENT object_id
@@ -55,13 +73,11 @@ object being acted on is ALWAYS just a parameter, never a separate,
 out-of-band field, at every scale Palantir itself supports). A
 sub_write's object_id, when it's a "parameter.<name>" expression,
 MUST reference a parameter declared this way, with its own object_type
-matching the sub_write's own -- this is what lets a later increment
-retire the separate, caller-supplied object_id argument entirely:
-every action, including ones touching only one object, identifies
-that object as an ordinary, named parameter like any other, not a
-special case. See core/agent/agentic_loop.py's own propose_action
-step handling for where that argument still lives today, until that
-increment lands.
+matching the sub_write's own -- this is what let a later increment
+retire the separate, caller-supplied object_id argument entirely
+(now done -- see propose_action()'s own docstring): every action,
+including ones touching only one object, identifies that object as an
+ordinary, named parameter like any other, not a special case.
 
 object_id is NOT required to be a "parameter.<name>" expression at
 all -- it uses the exact same resolution vocabulary
@@ -80,11 +96,13 @@ MAX_SUB_WRITES = 20
 def validate_action_types(action_types: dict, object_types: dict) -> None:
     for action_type_name, action_def in action_types.items():
         if "sub_writes" not in action_def:
-            # The OLD, flat shape -- completely untouched. Whatever
-            # validation it gets (today: none at load time, only
-            # lazily at propose_action() time) is unaffected by this
-            # module existing at all.
-            continue
+            raise ValueError(
+                f"Action type {action_type_name!r} has no 'sub_writes' -- this is "
+                f"required for every action_type now, there is no supported flat, "
+                f"single-object shorthand. See this module's own docstring for why "
+                f"this used to be silently skipped instead of rejected, and what "
+                f"that gap actually let through."
+            )
         _validate_sub_writes_action(action_type_name, action_def, object_types)
 
 
@@ -214,6 +232,26 @@ def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, 
             f"be a non-empty list."
         )
 
+    # Every mutation's own "property" must be a REAL field this
+    # object_type actually declares -- catches a typo (e.g. "nmae"
+    # instead of "name") that would otherwise pass silently here and
+    # only surface as a confusing failure deep inside
+    # _group_changes_by_storage() the first time a real caller
+    # happened to trigger this specific action. id_field is
+    # separately valid too -- it's a real, settable property (a
+    # create's own mutations set it explicitly) even though it isn't
+    # listed under the type's own "fields" (see core/deployment_
+    # loader.py's own schema handling for why).
+    valid_properties = set(object_types[object_type]["fields"]) | {object_types[object_type]["id_field"]}
+    for mutation_index, mutation in enumerate(sub_write["mutations"]):
+        property_name = mutation.get("set", {}).get("property")
+        if property_name not in valid_properties:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}].mutations[{mutation_index}] "
+                f"sets unknown property {property_name!r} on {object_type!r} -- not declared "
+                f"anywhere in this deployment's own ontology_schema.yaml."
+            )
+
     object_id = sub_write["object_id"]
     if isinstance(object_id, str) and object_id.startswith("parameter."):
         # See this module's own docstring for why ONLY this expression
@@ -242,3 +280,48 @@ def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, 
                 f"{param_spec.get('object_type')!r}, but this sub_write's own "
                 f"object_type is {object_type!r} -- these must match."
             )
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# RESOLVED (kept for history):
+# - This module used to silently SKIP validating any action_type
+#   missing "sub_writes" entirely, treating it as "the old, still-
+#   supported flat shape." It wasn't -- propose_action() does a bare
+#   action_def["sub_writes"] dict access with no fallback, so a
+#   malformed action_type used to pass this module's own validation
+#   cleanly and then crash with a raw KeyError the first time anyone
+#   actually proposed it. NOW FIXED: missing "sub_writes" is rejected
+#   loudly here instead. Found while specifically auditing this file
+#   for exactly this class of gap (part of a broader pass also
+#   covering role-grant validation -- see core/intermediate_layer/
+#   policy_validation.py, and mutation-property-name validation,
+#   added at the same time, immediately below this note).
+# - templates/ontology_schema.yaml -- the file explicitly meant to be
+#   copied into new deployments -- was STILL using the old, now-
+#   rejected flat shape when this gap was found. Anyone following it
+#   would have produced a config that passed validation and crashed
+#   on first real use. Migrated to sub_writes, and verified against
+#   the REAL validate_action_types() function directly, not just
+#   visually inspected. templates/policy.yaml's own explanatory
+#   comment had a related, separate gap: it never mentioned write:
+#   grants at all (added to this project after that template was
+#   originally written) -- also fixed, same pass.
+#
+# DEFERRED (known, intentional, not yet built):
+# - No check that a declared object_reference parameter, or a
+#   sub_write's own object_id expression, is genuinely REACHABLE given
+#   the action's own declared "parameters" -- e.g. an object_reference
+#   parameter that's declared but never referenced by anything at all
+#   (not a sub_write's object_id, not a mutation value, not a
+#   submission_criteria check) is not currently flagged as suspicious.
+#   This would be a "declared but unused" lint, a genuinely different
+#   kind of check from "does this reference something real" (the only
+#   thing this whole module does today) -- not built here, on purpose,
+#   matching this module's own docstring reasoning for why the
+#   analogous "is this write: grant actually used" question isn't
+#   checked by policy_validation.py either.
