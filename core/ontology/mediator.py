@@ -683,14 +683,18 @@ class DataMediator:
 #   writes() (core/ontology/write_mediator.py), and IS exercised with
 #   a genuine, 2-element object_refs list -- see tests/unit/
 #   test_write_log_resume.py's own test_resume_with_multiple_sub_
-#   writes_aggregates_correctly, the first test in this whole effort
-#   to touch two real, different objects within one batch. What's
-#   STILL not proven: genuine multi-THREADED contention -- two
-#   different batches, running concurrently on different threads,
-#   whose own object sets genuinely overlap, actually avoiding
-#   deadlock in practice, not just by construction. No dedicated
-#   concurrency test exists anywhere in this codebase yet for EITHER
-#   the single-object (KeyedLockManager itself, core/concurrency.py)
-#   or multi-object locking case -- worth adding for both, not just
-#   this one, once a real multi-object action_type exists to motivate
-#   it (see write_mediator.py's own AI-notes for where that stands).
+#   writes_aggregates_correctly (synthetic fixtures), and now, for the
+#   FIRST time, a real, schema-authored action too: TransferFunds
+#   (tests/unit/test_transfer_funds.py, tests/integration/test_
+#   transfer_funds_e2e.py -- see write_mediator.py's own AI-notes for
+#   the fuller record). What's STILL not proven: genuine multi-
+#   THREADED contention -- two different batches, running concurrently
+#   on different threads, whose own object sets genuinely overlap,
+#   actually avoiding deadlock in practice, not just by construction.
+#   No dedicated concurrency test exists anywhere in this codebase yet
+#   for EITHER the single-object (KeyedLockManager itself, core/
+#   concurrency.py) or multi-object locking case -- the "once a real
+#   multi-object action_type exists to motivate it" condition this
+#   note used to name is now met (TransferFunds), but the test itself
+#   remains a separate, still-open, explicitly tracked item -- worth
+#   adding for both, not just one.

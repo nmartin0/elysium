@@ -533,14 +533,16 @@ class WriteLog:
 #   which is more serious than "incomplete": crash recovery for real,
 #   confirm_and_execute()-originated writes is currently a silent
 #   no-op, not merely partial.
-# - No real, multi-object action_type has ever been declared or
-#   exercised anywhere -- only synthetic test fixtures. Still true as
-#   of this update. The first REAL one (a funds transfer, most likely)
-#   should be authored once resume is ALSO ready to handle it
-#   correctly, as the genuine end-to-end proof this whole mechanism
-#   works -- not before, since a crash mid-apply on a real multi-
-#   object action would currently be unrecoverable, per the point
-#   above.
+# - (RESOLVED, kept for history) No real, multi-object action_type
+#   had ever been declared or exercised anywhere -- only synthetic
+#   test fixtures. NOW FIXED: TransferFunds (tests/integration/
+#   fixtures/ontology_schema.yaml) is that real action -- a fund
+#   transfer, two sub_writes, both Account. Authored once resume was
+#   ALSO ready to handle it correctly (per this note's own earlier
+#   reasoning), not before. See core/ontology/write_mediator.py's own
+#   AI-notes for the fuller record, including a real, previously-
+#   uncovered gap found while building it (the resolved-id duplicate
+#   check had zero test coverage anywhere until now).
 #
 # REJECTED ALTERNATIVES (considered and ruled out -- don't re-propose
 # without reading why):

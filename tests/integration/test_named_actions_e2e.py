@@ -55,7 +55,7 @@ def test_real_model_invokes_named_action_and_it_actually_changes_the_database(de
     # the model's OWN chosen value for its OWN chosen parameter -- not
     # a hardcoded expectation, since the model's exact phrasing (and
     # even which parameter NAME it used internally) is its own choice.
-    real_value = mediator.get_field(user_record, "Customer", pending.object_id, "name")
+    real_value = mediator.get_field(user_record, "Customer", pending.sub_writes[0].object_id, "name")
     assert real_value == proposed_name, (
         f"Expected the database to reflect the model's own proposed value "
         f"{proposed_name!r}, but found {real_value!r}"
@@ -71,8 +71,31 @@ def test_real_model_proposal_rejected_leaves_database_unchanged(deployment, medi
 
     assert outcome is None
 
-    real_value = mediator.get_field(user_record, "Customer", pending.object_id, "name")
+    real_value = mediator.get_field(user_record, "Customer", pending.sub_writes[0].object_id, "name")
     assert real_value == "Ada Okafor", (
         f"Expected the database to remain at the original seed value "
         f"after rejection, but found {real_value!r}"
     )
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# RESOLVED (kept for history):
+# - A prior pass migrating PendingWrite's own object_id retirement
+#   fixed the outcome assertion's own "object_id" reference in this
+#   file, but MISSED two other, identical stale references (both in
+#   get_field() calls, one per test function) -- pending.object_id,
+#   which does not exist on PendingWrite at all (confirmed directly:
+#   PendingWrite.__dataclass_fields__ has no such key). This went
+#   uncaught for a real reason, not carelessness: this whole file
+#   requires a real, locally-running Ollama server, which was not
+#   available in the environment(s) that ran the fast suite throughout
+#   that migration, so it was never actually exercised. Found and
+#   fixed by directly checking PendingWrite's own real attributes,
+#   not assumed from the surrounding code's own apparent intent.
+#   Fixed to pending.sub_writes[0].object_id, matching every other
+#   already-migrated reference in this same file.

@@ -101,6 +101,22 @@ roles:
       - read:SupportTicket
       - read:SupportTicket.subject
       - read:SupportTicket.status
+  # For tests/integration/test_transfer_funds_e2e.py and
+  # tests/unit/test_transfer_funds.py -- a DEDICATED role/user (not an
+  # extension of editor's own grants), same discipline this project's
+  # own commit history already established for named actions: a NEW
+  # grant added to an EXISTING, already-tested user silently changes
+  # what that user's prompt shows to EVERY test already relying on it.
+  # Same-type sub_writes (Account -> Account) need only execute:
+  # TransferFunds -- no write:Account.balance grant, matching
+  # ontology_schema.yaml's own comment on why this action doesn't
+  # exercise the cross-type RBAC path.
+  accountant:
+    allowed_actions:
+      - read:Account
+      - read:Account.account_id
+      - read:Account.balance
+      - execute:TransferFunds
 
 users:
   user_alice:
@@ -129,3 +145,12 @@ users:
   user_frank:
     region: us-west
     role: customer_service_link_only
+  # For tests/integration/test_transfer_funds_e2e.py -- see the
+  # accountant role above for why this is a dedicated user rather than
+  # an extension of an existing one. Same region as cust_001 (both
+  # seed accounts' real owner in schema.sql) -- MAC must genuinely
+  # pass for this test to prove anything about the WRITE mechanism
+  # specifically, not accidentally test MAC denial instead.
+  user_henry:
+    region: us-west
+    role: accountant

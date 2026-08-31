@@ -83,18 +83,26 @@ def _build_sqlite_db(sql_file: Path, db_path: Path) -> None:
     conn.close()
 
 
-def propose_named_action(deployment, mediator, query_text: str):
-    # Shared by test_named_actions_e2e.py and test_write_confirmation_e2e.py
-    # -- both real-Ollama tests run a query through a real model,
-    # expecting it to produce a propose_action step, then hand back
-    # everything the calling test needs to confirm/reject and verify.
-    # Was duplicated near-verbatim (identical logic, differing only in
-    # the assertion's error-message wording) before this extraction,
-    # caught during a full pass over every test helper function looking
-    # for exactly this kind of duplication.
+def propose_named_action(deployment, mediator, query_text: str, user_id: str = "user_eve"):
+    # Shared by test_named_actions_e2e.py, test_write_confirmation_
+    # e2e.py, and test_transfer_funds_e2e.py -- all real-Ollama tests
+    # that run a query through a real model, expecting it to produce a
+    # propose_action step, then hand back everything the calling test
+    # needs to confirm/reject and verify. Was duplicated near-verbatim
+    # (identical logic, differing only in the assertion's error-
+    # message wording) before this extraction, caught during a full
+    # pass over every test helper function looking for exactly this
+    # kind of duplication.
+    #
+    # user_id defaults to "user_eve" -- every caller before test_
+    # transfer_funds_e2e.py existed used exactly that user, unchanged;
+    # generalized to a parameter once a SECOND, genuinely different
+    # user (user_henry, the dedicated accountant-role user) needed
+    # this same shared flow, rather than that test growing its own,
+    # near-identical copy of this same logic.
     write_mediator = WriteMediator(mediator, deployment.roles, deployment.action_types)
     loop = AgentLoop.from_deployment(deployment, mediator, write_mediator=write_mediator)
-    user_record = resolve_user_record(deployment.users, "user_eve", deployment.security_attribute)
+    user_record = resolve_user_record(deployment.users, user_id, deployment.security_attribute)
 
     result = loop.run(user_record, query_text)
     print(f"\n[diagnostic] pending_write: {result.pending_write}")
@@ -137,3 +145,24 @@ def deployment(_bundle):
 def mediator(_bundle):
     _, mediator = _bundle
     return mediator
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# RESOLVED (kept for history):
+# - propose_named_action() used to hardcode "user_eve" -- generalized
+#   with a user_id parameter (defaulting to "user_eve", so every
+#   existing caller stayed unchanged) once tests/integration/test_
+#   transfer_funds_e2e.py needed the SAME shared flow for a genuinely
+#   different user (user_henry, the dedicated accountant-role user --
+#   see policy.yaml's own comment for why a dedicated user, not an
+#   extension of user_eve's existing grants). Caught the alternative
+#   (a second, near-duplicate helper) directly, before it happened --
+#   this file's own docstring already names the exact prior instance
+#   of this class of duplication (propose_named_action()'s own
+#   original extraction) as the reason to generalize rather than
+#   repeat it.

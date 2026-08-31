@@ -103,6 +103,31 @@ object_types:
         type: link
         target: Customer
         cardinality: one
+  # For tests/integration/test_transfer_funds_e2e.py and
+  # tests/unit/test_transfer_funds.py -- the first REAL, deliberately-
+  # authored multi-object action_type (TransferFunds, below), the
+  # actual end-to-end proof the whole sub_writes/write_log_batches
+  # mechanism works, not just its synthetic-fixture unit tests.
+  Account:
+    storage:
+      silo: primary_sql
+      table: accounts
+      id_column: account_id
+    id_field: account_id
+    # A SECURITY CHAIN, not a direct field -- same pattern as
+    # SupportTicket above (via_field: customer_id): MAC resolves by
+    # following owner_customer_id back to Customer.region.
+    security:
+      via_field: owner_customer_id
+    fields:
+      balance:
+        type: data
+      currency:
+        type: data
+      owner_customer_id:
+        type: link
+        target: Customer
+        cardinality: one
 
 # NAMED ACTION TYPES (action-types-redesign branch) -- for
 # tests/integration/test_named_actions_e2e.py, proving a real model
@@ -176,3 +201,55 @@ action_types:
           - set: {property: name, value: parameter.name}
           - set: {property: email, value: parameter.email}
           - set: {property: region, value: user.security_value}
+  # For tests/integration/test_transfer_funds_e2e.py and
+  # tests/unit/test_transfer_funds.py -- the first REAL, deliberately-
+  # authored MULTI-OBJECT action_type: two sub_writes, both Account,
+  # exercised through the real apply path (WriteMediator._apply_
+  # batch(), DataMediator._locks_for_objects() with two genuinely
+  # different real locks) rather than only the synthetic fixtures
+  # test_write_log_batches.py/test_action_types_validation.py already
+  # used to prove the mechanism's own correctness in isolation.
+  #
+  # Same-type sub_writes (Account -> Account) -- only execute:
+  # TransferFunds is required by RBAC, not any write:<Type>.<field>
+  # grant; that separate path (a cross-TYPE action) is already proven
+  # by tests/unit/test_write_mediator.py's own synthetic fixtures, not
+  # this addition's own job to prove again.
+  #
+  # Mutations only ever "set" a value -- there is no arithmetic
+  # increment/decrement mutation kind, deliberately (see core/ontology/
+  # write_mediator.py's own docstring on mutation resolution). A real
+  # transfer's own new balances are therefore parameters the CALLER
+  # supplies directly, already computed -- exactly how a real person
+  # using this system would gather each account's current balance
+  # first (an ordinary read), then propose the write with the values
+  # they've already worked out, not something this action computes
+  # for them.
+  TransferFunds:
+    affected_object_types: [Account]
+    parameters:
+      from_account_id:
+        type: object_reference
+        object_type: Account
+        required: true
+      to_account_id:
+        type: object_reference
+        object_type: Account
+        required: true
+      new_from_balance:
+        type: number
+        required: true
+      new_to_balance:
+        type: number
+        required: true
+    sub_writes:
+      - object_type: Account
+        object_id: parameter.from_account_id
+        operation: update
+        mutations:
+          - set: {property: balance, value: parameter.new_from_balance}
+      - object_type: Account
+        object_id: parameter.to_account_id
+        operation: update
+        mutations:
+          - set: {property: balance, value: parameter.new_to_balance}

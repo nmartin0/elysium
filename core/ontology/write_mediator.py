@@ -994,18 +994,23 @@ class WriteMediator:
 #   tests/unit/test_write_log_create.py's own resume tests (rebuilt
 #   the same way, create-side).
 #
-# DEFERRED (known, intentional, not yet built):
-# - Real multi-object action_types still don't exist anywhere. Every
-#   test in this file, test_confirm_and_execute_batches.py, and
-#   test_write_log_resume.py's own multi-sub-write test uses
-#   SYNTHETIC multi-object scenarios (constructed write_log rows/
-#   batches directly, not a real action_type any real caller could
-#   invoke) -- proving the mechanism itself is correct, not yet
-#   proving a real, schema-authored multi-object action works end to
-#   end through propose_action() and a real model. Worth a real,
-#   deliberately-authored multi-object action_type (a fund transfer,
-#   most likely) as the genuine end-to-end proof, now that both the
-#   apply path AND resume are ready to handle it correctly.
+# RESOLVED (kept for history):
+# - TransferFunds (tests/integration/fixtures/ontology_schema.yaml) is
+#   the real, deliberately-authored multi-object action_type this note
+#   used to call for -- a real fund transfer, two sub_writes, both
+#   Account, same-type (execute:-only RBAC, not the cross-type write:
+#   path -- that's still only proven synthetically, by this file's own
+#   unit tests, which remains fine: nothing about same-type vs cross-
+#   type changes how propose_action() itself resolves or applies a
+#   sub_write). tests/unit/test_transfer_funds.py is the fully
+#   scripted, real-schema proof (propose_action() called directly, no
+#   model); tests/integration/test_transfer_funds_e2e.py is the real-
+#   Ollama proof, mirroring test_named_actions_e2e.py's own structure.
+#   Found and fixed, while building this: the resolved-id duplicate
+#   check in THIS file (the "seen_object_refs" logic a few hundred
+#   lines up) had NO test coverage anywhere in the project until now --
+#   only the weaker, load-time structural check (core/ontology/
+#   action_types.py) was ever exercised.
 #
 # REJECTED ALTERNATIVES (considered and ruled out -- don't re-propose
 # without reading why):
