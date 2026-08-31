@@ -201,7 +201,7 @@ def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "UpdateRiskScore", "cust_001", {"new_score": 0.99})
-    assert pending.expected_current_values == {"risk_score": 0.42}
+    assert pending.sub_writes[0].expected_current_values == {"risk_score": 0.42}
 
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
     assert outcome == {"status": "written", "object_id": "cust_001"}

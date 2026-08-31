@@ -56,14 +56,49 @@ def _fields_to_columns(resolved_type_config: dict, values_by_field: dict) -> dic
 
 
 @dataclass(frozen=True)
-class PendingWrite:
+class SubWrite:
+    # One object's own share of a (possibly multi-object) proposed
+    # write -- see PendingWrite's own docstring immediately below for
+    # why this is a separate dataclass, nested inside a tuple, rather
+    # than PendingWrite itself still holding one flat object_type/
+    # object_id/changes triple directly the way it used to.
+    #
+    # object_id is ALWAYS the real, concrete id here, for BOTH "update"
+    # and "create" -- unlike this dataclass's own predecessor
+    # (PendingWrite.object_id), which used to stay None for "create"
+    # specifically, forcing every consumer (see the old
+    # _apply_create_via_log()) to separately re-derive the real id from
+    # changes[id_field] each time it was needed. propose_action()
+    # already knows the real id at construction time either way (the
+    # object_id it was called with for "update"; changes[id_field],
+    # already validated present, for "create") -- resolving it once,
+    # here, removes that whole re-derivation dance, and gives every
+    # future consumer (locking, duplicate-object validation, the
+    # write_log_batches JSON) a real id to work with directly, with no
+    # special-casing by operation kind.
     object_type: str
-    object_id: Any | None
-    action: Literal["update", "create"]
+    object_id: Any
+    operation: Literal["update", "create"]
     changes: dict
+    expected_current_values: dict = field(default_factory=dict)  # for update lost-update checks
+
+
+@dataclass(frozen=True)
+class PendingWrite:
+    # sub_writes is ALWAYS at least one entry, even for what looks like
+    # an ordinary single-object action -- there is deliberately no
+    # separate "single-object" representation living alongside a
+    # "multi-object" one. Every action_type today still only ever
+    # produces exactly one, since ontology_schema.yaml has no way to
+    # DECLARE a multi-object action yet (a later, separate piece of
+    # work) -- but the shape here is already the one multi-object
+    # actions will use unchanged: nothing about propose_action()'s own
+    # RBAC/MAC/validation/mutation-resolution logic, or
+    # confirm_and_execute()'s own apply logic, needs to change AGAIN
+    # once declaring more than one sub-write becomes possible.
+    sub_writes: tuple[SubWrite, ...]
     user_id: str
     description: str
-    expected_current_values: dict = field(default_factory=dict)  # for update lost-update checks
 
 
 class WriteMediator:
@@ -224,9 +259,14 @@ class WriteMediator:
         # deliberate scope boundary (update only; crash recovery and
         # partial-failure reconciliation both explicitly deferred).
         # Logs ONE row (trivially atomic regardless of how many
-        # storages pending.changes spans), THEN applies each storage's
-        # own share of the mutations SEQUENTIALLY, THEN marks the
-        # entry applied.
+        # storages sub_write.changes spans), THEN applies each
+        # storage's own share of the mutations SEQUENTIALLY, THEN marks
+        # the entry applied.
+        #
+        # pending.sub_writes[0] -- exactly one entry always, for now
+        # (see PendingWrite's own docstring for why the shape already
+        # supports more without this method needing to change again
+        # once it does; today, nothing can construct more than one).
         #
         # The per-object lock is held across the WHOLE sequence -- not
         # just the apply portion -- so a second, concurrent write to
@@ -234,22 +274,23 @@ class WriteMediator:
         # than fully absent or fully applied; write_log.
         # get_pending_changes()'s own "at most one pending entry per
         # object" assumption depends on this holding.
-        object_lock = self.mediator._lock_for_object(pending.object_type, pending.object_id)
+        sub_write = pending.sub_writes[0]
+        object_lock = self.mediator._lock_for_object(sub_write.object_type, sub_write.object_id)
         with object_lock:
             log_id = self.write_log.log_pending_update(
-                pending.object_type, pending.object_id,
-                pending.changes, pending.expected_current_values,
+                sub_write.object_type, sub_write.object_id,
+                sub_write.changes, sub_write.expected_current_values,
                 pending.user_id, pending.description,
             )
 
-            groups = self._group_changes_by_storage(pending.object_type, pending.changes)
+            groups = self._group_changes_by_storage(sub_write.object_type, sub_write.changes)
             for adapter, resolved_type_config, group_changes in groups:
                 group_expected = {
-                    field_name: pending.expected_current_values[field_name]
+                    field_name: sub_write.expected_current_values[field_name]
                     for field_name in group_changes
                 }
                 success = self._write_fields_with_limiter(
-                    pending.object_type, pending.object_id, adapter, resolved_type_config,
+                    sub_write.object_type, sub_write.object_id, adapter, resolved_type_config,
                     group_changes, group_expected,
                 )
                 if not success:
@@ -263,13 +304,13 @@ class WriteMediator:
                     # crash-recovery work rather than solved separately
                     # here.
                     raise ValueError(
-                        f"{pending.object_type} {pending.object_id!r} changed since this "
+                        f"{sub_write.object_type} {sub_write.object_id!r} changed since this "
                         f"write was proposed -- refresh and retry"
                     )
 
             self.write_log.mark_applied(log_id)
 
-        return pending.object_id
+        return sub_write.object_id
 
     def resume_pending_writes(self) -> dict:
         # Called ONCE, at deployment startup (see api/app.py / scripts/
@@ -671,20 +712,33 @@ class WriteMediator:
                 )
 
         description = f"{action_type_name}({object_id!r}, parameters={parameters})"
-        return PendingWrite(object_type, object_id, operation, changes, user_record.user_id,
-                             description, expected_current_values)
+        # The real, concrete id either way -- object_id itself for
+        # "update," changes[id_field] for "create" (already validated
+        # present above; NOT the object_id parameter, which is None for
+        # "create" -- see SubWrite's own docstring for why resolving
+        # this once, here, replaces the old re-derivation every
+        # consumer of a "create" PendingWrite used to need).
+        if operation == "create":
+            sub_write_object_id = changes[id_field]
+        else:
+            sub_write_object_id = object_id
+        sub_write = SubWrite(object_type, sub_write_object_id, operation, changes, expected_current_values)
+        return PendingWrite((sub_write,), user_record.user_id, description)
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
+        # pending.sub_writes[0] -- exactly one entry always, for now;
+        # see PendingWrite's own docstring.
+        sub_write = pending.sub_writes[0]
         request_id = str(uuid.uuid4())
         self.audit_log.log_pre(
             request_id, pending.user_id, pending.description,
-            f"write:{pending.object_type}", pending.changes, approved,
+            f"write:{sub_write.object_type}", sub_write.changes, approved,
         )
 
         if not approved:
             return None
 
-        if pending.action == "update":
+        if sub_write.operation == "update":
             # ALWAYS via the write log now -- see write_log.py's own
             # module docstring for the full mechanism. Handles
             # multi-storage updates the old, single-call
@@ -699,8 +753,8 @@ class WriteMediator:
         # "update"'s own precedent immediately above: one unified
         # mechanism regardless of storage count, not two separately-
         # maintained paths. propose_action() already enforced that the
-        # object's own id is present in pending.changes before this was
-        # ever proposable -- see its own comment on why this is now
+        # object's own id is present in sub_write.changes before this
+        # was ever proposable -- see its own comment on why this is now
         # required universally, not just when create happens to span
         # multiple storages.
         new_id = self._apply_create_via_log(pending)
@@ -713,34 +767,30 @@ class WriteMediator:
         # Handles single-storage create too now, same as
         # _apply_update_via_log() already did for update -- a single-
         # group `groups` list below is simply the degenerate case,
-        # nothing here needs to special-case it. Requires pending.changes to
-        # already include the type's own id_field, explicitly --
-        # propose_action() enforces this upfront; matches Palantir
-        # Foundry's own MDO requirement that an object's primary key
-        # already exist, matching, in every backing datasource
-        # (verified directly, not assumed -- see
+        # nothing here needs to special-case it. Requires
+        # sub_write.changes to already include the type's own id_field,
+        # explicitly -- propose_action() enforces this upfront; matches
+        # Palantir Foundry's own MDO requirement that an object's
+        # primary key already exist, matching, in every backing
+        # datasource (verified directly, not assumed -- see
         # https://www.palantir.com/docs/foundry/object-permissioning/multi-datasource-objects).
-        id_field = self.mediator._type_schema(pending.object_type)["id_field"]
-        object_id = pending.changes[id_field]
-        # NOT pending.object_id -- see this method's own return
-        # statement below for why that's always None for "create."
-        # Using it here would be a real bug, not just an unused
-        # parameter: it would key the per-object lock identically for
-        # EVERY create of this type (needlessly serializing unrelated
-        # concurrent creates against each other), and -- more
-        # seriously -- store the write_log row itself under the wrong
-        # object_id, breaking get_pending_changes()'s own by-id lookup
-        # for the real id during the brief window before mark_applied()
-        # runs, and breaking resume_pending_writes() outright if a
-        # crash happens in that same window.
-        object_lock = self.mediator._lock_for_object(pending.object_type, object_id)
+        #
+        # sub_write.object_id -- ALREADY the real id here, resolved
+        # once by propose_action() (see SubWrite's own docstring). The
+        # old version of this method used to separately re-derive it
+        # from pending.changes[id_field] every time, specifically
+        # because PendingWrite.object_id itself stayed None for
+        # "create" -- that workaround no longer exists to work around.
+        sub_write = pending.sub_writes[0]
+        id_field = self.mediator._type_schema(sub_write.object_type)["id_field"]
+        object_lock = self.mediator._lock_for_object(sub_write.object_type, sub_write.object_id)
         with object_lock:
             log_id = self.write_log.log_pending_create(
-                pending.object_type, object_id,
-                pending.changes, pending.user_id, pending.description,
+                sub_write.object_type, sub_write.object_id,
+                sub_write.changes, pending.user_id, pending.description,
             )
 
-            groups = self._group_changes_by_storage(pending.object_type, pending.changes)
+            groups = self._group_changes_by_storage(sub_write.object_type, sub_write.changes)
             for adapter, resolved_type_config, group_changes in groups:
                 # Every group's own row needs the id as one of its
                 # actual inserted columns -- unlike update, create_
@@ -750,9 +800,9 @@ class WriteMediator:
                 # group's mutations happened to place it in naturally
                 # (a no-op overwrite for that one group, a real
                 # injection for every other).
-                group_with_id = {**group_changes, id_field: object_id}
-                self._create_object_with_limiter(pending.object_type, adapter, resolved_type_config, group_with_id)
+                group_with_id = {**group_changes, id_field: sub_write.object_id}
+                self._create_object_with_limiter(sub_write.object_type, adapter, resolved_type_config, group_with_id)
 
             self.write_log.mark_applied(log_id)
 
-        return object_id
+        return sub_write.object_id

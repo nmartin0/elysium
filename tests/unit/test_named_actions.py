@@ -124,7 +124,7 @@ def test_mutations_resolve_both_literal_and_parameter_references(write_mediator)
     # "status" is a LITERAL in the action's own mutations ("open");
     # "reopen_reason" is a "parameter.reason" reference -- both must
     # resolve correctly into the SAME changes dict.
-    assert pending.changes == {"status": "open", "reopen_reason": "a specific reason"}
+    assert pending.sub_writes[0].changes == {"status": "open", "reopen_reason": "a specific reason"}
 
 
 def test_submission_criteria_blocks_an_invalid_state_transition(write_mediator):

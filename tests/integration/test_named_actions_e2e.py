@@ -42,8 +42,8 @@ def test_real_model_invokes_named_action_and_it_actually_changes_the_database(de
     # field the model somehow injected directly -- "name" is the
     # action's own declared mutation target, resolved from whatever
     # parameter the model chose to supply.
-    assert set(pending.changes.keys()) == {"name"}
-    proposed_name = pending.changes["name"]
+    assert set(pending.sub_writes[0].changes.keys()) == {"name"}
+    proposed_name = pending.sub_writes[0].changes["name"]
 
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
     print(f"[diagnostic] confirm_and_execute outcome: {outcome}")

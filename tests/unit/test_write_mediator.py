@@ -109,15 +109,20 @@ def test_propose_action_denied_for_ungranted_action_even_with_a_different_action
 
 def test_propose_action_succeeds_for_own_org_object(wm):
     pending = wm.propose_action(_record("alice"), "RenameAuthor", "auth_001", {"new_name": "Ada L."})
-    assert pending.object_type == "Author"
+    assert pending.sub_writes[0].object_type == "Author"
     assert pending.user_id == "alice"
-    assert pending.changes == {"name": "Ada L."}
+    assert pending.sub_writes[0].changes == {"name": "Ada L."}
 
 
 def test_pending_write_is_immutable(wm):
+    # Both levels, deliberately -- PendingWrite AND each of its own
+    # SubWrite entries are separately frozen dataclasses now (see
+    # PendingWrite's own docstring for why the shape split into two).
     pending = wm.propose_action(_record("alice"), "RenameAuthor", "auth_001", {"new_name": "Ada L."})
     with pytest.raises(FrozenInstanceError):
-        pending.changes = {"name": "TAMPERED"}
+        pending.sub_writes = ()
+    with pytest.raises(FrozenInstanceError):
+        pending.sub_writes[0].changes = {"name": "TAMPERED"}
 
 
 def test_rejected_action_does_not_touch_database(wm):
@@ -151,7 +156,7 @@ def test_approved_create_action_actually_creates_a_new_row(wm):
     pending = wm.propose_action(
         _record("alice"), "CreateAuthor", None, {"author_id": "auth_003", "name": "Grace Hopper"}
     )
-    assert pending.action == "create"
+    assert pending.sub_writes[0].operation == "create"
 
     result = wm.confirm_and_execute(pending, approved=True)
     assert result == {"status": "written", "object_id": "auth_003"}

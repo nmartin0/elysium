@@ -326,13 +326,18 @@ async def query(body: QueryRequest, request: Request,
 
     if result.pending_write is not None:
         write_id = request.app.state.pending_writes.store(result.pending_write)
+        # sub_writes[0] -- exactly one entry always, for now (see
+        # PendingWrite's own docstring). The external response shape
+        # here ("changes": {...}, a flat dict) stays exactly as it was
+        # before this internal restructuring -- ui/src/components/
+        # PendingWriteCard.jsx isn't touched by this change at all.
         return JSONResponse(
             status_code=202,
             content={
                 "pending_write": {
                     "id": write_id,
                     "description": result.pending_write.description,
-                    "changes": result.pending_write.changes,
+                    "changes": result.pending_write.sub_writes[0].changes,
                 }
             },
         )

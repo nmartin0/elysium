@@ -34,9 +34,9 @@ QUERY_TEXT = (
 @pytest.mark.integration
 def test_real_model_create_action_approved_actually_creates_the_row(deployment, mediator):
     write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT)
-    proposed_customer_id = pending.changes["customer_id"]
-    proposed_name = pending.changes["name"]
-    proposed_email = pending.changes["email"]
+    proposed_customer_id = pending.sub_writes[0].changes["customer_id"]
+    proposed_name = pending.sub_writes[0].changes["name"]
+    proposed_email = pending.sub_writes[0].changes["email"]
 
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
     print(f"[diagnostic] confirm_and_execute outcome: {outcome}")
@@ -58,7 +58,7 @@ def test_real_model_create_action_approved_actually_creates_the_row(deployment, 
 @pytest.mark.integration
 def test_real_model_create_action_rejected_creates_nothing(deployment, mediator):
     write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT)
-    proposed_customer_id = pending.changes["customer_id"]
+    proposed_customer_id = pending.sub_writes[0].changes["customer_id"]
 
     outcome = write_mediator.confirm_and_execute(pending, approved=False)
     print(f"[diagnostic] confirm_and_execute outcome: {outcome}")

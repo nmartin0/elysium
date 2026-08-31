@@ -69,8 +69,8 @@ def test_propose_action_stops_the_loop_immediately(mediator_and_write_mediator):
     result = loop.run(_record("alice"), "test query")
 
     assert result.pending_write is not None
-    assert result.pending_write.object_type == "Author"
-    assert result.pending_write.changes == {"name": "New Name"}
+    assert result.pending_write.sub_writes[0].object_type == "Author"
+    assert result.pending_write.sub_writes[0].changes == {"name": "New Name"}
 
 
 def test_propose_action_does_not_touch_the_database(mediator_and_write_mediator):

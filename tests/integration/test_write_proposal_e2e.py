@@ -66,17 +66,18 @@ def test_real_model_produces_a_well_formed_create_action_proposal(deployment, me
         "Expected the real model to produce a well-formed propose_action step "
         f"for CreateCustomer, but it never reached the pending stage. Gathered: {result.gathered}"
     )
-    assert result.pending_write.object_type == "Customer"
-    assert result.pending_write.action == "create"
+    sub_write = result.pending_write.sub_writes[0]
+    assert sub_write.object_type == "Customer"
+    assert sub_write.operation == "create"
 
     # THE model's own, explicit choices -- it read the query and
     # supplied exactly these three parameters correctly.
-    assert result.pending_write.changes["customer_id"] == "cust_999"
-    assert result.pending_write.changes["name"] == "Grace Hopper"
-    assert result.pending_write.changes["email"] == "grace@example.com"
+    assert sub_write.changes["customer_id"] == "cust_999"
+    assert sub_write.changes["name"] == "Grace Hopper"
+    assert sub_write.changes["email"] == "grace@example.com"
 
     # THE thing this test actually exists to prove: "region" was
     # resolved automatically from user_eve's OWN security value --
     # the model never saw or chose this field at all, yet it's present
     # and correct in the resolved mutations.
-    assert result.pending_write.changes["region"] == user_record.security_value
+    assert sub_write.changes["region"] == user_record.security_value

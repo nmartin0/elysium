@@ -46,12 +46,20 @@ from core.ontology.write_mediator import PendingWrite, WriteMediator
 def _terminal_confirm_write(pending: PendingWrite) -> bool:
     # The "hardcoded, non-LLM code" confirmation gate for this entry
     # point specifically -- a real terminal prompt showing EXACTLY what
-    # was proposed (both the description AND the raw changes dict, so
-    # nothing is hidden behind a possibly-incomplete summary) before
-    # anything executes.
+    # was proposed (both the description AND each sub-write's raw
+    # changes dict, so nothing is hidden behind a possibly-incomplete
+    # summary) before anything executes.
+    #
+    # Loops over pending.sub_writes rather than indexing [0] -- unlike
+    # write_mediator.py's own apply-side methods, this is pure display,
+    # with no atomicity concern tying it to exactly one sub-write for
+    # now. A human reviewing a future multi-object proposal already
+    # sees every one of its sub-writes here, even though nothing can
+    # construct more than one yet (see PendingWrite's own docstring).
     print("\n--- WRITE CONFIRMATION NEEDED ---")
     print(pending.description)
-    print(f"Raw changes: {pending.changes}")
+    for sub_write in pending.sub_writes:
+        print(f"  {sub_write.operation} {sub_write.object_type} {sub_write.object_id!r}: {sub_write.changes}")
     answer = input("Approve this write? [y/N]: ").strip().lower()
     return answer == "y"
 
