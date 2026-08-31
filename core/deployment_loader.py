@@ -35,6 +35,7 @@ from core.config import load_yaml
 from core.intermediate_layer.audit import AuditLog
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
+from core.ontology.action_types import validate_action_types
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.write_log import WriteLog
@@ -101,7 +102,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     enabled_tools = config.get("tools", {}).get("enabled", [])
 
     try:
-        return DeploymentConfig(
+        deployment_config = DeploymentConfig(
             base_path=base_path,
             llm_provider=config["llm"]["provider"],
             llm_connection=config["llm"]["connection"],
@@ -131,6 +132,20 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             f"or policy.yaml under {base_path} -- check for typos or a "
             f"missing section."
         ) from e
+
+    # A SEPARATE validation pass, deliberately after the try/except
+    # above -- by this point every basic required key is already
+    # confirmed present; this checks the DEEPER structure of
+    # action_types that use the newer sub_writes shape specifically.
+    # See core/ontology/action_types.py's own module docstring for the
+    # full reasoning on why this belongs here, at load time, not
+    # deferred to propose_action(). A no-op for any deployment with no
+    # sub_writes-shaped action_types at all -- see that module's own
+    # validate_action_types() for why an action_type still using the
+    # older, flat shape is untouched by this entirely.
+    validate_action_types(deployment_config.action_types, deployment_config.schema)
+
+    return deployment_config
 
 
 def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
