@@ -578,61 +578,65 @@ class WriteMediator:
             return user_record.security_value
         return value_spec
 
-    def propose_action(self, user_record: UserRecord, action_type_name: str,
-                        object_id: Any | None, parameters: dict) -> PendingWrite:
+    def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict) -> PendingWrite:
         # Matches Palantir Foundry's own action-type model directly
         # (verified against their docs, not assumed): a NAMED,
         # independently-governed operation, not a generic CRUD verb.
+        # The object(s) being acted on are always just PARAMETERS too
+        # -- "an existing object whose primary key is derived from
+        # object reference parameters," Palantir's own words -- never
+        # a separate, out-of-band argument the way object_id used to
+        # be here. See SubWrite's and core/ontology/action_types.py's
+        # own docstrings for the full reasoning behind that change.
         #
         # RBAC is ACTION-level, deliberately NOT a field-grant hybrid --
         # one "execute:{action_type_name}" grant, not one write:{type}.
         # {field} grant per field the action's mutations happen to
-        # touch. A real, considered trade-off, not an oversight: this
-        # is CLOSER to Palantir's real model and easier for whoever is
-        # actually configuring roles to reason about ("this role may
-        # perform this named business operation," not "this role may
-        # touch these raw columns") -- but it means a role's true field-
-        # level reach is now defined by whatever an action's mutations
-        # happen to declare, not by an independent, per-field decision.
-        # Editing an action's mutations later is therefore a REAL grant-
-        # equivalent decision, not routine schema maintenance -- every
-        # role already holding execute: on that action silently gains
-        # whatever new mutation was added.
+        # touch, AS LONG AS every sub_write targets the SAME object
+        # type. This is CLOSER to Palantir's real model and easier for
+        # whoever is actually configuring roles to reason about ("this
+        # role may perform this named business operation," not "this
+        # role may touch these raw columns") -- but it means a role's
+        # true field-level reach is now defined by whatever an action's
+        # mutations happen to declare, not by an independent, per-field
+        # decision. Editing an action's mutations later is therefore a
+        # REAL grant-equivalent decision, not routine schema
+        # maintenance -- every role already holding execute: on that
+        # action silently gains whatever new mutation was added. Once
+        # sub_writes spans more than one DISTINCT object type, that
+        # risk stops being bounded to "new fields on the same type" --
+        # see the cross-type RBAC check further below for how this is
+        # actually contained.
         action_def = self.action_types.get(action_type_name)
         if action_def is None:
             raise ValueError(f"Unknown action_type: {action_type_name!r}")
-
-        object_type = action_def["object_type"]
-        operation = action_def["operation"]  # "create" or "update"
 
         execute_action_id = f"execute:{action_type_name}"
         rbac_allowed = authorize(user_record, self.roles, execute_action_id)
         if not rbac_allowed:
             # Logged ONCE here, with mac_allowed=None -- MAC never ran,
-            # short-circuited before a real database query. Never
-            # logs twice for the same outcome.
+            # short-circuited before a real database query. Uses
+            # action_type_name itself, not any object_type -- this
+            # check is about whether the user may invoke this ACTION
+            # at all, before WHICH object(s) it touches is even known;
+            # every action, single- or multi-object, shares this same
+            # first gate, and there is no single object_type to report
+            # here regardless.
             self.audit_log.log_access(
-                user_record.user_id, object_type, object_id, execute_action_id,
+                user_record.user_id, action_type_name, None, execute_action_id,
                 mac_allowed=None, rbac_allowed=False,
             )
             raise PermissionError(f"{user_record.user_id!r} is not authorized for: {execute_action_id!r}")
 
-        if operation == "create":
-            mac_allowed = True
-        else:
-            mac_allowed = (
-                user_record.security_value is not None
-                and self.mediator._security_allowed(object_type, object_id, user_record.security_value)
-            )
-        self.audit_log.log_access(user_record.user_id, object_type, object_id, execute_action_id,
-                                   mac_allowed, rbac_allowed)
-        if not mac_allowed:
-            raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
-
-        # Parameter validation -- REQUIRED parameters must be present;
-        # UNDECLARED ones are rejected outright, not silently ignored.
-        # "Explicit and safe," matching this project's own consistent
-        # discipline: never silently accept something unexpected.
+        # Parameter validation -- MOVED before per-sub_write MAC below
+        # (was after, back when object_id was a directly-supplied,
+        # separate argument known independent of parameters). Every
+        # sub_write's own identity now comes FROM parameters, so
+        # parameters must be validated before any sub_write's object_id
+        # can even be resolved, let alone MAC-checked. REQUIRED
+        # parameters must be present; UNDECLARED ones are rejected
+        # outright, not silently ignored -- "explicit and safe,"
+        # matching this project's own consistent discipline.
         declared_params = action_def.get("parameters", {})
         for param_name, param_spec in declared_params.items():
             if param_spec.get("required") and param_name not in parameters:
@@ -643,87 +647,156 @@ class WriteMediator:
                 f"Unknown parameter(s) for action {action_type_name!r}: {sorted(unknown_params)}"
             )
 
-        # Submission criteria -- structurally a property of the named
-        # ACTION, not a generic validation bolted onto whatever
-        # "update" happens to mean for an object type (see
-        # submission_criteria.py's own docstring). The "parameter"
-        # check kind reads from the action's own declared parameter
-        # names, a genuinely different namespace than an object's raw
-        # field names.
-        criteria = action_def.get("submission_criteria", [])
-        if criteria:
-            current_state = self._read_current_state_for_criteria(object_type, object_id, criteria) \
-                if operation == "update" else None
-            evaluate_submission_criteria(criteria, current_state, parameters)
+        sub_write_defs = action_def["sub_writes"]
 
-        # Resolve the action's DECLARED mutations into a concrete
-        # field-value dict -- this, not free-form model input, is what
-        # actually gets written. The model chooses WHICH action and
-        # supplies typed parameters; it never directly names a raw
-        # field to change.
-        changes = {
-            mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"], parameters, user_record)
-            for mutation in action_def["mutations"]
-        }
+        # Cross-type RBAC -- the OPTION B decision. execute: alone is
+        # sufficient only when every sub_write targets the SAME object
+        # type (unchanged from before sub_writes existed at all). The
+        # moment sub_writes spans two or more DISTINCT types, every one
+        # of those types additionally needs its own write:<Type>.
+        # {field} grant, for each field that type's own mutations
+        # touch -- checked here, before anything is resolved or
+        # logged, same fail-closed timing as the execute: check above.
+        # Deliberately no exemption for any "first" or "primary" type
+        # -- sub_writes has no inherent ordering that could principled
+        # single one out, and a role trusted with execute: on a
+        # cross-type action has no more inherent reason to be trusted
+        # with EVERY type it touches than with any one of them.
+        affected_types = {sw["object_type"] for sw in sub_write_defs}
+        if len(affected_types) > 1:
+            for sw_def in sub_write_defs:
+                for mutation in sw_def["mutations"]:
+                    write_action_id = f"write:{sw_def['object_type']}.{mutation['set']['property']}"
+                    if not authorize(user_record, self.roles, write_action_id):
+                        raise PermissionError(
+                            f"{user_record.user_id!r} is not authorized for: {write_action_id!r} "
+                            f"(required because {action_type_name!r} touches more than one object type)"
+                        )
 
-        # For "create," an explicit id is ALWAYS required now, matching
-        # update's own precedent of a SINGLE, unified path regardless
-        # of storage count (see confirm_and_execute() below -- update
-        # ALWAYS goes through the log, whether it touches one storage
-        # or several; create now does too). Not required only because
-        # multi-storage needs it structurally -- deliberately unified
-        # rather than maintaining two separate mechanisms (a log-based
-        # path for multi-storage, a log-free direct path for single-
-        # storage), even though a genuinely single-storage create's
-        # own INSERT is already atomic on its own and doesn't NEED the
-        # log to avoid a half-applied state the way multi-storage does.
-        # The real, remaining reason auto-generated ids can't be
-        # supported at all now: the log-first-then-apply ordering this
-        # whole mechanism depends on needs the id known BEFORE any
-        # storage is touched -- an auto-generated id, by definition,
-        # isn't known until AFTER an INSERT already ran. Matches
-        # Palantir Foundry's own MDO requirement that a primary key
-        # already exist, matching, in every backing datasource, not
-        # just the multi-storage case specifically.
-        #
-        # For "update," expected_current_values is built PER STORAGE
-        # GROUP (same _group_changes_by_storage() confirm_and_execute()
-        # itself uses) -- this is what makes a multi-storage update
-        # possible at all; see write_log.py's own module docstring for
-        # the full mechanism.
-        expected_current_values = {}
-        if operation == "update":
-            for adapter, resolved_type_config, group_changes in self._group_changes_by_storage(object_type, changes):
-                expected_current_values.update(
-                    self._read_group_fields(object_type, object_id, adapter, resolved_type_config, group_changes)
-                )
-        else:
-            # _group_changes_by_storage() also validates every field
-            # name is real (same as update's own branch above) -- an
-            # unknown field in a create's mutations should fail HERE,
-            # at proposal time, not later at confirm_and_execute() time
-            # after a human may have already approved it.
-            self._group_changes_by_storage(object_type, changes)
-            id_field = self.mediator._type_schema(object_type)["id_field"]
-            if id_field not in changes:
+        # Resolve, MAC-check, and validate EACH sub_write independently.
+        resolved_sub_writes = []
+        seen_object_refs: set[tuple[str, str]] = set()
+        for sw_def in sub_write_defs:
+            object_type = sw_def["object_type"]
+            operation = sw_def["operation"]
+
+            # The object's own identity, resolved FIRST, via the SAME
+            # _resolve_mutation_value() vocabulary every mutation value
+            # already uses -- see this method's own top-level comment
+            # for why object_id is just an ordinary parameter now, not
+            # a special case.
+            object_id = self._resolve_mutation_value(sw_def["object_id"], parameters, user_record)
+
+            # The FULL duplicate check, against REAL resolved ids --
+            # the complement to core/ontology/action_types.py's own,
+            # WEAKER, load-time-only structural check. Two DIFFERENT
+            # object_id expressions (e.g. parameter.from_id and
+            # parameter.to_id) could still resolve to the SAME real id
+            # once real parameters arrive -- the schema-load check can
+            # never catch that; only this, with real values in hand,
+            # can.
+            object_ref = (object_type, str(object_id))
+            if object_ref in seen_object_refs:
                 raise ValueError(
-                    f"Create for {object_type!r} requires an explicit {id_field!r} value "
-                    f"in its own mutations -- auto-generated ids aren't supported"
+                    f"Action {action_type_name!r}: two sub_writes both resolved to the "
+                    f"identical {object_type} {object_id!r}"
                 )
+            seen_object_refs.add(object_ref)
 
-        description = f"{action_type_name}({object_id!r}, parameters={parameters})"
-        # The real, concrete id either way -- object_id itself for
-        # "update," changes[id_field] for "create" (already validated
-        # present above; NOT the object_id parameter, which is None for
-        # "create" -- see SubWrite's own docstring for why resolving
-        # this once, here, replaces the old re-derivation every
-        # consumer of a "create" PendingWrite used to need).
-        if operation == "create":
-            sub_write_object_id = changes[id_field]
-        else:
-            sub_write_object_id = object_id
-        sub_write = SubWrite(object_type, sub_write_object_id, operation, changes, expected_current_values)
-        return PendingWrite((sub_write,), user_record.user_id, description)
+            if operation == "create":
+                mac_allowed = True
+            else:
+                mac_allowed = (
+                    user_record.security_value is not None
+                    and self.mediator._security_allowed(object_type, object_id, user_record.security_value)
+                )
+            self.audit_log.log_access(user_record.user_id, object_type, object_id, execute_action_id,
+                                       mac_allowed, rbac_allowed)
+            if not mac_allowed:
+                raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
+
+            # Submission criteria -- now PER SUB_WRITE, not per action;
+            # see core/ontology/submission_criteria.py's own docstring
+            # for why this stays a property of the write being
+            # proposed, not a generic validation bolted onto "update"
+            # itself. The "parameter" check kind still reads from the
+            # action's own declared parameter names, shared across
+            # every sub_write, not a per-sub_write namespace.
+            criteria = sw_def.get("submission_criteria", [])
+            if criteria:
+                current_state = self._read_current_state_for_criteria(object_type, object_id, criteria) \
+                    if operation == "update" else None
+                evaluate_submission_criteria(criteria, current_state, parameters)
+
+            # Resolve this sub_write's own declared mutations into a
+            # concrete field-value dict -- this, not free-form model
+            # input, is what actually gets written.
+            changes = {
+                mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"],
+                                                                            parameters, user_record)
+                for mutation in sw_def["mutations"]
+            }
+
+            # For "update," expected_current_values is built PER
+            # STORAGE GROUP (same _group_changes_by_storage()
+            # confirm_and_execute() itself uses) -- this is what makes
+            # a multi-storage update possible at all; see write_log.py's
+            # own module docstring for the full mechanism.
+            if operation == "update":
+                expected_current_values = {}
+                for adapter, resolved_type_config, group_changes in self._group_changes_by_storage(
+                    object_type, changes
+                ):
+                    expected_current_values.update(
+                        self._read_group_fields(object_type, object_id, adapter, resolved_type_config, group_changes)
+                    )
+            else:
+                # _group_changes_by_storage() also validates every
+                # field name is real -- an unknown field in a create's
+                # mutations should fail HERE, at proposal time, not
+                # later at confirm_and_execute() time after a human may
+                # have already approved it. An explicit id is ALWAYS
+                # required, matching update's own precedent of a
+                # SINGLE, unified path regardless of storage count --
+                # auto-generated ids aren't supported at all: the
+                # log-first-then-apply ordering this whole mechanism
+                # depends on needs the id known BEFORE any storage is
+                # touched, and an auto-generated id, by definition,
+                # isn't known until AFTER an INSERT already ran.
+                # Matches Palantir Foundry's own MDO requirement that a
+                # primary key already exist, matching, in every backing
+                # datasource.
+                self._group_changes_by_storage(object_type, changes)
+                id_field = self.mediator._type_schema(object_type)["id_field"]
+                if id_field not in changes:
+                    raise ValueError(
+                        f"Create for {object_type!r} requires an explicit {id_field!r} value "
+                        f"in its own mutations -- auto-generated ids aren't supported"
+                    )
+                if changes[id_field] != object_id:
+                    # A real, previously-impossible-to-catch authoring
+                    # mistake -- this sub_write's own object_id
+                    # expression disagrees with what its OWN mutations
+                    # separately set for the type's id_field. Both
+                    # exist for a reason (object_id: resolved
+                    # uniformly, up front, for MAC/locking/duplicate-
+                    # checking, matching every other sub_write
+                    # regardless of operation; changes[id_field]: the
+                    # real value that actually gets inserted) -- if
+                    # they ever disagree, something in the schema is
+                    # wrong, and this is the one place both are known
+                    # at once to catch it.
+                    raise ValueError(
+                        f"Action {action_type_name!r}: sub_write's object_id resolved to "
+                        f"{object_id!r}, but its own mutations set {id_field!r} to "
+                        f"{changes[id_field]!r} -- these must match."
+                    )
+                expected_current_values = {}
+
+            resolved_sub_writes.append(SubWrite(object_type, object_id, operation, changes, expected_current_values))
+
+        description = f"{action_type_name}(parameters={parameters})"
+        return PendingWrite(tuple(resolved_sub_writes), user_record.user_id, description)
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
         # pending.sub_writes[0] -- exactly one entry always, for now;

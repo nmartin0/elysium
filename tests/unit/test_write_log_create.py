@@ -62,48 +62,68 @@ TEST_ACTION_TYPES = {
     # leave the new row's own MAC field unset, denying every reader
     # (including the very user who just created it).
     "CreateCustomerFull": {
-        "object_type": "Customer",
-        "operation": "create",
+        "affected_object_types": ["Customer"],
         "parameters": {
-            "new_id": {"type": "string", "required": True},
+            "new_id": {"type": "object_reference", "object_type": "Customer", "required": True},
             "new_name": {"type": "string", "required": True},
             "new_score": {"type": "number", "required": True},
         },
-        "mutations": [
-            {"set": {"property": "customer_id", "value": "parameter.new_id"}},
-            {"set": {"property": "region", "value": "user.security_value"}},
-            {"set": {"property": "name", "value": "parameter.new_name"}},
-            {"set": {"property": "risk_score", "value": "parameter.new_score"}},
-        ],
+        "sub_writes": [{
+            "object_type": "Customer",
+            "object_id": "parameter.new_id",
+            "operation": "create",
+            "mutations": [
+                {"set": {"property": "customer_id", "value": "parameter.new_id"}},
+                {"set": {"property": "region", "value": "user.security_value"}},
+                {"set": {"property": "name", "value": "parameter.new_name"}},
+                {"set": {"property": "risk_score", "value": "parameter.new_score"}},
+            ],
+        }],
     },
     # Single-storage: name only (plus id + region) -- proves this
     # path is now unified with the multi-storage one, both going
     # through the SAME log-based mechanism.
     "CreateCustomerNameOnly": {
-        "object_type": "Customer",
-        "operation": "create",
+        "affected_object_types": ["Customer"],
         "parameters": {
-            "new_id": {"type": "string", "required": True},
+            "new_id": {"type": "object_reference", "object_type": "Customer", "required": True},
             "new_name": {"type": "string", "required": True},
         },
-        "mutations": [
-            {"set": {"property": "customer_id", "value": "parameter.new_id"}},
-            {"set": {"property": "region", "value": "user.security_value"}},
-            {"set": {"property": "name", "value": "parameter.new_name"}},
-        ],
+        "sub_writes": [{
+            "object_type": "Customer",
+            "object_id": "parameter.new_id",
+            "operation": "create",
+            "mutations": [
+                {"set": {"property": "customer_id", "value": "parameter.new_id"}},
+                {"set": {"property": "region", "value": "user.security_value"}},
+                {"set": {"property": "name", "value": "parameter.new_name"}},
+            ],
+        }],
     },
-    # DELIBERATELY omits customer_id -- for
+    # DELIBERATELY omits customer_id from its own mutations -- for
     # test_single_storage_create_still_requires_an_explicit_id, proving
     # the explicit-id requirement is now universal, not just for create
-    # spanning multiple storages.
+    # spanning multiple storages. new_id is still a REQUIRED
+    # object_reference parameter (every sub_write needs its own
+    # resolved object_id regardless of operation -- see SubWrite's own
+    # docstring), but it is deliberately never referenced by any
+    # mutation below -- exactly the gap this test exists to prove is
+    # still caught.
     "CreateCustomerNameOnlyNoId": {
-        "object_type": "Customer",
-        "operation": "create",
-        "parameters": {"new_name": {"type": "string", "required": True}},
-        "mutations": [
-            {"set": {"property": "region", "value": "user.security_value"}},
-            {"set": {"property": "name", "value": "parameter.new_name"}},
-        ],
+        "affected_object_types": ["Customer"],
+        "parameters": {
+            "new_id": {"type": "object_reference", "object_type": "Customer", "required": True},
+            "new_name": {"type": "string", "required": True},
+        },
+        "sub_writes": [{
+            "object_type": "Customer",
+            "object_id": "parameter.new_id",
+            "operation": "create",
+            "mutations": [
+                {"set": {"property": "region", "value": "user.security_value"}},
+                {"set": {"property": "name", "value": "parameter.new_name"}},
+            ],
+        }],
     },
 }
 
@@ -176,7 +196,8 @@ def test_single_storage_create_still_requires_an_explicit_id(fixture):
     alice = _record("alice")
 
     with pytest.raises(ValueError, match="requires an explicit 'customer_id' value"):
-        write_mediator.propose_action(alice, "CreateCustomerNameOnlyNoId", None, {"new_name": "Solo Customer"})
+        write_mediator.propose_action(alice, "CreateCustomerNameOnlyNoId",
+                                       {"new_id": "cust_ignored", "new_name": "Solo Customer"})
 
 
 def test_single_storage_create_also_goes_through_the_log(fixture):
@@ -194,7 +215,7 @@ def test_single_storage_create_also_goes_through_the_log(fixture):
     alice = _record("alice")
 
     pending = write_mediator.propose_action(
-        alice, "CreateCustomerNameOnly", None, {"new_id": "cust_solo", "new_name": "Solo Customer"}
+        alice, "CreateCustomerNameOnly", {"new_id": "cust_solo", "new_name": "Solo Customer"}
     )
     result = write_mediator.confirm_and_execute(pending, approved=True)
 
@@ -225,7 +246,7 @@ def test_apply_create_via_log_logs_under_the_real_id_not_none(fixture, monkeypat
     alice = _record("alice")
 
     pending = write_mediator.propose_action(
-        alice, "CreateCustomerFull", None,
+        alice, "CreateCustomerFull",
         {"new_id": "cust_mid_apply", "new_name": "Mid Apply", "new_score": 0.3},
     )
 
@@ -253,7 +274,7 @@ def test_multi_storage_create_applies_to_every_storage(fixture):
     alice = _record("alice")
 
     pending = write_mediator.propose_action(
-        alice, "CreateCustomerFull", None,
+        alice, "CreateCustomerFull",
         {"new_id": "cust_001", "new_name": "Ada Okafor", "new_score": 0.42},
     )
     result = write_mediator.confirm_and_execute(pending, approved=True)

@@ -312,7 +312,7 @@ class AgentLoop:
                 if self.write_mediator is None:
                     raise ValueError("Writes are not enabled for this deployment")
                 pending = self.write_mediator.propose_action(
-                    user_record, step["action_type"], step.get("object_id"), step["parameters"]
+                    user_record, step["action_type"], step["parameters"]
                 )
                 return 0, 0, True, pending
             else:

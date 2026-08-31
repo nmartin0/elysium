@@ -154,7 +154,10 @@ def _known_state_for_object(gathered: list[dict], object_type: str, object_id) -
     # Every field ALREADY read for this specific object during this
     # same run(), keyed by field_name -- built entirely from real
     # get_field results already sitting in `gathered`, never a fresh
-    # database read at prompt-build time.
+    # database read at prompt-build time. Unchanged by the sub_writes
+    # rebuild below -- "what does the model already know about ONE
+    # object" is exactly as useful a building block per sub_write as
+    # it was per action.
     return {
         item["field_name"]: item["result"]
         for item in gathered
@@ -164,22 +167,26 @@ def _known_state_for_object(gathered: list[dict], object_type: str, object_id) -
     }
 
 
-def _action_validity_for_object(action_def: dict, known_state: dict) -> tuple[bool, str] | None:
+def _sub_write_validity_for_object(sub_write_def: dict, known_state: dict) -> tuple[bool, str] | None:
     # Returns (is_valid, reason) if `known_state` genuinely covers
-    # EVERY field this action's own current_state criteria reference --
-    # reusing evaluate_submission_criteria() directly, the SAME
-    # function propose_action() itself calls at proposal time, not a
-    # separate reimplementation that could silently drift out of sync
-    # with it over time (the exact risk this project has been careful
-    # to avoid elsewhere -- see is_searchable_field()'s own docstring
-    # for the earlier instance of this same principle). Returns None
-    # if known_state is missing even ONE needed field -- a PARTIAL read
+    # EVERY field this SUB_WRITE's own current_state criteria
+    # reference -- submission_criteria lives per sub_write now, not
+    # per action (see WriteMediator.propose_action()'s own comment on
+    # why); this takes a single sub_write's own definition, not a
+    # whole action_def, for the identical reason. Reuses
+    # evaluate_submission_criteria() directly, the SAME function
+    # propose_action() itself calls at proposal time, not a separate
+    # reimplementation that could silently drift out of sync with it
+    # over time (the exact risk this project has been careful to avoid
+    # elsewhere -- see is_searchable_field()'s own docstring for the
+    # earlier instance of this same principle). Returns None if
+    # known_state is missing even ONE needed field -- a PARTIAL read
     # must never produce a confident verdict either way, since
     # evaluating a missing field as None could silently produce a
     # WRONG answer depending on the criterion's own operator (e.g. a
     # "not_equals" criterion would incorrectly read as satisfied
     # against a field that was simply never read at all).
-    criteria = action_def.get("submission_criteria", [])
+    criteria = sub_write_def.get("submission_criteria", [])
     needed_fields = {c["field"] for c in criteria if c["check"] == "current_state"}
     if not needed_fields.issubset(known_state.keys()):
         return None
@@ -188,6 +195,52 @@ def _action_validity_for_object(action_def: dict, known_state: dict) -> tuple[bo
         return True, ""
     except SubmissionCriteriaViolation as e:
         return False, str(e)
+
+
+def _object_reference_hints(action_def: dict, gathered: list[dict]) -> list[str]:
+    # One or more lines like "Currently valid for widget_id: w1", each
+    # keyed by the NAME of the object_reference parameter it concerns
+    # -- necessarily plural now, unlike the old, single-object "Currently
+    # valid for: ..." this replaces: a multi-object action can have
+    # several DIFFERENT object_reference parameters (e.g.
+    # from_account_id and to_account_id), each needing its own,
+    # independently-computed hint, not one hint for "the" object.
+    #
+    # Only sub_writes whose OWN object_id is a "parameter.<name>"
+    # expression get a hint at all -- a literal or user.security_value
+    # object_id has no model-supplied id to annotate in the first
+    # place (see core/ontology/action_types.py's own docstring for why
+    # object_id isn't required to be a parameter reference at all).
+    lines = []
+    for sub_write_def in action_def["sub_writes"]:
+        object_id_expr = sub_write_def["object_id"]
+        if not (isinstance(object_id_expr, str) and object_id_expr.startswith("parameter.")):
+            continue
+        param_name = object_id_expr.removeprefix("parameter.")
+        object_type = sub_write_def["object_type"]
+
+        known_object_ids = sorted({
+            item["object_id"] for item in gathered
+            if item.get("step") == "get_field" and item.get("object_type") == object_type
+        }, key=str)
+
+        valid_for, blocked_for = [], []
+        for object_id in known_object_ids:
+            known_state = _known_state_for_object(gathered, object_type, object_id)
+            verdict = _sub_write_validity_for_object(sub_write_def, known_state)
+            if verdict is None:
+                continue
+            is_valid, reason = verdict
+            if is_valid:
+                valid_for.append(str(object_id))
+            else:
+                blocked_for.append(f"{object_id} ({reason})")
+
+        if valid_for:
+            lines.append(f"  Currently valid for {param_name}: {', '.join(valid_for)}")
+        if blocked_for:
+            lines.append(f"  Currently blocked for {param_name}: {'; '.join(blocked_for)}")
+    return lines
 
 
 def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
@@ -208,39 +261,25 @@ def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
     # exactly as a UI with nothing loaded yet would show it).
     blocks = []
     for action_name, action_def in visible_action_types.items():
-        object_type = action_def["object_type"]
         params = action_def.get("parameters", {})
+        # Already generic over EVERY declared parameter, object_reference
+        # ones included -- no special-casing needed here at all; the
+        # object(s) an action touches are just ordinary parameters now
+        # (see WriteMediator.propose_action()'s own top-level comment).
         param_desc = ", ".join(
             f"{name} ({info['type']}{', required' if info.get('required') else ', optional'})"
             for name, info in params.items()
         ) or "no parameters"
         param_json = ", ".join(f'"{name}": "<value>"' for name in params)
 
-        known_object_ids = sorted({
-            item["object_id"] for item in gathered
-            if item.get("step") == "get_field" and item.get("object_type") == object_type
-        }, key=str)
-
-        valid_for, blocked_for = [], []
-        for object_id in known_object_ids:
-            verdict = _action_validity_for_object(action_def, _known_state_for_object(gathered, object_type, object_id))
-            if verdict is None:
-                continue
-            is_valid, reason = verdict
-            if is_valid:
-                valid_for.append(str(object_id))
-            else:
-                blocked_for.append(f"{object_id} ({reason})")
-
+        object_types_touched = ", ".join(sorted({sw["object_type"] for sw in action_def["sub_writes"]}))
         block = (
-            f'- {action_name} (on {object_type}): requires {param_desc}\n'
-            f'  {{"step": "propose_action", "action_type": "{action_name}", '
-            f'"object_id": "<id>", "parameters": {{{param_json}}}}}'
+            f'- {action_name} (on {object_types_touched}): requires {param_desc}\n'
+            f'  {{"step": "propose_action", "action_type": "{action_name}", "parameters": {{{param_json}}}}}'
         )
-        if valid_for:
-            block += f"\n  Currently valid for: {', '.join(valid_for)}"
-        if blocked_for:
-            block += f"\n  Currently blocked for: {'; '.join(blocked_for)}"
+        hint_lines = _object_reference_hints(action_def, gathered)
+        if hint_lines:
+            block += "\n" + "\n".join(hint_lines)
         blocks.append(block)
     return "\n".join(blocks)
 
@@ -399,15 +438,18 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # job, surfacing back to core/agent/agentic_loop.py as a caught
         # ValueError/PermissionError exactly like an unknown object_type
         # or field_name already does for the other step kinds.
-        # object_id is genuinely OPTIONAL here -- a "create"-operation
-        # action has no existing object to reference at all.
+        # No separate object_id field anymore -- matches Palantir
+        # Foundry's own action parameter model directly (verified
+        # against their docs, not assumed): the object being acted on
+        # is always just an ordinary parameter, never a special,
+        # out-of-band one. See core/ontology/action_types.py's own
+        # module docstring for the full reasoning.
         required = {"action_type", "parameters"}
         if not _has_required_keys(parsed, required, "propose_action"):
             return _finish_step()
         return {
             "step": "propose_action",
             "action_type": parsed["action_type"],
-            "object_id": parsed.get("object_id"),
             "parameters": parsed["parameters"],
         }
 

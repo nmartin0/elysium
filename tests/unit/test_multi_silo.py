@@ -142,14 +142,21 @@ def test_an_action_to_one_silo_never_touches_the_other(mediator):
 
     action_types = {
         "RenameWidget": {
-            "object_type": "Widget",
-            "operation": "update",
-            "parameters": {"new_name": {"type": "string", "required": True}},
-            "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
+            "affected_object_types": ["Widget"],
+            "parameters": {
+                "widget_id": {"type": "object_reference", "object_type": "Widget", "required": True},
+                "new_name": {"type": "string", "required": True},
+            },
+            "sub_writes": [{
+                "object_type": "Widget",
+                "object_id": "parameter.widget_id",
+                "operation": "update",
+                "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
+            }],
         },
     }
     write_mediator = WriteMediator(mediator, roles, action_types)
-    pending = write_mediator.propose_action(carol, "RenameWidget", "w1", {"new_name": "Renamed Widget"})
+    pending = write_mediator.propose_action(carol, "RenameWidget", {"widget_id": "w1", "new_name": "Renamed Widget"})
     write_mediator.confirm_and_execute(pending, approved=True)
 
     # The widget changed...

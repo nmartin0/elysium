@@ -205,11 +205,15 @@ def _propose_action(client, token, new_name="Updated Name"):
     # against the fixture's own Customer schema (cust_001), returns the
     # 202 response. Uses the same UpdateCustomerName action editor's
     # own execute: grant covers -- see policy.yaml's own comment.
+    # No separate "object_id" field -- customer_id is just another
+    # entry in "parameters" now, matching Palantir Foundry's own action
+    # parameter model directly (see WriteMediator.propose_action()'s
+    # own docstring).
     def fake_post(*args, **kwargs):
         response = MagicMock()
         response.json.return_value = {"message": {"content": json.dumps({
-            "step": "propose_action", "action_type": "UpdateCustomerName", "object_id": "cust_001",
-            "parameters": {"new_name": new_name},
+            "step": "propose_action", "action_type": "UpdateCustomerName",
+            "parameters": {"customer_id": "cust_001", "new_name": new_name},
         })}}
         response.raise_for_status.return_value = None
         return response

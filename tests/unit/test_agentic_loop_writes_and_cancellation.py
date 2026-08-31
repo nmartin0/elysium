@@ -30,10 +30,17 @@ TEST_ROLES = {
 
 TEST_ACTION_TYPES = {
     "RenameAuthor": {
-        "object_type": "Author",
-        "operation": "update",
-        "parameters": {"new_name": {"type": "string", "required": True}},
-        "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
+        "affected_object_types": ["Author"],
+        "parameters": {
+            "author_id": {"type": "object_reference", "object_type": "Author", "required": True},
+            "new_name": {"type": "string", "required": True},
+        },
+        "sub_writes": [{
+            "object_type": "Author",
+            "object_id": "parameter.author_id",
+            "operation": "update",
+            "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
+        }],
     },
 }
 
@@ -62,8 +69,8 @@ def test_propose_action_stops_the_loop_immediately(mediator_and_write_mediator):
     # reached -- the loop should stop at the proposal itself, not
     # continue on to it.
     loop = _loop_with_mocked_llm(mediator, write_mediator, [
-        {"step": "propose_action", "action_type": "RenameAuthor", "object_id": "auth_001",
-         "parameters": {"new_name": "New Name"}},
+        {"step": "propose_action", "action_type": "RenameAuthor",
+         "parameters": {"author_id": "auth_001", "new_name": "New Name"}},
         {"step": "finish"},
     ])
     result = loop.run(_record("alice"), "test query")
@@ -78,8 +85,8 @@ def test_propose_action_does_not_touch_the_database(mediator_and_write_mediator)
     # is as far as it goes; the database must be completely untouched.
     mediator, write_mediator = mediator_and_write_mediator
     loop = _loop_with_mocked_llm(mediator, write_mediator, [
-        {"step": "propose_action", "action_type": "RenameAuthor", "object_id": "auth_001",
-         "parameters": {"new_name": "Should Not Apply"}},
+        {"step": "propose_action", "action_type": "RenameAuthor",
+         "parameters": {"author_id": "auth_001", "new_name": "Should Not Apply"}},
     ])
     loop.run(_record("alice"), "test query")
 

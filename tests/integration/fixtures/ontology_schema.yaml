@@ -128,14 +128,21 @@ object_types:
 # reduction anymore.
 action_types:
   UpdateCustomerName:
-    object_type: Customer
-    operation: update
+    affected_object_types: [Customer]
     parameters:
+      customer_id:
+        type: object_reference
+        object_type: Customer
+        required: true
       new_name:
         type: string
         required: true
-    mutations:
-      - set: {property: name, value: parameter.new_name}
+    sub_writes:
+      - object_type: Customer
+        object_id: parameter.customer_id
+        operation: update
+        mutations:
+          - set: {property: name, value: parameter.new_name}
   # For tests/integration/test_write_proposal_e2e.py -- the one real,
   # still-open gap this project had: "user.security_value" and writing
   # to a type's own id_field (see core/ontology/write_mediator.py's
@@ -148,11 +155,11 @@ action_types:
   # region (the MAC security field) is populated automatically from
   # the ACTING user's own value, never the model's choice.
   CreateCustomer:
-    object_type: Customer
-    operation: create
+    affected_object_types: [Customer]
     parameters:
       customer_id:
-        type: string
+        type: object_reference
+        object_type: Customer
         required: true
       name:
         type: string
@@ -160,8 +167,12 @@ action_types:
       email:
         type: string
         required: true
-    mutations:
-      - set: {property: customer_id, value: parameter.customer_id}
-      - set: {property: name, value: parameter.name}
-      - set: {property: email, value: parameter.email}
-      - set: {property: region, value: user.security_value}
+    sub_writes:
+      - object_type: Customer
+        object_id: parameter.customer_id
+        operation: create
+        mutations:
+          - set: {property: customer_id, value: parameter.customer_id}
+          - set: {property: name, value: parameter.name}
+          - set: {property: email, value: parameter.email}
+          - set: {property: region, value: user.security_value}

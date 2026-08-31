@@ -57,16 +57,22 @@ TEST_ROLES = {
 
 TEST_ACTION_TYPES = {
     "Reopen": {
-        "object_type": "Ticket",
-        "operation": "update",
-        "parameters": {},
-        "submission_criteria": [
-            {
-                "description": "Ticket must currently be closed to reopen it",
-                "check": "current_state", "field": "status", "operator": "equals", "value": "closed",
-            },
-        ],
-        "mutations": [{"set": {"property": "status", "value": "open"}}],
+        "affected_object_types": ["Ticket"],
+        "parameters": {
+            "ticket_id": {"type": "object_reference", "object_type": "Ticket", "required": True},
+        },
+        "sub_writes": [{
+            "object_type": "Ticket",
+            "object_id": "parameter.ticket_id",
+            "operation": "update",
+            "submission_criteria": [
+                {
+                    "description": "Ticket must currently be closed to reopen it",
+                    "check": "current_state", "field": "status", "operator": "equals", "value": "closed",
+                },
+            ],
+            "mutations": [{"set": {"property": "status", "value": "open"}}],
+        }],
     },
 }
 
@@ -237,4 +243,4 @@ def test_submission_criteria_sees_pending_value_not_stale_backend_state(fixture,
 
     from core.ontology.submission_criteria import SubmissionCriteriaViolation
     with pytest.raises(SubmissionCriteriaViolation, match="must currently be closed"):
-        write_mediator.propose_action(alice, "Reopen", 2, {})
+        write_mediator.propose_action(alice, "Reopen", {"ticket_id": 2})

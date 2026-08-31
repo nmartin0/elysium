@@ -50,21 +50,26 @@ TEST_SCHEMA = {
 
 TEST_ACTION_TYPES = {
     "ReopenTicket": {
-        "object_type": "Ticket",
-        "operation": "update",
+        "affected_object_types": ["Ticket"],
         "parameters": {
+            "ticket_id": {"type": "object_reference", "object_type": "Ticket", "required": True},
             "reason": {"type": "string", "required": True},
         },
-        "submission_criteria": [
-            {
-                "description": "Ticket must currently be closed to reopen it",
-                "check": "current_state", "field": "status", "operator": "equals", "value": "closed",
-            },
-        ],
-        "mutations": [
-            {"set": {"property": "status", "value": "open"}},
-            {"set": {"property": "reopen_reason", "value": "parameter.reason"}},
-        ],
+        "sub_writes": [{
+            "object_type": "Ticket",
+            "object_id": "parameter.ticket_id",
+            "operation": "update",
+            "submission_criteria": [
+                {
+                    "description": "Ticket must currently be closed to reopen it",
+                    "check": "current_state", "field": "status", "operator": "equals", "value": "closed",
+                },
+            ],
+            "mutations": [
+                {"set": {"property": "status", "value": "open"}},
+                {"set": {"property": "reopen_reason", "value": "parameter.reason"}},
+            ],
+        }],
     },
 }
 
@@ -108,7 +113,7 @@ def write_mediator(tmp_path, isolated_audit_log):
 
 def test_valid_action_call_succeeds_end_to_end(write_mediator):
     lead = _record("lead")
-    pending = write_mediator.propose_action(lead, "ReopenTicket", "t1", {"reason": "customer followup"})
+    pending = write_mediator.propose_action(lead, "ReopenTicket", {"ticket_id": "t1", "reason": "customer followup"})
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
     assert outcome == {"status": "written", "object_id": "t1"}
@@ -120,7 +125,7 @@ def test_valid_action_call_succeeds_end_to_end(write_mediator):
 
 def test_mutations_resolve_both_literal_and_parameter_references(write_mediator):
     lead = _record("lead")
-    pending = write_mediator.propose_action(lead, "ReopenTicket", "t1", {"reason": "a specific reason"})
+    pending = write_mediator.propose_action(lead, "ReopenTicket", {"ticket_id": "t1", "reason": "a specific reason"})
     # "status" is a LITERAL in the action's own mutations ("open");
     # "reopen_reason" is a "parameter.reason" reference -- both must
     # resolve correctly into the SAME changes dict.
@@ -130,36 +135,38 @@ def test_mutations_resolve_both_literal_and_parameter_references(write_mediator)
 def test_submission_criteria_blocks_an_invalid_state_transition(write_mediator):
     # t2 is already open -- the current_state criterion must block this.
     with pytest.raises(SubmissionCriteriaViolation, match="must currently be closed"):
-        write_mediator.propose_action(_record("lead"), "ReopenTicket", "t2", {"reason": "x"})
+        write_mediator.propose_action(_record("lead"), "ReopenTicket", {"ticket_id": "t2", "reason": "x"})
 
 
 def test_missing_required_parameter_is_rejected(write_mediator):
     with pytest.raises(ValueError, match="Missing required parameter"):
-        write_mediator.propose_action(_record("lead"), "ReopenTicket", "t1", {})
+        write_mediator.propose_action(_record("lead"), "ReopenTicket", {})
 
 
 def test_undeclared_parameter_is_rejected(write_mediator):
     # "Explicit and safe" -- an extra, undeclared parameter is REJECTED
     # outright, never silently ignored.
     with pytest.raises(ValueError, match="Unknown parameter"):
-        write_mediator.propose_action(_record("lead"), "ReopenTicket", "t1", {"reason": "x", "hacked": "y"})
+        write_mediator.propose_action(
+            _record("lead"), "ReopenTicket", {"ticket_id": "t1", "reason": "x", "hacked": "y"}
+        )
 
 
 def test_rbac_denial_without_an_execute_grant(write_mediator):
     with pytest.raises(PermissionError, match="execute:ReopenTicket"):
-        write_mediator.propose_action(_record("nobody"), "ReopenTicket", "t1", {"reason": "x"})
+        write_mediator.propose_action(_record("nobody"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"})
 
 
 def test_mac_denial_even_with_execute_granted(write_mediator):
     # Action-level RBAC does NOT bypass MAC -- proves the two gates
     # are still genuinely independent under the new authorization model.
     with pytest.raises(PermissionError, match="cannot modify"):
-        write_mediator.propose_action(_record("wrong_region"), "ReopenTicket", "t1", {"reason": "x"})
+        write_mediator.propose_action(_record("wrong_region"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"})
 
 
 def test_unknown_action_type_name_raises(write_mediator):
     with pytest.raises(ValueError, match="Unknown action_type"):
-        write_mediator.propose_action(_record("lead"), "TotallyFakeAction", "t1", {})
+        write_mediator.propose_action(_record("lead"), "TotallyFakeAction", {})
 
 
 def test_denied_action_does_not_double_log(write_mediator, isolated_audit_log):
@@ -170,7 +177,7 @@ def test_denied_action_does_not_double_log(write_mediator, isolated_audit_log):
     from tests.conftest import read_audit_log
 
     with pytest.raises(PermissionError):
-        write_mediator.propose_action(_record("wrong_region"), "ReopenTicket", "t1", {"reason": "x"})
+        write_mediator.propose_action(_record("wrong_region"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"})
 
     entries = read_audit_log(isolated_audit_log)
     execute_entries = [e for e in entries if e.get("action") == "execute:ReopenTicket"]

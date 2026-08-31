@@ -70,10 +70,17 @@ TEST_ROLES = {
 
 TEST_ACTION_TYPES = {
     "UpdateRiskScore": {
-        "object_type": "Customer",
-        "operation": "update",
-        "parameters": {"new_score": {"type": "number", "required": True}},
-        "mutations": [{"set": {"property": "risk_score", "value": "parameter.new_score"}}],
+        "affected_object_types": ["Customer"],
+        "parameters": {
+            "customer_id": {"type": "object_reference", "object_type": "Customer", "required": True},
+            "new_score": {"type": "number", "required": True},
+        },
+        "sub_writes": [{
+            "object_type": "Customer",
+            "object_id": "parameter.customer_id",
+            "operation": "update",
+            "mutations": [{"set": {"property": "risk_score", "value": "parameter.new_score"}}],
+        }],
     },
     # DELIBERATELY mixes a primary-storage field (name) and an MDO
     # field (risk_score) in ONE action's mutations, WITHOUT ever naming
@@ -83,16 +90,27 @@ TEST_ACTION_TYPES = {
     # core/ontology/write_log.py's own module docstring), but requires
     # the object's own id explicitly among the mutations; this action
     # deliberately omits it to prove that requirement is still enforced.
+    # new_id is still a REQUIRED object_reference parameter -- every
+    # sub_write needs its own resolved object_id regardless of
+    # operation (see SubWrite's own docstring) -- but it is
+    # DELIBERATELY never referenced by any mutation below, which is
+    # exactly the gap this test exists to prove is still caught.
     "CreateCustomerWithNameAndRiskScore": {
-        "object_type": "Customer",
-        "operation": "create",
+        "affected_object_types": ["Customer"],
         "parameters": {
-            "new_name": {"type": "string", "required": True}, "new_score": {"type": "number", "required": True}
+            "new_id": {"type": "object_reference", "object_type": "Customer", "required": True},
+            "new_name": {"type": "string", "required": True},
+            "new_score": {"type": "number", "required": True},
         },
-        "mutations": [
-            {"set": {"property": "name", "value": "parameter.new_name"}},
-            {"set": {"property": "risk_score", "value": "parameter.new_score"}},
-        ],
+        "sub_writes": [{
+            "object_type": "Customer",
+            "object_id": "parameter.new_id",
+            "operation": "create",
+            "mutations": [
+                {"set": {"property": "name", "value": "parameter.new_name"}},
+                {"set": {"property": "risk_score", "value": "parameter.new_score"}},
+            ],
+        }],
     },
     # DELIBERATELY sets an explicit id (now required for every create --
     # see WriteMediator.propose_action()'s own comment on why) and
@@ -106,15 +124,20 @@ TEST_ACTION_TYPES = {
     # the same underlying reason, just via a real row with a missing
     # field rather than a missing row entirely.
     "CreateCustomerRiskOnly": {
-        "object_type": "Customer",
-        "operation": "create",
+        "affected_object_types": ["Customer"],
         "parameters": {
-            "new_id": {"type": "string", "required": True}, "risk_score": {"type": "number", "required": True}
+            "new_id": {"type": "object_reference", "object_type": "Customer", "required": True},
+            "risk_score": {"type": "number", "required": True},
         },
-        "mutations": [
-            {"set": {"property": "customer_id", "value": "parameter.new_id"}},
-            {"set": {"property": "risk_score", "value": "parameter.risk_score"}},
-        ],
+        "sub_writes": [{
+            "object_type": "Customer",
+            "object_id": "parameter.new_id",
+            "operation": "create",
+            "mutations": [
+                {"set": {"property": "customer_id", "value": "parameter.new_id"}},
+                {"set": {"property": "risk_score", "value": "parameter.risk_score"}},
+            ],
+        }],
     },
 }
 
@@ -200,7 +223,7 @@ def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
     write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
 
-    pending = write_mediator.propose_action(alice, "UpdateRiskScore", "cust_001", {"new_score": 0.99})
+    pending = write_mediator.propose_action(alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.99})
     assert pending.sub_writes[0].expected_current_values == {"risk_score": 0.42}
 
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
@@ -228,8 +251,8 @@ def test_create_without_explicit_id_is_rejected(mediator):
     write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
     with pytest.raises(ValueError, match="requires an explicit 'customer_id' value"):
-        write_mediator.propose_action(alice, "CreateCustomerWithNameAndRiskScore", None,
-                                       {"new_name": "New Name", "new_score": 0.5})
+        write_mediator.propose_action(alice, "CreateCustomerWithNameAndRiskScore",
+                                       {"new_id": "cust_998", "new_name": "New Name", "new_score": 0.5})
 
 
 def test_search_with_empty_criteria_defaults_to_primary_storage(mediator):
@@ -398,7 +421,7 @@ def test_create_without_setting_security_field_produces_an_unreadable_row(mediat
     write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
 
-    pending = write_mediator.propose_action(alice, "CreateCustomerRiskOnly", None,
+    pending = write_mediator.propose_action(alice, "CreateCustomerRiskOnly",
                                              {"new_id": "cust_incomplete", "risk_score": 0.15})
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 

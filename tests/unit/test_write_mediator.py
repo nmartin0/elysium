@@ -48,29 +48,40 @@ TEST_ROLES = {
 
 TEST_ACTION_TYPES = {
     "RenameAuthor": {
-        "object_type": "Author",
-        "operation": "update",
-        "parameters": {"new_name": {"type": "string", "required": True}},
-        "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
+        "affected_object_types": ["Author"],
+        "parameters": {
+            "author_id": {"type": "object_reference", "object_type": "Author", "required": True},
+            "new_name": {"type": "string", "required": True},
+        },
+        "sub_writes": [{
+            "object_type": "Author",
+            "object_id": "parameter.author_id",
+            "operation": "update",
+            "mutations": [{"set": {"property": "name", "value": "parameter.new_name"}}],
+        }],
     },
     "CreateAuthor": {
-        "object_type": "Author",
-        "operation": "create",
+        "affected_object_types": ["Author"],
         "parameters": {
-            "author_id": {"type": "string", "required": True},
+            "author_id": {"type": "object_reference", "object_type": "Author", "required": True},
             "name": {"type": "string", "required": True},
         },
-        "mutations": [
-            {"set": {"property": "author_id", "value": "parameter.author_id"}},
-            {"set": {"property": "name", "value": "parameter.name"}},
-            # "user.security_value" -- the ACTING user's own org_id,
-            # substituted automatically. Discovered as a genuinely
-            # necessary, previously-missing mechanism while building
-            # THIS test: without it, a create action's mutations had
-            # no safe way to populate the security field at all -- a
-            # real NOT NULL constraint failure, not a hypothetical.
-            {"set": {"property": "org_id", "value": "user.security_value"}},
-        ],
+        "sub_writes": [{
+            "object_type": "Author",
+            "object_id": "parameter.author_id",
+            "operation": "create",
+            "mutations": [
+                {"set": {"property": "author_id", "value": "parameter.author_id"}},
+                {"set": {"property": "name", "value": "parameter.name"}},
+                # "user.security_value" -- the ACTING user's own org_id,
+                # substituted automatically. Discovered as a genuinely
+                # necessary, previously-missing mechanism while building
+                # THIS test: without it, a create action's mutations had
+                # no safe way to populate the security field at all -- a
+                # real NOT NULL constraint failure, not a hypothetical.
+                {"set": {"property": "org_id", "value": "user.security_value"}},
+            ],
+        }],
     },
 }
 
@@ -90,12 +101,12 @@ def wm(test_db_path, test_schema, tmp_path) -> WriteMediator:
 
 def test_propose_action_denied_without_role_rbac(wm):
     with pytest.raises(PermissionError):
-        wm.propose_action(_record("carol"), "RenameAuthor", "auth_001", {"new_name": "Someone Else"})
+        wm.propose_action(_record("carol"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Someone Else"})
 
 
 def test_propose_action_denied_cross_org_even_with_role_granted_mac(wm):
     with pytest.raises(PermissionError):
-        wm.propose_action(_record("bob"), "RenameAuthor", "auth_001", {"new_name": "Hacked"})
+        wm.propose_action(_record("bob"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Hacked"})
 
 
 def test_propose_action_denied_for_ungranted_action_even_with_a_different_action_granted(wm):
@@ -104,11 +115,11 @@ def test_propose_action_denied_for_ungranted_action_even_with_a_different_action
     # test: one grant on this object type does not unlock every
     # action that happens to touch it.
     with pytest.raises(PermissionError):
-        wm.propose_action(_record("dave"), "CreateAuthor", None, {"name": "New Author"})
+        wm.propose_action(_record("dave"), "CreateAuthor", {"name": "New Author"})
 
 
 def test_propose_action_succeeds_for_own_org_object(wm):
-    pending = wm.propose_action(_record("alice"), "RenameAuthor", "auth_001", {"new_name": "Ada L."})
+    pending = wm.propose_action(_record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."})
     assert pending.sub_writes[0].object_type == "Author"
     assert pending.user_id == "alice"
     assert pending.sub_writes[0].changes == {"name": "Ada L."}
@@ -118,7 +129,7 @@ def test_pending_write_is_immutable(wm):
     # Both levels, deliberately -- PendingWrite AND each of its own
     # SubWrite entries are separately frozen dataclasses now (see
     # PendingWrite's own docstring for why the shape split into two).
-    pending = wm.propose_action(_record("alice"), "RenameAuthor", "auth_001", {"new_name": "Ada L."})
+    pending = wm.propose_action(_record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."})
     with pytest.raises(FrozenInstanceError):
         pending.sub_writes = ()
     with pytest.raises(FrozenInstanceError):
@@ -126,7 +137,9 @@ def test_pending_write_is_immutable(wm):
 
 
 def test_rejected_action_does_not_touch_database(wm):
-    pending = wm.propose_action(_record("alice"), "RenameAuthor", "auth_001", {"new_name": "Should Not Apply"})
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Should Not Apply"}
+    )
     result = wm.confirm_and_execute(pending, approved=False)
     assert result is None
 
@@ -135,7 +148,9 @@ def test_rejected_action_does_not_touch_database(wm):
 
 
 def test_approved_action_actually_updates_the_database(wm):
-    pending = wm.propose_action(_record("alice"), "RenameAuthor", "auth_001", {"new_name": "Ada, Countess of Lovelace"})
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada, Countess of Lovelace"}
+    )
     result = wm.confirm_and_execute(pending, approved=True)
     assert result == {"status": "written", "object_id": "auth_001"}
 
@@ -154,7 +169,7 @@ def test_approved_create_action_actually_creates_a_new_row(wm):
     # one explicitly -- not specific to named actions, just the first
     # time anything actually created an Author through to completion.
     pending = wm.propose_action(
-        _record("alice"), "CreateAuthor", None, {"author_id": "auth_003", "name": "Grace Hopper"}
+        _record("alice"), "CreateAuthor", {"author_id": "auth_003", "name": "Grace Hopper"}
     )
     assert pending.sub_writes[0].operation == "create"
 

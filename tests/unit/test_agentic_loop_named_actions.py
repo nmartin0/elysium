@@ -45,19 +45,26 @@ TEST_SCHEMA = {
 
 TEST_ACTION_TYPES = {
     "ReopenTicket": {
-        "object_type": "Ticket",
-        "operation": "update",
-        "parameters": {"reason": {"type": "string", "required": True}},
-        "submission_criteria": [
-            {
-                "description": "Ticket must currently be closed to reopen it",
-                "check": "current_state", "field": "status", "operator": "equals", "value": "closed",
-            },
-        ],
-        "mutations": [
-            {"set": {"property": "status", "value": "open"}},
-            {"set": {"property": "reopen_reason", "value": "parameter.reason"}},
-        ],
+        "affected_object_types": ["Ticket"],
+        "parameters": {
+            "ticket_id": {"type": "object_reference", "object_type": "Ticket", "required": True},
+            "reason": {"type": "string", "required": True},
+        },
+        "sub_writes": [{
+            "object_type": "Ticket",
+            "object_id": "parameter.ticket_id",
+            "operation": "update",
+            "submission_criteria": [
+                {
+                    "description": "Ticket must currently be closed to reopen it",
+                    "check": "current_state", "field": "status", "operator": "equals", "value": "closed",
+                },
+            ],
+            "mutations": [
+                {"set": {"property": "status", "value": "open"}},
+                {"set": {"property": "reopen_reason", "value": "parameter.reason"}},
+            ],
+        }],
     },
 }
 
@@ -94,7 +101,7 @@ def loop(tmp_path):
 
 
 def _reopen_step():
-    return {"step": "propose_action", "action_type": "ReopenTicket", "object_id": "t1", "parameters": {"reason": "x"}}
+    return {"step": "propose_action", "action_type": "ReopenTicket", "parameters": {"ticket_id": "t1", "reason": "x"}}
 
 
 def test_business_rule_violation_produces_rejected_business_rule_not_invalid_step(loop):
