@@ -146,8 +146,8 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
     )
   }
 
-  const availableActions = Object.entries(visibleActionTypes ?? {}).filter(([, actionDef]) =>
-    actionDef.affected_object_types.includes(objectType)
+  const availableActions = Object.entries(visibleActionTypes ?? {}).filter(
+    ([, actionDef]) => actionDef.affected_object_types.includes(objectType) && actionDef.executable
   )
 
   return (
@@ -225,12 +225,25 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
 // formatValue's own fallback behavior, just without link treatment --
 // never hidden, never fabricated.
 //
-// availableActions filters on affected_object_types locally, in this
-// component -- NOT a second, server-side filter. The real, only
-// authorization decision (can this user even SEE this action at all)
-// already happened inside GET /me/visible-action-types itself; this
-// filter is purely "which of the ones I'm already allowed to see
-// make sense to offer HERE," a display decision, not a security one.
+// availableActions filters on affected_object_types AND executable
+// locally, in this component -- NOT a second, server-side filter. The
+// real, only authorization decisions (can this user even SEE this
+// action; can this user genuinely INVOKE it) already happened inside
+// GET /me/visible-action-types itself -- executable is computed
+// there, per action, specifically so a discover:action_types-holding
+// role (which sees actions it cannot invoke -- see that grant's own
+// docstring on WriteMediator.visible_action_types()) never gets shown
+// a button for one of them. Deliberately HIDDEN, not shown disabled --
+// decided explicitly with the user after checking both Palantir's own
+// real Object View convention (which supports either, but frames
+// disable as for a condition the user could fix by changing form
+// input) and the general, converging UX consensus for permission-
+// based unavailability specifically: hide, since no amount of correct
+// form-filling grants a permission the user doesn't hold. This
+// filter is purely "which of the ones I'm already allowed to see AND
+// invoke make sense to offer HERE," a display decision built on TWO
+// already-real, server-computed authorization facts, not a new
+// security decision of its own.
 //
 // DEFERRED (known, intentional, not yet built):
 // - No "return to where I was" breadcrumb/back trail across multiple

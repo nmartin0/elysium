@@ -411,10 +411,37 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
     # know which ACTIONS exist, and what parameters each one declares,
     # before a person can be shown a button or a form for one at all.
     # WriteMediator.visible_action_types() already existed for the
-    # model-facing prompt (core/llm/agent_step_prompt.py) -- this
-    # route is pure composition, no new backend logic.
+    # model-facing prompt (core/llm/agent_step_prompt.py).
+    #
+    # "executable" is added HERE, at this HTTP layer, deliberately NOT
+    # inside visible_action_types() itself -- that method's own return
+    # shape is shared with the model-facing prompt path and has real,
+    # existing tests asserting exact dict equality against the raw
+    # action_type definition; this flag is a UI-only concern (which
+    # actions can grow a real button, not just appear in a catalog),
+    # with no reason to touch that shared, already-correct method or
+    # its own callers/tests at all. {**action_def, ...} builds a
+    # genuinely NEW dict per action -- never mutates action_def in
+    # place, which would otherwise corrupt WriteMediator's own,
+    # shared, long-lived self.action_types for every future caller,
+    # not just this one request.
+    #
+    # For a role WITHOUT discover:action_types, every entry it sees is
+    # already execute:-filtered (visible_action_types()'s own existing
+    # behavior), so "executable" is always true there -- correct,
+    # if redundant, information. Only meaningfully varies once
+    # discover:action_types is held (see that grant's own docstring on
+    # visible_action_types() for the full reasoning): a role can see
+    # an action's shape without being able to invoke it, and the UI
+    # needs to know which is which to decide whether to offer a
+    # button at all (see ObjectDetailPanel.jsx's own comment).
     write_mediator: WriteMediator = request.app.state.write_mediator
-    return write_mediator.visible_action_types(current_user)
+    roles = request.app.state.config.roles
+    visible = write_mediator.visible_action_types(current_user)
+    return {
+        action_name: {**action_def, "executable": authorize(current_user, roles, f"execute:{action_name}")}
+        for action_name, action_def in visible.items()
+    }
 
 
 @router.post("/actions/{action_type_name}")

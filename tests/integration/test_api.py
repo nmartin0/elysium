@@ -486,6 +486,55 @@ def test_visible_action_types_with_discover_grant_shows_the_whole_catalog(client
     assert set(response.json().keys()) == {"UpdateCustomerName", "CreateCustomer", "TransferFunds"}
 
 
+def test_visible_action_types_executable_flag_is_false_with_no_execute_grants(client):
+    # process_auditor sees the whole catalog (previous test) but holds
+    # NO execute: grants at all -- every entry's own "executable" flag
+    # must be false, matching what the frontend needs to decide
+    # whether to render a button for it at all (see ObjectDetailPanel.
+    # jsx's own comment).
+    client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
+    token = _login(client, "carol", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-action-types", headers={"Authorization": f"Bearer {token}"})
+
+    body = response.json()
+    assert all(action_def["executable"] is False for action_def in body.values())
+
+
+def test_visible_action_types_executable_flag_differentiates_within_one_response(client):
+    # THE real proof of per-action differentiation, not just an all-
+    # or-nothing role: senior_auditor holds discover:action_types
+    # (sees all three) AND execute:UpdateCustomerName specifically
+    # (can genuinely invoke only that one) -- confirms "executable"
+    # is computed PER action, not a single, role-wide flag.
+    client.app.state.user_directory.create_user("dana", "correct-pw", "us-west", "senior_auditor")
+    token = _login(client, "dana", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-action-types", headers={"Authorization": f"Bearer {token}"})
+
+    body = response.json()
+    assert set(body.keys()) == {"UpdateCustomerName", "CreateCustomer", "TransferFunds"}
+    assert body["UpdateCustomerName"]["executable"] is True
+    assert body["CreateCustomer"]["executable"] is False
+    assert body["TransferFunds"]["executable"] is False
+
+
+def test_visible_action_types_executable_flag_is_always_true_without_discover_grant(client):
+    # editor holds NO discover:action_types -- every entry it sees is
+    # already execute:-filtered by visible_action_types() itself, so
+    # "executable" is always true here, if redundant -- confirms the
+    # flag doesn't accidentally introduce a NEW denial for the
+    # existing, unchanged, non-discover: path.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-action-types", headers={"Authorization": f"Bearer {token}"})
+
+    body = response.json()
+    assert set(body.keys()) == {"UpdateCustomerName", "CreateCustomer"}
+    assert all(action_def["executable"] is True for action_def in body.values())
+
+
 def test_propose_action_unknown_action_shows_the_real_message_for_a_discover_holder(client):
     client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
     token = _login(client, "carol", "correct-pw").json()["token"]

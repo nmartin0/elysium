@@ -78,6 +78,25 @@ roles:
   process_auditor:
     allowed_actions:
       - discover:action_types
+  # A discover:action_types role that ALSO holds a real, PARTIAL
+  # execute: grant -- for a single test proving per-action
+  # differentiation within ONE response (process_auditor above proves
+  # the all-execute:-grants-absent case; this proves the mixed case:
+  # sees all three actions, but only ONE is genuinely invokable). Also
+  # holds real read: grants on Customer (matching editor's own,
+  # exactly) -- without them this role could see actions exist but
+  # could never actually reach an object's own detail page to try one
+  # from, real or in an automated test alike (Browse itself needs
+  # read:<Type> just to offer a type to search).
+  senior_auditor:
+    allowed_actions:
+      - read:Customer
+      - read:Customer.customer_id
+      - read:Customer.name
+      - read:Customer.email
+      - read:Customer.region
+      - discover:action_types
+      - execute:UpdateCustomerName
   # Deliberately grants name but NOT email -- for
   # tests/integration/test_field_denial_e2e.py, proving a real model
   # never sees (and, via the citation/email verification in
