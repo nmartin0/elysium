@@ -33,6 +33,12 @@ def test_manage_users_is_always_valid():
     validate_roles(_role("manage:users"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)  # does not raise
 
 
+def test_discover_action_types_is_always_valid():
+    # Same exact-literal shape as manage:users above -- a single,
+    # blanket grant, nothing further to reference or validate.
+    validate_roles(_role("discover:action_types"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)  # does not raise
+
+
 def test_execute_a_real_action_type_is_valid():
     validate_roles(_role("execute:RenameWidget"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)  # does not raise
 

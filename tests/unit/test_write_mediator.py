@@ -37,6 +37,7 @@ TEST_USERS = {
     "bob": {"org_id": "org-b", "role": "editor"},
     "carol": {"org_id": "org-a"},  # deliberately no role
     "dave": {"org_id": "org-a", "role": "rename_only"},
+    "erin": {"org_id": "org-a", "role": "process_auditor"},
 }
 
 TEST_ROLES = {
@@ -44,6 +45,10 @@ TEST_ROLES = {
         "read:Author", "read:Author.name", "execute:RenameAuthor", "execute:CreateAuthor",
     ]},
     "rename_only": {"allowed_actions": ["read:Author", "execute:RenameAuthor"]},
+    # discover:action_types, and DELIBERATELY no execute: grant at
+    # all -- proves the two axes are genuinely separate (see
+    # visible_action_types()'s own docstring for the full reasoning).
+    "process_auditor": {"allowed_actions": ["discover:action_types"]},
 }
 
 TEST_ACTION_TYPES = {
@@ -97,6 +102,43 @@ def wm(test_db_path, test_schema, tmp_path) -> WriteMediator:
     write_log = WriteLog(tmp_path / "write_log.db")
     mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES, write_log=write_log)
     return WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+
+
+def test_visible_action_types_without_discover_grant_shows_only_executable_actions(wm):
+    # alice (editor) has execute: for BOTH RenameAuthor and
+    # CreateAuthor -- unchanged, existing behavior.
+    assert set(wm.visible_action_types(_record("alice")).keys()) == {"RenameAuthor", "CreateAuthor"}
+
+
+def test_visible_action_types_without_discover_grant_and_partial_execute_shows_only_that_one(wm):
+    # dave (rename_only) has execute:RenameAuthor but NOT
+    # execute:CreateAuthor -- proves the existing, execute:-filtered
+    # path is genuinely unaffected by this addition.
+    assert set(wm.visible_action_types(_record("dave")).keys()) == {"RenameAuthor"}
+
+
+def test_visible_action_types_no_role_shows_nothing(wm):
+    assert wm.visible_action_types(_record("carol")) == {}
+
+
+def test_visible_action_types_with_discover_grant_shows_the_whole_catalog(wm):
+    # erin (process_auditor) holds discover:action_types and
+    # DELIBERATELY no execute: grant at all -- still sees BOTH real
+    # action types, proving discovery is genuinely independent of any
+    # execute: grant, not just a superset built from executable ones.
+    result = wm.visible_action_types(_record("erin"))
+    assert set(result.keys()) == {"RenameAuthor", "CreateAuthor"}
+    assert result["RenameAuthor"] == TEST_ACTION_TYPES["RenameAuthor"]
+
+
+def test_discover_grant_alone_does_not_authorize_invoking_anything(wm):
+    # THE real security proof: erin can SEE RenameAuthor's full shape
+    # (previous test) but propose_action() itself -- the actual,
+    # unchanged authorization gate -- still, correctly, refuses to let
+    # her invoke it. Discovery and execution are genuinely separate;
+    # this grant alone unlocks neither.
+    with pytest.raises(PermissionError):
+        wm.propose_action(_record("erin"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Erin's Edit"})
 
 
 def test_propose_action_denied_without_role_rbac(wm):

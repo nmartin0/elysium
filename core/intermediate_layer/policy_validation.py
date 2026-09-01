@@ -28,11 +28,16 @@ lifetime of a running deployment. Checking here, once, at startup, is
 strictly better: catches the exact same bug, for free at runtime,
 before the deployment ever serves a single real request.
 
-THE SIX REAL GRANT PATTERNS -- found by grepping every real call site
+THE SEVEN REAL GRANT PATTERNS -- found by grepping every real call site
 that constructs an action_id string to pass to authorize(), not
 assumed or invented:
   - "manage:users" -- an exact, fixed literal (core/user_directory.py,
     api/routes.py). No object/field/action to reference at all.
+  - "discover:action_types" -- an exact, fixed literal (core/ontology/
+    write_mediator.py's own visible_action_types()), same shape as
+    manage:users above -- a single, blanket grant, not per-action-
+    type, so nothing further to validate against once the literal
+    string itself matches.
   - "execute:<ActionName>" -- ActionName must be a real, declared
     action_type (core/ontology/write_mediator.py).
   - "tool:<ToolName>" -- ToolName must be in this deployment's own
@@ -48,9 +53,9 @@ assumed or invented:
   - "read:<Type>" (no dot) -- Type must be real; the TYPE-level read
     grant gating schema visibility itself (core/ontology/mediator.py).
 
-Anything that doesn't match ANY of these six patterns is rejected
+Anything that doesn't match ANY of these seven patterns is rejected
 outright, not silently accepted -- almost certainly a typo of one of
-the six above (e.g. a stray colon, a misspelled prefix), and letting
+the seven above (e.g. a stray colon, a misspelled prefix), and letting
 it through unchecked would just be a DIFFERENT, undetectable version
 of the same silent-typo problem this module exists to catch.
 
@@ -71,6 +76,9 @@ def validate_roles(roles: dict, object_types: dict, action_types: dict, enabled_
 def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_types: dict,
                          enabled_tools: list[str]) -> None:
     if grant == "manage:users":
+        return
+
+    if grant == "discover:action_types":
         return
 
     if grant.startswith("execute:"):
@@ -154,13 +162,25 @@ def _valid_field_names(type_schema: dict) -> set[str]:
 # still catching up.
 #
 # RESOLVED (kept for history):
+# - The predicted "seventh grant pattern" below actually arrived:
+#   discover:action_types (a role-level, blanket "see the whole
+#   action catalog regardless of execute: grants" capability, added
+#   after directly researching Palantir's own real, documented
+#   default -- see core/ontology/write_mediator.py's own
+#   visible_action_types() for the full reasoning). Same exact-
+#   literal shape as manage:users, so the new branch is equally
+#   trivial -- confirmed directly, not assumed, that skipping this
+#   step breaks real deployment loading: forgetting it here produced
+#   a genuine, load-time ValueError ("doesn't match any recognized
+#   pattern") the moment a real policy.yaml declared the new grant,
+#   exactly the failure mode this module's own docstring describes.
 # - Every raise ValueError(...) message in this file was rewritten to
 #   ONE LINE each, per the user's own explicit request for compiler-
 #   style brevity. The reasoning each message used to carry inline
 #   moved to the comment above each check instead -- see core/
 #   ontology/action_types.py's own AI-notes for the identical change
 #   made to its own messages at the same time, and this module's own
-#   docstring, which still documents the real six grant patterns in
+#   docstring, which still documents the real seven grant patterns in
 #   full even though the raised strings themselves no longer spell
 #   them out.
 #
@@ -169,14 +189,14 @@ def _valid_field_names(type_schema: dict) -> set[str]:
 #   were trimmed to one line each, per the user's own explicit
 #   request for succinctness; it had become dead weight once no
 #   longer interpolated into any message) The underlying concern still
-#   stands: if a SEVENTH real grant pattern is ever added anywhere in
+#   stands: if an EIGHTH real grant pattern is ever added anywhere in
 #   the codebase (a new authorize() call site constructing some new
 #   prefix), this module needs a matching new branch in _validate_
 #   one_grant(). There's no structural guarantee this module's own
 #   recognized-pattern branches stay in sync with authorize()'s real
 #   call sites automatically -- worth re-grepping every real
 #   f"...:{...}" construction site (the same search this module's own
-#   docstring describes doing to find the current six) if this
+#   docstring describes doing to find the current seven) if this
 #   module's own tests ever start failing against a real policy.yaml
 #   for no apparent reason.
 # - Does NOT check whether a role's OWN combination of grants is

@@ -70,6 +70,14 @@ roles:
       - read:Customer.region
       - execute:UpdateCustomerName
       - execute:CreateCustomer
+  # For test_api.py's own discover:action_types coverage -- holds
+  # discover:action_types and DELIBERATELY NO execute: grant at all,
+  # to prove the two axes are genuinely separate: sees the entire
+  # action catalog (unlike editor above, which only sees what it can
+  # execute) while being unable to invoke a single one of them.
+  process_auditor:
+    allowed_actions:
+      - discover:action_types
   # Deliberately grants name but NOT email -- for
   # tests/integration/test_field_denial_e2e.py, proving a real model
   # never sees (and, via the citation/email verification in

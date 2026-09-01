@@ -241,6 +241,8 @@ explicit — nothing is inherited from anything else**:
 | `write:<Type>.<field>` | May change this one field on an existing object. All fields in a write need their own grant — missing even one denies the whole write. |
 | `create:<Type>` | May bring a new object into existence. Still needs `write:<Type>.<field>` for every field being set. |
 | `tool:<name>` | May invoke this specific tool. |
+| `execute:<ActionName>` | May invoke this one named, independently-governed action — the mutations it declares apply regardless of any individual `write:<Type>.<field>` grant, as long as every one of its sub-writes targets a single object type. A sub-write spanning more than one object type additionally needs its own `write:<Type>.<field>` grant per field touched, for each type involved. |
+| `discover:action_types` | A single, blanket grant (not per-action) — see the whole action-type catalog via `GET /me/visible-action-types`, including actions this role holds no `execute:` grant for. Matches Palantir's own real, documented default (verified directly, not assumed) more closely than this project's own default posture, which is intentionally more conservative absent this grant: an unknown action and a real-but-unauthorized one otherwise look identical, by design (see `api/routes.py`'s own `propose_action_route`). A role holding this can still only *invoke* an action with its own, separate `execute:` grant — discovery and execution are genuinely separate axes here, same as in Palantir's real model. |
 | `manage:users` | May create new database-backed users via `api/`'s `/users` endpoint. |
 
 - **`security_attribute`** — the *mandatory* boundary (MAC). A user can never see data outside their own value for this field, regardless of role.

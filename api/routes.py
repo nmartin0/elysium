@@ -448,27 +448,32 @@ def propose_action_route(action_type_name: str, body: ProposeActionRequest, requ
     # they can actually execute it, and their real API returns
     # standard, differentiated HTTP status codes with specific
     # messages for permission failures). Elysium's OWN, already-
-    # established posture is more conservative -- unknown/denied
-    # already look identical for objects and fields throughout this
-    # project (see get_object_detail_route's own docstring) -- and
-    # this route extends that SAME posture to actions too, for
-    # consistency's sake, not because it's the only defensible choice.
-    # ValueError, TypeError, and PermissionError are caught TOGETHER
-    # (matching how core/agent/agentic_loop.py's own _execute_step()
-    # already treats these three identically for the model -- this
-    # route is not introducing a new distinction, just applying an
-    # EXISTING one consistently to a second, human-facing caller) and
-    # ALL map to the SAME status code with the SAME generic message --
-    # never the real str(e), which would itself re-introduce the
-    # exact distinction (e.g. "Unknown action_type" vs "not authorized
-    # for execute:X") this is meant to avoid. Do not "improve" this
-    # later into a more specific message without re-reading this
-    # reasoning first.
+    # established posture is more conservative by DEFAULT -- unknown/
+    # denied already look identical for objects and fields throughout
+    # this project (see get_object_detail_route's own docstring) --
+    # and this route extends that SAME posture to actions too, for
+    # every role EXCEPT one holding discover:action_types (see
+    # visible_action_types()'s own docstring for that grant's full
+    # reasoning): such a role already sees the WHOLE action catalog
+    # via GET /me/visible-action-types, so "unknown vs denied" is not
+    # a new leak for them specifically -- the real reason this
+    # generic-by-default design exists doesn't apply once someone
+    # already has that visibility. For that role only, the real
+    # exception message is surfaced, and PermissionError gets its own,
+    # differentiated 403 (matching standard HTTP semantics and
+    # Palantir's own real API, both safe to do ONLY because this
+    # specific role isn't the audience the generic default protects).
+    # Every OTHER role keeps the fully generic, undifferentiated
+    # response exactly as before.
     write_mediator: WriteMediator = request.app.state.write_mediator
     try:
         pending_write = write_mediator.propose_action(current_user, action_type_name, body.parameters)
     except (ValueError, TypeError, PermissionError) as e:
         logger.warning(f"propose_action_route: {action_type_name!r} rejected for {current_user.user_id!r}: {e}")
+        roles = request.app.state.config.roles
+        if authorize(current_user, roles, "discover:action_types"):
+            status_code = 403 if isinstance(e, PermissionError) else 400
+            raise HTTPException(status_code=status_code, detail=str(e)) from e
         raise HTTPException(
             status_code=400,
             detail="That action could not be proposed. Check the action name and parameters, "

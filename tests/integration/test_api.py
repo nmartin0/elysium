@@ -472,6 +472,79 @@ def test_propose_action_cross_region_mac_denial_returns_the_same_generic_error(c
     )
 
 
+def test_visible_action_types_with_discover_grant_shows_the_whole_catalog(client):
+    # process_auditor holds discover:action_types and DELIBERATELY no
+    # execute: grant at all -- proves discovery is genuinely
+    # independent of any execute: grant, not built from executable
+    # actions plus a few extras.
+    client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
+    token = _login(client, "carol", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-action-types", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert set(response.json().keys()) == {"UpdateCustomerName", "CreateCustomer", "TransferFunds"}
+
+
+def test_propose_action_unknown_action_shows_the_real_message_for_a_discover_holder(client):
+    client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
+    token = _login(client, "carol", "correct-pw").json()["token"]
+
+    response = client.post(
+        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unknown action_type: 'TotallyFakeAction'"
+
+
+def test_propose_action_real_but_unauthorized_shows_403_for_a_discover_holder(client):
+    # process_auditor can SEE TransferFunds (previous test) but holds
+    # no execute: grant for it at all -- the real, unchanged
+    # authorization gate still refuses it, now with a real, specific
+    # 403 rather than the generic 400 every other role gets.
+    client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
+    token = _login(client, "carol", "correct-pw").json()["token"]
+
+    response = client.post(
+        "/api/actions/TransferFunds",
+        json={"parameters": {
+            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
+            "new_from_balance": 1, "new_to_balance": 1,
+        }},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "'carol' is not authorized for: 'execute:TransferFunds'"
+
+
+def test_propose_action_unknown_vs_unauthorized_are_no_longer_identical_for_a_discover_holder(client):
+    # The direct inverse of test_propose_action_unknown_action_and_
+    # real_but_unauthorized_action_are_identical above -- for a
+    # discover:-holding role specifically, these two cases are now
+    # DELIBERATELY distinguishable (different status code, different
+    # message), since that role already sees the full catalog and
+    # "unknown vs denied" is no longer a real leak for them.
+    client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
+    token = _login(client, "carol", "correct-pw").json()["token"]
+
+    unknown = client.post(
+        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers={"Authorization": f"Bearer {token}"}
+    )
+    unauthorized = client.post(
+        "/api/actions/TransferFunds",
+        json={"parameters": {
+            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
+            "new_from_balance": 1, "new_to_balance": 1,
+        }},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert unknown.status_code != unauthorized.status_code
+    assert unknown.json() != unauthorized.json()
+
+
 def test_create_user_without_manage_users_grant_is_rejected(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]

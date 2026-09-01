@@ -50,6 +50,18 @@
 #     manage:users              -- may create new database-backed users
 #                                via api/'s /users endpoint (see
 #                                scripts/install.sh's root bootstrap)
+#     discover:action_types     -- a single, blanket grant (not per-
+#                                action) -- see the WHOLE action-type
+#                                catalog via GET /me/visible-action-
+#                                types, including actions this role
+#                                holds no execute: grant for at all.
+#                                Without it, a role only ever sees the
+#                                actions it can actually invoke -- the
+#                                more conservative default. execute:
+#                                remains the ONLY thing that can ever
+#                                authorize actually INVOKING an
+#                                action; this grant affects discovery
+#                                alone.
 #
 # This is deliberately verbose. That verbosity is the point: nothing
 # about what an LLM-driven agent can see or do on your organization's

@@ -505,7 +505,36 @@ class WriteMediator:
         # used by core/llm/agent_step_prompt.py to build the model-
         # facing action vocabulary, and by core/agent/agentic_loop.py's
         # run(), which computes this ONCE per request, same as
-        # visible_schema() itself.
+        # visible_schema() itself. Also the backend for GET /me/
+        # visible-action-types (api/routes.py), Stage 3's own UI-facing
+        # action discovery.
+        #
+        # discover:action_types -- a real, deliberate DEPARTURE from
+        # this project's own earlier, more conservative default,
+        # decided explicitly with the user after directly researching
+        # Palantir's own real, documented behavior: by default, every
+        # user with Ontology access sees every action type's own
+        # title/description/rules, whether or not they can actually
+        # execute it (verified directly against Palantir's real docs,
+        # not assumed). A role holding this ONE, single, blanket grant
+        # -- matching manage:users' own "not per-resource" shape, not
+        # a new per-action-type discover:{name} vocabulary, since the
+        # real use case (general orientation, understanding the full
+        # business-process catalog) is a role-level decision, not an
+        # action-by-action one -- sees the WHOLE catalog here,
+        # regardless of which specific actions it can execute.
+        #
+        # execute: alone remains, unconditionally, the ONLY thing that
+        # can ever actually authorize INVOKING an action --
+        # propose_action() below enforces that itself, completely
+        # unaffected by this method or this grant. A role could hold
+        # discover:action_types and zero execute: grants at all, and
+        # would correctly see every action's own shape here while
+        # being unable to invoke a single one of them -- discovery and
+        # execution are two genuinely separate axes, same as
+        # Palantir's own real model keeps them.
+        if authorize(user_record, self.roles, "discover:action_types"):
+            return dict(self.action_types)
         return {
             action_name: action_def
             for action_name, action_def in self.action_types.items()
