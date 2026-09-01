@@ -142,3 +142,19 @@ export async function getVisibleSchema(username) {
   const response = await apiFetchOrThrow(`/users/${username}/visible-schema`)
   return response.json()
 }
+
+// --- Browse/search: self-service, no manage:users needed -- every
+// call here reflects the CURRENT logged-in user's own view/grants,
+// enforced entirely server-side (see api/routes.py's own docstrings
+// for both routes).
+
+export async function getMyVisibleSchema() {
+  const response = await apiFetchOrThrow('/me/visible-schema')
+  return response.json()
+}
+
+export async function searchObjects(objectType, queryText) {
+  const params = new URLSearchParams({ q: queryText })
+  const response = await apiFetchOrThrow(`/objects/${objectType}/search?${params}`)
+  return response.json()
+}

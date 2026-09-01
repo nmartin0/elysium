@@ -88,6 +88,129 @@ def test_query_without_token_is_rejected(client):
     assert response.status_code == 401
 
 
+def test_search_objects_without_token_is_rejected(client):
+    response = client.get("/objects/Customer/search", params={"q": "ada"})
+    assert response.status_code == 401
+
+
+def test_my_visible_schema_without_token_is_rejected(client):
+    response = client.get("/me/visible-schema")
+    assert response.status_code == 401
+
+
+def test_my_visible_schema_returns_the_callers_own_view(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/me/visible-schema", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    # confirmed directly against a real mediator.visible_schema() call
+    # for the customer_service role, not assumed.
+    assert set(response.json().keys()) == {"Customer", "Transaction", "SupportTicket"}
+
+
+def test_my_visible_schema_differs_by_role_not_a_static_response(client):
+    # customer_service_no_email (user_dave's real role in fixtures/
+    # policy.yaml) withholds read:Customer.email specifically -- proves
+    # this route genuinely reflects the CALLER's own grants, not a
+    # cached or role-blind response.
+    client.app.state.user_directory.create_user("dave", "correct-pw", "us-west", "customer_service_no_email")
+    token = _login(client, "dave", "correct-pw").json()["token"]
+
+    response = client.get("/me/visible-schema", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert "email" not in response.json()["Customer"]["fields"]
+
+
+def test_search_objects_finds_a_partial_match_with_real_field_values(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get(
+        "/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_matches"] == 1
+    assert body["results"] == [
+        {"id": "cust_001", "fields": {"region": "us-west", "name": "Ada Okafor", "email": "ada.okafor@example.com"}}
+    ]
+
+
+def test_search_objects_empty_query_returns_every_visible_result(client):
+    # alice is us-west -- TWO real seeded customers share that region
+    # (cust_001, cust_002), confirmed directly against fixtures/
+    # schema.sql's own real data, not assumed. cust_003/cust_004 (us-
+    # east/eu) must NOT appear.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get(
+        "/objects/Customer/search", params={"q": ""}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_matches"] == 2
+    assert {result["id"] for result in body["results"]} == {"cust_001", "cust_002"}
+
+
+def test_search_objects_no_query_param_at_all_also_browses_all(client):
+    # q is genuinely optional -- omitting it entirely (not just passing
+    # an empty string) must behave identically.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/objects/Customer/search", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json()["total_matches"] == 2
+
+
+def test_search_objects_blocks_cross_region_mac(client):
+    # THE real security proof, not just a functional one: "ada" would
+    # textually match cust_001's own real name regardless of who asks
+    # -- bob (us-east) must still get nothing back, since cust_001 is
+    # us-west, matching test_query's own established MAC-boundary
+    # testing pattern elsewhere in this file.
+    client.app.state.user_directory.create_user("bob", "correct-pw", "us-east", "customer_service")
+    token = _login(client, "bob", "correct-pw").json()["token"]
+
+    response = client.get(
+        "/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"results": [], "total_matches": 0}
+
+
+def test_search_objects_no_match_returns_empty_results(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get(
+        "/objects/Customer/search", params={"q": "zzz_nonexistent"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"results": [], "total_matches": 0}
+
+
+def test_search_objects_unknown_type_returns_empty_results_not_error(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get(
+        "/objects/TotallyFakeType/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"results": [], "total_matches": 0}
+
+
 def test_create_user_without_manage_users_grant_is_rejected(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]

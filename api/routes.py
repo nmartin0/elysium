@@ -293,6 +293,63 @@ async def _watch_for_disconnect(request: Request, cancel_event: threading.Event)
         await asyncio.sleep(0.5)
 
 
+@router.get("/me/visible-schema")
+def my_visible_schema_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The self-service counterpart to GET /users/{username}/visible-
+    # schema above -- that one is an ADMIN debugging view (manage:
+    # users required, targets ANY username); this one needs nothing
+    # beyond a valid login, and always returns the CALLER's own view.
+    # The real, concrete reason this exists: the new browse/search UI
+    # (see /objects/{object_type}/search below) needs to know which
+    # object types even exist and are visible BEFORE a person can pick
+    # one to search -- there was no self-service way to ask that at
+    # all before this route.
+    mediator = request.app.state.mediator
+    return mediator.visible_schema(current_user)
+
+
+# Hard cap on how many search_object_free_text() matches get expanded
+# into full result rows below -- a real, deliberate safety limit, not
+# genuine pagination (there is no way to ask for "the next page" of
+# results yet). Prevents a broad/empty query on a large table from
+# triggering an unbounded number of get_object() calls (each already
+# its own N-field loop of get_field() calls -- see DataMediator.
+# get_object()'s own docstring), not just an unbounded RESPONSE size.
+MAX_SEARCH_RESULTS = 50
+
+
+@router.get("/objects/{object_type}/search")
+def search_objects_route(object_type: str, request: Request, q: str = "",
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The human-facing browse/search endpoint -- DataMediator.search_
+    # object_free_text() underneath, a forgiving CONTAINS match across
+    # every field a real end user could plausibly recognize (name,
+    # email, ...), not the model's own exact-match search_object()
+    # step. No manage:users or other extra gate here, unlike /users/
+    # {username}/visible-schema above -- this operates on the CURRENT,
+    # logged-in user's own view, same pattern /query itself uses;
+    # search_object_free_text() and get_object() below already enforce
+    # every real RBAC/MAC decision internally, so there is nothing
+    # further for this route to check on top.
+    #
+    # Each result includes a real, useful SUMMARY (every field that
+    # actually participated in the search, via the SAME free_text_
+    # searchable_fields() DataMediator itself used -- never a second,
+    # independently-guessed set that could silently drift out of sync
+    # with what was actually searched), not just a bare id the UI would
+    # otherwise need a SEPARATE call per result to make sense of.
+    mediator = request.app.state.mediator
+    matching_ids = mediator.search_object_free_text(current_user, object_type, q)
+    summary_fields = mediator.free_text_searchable_fields(current_user, object_type)
+
+    capped_ids = matching_ids[:MAX_SEARCH_RESULTS]
+    results = [
+        {"id": object_id, "fields": mediator.get_object(current_user, object_type, object_id, summary_fields)}
+        for object_id in capped_ids
+    ]
+    return {"results": results, "total_matches": len(matching_ids)}
+
+
 @router.post("/query")
 async def query(body: QueryRequest, request: Request,
                  current_user: UserRecord = Depends(get_current_user)):
@@ -405,6 +462,33 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - GET /objects/{object_type}/search -- the first real API surface
+#   for the human-facing, non-technical browse/search UI (Palantir's
+#   own Object Explorer being the closest real-world analog, per a
+#   real research + architecture conversation with the user). Thin
+#   wrapper over DataMediator.search_object_free_text() +
+#   free_text_searchable_fields() -- see that file's own AI-notes for
+#   the fuller backend design. No manage:users or other extra gate,
+#   deliberately: operates on the CURRENT, logged-in user's own view,
+#   same pattern /query itself uses -- every real RBAC/MAC decision is
+#   already enforced inside the mediator calls themselves.
+#   MAX_SEARCH_RESULTS (50) is a real, deliberate SAFETY LIMIT, not
+#   genuine pagination -- there is no "next page" mechanism yet; a
+#   caller only ever learns there were MORE matches via total_matches
+#   exceeding len(results), not how to fetch them.
+#
+#   GET /me/visible-schema -- added right after, once the new browse/
+#   search frontend (ui/src/components/ObjectSearchPanel.jsx) revealed
+#   a real, missing prerequisite: nothing let a non-admin ask "which
+#   object types even exist for ME" before this -- GET /users/
+#   {username}/visible-schema above is an ADMIN debugging view
+#   (manage:users required, targets a NAMED username), not something
+#   an ordinary end user could call for their own view. Same "operates
+#   on the CURRENT user, no extra gate" pattern as the search route
+#   just above. A real end-to-end user of both routes now exists (see
+#   that frontend file's own AI-notes), not built speculatively ahead
+#   of a consumer.
+#
 # - The pending-write response's "sub_writes" list -- and confirm_
 #   write's own passthrough "object_ids" list -- used to only ever
 #   contain ONE entry in practice, with no real multi-object action

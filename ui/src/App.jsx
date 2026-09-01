@@ -1,14 +1,19 @@
 import { useState } from 'react'
 import LoginForm from './components/LoginForm'
 import QueryPanel from './components/QueryPanel'
+import ObjectSearchPanel from './components/ObjectSearchPanel'
 import AdminPanel from './components/AdminPanel'
 import { getToken, logout } from './api'
 import './index.css'
 
-// A plain state toggle, not react-router-dom -- reasonable for two
-// screens; worth reaching for real routing once a third screen
-// (e.g. a future graph/relationship view) makes hand-rolled toggling
-// awkward, not before.
+// A plain state toggle, not react-router-dom -- still reasonable for
+// three flat screens with no deep-linkable state of their own. Worth
+// reaching for real routing once a screen needs a URL a person could
+// bookmark or share -- e.g. a future individual Object View page
+// (/objects/Customer/cust_001), which a plain toggle genuinely
+// couldn't represent -- not before. Browse (ObjectSearchPanel) itself
+// doesn't need one yet: nothing about "which type, what I typed" is
+// meant to survive a reload or be shareable today.
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!getToken())
   const [view, setView] = useState('query')
@@ -35,6 +40,9 @@ export default function App() {
             <button className={view === 'query' ? '' : 'secondary'} onClick={() => setView('query')}>
               Query
             </button>
+            <button className={view === 'browse' ? '' : 'secondary'} onClick={() => setView('browse')}>
+              Browse
+            </button>
             <button className={view === 'admin' ? '' : 'secondary'} onClick={() => setView('admin')}>
               Admin
             </button>
@@ -50,6 +58,8 @@ export default function App() {
           <LoginForm onSuccess={handleLoginSuccess} />
         ) : view === 'admin' ? (
           <AdminPanel onSessionExpired={handleSessionExpired} />
+        ) : view === 'browse' ? (
+          <ObjectSearchPanel onSessionExpired={handleSessionExpired} />
         ) : (
           <QueryPanel onSessionExpired={handleSessionExpired} />
         )}

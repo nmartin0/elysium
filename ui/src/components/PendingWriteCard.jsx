@@ -1,23 +1,6 @@
 import { useState } from 'react'
 import { confirmWrite, ApiError } from '../api'
-
-// "balance" stays "Balance"; "reopen_reason" becomes "Reopen reason"
-// -- every real field name in this project's own schemas (balance,
-// name, email, region, status, reopen_reason, subject, category, ...)
-// reads correctly through this one, simple transformation. NOT
-// Title Case for multi-word names -- the frontend-design skill's own
-// guidance against needless ALL CAPS labels applies equally to
-// needless Title Case; sentence case is the plainer, less templated
-// choice.
-function formatFieldName(name) {
-  const spaced = name.replace(/_/g, ' ')
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
-function formatValue(value) {
-  if (value === null || value === undefined) return '(not set)'
-  return String(value)
-}
+import { formatFieldName, formatValue } from '../format'
 
 // One object's own field-by-field changes, as a real "old -> new"
 // transition per field when the backend supplied one (expected_
@@ -159,6 +142,12 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired }) {
 // - Verified via a real `npm run build` + `npm run lint` (oxlint) pass,
 //   not just visual inspection -- both clean. If picking this back up,
 //   re-run both before trusting any further edits compile.
+// - formatFieldName()/formatValue() moved to the new, shared
+//   ui/src/format.js once ObjectSearchPanel.jsx needed the SAME two
+//   functions for its own result rows -- one source of truth, not a
+//   second copy that could quietly drift (e.g. one component learning
+//   to handle a new value type the other doesn't). This file's own
+//   behavior is unchanged, just re-imported.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Still no semantic "role" labeling for a sub_write within its own

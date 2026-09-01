@@ -23,7 +23,7 @@ adapter's atomic conditional write_fields() -- see that method's
 docstring for the actual lost-update-prevention mechanism.
 
 Used by: core/deployment_loader.py (constructs one instance per silo
-         declared in a deployment's config.yaml)
+         declared in a deployment's data_silos.yaml)
 """
 
 import sqlite3
@@ -81,6 +81,41 @@ class SQLiteAdapter:
                 rows = _run_query(conn, f"SELECT {id_column} FROM {table} WHERE {where_clause}", values)
             else:
                 rows = _run_query(conn, f"SELECT {id_column} FROM {table}")
+            return [row[id_column] for row in rows]
+
+    def find_ids_matching_text(self, object_type: str, columns: list[str], query_text: str,
+                                type_config: dict) -> list[Any]:
+        # Free-text, CONTAINS (not exact-match) search across several
+        # columns at once, ORed together -- the human-facing browse/
+        # search counterpart to find_ids()'s own exact-match filtering,
+        # which stays completely untouched by this addition (a genuinely
+        # different KIND of match, not a mode flag bolted onto the
+        # existing method -- see core/ontology/mediator.py's own AI-
+        # notes for the fuller reasoning). SQLite's LIKE is already
+        # case-insensitive for ASCII by default (verified directly, not
+        # assumed) -- no explicit LOWER() needed on either side.
+        #
+        # query_text is escaped for LIKE's own wildcard characters (%, _)
+        # before being wrapped in %...% -- verified directly (not
+        # assumed) that an unescaped search for a literal "50%" would
+        # otherwise ALSO match "50X" and similar, since % is a genuine
+        # SQL wildcard, not a literal character, unless told otherwise
+        # via ESCAPE. Column NAMES are validated by DataMediator before
+        # this is ever called, same as find_ids(); the query VALUE is
+        # always a bound param, never interpolated, same discipline.
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
+
+        if not columns:
+            return []
+
+        escaped = query_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        where_clause = " OR ".join(f"{column} LIKE ? ESCAPE '\\'" for column in columns)
+        values = tuple(pattern for _ in columns)
+
+        with self._connection() as conn:
+            rows = _run_query(conn, f"SELECT {id_column} FROM {table} WHERE {where_clause}", values)
             return [row[id_column] for row in rows]
 
     def get_raw_field(self, object_type: str, object_id: Any, field_name: str, type_config: dict) -> Any:
@@ -157,3 +192,32 @@ class SQLiteAdapter:
             # meaningless -- fall back to whatever the caller supplied
             # as the id_column value directly, if present.
             return fields.get(id_column, new_id)
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# RESOLVED (kept for history):
+# - find_ids_matching_text() -- the free-text, CONTAINS-match search
+#   underneath DataMediator.search_object_free_text() (see that
+#   method's own AI-notes for the fuller design and why it's a
+#   genuinely separate method from find_ids(), not a mode flag on it).
+#   A real, confirmed SQL gotcha caught DIRECTLY, empirically, before
+#   this method ever shipped, not assumed away: SQLite's own LIKE
+#   operator treats "%" and "_" as genuine wildcards, not literal
+#   characters -- an unescaped search for a literal "50%" would ALSO
+#   match "50X" and similar (proven with a real, in-memory SQLite
+#   query before writing the fix, then re-proven with a real row in
+#   tests/unit/test_sqlite_adapter_find_ids_matching_text.py, both
+#   "%" and "_" separately). Fixed via backslash-escaping both
+#   characters in the query text before wrapping it in %...%, plus an
+#   explicit ESCAPE '\\' clause on every LIKE. Also confirmed directly
+#   (not assumed): SQLite's LIKE is already case-insensitive for ASCII
+#   by default, so no explicit LOWER() was needed on either side; and
+#   SQLite's own dynamic typing correctly coerces a real INTEGER
+#   column to text for a LIKE comparison, so numeric fields (e.g. a
+#   year) are genuinely free-text-searchable too, not silently
+#   unmatchable.

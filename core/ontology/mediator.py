@@ -494,6 +494,99 @@ class DataMediator:
             if check_access(self, user_record, self.roles, object_type, candidate_id, action)
         ]
 
+    def free_text_searchable_fields(self, user_record: UserRecord, object_type: str,
+                                     visible_schema: dict | None = None) -> list[str]:
+        # PUBLIC (unlike _filterable_columns() above) -- api/routes.py's
+        # own free-text search endpoint needs this SAME list to know
+        # which fields to show as each result's own summary row,
+        # matching exactly what search_object_free_text() itself
+        # actually searched, not a second, independently-guessed set
+        # that could silently drift out of sync with it (the same
+        # single-source-of-truth discipline is_searchable_field() was
+        # already built to enforce elsewhere in this file).
+        #
+        # Narrower than _filterable_columns() above, deliberately: free-
+        # text CONTAINS search only makes sense over plain "data"
+        # fields, not the id_field or a forward-link field (both real,
+        # useful EXACT-match filter keys for search_object(), but
+        # substring-searching a raw id/foreign-key value isn't what a
+        # human typing a few characters of a name or email is after).
+        # Also excludes any field backed by a non-primary storage (MDO)
+        # -- see search_object_free_text()'s own docstring for why.
+        visible = visible_schema if visible_schema is not None else self.visible_schema(user_record)
+        visible_type_def = visible.get(object_type)
+        if visible_type_def is None:
+            return []
+        return [
+            field_name for field_name, field_info in visible_type_def["fields"].items()
+            if field_info["type"] == "data" and get_field_storage_name(field_info) is None
+        ]
+
+    def search_object_free_text(self, user_record: UserRecord, object_type: str, query_text: str,
+                                 visible_schema: dict | None = None) -> list:
+        # The human-facing, browse/search counterpart to search_object()
+        # above -- a forgiving, CONTAINS match across every visible,
+        # plain-data, primary-storage field at once, not an exact match
+        # against one named field. Built for a real end user typing a
+        # few characters of a name or email into a search box, not for
+        # the model's own precise, single-field search_object() steps
+        # (which stay completely unchanged by this addition -- see
+        # this method's own AI-notes for the fuller reasoning on why
+        # this is a new, separate method rather than a mode flag on the
+        # existing one).
+        #
+        # An empty/blank query_text returns EVERY visible object of
+        # this type -- the natural "browse, nothing typed yet" default
+        # for a UI landing on this type, not an empty result.
+        #
+        # DELIBERATE V1 SCOPE BOUNDARIES, both worth stating explicitly:
+        # - MDO-backed fields (additional_storage) are excluded from the
+        #   search entirely, matching this project's own existing,
+        #   already-justified "one storage per search" boundary for
+        #   search_object() itself (see _resolve_shared_storage()'s own
+        #   docstring) -- not a new gap, the same one, applied here too.
+        # - Does NOT reconcile against write_log.py's own pending writes
+        #   the way search_object() does via _reconcile_search_with_
+        #   pending_writes() -- that mechanism is built around exact-
+        #   match criteria (field: value pairs) and doesn't generalize
+        #   cleanly to a substring match against a possibly-pending
+        #   value. An object mid-update could therefore, briefly, be
+        #   missing from (or wrongly present in) a free-text search for
+        #   its own in-flight change -- the same class of torn-state
+        #   window search_object() itself used to have before that
+        #   mechanism existed. Acceptable for a first, foundational
+        #   version of a browse/search UI (the window is normally
+        #   brief, and this is a discovery aid, not a correctness-
+        #   sensitive read) -- not acceptable to leave forever
+        #   undocumented, which is why it's spelled out here.
+        visible = visible_schema if visible_schema is not None else self.visible_schema(user_record)
+        visible_type_def = visible.get(object_type)
+        if visible_type_def is None:
+            if object_type not in self.schema:
+                self.audit_log.log_unknown_reference(user_record.user_id, object_type)
+            else:
+                self.audit_log.log_access(user_record.user_id, object_type, None, f"read:{object_type}",
+                                           mac_allowed=None, rbac_allowed=False)
+            return []
+
+        searchable_fields = self.free_text_searchable_fields(user_record, object_type, visible)
+        if not searchable_fields:
+            return []
+
+        adapter, resolved_type_config = self._resolve_shared_storage(object_type, searchable_fields)
+        columns = [get_column_for_field(resolved_type_config, field_name) for field_name in searchable_fields]
+
+        if query_text.strip():
+            candidate_ids = adapter.find_ids_matching_text(object_type, columns, query_text, resolved_type_config)
+        else:
+            candidate_ids = adapter.find_ids(object_type, {}, resolved_type_config)
+
+        action = f"read:{object_type}"
+        return [
+            candidate_id for candidate_id in candidate_ids
+            if check_access(self, user_record, self.roles, object_type, candidate_id, action)
+        ]
+
     def _reconcile_search_with_pending_writes(self, object_type: str, criteria: dict, candidate_ids: list,
                                                adapter: DataSiloAdapter, resolved_type_config: dict) -> list:
         # Closes the gap write_log.py's own module docstring used to
@@ -702,6 +795,33 @@ class DataMediator:
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - search_object_free_text() + free_text_searchable_fields() (public,
+#   promoted from a private helper mid-build once api/routes.py's own
+#   new /objects/{type}/search endpoint needed the SAME field list
+#   search_object_free_text() itself used -- one source of truth for
+#   "what counts as a searchable summary field," not a second, risk-
+#   of-drift guess at the API layer) are the real backend for the new
+#   human-facing, non-technical browse/search UI (see api/routes.py's
+#   own AI-notes, and the frontend work this enables). A genuinely
+#   separate, NEW method from search_object() -- CONTAINS matching,
+#   not exact -- rather than a mode flag on the existing one, which
+#   stays completely untouched (still the model's own precise, single-
+#   field search step). adapters/sqlite_adapter.py's own new find_ids_
+#   matching_text() is the mechanism underneath; see that file's own
+#   AI-notes for a real LIKE-wildcard-escaping gotcha caught directly,
+#   empirically, before it ever shipped.
+#
+#   Three of my own mistakes, all caught by actually running the
+#   tests against tests/conftest.py's real Author/Book seed data
+#   rather than trusting assumptions about it: a guessed book_id that
+#   was actually a different book; an assumed same-org author that
+#   was actually a different org (making the "wrong" result the
+#   correct, SECURE one); an assumed field grant (Book.year) alice
+#   didn't actually have, fixed by deliberately extending her own role
+#   (verified first that no other test depends on her NOT having it,
+#   unlike the dave/erin precedent where a negative property genuinely
+#   mattered).
+#
 # - get_object() closes a long-tracked deferred item -- letting the
 #   model request several fields from one object in a single hop,
 #   matching MDO's own "one call, however many storages" uniformity

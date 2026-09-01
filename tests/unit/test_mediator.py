@@ -18,6 +18,8 @@ shape a real deployment would use.
                                  RBAC is independent of object-type RBAC)
 """
 
+import sqlite3
+
 import pytest
 
 from adapters.sqlite_adapter import SQLiteAdapter
@@ -41,7 +43,7 @@ TEST_USERS = {
 TEST_ROLES = {
     "reader": {"allowed_actions": [
         "read:Author", "read:Author.author_id", "read:Author.name", "read:Author.books",
-        "read:Book", "read:Book.book_id", "read:Book.title", "read:Book.author_id",
+        "read:Book", "read:Book.book_id", "read:Book.title", "read:Book.author_id", "read:Book.year",
     ]},
     "type_only": {"allowed_actions": ["read:Author", "read:Author.author_id"]},
     "author_name_only": {"allowed_actions": ["read:Author", "read:Author.name"]},
@@ -181,6 +183,109 @@ def test_get_object_result_matches_calling_get_field_separately(mediator):
         for field_name in ["title", "year", "author_id"]
     }
     assert combined == separate
+
+
+def test_free_text_searchable_fields_excludes_id_field_and_links(mediator):
+    # Deliberately narrower than the id_field/link-inclusive set
+    # search_object() itself accepts as exact-match filter keys --
+    # "author_id" (a link) is excluded even though alice can read it;
+    # "title" (plain data) is included.
+    assert mediator.free_text_searchable_fields(_record("alice"), "Book") == ["title", "year"]
+
+
+def test_free_text_searchable_fields_unknown_type_returns_empty_list(mediator):
+    assert mediator.free_text_searchable_fields(_record("alice"), "TotallyFakeType") == []
+
+
+def test_search_object_free_text_finds_a_partial_match(mediator):
+    assert mediator.search_object_free_text(_record("alice"), "Author", "love") == ["auth_001"]
+
+
+def test_search_object_free_text_is_case_insensitive(mediator):
+    assert mediator.search_object_free_text(_record("alice"), "Author", "LOVE") == ["auth_001"]
+
+
+def test_search_object_free_text_matches_across_multiple_fields(mediator):
+    # "title" and "year" are two genuinely different Book fields --
+    # this proves the OR-across-columns match works for either, not
+    # just the first one checked. year is a real INTEGER column
+    # (confirmed directly: SQLite's own LIKE coerces it to text for
+    # comparison, not skipped or silently unmatchable). book_id 1 is
+    # "Notes on the Analytical Engine" (1843), owned by auth_001/
+    # org-a -- confirmed directly against tests/conftest.py's own real
+    # seed data, not assumed (an earlier version of this test wrongly
+    # used book_id 3, "A New Glossary" -- owned by auth_002/org-b, so
+    # correctly, securely invisible to alice regardless of search text;
+    # caught by actually running the test, not by re-reading the fixture
+    # more carefully after the fact). alice's own role was extended
+    # with read:Book.year specifically to make this test possible --
+    # she didn't have it before, and this method correctly, securely
+    # excludes an ungranted field from the search entirely rather than
+    # searching it anyway (see test_search_object_free_text_blocks_
+    # missing_role_rbac's own sibling coverage of that boundary).
+    assert mediator.search_object_free_text(_record("alice"), "Book", "notes") == [1]
+    assert mediator.search_object_free_text(_record("alice"), "Book", "1843") == [1]
+
+
+def test_search_object_free_text_blocks_cross_org_mac(mediator):
+    # THE real security proof, not just a functional one: "love" would
+    # ALSO textually match a same-named different-org author if one
+    # existed -- this specific fixture doesn't have that case, so this
+    # test instead confirms the MAC boundary directly the way test_
+    # search_object_blocks_cross_org_mac above does, applied to this
+    # method instead: bob (org-b) gets nothing back for a query that
+    # would match alice's own org-a data.
+    assert mediator.search_object_free_text(_record("bob"), "Author", "love") == []
+
+
+def test_search_object_free_text_blocks_missing_role_rbac(mediator):
+    assert mediator.search_object_free_text(_record("carol"), "Author", "love") == []
+
+
+def test_search_object_free_text_excludes_an_ungranted_field_from_the_search_itself(mediator):
+    # dave (type_only) has read:Author but NO read:Author.name grant --
+    # proves "name" is excluded from the search's own column set
+    # entirely (never even participates in the SQL match), not just
+    # filtered out afterward by RBAC on an object that DID match. A
+    # genuinely different, more precise claim than test_search_object_
+    # free_text_blocks_missing_role_rbac above (no role at all).
+    assert mediator.search_object_free_text(_record("dave"), "Author", "love") == []
+
+
+def test_search_object_free_text_empty_query_returns_every_visible_object(mediator):
+    # Book, not Author -- auth_001 owns TWO real books, both visible to
+    # alice, genuinely demonstrating "more than one result" rather than
+    # a single-item set that wouldn't distinguish this from a bug
+    # returning just the first match. Both real book_ids confirmed
+    # directly against tests/conftest.py's own seed data, not assumed.
+    result = mediator.search_object_free_text(_record("alice"), "Book", "")
+    assert set(result) == {1, 2}
+
+
+def test_search_object_free_text_no_match_returns_empty_list(mediator):
+    assert mediator.search_object_free_text(_record("alice"), "Author", "zzz_nonexistent") == []
+
+
+def test_search_object_free_text_unknown_type_returns_empty_not_error(mediator):
+    assert mediator.search_object_free_text(_record("alice"), "TotallyFakeType", "love") == []
+
+
+def test_search_object_free_text_literal_wildcard_character_is_not_a_wildcard(mediator, test_db_path):
+    # A real, confirmed SQL LIKE gotcha, verified directly (not
+    # assumed): an unescaped "%" or "_" in the user's own query text
+    # is a genuine SQL wildcard, not a literal character, unless
+    # explicitly escaped -- see adapters/sqlite_adapter.py's own AI-
+    # notes/comments for the fuller reasoning. Proven here against a
+    # REAL row containing a literal "%", not just the adapter's own
+    # isolated test.
+    conn = sqlite3.connect(test_db_path)
+    conn.execute("INSERT INTO authors (author_id, org_id, name) VALUES ('auth_pct', 'org-a', '50% Off Corp')")
+    conn.execute("INSERT INTO authors (author_id, org_id, name) VALUES ('auth_x', 'org-a', '50X Off Corp')")
+    conn.commit()
+    conn.close()
+
+    result = mediator.search_object_free_text(_record("alice"), "Author", "50%")
+    assert result == ["auth_pct"]
 
 
 def test_visible_schema_hides_ungranted_object_types(mediator):
