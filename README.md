@@ -137,7 +137,7 @@ python3 -m pytest tests/integration/test_api.py -v
 
 ## 8. Configuring your organization's deployment
 
-**Start from `templates/`** — four genuinely runnable YAML files (an
+**Start from `templates/`** — five genuinely runnable YAML files (an
 Employee/ExpenseReport example, verified end to end, not just
 illustrative snippets) with the same explanatory comments this section
 walks through. Copy them into `deployment/etc/`, confirm the pipeline
@@ -181,12 +181,6 @@ agent:
   max_consecutive_invalid_steps: 2
   max_concurrent_requests: 4
 
-data_silos:
-  primary_sql:
-    adapter: sqlite
-    connection:
-      path: "dev_fixtures/mediator.db"
-
 tools:
   enabled:
     - linear_regression
@@ -198,17 +192,36 @@ tools:
 | `llm.step_model` / `synthesis_model` | Which model handles step-selection vs. final answer writing. |
 | `agent.max_hops` | Hard ceiling on steps per question. |
 | `agent.max_concurrent_requests` | Thread pool size for `api/` and `scripts/serve_requests.py`. |
-| `data_silos` | Named data-silo instances — technology + connection details. `path`-style connection fields resolve against the DATA directory, never the config directory. |
 | `tools.enabled` | Which registered tools the LLM may call, by name. |
 
-### 8.2 `ontology_schema.yaml` — what data exists
+### 8.2 `data_silos.yaml` — where your data physically lives
+
+```yaml
+data_silos:
+  primary_sql:
+    adapter: sqlite
+    connection:
+      path: "dev_fixtures/mediator.db"
+```
+
+A separate file from `config.yaml`, deliberately — connection details
+(hosts, credentials, paths) are a genuinely different kind of
+configuration than operational tuning, and are often owned or secured
+differently in a real deployment. Named data-silo instances —
+technology + connection details, one entry per silo. `path`-style
+connection fields resolve against the DATA directory, never the
+config directory. Each object type in `ontology_schema.yaml` declares
+which named silo it lives in via its own `silo:` key — this is what
+lets a deployment span more than one adapter.
+
+### 8.3 `ontology_schema.yaml` — what data exists
 
 Declares what data **exists** and how it's structured — it does
 **not** by itself make anything visible. Every field, including each
 type's own `id_field`, needs a matching grant in `policy.yaml` before
 any user can see it.
 
-- **`silo`** — which named entry in `config.yaml`'s `data_silos`.
+- **`silo`** — which named entry in `data_silos.yaml`.
 - **`id_field`** — the identifier's name. **Not automatically safe to expose** — some deployments use identifiers that are themselves sensitive (a password-reset token, a verification code), so this needs its own explicit grant like any other field.
 - **`security`** — the MAC boundary for this type: `field: <column>` (carries its own boundary value) or `via_field: <link>` (inherits the linked object's).
 - **`fields`** — `type: data` (plain value) or `type: link` (points to another object; `cardinality: one` is a real foreign key, `cardinality: many` is a reverse relationship needing `via_table`/`via_column`).
@@ -216,7 +229,7 @@ any user can see it.
 See `templates/ontology_schema.yaml` for a complete, working example
 demonstrating every one of these.
 
-### 8.3 `policy.yaml` — who your users are, and exactly what they can do
+### 8.4 `policy.yaml` — who your users are, and exactly what they can do
 
 Two independent, both-required gates, and **everything is fully
 explicit — nothing is inherited from anything else**:
@@ -238,7 +251,7 @@ dozen lines. That verbosity is the actual point — every one of those
 lines is a decision someone made on purpose, not a default nobody
 thought about.
 
-### 8.4 `example_queries.yaml` and your database
+### 8.5 `example_queries.yaml` and your database
 
 `example_queries.yaml` is `user_id`/`query` pairs for
 `scripts/run_deployment.py`'s demo. Your database is whatever your

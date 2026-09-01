@@ -8,7 +8,8 @@ full explanation of each field -- these files use the SAME illustrative
 two stay consistent with each other rather than telling two different
 stories.
 
-- `config.yaml` -- operational settings (LLM backend, agent tuning, data silos, tools)
+- `config.yaml` -- operational settings (LLM backend, agent tuning, tools)
+- `data_silos.yaml` -- where your data physically lives (connection details, per silo)
 - `ontology_schema.yaml` -- what data exists and how it's structured
 - `policy.yaml` -- who your users are, and exactly what they can do (MAC + fully-explicit RBAC)
 - `example_queries.yaml` -- optional demo queries for `scripts/run_deployment.py`

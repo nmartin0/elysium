@@ -21,7 +21,7 @@
 object_types:
   Employee:
     storage:
-      silo: primary_sql             # must match a name under config.yaml's data_silos
+      silo: primary_sql             # must match a name under data_silos.yaml
       table: employees               # the real table name
       id_column: employee_id
     id_field: employee_id           # the identifier's name -- see policy.yaml's

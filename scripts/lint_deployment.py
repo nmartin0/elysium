@@ -14,9 +14,9 @@ beyond reading the YAML itself. load_deployment_bundle() is the one
 that actually opens real adapter connections and creates real write_
 log.db/credentials.db files on disk. This script exists specifically
 because that separation already existed -- an admin checking whether
-a new or edited config.yaml/ontology_schema.yaml/policy.yaml is valid
-shouldn't need to touch any real database, or risk creating stray
-database files in the wrong place, just to find out.
+a new or edited config.yaml/ontology_schema.yaml/policy.yaml/data_
+silos.yaml is valid shouldn't need to touch any real database, or risk
+creating stray database files in the wrong place, just to find out.
 
 COLLECTS EVERY action_type's own error and EVERY role's own error,
 not just the first one found -- load_deployment() itself stays
@@ -397,9 +397,12 @@ if __name__ == "__main__":
 #   interactively or a simple CI step checking the exit code alone,
 #   but a caller wanting to parse WHAT specifically was invalid, in a
 #   structured way, would need to scrape stdout today.
-# - Only checks the THREE YAML files load_deployment() itself reads --
-#   doesn't attempt to verify anything about the REAL infrastructure a
-#   deployment also depends on (does data_silos' own "path" actually
+# - Only checks the FOUR YAML files load_deployment() itself reads
+#   (config.yaml, ontology_schema.yaml, policy.yaml, data_silos.yaml --
+#   see core/deployment_loader.py's own AI-notes for the fourth, added
+#   when data_silos.yaml was split out of config.yaml) -- doesn't
+#   attempt to verify anything about the REAL infrastructure a
+#   deployment also depends on (does a silo's own "path" actually
 #   resolve to a real, readable SQLite file once combined with a real
 #   data_dir; is the configured LLM endpoint actually reachable). That
 #   would require load_deployment_bundle() instead, which is exactly

@@ -51,7 +51,7 @@ can assert on its OWN real, specific log entries.
 
 _bundle builds THREE genuinely separate SQLite databases (schema.sql ->
 mediator.db, support_schema.sql -> support.db, risk_schema.sql ->
-risk.db), matching fixtures/config.yaml's three declared data_silos
+risk.db), matching fixtures/data_silos.yaml's three declared silos
 (primary_sql, support_crm, risk_sql) -- for tests/integration/
 test_cross_silo_e2e.py (a real model following a link that genuinely
 crosses silos) and test_mdo_e2e.py (a real model transparently reading

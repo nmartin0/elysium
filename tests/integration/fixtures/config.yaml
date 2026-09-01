@@ -30,27 +30,6 @@ agent:
   max_consecutive_duplicates: 2
   max_consecutive_invalid_steps: 2
 
-data_silos:
-  primary_sql:
-    adapter: sqlite
-    connection:
-      path: "dev_fixtures/mediator.db"
-  # A GENUINELY SEPARATE database -- for tests/integration/
-  # test_cross_silo_e2e.py, proving a real model discovers and follows
-  # a link crossing this boundary on its own.
-  support_crm:
-    adapter: sqlite
-    connection:
-      path: "dev_fixtures/support.db"
-  # A THIRD, GENUINELY SEPARATE database -- for tests/integration/
-  # test_mdo_e2e.py, backing Customer.risk_score (an MDO field). Unlike
-  # support_crm (a whole separate OBJECT TYPE), this backs ONE
-  # PROPERTY of an object type otherwise backed by primary_sql.
-  risk_sql:
-    adapter: sqlite
-    connection:
-      path: "dev_fixtures/risk.db"
-
 tools:
   enabled:
     - linear_regression

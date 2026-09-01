@@ -1,0 +1,28 @@
+# data_silos.yaml  (tests/integration/'s OWN, fully isolated test deployment)
+#
+# Split out of config.yaml into its own file -- see deployment/etc/
+# data_silos.yaml's own header for the general reasoning. This fixture
+# specifically declares THREE genuinely separate databases, not one:
+# see conftest.py's own docstring for how each gets built fresh, per
+# test.
+
+data_silos:
+  primary_sql:
+    adapter: sqlite
+    connection:
+      path: "dev_fixtures/mediator.db"
+  # A GENUINELY SEPARATE database -- for tests/integration/
+  # test_cross_silo_e2e.py, proving a real model discovers and follows
+  # a link crossing this boundary on its own.
+  support_crm:
+    adapter: sqlite
+    connection:
+      path: "dev_fixtures/support.db"
+  # A THIRD, GENUINELY SEPARATE database -- for tests/integration/
+  # test_mdo_e2e.py, backing Customer.risk_score (an MDO field). Unlike
+  # support_crm (a whole separate OBJECT TYPE), this backs ONE
+  # PROPERTY of an object type otherwise backed by primary_sql.
+  risk_sql:
+    adapter: sqlite
+    connection:
+      path: "dev_fixtures/risk.db"

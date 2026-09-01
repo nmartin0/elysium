@@ -1,11 +1,11 @@
 """
 deployment_loader.py  (generic -- org-agnostic)
 
-Reads a deployment's config.yaml, ontology_schema.yaml, and policy.yaml
-from a given directory and returns them bundled into one
-DeploymentConfig object. Contains zero knowledge of any specific
-organization -- only the fixed file names and key names this project's
-deployment convention expects.
+Reads a deployment's config.yaml, ontology_schema.yaml, policy.yaml,
+and data_silos.yaml from a given directory and returns them bundled
+into one DeploymentConfig object. Contains zero knowledge of any
+specific organization -- only the fixed file names and key names this
+project's deployment convention expects.
 
 resolve_runtime_paths() is THE single source of truth for where
 config, data, and logs live -- three genuinely independent locations,
@@ -163,6 +163,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
     policy_raw = load_yaml(base_path / "policy.yaml")
+    data_silos_raw = load_yaml(base_path / "data_silos.yaml")
 
     validate_identifier_types(schema_raw, policy_raw)
 
@@ -187,7 +188,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             users=policy_raw["users"],
             roles=_freeze_roles(policy_raw["roles"]),
             security_attribute=policy_raw["security_attribute"],
-            silo_configs=config["data_silos"],
+            silo_configs=data_silos_raw["data_silos"],
             enabled_tools=enabled_tools,
             # GENUINELY optional in the YAML itself -- .get() with a {}
             # default, same as enabled_tools above, NOT inside the
@@ -353,6 +354,30 @@ def load_example_queries(config_dir: Path) -> list[dict]:
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - data_silos.yaml was split out of config.yaml into its own,
+#   fourth required file (config.yaml, ontology_schema.yaml, policy.
+#   yaml, data_silos.yaml) -- load_deployment() now reads it directly
+#   and pulls silo_configs from ITS "data_silos" key, not config's own.
+#   A genuine separation-of-concerns split, not just a rename:
+#   connection details (hosts, credentials, paths) are a different
+#   kind of configuration than operational tuning (which model, how
+#   many hops), often owned or secured differently in a real
+#   deployment -- and matches this project's own existing "one file
+#   per concern" convention (ontology_schema.yaml for the data model,
+#   policy.yaml for RBAC/MAC) rather than being the one exception to
+#   it. Every real/template/fixture config directory (deployment/etc,
+#   templates, tests/integration/fixtures) was split and re-verified
+#   by actually loading it through load_deployment(), not just edited
+#   by inspection -- including the three-silo fixtures case, confirmed
+#   through a real, no-Ollama integration test run afterward. scripts/
+#   lint_deployment.py needed no functional changes at all: its
+#   existing generic OSError/yaml.YAMLError/ValueError handling around
+#   load_deployment() already covers a missing, malformed, or
+#   incomplete data_silos.yaml exactly the way it already covered the
+#   other three files -- confirmed directly with a new, dedicated test
+#   (tests/unit/test_lint_deployment.py's own test_missing_data_silos_
+#   file_returns_false), not assumed safe by the wrapper design alone.
+#
 # - _require_str()'s own error message, and the "Missing expected
 #   key" message in load_deployment()'s own try/except, were both
 #   trimmed to one line each, per the user's own explicit request for

@@ -32,6 +32,9 @@ agent:
   max_hops: 5
   max_consecutive_duplicates: 2
   max_consecutive_invalid_steps: 2
+"""
+
+VALID_DATA_SILOS_YAML = """
 data_silos:
   primary_sql:
     adapter: sqlite
@@ -64,10 +67,12 @@ users:
 """
 
 
-def _write_deployment(tmp_path, config=VALID_CONFIG_YAML, ontology=VALID_ONTOLOGY_YAML, policy=VALID_POLICY_YAML):
+def _write_deployment(tmp_path, config=VALID_CONFIG_YAML, ontology=VALID_ONTOLOGY_YAML, policy=VALID_POLICY_YAML,
+                       data_silos=VALID_DATA_SILOS_YAML):
     (tmp_path / "config.yaml").write_text(config)
     (tmp_path / "ontology_schema.yaml").write_text(ontology)
     (tmp_path / "policy.yaml").write_text(policy)
+    (tmp_path / "data_silos.yaml").write_text(data_silos)
     return tmp_path
 
 
@@ -85,6 +90,24 @@ def test_valid_deployment_returns_true_and_prints_a_summary(tmp_path, capsys):
 
 def test_missing_config_directory_returns_false(tmp_path, capsys):
     result = lint_deployment(tmp_path / "does_not_exist")
+
+    assert result is False
+    out = capsys.readouterr().out
+    assert "INVALID" in out
+    assert "Cannot read config" in out
+
+
+def test_missing_data_silos_file_returns_false(tmp_path, capsys):
+    # A genuinely NEW failure mode after data_silos.yaml was split out
+    # of config.yaml into its own, fourth required file -- worth its
+    # own direct coverage, not just assumed to be handled by the
+    # existing generic OSError catch-all. The other three files are
+    # all present and valid; only data_silos.yaml is missing.
+    (tmp_path / "config.yaml").write_text(VALID_CONFIG_YAML)
+    (tmp_path / "ontology_schema.yaml").write_text(VALID_ONTOLOGY_YAML)
+    (tmp_path / "policy.yaml").write_text(VALID_POLICY_YAML)
+
+    result = lint_deployment(tmp_path)
 
     assert result is False
     out = capsys.readouterr().out

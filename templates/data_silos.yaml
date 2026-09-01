@@ -1,0 +1,26 @@
+# data_silos.yaml  (TEMPLATE -- copy into deployment/etc/ and edit)
+#
+# Named data-silo instances -- YOU MUST CHANGE THIS to point at your
+# real database. Each object type in ontology_schema.yaml declares
+# which of these named silos it lives in via its own `silo:` key --
+# this is what lets a deployment span more than one adapter/database.
+# Split out of config.yaml into its own file: connection details
+# (hosts, credentials, paths) are a genuinely different kind of
+# configuration than operational tuning (which model, how many hops)
+# -- often owned or secured differently in a real deployment -- so
+# they get their own file, matching this project's existing "one file
+# per concern" convention (ontology_schema.yaml for the data model,
+# policy.yaml for RBAC/MAC).
+
+data_silos:
+  primary_sql:
+    adapter: sqlite                 # see adapters/ for what's built in;
+                                     # register a new one in
+                                     # core/deployment_loader.py's
+                                     # _ADAPTER_REGISTRY
+    connection:
+      path: "dev_fixtures/mediator.db"   # relative to the DATA directory
+                                          # (deployment/var/lib/ locally,
+                                          # /var/lib/elysium/ under a real
+                                          # install) -- never the config
+                                          # directory

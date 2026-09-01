@@ -1,9 +1,11 @@
 # config.yaml  (acme_corp-specific operational settings)
 #
-# Which LLM backend and model each call uses, agent-loop tuning, and
-# which data silo(s) this deployment reads from. Different deployments
-# can run entirely different models/hardware/silos by editing only this
-# file -- core/ code never hardcodes any of this.
+# Which LLM backend and model each call uses, and agent-loop tuning.
+# Which data silo(s) this deployment reads from lives in its own,
+# separate data_silos.yaml -- see that file's own header for why.
+# Different deployments can run entirely different models/hardware/
+# silos by editing only these files -- core/ code never hardcodes any
+# of this.
 
 llm:
   provider: ollama                 # key into deployment_loader's LLM adapter
@@ -25,18 +27,9 @@ agent:
   max_consecutive_duplicates: 2
   max_consecutive_invalid_steps: 2
 
-# Named data-silo instances. Each object type in ontology_schema.yaml
-# declares which of these named silos it lives in via its own `silo:`
-# key -- this is what lets a deployment span more than one adapter.
-data_silos:
-  primary_sql:
-    adapter: sqlite
-    connection:
-      path: "dev_fixtures/mediator.db"
-
 # Tools the LLM may call, by name -- entirely optional; omitting this
-# section (or listing none) is completely valid, unlike llm:/data_silos:
-# which every deployment needs. Registered tools live in
+# section (or listing none) is completely valid, unlike llm:, which
+# every deployment needs. Registered tools live in
 # core/tools/registry.py.
 tools:
   enabled:
