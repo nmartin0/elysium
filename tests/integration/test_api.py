@@ -49,11 +49,24 @@ def client(tmp_path: Path):
     dev_fixtures_dir = data_dir / "dev_fixtures"
     dev_fixtures_dir.mkdir(parents=True)
 
-    db_path = dev_fixtures_dir / "mediator.db"
-    conn = sqlite3.connect(db_path)
-    conn.executescript((FIXTURES_DIR / "schema.sql").read_text())
-    conn.commit()
-    conn.close()
+    # ALL THREE silos data_silos.yaml actually declares -- not just
+    # primary_sql. Was only ever mediator.db before this file's own
+    # get_object_detail_route tests needed a REAL Customer.risk_score
+    # (an MDO field, backed by risk_sql) to genuinely exist: a real
+    # gap this test fixture had, not something to work around in the
+    # test itself by avoiding a field a real customer_service user can
+    # actually see. Cheap to build (a handful of rows each) -- no
+    # meaningful cost to every OTHER test in this file gaining two
+    # small databases they don't happen to touch.
+    for db_name, schema_name in [
+        ("mediator.db", "schema.sql"),
+        ("support.db", "support_schema.sql"),
+        ("risk.db", "risk_schema.sql"),
+    ]:
+        conn = sqlite3.connect(dev_fixtures_dir / db_name)
+        conn.executescript((FIXTURES_DIR / schema_name).read_text())
+        conn.commit()
+        conn.close()
 
     test_paths = RuntimePaths(config_dir=FIXTURES_DIR, data_dir=data_dir, log_dir=tmp_path / "log")
     app = create_app(test_paths)
@@ -209,6 +222,89 @@ def test_search_objects_unknown_type_returns_empty_results_not_error(client):
 
     assert response.status_code == 200
     assert response.json() == {"results": [], "total_matches": 0}
+
+
+def test_object_detail_without_token_is_rejected(client):
+    response = client.get("/objects/Customer/cust_001")
+    assert response.status_code == 401
+
+
+def test_object_detail_returns_every_visible_field_including_a_link(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/objects/Customer/cust_001", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "cust_001"
+    assert body["fields"]["region"] == "us-west"
+    assert body["fields"]["name"] == "Ada Okafor"
+    assert body["fields"]["email"] == "ada.okafor@example.com"
+    # "transactions" is a real link field (cardinality many) -- proves
+    # get_object() resolves it to the actual linked ids, not just plain
+    # data fields.
+    assert set(body["fields"]["transactions"]) == {1, 2}
+
+
+def test_object_detail_nonexistent_id_returns_200_with_every_field_null(client):
+    # Deliberate, not a bug -- see api/routes.py's own docstring for
+    # the full reasoning: a nonexistent id within a KNOWN, visible type
+    # must be indistinguishable from a real, MAC-denied one.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/objects/Customer/cust_does_not_exist", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "cust_does_not_exist"
+    assert all(value is None for value in body["fields"].values())
+
+
+def test_object_detail_cross_region_mac_denial_is_identical_to_nonexistent(client):
+    # THE real security proof: cust_003 is a REAL, us-east customer --
+    # bob (us-west) must see the EXACT same shape (every field null) as
+    # a genuinely nonexistent id, not a different response that would
+    # let him distinguish "exists but denied" from "doesn't exist."
+    client.app.state.user_directory.create_user("bob", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "bob", "correct-pw").json()["token"]
+
+    denied = client.get("/objects/Customer/cust_003", headers={"Authorization": f"Bearer {token}"})
+    nonexistent = client.get("/objects/Customer/cust_does_not_exist", headers={"Authorization": f"Bearer {token}"})
+
+    assert denied.status_code == nonexistent.status_code == 200
+    assert all(value is None for value in denied.json()["fields"].values())
+    assert set(denied.json()["fields"].keys()) == set(nonexistent.json()["fields"].keys())
+
+
+def test_object_detail_unknown_type_returns_200_with_empty_fields(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/objects/TotallyFakeType/whatever", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "whatever", "fields": {}}
+
+
+def test_object_detail_and_search_routes_do_not_collide(client):
+    # A real, deliberately-verified concern: /objects/{type}/search and
+    # /objects/{type}/{object_id} share the same prefix. Confirms
+    # Starlette's own route-matching genuinely prioritizes the literal
+    # "search" path segment (registered first in api/routes.py) over
+    # treating "search" as a literal object_id -- verified directly,
+    # not assumed from registration order alone.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get(
+        "/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    assert "results" in response.json()
+    assert "total_matches" in response.json()
 
 
 def test_create_user_without_manage_users_grant_is_rejected(client):

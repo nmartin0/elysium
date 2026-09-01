@@ -350,6 +350,51 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     return {"results": results, "total_matches": len(matching_ids)}
 
 
+@router.get("/objects/{object_type}/{object_id}")
+def get_object_detail_route(object_type: str, object_id: str, request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The Object View backend -- every field the CALLER can see for one
+    # specific object, not just the free-text-searchable summary subset
+    # above. Deliberately thin: visible_schema() already computes
+    # "every field this user is granted," and get_object() already
+    # fetches any given field list in one call (including LINK fields
+    # -- get_field() already resolves those to the linked id(s), one
+    # id for cardinality "one", a list for "many"). No new DataMediator
+    # method needed at all; this endpoint is pure composition of two
+    # things that already existed for other reasons.
+    #
+    # SECURITY: object_id is never trusted for anything beyond
+    # constructing the get_object() call itself -- every real
+    # authorization decision (RBAC per field, MAC per object) happens
+    # INSIDE get_object() -> get_field() -> check_access(), exactly
+    # once per field, the SAME mechanism every other read path in this
+    # project already uses. A caller pointed at an object outside
+    # their own MAC boundary, or a field they lack a grant for, gets
+    # None back for it -- never a different code path, never a
+    # shortcut around the real check.
+    #
+    # An UNKNOWN object_type, and a real object_type with a NONEXISTENT
+    # or MAC-denied object_id, both resolve to the SAME shape: every
+    # field null. Deliberate, not an oversight -- matches get_field()'s
+    # own "unknown and denied look identical" security property (see
+    # that method's own docstring), now extended to the whole object,
+    # not just a single field. A real, considered trade-off, decided
+    # explicitly with the user: knowing whether a SPECIFIC id exists,
+    # even within a type the caller can otherwise see, is itself a
+    # real enumeration primitive worth denying, not merely a REST-
+    # idiom nicety to relax for a cleaner 404. NEVER "fix" this to a
+    # 404 without re-reading this reasoning first.
+    mediator = request.app.state.mediator
+    visible = mediator.visible_schema(current_user)
+    type_def = visible.get(object_type)
+    if type_def is None:
+        return {"id": object_id, "fields": {}}
+
+    field_names = list(type_def["fields"].keys())
+    fields = mediator.get_object(current_user, object_type, object_id, field_names)
+    return {"id": object_id, "fields": fields}
+
+
 @router.post("/query")
 async def query(body: QueryRequest, request: Request,
                  current_user: UserRecord = Depends(get_current_user)):
@@ -462,6 +507,32 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - GET /objects/{object_type}/{object_id} -- Stage 2 of the Palantir-
+#   parity UI plan (Object View). Needed no new DataMediator method at
+#   all -- pure composition of visible_schema() + get_object(), both
+#   already built for other reasons. See this route's own, extensive
+#   inline comment for the full security reasoning (the 200-with-
+#   nulls design for a nonexistent/denied object, decided explicitly
+#   with the user -- do not "fix" it to a 404).
+#
+#   A real routing collision was a genuine, verified concern going in
+#   (this route and /objects/{object_type}/search above share the
+#   same URL prefix) -- confirmed directly, both via a live curl
+#   against a real running server AND a dedicated permanent test
+#   (test_object_detail_and_search_routes_do_not_collide), that
+#   Starlette correctly prioritizes the literal "search" path segment
+#   (registered first) over treating it as a literal object_id.
+#
+#   Building this ALSO surfaced a real, separate gap: tests/
+#   integration/test_api.py's own client fixture had only ever built
+#   mediator.db, never risk.db/support.db -- fine for every earlier
+#   test in that file, but this route is the first thing there to
+#   fetch EVERY visible field for an object, including Customer.
+#   risk_score (a real, granted MDO field backed by risk_sql). Fixed
+#   by building all three silos data_silos.yaml actually declares, not
+#   by avoiding the field in the new test -- a real, if narrow, gap in
+#   the fixture, not something to route around.
+#
 # - GET /objects/{object_type}/search -- the first real API surface
 #   for the human-facing, non-technical browse/search UI (Palantir's
 #   own Object Explorer being the closest real-world analog, per a
