@@ -329,6 +329,11 @@ field's value is another object's ID -- you can search_object or
 get_field on it next):
   {{"step": "get_field", "object_type": "<type>", "object_id": "<id>", "field_name": "<field>"}}
 
+To read SEVERAL fields of the SAME object in one step -- prefer this
+over several separate get_field calls whenever you already know you
+need more than one field from the same object:
+  {{"step": "get_object", "object_type": "<type>", "object_id": "<id>", "field_names": ["<field1>", "<field2>"]}}
+
 If you have gathered enough to answer the question, or nothing further
 would help:
   {{"step": "finish"}}
@@ -347,6 +352,12 @@ Example: to answer "What is cust_001's email", the correct sequence is:
   1. {{"step": "search_object", "object_type": "Customer", "filter": {{"customer_id": "cust_001"}}}}
   2. {{"step": "get_field", "object_type": "Customer", "object_id": "cust_001", "field_name": "email"}}
   3. {{"step": "finish"}}  <- stop here, do NOT request "email" or any other field again.
+
+Example: to answer "What is cust_001's name and email", after the same
+search_object step, use ONE get_object call instead of two separate
+get_field calls:
+  {{"step": "get_object", "object_type": "Customer", "object_id": "cust_001", "field_names": ["name", "email"]}}
+  then {{"step": "finish"}}.
 
 Example: to answer "What are cust_001's transaction amounts", after you
 get_field "transactions" on Customer cust_001 and receive [1, 2], the
@@ -426,6 +437,30 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
             "field_name": parsed["field_name"],
         }
 
+    if step == "get_object":
+        required = {"object_type", "object_id", "field_names"}
+        if not _has_required_keys(parsed, required, "get_object"):
+            return _finish_step()
+        field_names = parsed["field_names"]
+        # A non-list, or an empty one, is structurally malformed --
+        # NOT "read every field" or "read nothing," and never treated
+        # as either. An empty list specifically would otherwise
+        # silently produce ZERO gathered[] entries (see core/agent/
+        # agentic_loop.py's own _execute_step() -- one entry per
+        # field, none if there are no fields), a confusing no-op the
+        # model would see no feedback from at all; failing closed here
+        # instead gives it the SAME clear "that step was invalid"
+        # recovery message every other malformed step already does.
+        if not isinstance(field_names, list) or not field_names:
+            logger.warning("malformed get_object step (field_names must be a non-empty list), finishing")
+            return _finish_step()
+        return {
+            "step": "get_object",
+            "object_type": parsed["object_type"],
+            "object_id": parsed["object_id"],
+            "field_names": field_names,
+        }
+
     if step == "use_tool":
         if not _has_required_keys(parsed, {"tool_name", "args"}, "use_tool"):
             return _finish_step()
@@ -455,3 +490,43 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
 
     logger.warning(f"unrecognized step {step!r}, finishing")
     return _finish_step()
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# CONTEXT: get_object (a new step letting the model request several
+# fields of one object in a single hop, instead of one get_field call
+# per field) was added here as a new parsing branch in next_step(),
+# plus new prompt text (_build_system_prompt()'s own step-shape list
+# and worked-example section) teaching the model when to prefer it.
+# See core/ontology/mediator.py's DataMediator.get_object() for the
+# underlying mechanism, and core/agent/agentic_loop.py's own AI-notes
+# for how a get_object step's RESULT is deliberately made
+# indistinguishable, downstream, from several separate get_field
+# results (including a real, empirically-found gap in that file's own
+# duplicate-request guard, caught and fixed while building this).
+#
+# RESOLVED (kept for history):
+# - An empty (or non-list) field_names is REJECTED here as a
+#   structurally malformed step, not silently treated as "read every
+#   field" or "read nothing." An empty list specifically would
+#   otherwise reach core/agent/agentic_loop.py's own get_object
+#   handling and silently produce ZERO gathered[] entries -- a
+#   confusing no-op the model would get no feedback from at all, not
+#   even the ordinary "that step was invalid" recovery message every
+#   other malformed step already gets.
+#
+# DEFERRED (known, intentional, not yet built):
+# - No dedicated test file existed for next_step()'s own core parsing
+#   logic (search_object/get_field/finish) at all before this work --
+#   only exercised indirectly, through full AgentLoop.run() calls in
+#   other test files. tests/unit/test_agent_step_prompt.py now covers
+#   the general "fails closed on any uncertainty" contract plus get_
+#   object's own new branch specifically, but was scoped to what this
+#   work actually needed, not an exhaustive retroactive pass over
+#   every existing step type's own edge cases -- that remains a
+#   separate, broader item if it's ever worth doing on its own.

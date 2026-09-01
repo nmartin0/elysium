@@ -669,6 +669,31 @@ class DataMediator:
         adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
         return self._read_field_with_log_check(object_type, object_id, field_name, adapter, resolved_type_config)
 
+    def get_object(self, user_record: UserRecord, object_type: str, object_id: Any, field_names: list[str]) -> dict:
+        # A thin, per-field loop around get_field() above -- reuses its
+        # ENTIRE RBAC/MAC/audit/MDO-storage-resolution/write-log-
+        # reconciliation logic exactly, unchanged, once per field. This
+        # exists ONLY to save the MODEL real hops (one request instead
+        # of N separate get_field calls against max_hops), not to
+        # reduce the number of underlying storage reads or introduce
+        # any new authorization/data logic of its own -- see this
+        # method's own AI-notes for why batching the UNDERLYING
+        # storage queries (e.g. resolving shared storage once for
+        # every field that happens to share one) was considered and
+        # deliberately deferred, not attempted here.
+        #
+        # Same "never raises" contract as get_field() -- an unknown
+        # field, an unknown object_type, or a genuine RBAC/MAC denial
+        # all resolve to that field's own entry being None, exactly as
+        # a caller would see calling get_field() for it directly; a
+        # partially-authorized request (some fields granted, some not)
+        # returns a dict mixing real values and Nones, never raises or
+        # silently drops the denied ones.
+        return {
+            field_name: self.get_field(user_record, object_type, object_id, field_name)
+            for field_name in field_names
+        }
+
 
 # =============================================================================
 # AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
@@ -677,6 +702,19 @@ class DataMediator:
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - get_object() closes a long-tracked deferred item -- letting the
+#   model request several fields from one object in a single hop,
+#   matching MDO's own "one call, however many storages" uniformity
+#   philosophy extended to "one call, however many fields." A thin,
+#   per-field loop around get_field() itself, deliberately -- reuses
+#   ALL of that method's own RBAC/MAC/audit/MDO-storage-resolution/
+#   write-log-reconciliation logic exactly, unchanged, rather than
+#   risk a second, parallel implementation subtly drifting from it
+#   over time. See core/agent/agentic_loop.py's own AI-notes for the
+#   full mechanism this plugs into (a real, previously-unknown gap in
+#   the duplicate-request guard, found and fixed while building this,
+#   not assumed safe by construction).
+#
 # - _locks_for_objects() used to be exercised only with a single-
 #   element object_refs list, then, later, a genuine 2-element list
 #   but only ever single-threaded (synthetic fixtures, and TransferFunds,

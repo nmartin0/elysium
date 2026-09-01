@@ -10,8 +10,8 @@ that's the same "same parameters, many calls" pattern that means a
 class fits better than a function.
 
 Repeatedly asks core/llm/agent_step_prompt.py for the next step
-(search_object, get_field, or finish), executes it against the
-DataMediator, and accumulates results until the model signals
+(search_object, get_field, get_object, or finish), executes it against
+the DataMediator, and accumulates results until the model signals
 "finish", asks for something it already has (duplicate detection), asks
 for something invalid (invalid-step recovery), proposes a write, is
 cancelled, or max_hops is reached.
@@ -98,6 +98,12 @@ def _step_signature(step: dict):
         return ("search_object", step["object_type"], frozenset(step["filter"].items()))
     if step["step"] == "get_field":
         return ("get_field", step["object_type"], step["object_id"], step["field_name"])
+    if step["step"] == "get_object":
+        # frozenset over field_names -- the model asking for the SAME
+        # set of fields on the SAME object twice must be detected as a
+        # genuine repeat regardless of what ORDER it happened to list
+        # them in either time.
+        return ("get_object", step["object_type"], step["object_id"], frozenset(step["field_names"]))
     if step["step"] == "use_tool":
         # Tool args can contain UNHASHABLE values (e.g. lists for
         # x_values/y_values) -- frozenset(dict.items()), used for the
@@ -284,6 +290,32 @@ class AgentLoop:
                 result = self.mediator.get_field(
                     user_record, step["object_type"], step["object_id"], step["field_name"]
                 )
+            elif step["step"] == "get_object":
+                # Expands into ONE get_field-shaped gathered[] entry
+                # per field, NOT a single get_object-shaped entry --
+                # see this method's own docstring/AI-notes for why:
+                # every downstream consumer of `gathered` (this
+                # module's own _detect_asymmetry(); core/llm/agent_
+                # step_prompt.py's _known_state_for_object() and
+                # _object_reference_hints()) was built around, and
+                # only ever filters for, step == "get_field" entries.
+                # Making get_object's own RESULT indistinguishable
+                # from N separate get_field calls means every one of
+                # those keeps working completely unchanged -- the
+                # only genuinely NEW thing is the MODEL can issue one
+                # REQUEST covering several fields, saving hops; the
+                # resulting STATE looks exactly as if it had issued
+                # them separately. Returns early, bypassing the
+                # generic gathered.append() below entirely.
+                field_values = self.mediator.get_object(
+                    user_record, step["object_type"], step["object_id"], step["field_names"]
+                )
+                for field_name, value in field_values.items():
+                    gathered.append({
+                        "step": "get_field", "object_type": step["object_type"],
+                        "object_id": step["object_id"], "field_name": field_name, "result": value,
+                    })
+                return 0, 0, False, None
             elif step["step"] == "use_tool":
                 tool = self._tools_by_name.get(step["tool_name"])
                 tool_name = step["tool_name"]
@@ -412,6 +444,22 @@ class AgentLoop:
             consecutive_duplicates = 0
             if signature is not None:
                 seen_signatures.add(signature)
+                if step["step"] == "get_object":
+                    # ALSO records each individual field's own get_
+                    # field-shaped signature -- closes a real gap
+                    # found directly, empirically (not assumed): a
+                    # get_object call followed by an ordinary get_
+                    # field for ONE of the SAME fields would otherwise
+                    # NOT be recognized as a duplicate at all, since
+                    # the two step TYPES produce genuinely different
+                    # signatures even when they cover overlapping
+                    # data (frozenset(field_names) as a whole vs one
+                    # single field_name). See this function's own
+                    # AI-notes for the reverse, rarer case (get_field
+                    # first, then a LARGER get_object covering that
+                    # same field among others) this does NOT close.
+                    for field_name in step["field_names"]:
+                        seen_signatures.add(("get_field", step["object_type"], step["object_id"], field_name))
 
             consecutive_invalid, consecutive_business_rule, should_stop, pending_write = self._execute_step(
                 step, user_record, visible_schema, gathered, consecutive_invalid, consecutive_business_rule
@@ -433,3 +481,62 @@ class AgentLoop:
             return AgentLoopResult(gathered=gathered, hit_max_hops=True)
 
         return AgentLoopResult(gathered=gathered)
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# CONTEXT: get_object support (a new step letting the model request
+# several fields from one object in a single hop -- see core/ontology/
+# mediator.py's own DataMediator.get_object(), a thin wrapper around
+# get_field()) was added here as: (1) a new _step_signature() branch,
+# for duplicate-request detection; (2) a new _execute_step() branch
+# that EXPANDS the result into multiple get_field-shaped gathered[]
+# entries, not one get_object-shaped entry -- deliberately, so every
+# EXISTING downstream consumer of `gathered` (this file's own
+# _detect_asymmetry(); core/llm/agent_step_prompt.py's own _known_
+# state_for_object()/_object_reference_hints(), both of which filter
+# specifically for step == "get_field") keeps working completely
+# unchanged, with zero awareness get_object exists at all.
+#
+# RESOLVED (kept for history):
+# - A real, genuine gap was found DIRECTLY, empirically -- not assumed
+#   safe by the expansion design above -- by writing a test that
+#   scripts get_object for one field, THEN an ordinary get_field for
+#   the SAME field, and asserting the second call gets rejected as a
+#   duplicate. It didn't: _step_signature()'s own get_field and get_
+#   object branches produce genuinely DIFFERENT signatures even when
+#   they cover the exact same underlying data (a bare field_name vs a
+#   frozenset(field_names)), so the existing seen_signatures dedup
+#   mechanism never recognized the overlap at all -- the SAME field
+#   got fetched twice. Before get_object existed, this class of gap
+#   was structurally impossible (there was only ever one way to
+#   request a given field), so THIS addition genuinely weakened an
+#   existing guarantee, not just left one already-known gap unclosed.
+#   FIXED: when a get_object step succeeds, run() now ALSO records
+#   each of its own individual fields' get_field-shaped signatures in
+#   seen_signatures, not just get_object's own whole-request
+#   signature -- closing the get_object-THEN-get_field direction.
+#
+# DEFERRED (known, intentional, not yet built):
+# - The REVERSE direction -- an ordinary get_field for one field,
+#   THEN a LARGER get_object call that happens to include that same
+#   field among others it doesn't have yet -- is NOT caught by the
+#   fix above, and remains a real, known gap. get_object's own
+#   signature is the WHOLE frozenset(field_names) as one unit; there
+#   is no per-field entry in seen_signatures for a get_field call to
+#   retroactively add TO a later get_object's own partial-overlap
+#   check against. Deliberately not fixed here -- doing so properly
+#   would mean detecting PARTIAL duplication (some of a get_object
+#   request's fields already known, some genuinely new), a real step
+#   up in complexity from the current all-or-nothing signature model,
+#   and this direction is judged less likely in practice: a model
+#   that already has ONE field would more naturally reach for get_
+#   field on specifically the fields it's still missing, not a get_
+#   object call that re-requests something it already has alongside
+#   them. Worth revisiting if this ever actually causes a real,
+#   observed problem (a wasted re-fetch, at worst -- not incorrect
+#   data, just wasted hop budget), not preemptively.

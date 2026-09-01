@@ -29,6 +29,13 @@ TEST_USERS = {
     "bob": {"org_id": "org-b", "role": "reader"},
     "carol": {"org_id": "org-a"},  # deliberately no role
     "dave": {"org_id": "org-a", "role": "type_only"},
+    # For test_get_object_mixes_real_values_and_none_for_partial_grants
+    # specifically -- a genuine mixed-grant case (one real data field
+    # granted, one withheld) needs its own dedicated role/user, not a
+    # repurposing of dave (whose own, existing purpose depends on
+    # having NO real field grants at all -- see test_get_field_
+    # object_type_rbac_alone_is_not_enough above).
+    "erin": {"org_id": "org-a", "role": "author_name_only"},
 }
 
 TEST_ROLES = {
@@ -37,6 +44,7 @@ TEST_ROLES = {
         "read:Book", "read:Book.book_id", "read:Book.title", "read:Book.author_id",
     ]},
     "type_only": {"allowed_actions": ["read:Author", "read:Author.author_id"]},
+    "author_name_only": {"allowed_actions": ["read:Author", "read:Author.name"]},
 }
 
 
@@ -129,6 +137,50 @@ def test_get_field_unknown_and_denied_are_identical(mediator):
     denied_real_field = mediator.get_field(_record("carol"), "Author", "auth_001", "org_id")
     fake_field = mediator.get_field(_record("carol"), "Author", "auth_001", "not_a_real_field_xyz")
     assert denied_real_field is fake_field is None
+
+
+def test_get_object_returns_multiple_fields_at_once(mediator):
+    result = mediator.get_object(_record("alice"), "Author", "auth_001", ["name", "books"])
+    assert result["name"] == "Ada Lovelace"
+    assert set(result["books"]) == {1, 2}
+
+
+def test_get_object_mixes_real_values_and_none_for_partial_grants(mediator):
+    # erin (author_name_only) has read:Author.name but NOT read:
+    # Author.org_id -- proves a single get_object() call correctly
+    # returns a REAL value for the field she's granted and None for
+    # the one she isn't, never raising or silently dropping the
+    # denied one from the dict.
+    result = mediator.get_object(_record("erin"), "Author", "auth_001", ["name", "org_id"])
+    assert result == {"name": "Ada Lovelace", "org_id": None}
+
+
+def test_get_object_unknown_field_returns_none_for_just_that_field(mediator):
+    result = mediator.get_object(_record("alice"), "Author", "auth_001", ["name", "totally_fake_field"])
+    assert result == {"name": "Ada Lovelace", "totally_fake_field": None}
+
+
+def test_get_object_empty_field_names_returns_empty_dict(mediator):
+    assert mediator.get_object(_record("alice"), "Author", "auth_001", []) == {}
+
+
+def test_get_object_unknown_object_type_returns_none_for_every_field_not_raise(mediator):
+    result = mediator.get_object(_record("alice"), "TotallyFakeType", "auth_001", ["name", "org_id"])
+    assert result == {"name": None, "org_id": None}
+
+
+def test_get_object_result_matches_calling_get_field_separately(mediator):
+    # THE core correctness claim get_object() itself makes: calling it
+    # once for several fields is INDISTINGUISHABLE from calling get_
+    # field() separately for each -- same values, same denials, same
+    # dict shape either way, proving the thin-wrapper design genuinely
+    # holds, not just assumed by construction.
+    combined = mediator.get_object(_record("alice"), "Book", 1, ["title", "year", "author_id"])
+    separate = {
+        field_name: mediator.get_field(_record("alice"), "Book", 1, field_name)
+        for field_name in ["title", "year", "author_id"]
+    }
+    assert combined == separate
 
 
 def test_visible_schema_hides_ungranted_object_types(mediator):
