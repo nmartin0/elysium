@@ -90,12 +90,67 @@ button.secondary {
   border: 1px solid #e0e0e0;
 }
 
-.pending-write pre {
-  background: #f2f2f2;
-  padding: 0.6rem;
-  border-radius: 6px;
+.pending-write h3 {
+  margin-top: 0;
+  margin-bottom: 0.4rem;
+}
+
+.pending-write__description {
+  margin: 0 0 0.85rem;
+  color: #666;
   font-size: 0.85rem;
-  overflow-x: auto;
+  word-break: break-word;
+}
+
+.pending-write__object {
+  margin-bottom: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  background: #f7f7f8;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+}
+
+.pending-write__object:last-of-type {
+  margin-bottom: 0;
+}
+
+.pending-write__object-label {
+  margin: 0 0 0.4rem;
+  font-weight: 600;
+}
+
+.pending-write__fields {
+  margin: 0;
+}
+
+.pending-write__field {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #eee;
+  font-size: 0.9rem;
+}
+
+.pending-write__field:last-child {
+  border-bottom: none;
+}
+
+.pending-write__field dt {
+  color: #666;
+}
+
+.pending-write__field dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.pending-write__old-value {
+  color: #999;
+  font-weight: 400;
 }
 
 .pending-write__actions {

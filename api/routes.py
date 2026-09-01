@@ -332,12 +332,16 @@ async def query(body: QueryRequest, request: Request,
         # changes based on how much happened). object_type included on
         # each entry too -- the old flat "changes" dict never named
         # which object it belonged to at all, meaningless once a
-        # response can describe more than one. ui/src/components/
-        # PendingWriteCard.jsx updated to match, minimally -- loops
-        # over sub_writes and renders each; a real, polished multi-
-        # object confirmation UI is deliberately deferred (see this
-        # file's own AI-notes at the bottom) until a real multi-object
-        # action exists to design it against.
+        # response can describe more than one. expected_current_values
+        # included too -- lets the UI show a real "old -> new"
+        # transition per field, not just the new value in isolation;
+        # empty for a "create" sub_write (nothing existed to have an
+        # old value), which the UI treats as "nothing to show a
+        # transition from," not an error. ui/src/components/
+        # PendingWriteCard.jsx updated to match -- a real, polished
+        # multi-object confirmation UI, no longer deferred now that
+        # TransferFunds exists as a real multi-object action to design
+        # it against (see this file's own AI-notes at the bottom).
         return JSONResponse(
             status_code=202,
             content={
@@ -345,7 +349,10 @@ async def query(body: QueryRequest, request: Request,
                     "id": write_id,
                     "description": result.pending_write.description,
                     "sub_writes": [
-                        {"object_type": sw.object_type, "object_id": sw.object_id, "changes": sw.changes}
+                        {
+                            "object_type": sw.object_type, "object_id": sw.object_id,
+                            "changes": sw.changes, "expected_current_values": sw.expected_current_values,
+                        }
                         for sw in result.pending_write.sub_writes
                     ],
                 }
@@ -391,17 +398,19 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
 # something genuinely open, deferred, or rejected comes up for this file.
 # =============================================================================
 #
-# DEFERRED (known, intentional, not yet built):
-# - The pending-write response's "sub_writes" list, and confirm_write_
-#   route's own passthrough "object_ids" list, are both correct and
-#   tested (see tests/integration/test_api.py) but only ever contain
-#   ONE entry in practice -- no real multi-object action_type exists
-#   anywhere yet (see core/ontology/write_mediator.py's own AI-notes
-#   for where that stands). ui/src/components/PendingWriteCard.jsx was
-#   updated to READ this shape correctly (loops over sub_writes) but
-#   deliberately NOT given real multi-object UI design (separate
-#   labeled sections per object, etc.) -- see that file's own
-#   AI-notes. Both sides of this were an explicit, agreed split with
-#   the user: real shape now, minimal-but-correct rendering now,
-#   polished multi-object UI later, once there's a real action to
-#   design it against.
+# RESOLVED (kept for history):
+# - The pending-write response's "sub_writes" list -- and confirm_
+#   write's own passthrough "object_ids" list -- used to only ever
+#   contain ONE entry in practice, with no real multi-object action
+#   to exercise the shape. TransferFunds (tests/integration/fixtures/
+#   ontology_schema.yaml) closed that; ui/src/components/
+#   PendingWriteCard.jsx now has real, polished multi-object
+#   rendering (separate labeled sections per object) to match, built
+#   and verified against it directly -- see that file's own AI-notes
+#   for the full record.
+# - This response was also extended with expected_current_values per
+#   sub_write (a real field SubWrite already had, previously unused
+#   here) so the UI can show a genuine "old -> new" transition per
+#   changed field, not just the new value alone -- see PendingWriteCard.
+#   jsx's own AI-notes for why that's a meaningfully stronger
+#   confirmation, especially for something like a transfer.

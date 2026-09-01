@@ -232,7 +232,10 @@ def test_query_proposing_an_action_returns_202_with_a_reference(client):
     body = response.json()
     assert "id" in body["pending_write"]
     assert body["pending_write"]["sub_writes"] == [
-        {"object_type": "Customer", "object_id": "cust_001", "changes": {"name": "Updated Name"}}
+        {
+            "object_type": "Customer", "object_id": "cust_001", "changes": {"name": "Updated Name"},
+            "expected_current_values": {"name": "Ada Okafor"},
+        }
     ]
 
 
