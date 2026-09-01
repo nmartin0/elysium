@@ -337,7 +337,12 @@ async def query(body: QueryRequest, request: Request,
         # transition per field, not just the new value in isolation;
         # empty for a "create" sub_write (nothing existed to have an
         # old value), which the UI treats as "nothing to show a
-        # transition from," not an error. ui/src/components/
+        # transition from," not an error. action_type_name (a real,
+        # already-existing PendingWrite field, e.g. "TransferFunds")
+        # included as a clean, separate label -- the UI shows this as
+        # the primary identifier, not description, which is a full,
+        # technical audit string (raw parameter dict syntax) never
+        # designed as user-facing copy. ui/src/components/
         # PendingWriteCard.jsx updated to match -- a real, polished
         # multi-object confirmation UI, no longer deferred now that
         # TransferFunds exists as a real multi-object action to design
@@ -347,6 +352,7 @@ async def query(body: QueryRequest, request: Request,
             content={
                 "pending_write": {
                     "id": write_id,
+                    "action_type_name": result.pending_write.action_type_name,
                     "description": result.pending_write.description,
                     "sub_writes": [
                         {

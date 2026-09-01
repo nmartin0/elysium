@@ -95,10 +95,15 @@ button.secondary {
   margin-bottom: 0.4rem;
 }
 
+.pending-write__action-name {
+  margin: 0 0 0.3rem;
+  font-weight: 600;
+}
+
 .pending-write__description {
   margin: 0 0 0.85rem;
   color: #666;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   word-break: break-word;
 }
 

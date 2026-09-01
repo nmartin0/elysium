@@ -98,6 +98,7 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired }) {
   return (
     <div className="pending-write">
       <h3>Proposed change</h3>
+      <p className="pending-write__action-name">{pendingWrite.action_type_name}</p>
       <p className="pending-write__description">{pendingWrite.description}</p>
       {pendingWrite.sub_writes.map((subWrite, i) =>
         isMultiObject ? (
