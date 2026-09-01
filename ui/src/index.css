@@ -364,3 +364,35 @@ button.danger {
   color: #2d2d34;
   font-weight: 600;
 }
+
+.object-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.action-form {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.action-form h3 {
+  margin: 0;
+}
+
+.action-form__field input:disabled {
+  background: #f2f2f2;
+  color: #666;
+}
+
+.action-form__actions {
+  display: flex;
+  gap: 0.5rem;
+}

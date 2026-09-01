@@ -11,9 +11,14 @@ function SubWriteFields({ subWrite }) {
   return (
     <dl className="pending-write__fields">
       {Object.keys(subWrite.changes).map((field) => {
-        const hasOldValue = Object.prototype.hasOwnProperty.call(
-          subWrite.expected_current_values ?? {}, field
-        )
+        // No `?? {}` fallback here -- expected_current_values is
+        // ALWAYS a real dict in the backend's own response (empty for
+        // a "create" sub_write, never absent -- see api/routes.py's
+        // own construction of this response). The UI ships together
+        // with the server it talks to, always matching its current,
+        // real contract; guarding against a shape that contract
+        // already rules out just adds a layer to doubt, not safety.
+        const hasOldValue = Object.prototype.hasOwnProperty.call(subWrite.expected_current_values, field)
         return (
           <div key={field} className="pending-write__field">
             <dt>{formatFieldName(field)}</dt>
@@ -39,7 +44,20 @@ function SubWriteFields({ subWrite }) {
 // the point of the whole design (see core/agent/agentic_loop.py's
 // docstring for why AgentLoop itself never confirms a write on its
 // own).
-export default function PendingWriteCard({ pendingWrite, onSessionExpired }) {
+//
+// onResolved is REQUIRED, no default -- every caller must make an
+// explicit, visible decision about what happens once a write is
+// actually applied or rejected, right at its own call site, rather
+// than silently falling through to "nothing" via a hidden default
+// buried in this file. QueryPanel.jsx has nothing useful to do here
+// (no persistent view of an object to refresh) and says so
+// explicitly with `() => {}`; ObjectDetailPanel.jsx's own ActionForm
+// really does need this, to refresh the object's own, now-possibly-
+// stale fields. Called with the SAME `approved` boolean
+// handleDecision() already computes, once, right where outcome
+// itself gets set, not a second, separately-tracked signal that
+// could drift from what the card itself just displayed.
+export default function PendingWriteCard({ pendingWrite, onSessionExpired, onResolved }) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [outcome, setOutcome] = useState(null)
@@ -50,6 +68,7 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired }) {
     try {
       await confirmWrite(pendingWrite.id, approved)
       setOutcome(approved ? 'Change applied.' : 'Change rejected.')
+      onResolved(approved)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onSessionExpired()

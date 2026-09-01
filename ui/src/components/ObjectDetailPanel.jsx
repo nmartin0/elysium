@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getObjectDetail, ApiError } from '../api'
+import { getObjectDetail, getVisibleActionTypes, ApiError } from '../api'
 import { formatFieldName, formatValue } from '../format'
+import ActionForm from './ActionForm'
 
 // Stage 2 of the Palantir-parity UI plan -- Object View. A real,
 // dedicated page for one specific object: every field the caller can
@@ -10,11 +11,15 @@ import { formatFieldName, formatValue } from '../format'
 // by clicking a result in ObjectSearchPanel (Stage 1), or any real,
 // bookmarked/shared URL -- see App.jsx's own comment for why this
 // specific screen is what justified adding real routing at all.
+// Stage 3 adds direct action invocation from this same page -- see
+// ActionForm.jsx's own docstring.
 export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
   const { objectType, objectId } = useParams()
   const [fields, setFields] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [visibleActionTypes, setVisibleActionTypes] = useState(null)
+  const [activeAction, setActiveAction] = useState(null)
 
   // Same stale-response guard as ObjectSearchPanel's own live search --
   // here it protects against rapid navigation between two DIFFERENT
@@ -24,7 +29,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
   // overwrite a later object's already-correct one.
   const latestRequestId = useRef(0)
 
-  useEffect(() => {
+  async function loadDetail() {
     const thisRequestId = ++latestRequestId.current
     setLoading(true)
     setError(null)
@@ -35,25 +40,51 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
     // actively misleading, not merely an empty flash.
     setFields(null)
 
-    async function loadDetail() {
+    try {
+      const response = await getObjectDetail(objectType, objectId)
+      if (thisRequestId !== latestRequestId.current) return
+      setFields(response.fields)
+    } catch (err) {
+      if (thisRequestId !== latestRequestId.current) return
+      if (err instanceof ApiError && err.status === 401) {
+        onSessionExpired()
+        return
+      }
+      setError(err.message)
+    } finally {
+      if (thisRequestId === latestRequestId.current) setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadDetail()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objectType, objectId])
+
+  // Fetched ONCE per mount, not re-fetched on every object navigation
+  // within this same route pattern -- which actions a user can invoke
+  // at all doesn't depend on which specific object they're currently
+  // looking at, only on their own role's grants.
+  useEffect(() => {
+    async function loadActionTypes() {
       try {
-        const response = await getObjectDetail(objectType, objectId)
-        if (thisRequestId !== latestRequestId.current) return
-        setFields(response.fields)
+        const response = await getVisibleActionTypes()
+        setVisibleActionTypes(response)
       } catch (err) {
-        if (thisRequestId !== latestRequestId.current) return
         if (err instanceof ApiError && err.status === 401) {
           onSessionExpired()
           return
         }
-        setError(err.message)
-      } finally {
-        if (thisRequestId === latestRequestId.current) setLoading(false)
+        // Deliberately silent otherwise -- a real failure here means
+        // no action buttons render at all, which is a safe, honest
+        // degradation (never fabricating a button for an action that
+        // might not really be available), not a broken page; the
+        // object's own fields above are unaffected either way.
       }
     }
-    loadDetail()
+    loadActionTypes()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [objectType, objectId])
+  }, [])
 
   const typeSchema = visibleSchema ? visibleSchema[objectType] : null
 
@@ -115,6 +146,10 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
     )
   }
 
+  const availableActions = Object.entries(visibleActionTypes ?? {}).filter(([, actionDef]) =>
+    actionDef.affected_object_types.includes(objectType)
+  )
+
   return (
     <div className="object-detail">
       <p className="object-detail__type">{objectType}</p>
@@ -127,6 +162,31 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
           </div>
         ))}
       </dl>
+
+      {availableActions.length > 0 && !activeAction && (
+        <div className="object-detail__actions">
+          {availableActions.map(([actionName]) => (
+            <button key={actionName} className="secondary" onClick={() => setActiveAction(actionName)}>
+              {actionName}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeAction && (
+        <ActionForm
+          actionName={activeAction}
+          actionDef={visibleActionTypes[activeAction]}
+          objectType={objectType}
+          objectId={objectId}
+          onCancel={() => setActiveAction(null)}
+          onResolved={() => {
+            setActiveAction(null)
+            loadDetail()
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
     </div>
   )
 }
@@ -139,9 +199,13 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
 //
 // CONTEXT: Stage 2 of the Palantir-parity UI plan -- see api/
 // routes.py's own AI-notes for the backend (GET /objects/{type}/{id}),
-// and ObjectSearchPanel.jsx's own for Stage 1. Stage 3 (a real action-
-// invocation button here, reusing PendingWriteCard as-is) remains
-// planned, deliberately NOT attempted in this pass.
+// and ObjectSearchPanel.jsx's own for Stage 1. Stage 3 (direct action
+// invocation from this page) is now built too -- see ActionForm.jsx's
+// own docstring for that piece; this file only owns discovering which
+// actions are available for the current object type and refreshing
+// its own fields once one has actually been applied or rejected
+// (loadDetail() extracted to a standalone function specifically so
+// onResolved below could call it again, not just on mount/navigation).
 //
 // SECURITY: this component NEVER tries to distinguish "this object
 // doesn't exist" from "this object exists but you can't see it" --
@@ -161,6 +225,13 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
 // formatValue's own fallback behavior, just without link treatment --
 // never hidden, never fabricated.
 //
+// availableActions filters on affected_object_types locally, in this
+// component -- NOT a second, server-side filter. The real, only
+// authorization decision (can this user even SEE this action at all)
+// already happened inside GET /me/visible-action-types itself; this
+// filter is purely "which of the ones I'm already allowed to see
+// make sense to offer HERE," a display decision, not a security one.
+//
 // DEFERRED (known, intentional, not yet built):
 // - No "return to where I was" breadcrumb/back trail across multiple
 //   hops of link-following (Customer -> Transaction -> ...) beyond
@@ -169,3 +240,10 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
 // - No loading skeleton matching the eventual field layout -- a plain
 //   "Loading…" text, matching every other data-fetching component's
 //   own existing convention in this app.
+// - visibleActionTypes is fetched independently here, NOT lifted to
+//   App.jsx the way visibleSchema was -- deliberately, not an
+//   oversight: only this component needs it today, unlike
+//   visibleSchema (needed by both this file and ObjectSearchPanel.jsx
+//   at the time of that lift). Revisit the same lift if a second
+//   consumer (e.g. quick action buttons on search results) ever
+//   needs it too.

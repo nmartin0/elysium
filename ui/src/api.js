@@ -188,3 +188,22 @@ export async function getObjectDetail(objectType, objectId) {
   const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}`)
   return response.json()
 }
+
+// --- Stage 3: direct action invocation, no LLM involved. Mirrors
+// getMyVisibleSchema()'s own self-service pattern exactly.
+
+export async function getVisibleActionTypes() {
+  const response = await apiFetchOrThrow('/me/visible-action-types')
+  return response.json()
+}
+
+export async function proposeAction(actionTypeName, parameters) {
+  // actionTypeName is a fixed, schema-controlled name (like
+  // objectType above), never encoded -- only objectId-shaped, DATA-
+  // derived values get that treatment (see getObjectDetail() above).
+  const response = await apiFetchOrThrow(`/actions/${actionTypeName}`, {
+    method: 'POST',
+    body: JSON.stringify({ parameters }),
+  })
+  return response.json()
+}

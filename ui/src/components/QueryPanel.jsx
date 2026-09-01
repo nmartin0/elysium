@@ -73,7 +73,10 @@ export default function QueryPanel({ onSessionExpired }) {
         </div>
       )}
       {pendingWrite && (
-        <PendingWriteCard pendingWrite={pendingWrite} onSessionExpired={onSessionExpired} />
+        // No persistent view of an object here to refresh once
+        // resolved (unlike ObjectDetailPanel.jsx's own ActionForm) --
+        // an explicit no-op, not an unset default.
+        <PendingWriteCard pendingWrite={pendingWrite} onSessionExpired={onSessionExpired} onResolved={() => {}} />
       )}
     </div>
   )
