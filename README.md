@@ -223,6 +223,7 @@ any user can see it.
 
 - **`silo`** — which named entry in `data_silos.yaml`.
 - **`id_field`** — the identifier's name. **Not automatically safe to expose** — some deployments use identifiers that are themselves sensitive (a password-reset token, a verification code), so this needs its own explicit grant like any other field.
+- **`title_field`** *(optional)* — which field's own value stands in as a human-readable display name in the UI's own Browse/Object View (e.g. "Ada Okafor," not a raw `cust_001`), instead of falling back to the identifier. Must reference a real, plain `type: data` field on this same type, or the `id_field` itself — checked at load time. Needs its own explicit `read:<Type>.<field>` grant like any other field before it's ever actually shown; declaring it here only says *which* field would be the title, it doesn't make that field's value visible on its own.
 - **`security`** — the MAC boundary for this type: `field: <column>` (carries its own boundary value) or `via_field: <link>` (inherits the linked object's).
 - **`fields`** — `type: data` (plain value) or `type: link` (points to another object; `cardinality: one` is a real foreign key, `cardinality: many` is a reverse relationship needing `via_table`/`via_column`).
 

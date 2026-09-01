@@ -383,10 +383,29 @@ class DataMediator:
             id_field = type_def["id_field"]
             id_field_visible = authorize(user_record, self.roles, f"read:{object_type}.{id_field}")
 
+            # title_field -- OPTIONAL, and RBAC-gated the exact same
+            # way id_field already is above: a real, existing grant is
+            # required for THIS specific field's own value before it's
+            # ever surfaced as "the" display name for this type, even
+            # though the field name itself is declared, schema-wide,
+            # in ontology_schema.yaml (schema STRUCTURE is not the same
+            # thing as a field's own VALUE being visible -- the same
+            # distinction visible_schema() already draws for every
+            # other field here). None (not the declared name) when the
+            # caller can't actually see it -- the UI already treats
+            # None/absent identically to "no title_field declared at
+            # all," falling back to the raw id, never a broken or
+            # partially-rendered label.
+            title_field = type_def.get("title_field")
+            title_field_visible = title_field is not None and authorize(
+                user_record, self.roles, f"read:{object_type}.{title_field}"
+            )
+
             visible[object_type] = {
                 **type_def,
                 "fields": visible_fields,
                 "id_field": id_field if id_field_visible else None,
+                "title_field": title_field if title_field_visible else None,
             }
         return visible
 

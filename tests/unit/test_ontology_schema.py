@@ -8,6 +8,7 @@ from core.ontology.schema import (
     get_field_storage_name,
     get_id_field,
     get_link_target,
+    get_title_field,
     is_link_field,
     is_searchable_field,
 )
@@ -20,6 +21,24 @@ def test_get_id_field_returns_declared_id(test_schema):
 def test_get_id_field_unknown_object_type_raises(test_schema):
     with pytest.raises(ValueError):
         get_id_field(test_schema, "Nonexistent")
+
+
+def test_get_title_field_returns_none_when_not_declared(test_schema):
+    # Author (test_schema's own fixture) declares no title_field at
+    # all -- a real, legitimate state (see core/ontology/object_type_
+    # validation.py's own docstring: title_field is OPTIONAL), not an
+    # error, and must return None, not raise.
+    assert get_title_field(test_schema, "Author") is None
+
+
+def test_get_title_field_returns_the_declared_field_name():
+    schema = {"Author": {"id_field": "author_id", "title_field": "name", "fields": {}}}
+    assert get_title_field(schema, "Author") == "name"
+
+
+def test_get_title_field_unknown_object_type_raises(test_schema):
+    with pytest.raises(ValueError):
+        get_title_field(test_schema, "Nonexistent")
 
 
 def test_get_field_info_returns_field_dict(test_schema):

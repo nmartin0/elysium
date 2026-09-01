@@ -27,6 +27,18 @@ object_types:
     id_field: employee_id           # the identifier's name -- see policy.yaml's
                                      # header for why this ISN'T automatically
                                      # safe to expose without its own grant
+    title_field: full_name          # OPTIONAL -- which field's own VALUE stands
+                                     # in as a human-readable display name (e.g.
+                                     # "Ada Okafor," not the raw employee_id) in
+                                     # the UI's own Browse/Object View. Must
+                                     # reference a real, plain `type: data` field
+                                     # (or the id_field itself) -- checked at
+                                     # load time. Still needs its OWN explicit
+                                     # read:Employee.full_name grant like any
+                                     # other field before it's ever shown --
+                                     # declaring it here only says WHICH field
+                                     # would be the title, never makes its own
+                                     # value visible on its own.
     security:
       field: department             # MAC boundary -- this object type carries
                                      # its own boundary value directly. The

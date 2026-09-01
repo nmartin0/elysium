@@ -316,6 +316,41 @@ def test_search_object_reuses_precomputed_visible_schema_if_given(mediator):
     assert result == []  # would be ["auth_001"] if the real schema were computed instead
 
 
+def test_visible_schema_title_field_requires_its_own_explicit_grant(mediator):
+    # A real, isolated DataMediator whose OWN schema actually declares
+    # a title_field (test_schema/mediator's shared fixtures deliberately
+    # don't -- see tests/unit/test_ontology_schema.py's own comment on
+    # why that fixture stays untouched). alice (real role: read:Author,
+    # read:Author.name) sees it; bob's role withholds read:Author.name
+    # specifically, so the SAME title_field must come back as None for
+    # him -- proves visible_schema() genuinely re-checks THIS field's
+    # own grant per caller, not just whether the type declares one.
+    schema_with_title = {
+        "Author": {
+            "storage": {"silo": "test_silo", "table": "authors", "id_column": "author_id"},
+            "id_field": "author_id",
+            "title_field": "name",
+            "security": {"field": "org_id"},
+            "fields": {"org_id": {"type": "data"}, "name": {"type": "data"}},
+        },
+    }
+    users = {
+        "alice": {"org_id": "org-a", "role": "with_name"},
+        "bob": {"org_id": "org-a", "role": "without_name"},
+    }
+    roles = {
+        "with_name": {"allowed_actions": ["read:Author", "read:Author.author_id", "read:Author.name"]},
+        "without_name": {"allowed_actions": ["read:Author", "read:Author.author_id"]},
+    }
+    m = DataMediator(schema_with_title, {}, {"Author": "test_silo"}, roles)
+
+    alice_visible = m.visible_schema(resolve_user_record(users, "alice", "org_id"))
+    bob_visible = m.visible_schema(resolve_user_record(users, "bob", "org_id"))
+
+    assert alice_visible["Author"]["title_field"] == "name"
+    assert bob_visible["Author"]["title_field"] is None
+
+
 def test_id_field_itself_requires_its_own_explicit_grant(mediator):
     eve_users = {**TEST_USERS, "eve": {"org_id": "org-a", "role": "no_id_grant"}}
     eve_roles = {**TEST_ROLES, "no_id_grant": {"allowed_actions": ["read:Author", "read:Author.name"]}}

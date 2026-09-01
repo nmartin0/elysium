@@ -39,6 +39,7 @@ from core.llm.interface import LLMAdapter
 from core.ontology.action_types import validate_action_types
 from core.ontology.interface import DataSiloAdapter
 from core.ontology.mediator import DataMediator
+from core.ontology.object_type_validation import validate_object_types
 from core.ontology.write_log import WriteLog
 
 _ADAPTER_REGISTRY: dict[str, type] = {
@@ -132,6 +133,8 @@ def validate_identifier_types(schema_raw: dict, policy_raw: dict) -> None:
         _require_str(object_type_name, "An object_type name")
         if "id_field" in object_type_def:
             _require_str(object_type_def["id_field"], f"{object_type_name!r}'s own id_field")
+        if "title_field" in object_type_def:
+            _require_str(object_type_def["title_field"], f"{object_type_name!r}'s own title_field")
         security = object_type_def.get("security", {})
         if "field" in security:
             _require_str(security["field"], f"{object_type_name!r}'s own security.field")
@@ -209,6 +212,12 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # load time, not deferred to propose_action() -- including why a
     # missing "sub_writes" is now REJECTED, not silently skipped).
     validate_action_types(deployment_config.action_types, deployment_config.schema)
+
+    # title_field -- an OPTIONAL, per-object-type display-name
+    # declaration (see core/ontology/object_type_validation.py's own
+    # module docstring for the full reasoning, including what's
+    # DELIBERATELY still deferred).
+    validate_object_types(deployment_config.schema)
 
     # Every role's own grants, checked against what they actually
     # reference -- see core/intermediate_layer/policy_validation.py's

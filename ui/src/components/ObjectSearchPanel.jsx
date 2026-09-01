@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { searchObjects, ApiError } from '../api'
-import { formatFieldName, formatValue } from '../format'
+import { formatFieldName, formatValue, getDisplayTitle } from '../format'
 
 // The human-facing browse/search screen -- Palantir's own Object
 // Explorer is the closest real-world analog (a real research +
@@ -114,21 +114,28 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
       {!loading && results.length === 0 && !error && <p className="object-search__empty">No results.</p>}
 
       <ul className="object-search__results">
-        {results.map((result) => (
-          <li key={result.id} className="object-search__result">
-            <Link to={`/objects/${selectedType}/${encodeURIComponent(result.id)}`} className="object-search__link">
-              <p className="object-search__result-id">{result.id}</p>
-              <dl className="object-search__result-fields">
-                {Object.entries(result.fields).map(([field, value]) => (
-                  <div key={field} className="object-search__result-field">
-                    <dt>{formatFieldName(field)}</dt>
-                    <dd>{formatValue(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </Link>
-          </li>
-        ))}
+        {results.map((result) => {
+          const titleValue = getDisplayTitle(visibleSchema?.[selectedType], result.fields, result.id)
+          return (
+            <li key={result.id} className="object-search__result">
+              <Link
+                to={`/objects/${selectedType}/${encodeURIComponent(result.id)}`}
+                className="object-search__link"
+              >
+                <p className="object-search__result-title">{titleValue}</p>
+                {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
+                <dl className="object-search__result-fields">
+                  {Object.entries(result.fields).map(([field, value]) => (
+                    <div key={field} className="object-search__result-field">
+                      <dt>{formatFieldName(field)}</dt>
+                      <dd>{formatValue(value)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </Link>
+            </li>
+          )
+        })}
       </ul>
 
       {totalMatches > results.length && (

@@ -25,6 +25,7 @@ object_types:
         table: customer_risk
         id_column: cust_ref
     id_field: customer_id
+    title_field: name
     security:
       field: region
     fields:

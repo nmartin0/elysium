@@ -26,6 +26,24 @@ def get_id_field(schema: dict, object_type: str) -> str:
     return type_schema["id_field"]
 
 
+def get_title_field(schema: dict, object_type: str) -> str | None:
+    # Which field's own value should stand in as this object's real,
+    # human-readable display name (e.g. "name" on Customer -- a real
+    # customer shows as "Ada Okafor," not its raw id_field value,
+    # "cust_001") -- OPTIONAL, unlike id_field: None means this type
+    # simply has no declared title, not an error (see core/ontology/
+    # object_type_validation.py's own docstring for the schema-load-
+    # time check this stays consistent with). Callers -- DataMediator.
+    # visible_schema() is the real one -- decide separately whether
+    # this field's own VALUE is actually visible to a given caller;
+    # this function only answers "which field, if any, is declared,"
+    # never a permission question of its own.
+    type_schema = schema.get(object_type)
+    if type_schema is None:
+        raise ValueError(f"Unknown object_type: {object_type}")
+    return type_schema.get("title_field")
+
+
 def get_field_info(schema: dict, object_type: str, field_name: str) -> dict:
     # The raw field descriptor dict for one field -- callers use this to
     # check its type, target, cardinality, etc. via the helpers below.

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getObjectDetail, getVisibleActionTypes, ApiError } from '../api'
-import { formatFieldName, formatValue } from '../format'
+import { formatFieldName, formatValue, getDisplayTitle } from '../format'
 import ActionForm from './ActionForm'
 
 // Stage 2 of the Palantir-parity UI plan -- Object View. A real,
@@ -150,10 +150,13 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
     ([, actionDef]) => actionDef.affected_object_types.includes(objectType) && actionDef.executable
   )
 
+  const titleValue = getDisplayTitle(typeSchema, fields, objectId)
+
   return (
     <div className="object-detail">
       <p className="object-detail__type">{objectType}</p>
-      <h2 className="object-detail__id">{objectId}</h2>
+      <h2 className="object-detail__title">{titleValue}</h2>
+      {titleValue !== objectId && <p className="object-detail__subtitle">{objectId}</p>}
       <dl className="object-detail__fields">
         {Object.entries(fields).map(([fieldName, value]) => (
           <div key={fieldName} className="object-detail__field">

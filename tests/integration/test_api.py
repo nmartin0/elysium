@@ -137,6 +137,37 @@ def test_my_visible_schema_differs_by_role_not_a_static_response(client):
     assert "email" not in response.json()["Customer"]["fields"]
 
 
+def test_my_visible_schema_shows_title_field_when_granted(client):
+    # customer_service holds read:Customer.name, and Customer's own
+    # title_field IS "name" (fixtures/ontology_schema.yaml) -- must be
+    # surfaced. customer_service_no_email (previous test) withholds a
+    # DIFFERENT field (email), not name -- together these two tests
+    # prove title_field's own visibility genuinely tracks its OWN
+    # field's grant, not some unrelated field's.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-schema", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json()["Customer"]["title_field"] == "name"
+
+
+def test_my_visible_schema_withholds_title_field_when_not_granted(client):
+    # customer_service_link_only holds read:Customer and read:Customer.
+    # customer_id (the id_field) but NO read:Customer.name at all --
+    # title_field must come back None, matching id_field's own,
+    # already-established RBAC-gating pattern exactly (declaring a
+    # field AS the title never makes its own value visible on its own).
+    client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "customer_service_link_only")
+    token = _login(client, "carol", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-schema", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json()["Customer"]["title_field"] is None
+
+
 def test_search_objects_finds_a_partial_match_with_real_field_values(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
