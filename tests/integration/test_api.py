@@ -307,6 +307,171 @@ def test_object_detail_and_search_routes_do_not_collide(client):
     assert "total_matches" in response.json()
 
 
+def test_visible_action_types_without_token_is_rejected(client):
+    response = client.get("/api/me/visible-action-types")
+    assert response.status_code == 401
+
+
+def test_visible_action_types_returns_the_callers_own_view(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-action-types", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    # editor's real, confirmed grants (fixtures/policy.yaml) --
+    # UpdateCustomerName and CreateCustomer, NOT TransferFunds.
+    assert set(body.keys()) == {"UpdateCustomerName", "CreateCustomer"}
+    assert body["UpdateCustomerName"]["parameters"]["customer_id"]["type"] == "object_reference"
+
+
+def test_visible_action_types_differs_by_role_not_a_static_response(client):
+    client.app.state.user_directory.create_user("bob", "correct-pw", "us-west", "customer_service")
+    token = _login(client, "bob", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-action-types", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    # customer_service has NO execute: grants at all (fixtures/
+    # policy.yaml) -- proves this route genuinely reflects the
+    # CALLER's own grants, not a cached or role-blind response.
+    assert response.json() == {}
+
+
+def test_propose_action_without_token_is_rejected(client):
+    response = client.post("/api/actions/UpdateCustomerName", json={"parameters": {}})
+    assert response.status_code == 401
+
+
+def test_propose_action_succeeds_and_returns_a_real_pending_write(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_001", "new_name": "Ada Lovelace"}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 202
+    body = response.json()["pending_write"]
+    assert body["action_type_name"] == "UpdateCustomerName"
+    assert body["sub_writes"] == [
+        {
+            "object_type": "Customer", "object_id": "cust_001",
+            "changes": {"name": "Ada Lovelace"}, "expected_current_values": {"name": "Ada Okafor"},
+        }
+    ]
+
+
+def test_propose_action_then_confirm_actually_changes_the_database(client):
+    # THE real, full, end-to-end proof: propose via THIS new, direct
+    # path (no LLM involved at all), confirm via the EXISTING /writes/
+    # {id}/confirm endpoint (unchanged, shared with the model-
+    # initiated path), then verify the real change through a
+    # COMPLETELY SEPARATE, independent read (GET /objects/.../...),
+    # not just trusting the confirm response's own claim.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    propose_response = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_002", "new_name": "Bram F. Feldman"}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    write_id = propose_response.json()["pending_write"]["id"]
+
+    confirm_response = client.post(
+        f"/api/writes/{write_id}/confirm", json={"approved": True}, headers={"Authorization": f"Bearer {token}"}
+    )
+    assert confirm_response.status_code == 200
+
+    detail_response = client.get("/api/objects/Customer/cust_002", headers={"Authorization": f"Bearer {token}"})
+    assert detail_response.json()["fields"]["name"] == "Bram F. Feldman"
+
+
+def test_propose_action_rejected_leaves_the_database_unchanged(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    propose_response = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_001", "new_name": "Someone Else"}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    write_id = propose_response.json()["pending_write"]["id"]
+
+    client.post(
+        f"/api/writes/{write_id}/confirm", json={"approved": False}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    detail_response = client.get("/api/objects/Customer/cust_001", headers={"Authorization": f"Bearer {token}"})
+    assert detail_response.json()["fields"]["name"] == "Ada Okafor"
+
+
+def test_propose_action_unknown_action_and_real_but_unauthorized_action_are_identical(client):
+    # THE real security proof for the normalized-error design, decided
+    # explicitly with the user (see propose_action_route's own
+    # docstring for the full reasoning): a genuinely nonexistent
+    # action and a REAL action this user simply isn't authorized for
+    # (TransferFunds -- editor has no execute: grant for it) must
+    # produce the EXACT SAME response, not just "both look like
+    # errors" -- byte-for-byte identical status and message.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    unknown = client.post(
+        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers={"Authorization": f"Bearer {token}"}
+    )
+    unauthorized = client.post(
+        "/api/actions/TransferFunds",
+        json={"parameters": {
+            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
+            "new_from_balance": 1, "new_to_balance": 1,
+        }},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert unknown.status_code == unauthorized.status_code == 400
+    assert unknown.json() == unauthorized.json()
+
+
+def test_propose_action_missing_required_parameter_returns_the_same_generic_error(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_001"}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "That action could not be proposed. Check the action name and parameters, "
+        "and that you're authorized to perform it."
+    )
+
+
+def test_propose_action_cross_region_mac_denial_returns_the_same_generic_error(client):
+    # cust_003 is us-east; alice (editor) is us-west.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_003", "new_name": "X"}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "That action could not be proposed. Check the action name and parameters, "
+        "and that you're authorized to perform it."
+    )
+
+
 def test_create_user_without_manage_users_grant_is_rejected(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]

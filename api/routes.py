@@ -110,6 +110,7 @@ loop for meaningfully longer than intended.
 """
 
 import asyncio
+import logging
 import threading
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -122,6 +123,8 @@ from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -393,6 +396,103 @@ def get_object_detail_route(object_type: str, object_id: str, request: Request,
     field_names = list(type_def["fields"].keys())
     fields = mediator.get_object(current_user, object_type, object_id, field_names)
     return {"id": object_id, "fields": fields}
+
+
+class ProposeActionRequest(BaseModel):
+    parameters: dict = {}
+
+
+@router.get("/me/visible-action-types")
+def my_visible_action_types_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # Self-service counterpart to GET /me/visible-schema above, same
+    # pattern -- the browse/search UI needs to know which object TYPES
+    # exist before a person can pick one; Stage 3's direct action
+    # invocation (POST /actions/{action_type_name} below) needs to
+    # know which ACTIONS exist, and what parameters each one declares,
+    # before a person can be shown a button or a form for one at all.
+    # WriteMediator.visible_action_types() already existed for the
+    # model-facing prompt (core/llm/agent_step_prompt.py) -- this
+    # route is pure composition, no new backend logic.
+    write_mediator: WriteMediator = request.app.state.write_mediator
+    return write_mediator.visible_action_types(current_user)
+
+
+@router.post("/actions/{action_type_name}")
+def propose_action_route(action_type_name: str, body: ProposeActionRequest, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> JSONResponse:
+    # Stage 3's real backend: direct, UI-driven action invocation, NOT
+    # routed through the LLM at all. WriteMediator.propose_action()
+    # already takes explicit, caller-supplied parameters -- it has
+    # ZERO dependency on the agent loop or a model's own reasoning;
+    # core/agent/agentic_loop.py's own propose_action step is just ONE
+    # caller of this same method, not a prerequisite for it. Every
+    # real authorization decision (RBAC via execute:, MAC per object,
+    # submission_criteria) is enforced INSIDE propose_action() itself,
+    # identically for both callers -- this route adds no security
+    # logic of its own, and must never be tempted to.
+    #
+    # Returns the EXACT SAME "pending_write" response shape /query
+    # already returns for a proposed write -- deliberately, so the
+    # EXISTING PendingWriteCard.jsx component (built for the /query
+    # path) can be reused completely unchanged for this one too. Two
+    # phases, same as every other write path in this project: this
+    # only PROPOSES: nothing is applied until a separate, later POST
+    # /writes/{id}/confirm call, same real confirmation gate a model-
+    # initiated write already goes through.
+    #
+    # ERROR HANDLING -- decided explicitly with the user, a real,
+    # deliberate DEPARTURE from Palantir's own documented default
+    # (verified directly, not assumed: Palantir's real docs state
+    # action type metadata -- title, description, rules -- is visible
+    # to every user with Ontology access by default, whether or not
+    # they can actually execute it, and their real API returns
+    # standard, differentiated HTTP status codes with specific
+    # messages for permission failures). Elysium's OWN, already-
+    # established posture is more conservative -- unknown/denied
+    # already look identical for objects and fields throughout this
+    # project (see get_object_detail_route's own docstring) -- and
+    # this route extends that SAME posture to actions too, for
+    # consistency's sake, not because it's the only defensible choice.
+    # ValueError, TypeError, and PermissionError are caught TOGETHER
+    # (matching how core/agent/agentic_loop.py's own _execute_step()
+    # already treats these three identically for the model -- this
+    # route is not introducing a new distinction, just applying an
+    # EXISTING one consistently to a second, human-facing caller) and
+    # ALL map to the SAME status code with the SAME generic message --
+    # never the real str(e), which would itself re-introduce the
+    # exact distinction (e.g. "Unknown action_type" vs "not authorized
+    # for execute:X") this is meant to avoid. Do not "improve" this
+    # later into a more specific message without re-reading this
+    # reasoning first.
+    write_mediator: WriteMediator = request.app.state.write_mediator
+    try:
+        pending_write = write_mediator.propose_action(current_user, action_type_name, body.parameters)
+    except (ValueError, TypeError, PermissionError) as e:
+        logger.warning(f"propose_action_route: {action_type_name!r} rejected for {current_user.user_id!r}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail="That action could not be proposed. Check the action name and parameters, "
+                   "and that you're authorized to perform it.",
+        ) from e
+
+    write_id = request.app.state.pending_writes.store(pending_write)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "pending_write": {
+                "id": write_id,
+                "action_type_name": pending_write.action_type_name,
+                "description": pending_write.description,
+                "sub_writes": [
+                    {
+                        "object_type": sw.object_type, "object_id": sw.object_id,
+                        "changes": sw.changes, "expected_current_values": sw.expected_current_values,
+                    }
+                    for sw in pending_write.sub_writes
+                ],
+            }
+        },
+    )
 
 
 @router.post("/query")

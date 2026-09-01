@@ -45,6 +45,8 @@ confirm_write_route
 search_objects_route
 my_visible_schema_route
 get_object_detail_route
+my_visible_action_types_route
+propose_action_route
 
 # --- unittest.mock attribute assignment -- `some_mock.return_value = x`
 # / `some_mock.side_effect = fn` are how tests configure a MagicMock;
