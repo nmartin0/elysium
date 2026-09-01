@@ -75,7 +75,7 @@ def client(tmp_path: Path):
 
 
 def _login(client, username, password):
-    return client.post("/login", json={"username": username, "password": password})
+    return client.post("/api/login", json={"username": username, "password": password})
 
 
 def test_login_wrong_password_and_nonexistent_username_are_identical(client):
@@ -97,17 +97,17 @@ def test_login_success_returns_a_real_token(client):
 
 
 def test_query_without_token_is_rejected(client):
-    response = client.post("/query", json={"query": "test"})
+    response = client.post("/api/query", json={"query": "test"})
     assert response.status_code == 401
 
 
 def test_search_objects_without_token_is_rejected(client):
-    response = client.get("/objects/Customer/search", params={"q": "ada"})
+    response = client.get("/api/objects/Customer/search", params={"q": "ada"})
     assert response.status_code == 401
 
 
 def test_my_visible_schema_without_token_is_rejected(client):
-    response = client.get("/me/visible-schema")
+    response = client.get("/api/me/visible-schema")
     assert response.status_code == 401
 
 
@@ -115,7 +115,7 @@ def test_my_visible_schema_returns_the_callers_own_view(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = client.get("/me/visible-schema", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/me/visible-schema", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
     # confirmed directly against a real mediator.visible_schema() call
@@ -131,7 +131,7 @@ def test_my_visible_schema_differs_by_role_not_a_static_response(client):
     client.app.state.user_directory.create_user("dave", "correct-pw", "us-west", "customer_service_no_email")
     token = _login(client, "dave", "correct-pw").json()["token"]
 
-    response = client.get("/me/visible-schema", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/me/visible-schema", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
     assert "email" not in response.json()["Customer"]["fields"]
@@ -142,7 +142,7 @@ def test_search_objects_finds_a_partial_match_with_real_field_values(client):
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.get(
-        "/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
+        "/api/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 200
@@ -162,7 +162,7 @@ def test_search_objects_empty_query_returns_every_visible_result(client):
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.get(
-        "/objects/Customer/search", params={"q": ""}, headers={"Authorization": f"Bearer {token}"}
+        "/api/objects/Customer/search", params={"q": ""}, headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 200
@@ -177,7 +177,7 @@ def test_search_objects_no_query_param_at_all_also_browses_all(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = client.get("/objects/Customer/search", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/objects/Customer/search", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
     assert response.json()["total_matches"] == 2
@@ -193,7 +193,7 @@ def test_search_objects_blocks_cross_region_mac(client):
     token = _login(client, "bob", "correct-pw").json()["token"]
 
     response = client.get(
-        "/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
+        "/api/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 200
@@ -205,7 +205,7 @@ def test_search_objects_no_match_returns_empty_results(client):
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.get(
-        "/objects/Customer/search", params={"q": "zzz_nonexistent"}, headers={"Authorization": f"Bearer {token}"}
+        "/api/objects/Customer/search", params={"q": "zzz_nonexistent"}, headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 200
@@ -217,7 +217,7 @@ def test_search_objects_unknown_type_returns_empty_results_not_error(client):
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.get(
-        "/objects/TotallyFakeType/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
+        "/api/objects/TotallyFakeType/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 200
@@ -225,7 +225,7 @@ def test_search_objects_unknown_type_returns_empty_results_not_error(client):
 
 
 def test_object_detail_without_token_is_rejected(client):
-    response = client.get("/objects/Customer/cust_001")
+    response = client.get("/api/objects/Customer/cust_001")
     assert response.status_code == 401
 
 
@@ -233,7 +233,7 @@ def test_object_detail_returns_every_visible_field_including_a_link(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = client.get("/objects/Customer/cust_001", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/objects/Customer/cust_001", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
     body = response.json()
@@ -254,7 +254,7 @@ def test_object_detail_nonexistent_id_returns_200_with_every_field_null(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = client.get("/objects/Customer/cust_does_not_exist", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/objects/Customer/cust_does_not_exist", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
     body = response.json()
@@ -270,8 +270,8 @@ def test_object_detail_cross_region_mac_denial_is_identical_to_nonexistent(clien
     client.app.state.user_directory.create_user("bob", "correct-pw", "us-west", "customer_service")
     token = _login(client, "bob", "correct-pw").json()["token"]
 
-    denied = client.get("/objects/Customer/cust_003", headers={"Authorization": f"Bearer {token}"})
-    nonexistent = client.get("/objects/Customer/cust_does_not_exist", headers={"Authorization": f"Bearer {token}"})
+    denied = client.get("/api/objects/Customer/cust_003", headers={"Authorization": f"Bearer {token}"})
+    nonexistent = client.get("/api/objects/Customer/cust_does_not_exist", headers={"Authorization": f"Bearer {token}"})
 
     assert denied.status_code == nonexistent.status_code == 200
     assert all(value is None for value in denied.json()["fields"].values())
@@ -282,7 +282,7 @@ def test_object_detail_unknown_type_returns_200_with_empty_fields(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = client.get("/objects/TotallyFakeType/whatever", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/objects/TotallyFakeType/whatever", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
     assert response.json() == {"id": "whatever", "fields": {}}
@@ -299,7 +299,7 @@ def test_object_detail_and_search_routes_do_not_collide(client):
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.get(
-        "/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
+        "/api/objects/Customer/search", params={"q": "ada"}, headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 200
@@ -312,7 +312,7 @@ def test_create_user_without_manage_users_grant_is_rejected(client):
     token = _login(client, "alice", "correct-pw").json()["token"]
 
     response = client.post(
-        "/users", json={"username": "bob", "password": "pw", "role_name": "customer_service"},
+        "/api/users", json={"username": "bob", "password": "pw", "role_name": "customer_service"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403
@@ -323,7 +323,7 @@ def test_create_user_with_manage_users_grant_succeeds_and_new_user_can_log_in(cl
     token = _login(client, "admin_user", "adminpass").json()["token"]
 
     create_response = client.post(
-        "/users",
+        "/api/users",
         json={"username": "newperson", "password": "newpass123",
               "mac_value": "us-west", "role_name": "customer_service"},
         headers={"Authorization": f"Bearer {token}"},
@@ -338,10 +338,10 @@ def test_logout_invalidates_the_token(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     token = _login(client, "alice", "correct-pw").json()["token"]
 
-    logout_response = client.post("/logout", headers={"Authorization": f"Bearer {token}"})
+    logout_response = client.post("/api/logout", headers={"Authorization": f"Bearer {token}"})
     assert logout_response.status_code == 204
 
-    reuse_response = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
+    reuse_response = client.post("/api/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
     assert reuse_response.status_code == 401
 
 
@@ -373,7 +373,7 @@ def test_query_end_to_end_with_mocked_llm(client):
         return response
 
     with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post):
-        response = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
+        response = client.post("/api/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
     assert response.json()["answer"] == "Here is your answer."
@@ -413,7 +413,7 @@ def test_query_refuses_if_permissions_changed_during_processing(client):
 
     with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post), \
          patch("core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]):
-        response = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
+        response = client.post("/api/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 409
     assert "answer" not in response.json()
@@ -438,7 +438,9 @@ def _propose_action(client, token, new_name="Updated Name"):
         return response
 
     with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post):
-        return client.post("/query", json={"query": "update the name"}, headers={"Authorization": f"Bearer {token}"})
+        return client.post(
+            "/api/query", json={"query": "update the name"}, headers={"Authorization": f"Bearer {token}"}
+        )
 
 
 def test_query_proposing_an_action_returns_202_with_a_reference(client):
@@ -466,7 +468,7 @@ def test_confirming_an_approved_action_actually_changes_the_database(client):
     write_id = _propose_action(client, token).json()["pending_write"]["id"]
 
     confirm_response = client.post(
-        f"/writes/{write_id}/confirm", json={"approved": True},
+        f"/api/writes/{write_id}/confirm", json={"approved": True},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert confirm_response.status_code == 200
@@ -488,7 +490,7 @@ def test_confirming_a_rejected_action_does_not_change_the_database(client):
     write_id = _propose_action(client, token).json()["pending_write"]["id"]
 
     confirm_response = client.post(
-        f"/writes/{write_id}/confirm", json={"approved": False},
+        f"/api/writes/{write_id}/confirm", json={"approved": False},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert confirm_response.status_code == 200
@@ -509,11 +511,11 @@ def test_confirm_with_wrong_user_and_unknown_id_are_identical(client):
     write_id = _propose_action(client, alice_token).json()["pending_write"]["id"]
 
     wrong_user_response = client.post(
-        f"/writes/{write_id}/confirm", json={"approved": True},
+        f"/api/writes/{write_id}/confirm", json={"approved": True},
         headers={"Authorization": f"Bearer {eve_token}"},
     )
     unknown_id_response = client.post(
-        "/writes/totally-fake-id/confirm", json={"approved": True},
+        "/api/writes/totally-fake-id/confirm", json={"approved": True},
         headers={"Authorization": f"Bearer {eve_token}"},
     )
 
@@ -531,7 +533,7 @@ def test_list_users_requires_manage_users(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = client.get("/users", headers={"Authorization": f"Bearer {alice_token}"})
+    response = client.get("/api/users", headers={"Authorization": f"Bearer {alice_token}"})
     assert response.status_code == 403
 
 
@@ -539,7 +541,7 @@ def test_list_users_returns_non_sensitive_metadata_only(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     admin_token = _make_admin(client)
 
-    response = client.get("/users", headers={"Authorization": f"Bearer {admin_token}"})
+    response = client.get("/api/users", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
     body = response.json()
     usernames = {entry["username"] for entry in body}
@@ -557,11 +559,11 @@ def test_logout_all_revokes_every_session_for_the_caller(client):
     token1 = _login(client, "alice", "correct-pw").json()["token"]
     token2 = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = client.post("/logout-all", headers={"Authorization": f"Bearer {token1}"})
+    response = client.post("/api/logout-all", headers={"Authorization": f"Bearer {token1}"})
     assert response.status_code == 204
 
     for token in (token1, token2):
-        result = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
+        result = client.post("/api/query", json={"query": "test"}, headers={"Authorization": f"Bearer {token}"})
         assert result.status_code == 401
 
 
@@ -570,7 +572,7 @@ def test_admin_logout_all_for_a_target_user_requires_manage_users(client):
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
 
     # alice herself has no manage:users grant.
-    response = client.post("/users/alice/logout-all", headers={"Authorization": f"Bearer {alice_token}"})
+    response = client.post("/api/users/alice/logout-all", headers={"Authorization": f"Bearer {alice_token}"})
     assert response.status_code == 403
 
 
@@ -579,10 +581,10 @@ def test_admin_logout_all_for_a_target_user_works(client):
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
     admin_token = _make_admin(client)
 
-    response = client.post("/users/alice/logout-all", headers={"Authorization": f"Bearer {admin_token}"})
+    response = client.post("/api/users/alice/logout-all", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 204
 
-    result = client.post("/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"})
+    result = client.post("/api/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"})
     assert result.status_code == 401
 
 
@@ -593,7 +595,7 @@ def test_visible_schema_debug_view_shows_what_the_target_user_can_see(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     admin_token = _make_admin(client)
 
-    response = client.get("/users/alice/visible-schema", headers={"Authorization": f"Bearer {admin_token}"})
+    response = client.get("/api/users/alice/visible-schema", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
     body = response.json()
     assert "Customer" in body
@@ -604,13 +606,15 @@ def test_visible_schema_debug_view_requires_manage_users(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
 
-    response = client.get("/users/alice/visible-schema", headers={"Authorization": f"Bearer {alice_token}"})
+    response = client.get("/api/users/alice/visible-schema", headers={"Authorization": f"Bearer {alice_token}"})
     assert response.status_code == 403
 
 
 def test_visible_schema_debug_view_for_unknown_user_is_404(client):
     admin_token = _make_admin(client)
-    response = client.get("/users/totally_fake_user/visible-schema", headers={"Authorization": f"Bearer {admin_token}"})
+    response = client.get(
+        "/api/users/totally_fake_user/visible-schema", headers={"Authorization": f"Bearer {admin_token}"}
+    )
     assert response.status_code == 404
 
 
@@ -619,12 +623,12 @@ def test_disable_user_blocks_new_logins_and_kills_existing_sessions(client):
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
     admin_token = _make_admin(client)
 
-    response = client.post("/users/alice/disable", headers={"Authorization": f"Bearer {admin_token}"})
+    response = client.post("/api/users/alice/disable", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 204
 
     # Existing session immediately rejected -- not just future logins.
     existing_session_result = client.post(
-        "/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"}
+        "/api/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"}
     )
     assert existing_session_result.status_code == 401
 
@@ -636,7 +640,7 @@ def test_disable_user_blocks_new_logins_and_kills_existing_sessions(client):
 
 def test_disable_nonexistent_user_is_404(client):
     admin_token = _make_admin(client)
-    response = client.post("/users/totally_fake_user/disable", headers={"Authorization": f"Bearer {admin_token}"})
+    response = client.post("/api/users/totally_fake_user/disable", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 404
 
 
@@ -644,8 +648,8 @@ def test_enable_reverses_disable(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
     admin_token = _make_admin(client)
 
-    client.post("/users/alice/disable", headers={"Authorization": f"Bearer {admin_token}"})
-    client.post("/users/alice/enable", headers={"Authorization": f"Bearer {admin_token}"})
+    client.post("/api/users/alice/disable", headers={"Authorization": f"Bearer {admin_token}"})
+    client.post("/api/users/alice/enable", headers={"Authorization": f"Bearer {admin_token}"})
 
     login_attempt = _login(client, "alice", "correct-pw")
     assert login_attempt.status_code == 200
@@ -656,11 +660,11 @@ def test_delete_user_removes_credential_and_kills_sessions(client):
     alice_token = _login(client, "alice", "correct-pw").json()["token"]
     admin_token = _make_admin(client)
 
-    response = client.delete("/users/alice", headers={"Authorization": f"Bearer {admin_token}"})
+    response = client.delete("/api/users/alice", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 204
 
     existing_session_result = client.post(
-        "/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"}
+        "/api/query", json={"query": "test"}, headers={"Authorization": f"Bearer {alice_token}"}
     )
     assert existing_session_result.status_code == 401
 
@@ -670,5 +674,5 @@ def test_delete_user_removes_credential_and_kills_sessions(client):
 
 def test_delete_nonexistent_user_is_404(client):
     admin_token = _make_admin(client)
-    response = client.delete("/users/totally_fake_user", headers={"Authorization": f"Bearer {admin_token}"})
+    response = client.delete("/api/users/totally_fake_user", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 404

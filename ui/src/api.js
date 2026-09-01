@@ -1,12 +1,23 @@
-// api.js  (the ONE place that knows about fetch, headers, and the token)
+// api.js  (the ONE place that knows about fetch, headers, the token,
+// and the /api prefix)
 //
-// Relative paths throughout ("/login", not "http://localhost:8000/login")
-// -- this works correctly in BOTH modes without any configuration:
-// Vite's dev-server proxy (see vite.config.js) forwards them to the
-// real backend during development, and the built app is served BY
-// FastAPI itself in production (see api/app.py), so they're already
-// same-origin there too. No environment variable, no base URL to get
-// wrong between dev and prod.
+// Every caller in this file passes a plain, unprefixed path ("/login",
+// not "/api/login") -- apiFetch() itself is the one place that adds
+// the real /api prefix (see its own comment). This works correctly in
+// BOTH modes without any configuration: Vite's dev-server proxy (see
+// vite.config.js) forwards /api/* to the real backend during
+// development, and the built app is served BY FastAPI itself in
+// production (see api/app.py), so requests are already same-origin
+// there too. No environment variable, no base URL to get wrong
+// between dev and prod.
+//
+// The /api prefix itself is load-bearing, not stylistic -- a real bug
+// this project shipped without it: a client-side react-router-dom
+// route and a real backend path were both /objects/{type}/{id}, so a
+// raw browser navigation to a bookmarked Object View URL hit the
+// backend directly (no auth header on a page navigation), instead of
+// ever loading this app. See api/app.py's own include_router() call
+// and vite.config.js's own AI-notes for the fuller history.
 //
 // The token lives in localStorage -- a real, standalone browser app,
 // not a sandboxed artifact, so this is the correct, normal choice
@@ -42,7 +53,16 @@ async function apiFetch(path, options = {}) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   }
-  return fetch(path, { ...options, headers })
+  // Every real backend path lives under /api -- see api/app.py's own
+  // include_router() call for the full reasoning (a real, structural
+  // guarantee that no client-side react-router-dom route can ever
+  // collide with a real API path, found necessary by a real bug: a
+  // bookmarked Object View URL that happened to match an unprefixed
+  // backend path hit the backend directly on a raw page navigation,
+  // with no auth header, instead of ever loading this app). This is
+  // the ONE place that needs to know this -- every caller in this
+  // file passes a plain, unprefixed path like '/login'.
+  return fetch(`/api${path}`, { ...options, headers })
 }
 
 // Throws ApiError on any non-2xx response -- used by calls where the

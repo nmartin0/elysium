@@ -61,15 +61,22 @@ built from a real but disposable fixture, makes that structurally
 impossible instead of relying on careful cleanup.
 
 STATIC UI SERVING: if ui/dist exists (a built React app -- see ui/'s
-own README), it's mounted at "/" and served by this SAME process --
-one systemd unit, not a separate static host, matching this project's
-"minimal ops burden" philosophy (see install/install.sh). Registered
-AFTER the API router, not before -- Starlette matches routes in
-registration order, so every real API path is matched by the router
-first; the static mount only ever handles what's left over. Mounting
-is CONDITIONAL, not required -- a checkout where nobody's run
-`npm run build` yet still runs correctly as a pure API backend; only a
-real install (which does build the UI) gets it served automatically.
+own README), it's served by this SAME process via app.frontend() --
+FastAPI's own, real, native SPA-serving mechanism (0.138.0+; see this
+method's own call below for the fuller history, including a real bug
+this replaced) -- one systemd unit, not a separate static host,
+matching this project's "minimal ops burden" philosophy (see install/
+install.sh). Registered AFTER the API router, not before -- FastAPI's
+own real path operations always take priority over frontend fallback
+routes, so every real API path is matched by the router first; the
+frontend fallback only ever handles what's left over. A SECOND,
+independent safeguard beyond that alone: the router itself only ever
+matches /api/* (see its own include_router() call below), so there is
+no collision possible between a real backend path and a client-side
+react-router-dom route even in principle. Registration is CONDITIONAL,
+not required -- a checkout where nobody's run `npm run build` yet
+still runs correctly as a pure API backend; only a real install
+(which does build the UI) gets it served automatically.
 """
 
 import logging
@@ -77,7 +84,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from core.agent.agentic_loop import AgentLoop
 from core.auth.credential_store import CredentialStore
@@ -152,12 +158,102 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.pending_writes = PendingWriteStore(audit_log=mediator.audit_log)
 
     from api.routes import router
-    app.include_router(router)
+    # ALL real API routes live under /api -- a real, structural
+    # guarantee, not individual, case-by-case vigilance: a client-side
+    # frontend route can NEVER collide with a real backend path,
+    # because the frontend never defines one starting with /api (see
+    # ui/vite.config.js's own AI-notes for the real bug this closes,
+    # found by the user testing a bookmarked Object View URL directly
+    # -- a raw browser navigation to a path that was ALSO a real,
+    # unprefixed backend route hit the backend directly, with no auth
+    # header, instead of ever loading this app at all). Every existing
+    # frontend/backend caller already updated to match -- see that
+    # same AI-notes entry for the full list.
+    app.include_router(router, prefix="/api")
 
     if UI_DIST_DIR.is_dir():
-        app.mount("/", StaticFiles(directory=UI_DIST_DIR, html=True), name="ui")
+        # app.frontend() -- FastAPI's own, real, native SPA-serving
+        # mechanism (shipped 2026-06-20, FastAPI 0.138.0; confirmed
+        # directly against this project's own installed version,
+        # 0.141.1, not assumed from documentation alone). Replaces
+        # the old app.mount("/", StaticFiles(..., html=True)) "hack"
+        # this project used before -- REAL bug found by the user
+        # testing a bookmarked client-side route directly: StaticFiles
+        # (html=True) only serves index.html for an actual root/
+        # directory path, NOT for an arbitrary client-side route like
+        # /browse (confirmed directly: a fresh GET to that exact,
+        # already-shipped, uncontroversial route 404'd against a real,
+        # production-mode server -- a second, genuinely separate bug
+        # from the /api-prefix collision found in the same session).
+        # fallback="index.html" explicit, not "auto" -- this project
+        # has no 404.html and never will, no reason to depend on
+        # auto's own conditional logic for a file that doesn't exist.
+        # Only ever engages for a real browser navigation (GET/HEAD,
+        # Accept: text/html) -- a missing JS/CSS asset, or a genuine
+        # API 404 under /api, is NEVER swallowed by this fallback.
+        app.frontend("/", directory=UI_DIST_DIR, fallback="index.html")
 
     return app
 
 
 app = create_app()
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# RESOLVED (kept for history):
+# - TWO real, separate bugs, both found by the user testing Stage 2's
+#   real react-router-dom routing directly, both fixed in the same
+#   pass, neither one caused by the other:
+#
+#   (1) Every real API route used to live at the SAME, unprefixed
+#       paths as this app's own client-side routes could (/objects/
+#       {type}/{id}, /query, ...). A raw browser page navigation to a
+#       bookmarked Object View URL matched the REAL backend route
+#       directly (no auth header on a page navigation), producing the
+#       backend's own raw 401 JSON instead of ever loading this app.
+#       A first attempt (renaming just the one colliding client-side
+#       route) was explicitly judged not idiomatic or fully safe --
+#       a SECOND collision (/query) was found sitting there, unfixed,
+#       confirmed with a real 502 from a raw curl request. Fixed
+#       properly, structurally: every real route now lives under
+#       /api (include_router(router, prefix="/api"), the documented,
+#       official FastAPI mechanism -- fastapi.tiangolo.com/tutorial/
+#       bigger-applications/). A client-side route can never again
+#       collide with a real API path, because the frontend never
+#       defines one starting with /api -- not case-by-case vigilance,
+#       a real, structural guarantee. ui/src/api.js's own apiFetch()
+#       is the ONE place that adds this prefix; every caller in that
+#       file still passes a plain, unprefixed path.
+#
+#   (2) A SEPARATE, genuinely unrelated bug, found while fixing (1):
+#       the OLD app.mount("/", StaticFiles(..., html=True)) never
+#       actually provided real SPA-fallback routing for an arbitrary
+#       client-side path -- only for a literal root/directory path.
+#       A fresh GET (with a real browser's own Accept: text/html) to
+#       /browse -- an existing, already-shipped route, nothing to do
+#       with the /api collision -- 404'd against a real, production-
+#       mode server. This was ALWAYS broken; it only became
+#       observable once Stage 2 added real client-side routes at all
+#       (before that, everything lived at "/", which StaticFiles
+#       already handled correctly). Fixed with app.frontend() --
+#       FastAPI's own real, native, documented SPA-serving mechanism,
+#       shipped 2026-06-20 (FastAPI 0.138.0) -- confirmed directly
+#       against this project's own installed version (0.141.1), not
+#       assumed from documentation alone. Correctly distinguishes a
+#       real page navigation (Accept: text/html) from a request for a
+#       missing sub-resource (a JS/CSS asset with Accept: */*, which
+#       still 404s, never silently served index.html instead) --
+#       verified directly with real curl requests using the correct
+#       Accept headers for each case, catching one flawed test of my
+#       own along the way (an artificially-forced Accept: text/html
+#       on a .js request, which no real browser would ever send,
+#       initially made this look broken when it wasn't).
+#
+#   Both fixes verified in BOTH dev (Vite's proxy) and production
+#   (this file's own app.frontend()) modes, with real servers, not
+#   assumed from one mode to generalize to the other.
