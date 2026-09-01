@@ -229,7 +229,124 @@ any user can see it.
 See `templates/ontology_schema.yaml` for a complete, working example
 demonstrating every one of these.
 
-### 8.4 `policy.yaml` — who your users are, and exactly what they can do
+### 8.4 `action_types` — named, independently-governed operations
+
+Declared in the same `ontology_schema.yaml`, alongside the object
+types above. Matches Palantir Foundry's own action-type model
+directly (verified against their docs, not assumed): a **named**
+business operation with its own, independent authorization —
+`execute:<ActionName>` — not a generic "update this field" capability
+assembled from individual `write:<Type>.<field>` grants. The object(s)
+an action touches are always just ordinary parameters, the same as
+any other input — never a separate, out-of-band argument.
+
+```yaml
+action_types:
+  UpdateEmployeeDepartment:
+    affected_object_types: [Employee]
+    parameters:
+      employee_id:
+        type: object_reference
+        object_type: Employee
+        required: true
+      new_department:
+        type: string
+        required: true
+    sub_writes:
+      - object_type: Employee
+        object_id: parameter.employee_id
+        operation: update
+        mutations:
+          - set: {property: department, value: parameter.new_department}
+```
+
+- **`affected_object_types`** — every object type this action can
+  touch, and **only** those — checked at schema-load time against
+  what `sub_writes` actually references, in both directions. A type
+  declared here but never touched by a real `sub_write`, or the
+  reverse, fails to load at all: this list is read and trusted by
+  whoever is deciding a role's real reach, so a stale declaration is
+  exactly as misleading as a missing one.
+- **`parameters`** — every input this action accepts, by name.
+  `type: object_reference` (with its own `object_type`) is the only
+  kind schema-load validation actually checks the shape of; `string`
+  and `number` are used by this project's own UI to pick the right
+  form input, but aren't independently validated beyond that — nothing
+  stops a deployer from writing an arbitrary `type` string here today.
+  `required: true` is enforced at proposal time: a required parameter
+  missing from a real call is rejected before anything else runs.
+- **`sub_writes`** — the actual change(s), one entry per object
+  touched (see **RBAC** below for what more than one object type
+  actually requires). Each needs:
+  - **`object_type`** / **`object_id`** — which real object. `object_id`
+    is usually `parameter.<name>`, referencing one of this action's
+    own declared `object_reference` parameters (checked at load time
+    that the reference is real and its own `object_type` matches) —
+    but it can also be a literal value, or `user.security_value` (the
+    *acting user's own* MAC value, substituted automatically — the
+    only safe way for a `create` action to populate a security field:
+    a literal would hardcode one tenant's value for everyone, and a
+    `parameter.<name>` would let the caller choose any value at all).
+  - **`operation`** — `create` or `update`.
+  - **`mutations`** — a list of `{set: {property, value}}`. `property`
+    must be one of the target type's own real, declared fields (or its
+    `id_field`) — checked at load time, so a typo here fails loudly at
+    startup, not the first time someone happens to invoke this action.
+    `value` uses the exact same vocabulary as `object_id` above
+    (literal / `parameter.<name>` / `user.security_value`).
+  - **`submission_criteria`** *(optional)* — business-state rules that
+    must hold before this specific sub-write proceeds, checked
+    **in addition to** RBAC/MAC, not instead of them. Matches Palantir's
+    own concept and name directly ("submission criteria... support
+    encoding business logic into data editing permissions," verified
+    against their docs). A real, working example:
+
+    ```yaml
+    submission_criteria:
+      - description: "Ticket must currently be closed to reopen it"
+        check: current_state
+        field: status
+        operator: equals
+        value: closed
+    ```
+
+    `check` is `current_state` (the object's own, *current* value for
+    `field`, read fresh from the database — skipped entirely for a
+    `create`, since there's no prior object to check) or `parameter`
+    (the value supplied for one of the action's own declared
+    parameters — skipped if that parameter wasn't supplied in this
+    specific call). `operator` is one of `equals`, `not_equals`,
+    `greater_than`, `less_than`, `greater_than_or_equal`,
+    `less_than_or_equal`, `in` — a small, fixed set, deliberately not a
+    general expression language (the same reasoning, and the same
+    real-world precedent, as Palantir's own condition-template-based
+    UI, not a raw-expression one). The first criterion that fails stops
+    the whole action, with its own `description` as the reason — the
+    same message a model sees through its own recoverable-mistake
+    handling, and the same one a real, human-facing caller would see
+    too.
+
+**RBAC**: `execute:<ActionName>` alone is sufficient exactly when every
+`sub_write` targets the **same** object type. The moment an action's
+`sub_writes` spans two or more *different* types, every role invoking
+it additionally needs its own `write:<Type>.<field>` grant, for every
+field touched, for **each** type involved — `execute:` alone is never
+enough for a genuinely cross-type action, since a single grant on the
+action itself shouldn't silently authorize reaching into a second,
+unrelated object type just because a later schema edit added a new
+`sub_write` to it.
+
+**Discovery** (`GET /me/visible-action-types`, and the equivalent
+model-facing prompt vocabulary) is a **separate** axis from execution
+— see `discover:action_types` in the grant table below.
+
+See `tests/integration/fixtures/ontology_schema.yaml` for a real,
+multi-object cross-type action (`TransferFunds`) and
+`tests/unit/test_named_actions.py` for a real, working
+`submission_criteria` example (a "reopen a closed ticket" rule) in
+context.
+
+### 8.5 `policy.yaml` — who your users are, and exactly what they can do
 
 Two independent, both-required gates, and **everything is fully
 explicit — nothing is inherited from anything else**:
@@ -253,7 +370,7 @@ dozen lines. That verbosity is the actual point — every one of those
 lines is a decision someone made on purpose, not a default nobody
 thought about.
 
-### 8.5 `example_queries.yaml` and your database
+### 8.6 `example_queries.yaml` and your database
 
 `example_queries.yaml` is `user_id`/`query` pairs for
 `scripts/run_deployment.py`'s demo. Your database is whatever your
