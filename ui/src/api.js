@@ -158,3 +158,13 @@ export async function searchObjects(objectType, queryText) {
   const response = await apiFetchOrThrow(`/objects/${objectType}/search?${params}`)
   return response.json()
 }
+
+export async function getObjectDetail(objectType, objectId) {
+  // objectId, unlike objectType, is genuinely DATA-derived (a real
+  // customer_id, a real integer transaction id, ...) rather than a
+  // fixed, schema-controlled name -- encoded specifically because an
+  // id containing a literal "/" would otherwise split the URL path
+  // in a way the backend's own path routing was never meant to parse.
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}`)
+  return response.json()
+}

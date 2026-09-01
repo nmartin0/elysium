@@ -55,7 +55,8 @@ textarea {
   font-family: inherit;
 }
 
-button {
+button,
+.app__nav a {
   padding: 0.55rem 1rem;
   border: none;
   border-radius: 6px;
@@ -63,6 +64,8 @@ button {
   color: white;
   font-size: 0.95rem;
   cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
 }
 
 button:disabled {
@@ -70,7 +73,8 @@ button:disabled {
   cursor: default;
 }
 
-button.secondary {
+button.secondary,
+.app__nav a.secondary {
   background: transparent;
   border: 1px solid #999;
   color: #333;
@@ -261,10 +265,23 @@ button.danger {
 }
 
 .object-search__result {
-  padding: 0.85rem 1rem;
   border-radius: 8px;
+  overflow: hidden;
+}
+
+.object-search__link {
+  display: block;
+  padding: 0.85rem 1rem;
   background: white;
   border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 0.1s ease;
+}
+
+.object-search__link:hover {
+  background: #f7f7f8;
 }
 
 .object-search__result-id {
@@ -298,4 +315,52 @@ button.danger {
   margin: 0;
   text-align: right;
   word-break: break-word;
+}
+
+.object-detail__type {
+  margin: 0;
+  color: #666;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.object-detail__id {
+  margin: 0.15rem 0 1rem;
+}
+
+.object-detail__fields {
+  margin: 0;
+  padding: 1rem;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e0e0e0;
+}
+
+.object-detail__field {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.object-detail__field:last-child {
+  border-bottom: none;
+}
+
+.object-detail__field dt {
+  color: #666;
+}
+
+.object-detail__field dd {
+  margin: 0;
+  text-align: right;
+  word-break: break-word;
+}
+
+.object-detail__links a {
+  color: #2d2d34;
+  font-weight: 600;
 }
