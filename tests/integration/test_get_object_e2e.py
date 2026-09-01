@@ -83,21 +83,32 @@ def test_real_model_uses_get_object_for_a_genuine_multi_field_lookup(deployment,
 # something genuinely open, deferred, or rejected comes up for this file.
 # =============================================================================
 #
-# IMPORTANT CAVEAT: built and verified as thoroughly as possible
-# WITHOUT a real Ollama server -- none was available in the
-# environment this was written in. Verified directly: the test
-# collects correctly, and fails FAST and CLEANLY (not a hang, not a
-# confusing traceback) with the exact same "Connection refused"
-# signature test_transfer_funds_e2e.py's own notes already document,
-# when Ollama is genuinely unreachable -- safe to leave for a human to
-# run for real. What was NOT verified: whether a real model actually
-# prefers get_object over two separate get_field calls for this
-# query. That is this whole file's actual point, and remains
-# genuinely open until run for real. If a real model does NOT choose
-# get_object reliably, consider whether the prompt's own get_object
-# section (core/llm/agent_step_prompt.py's _build_system_prompt(),
-# the "prefer this over several separate get_field calls" language)
-# needs to be more insistent before assuming the mechanism itself has
-# a bug -- the mechanism's own correctness, independent of any
-# model's own preference, is already separately and thoroughly proven
-# by tests/unit/test_agentic_loop_get_object.py.
+# RESOLVED (kept for history):
+# - This file was originally built and verified as thoroughly as
+#   possible WITHOUT a real Ollama server -- none was available in the
+#   environment it was written in. Whether a real model actually
+#   prefers get_object over two separate get_field calls was left
+#   explicitly open -- that was this whole file's actual point, and
+#   remained unproven until run for real.
+#
+#   NOW RUN FOR REAL, by the user, against real Ollama. Passes,
+#   genuinely: the model searched for cust_001, then made exactly ONE
+#   get_object call covering both "name" and "email" -- not two
+#   separate get_field calls -- correctly recognizing this as the
+#   "several fields, one object" case the prompt's own get_object
+#   section describes, on its own, not a lucky fallback. Both real
+#   seeded values (Ada Okafor, ada.okafor@example.com) came back
+#   correct via the expected get_field-shaped gathered[] entries.
+#
+#   The FIRST run, though, had one real, informative failure: a
+#   genuine 480s timeout (HTTPConnectionPool... Read timed out, NOT
+#   Connection refused -- Ollama was genuinely reachable, the request
+#   was accepted, generation itself just didn't finish in time) on the
+#   very FIRST request of that session. Same cold-start signature
+#   already documented in test_transfer_funds_e2e.py's own AI-notes
+#   (local model serving's own one-time weight-loading delay).
+#   Confirmed by immediately re-running this SAME test alone,
+#   Ollama already warm from the first attempt: passed cleanly in
+#   204s, comfortably inside budget, same query, same everything. If
+#   this class of flake ever recurs, a warm-server re-run is the
+#   cheap, first diagnostic step -- not raising the timeout blindly.
