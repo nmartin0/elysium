@@ -1005,7 +1005,11 @@ class WriteMediator:
 #   sub_write). tests/unit/test_transfer_funds.py is the fully
 #   scripted, real-schema proof (propose_action() called directly, no
 #   model); tests/integration/test_transfer_funds_e2e.py is the real-
-#   Ollama proof, mirroring test_named_actions_e2e.py's own structure.
+#   Ollama proof, mirroring test_named_actions_e2e.py's own structure
+#   -- CONFIRMED passing against a real model (see that file's own
+#   AI-notes for the full real-run record, including a genuine, real
+#   transcript of a model independently gathering both accounts'
+#   current balances before correctly proposing a two-object write).
 #   Found and fixed, while building this: the resolved-id duplicate
 #   check in THIS file (the "seen_object_refs" logic a few hundred
 #   lines up) had NO test coverage anywhere in the project until now --

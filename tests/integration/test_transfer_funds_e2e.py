@@ -111,23 +111,45 @@ def test_real_model_transfer_rejected_leaves_both_accounts_unchanged(deployment,
 # something genuinely open, deferred, or rejected comes up for this file.
 # =============================================================================
 #
-# IMPORTANT CAVEAT: this file was built and verified as thoroughly as
-# possible WITHOUT a real Ollama server -- none was available in the
-# environment this was written in (checked directly: neither `which
-# ollama` nor a curl to localhost:11434 found anything). What WAS
-# verified directly: both tests correctly COLLECT; both fail FAST
-# (0.08s) and CLEANLY with a clear diagnostic assertion message, not a
-# hang or a confusing raw traceback, when Ollama is genuinely
-# unreachable (core/llm/agent_step_prompt.py's own request/parse-
-# failure handling already degrades gracefully to gathered=[],
-# pending_write=None, and this file's own propose_named_action() call
-# asserts on exactly that) -- so this file is SAFE to leave for a
-# human to run for real, not a risk of hanging CI or silently passing
-# for the wrong reason. What was NOT verified: whether a real model
-# actually succeeds at the task this file describes (discovering and
-# correctly invoking a genuinely two-object action). That is this
-# whole file's actual point, and remains genuinely open until someone
-# runs it against a real Ollama instance.
+# RESOLVED (kept for history):
+# - This file was originally built and verified as thoroughly as
+#   possible WITHOUT a real Ollama server -- none was available in the
+#   environment it was written in. What COULD be verified then: both
+#   tests correctly collected; both failed fast and cleanly, not a
+#   hang or a raw traceback, when Ollama was genuinely unreachable.
+#   Whether a real model actually succeeds at the task this file
+#   describes was left explicitly open -- that was this whole file's
+#   actual point, and remained unproven until run for real.
+#
+#   NOW RUN FOR REAL, by the user, against a real Ollama instance
+#   (qwen3:4b-instruct-2507-q4_K_M / qwen2.5:3b, the models tests/
+#   integration/fixtures/config.yaml declares). Both tests pass. The
+#   rejection test's own real transcript is the clean, complete proof:
+#   the model independently searched for BOTH accounts, read BOTH
+#   current balances (four full steps of real gathering, unprompted --
+#   QUERY_TEXT already stated the target values, so this wasn't even
+#   strictly necessary reasoning, just real diligence), then proposed
+#   TransferFunds with parameters matching the query exactly, producing
+#   a PendingWrite with exactly two SubWrites touching two genuinely
+#   different real objects -- precisely the shape this whole mechanism
+#   exists to prove. Rejection correctly returned None; both real
+#   balances confirmed unchanged afterward.
+#
+#   The FIRST full run of both tests together, though, had one real,
+#   informative failure: test_real_model_invokes_a_genuinely_multi_
+#   object_action alone timed out (HTTPConnectionPool... Read timed
+#   out, timeout=480) -- NOT a connection failure, NOT a malformed
+#   response, a genuine timeout on one specific call. This was the
+#   very FIRST request of the whole session; a near-certain cold-start
+#   effect (local model serving commonly has a real, one-time delay
+#   loading weights into memory/GPU on a truly first call). Confirmed
+#   by re-running that SAME test alone, immediately after (Ollama
+#   already warm from the first run): passed cleanly, well inside the
+#   480s budget, same QUERY_TEXT, same everything. If this class of
+#   flake ever recurs, look for cold-start/first-request timing before
+#   assuming a real regression -- a warm-server re-run is the cheap,
+#   first diagnostic step, not raising the timeout blindly.
+#
 # - Getting all the way to the Ollama connection attempt (rather than
 #   failing earlier, e.g. on a schema/fixture problem) DOES confirm
 #   the real fixture setup -- tests/integration/fixtures/schema.sql's
@@ -135,13 +157,10 @@ def test_real_model_transfer_rejected_leaves_both_accounts_unchanged(deployment,
 #   TransferFunds, policy.yaml's new accountant/user_henry -- all load
 #   correctly through the REAL conftest.py path, not just an ad-hoc
 #   verification script. That part is solid.
-# - If this is ever revisited and a real model DOESN'T reliably
-#   produce a well-formed two-object proposal from QUERY_TEXT as
-#   written, the most likely fix is making the query even more
-#   explicit/structured (the model-facing prompt for a multi-object
-#   action -- see core/llm/agent_step_prompt.py's own hint-building
-#   logic -- has itself only ever been exercised by single-object
-#   named actions before this file existed) before assuming the
-#   underlying mechanism itself has a bug; tests/unit/test_transfer_
-#   funds.py already proves the mechanism's own correctness
-#   independent of any model's own reliability.
+# - The model-facing prompt for a multi-object action (core/llm/
+#   agent_step_prompt.py's own hint-building logic) had, before this
+#   file's own real run, only ever been exercised by single-object
+#   named actions -- now genuinely proven against a real model too,
+#   not just structurally. tests/unit/test_transfer_funds.py remains
+#   the independent proof of the underlying mechanism's own
+#   correctness, regardless of any model's own reliability.
