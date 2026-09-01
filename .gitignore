@@ -5,6 +5,7 @@ venv/
 # generated at runtime -- not source
 deployment/var/log/
 deployment/var/lib/credentials.db
+deployment/var/lib/write_log.db
 # secrets, if you ever add a .env for a real API key
 .env
 # editor/OS noise

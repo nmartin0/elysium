@@ -20,6 +20,8 @@ export default defineConfig({
       '/query': API_PROXY_TARGET,
       '/users': API_PROXY_TARGET,
       '/writes': API_PROXY_TARGET,
+      '/objects': API_PROXY_TARGET,
+      '/me': API_PROXY_TARGET,
     },
   },
 })
