@@ -1,5 +1,5 @@
-// api.js  (the ONE place that knows about fetch, headers, the token,
-// and the /api prefix)
+// api.js  (the ONE place that knows about fetch, the session/CSRF
+// cookies, and the /api prefix)
 //
 // Every caller in this file passes a plain, unprefixed path ("/login",
 // not "/api/login") -- apiFetch() itself is the one place that adds
@@ -11,21 +11,39 @@
 // there too. No environment variable, no base URL to get wrong
 // between dev and prod.
 //
-// The /api prefix itself is load-bearing, not stylistic -- a real bug
-// this project shipped without it: a client-side react-router-dom
-// route and a real backend path were both /objects/{type}/{id}, so a
-// raw browser navigation to a bookmarked Object View URL hit the
-// backend directly (no auth header on a page navigation), instead of
-// ever loading this app. See api/app.py's own include_router() call
-// and vite.config.js's own AI-notes for the fuller history.
+// The /api prefix itself is STILL load-bearing, for a related but now
+// slightly different reason than before: a client-side react-router-
+// dom route and a real backend path could still collide (e.g. both
+// /objects/{type}/{id}) without it -- and now that the session lives
+// in a real cookie (see below), a raw browser navigation to that
+// bookmarked URL would no longer even hit a 401 (a cookie, unlike the
+// old Authorization header, IS automatically sent on a plain page
+// navigation) -- it would render the backend's own raw JSON response
+// directly instead of ever loading this app. Still a real bug this
+// prefix structurally prevents, just a different failure shape than
+// the original one that motivated it. See api/app.py's own
+// include_router() call for the fuller history.
 //
-// The token lives in localStorage -- a real, standalone browser app,
-// not a sandboxed artifact, so this is the correct, normal choice
-// here (the restriction against browser storage applies specifically
-// to Claude's artifact environment, not to a real deployed app like
-// this one).
-
-const TOKEN_KEY = 'elysium_token'
+// The session token is NO LONGER stored or managed by this file AT
+// ALL -- it lives in a real, httponly cookie (core/auth/
+// auth_cookies.py), set and cleared entirely by the backend's own
+// Set-Cookie responses, invisible to and unreachable by this or any
+// other JavaScript running on the page. This is the whole point:
+// even a hypothetical future XSS bug in this app could never read it.
+// The browser attaches it automatically on every same-origin request;
+// this file's own job shrank considerably as a direct result -- see
+// git history for the real localStorage-based mechanism this
+// replaced, and the security review that motivated the change.
+//
+// The CSRF token, by contrast, DOES need to be read here -- it lives
+// in a second, deliberately NOT httponly cookie (elysium_csrf) for
+// exactly this reason: same-origin JS reads its value and echoes it
+// back as a real request header (X-CSRF-Token) on every state-
+// changing call. This works because a cross-site attacker page can
+// never read a cookie set by this origin (same-origin policy), so it
+// can never construct a matching header value -- even in the rare
+// cases SameSite=Strict alone doesn't fully cover. See api/
+// csrf_middleware.py's own docstring for the complete reasoning.
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -60,35 +78,55 @@ export function handleIfSessionExpired(err, onSessionExpired) {
   return false
 }
 
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY)
-}
+const CSRF_COOKIE_NAME = 'elysium_csrf'
+const CSRF_HEADER_NAME = 'X-CSRF-Token'
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', undefined]) // undefined = fetch's own default, GET
 
-function setToken(token) {
-  localStorage.setItem(TOKEN_KEY, token)
-}
-
-function clearToken() {
-  localStorage.removeItem(TOKEN_KEY)
+// Reads a single, specific cookie's own value out of document.cookie
+// -- there is no built-in browser API for this. Deliberately does
+// NOT reach for a general-purpose cookie-parsing library for one,
+// narrow, single-cookie read; a tiny, direct regex is simpler and has
+// nothing to go wrong that a library would meaningfully protect
+// against here. Returns null (not '' or undefined) when the cookie
+// genuinely isn't set -- e.g. before any login has ever happened, or
+// after logout() has cleared it -- so callers can tell "no CSRF
+// cookie exists yet" apart from "it exists and is empty" (which never
+// legitimately happens, but null is still the more honest absence
+// value than an empty string would be).
+function getCsrfCookie() {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${CSRF_COOKIE_NAME}=([^;]*)`))
+  return match ? decodeURIComponent(match[1]) : null
 }
 
 async function apiFetch(path, options = {}) {
-  const token = getToken()
   const headers = {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   }
-  // Every real backend path lives under /api -- see api/app.py's own
-  // include_router() call for the full reasoning (a real, structural
-  // guarantee that no client-side react-router-dom route can ever
-  // collide with a real API path, found necessary by a real bug: a
-  // bookmarked Object View URL that happened to match an unprefixed
-  // backend path hit the backend directly on a raw page navigation,
-  // with no auth header, instead of ever loading this app). This is
-  // the ONE place that needs to know this -- every caller in this
-  // file passes a plain, unprefixed path like '/login'.
-  return fetch(`/api${path}`, { ...options, headers })
+  // Only for state-changing methods -- matches api/csrf_middleware.py's
+  // own exemption for safe methods exactly, and naturally, correctly
+  // does nothing extra for /login itself: no elysium_csrf cookie
+  // exists yet at that point (nobody has a session yet), so
+  // getCsrfCookie() returns null and no header gets added at all --
+  // the backend's own middleware already, separately exempts /login
+  // by path regardless, so this isn't relied upon for that specific
+  // exemption, just a natural, harmless consequence of it.
+  if (!SAFE_METHODS.has(options.method)) {
+    const csrfToken = getCsrfCookie()
+    if (csrfToken) headers[CSRF_HEADER_NAME] = csrfToken
+  }
+  // Every real backend path lives under /api -- see this file's own
+  // header comment for the fuller reasoning. This is the ONE place
+  // that needs to know this -- every caller in this file passes a
+  // plain, unprefixed path like '/login'.
+  //
+  // credentials: 'same-origin' set EXPLICITLY, even though it's
+  // already the real, current spec default (confirmed directly
+  // against the Fetch Standard itself, not assumed from memory) --
+  // zero-cost, and removes any ambiguity about whether the session
+  // cookie actually gets attached, which this entire mechanism now
+  // depends on.
+  return fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' })
 }
 
 // Throws ApiError on any non-2xx response -- used by calls where the
@@ -103,14 +141,18 @@ async function apiFetchOrThrow(path, options = {}) {
   return response
 }
 
+// No return value -- the real session and CSRF cookies are set
+// entirely by the backend's own Set-Cookie response headers; there is
+// nothing left for this function to store or hand back. Still throws
+// ApiError on a real failure (wrong credentials, locked out), same as
+// before -- login() itself is genuinely different from the rest of
+// this file only in that it produces no data of its own to return on
+// success.
 export async function login(username, password) {
-  const response = await apiFetchOrThrow('/login', {
+  await apiFetchOrThrow('/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
   })
-  const data = await response.json()
-  setToken(data.token)
-  return data
 }
 
 export async function logout() {
@@ -118,20 +160,17 @@ export async function logout() {
     await apiFetch('/logout', { method: 'POST' })
   } catch {
     // A failed logout REQUEST (a real network error, not just a non-
-    // 2xx response) must never prevent the LOCAL logout from
-    // completing -- swallowed here, not just left to a finally block.
-    // A bug this project actually had, found by a real test: try/
-    // finally clears the token below either way, but finally does
-    // NOT swallow the original error -- it still re-throws after
-    // running, which meant a network failure during logout would
-    // propagate all the way up into App.jsx's own handleLogout(),
-    // which never catches it, so setIsLoggedIn(false) would never
-    // run. The token would be gone (so every subsequent API call
-    // would fail auth) while the UI kept showing the logged-in view
-    // regardless -- a genuinely confusing, broken state, not a
-    // hypothetical one.
-  } finally {
-    clearToken()
+    // 2xx response) must never prevent the caller's own UI-level
+    // "log me out" intent from completing -- swallowed here. Unlike
+    // the earlier, localStorage-based version of this function, there
+    // is no longer any LOCAL cleanup step this needs to guarantee
+    // regardless (the cookies themselves are only ever cleared by the
+    // backend's own response, which never arrived if this branch
+    // runs) -- App.jsx's own handleLogout() still needs to update its
+    // OWN, local isLoggedIn state unconditionally, though, which is
+    // why this still swallows rather than lets the error propagate:
+    // the person asked to log out, and the UI should reflect that
+    // immediately regardless of a transient network failure.
   }
 }
 

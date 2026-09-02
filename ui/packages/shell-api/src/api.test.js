@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   ApiError,
-  getToken,
   login,
   logout,
   query,
@@ -30,8 +29,21 @@ function jsonResponse(body, { ok = true, status = ok ? 200 : 400 } = {}) {
   }
 }
 
+// The real session token no longer lives in anything this file can
+// see or set at all -- it's a genuine httponly cookie now, invisible
+// to JavaScript by design (see api.js's own header comment). Only
+// elysium_csrf is ever read here, matching what api.js itself can
+// actually access.
+function setCsrfCookie(value) {
+  document.cookie = `elysium_csrf=${value}`
+}
+
+function clearCsrfCookie() {
+  document.cookie = 'elysium_csrf=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/'
+}
+
 beforeEach(() => {
-  localStorage.clear()
+  clearCsrfCookie()
   global.fetch = vi.fn()
 })
 
@@ -46,34 +58,78 @@ afterEach(() => {
 // further down instead of 15+ near-identical hand-written tests.
 describe('apiFetch / apiFetchOrThrow (via real exported callers)', () => {
   it('prefixes every request with /api', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({ token: 't', role: 'editor' }))
+    global.fetch.mockResolvedValue(jsonResponse({}))
     await login('alice', 'pw')
     expect(global.fetch).toHaveBeenCalledWith('/api/login', expect.anything())
   })
 
   it('always sends Content-Type: application/json', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({ token: 't', role: 'editor' }))
+    global.fetch.mockResolvedValue(jsonResponse({}))
     await login('alice', 'pw')
     const [, options] = global.fetch.mock.calls[0]
     expect(options.headers['Content-Type']).toBe('application/json')
   })
 
-  it('attaches a real Authorization header when a token is stored', async () => {
-    localStorage.setItem('elysium_token', 'real-token-123')
+  it('always sets credentials: same-origin -- this is what makes the real, httponly session cookie get sent at all', async () => {
     global.fetch.mockResolvedValue(jsonResponse({}))
     await getMyVisibleSchema()
     const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers.Authorization).toBe('Bearer real-token-123')
+    expect(options.credentials).toBe('same-origin')
   })
 
-  it('sends no Authorization header at all when no token is stored', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({ token: 't', role: 'editor' }))
+  it('attaches a real X-CSRF-Token header, read from the elysium_csrf cookie, on a state-changing request', async () => {
+    setCsrfCookie('real-csrf-value')
+    global.fetch.mockResolvedValue(jsonResponse({}))
+    await confirmWrite('w1', true)
+    const [, options] = global.fetch.mock.calls[0]
+    expect(options.headers['X-CSRF-Token']).toBe('real-csrf-value')
+  })
+
+  it('sends no X-CSRF-Token header at all when no elysium_csrf cookie exists yet', async () => {
+    // The real, normal case for login() itself -- no session/CSRF
+    // cookie pair exists yet at the moment someone is logging in.
+    global.fetch.mockResolvedValue(jsonResponse({}))
     await login('alice', 'pw')
     const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers.Authorization).toBeUndefined()
+    expect(options.headers['X-CSRF-Token']).toBeUndefined()
   })
 
-  it('throws ApiError with the real status and the backend\'s own detail message on failure', async () => {
+  it("never attaches X-CSRF-Token on a GET request, even when the cookie exists -- matches the backend's own safe-method exemption", async () => {
+    setCsrfCookie('real-csrf-value')
+    global.fetch.mockResolvedValue(jsonResponse({}))
+    await getMyVisibleSchema()
+    const [, options] = global.fetch.mock.calls[0]
+    expect(options.headers['X-CSRF-Token']).toBeUndefined()
+  })
+
+  it('correctly decodes a URL-encoded CSRF cookie value, not just a plain one', async () => {
+    // The real, backend-generated value (secrets.token_urlsafe()) is
+    // always already URL-safe in practice, so this never actually
+    // matters for the real cookie this app sets -- but getCsrfCookie()
+    // still genuinely calls decodeURIComponent() on whatever it reads,
+    // and every other test's own plain values (e.g. 'real-csrf-value')
+    // decode identically to themselves either way, so none of them
+    // would catch a real regression here (a broken/removed decode
+    // call). This uses a value that only reads correctly if decoding
+    // genuinely happened.
+    document.cookie = 'elysium_csrf=hello%20world'
+    global.fetch.mockResolvedValue(jsonResponse({}))
+    await confirmWrite('w1', true)
+    const [, options] = global.fetch.mock.calls[0]
+    expect(options.headers['X-CSRF-Token']).toBe('hello world')
+  })
+
+  it('correctly extracts elysium_csrf when other, unrelated cookies are also present', async () => {
+    document.cookie = 'unrelated_cookie=abc'
+    document.cookie = 'elysium_csrf=real-value'
+    document.cookie = 'another_cookie=xyz'
+    global.fetch.mockResolvedValue(jsonResponse({}))
+    await confirmWrite('w1', true)
+    const [, options] = global.fetch.mock.calls[0]
+    expect(options.headers['X-CSRF-Token']).toBe('real-value')
+  })
+
+  it("throws ApiError with the real status and the backend's own detail message on failure", async () => {
     global.fetch.mockResolvedValue(jsonResponse({ detail: 'Invalid username or password' }, { ok: false, status: 401 }))
     await expect(login('alice', 'wrong')).rejects.toMatchObject({
       status: 401,
@@ -142,25 +198,48 @@ describe('handleIfSessionExpired', () => {
   })
 })
 
-describe('login/logout token lifecycle', () => {
-  it('login stores the real token returned by the backend', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({ token: 'brand-new-token', role: 'editor' }))
-    await login('alice', 'correct-pw')
-    expect(getToken()).toBe('brand-new-token')
+// No token/cookie assertions here at all anymore -- the real session
+// and CSRF cookies are set/cleared entirely by the BACKEND's own
+// Set-Cookie response headers (core/auth/auth_cookies.py), invisible
+// to and unmanaged by this file. What's left to genuinely test here
+// is login()/logout()'s own real behavior: does login() throw
+// correctly on failure and return nothing on success; does logout()
+// swallow a network-level failure without letting it propagate.
+describe('login/logout', () => {
+  it('login resolves with no value on a successful response', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({}))
+    await expect(login('alice', 'correct-pw')).resolves.toBeUndefined()
   })
 
-  it('logout clears the token even when the request itself fails', async () => {
-    localStorage.setItem('elysium_token', 'stale-token')
+  it('login throws a real ApiError on a failed response, same as any other apiFetchOrThrow caller', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ detail: 'Invalid username or password' }, { ok: false, status: 401 }))
+    await expect(login('alice', 'wrong-pw')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('logout swallows a network-level failure rather than letting it propagate', async () => {
+    // A real bug this project actually had, found by a real test
+    // (see git history): a network failure during logout must never
+    // prevent the caller's own "log me out" UI intent from completing
+    // -- App.jsx's own handleLogout() still needs to update its local
+    // isLoggedIn state unconditionally afterward. There is no longer
+    // any LOCAL cleanup step this needs to guarantee either way (the
+    // cookies themselves are managed entirely by the backend's own
+    // response), but logout() itself must still never throw.
     global.fetch.mockRejectedValue(new Error('network down'))
-    await logout()
-    expect(getToken()).toBeNull()
+    await expect(logout()).resolves.toBeUndefined()
   })
 
-  it('logout clears the token on a normal, successful request too', async () => {
-    localStorage.setItem('elysium_token', 'stale-token')
+  it('logout resolves normally on a real, successful request too', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({}))
+    await expect(logout()).resolves.toBeUndefined()
+  })
+
+  it('logout attaches the X-CSRF-Token header, same as any other state-changing call', async () => {
+    setCsrfCookie('real-csrf-value')
     global.fetch.mockResolvedValue(jsonResponse({}))
     await logout()
-    expect(getToken()).toBeNull()
+    const [, options] = global.fetch.mock.calls[0]
+    expect(options.headers['X-CSRF-Token']).toBe('real-csrf-value')
   })
 })
 

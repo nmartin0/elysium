@@ -6,36 +6,45 @@ import QueryPanel from '@elysium/app-query/QueryPanel'
 import ObjectSearchPanel from '@elysium/app-browse/ObjectSearchPanel'
 import ObjectDetailPanel from '@elysium/app-browse/ObjectDetailPanel'
 import AdminPanel from '@elysium/app-admin/AdminPanel'
-import { getToken, logout, getMyVisibleSchema, getVisibleApps, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { logout, getMyVisibleSchema, getVisibleApps, handleIfSessionExpired } from '@elysium/shell-api/api'
 import '@elysium/shell-api/index.css'
 
-// SECURITY, not just structure: the `!isLoggedIn` check below is an
+// SECURITY, not just structure: the auth-gated render below is an
 // EARLY RETURN, before <BrowserRouter>/<Routes> ever mounts -- not a
 // wrapper rendered conditionally alongside them. This means that when
-// logged out, the route tree (including ObjectDetailPanel, which
+// not logged in, the route tree (including ObjectDetailPanel, which
 // fetches real object data) genuinely does not exist in the component
 // tree at all; there is no code path where a route's own render logic
-// could run before an auth check does. Reuses the EXACT isLoggedIn/
-// onSessionExpired mechanism this app already had for its two
-// original views, applied globally around the whole route tree now,
-// rather than a second, new "guard component" concept that could
-// drift out of sync with it -- fewer new code paths is itself a
-// security property, not just simplicity for its own sake.
-// UNCHANGED by the Shell redesign below -- this property was decided
-// explicitly and deliberately preserved through the rewrite, not
-// something to reconsider casually in a future edit.
+// could run before an auth check does. UNCHANGED by the Shell
+// redesign, and unchanged again by the httpOnly-cookie migration --
+// this property was decided explicitly and deliberately preserved
+// through both rewrites, not something to reconsider casually in a
+// future edit.
 //
 // IMPORTANT, stated explicitly because it matters: this guard is
 // client-side UX (don't attempt a doomed fetch, don't flash a broken
 // page, redirect cleanly) -- it is NOT the real security boundary and
 // must never be treated as one. The actual enforcement is, and must
 // remain, server-side: every single API call requires a valid,
-// non-expired token verified by get_current_user() on EVERY request,
-// completely independent of what this component does or doesn't
-// check. Even a hypothetical bug in this guard could not itself leak
-// real data -- the underlying fetch would still fail with a real 401.
-// Don't let a future edit here start treating this as sufficient on
-// its own.
+// non-expired session cookie verified by get_current_user() on EVERY
+// request, completely independent of what this component does or
+// doesn't check. Even a hypothetical bug in this guard could not
+// itself leak real data -- the underlying fetch would still fail with
+// a real 401. Don't let a future edit here start treating this as
+// sufficient on its own.
+//
+// THREE real states now, not two -- authStatus is 'checking' |
+// 'loggedOut' | 'loggedIn', not a plain isLoggedIn boolean. This is a
+// REAL, necessary consequence of moving the session to an httponly
+// cookie (see api.js's own header comment), not complexity added for
+// its own sake: the old boolean could be computed SYNCHRONOUSLY, on
+// first render, via `!!getToken()` against localStorage -- but
+// JavaScript can never read an httponly cookie's own presence at all,
+// by design. There is no synchronous check left to make; genuinely
+// determining "is there already a valid session" now requires a real
+// network round-trip, and this component must render SOMETHING while
+// that's in flight, rather than incorrectly assume either logged-in
+// or logged-out before the real answer comes back.
 //
 // A bookmarked, deep URL (e.g. /objects/Customer/cust_001) visited
 // while logged out lands here first, on the FIRST render, before
@@ -46,39 +55,85 @@ import '@elysium/shell-api/index.css'
 // dropped) -- after logging in, the person lands on the default view,
 // same as today.
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!getToken())
+  const [authStatus, setAuthStatus] = useState('checking')
   const [visibleSchema, setVisibleSchema] = useState(null)
   const [visibleApps, setVisibleApps] = useState([])
 
   function handleLoginSuccess() {
-    setIsLoggedIn(true)
+    setAuthStatus('loggedIn')
   }
 
   async function handleLogout() {
     await logout()
-    setIsLoggedIn(false)
+    setAuthStatus('loggedOut')
     setVisibleSchema(null)
     setVisibleApps([])
   }
 
   function handleSessionExpired() {
-    setIsLoggedIn(false)
+    setAuthStatus('loggedOut')
     setVisibleSchema(null)
     setVisibleApps([])
   }
 
-  // Fetched ONCE, here, and passed down -- not independently re-
-  // fetched by every view that needs it (ObjectSearchPanel and
-  // ObjectDetailPanel both need to know which object types exist and
-  // which fields are links). A React Context would be the OTHER
-  // reasonable way to share this same value without prop drilling;
-  // deliberately not used here since this app's component tree is
-  // still shallow and flat (App -> a handful of sibling views, no
-  // real nesting) -- exactly the case Context is usually overkill for,
-  // not the deeply-nested case it's meant to solve. Worth revisiting
-  // if the tree ever grows deeper than that.
+  // THE initial "is there already a valid session" check -- runs
+  // ONCE, on mount, and ONLY decides authStatus itself; deliberately
+  // does NOT also populate visibleSchema/visibleApps directly, even
+  // though getMyVisibleSchema() below returns real, usable data on
+  // success. See the two effects further down for why: each of THOSE
+  // is gated on authStatus === 'loggedIn' and fires again on a FRESH
+  // login too (handleLoginSuccess() above, a genuinely separate
+  // moment this mount-only effect can't react to on its own) -- a
+  // single, shared fetch here would correctly cover the "already
+  // logged in when the page loaded" path but silently leave
+  // visibleApps/visibleSchema empty forever after a fresh login,
+  // since THIS effect never runs a second time. The accepted cost:
+  // one real, deliberate, redundant fetch of each on the "already
+  // logged in on page load" path specifically (this probe, then the
+  // authStatus-gated effect firing right after) -- a cheap, self-
+  // service call, not worth special-casing away at the cost of two
+  // genuinely different code paths for what is otherwise the exact
+  // same fetch.
   useEffect(() => {
-    if (!isLoggedIn) return
+    let cancelled = false
+    async function checkSession() {
+      try {
+        await getMyVisibleSchema()
+        if (!cancelled) setAuthStatus('loggedIn')
+      } catch {
+        // A 401 here is the NORMAL, expected "no session yet" case on
+        // a fresh page load -- not a session that WAS valid and
+        // stopped being so mid-use, so this deliberately does NOT go
+        // through handleIfSessionExpired()/handleSessionExpired()
+        // (those exist for that different case). Any OTHER error
+        // (network failure, server unreachable) is treated
+        // IDENTICALLY to "not logged in" here too -- fails closed,
+        // never accidentally renders the route tree when this
+        // genuinely can't confirm a real session exists.
+        if (!cancelled) setAuthStatus('loggedOut')
+      }
+    }
+    checkSession()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Fetched on every transition INTO 'loggedIn' -- both the "already
+  // logged in when the page first loaded" path (right after the probe
+  // above) and a genuinely fresh login (handleLoginSuccess() above).
+  // Passed down as a prop rather than independently re-fetched by
+  // every view that needs it (ObjectSearchPanel and ObjectDetailPanel
+  // both need to know which object types exist and which fields are
+  // links). A React Context would be the OTHER reasonable way to
+  // share this same value without prop drilling; deliberately not
+  // used here since this app's component tree is still shallow and
+  // flat (App -> a handful of sibling views, no real nesting) --
+  // exactly the case Context is usually overkill for, not the deeply-
+  // nested case it's meant to solve. Worth revisiting if the tree
+  // ever grows deeper than that.
+  useEffect(() => {
+    if (authStatus !== 'loggedIn') return
     let cancelled = false
     async function loadSchema() {
       try {
@@ -97,7 +152,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [isLoggedIn])
+  }, [authStatus])
 
   // A SEPARATE, independent fetch/effect from visibleSchema above --
   // deliberately not combined into one Promise.all, even though both
@@ -108,7 +163,7 @@ export default function App() {
   // effect before this -- one more, similarly-independent effect is
   // consistent with that, not new complexity.
   useEffect(() => {
-    if (!isLoggedIn) return
+    if (authStatus !== 'loggedIn') return
     let cancelled = false
     async function loadApps() {
       try {
@@ -128,9 +183,27 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [isLoggedIn])
+  }, [authStatus])
 
-  if (!isLoggedIn) {
+  if (authStatus === 'checking') {
+    // Brief, unavoidable moment while the real network round-trip
+    // above is in flight -- see this file's own header comment for
+    // why no synchronous check exists anymore. No spinner/skeleton
+    // beyond plain text, matching every other data-fetching
+    // component's own existing "Loading…" convention in this app.
+    return (
+      <div className="app">
+        <header className="app__header">
+          <h1>Elysium</h1>
+        </header>
+        <main>
+          <p>Loading…</p>
+        </main>
+      </div>
+    )
+  }
+
+  if (authStatus === 'loggedOut') {
     return (
       <div className="app">
         <header className="app__header">
@@ -143,6 +216,8 @@ export default function App() {
     )
   }
 
+  // authStatus === 'loggedIn' from here on.
+  //
   // Shell is now a real React Router LAYOUT route -- an element on
   // the wrapping <Route>, no path of its own -- not a plain component
   // this file renders directly around <Routes>. Every child route
@@ -215,6 +290,17 @@ export default function App() {
 //   early-return guard above was explicitly, deliberately preserved
 //   unchanged through this rewrite -- confirmed directly, not assumed
 //   safe by proximity.
+// - The session moved from a JS-readable localStorage token to a
+//   real httponly cookie (core/auth/auth_cookies.py), closing a real,
+//   found defense-in-depth gap a direct security review surfaced --
+//   see that review's own findings. The genuine, necessary
+//   consequence here: authStatus grew from a plain isLoggedIn boolean
+//   to a real three-state 'checking' | 'loggedOut' | 'loggedIn',
+//   since JavaScript can no longer synchronously read whether a
+//   session already exists the way `!!getToken()` once could -- see
+//   this file's own inline comment above App() for the full
+//   reasoning, including the deliberate, accepted redundant fetch on
+//   the "already logged in when the page loaded" path.
 //
 // DEFERRED (known, intentional, not yet built):
 // - No "return to where I was headed" after being redirected to
