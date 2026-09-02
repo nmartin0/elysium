@@ -85,6 +85,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 
+from api.csrf_middleware import csrf_protect
 from core.agent.agentic_loop import AgentLoop
 from core.auth.credential_store import CredentialStore
 from core.auth.login_attempt_tracker import LoginAttemptTracker
@@ -101,6 +102,21 @@ UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
 
 def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app = FastAPI(title="LLM Data Mediator")
+
+    # CSRF validation -- registered BEFORE add_security_headers below,
+    # deliberately: Starlette's own middleware stack makes the LAST-
+    # registered middleware the OUTERMOST one, so add_security_headers
+    # (registered after this) wraps AROUND csrf_protect and therefore
+    # still runs -- and still applies security headers -- even on a
+    # request csrf_protect rejects and short-circuits before it ever
+    # reaches a real route. Verified directly, not assumed: confirmed
+    # live that a genuine 403 CSRF rejection still carries the same
+    # Content-Security-Policy/X-Frame-Options headers as every other
+    # response. See api/csrf_middleware.py's own docstring for why
+    # this exists at all (SameSite=Strict alone, researched directly
+    # against OWASP's own current CSRF guidance, was found insufficient
+    # on its own).
+    app.middleware("http")(csrf_protect)
 
     # Security headers, applied to EVERY response -- a real, found gap:
     # this app previously set none at all. Verified directly before

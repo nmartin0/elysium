@@ -470,6 +470,7 @@ POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 - **Cross-silo links aren't supported.** Linked object types must currently share a data silo.
 - **Single OS process.** Concurrency protections coordinate threads within one process, not across separate processes. The pending-write store is also in-process memory — a multi-worker deployment would need a shared store instead.
 - **`install.sh` is a fresh-install script, not an upgrade mechanism.**
+- **TLS termination is a deployment responsibility, not this application's own code.** A real, production install sits behind a reverse proxy handling HTTPS -- this project's own security headers (`Content-Security-Policy` etc., see `api/app.py`) and cookie flags (`Secure`, see `core/auth/auth_cookies.py`) assume that proxy exists and is configured correctly; neither `Strict-Transport-Security` nor TLS certificate management is set up by this codebase itself.
 
 None of these are silent gaps — each is a deliberate, documented scope
 decision.

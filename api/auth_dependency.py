@@ -1,14 +1,22 @@
 """
-auth_dependency.py  (the one place a request's raw token becomes a real UserRecord)
+auth_dependency.py  (the one place a request's session cookie becomes
+a real UserRecord)
 
 Every route except /login goes through get_current_user() -- a FastAPI
-Depends() that reads the Authorization header, resolves it to a
-UserRecord, or raises a generic 401. Missing header, malformed header,
-unknown token, expired token, AND a disabled account ALL produce the
-EXACT SAME message -- the same uniform-denial principle used
-throughout core/ (see core/ontology/mediator.py's docstring):
-distinguishing any of these from each other would tell an attacker
-something real, for zero benefit to a legitimate caller.
+Depends() that reads the elysium_session cookie (see core/auth/
+auth_cookies.py), resolves it to a UserRecord, or raises a generic
+401. Missing cookie, unknown token, expired token, AND a disabled
+account ALL produce the EXACT SAME message -- the same uniform-denial
+principle used throughout core/ (see core/ontology/mediator.py's
+docstring): distinguishing any of these from each other would tell an
+attacker something real, for zero benefit to a legitimate caller.
+
+Reads from a cookie, not an Authorization header -- the session token
+moved to a real, httponly cookie specifically so client-side
+JavaScript can never read it at all, even in a hypothetical future XSS
+scenario (see core/auth/auth_cookies.py's own docstring for the full
+reasoning). The browser attaches this cookie automatically on every
+same-origin request; the frontend no longer manages this value itself.
 
 The disabled check happens HERE, on every single authenticated
 request, checked fresh -- not just at login time. This is what makes
@@ -24,22 +32,24 @@ request.app.state, built once at startup by api/app.py's create_app()
 Used by: api/routes.py (every route requiring a logged-in caller)
 """
 
-from fastapi import Header, HTTPException, Request
+from fastapi import Cookie, HTTPException, Request
 
+from core.auth.auth_cookies import SESSION_COOKIE_NAME
 from core.intermediate_layer.auth import UserRecord
 
 _INVALID_SESSION_DETAIL = "Invalid or expired session"
 
 
-def get_current_user(request: Request, authorization: str | None = Header(default=None)) -> UserRecord:
-    if authorization is None or not authorization.startswith("Bearer "):
+def get_current_user(
+    request: Request, session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME)
+) -> UserRecord:
+    if session_token is None:
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
 
-    token = authorization.removeprefix("Bearer ")
     session_store = request.app.state.session_store
     user_directory = request.app.state.user_directory
 
-    username = session_store.validate_session(token)
+    username = session_store.validate_session(session_token)
     if username is None:
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
 

@@ -113,13 +113,21 @@ import asyncio
 import logging
 import threading
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
 from core.agent.agentic_loop import AgentLoop
+from core.auth.auth_cookies import (
+    SESSION_COOKIE_NAME,
+    clear_csrf_cookie,
+    clear_session_cookie,
+    generate_csrf_token,
+    set_csrf_cookie,
+    set_session_cookie,
+)
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.write_mediator import WriteMediator
@@ -133,10 +141,6 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str
     password: str
-
-
-class LoginResponse(BaseModel):
-    token: str
 
 
 class CreateUserRequest(BaseModel):
@@ -158,8 +162,8 @@ class ConfirmWriteRequest(BaseModel):
     approved: bool
 
 
-@router.post("/login", response_model=LoginResponse)
-def login(body: LoginRequest, request: Request) -> LoginResponse:
+@router.post("/login", status_code=204)
+def login(body: LoginRequest, request: Request, response: Response) -> None:
     credential_store = request.app.state.credential_store
     session_store = request.app.state.session_store
     user_directory = request.app.state.user_directory
@@ -206,20 +210,28 @@ def login(body: LoginRequest, request: Request) -> LoginResponse:
 
     login_attempt_tracker.record_success(body.username)
     token = session_store.create_session(body.username)
-    return LoginResponse(token=token)
+    # Real, httponly cookie -- never returned in the JSON body at all;
+    # doing both would defeat the entire point (see core/auth/
+    # auth_cookies.py's own docstring). The CSRF cookie is
+    # deliberately readable (NOT httponly) -- see that same module's
+    # docstring for why, and api/csrf_middleware.py for how it's used.
+    set_session_cookie(response, token)
+    set_csrf_cookie(response, generate_csrf_token())
 
 
 @router.post("/logout", status_code=204)
-def logout(request: Request, authorization: str | None = Header(default=None)) -> None:
+def logout(request: Request, response: Response) -> None:
     # Needs the RAW token (to delete that exact session), not a
     # resolved UserRecord -- the only route with this need, so it
-    # parses the header itself rather than adding a second shape to
+    # reads the cookie directly rather than adding a second shape to
     # the shared auth dependency for one caller.
-    if authorization is not None and authorization.startswith("Bearer "):
-        token = authorization.removeprefix("Bearer ")
-        request.app.state.session_store.invalidate_session(token)
-    # No error even if the header was missing/malformed -- logging out
-    # of a session that isn't valid anyway isn't a meaningful failure.
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_token is not None:
+        request.app.state.session_store.invalidate_session(session_token)
+    # No error even if the cookie was missing -- logging out of a
+    # session that isn't valid anyway isn't a meaningful failure.
+    clear_session_cookie(response)
+    clear_csrf_cookie(response)
 
 
 @router.post("/logout-all", status_code=204)
