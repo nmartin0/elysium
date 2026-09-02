@@ -130,6 +130,7 @@ from core.auth.auth_cookies import (
 )
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
+from core.lock_store import LockStore
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 
@@ -684,6 +685,91 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
     event_loop = asyncio.get_running_loop()
     outcome = await event_loop.run_in_executor(executor, write_mediator.confirm_and_execute, pending, body.approved)
     return outcome if outcome is not None else {"status": "rejected"}
+
+
+# --- Generic, resource-agnostic locking -- see core/lock_store.py's
+# own module docstring for the full mechanism. Built as part of the
+# app shell, not config-builder-specific -- resource_name is an
+# arbitrary caller-supplied string, and this class has no knowledge
+# of what it actually names. No manage:* gate on acquire/refresh/
+# release/status -- any logged-in user may attempt to lock any named
+# resource; whether that attempt is MEANINGFUL for a given resource
+# (e.g. only a manage:deployment_config holder's attempt to lock the
+# config draft actually matters) is entirely up to whichever future
+# route consumes this lock for a real purpose, not this generic layer
+# itself. force-release is the one exception -- see its own route.
+
+class LockTokenRequest(BaseModel):
+    token: str
+
+
+@router.post("/locks/{resource_name}/acquire")
+def acquire_lock_route(resource_name: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    lock_store: LockStore = request.app.state.lock_store
+    result = lock_store.acquire(resource_name, current_user.user_id)
+    if result is None:
+        # Tells the caller WHO currently holds it -- not a security
+        # leak, since GET /locks/{resource_name} below already exposes
+        # the identical information to any logged-in caller; returning
+        # it here too just saves a second round-trip for the common
+        # "show me why this failed" UI case.
+        status = lock_store.get_status(resource_name)
+        raise HTTPException(status_code=409, detail={"message": "Resource is locked by another user", "lock": status})
+
+    token, expires_at = result
+    return {"token": token, "expires_at": expires_at.isoformat()}
+
+
+@router.post("/locks/{resource_name}/refresh")
+def refresh_lock_route(resource_name: str, body: LockTokenRequest, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    lock_store: LockStore = request.app.state.lock_store
+    new_expires_at = lock_store.refresh(resource_name, current_user.user_id, body.token)
+    if new_expires_at is None:
+        # Uniform denial -- wrong token, wrong user, unknown resource,
+        # and a genuinely already-expired lock all look identical to
+        # the caller. Correct next move on this response is a fresh
+        # acquire(), not a retry of refresh() -- see LockStore.refresh()'s
+        # own docstring for why.
+        raise HTTPException(status_code=409, detail="Lock not held, or already expired -- acquire a new one")
+    return {"expires_at": new_expires_at.isoformat()}
+
+
+@router.post("/locks/{resource_name}/release", status_code=204)
+def release_lock_route(resource_name: str, body: LockTokenRequest, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> None:
+    lock_store: LockStore = request.app.state.lock_store
+    released = lock_store.release(resource_name, current_user.user_id, body.token)
+    if not released:
+        raise HTTPException(status_code=404, detail="Lock not held by you")
+
+
+@router.post("/locks/{resource_name}/force-release", status_code=204)
+def force_release_lock_route(resource_name: str, request: Request,
+                              current_user: UserRecord = Depends(get_current_user)) -> None:
+    # The ONE route in this whole section with a permission gate --
+    # see core/lock_store.py's own module docstring for why the check
+    # belongs entirely here, at the caller, not inside LockStore.
+    # force_release() itself.
+    roles = request.app.state.config.roles
+    if not authorize(current_user, roles, "manage:locks"):
+        raise HTTPException(status_code=403, detail="Not authorized to force-release locks")
+
+    lock_store: LockStore = request.app.state.lock_store
+    released = lock_store.force_release(resource_name)
+    if not released:
+        raise HTTPException(status_code=404, detail="Resource is not currently locked")
+
+
+@router.get("/locks/{resource_name}")
+def lock_status_route(resource_name: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    lock_store: LockStore = request.app.state.lock_store
+    status = lock_store.get_status(resource_name)
+    if status is None:
+        return {"locked": False}
+    return {"locked": True, **status}
 
 
 # =============================================================================

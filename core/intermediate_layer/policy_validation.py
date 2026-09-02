@@ -28,11 +28,17 @@ lifetime of a running deployment. Checking here, once, at startup, is
 strictly better: catches the exact same bug, for free at runtime,
 before the deployment ever serves a single real request.
 
-THE SEVEN REAL GRANT PATTERNS -- found by grepping every real call site
+THE EIGHT REAL GRANT PATTERNS -- found by grepping every real call site
 that constructs an action_id string to pass to authorize(), not
 assumed or invented:
   - "manage:users" -- an exact, fixed literal (core/user_directory.py,
     api/routes.py). No object/field/action to reference at all.
+  - "manage:locks" -- an exact, fixed literal (api/routes.py's own
+    generic force-release route, core/lock_store.py's own docstring
+    for why the permission check lives entirely at the caller), same
+    shape as manage:users above -- a single, blanket grant, not
+    per-resource, so nothing further to validate against once the
+    literal string itself matches.
   - "discover:action_types" -- an exact, fixed literal (core/ontology/
     write_mediator.py's own visible_action_types()), same shape as
     manage:users above -- a single, blanket grant, not per-action-
@@ -76,6 +82,9 @@ def validate_roles(roles: dict, object_types: dict, action_types: dict, enabled_
 def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_types: dict,
                          enabled_tools: list[str]) -> None:
     if grant == "manage:users":
+        return
+
+    if grant == "manage:locks":
         return
 
     if grant == "discover:action_types":

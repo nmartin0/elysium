@@ -1086,7 +1086,7 @@ def _make_admin(client):
     # small number of callers that need to act as this admin AND
     # another, separate user within the same test -- see that
     # helper's own comment.
-    client.app.state.config.roles["admin"] = {"allowed_actions": frozenset(["manage:users"])}
+    client.app.state.config.roles["admin"] = {"allowed_actions": frozenset(["manage:users", "manage:locks"])}
     client.app.state.user_directory.create_user("admin_user", "adminpass", None, "admin")
     _login(client, "admin_user", "adminpass")
     return _capture_session(client)
@@ -1260,3 +1260,135 @@ def test_delete_nonexistent_user_is_404(client):
     _make_admin(client)
     response = client.delete("/api/users/totally_fake_user", headers=_csrf_headers(client))
     assert response.status_code == 404
+
+
+# --- Generic locking (api/routes.py's own /locks/{resource_name}/*
+# routes, core/lock_store.py's own LockStore). Deep, direct-unit-test
+# coverage of LockStore's own logic already lives in tests/unit/
+# test_lock_store.py -- these are the real, HTTP-layer, end-to-end
+# counterparts: request/response shapes, status codes, CSRF, and the
+# one genuine permission gate (force-release).
+
+def test_acquire_lock_returns_token_and_expiry(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.post("/api/locks/config/acquire", headers=_csrf_headers(client))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "token" in body and body["token"]
+    assert "expires_at" in body
+
+
+def test_acquire_lock_already_held_by_another_user_returns_409_with_holder_info(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("bob", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+    client.post("/api/locks/config/acquire", headers=_csrf_headers(client))
+
+    _login(client, "bob", "correct-pw")
+    response = client.post("/api/locks/config/acquire", headers=_csrf_headers(client))
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["lock"]["held_by"] == "alice"
+
+
+def test_acquire_lock_requires_a_valid_csrf_token(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.post("/api/locks/config/acquire")
+
+    assert response.status_code == 403
+
+
+def test_refresh_lock_extends_the_lease(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+    token = client.post("/api/locks/config/acquire", headers=_csrf_headers(client)).json()["token"]
+
+    response = client.post(
+        "/api/locks/config/refresh", json={"token": token}, headers=_csrf_headers(client)
+    )
+
+    assert response.status_code == 200
+    assert "expires_at" in response.json()
+
+
+def test_refresh_lock_with_wrong_token_returns_409(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+    client.post("/api/locks/config/acquire", headers=_csrf_headers(client))
+
+    response = client.post(
+        "/api/locks/config/refresh", json={"token": "totally-wrong-token"}, headers=_csrf_headers(client)
+    )
+
+    assert response.status_code == 409
+
+
+def test_release_lock_by_holder_succeeds(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+    token = client.post("/api/locks/config/acquire", headers=_csrf_headers(client)).json()["token"]
+
+    response = client.post(
+        "/api/locks/config/release", json={"token": token}, headers=_csrf_headers(client)
+    )
+
+    assert response.status_code == 204
+    assert client.get("/api/locks/config", headers=_csrf_headers(client)).json() == {"locked": False}
+
+
+def test_release_lock_by_a_different_user_returns_404(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("bob", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+    token = client.post("/api/locks/config/acquire", headers=_csrf_headers(client)).json()["token"]
+
+    _login(client, "bob", "correct-pw")
+    response = client.post(
+        "/api/locks/config/release", json={"token": token}, headers=_csrf_headers(client)
+    )
+
+    assert response.status_code == 404
+
+
+def test_force_release_lock_requires_manage_locks(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+    client.post("/api/locks/config/acquire", headers=_csrf_headers(client))
+
+    # alice herself is NOT the holder of manage:locks -- a plain
+    # customer_service role, same fixture shape as every other
+    # RBAC-gated-route test in this file.
+    response = client.post("/api/locks/config/force-release", headers=_csrf_headers(client))
+
+    assert response.status_code == 403
+
+
+def test_force_release_lock_by_manage_locks_holder_succeeds_even_though_they_never_held_it(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+    client.post("/api/locks/config/acquire", headers=_csrf_headers(client))
+
+    _make_admin(client)
+    response = client.post("/api/locks/config/force-release", headers=_csrf_headers(client))
+
+    assert response.status_code == 204
+    assert client.get("/api/locks/config", headers=_csrf_headers(client)).json() == {"locked": False}
+
+
+def test_lock_status_route_reflects_real_state(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    assert client.get("/api/locks/config", headers=_csrf_headers(client)).json() == {"locked": False}
+
+    client.post("/api/locks/config/acquire", headers=_csrf_headers(client))
+    status = client.get("/api/locks/config", headers=_csrf_headers(client)).json()
+
+    assert status["locked"] is True
+    assert status["held_by"] == "alice"
+

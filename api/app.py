@@ -91,6 +91,7 @@ from core.auth.credential_store import CredentialStore
 from core.auth.login_attempt_tracker import LoginAttemptTracker
 from core.auth.session_store import SessionStore
 from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
+from core.lock_store import LockStore
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 from core.user_directory import UserDirectory
@@ -178,6 +179,14 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # constructs mediator with a real write_log, and WriteMediator's
     # own __init__ raises a clear error if that were ever not true.
     app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types)
+    # Generic, resource-agnostic locking -- see core/lock_store.py's
+    # own module docstring for the full mechanism. Its own, dedicated
+    # SQLite file (matches write_log.db's own precedent), built
+    # directly here rather than threaded through load_deployment_
+    # bundle() -- this is shell-level infrastructure, not part of a
+    # specific deployment's own config/schema/mediator the way that
+    # function's own return value is.
+    app.state.lock_store = LockStore(runtime_paths.data_dir / "resource_locks.db")
     # THE resume-on-startup half of crash recovery -- see
     # WriteMediator.resume_pending_writes()'s own docstring for the
     # full mechanism. Runs ONCE, here, before this app ever serves a

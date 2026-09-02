@@ -50,6 +50,15 @@
 #     manage:users              -- may create new database-backed users
 #                                via api/'s /users endpoint (see
 #                                scripts/install.sh's root bootstrap)
+#     manage:locks              -- may force-release ANY resource's
+#                                lock via the generic /locks/
+#                                {resource_name}/force-release
+#                                endpoint, regardless of who currently
+#                                holds it -- the "Locks Admin UI"
+#                                capability, for recovering a resource
+#                                stuck locked by a crashed/abandoned
+#                                editing session before its own lease
+#                                naturally expires.
 #     discover:action_types     -- a single, blanket grant (not per-
 #                                action) -- see the WHOLE action-type
 #                                catalog via GET /me/visible-action-
@@ -78,6 +87,7 @@ roles:
   admin:
     allowed_actions:
       - manage:users
+      - manage:locks
   analyst:
     allowed_actions:
       - read:Employee

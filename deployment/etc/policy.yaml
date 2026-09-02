@@ -41,13 +41,15 @@
 security_attribute: region
 
 roles:
-  # Deliberately minimal -- manage:users is the ONLY grant an admin
-  # needs; nothing about data access is implied by being able to
-  # create other users, matching the fully-explicit philosophy above.
+  # Deliberately minimal -- manage:users and manage:locks are the ONLY
+  # grants an admin needs; nothing about data access is implied by
+  # being able to create other users or force-release a stuck lock,
+  # matching the fully-explicit philosophy above.
   # scripts/install.sh bootstraps the very first user with this role.
   admin:
     allowed_actions:
       - manage:users
+      - manage:locks
   customer_service:
     allowed_actions:
       - read:Customer

@@ -48,6 +48,11 @@ my_visible_schema_route
 get_object_detail_route
 my_visible_action_types_route
 propose_action_route
+acquire_lock_route
+refresh_lock_route
+release_lock_route
+force_release_lock_route
+lock_status_route
 
 # --- unittest.mock attribute assignment -- `some_mock.return_value = x`
 # / `some_mock.side_effect = fn` are how tests configure a MagicMock;
