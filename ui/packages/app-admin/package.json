@@ -1,7 +1,7 @@
 {
   "name": "@elysium/app-admin",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "exports": {
     "./AdminPanel": "./src/AdminPanel.jsx"

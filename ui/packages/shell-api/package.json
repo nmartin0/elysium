@@ -1,7 +1,7 @@
 {
   "name": "@elysium/shell-api",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "exports": {
     "./api": "./src/api.js",

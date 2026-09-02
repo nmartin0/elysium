@@ -12,7 +12,7 @@ function renderShell(visibleApps, onLogout = vi.fn(), initialPath = '/query') {
           <Route path="/admin" element={<p>admin screen</p>} />
         </Route>
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 

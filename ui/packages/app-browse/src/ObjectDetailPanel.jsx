@@ -141,7 +141,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
   }
 
   const availableActions = Object.entries(visibleActionTypes ?? {}).filter(
-    ([, actionDef]) => actionDef.affected_object_types.includes(objectType) && actionDef.executable
+    ([, actionDef]) => actionDef.affected_object_types.includes(objectType) && actionDef.executable,
   )
 
   const titleValue = getDisplayTitle(typeSchema, fields, objectId)

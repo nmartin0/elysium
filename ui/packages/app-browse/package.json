@@ -1,7 +1,7 @@
 {
   "name": "@elysium/app-browse",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "exports": {
     "./ObjectSearchPanel": "./src/ObjectSearchPanel.jsx",

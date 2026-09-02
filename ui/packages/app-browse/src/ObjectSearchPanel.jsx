@@ -90,10 +90,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
   return (
     <div className="object-search">
       <div className="object-search__controls">
-        <select
-          value={selectedType ?? objectTypes[0]}
-          onChange={(event) => setSelectedType(event.target.value)}
-        >
+        <select value={selectedType ?? objectTypes[0]} onChange={(event) => setSelectedType(event.target.value)}>
           {/* selectedType itself still starts as null -- the effect
               below sets it to a real value once objectTypes is known,
               and the search effect further down correctly waits for
@@ -131,10 +128,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
           const titleValue = getDisplayTitle(visibleSchema?.[selectedType], result.fields, result.id)
           return (
             <li key={result.id} className="object-search__result">
-              <Link
-                to={`/objects/${selectedType}/${encodeURIComponent(result.id)}`}
-                className="object-search__link"
-              >
+              <Link to={`/objects/${selectedType}/${encodeURIComponent(result.id)}`} className="object-search__link">
                 <p className="object-search__result-title">{titleValue}</p>
                 {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
                 <dl className="object-search__result-fields">

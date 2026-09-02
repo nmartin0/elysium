@@ -1,7 +1,13 @@
 import { Fragment, useEffect, useState } from 'react'
 import {
-  listUsers, createUser, disableUser, enableUser, deleteUser,
-  logoutAllForUser, getVisibleSchema, handleIfSessionExpired,
+  listUsers,
+  createUser,
+  disableUser,
+  enableUser,
+  deleteUser,
+  logoutAllForUser,
+  getVisibleSchema,
+  handleIfSessionExpired,
 } from '@elysium/shell-api/api'
 
 // Every action here is gated server-side by manage:users -- this
@@ -99,9 +105,7 @@ export default function AdminPanel({ onSessionExpired }) {
                     ) : (
                       <button onClick={() => handleAction(disableUser, user.username)}>Disable</button>
                     )}
-                    <button onClick={() => handleAction(logoutAllForUser, user.username)}>
-                      Log out sessions
-                    </button>
+                    <button onClick={() => handleAction(logoutAllForUser, user.username)}>Log out sessions</button>
                     <button onClick={() => handleToggleSchema(user.username)}>
                       {schemaByUsername[user.username] ? 'Hide schema' : 'View schema'}
                     </button>

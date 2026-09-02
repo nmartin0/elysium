@@ -13,8 +13,15 @@ import PendingWriteCard from '@elysium/shell-api/components/PendingWriteCard'
 // closed" (onCancel) or "form closed AND the object may have changed"
 // (onResolved) -- it never needs to know whether the person got as
 // far as seeing a PendingWriteCard at all.
-export default function ActionForm({ actionName, actionDef, objectType, objectId, onCancel, onResolved,
-                                      onSessionExpired }) {
+export default function ActionForm({
+  actionName,
+  actionDef,
+  objectType,
+  objectId,
+  onCancel,
+  onResolved,
+  onSessionExpired,
+}) {
   const [values, setValues] = useState(() => {
     const initial = {}
     for (const [paramName, paramSpec] of Object.entries(actionDef.parameters)) {
@@ -26,8 +33,7 @@ export default function ActionForm({ actionName, actionDef, objectType, objectId
       // would be confusing at best. Matches Palantir's own Action
       // widgets, which lock the "acting on this object" parameter the
       // same way when opened from that object's own context.
-      initial[paramName] =
-        paramSpec.type === 'object_reference' && paramSpec.object_type === objectType ? objectId : ''
+      initial[paramName] = paramSpec.type === 'object_reference' && paramSpec.object_type === objectType ? objectId : ''
     }
     return initial
   })
@@ -79,8 +85,7 @@ export default function ActionForm({ actionName, actionDef, objectType, objectId
     <form className="action-form" onSubmit={handleSubmit}>
       <h3>{actionName}</h3>
       {Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => {
-        const isLockedToCurrentObject =
-          paramSpec.type === 'object_reference' && paramSpec.object_type === objectType
+        const isLockedToCurrentObject = paramSpec.type === 'object_reference' && paramSpec.object_type === objectType
         return (
           <label key={paramName} className="action-form__field">
             <span>{formatFieldName(paramName)}</span>

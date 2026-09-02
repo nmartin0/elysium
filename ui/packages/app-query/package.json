@@ -1,7 +1,7 @@
 {
   "name": "@elysium/app-query",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "exports": {
     "./QueryPanel": "./src/QueryPanel.jsx"

@@ -109,18 +109,14 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
           </div>
         ) : (
           <SubWriteFields key={i} subWrite={subWrite} />
-        )
+        ),
       )}
       {error && <p className="error">{error}</p>}
       <div className="pending-write__actions">
         <button onClick={() => handleDecision(true)} disabled={submitting}>
           Approve
         </button>
-        <button
-          className="secondary"
-          onClick={() => handleDecision(false)}
-          disabled={submitting}
-        >
+        <button className="secondary" onClick={() => handleDecision(false)} disabled={submitting}>
           Reject
         </button>
       </div>

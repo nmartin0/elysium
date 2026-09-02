@@ -22,8 +22,6 @@ export default defineConfig({
     // already have a compatible chromium on disk from elsewhere (the
     // exact situation this test was first verified in) -- never
     // needed on a normal machine with ordinary network access.
-    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_PATH
-      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
-      : {},
+    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {},
   },
 })

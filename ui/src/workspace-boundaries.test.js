@@ -58,7 +58,7 @@ describe('the root package.json correctly declares the workspace', () => {
   it('depends on every real sub-app and shell-api package by name', () => {
     const pkg = readPackageJson('.')
     expect(Object.keys(pkg.dependencies)).toEqual(
-      expect.arrayContaining(['@elysium/shell-api', '@elysium/app-query', '@elysium/app-browse', '@elysium/app-admin'])
+      expect.arrayContaining(['@elysium/shell-api', '@elysium/app-query', '@elysium/app-browse', '@elysium/app-admin']),
     )
   })
 })
