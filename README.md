@@ -39,7 +39,7 @@ deployment/      YOUR organization's configuration and data, for local
 templates/       Copy-and-edit starting points for the four deployment/
                  YAML files, using a realistic Employee/ExpenseReport
                  example -- genuinely runnable, not just illustrative
-                 prose. See section 8.
+                 prose. See section 9.
 scripts/         Runnable entry points.
 install/         install.sh (fresh-install script) and elysium.service
                  (systemd unit) for a real, running install.
@@ -67,7 +67,7 @@ simply don't appear to exist. Every actual decision — what's visible,
 what's writable, what's callable — is made by plain Python code the LLM
 never touches, checked fresh on every single access, and logged whether
 allowed or denied. Section 8 explains exactly how to configure this for
-your organization; section 12 explains why it's built this way.
+your organization; section 13 explains why it's built this way.
 
 ---
 
@@ -92,7 +92,7 @@ source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-For a real, running production install, see section 10 instead.
+For a real, running production install, see section 11 instead.
 
 ---
 
@@ -136,7 +136,32 @@ python3 -m pytest tests/integration/test_api.py -v
 
 ---
 
-## 8. Configuring your organization's deployment
+## 8. Code quality: linting, type checking, dead code, import boundaries
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+
+./lint.sh
+```
+
+Four separate tools, each catching something genuinely different — see
+`lint.sh`'s own top comment for why each one earns its place, and
+`pyproject.toml`'s `[tool.ruff.lint]`, `[tool.mypy]`, and
+`[tool.importlinter]` sections for the specific configuration and
+reasoning behind each. In short: Ruff (style, real Python gotchas,
+import order), MyPy (does the types agree), Vulture (does anything
+still use this), Import Linter (is this module even allowed to import
+that one — the real, current architectural contracts live in
+`pyproject.toml`'s own `[tool.importlinter]` section, mapped directly
+against this project's real import graph, not designed from
+assumption).
+
+`ruff format` is intentionally never run by `./lint.sh` or anywhere
+else — see `pyproject.toml`'s own `[tool.ruff]` section for why.
+
+---
+
+## 9. Configuring your organization's deployment
 
 **Start from `templates/`** — five genuinely runnable YAML files (an
 Employee/ExpenseReport example, verified end to end, not just
@@ -165,7 +190,7 @@ install uses, just rooted under one project-relative folder instead of
 `resolve_runtime_paths()` (in `core/deployment_loader.py`) is the one
 place that decides where each actually is.
 
-### 8.1 `config.yaml` — operational settings
+### 9.1 `config.yaml` — operational settings
 
 ```yaml
 llm:
@@ -195,7 +220,7 @@ tools:
 | `agent.max_concurrent_requests` | Thread pool size for `api/` and `scripts/serve_requests.py`. |
 | `tools.enabled` | Which registered tools the LLM may call, by name. |
 
-### 8.2 `data_silos.yaml` — where your data physically lives
+### 9.2 `data_silos.yaml` — where your data physically lives
 
 ```yaml
 data_silos:
@@ -215,7 +240,7 @@ config directory. Each object type in `ontology_schema.yaml` declares
 which named silo it lives in via its own `silo:` key — this is what
 lets a deployment span more than one adapter.
 
-### 8.3 `ontology_schema.yaml` — what data exists
+### 9.3 `ontology_schema.yaml` — what data exists
 
 Declares what data **exists** and how it's structured — it does
 **not** by itself make anything visible. Every field, including each
@@ -231,7 +256,7 @@ any user can see it.
 See `templates/ontology_schema.yaml` for a complete, working example
 demonstrating every one of these.
 
-### 8.4 `action_types` — named, independently-governed operations
+### 9.4 `action_types` — named, independently-governed operations
 
 Declared in the same `ontology_schema.yaml`, alongside the object
 types above. Matches Palantir Foundry's own action-type model
@@ -348,7 +373,7 @@ multi-object cross-type action (`TransferFunds`) and
 `submission_criteria` example (a "reopen a closed ticket" rule) in
 context.
 
-### 8.5 `policy.yaml` — who your users are, and exactly what they can do
+### 9.5 `policy.yaml` — who your users are, and exactly what they can do
 
 Two independent, both-required gates, and **everything is fully
 explicit — nothing is inherited from anything else**:
@@ -365,14 +390,14 @@ explicit — nothing is inherited from anything else**:
 | `manage:users` | May create new database-backed users via `api/`'s `/users` endpoint. |
 
 - **`security_attribute`** — the *mandatory* boundary (MAC). A user can never see data outside their own value for this field, regardless of role.
-- **`users`** — static, only used by `scripts/run_deployment.py` (a simple demo/dev tool). The real running service (`api/`) never reads this section — see section 9.
+- **`users`** — static, only used by `scripts/run_deployment.py` (a simple demo/dev tool). The real running service (`api/`) never reads this section — see section 10.
 
 This is deliberately verbose. A role touching a dozen fields needs a
 dozen lines. That verbosity is the actual point — every one of those
 lines is a decision someone made on purpose, not a default nobody
 thought about.
 
-### 8.6 `example_queries.yaml` and your database
+### 9.6 `example_queries.yaml` and your database
 
 `example_queries.yaml` is `user_id`/`query` pairs for
 `scripts/run_deployment.py`'s demo. Your database is whatever your
@@ -382,7 +407,7 @@ fixture pattern.
 
 ---
 
-## 9. Two ways to run this: `scripts/run_deployment.py` vs. `api/`
+## 10. Two ways to run this: `scripts/run_deployment.py` vs. `api/`
 
 These are **intentionally not unified**:
 
@@ -407,7 +432,7 @@ minutes) if never confirmed.
 
 ---
 
-## 10. Installing as a real, running service
+## 11. Installing as a real, running service
 
 `install/install.sh` (run as root, from a checked-out copy of this
 repository) sets up a genuine production install:
@@ -441,7 +466,7 @@ POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 
 ---
 
-## 11. Extending the system
+## 12. Extending the system
 
 | To add... | Implement | Register in |
 |---|---|---|
@@ -451,7 +476,7 @@ POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 
 ---
 
-## 12. Why it's built this way — the untrusted-LLM design, point by point
+## 13. Why it's built this way — the untrusted-LLM design, point by point
 
 - **The LLM never sees a schema element it isn't authorized for.**
 - **"Doesn't exist" and "exists but denied" are indistinguishable**, on purpose, everywhere.
@@ -464,7 +489,7 @@ POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 
 ---
 
-## 13. Known limitations, honestly
+## 14. Known limitations, honestly
 
 - **Memory security infrastructure exists but isn't wired into the live query path.** `core/memory/guard.py`'s `MemoryGuard` is built and tested, but `AgentLoop` doesn't currently construct or use one.
 - **Cross-silo links aren't supported.** Linked object types must currently share a data silo.

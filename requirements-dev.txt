@@ -1,0 +1,16 @@
+# requirements-dev.txt
+# Dev-only tooling this project's own ./lint.sh needs -- NOT part of
+# requirements.txt deliberately: a real, running production install
+# (see install/install.sh) has no use for a linter, type checker,
+# dead-code scanner, or import-boundary checker. Install alongside
+# requirements.txt for local development:
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# No version pins -- unlike requirements.txt's own starlette floor
+# (a real, disclosed security fix, load-bearing), none of these four
+# have a known compatibility or security concern that would justify
+# pinning here.
+ruff            # lint.sh -- style/correctness (see pyproject.toml's own [tool.ruff.lint] comment)
+mypy            # lint.sh -- type checking (see pyproject.toml's own [tool.mypy] comment)
+vulture         # lint.sh -- whole-program dead-code detection (see lint.sh's own top comment for why)
+import-linter   # lint.sh -- architectural import-boundary enforcement (see pyproject.toml's own [tool.importlinter] section)
