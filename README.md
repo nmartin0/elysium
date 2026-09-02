@@ -74,6 +74,7 @@ your organization; section 12 explains why it's built this way.
 ## 3. Prerequisites
 
 - **Python 3.10 or later**
+- **Node.js 22.22.2 or later (22.x, 24.15.0+, or 26+)** for the `ui/` frontend -- see `ui/package.json`'s own `engines` field for the exact, binding constraint (driven by `jsdom`'s own requirement). If you use `nvm`, `ui/.nvmrc` picks the right version automatically (`nvm use`, from inside `ui/`).
 - **[Ollama](https://ollama.com)** installed and running locally
 - Enough free RAM for whatever model you choose to run
 

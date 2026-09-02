@@ -163,6 +163,16 @@ def login(body: LoginRequest, request: Request) -> LoginResponse:
     credential_store = request.app.state.credential_store
     session_store = request.app.state.session_store
     user_directory = request.app.state.user_directory
+    login_attempt_tracker = request.app.state.login_attempt_tracker
+
+    # Checked BEFORE the real password verification below, but NEVER
+    # used to short-circuit it -- see login_attempt_tracker.py's own
+    # module docstring for the full reasoning. verify_credential()
+    # below still runs UNCONDITIONALLY regardless of this result, so a
+    # locked-out response takes exactly as long as a real wrong-
+    # password one, never leaking "this account exists and has recent
+    # failed attempts against it" through response timing alone.
+    locked_out = login_attempt_tracker.is_locked_out(body.username)
 
     # Credential check ALWAYS runs first, unconditionally -- checking
     # is_user_disabled() before this and short-circuiting for a
@@ -171,16 +181,30 @@ def login(body: LoginRequest, request: Request) -> LoginResponse:
     # leaking "this account exists and is disabled" through response
     # timing alone, even with an identical error message). Same timing-
     # safety principle verify_credential() itself already follows.
-    if not credential_store.verify_credential(body.username, body.password):
+    credentials_valid = credential_store.verify_credential(body.username, body.password)
+
+    if locked_out:
+        # Same generic message as every other failure below --
+        # deliberately never distinguishable from a plain wrong
+        # password. Not recorded as a NEW failure here -- already
+        # locked out; another record wouldn't change the outcome.
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    if not credentials_valid:
+        login_attempt_tracker.record_failure(body.username)
         # Generic on purpose -- see module docstring.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     if user_directory.is_user_disabled(body.username):
         # SAME message as a wrong password -- a disabled account must
         # not be distinguishable from one that simply doesn't exist or
-        # was given the wrong password.
+        # was given the wrong password. Deliberately NOT recorded as a
+        # rate-limit failure -- the password itself was genuinely
+        # correct here, blocked by account status alone, a different
+        # thing entirely from a guessing attempt.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
+    login_attempt_tracker.record_success(body.username)
     token = session_store.create_session(body.username)
     return LoginResponse(token=token)
 

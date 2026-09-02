@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { searchObjects, ApiError } from '@elysium/shell-api/api'
+import { searchObjects, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 
 // The human-facing browse/search screen -- Palantir's own Object
@@ -60,10 +60,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
         setTotalMatches(response.total_matches)
       } catch (err) {
         if (thisRequestId !== latestRequestId.current) return
-        if (err instanceof ApiError && err.status === 401) {
-          onSessionExpired()
-          return
-        }
+        if (handleIfSessionExpired(err, onSessionExpired)) return
         setError(err.message)
       } finally {
         if (thisRequestId === latestRequestId.current) setLoading(false)
@@ -159,8 +156,8 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
 // screens rather than a generic app-building tool -- see api/
 // routes.py's own AI-notes for the backend side, core/ontology/
 // mediator.py's for search_object_free_text()). Stage 3 (direct
-// action invocation from ObjectDetailPanel, reusing PendingWriteCard
-// as-is) remains planned, deliberately NOT attempted here.
+// action invocation from ObjectDetailPanel) was built later the same
+// session -- see ActionForm.jsx's own docstring.
 //
 // RESOLVED (kept for history):
 // - Building this surfaced a real, missing backend prerequisite:
@@ -183,6 +180,12 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
 //   for; worth revisiting if the tree ever grows deeper.
 // - Results are now real react-router-dom <Link>s to /objects/{type}/
 //   {id} (Stage 2's Object View), not inert rows.
+// - title_field was later added to the schema (see core/ontology/
+//   object_type_validation.py) -- getDisplayTitle() above (shared, in
+//   ../format) uses it when a type declares one and the caller can
+//   actually see that field's own value, falling back to the raw id
+//   otherwise. Matches Palantir's own Object Explorer, which has the
+//   equivalent concept ("title key").
 //
 // DEFERRED (known, intentional, not yet built):
 // - Live, debounced search (300ms) is a deliberate departure from
@@ -192,12 +195,6 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
 //   a button) -- not applied retroactively to QueryPanel, which has
 //   its own, different reason to stay submit-driven (a real, possibly
 //   slow LLM call per submission, not a cheap live search).
-// - No "title field" concept exists in the schema yet -- each result
-//   is labeled by its raw id (e.g. "cust_001"), not a human-chosen
-//   display name. Palantir's own Object Explorer has this (a
-//   configurable "title property" per object type); worth adding to
-//   ontology_schema.yaml's own format if this ever feels like a real
-//   gap in practice, not invented speculatively here.
 // - No pagination -- MAX_SEARCH_RESULTS (api/routes.py, 50) is a hard
 //   safety cap; a query matching more than that shows a "narrow your
 //   search" hint, not a way to see the rest.

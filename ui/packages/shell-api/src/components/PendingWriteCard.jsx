@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { confirmWrite, ApiError } from '../api'
+import { confirmWrite, handleIfSessionExpired } from '../api'
 import { formatFieldName, formatValue } from '../format'
 
 // One object's own field-by-field changes, as a real "old -> new"
@@ -70,10 +70,7 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
       setOutcome(approved ? 'Change applied.' : 'Change rejected.')
       onResolved(approved)
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
+      if (handleIfSessionExpired(err, onSessionExpired)) return
       setError(err.message)
     } finally {
       setSubmitting(false)

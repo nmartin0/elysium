@@ -34,6 +34,32 @@ export class ApiError extends Error {
   }
 }
 
+// The ONE place this project's own "a 401 means the session expired,
+// go back to login" rule is expressed -- previously duplicated,
+// byte-for-byte, in nine separate catch blocks across this app
+// (PendingWriteCard, ObjectSearchPanel, ObjectDetailPanel twice,
+// ActionForm, AdminPanel four times, App.jsx twice) before being
+// extracted here. Returns true when it already called onSessionExpired
+// -- every caller's own catch block follows the same shape:
+//
+//   if (handleIfSessionExpired(err, onSessionExpired)) return
+//   setError(err.message)   // or whatever this call site does otherwise
+//
+// Deliberately narrow -- extracts ONLY the part that was genuinely
+// identical everywhere. The surrounding try/catch/finally shape still
+// varies per call site (different success-path state, different
+// finally cleanup), and folding THAT into a generic "run this and
+// handle errors" wrapper too would trade real, if repetitive, clarity
+// at each call site for a more abstract, harder-to-follow one -- not
+// attempted here for that reason, not an oversight.
+export function handleIfSessionExpired(err, onSessionExpired) {
+  if (err instanceof ApiError && err.status === 401) {
+    onSessionExpired()
+    return true
+  }
+  return false
+}
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
 }
@@ -90,10 +116,21 @@ export async function login(username, password) {
 export async function logout() {
   try {
     await apiFetch('/logout', { method: 'POST' })
+  } catch {
+    // A failed logout REQUEST (a real network error, not just a non-
+    // 2xx response) must never prevent the LOCAL logout from
+    // completing -- swallowed here, not just left to a finally block.
+    // A bug this project actually had, found by a real test: try/
+    // finally clears the token below either way, but finally does
+    // NOT swallow the original error -- it still re-throws after
+    // running, which meant a network failure during logout would
+    // propagate all the way up into App.jsx's own handleLogout(),
+    // which never catches it, so setIsLoggedIn(false) would never
+    // run. The token would be gone (so every subsequent API call
+    // would fail auth) while the UI kept showing the logged-in view
+    // regardless -- a genuinely confusing, broken state, not a
+    // hypothetical one.
   } finally {
-    // Cleared regardless of whether the request itself succeeded --
-    // a failed logout call server-side shouldn't leave the browser
-    // still holding onto (and offering to reuse) the token.
     clearToken()
   }
 }

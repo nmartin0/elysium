@@ -28,6 +28,18 @@ export default defineConfig({
       '/api': API_PROXY_TARGET,
     },
   },
+  // Vitest shares this SAME config file rather than a separate one --
+  // one source of truth for how this app builds AND how it's tested,
+  // not two files that could quietly drift apart. Discovers tests
+  // across the whole workspace (root src/ AND every packages/*/src/)
+  // in one run -- matches how this is still one build/one deploy, not
+  // per-package test runs.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/setupTests.js',
+    include: ['src/**/*.test.{js,jsx}', 'packages/*/src/**/*.test.{js,jsx}'],
+  },
 })
 
 // =============================================================================

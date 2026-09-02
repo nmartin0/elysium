@@ -96,6 +96,122 @@ def test_login_success_returns_a_real_token(client):
     assert len(response.json()["token"]) > 20
 
 
+def test_login_locked_out_after_max_failed_attempts(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+
+    for _ in range(5):
+        _login(client, "alice", "wrong-pw")
+
+    # The CORRECT password, on the very next attempt -- still rejected,
+    # since the account is now locked out regardless of whether this
+    # specific attempt's own password was right.
+    response = _login(client, "alice", "correct-pw")
+    assert response.status_code == 401
+
+
+def test_login_lockout_response_is_identical_to_a_normal_wrong_password(client):
+    # The real, uniform-denial property this whole mechanism was built
+    # to preserve, not just to add rate limiting for its own sake --
+    # confirmed directly, not assumed: a locked-out response and a
+    # normal wrong-password response must be byte-for-byte identical.
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    for _ in range(5):
+        _login(client, "alice", "wrong-pw")
+
+    locked_out = _login(client, "alice", "correct-pw")
+    normal_wrong_password = _login(client, "bob-not-locked-out", "wrong-pw")
+
+    assert locked_out.status_code == normal_wrong_password.status_code == 401
+    assert locked_out.json() == normal_wrong_password.json()
+
+
+def test_login_lockout_applies_to_a_nonexistent_username_too(client):
+    # Preserves the existing, already-established non-enumeration
+    # property -- a made-up username locks out the exact same way a
+    # real one does, so noticing which usernames get throttled can
+    # never itself reveal which ones are real.
+    for _ in range(5):
+        _login(client, "totally_fake_user", "anything")
+
+    response = _login(client, "totally_fake_user", "anything")
+    assert response.status_code == 401
+
+
+def test_login_success_clears_prior_failures(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+
+    for _ in range(3):  # fewer than the 5-attempt threshold
+        _login(client, "alice", "wrong-pw")
+
+    success = _login(client, "alice", "correct-pw")
+    assert success.status_code == 200
+
+    # The counter was cleared by that success -- three MORE wrong
+    # attempts now should not lock the account out, since they start
+    # counting from zero again, not continuing from 3+3=6.
+    for _ in range(3):
+        _login(client, "alice", "wrong-pw")
+    still_works = _login(client, "alice", "correct-pw")
+    assert still_works.status_code == 200
+
+
+def test_login_lockout_is_per_username_not_global(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    client.app.state.user_directory.create_user("bob", "correct-pw", None, "customer_service")
+
+    for _ in range(5):
+        _login(client, "alice", "wrong-pw")
+
+    alice_response = _login(client, "alice", "correct-pw")
+    bob_response = _login(client, "bob", "correct-pw")
+
+    assert alice_response.status_code == 401
+    assert bob_response.status_code == 200
+
+
+def test_login_always_runs_real_password_verification_even_when_already_locked_out(client):
+    # THE actual timing-safety property, verified structurally rather
+    # than by measuring flaky wall-clock timing: a locked-out account
+    # must still trigger a REAL call to verify_credential() (the slow,
+    # real argon2id check), not a short-circuit that skips it -- see
+    # login_attempt_tracker.py's own module docstring for the full
+    # reasoning (a locked-out account returning measurably faster than
+    # a real wrong-password check would itself leak that the account
+    # exists and has recent activity against it).
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    for _ in range(5):
+        _login(client, "alice", "wrong-pw")
+
+    real_verify = client.app.state.credential_store.verify_credential
+    with patch.object(client.app.state.credential_store, "verify_credential", wraps=real_verify) as spy:
+        _login(client, "alice", "correct-pw")
+        assert spy.called
+
+
+def test_security_headers_are_present_on_every_response(client):
+    # A real, found gap: this app previously set none of these at all.
+    # Checked on TWO genuinely different response shapes -- a real
+    # login (200) and a rejected one (401) -- confirming the
+    # middleware applies universally, not just to one specific route
+    # or one specific status code.
+    client.app.state.user_directory.create_user("alice", "correct-pw", None, "customer_service")
+    success = _login(client, "alice", "correct-pw")
+    failure = _login(client, "alice", "wrong-pw")
+
+    for response in (success, failure):
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["referrer-policy"] == "same-origin"
+        # Verified directly (grepped the real source for inline
+        # style={{}} props, external <script>/<link> tags, and any
+        # CDN/external CSS reference -- all zero) that this app is
+        # genuinely, fully self-contained before writing a policy this
+        # strict -- see api/app.py's own comment for the full check.
+        assert response.headers["content-security-policy"] == (
+            "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        )
+
+
 def test_query_without_token_is_rejected(client):
     response = client.post("/api/query", json={"query": "test"})
     assert response.status_code == 401

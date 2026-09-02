@@ -85,3 +85,9 @@ supports_atomic_conditional_write
 # authorization logic (always re-derives security live instead), so
 # it genuinely has no in-logic reader by design, not by omission.
 captured_security_value
+
+# Registered via @app.middleware("http") -- called by FastAPI's own
+# internal dispatch mechanism, the same reason every route handler in
+# this file already needs a whitelist entry (see the block above):
+# never referenced by name anywhere in the Python source itself.
+add_security_headers

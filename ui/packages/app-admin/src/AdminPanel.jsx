@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import {
   listUsers, createUser, disableUser, enableUser, deleteUser,
-  logoutAllForUser, getVisibleSchema, ApiError,
+  logoutAllForUser, getVisibleSchema, handleIfSessionExpired,
 } from '@elysium/shell-api/api'
 
 // Every action here is gated server-side by manage:users -- this
@@ -21,10 +21,7 @@ export default function AdminPanel({ onSessionExpired }) {
       const data = await listUsers()
       setUsers(data)
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
+      if (handleIfSessionExpired(err, onSessionExpired)) return
       setError(err.message)
     }
   }
@@ -40,10 +37,7 @@ export default function AdminPanel({ onSessionExpired }) {
       await action(username)
       await loadUsers()
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
+      if (handleIfSessionExpired(err, onSessionExpired)) return
       setError(err.message)
     }
   }
@@ -61,10 +55,7 @@ export default function AdminPanel({ onSessionExpired }) {
       const schema = await getVisibleSchema(username)
       setSchemaByUsername((prev) => ({ ...prev, [username]: schema }))
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
+      if (handleIfSessionExpired(err, onSessionExpired)) return
       setError(err.message)
     }
   }
@@ -154,10 +145,7 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }) {
       setRoleName('')
       await onCreated()
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
+      if (handleIfSessionExpired(err, onSessionExpired)) return
       onError(err.message)
     } finally {
       setSubmitting(false)

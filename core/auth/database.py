@@ -58,6 +58,11 @@ CREATE TABLE IF NOT EXISTS users (
     role_name TEXT NOT NULL,
     disabled INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS login_attempts (
+    username TEXT PRIMARY KEY,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    window_started_at TEXT NOT NULL
+);
 """
 
 

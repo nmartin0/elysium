@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { proposeAction, ApiError } from '@elysium/shell-api/api'
+import { proposeAction, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName } from '@elysium/shell-api/format'
 import PendingWriteCard from '@elysium/shell-api/components/PendingWriteCard'
 
@@ -58,10 +58,7 @@ export default function ActionForm({ actionName, actionDef, objectType, objectId
       const response = await proposeAction(actionName, parameters)
       setPendingWrite(response.pending_write)
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
+      if (handleIfSessionExpired(err, onSessionExpired)) return
       // err.message here is ALREADY the safe, generic string api/
       // routes.py's own propose_action_route returns for every real
       // rejection reason (unknown action, RBAC denial, bad

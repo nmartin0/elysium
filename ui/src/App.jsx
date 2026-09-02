@@ -6,7 +6,7 @@ import QueryPanel from '@elysium/app-query/QueryPanel'
 import ObjectSearchPanel from '@elysium/app-browse/ObjectSearchPanel'
 import ObjectDetailPanel from '@elysium/app-browse/ObjectDetailPanel'
 import AdminPanel from '@elysium/app-admin/AdminPanel'
-import { getToken, logout, getMyVisibleSchema, getVisibleApps, ApiError } from '@elysium/shell-api/api'
+import { getToken, logout, getMyVisibleSchema, getVisibleApps, handleIfSessionExpired } from '@elysium/shell-api/api'
 import '@elysium/shell-api/index.css'
 
 // SECURITY, not just structure: the `!isLoggedIn` check below is an
@@ -85,9 +85,9 @@ export default function App() {
         const schema = await getMyVisibleSchema()
         if (!cancelled) setVisibleSchema(schema)
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
+        handleIfSessionExpired(err, () => {
           if (!cancelled) handleSessionExpired()
-        }
+        })
         // Any other error: leave visibleSchema null. Consuming views
         // (ObjectSearchPanel, ObjectDetailPanel) already handle a
         // null/not-yet-loaded schema as a loading state, not a crash.
@@ -115,9 +115,9 @@ export default function App() {
         const apps = await getVisibleApps()
         if (!cancelled) setVisibleApps(apps)
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
+        handleIfSessionExpired(err, () => {
           if (!cancelled) handleSessionExpired()
-        }
+        })
         // Any other error: leave visibleApps as []. Shell already
         // renders an empty nav in that state, not a crash -- see its
         // own docstring for why that's the deliberate default, not a

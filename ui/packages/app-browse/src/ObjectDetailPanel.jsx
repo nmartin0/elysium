@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getObjectDetail, getVisibleActionTypes, ApiError } from '@elysium/shell-api/api'
+import { getObjectDetail, getVisibleActionTypes, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import ActionForm from './ActionForm'
 
@@ -46,10 +46,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
       setFields(response.fields)
     } catch (err) {
       if (thisRequestId !== latestRequestId.current) return
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
+      if (handleIfSessionExpired(err, onSessionExpired)) return
       setError(err.message)
     } finally {
       if (thisRequestId === latestRequestId.current) setLoading(false)
@@ -71,10 +68,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
         const response = await getVisibleActionTypes()
         setVisibleActionTypes(response)
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
-          onSessionExpired()
-          return
-        }
+        if (handleIfSessionExpired(err, onSessionExpired)) return
         // Deliberately silent otherwise -- a real failure here means
         // no action buttons render at all, which is a safe, honest
         // degradation (never fabricating a button for an action that
