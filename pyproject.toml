@@ -5,6 +5,30 @@
 # genuine outliers), not an arbitrarily chosen number.
 line-length = 120
 target-version = "py312"
+
+# `ruff format` is deliberately NEVER run by lint.sh, or anywhere else
+# in this project -- a real, considered decision, not an oversight.
+# Verified directly (not assumed) by actually running `ruff format
+# --diff` against this project's real, current code before writing
+# this: it would rewrap a genuine, recurring, deliberate pattern in
+# this codebase's own hand-placed formatting -- multi-argument
+# function signatures and calls broken across lines specifically for
+# readability, even in places short enough to fit on one line under
+# this file's own 120-char limit (e.g. adapters/sqlite_adapter.py's
+# own find_ids_matching_text() and write_fields(), api/routes.py's
+# own create_user_route()). ruff format would collapse or re-wrap
+# these into its own, generic, denser style, on every file, every
+# run -- overriding real, deliberate authorial choices with a tool's
+# default opinion, not fixing a genuine problem the way ruff check,
+# mypy, and vulture each do. Those three all detect something
+# objectively wrong (a real bug, a real type mismatch, real dead
+# code); reformatting has no "correct" answer, only a consistent one
+# -- and this project has chosen to keep that consistency a deliberate,
+# human decision, not an automated one. `ruff format --check` remains
+# available to run by hand at any time; it is simply never wired into
+# this project's own CI-equivalent (lint.sh) or run silently as a
+# side effect of anything else.
+#
 # vulture_whitelist.py is deliberately NOT ordinary executable Python
 # -- it's a sequence of bare name references, Vulture's own required
 # whitelist format (each line marks a name as "used" for Vulture's
@@ -68,3 +92,130 @@ ignore_missing_imports = true
 [tool.vulture]
 paths = ["core", "api", "adapters", "scripts", "tests", "vulture_whitelist.py"]
 min_confidence = 60
+
+[tool.importlinter]
+root_packages = ["core", "api", "adapters"]
+
+# Contract 1 of 3 -- the outer, top-level layering. api is the entry
+# point (HTTP layer, wires everything together); adapters implement
+# the concrete storage/LLM backends; core holds the domain logic and
+# must never know which concrete backend it's actually talking to
+# (dependency inversion -- core defines the interfaces adapters/ own
+# files implement, e.g. core.ontology.interface, core.llm.interface,
+# core.tools.interface, core.memory.interface).
+#
+# Confirmed directly against this project's REAL, current imports
+# before writing this (not assumed): api and adapters genuinely never
+# import from each other, and core genuinely never imports from api
+# at all. core.deployment_loader is the ONE, deliberate exception --
+# it's this project's own composition root, the single place
+# responsible for instantiating a concrete adapter (OllamaAdapter,
+# SQLiteAdapter) based on deployment config and injecting it into
+# core.ontology.mediator.DataMediator -- not a violation, and
+# whitelisted explicitly below rather than weakening this contract
+# for the rest of core/.
+[[tool.importlinter.contracts]]
+name = "api sits above adapters and core; core never reaches into adapters or api"
+type = "layers"
+layers = ["api", "adapters", "core"]
+ignore_imports = [
+    "core.deployment_loader -> adapters.ollama_adapter",
+    "core.deployment_loader -> adapters.sqlite_adapter",
+]
+
+# Contract 2 of 3 -- the real, internal shape of core/ itself, mapped
+# directly against this project's actual import graph before writing
+# this list (not designed from memory or assumption): core.agent (the
+# LLM-driven agentic loop) sits at the top, orchestrating everything
+# else; core.tools and core.intermediate_layer are true leaves (never
+# import from any other core.X submodule). The middle ordering
+# (llm, memory, ontology) reflects real, confirmed dependencies --
+# core.llm imports core.ontology and core.tools; core.memory imports
+# core.intermediate_layer and core.ontology; core.ontology imports
+# core.intermediate_layer. core.auth has no real position requirement
+# of its own (nothing else in core/ depends on it directly -- its
+# only real consumer within core/ is core.user_directory, and
+# ultimately api/ itself for the login/session endpoints), placed
+# here as a leaf alongside core.intermediate_layer and core.tools.
+[[tool.importlinter.contracts]]
+name = "core/ internal layering (agent orchestrates llm/memory/ontology/tools)"
+type = "layers"
+layers = ["agent", "llm", "memory", "ontology", "auth", "intermediate_layer", "tools"]
+containers = ["core"]
+exhaustive = true
+exhaustive_ignores = ["concurrency", "config", "deployment_loader", "logging_config", "pending_write_store", "sqlite_connection", "user_directory"]
+
+# Contract 3 of 3 -- the single most repeatedly-stated architectural
+# principle throughout this project's own history: authentication
+# (core.auth -- who is this person, verified via password/session,
+# the front gate) is completely separate from authorization
+# (core.intermediate_layer -- what is this person allowed to do,
+# RBAC/MAC access control). Confirmed directly, before writing this,
+# that this was ALREADY true in practice throughout this codebase's
+# real history -- neither package imports from the other anywhere --
+# this contract exists to keep that real, already-honored property
+# genuinely enforced going forward, not to fix an existing violation.
+# A stricter, additional guarantee than contract 2's own layers
+# ordering alone provides: layers only forbids the LOWER of two
+# adjacent layers importing from the higher one; this forbids BOTH
+# directions between this specific pair, regardless of where either
+# one sits in that ordering.
+[[tool.importlinter.contracts]]
+name = "authentication (core.auth) and authorization (core.intermediate_layer) stay fully independent"
+type = "independence"
+modules = ["core.auth", "core.intermediate_layer"]
+
+# The remaining contracts below map the real, internal shape of each
+# multi-file package individually -- the three above cover the
+# BETWEEN-package picture; these cover WITHIN each package, mapped the
+# same way (against this project's own real, current imports, not
+# designed from assumption).
+
+[[tool.importlinter.contracts]]
+name = "api/ internal layering (app wires routes + csrf; routes wires apps + auth_dependency)"
+type = "layers"
+layers = ["app", "routes", "apps | auth_dependency | csrf_middleware"]
+containers = ["api"]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+name = "core/ontology/ internal layering (write_mediator wraps mediator, both sit above the rest)"
+type = "layers"
+layers = [
+    "write_mediator",
+    "mediator",
+    "interface | schema | write_log | submission_criteria | action_types | object_type_validation",
+]
+containers = ["core.ontology"]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+name = "core/intermediate_layer/ internal layering (access_control wraps auth; audit, policy_validation stay leaves)"
+type = "layers"
+layers = ["access_control", "auth | audit | policy_validation"]
+containers = ["core.intermediate_layer"]
+exhaustive = true
+
+# core.llm.interface is the one real leaf (the LLMAdapter Protocol
+# itself); the other three each implement or consume it but were
+# never meant to depend on EACH OTHER -- independence, not layers,
+# since there's no real ordering between them, just a shared leaf all
+# three sit above.
+[[tool.importlinter.contracts]]
+name = "core/llm/ siblings (agent_step_prompt, concurrency_limited_adapter, synthesis_prompt) stay independent of each other"
+type = "independence"
+modules = [
+    "core.llm.agent_step_prompt",
+    "core.llm.concurrency_limited_adapter",
+    "core.llm.synthesis_prompt",
+]
+
+# The three concrete adapters are deliberately parallel, alternative
+# implementations of the same core/ interfaces (see contract 1's own
+# comment on dependency inversion) -- never meant to depend on each
+# other at all.
+[[tool.importlinter.contracts]]
+name = "the three concrete adapters stay independent of each other"
+type = "independence"
+modules = ["adapters.inmemory_adapter", "adapters.ollama_adapter", "adapters.sqlite_adapter"]
+
