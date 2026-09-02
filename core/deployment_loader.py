@@ -138,6 +138,8 @@ def validate_identifier_types(schema_raw: dict, policy_raw: dict) -> None:
         security = object_type_def.get("security", {})
         if "field" in security:
             _require_str(security["field"], f"{object_type_name!r}'s own security.field")
+        if "via_field" in security:
+            _require_str(security["via_field"], f"{object_type_name!r}'s own security.via_field")
         for field_name in object_type_def.get("fields", {}):
             _require_str(field_name, f"A field name on {object_type_name!r}")
 
@@ -420,9 +422,18 @@ def load_example_queries(config_dir: Path) -> list[dict]:
 # DEFERRED (known, intentional, not yet built):
 # - validate_identifier_types() checks identifiers (keys, and the few
 #   VALUES that function as identifiers -- id_field, security.field,
-#   grant strings) for being genuine strings, not other YAML-coercible
-#   VALUES a mutation's own "value" could still silently become (a
-#   date, an octal-interpreted number). See core/config.py's own AI-
-#   notes for why that narrower, value-level gap was deliberately left
-#   for a future, separate, more schema-aware pass rather than
-#   addressed here or at the generic YAML-loading level.
+#   security.via_field, grant strings) for being genuine strings, not
+#   other YAML-coercible VALUES a mutation's own "value" could still
+#   silently become (a date, an octal-interpreted number). See
+#   core/config.py's own AI-notes for why that narrower, value-level
+#   gap was deliberately left for a future, separate, more schema-
+#   aware pass rather than addressed here or at the generic YAML-
+#   loading level.
+#
+# RESOLVED (kept for history):
+# - security.via_field itself used to be missing from this exact
+#   check -- security.field got _require_str(), via_field silently
+#   didn't. Found and fixed alongside core/ontology/object_type_
+#   validation.py's own new referential validation for both (see that
+#   module's own docstring for the fuller, four-part gap this closed
+#   together).
