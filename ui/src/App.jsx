@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import LoginForm from './components/LoginForm'
+import LoginForm from '@elysium/shell-api/components/LoginForm'
 import Shell from './Shell'
-import QueryPanel from './components/QueryPanel'
-import ObjectSearchPanel from './components/ObjectSearchPanel'
-import ObjectDetailPanel from './components/ObjectDetailPanel'
-import AdminPanel from './components/AdminPanel'
-import { getToken, logout, getMyVisibleSchema, getVisibleApps, ApiError } from './api'
-import './index.css'
+import QueryPanel from '@elysium/app-query/QueryPanel'
+import ObjectSearchPanel from '@elysium/app-browse/ObjectSearchPanel'
+import ObjectDetailPanel from '@elysium/app-browse/ObjectDetailPanel'
+import AdminPanel from '@elysium/app-admin/AdminPanel'
+import { getToken, logout, getMyVisibleSchema, getVisibleApps, ApiError } from '@elysium/shell-api/api'
+import '@elysium/shell-api/index.css'
 
 // SECURITY, not just structure: the `!isLoggedIn` check below is an
 // EARLY RETURN, before <BrowserRouter>/<Routes> ever mounts -- not a

@@ -1,0 +1,15 @@
+{
+  "name": "@elysium/app-admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./AdminPanel": "./src/AdminPanel.jsx"
+  },
+  "dependencies": {
+    "@elysium/shell-api": "*"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8"
+  }
+}

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import {
   listUsers, createUser, disableUser, enableUser, deleteUser,
   logoutAllForUser, getVisibleSchema, ApiError,
-} from '../api'
+} from '@elysium/shell-api/api'
 
 // Every action here is gated server-side by manage:users -- this
 // component never decides who's allowed to do what, it just calls the

@@ -1,0 +1,17 @@
+{
+  "name": "@elysium/app-browse",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./ObjectSearchPanel": "./src/ObjectSearchPanel.jsx",
+    "./ObjectDetailPanel": "./src/ObjectDetailPanel.jsx"
+  },
+  "dependencies": {
+    "@elysium/shell-api": "*"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8",
+    "react-router-dom": "^7.18.3"
+  }
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { searchObjects, ApiError } from '../api'
-import { formatFieldName, formatValue, getDisplayTitle } from '../format'
+import { searchObjects, ApiError } from '@elysium/shell-api/api'
+import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 
 // The human-facing browse/search screen -- Palantir's own Object
 // Explorer is the closest real-world analog (a real research +

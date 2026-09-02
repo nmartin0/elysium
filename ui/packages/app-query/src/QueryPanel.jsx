@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { query } from '../api'
-import PendingWriteCard from './PendingWriteCard'
+import { query } from '@elysium/shell-api/api'
+import PendingWriteCard from '@elysium/shell-api/components/PendingWriteCard'
 
 // Note on status 499 (client disconnected -- see api/routes.py's
 // docstring): deliberately no special handling for it here. By the

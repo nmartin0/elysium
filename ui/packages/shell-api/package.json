@@ -1,0 +1,16 @@
+{
+  "name": "@elysium/shell-api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./api": "./src/api.js",
+    "./format": "./src/format.js",
+    "./index.css": "./src/index.css",
+    "./components/LoginForm": "./src/components/LoginForm.jsx",
+    "./components/PendingWriteCard": "./src/components/PendingWriteCard.jsx"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8"
+  }
+}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { proposeAction, ApiError } from '../api'
-import { formatFieldName } from '../format'
-import PendingWriteCard from './PendingWriteCard'
+import { proposeAction, ApiError } from '@elysium/shell-api/api'
+import { formatFieldName } from '@elysium/shell-api/format'
+import PendingWriteCard from '@elysium/shell-api/components/PendingWriteCard'
 
 // Stage 3 of the Palantir-parity UI plan: direct, form-driven action
 // invocation from an Object View, no LLM involved at all. Owns its

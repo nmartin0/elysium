@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,6 +13,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@elysium/shell-api": "*",
+    "@elysium/app-query": "*",
+    "@elysium/app-browse": "*",
+    "@elysium/app-admin": "*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3"

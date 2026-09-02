@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "regex": "^(\\.\\./){2,}",
+            "message": "Cross-package relative imports are not allowed. Import via the package name instead (e.g. '@elysium/shell-api/api'), not a relative path reaching into another package's src/."
+          }
+        ]
+      }
+    ]
+  }
+}

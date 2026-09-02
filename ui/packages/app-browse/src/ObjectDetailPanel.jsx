@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getObjectDetail, getVisibleActionTypes, ApiError } from '../api'
-import { formatFieldName, formatValue, getDisplayTitle } from '../format'
+import { getObjectDetail, getVisibleActionTypes, ApiError } from '@elysium/shell-api/api'
+import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import ActionForm from './ActionForm'
 
 // Stage 2 of the Palantir-parity UI plan -- Object View. A real,

@@ -1,0 +1,15 @@
+{
+  "name": "@elysium/app-query",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./QueryPanel": "./src/QueryPanel.jsx"
+  },
+  "dependencies": {
+    "@elysium/shell-api": "*"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8"
+  }
+}
