@@ -117,11 +117,30 @@ def _capture_session(client):
 
 
 def _csrf_header_for(session):
-    # Pairs with a _capture_session() dict -- always pass BOTH
-    # cookies=session and headers=_csrf_header_for(session) together
-    # on the same call, or the CSRF check would correctly, but
-    # unhelpfully, reject a mismatched pairing.
+    # Pairs with a _capture_session() dict -- always call
+    # _use_session(client, session) BEFORE the request too, or the
+    # CSRF check would correctly, but unhelpfully, reject a mismatched
+    # pairing (the client's own cookie jar would still hold some
+    # OTHER session's cookies otherwise).
     return {"X-CSRF-Token": session["elysium_csrf"]}
+
+
+def _use_session(client, session):
+    # Mutates the CLIENT's own cookie jar to match a captured session
+    # -- the current, correct way to control which session a
+    # subsequent request uses. Replaces an earlier version of this
+    # file that passed cookies={...} directly as a PER-REQUEST kwarg
+    # to client.post()/client.get() -- a real DeprecationWarning
+    # (TestClient's own httpx2 client: "Setting per-request cookies=
+    # is being deprecated, because the expected behaviour on cookie
+    # persistence is ambiguous") this project's own test suite was
+    # genuinely producing, not a hypothetical one. Confirmed directly
+    # (not assumed) that httpx2's own Cookies.set() correctly
+    # overwrites an existing cookie of the same name and leaves any
+    # others untouched, which is exactly what switching between
+    # captured sessions within one test needs.
+    client.cookies.set("elysium_session", session["elysium_session"])
+    client.cookies.set("elysium_csrf", session["elysium_csrf"])
 
 
 def test_login_wrong_password_and_nonexistent_username_are_identical(client):
@@ -969,13 +988,12 @@ def _propose_action(client, session=None, new_name="Updated Name"):
         response.raise_for_status.return_value = None
         return response
 
-    cookies = (
-        {"elysium_session": session["elysium_session"], "elysium_csrf": session["elysium_csrf"]} if session else None
-    )
+    if session:
+        _use_session(client, session)
     headers = _csrf_header_for(session) if session else _csrf_headers(client)
 
     with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post):
-        return client.post("/api/query", json={"query": "update the name"}, cookies=cookies, headers=headers)
+        return client.post("/api/query", json={"query": "update the name"}, headers=headers)
 
 
 def test_query_proposing_an_action_returns_202_with_a_reference(client):
@@ -1047,14 +1065,13 @@ def test_confirm_with_wrong_user_and_unknown_id_are_identical(client):
 
     write_id = _propose_action(client, alice_session).json()["pending_write"]["id"]
 
+    _use_session(client, eve_session)
     wrong_user_response = client.post(
         f"/api/writes/{write_id}/confirm", json={"approved": True},
-        cookies={"elysium_session": eve_session["elysium_session"], "elysium_csrf": eve_session["elysium_csrf"]},
         headers=_csrf_header_for(eve_session),
     )
     unknown_id_response = client.post(
         "/api/writes/totally-fake-id/confirm", json={"approved": True},
-        cookies={"elysium_session": eve_session["elysium_session"], "elysium_csrf": eve_session["elysium_csrf"]},
         headers=_csrf_header_for(eve_session),
     )
 
@@ -1107,17 +1124,14 @@ def test_logout_all_revokes_every_session_for_the_caller(client):
     _login(client, "alice", "correct-pw")
     session2 = _capture_session(client)
 
-    response = client.post(
-        "/api/logout-all",
-        cookies={"elysium_session": session1["elysium_session"], "elysium_csrf": session1["elysium_csrf"]},
-        headers=_csrf_header_for(session1),
-    )
+    _use_session(client, session1)
+    response = client.post("/api/logout-all", headers=_csrf_header_for(session1))
     assert response.status_code == 204
 
     for session in (session1, session2):
+        _use_session(client, session)
         result = client.post(
             "/api/query", json={"query": "test"},
-            cookies={"elysium_session": session["elysium_session"], "elysium_csrf": session["elysium_csrf"]},
             headers=_csrf_header_for(session),
         )
         assert result.status_code == 401
@@ -1138,16 +1152,13 @@ def test_admin_logout_all_for_a_target_user_works(client):
     alice_session = _capture_session(client)
     admin_session = _make_admin(client)
 
-    response = client.post(
-        "/api/users/alice/logout-all",
-        cookies={"elysium_session": admin_session["elysium_session"], "elysium_csrf": admin_session["elysium_csrf"]},
-        headers=_csrf_header_for(admin_session),
-    )
+    _use_session(client, admin_session)
+    response = client.post("/api/users/alice/logout-all", headers=_csrf_header_for(admin_session))
     assert response.status_code == 204
 
+    _use_session(client, alice_session)
     result = client.post(
         "/api/query", json={"query": "test"},
-        cookies={"elysium_session": alice_session["elysium_session"], "elysium_csrf": alice_session["elysium_csrf"]},
         headers=_csrf_header_for(alice_session),
     )
     assert result.status_code == 401
@@ -1189,17 +1200,14 @@ def test_disable_user_blocks_new_logins_and_kills_existing_sessions(client):
     alice_session = _capture_session(client)
     admin_session = _make_admin(client)
 
-    response = client.post(
-        "/api/users/alice/disable",
-        cookies={"elysium_session": admin_session["elysium_session"], "elysium_csrf": admin_session["elysium_csrf"]},
-        headers=_csrf_header_for(admin_session),
-    )
+    _use_session(client, admin_session)
+    response = client.post("/api/users/alice/disable", headers=_csrf_header_for(admin_session))
     assert response.status_code == 204
 
     # Existing session immediately rejected -- not just future logins.
+    _use_session(client, alice_session)
     existing_session_result = client.post(
         "/api/query", json={"query": "test"},
-        cookies={"elysium_session": alice_session["elysium_session"], "elysium_csrf": alice_session["elysium_csrf"]},
         headers=_csrf_header_for(alice_session),
     )
     assert existing_session_result.status_code == 401
@@ -1233,16 +1241,13 @@ def test_delete_user_removes_credential_and_kills_sessions(client):
     alice_session = _capture_session(client)
     admin_session = _make_admin(client)
 
-    response = client.delete(
-        "/api/users/alice",
-        cookies={"elysium_session": admin_session["elysium_session"], "elysium_csrf": admin_session["elysium_csrf"]},
-        headers=_csrf_header_for(admin_session),
-    )
+    _use_session(client, admin_session)
+    response = client.delete("/api/users/alice", headers=_csrf_header_for(admin_session))
     assert response.status_code == 204
 
+    _use_session(client, alice_session)
     existing_session_result = client.post(
         "/api/query", json={"query": "test"},
-        cookies={"elysium_session": alice_session["elysium_session"], "elysium_csrf": alice_session["elysium_csrf"]},
         headers=_csrf_header_for(alice_session),
     )
     assert existing_session_result.status_code == 401
