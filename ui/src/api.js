@@ -173,6 +173,11 @@ export async function getMyVisibleSchema() {
   return response.json()
 }
 
+export async function getVisibleApps() {
+  const response = await apiFetchOrThrow('/me/visible-apps')
+  return response.json()
+}
+
 export async function searchObjects(objectType, queryText) {
   const params = new URLSearchParams({ q: queryText })
   const response = await apiFetchOrThrow(`/objects/${objectType}/search?${params}`)

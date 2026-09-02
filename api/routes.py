@@ -117,6 +117,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
 from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import UserRecord, authorize
@@ -294,6 +295,23 @@ async def _watch_for_disconnect(request: Request, cancel_event: threading.Event)
             cancel_event.set()
             return
         await asyncio.sleep(0.5)
+
+
+@router.get("/me/visible-apps")
+def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    # The shell's own nav, made real: which apps exist for THIS
+    # specific caller, computed from their actual grants -- not a
+    # hardcoded, always-shown list every logged-in user saw regardless
+    # of what they could actually use (Admin, before this route
+    # existed, was visible to everyone in the nav even though every
+    # single action inside it was already, separately, gated server-
+    # side by manage:users -- the button itself just never reflected
+    # that). Matches the exact same discipline already applied to
+    # action buttons (see discover:action_types/"executable" on
+    # ObjectDetailPanel.jsx) -- never show a nav entry for something
+    # the caller genuinely cannot use.
+    roles = request.app.state.config.roles
+    return visible_apps_for(current_user, roles)
 
 
 @router.get("/me/visible-schema")

@@ -123,6 +123,31 @@ def test_my_visible_schema_returns_the_callers_own_view(client):
     assert set(response.json().keys()) == {"Customer", "Transaction", "SupportTicket"}
 
 
+def test_visible_apps_hides_admin_without_manage_users(client):
+    # editor (fixtures/policy.yaml) holds no manage:users grant --
+    # Admin must be genuinely absent from the response, not merely
+    # something the frontend is trusted to hide.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    token = _login(client, "alice", "correct-pw").json()["token"]
+
+    response = client.get("/api/me/visible-apps", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    names = {app["name"] for app in response.json()}
+    assert {"Query", "Browse"}.issubset(names)
+    assert "Admin" not in names
+
+
+def test_visible_apps_shows_admin_with_manage_users(client):
+    admin_token = _make_admin(client)
+
+    response = client.get("/api/me/visible-apps", headers={"Authorization": f"Bearer {admin_token}"})
+
+    assert response.status_code == 200
+    names = {app["name"] for app in response.json()}
+    assert "Admin" in names
+
+
 def test_my_visible_schema_differs_by_role_not_a_static_response(client):
     # customer_service_no_email (user_dave's real role in fixtures/
     # policy.yaml) withholds read:Customer.email specifically -- proves

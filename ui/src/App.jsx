@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginForm from './components/LoginForm'
+import Shell from './Shell'
 import QueryPanel from './components/QueryPanel'
 import ObjectSearchPanel from './components/ObjectSearchPanel'
 import ObjectDetailPanel from './components/ObjectDetailPanel'
 import AdminPanel from './components/AdminPanel'
-import { getToken, logout, getMyVisibleSchema, ApiError } from './api'
+import { getToken, logout, getMyVisibleSchema, getVisibleApps, ApiError } from './api'
 import './index.css'
 
 // SECURITY, not just structure: the `!isLoggedIn` check below is an
@@ -20,6 +21,9 @@ import './index.css'
 // rather than a second, new "guard component" concept that could
 // drift out of sync with it -- fewer new code paths is itself a
 // security property, not just simplicity for its own sake.
+// UNCHANGED by the Shell redesign below -- this property was decided
+// explicitly and deliberately preserved through the rewrite, not
+// something to reconsider casually in a future edit.
 //
 // IMPORTANT, stated explicitly because it matters: this guard is
 // client-side UX (don't attempt a doomed fetch, don't flash a broken
@@ -44,6 +48,7 @@ import './index.css'
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!getToken())
   const [visibleSchema, setVisibleSchema] = useState(null)
+  const [visibleApps, setVisibleApps] = useState([])
 
   function handleLoginSuccess() {
     setIsLoggedIn(true)
@@ -53,11 +58,13 @@ export default function App() {
     await logout()
     setIsLoggedIn(false)
     setVisibleSchema(null)
+    setVisibleApps([])
   }
 
   function handleSessionExpired() {
     setIsLoggedIn(false)
     setVisibleSchema(null)
+    setVisibleApps([])
   }
 
   // Fetched ONCE, here, and passed down -- not independently re-
@@ -92,6 +99,37 @@ export default function App() {
     }
   }, [isLoggedIn])
 
+  // A SEPARATE, independent fetch/effect from visibleSchema above --
+  // deliberately not combined into one Promise.all, even though both
+  // run at the same moment: these are genuinely different concerns
+  // (nav-level "which apps exist" vs. object-level "which types/
+  // fields exist"), and keeping their own error handling isolated
+  // matches how getMyVisibleSchema() was already its own independent
+  // effect before this -- one more, similarly-independent effect is
+  // consistent with that, not new complexity.
+  useEffect(() => {
+    if (!isLoggedIn) return
+    let cancelled = false
+    async function loadApps() {
+      try {
+        const apps = await getVisibleApps()
+        if (!cancelled) setVisibleApps(apps)
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          if (!cancelled) handleSessionExpired()
+        }
+        // Any other error: leave visibleApps as []. Shell already
+        // renders an empty nav in that state, not a crash -- see its
+        // own docstring for why that's the deliberate default, not a
+        // gap.
+      }
+    }
+    loadApps()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoggedIn])
+
   if (!isLoggedIn) {
     return (
       <div className="app">
@@ -105,43 +143,34 @@ export default function App() {
     )
   }
 
+  // Shell is now a real React Router LAYOUT route -- an element on
+  // the wrapping <Route>, no path of its own -- not a plain component
+  // this file renders directly around <Routes>. Every child route
+  // below mounts INSIDE Shell's own <Outlet />, sharing its header/
+  // nav automatically; Shell itself has no knowledge of which routes
+  // exist, only of visibleApps (what to list in nav) and onLogout.
+  // This IS the "outer app is a logical container, sub-apps are
+  // functionality" boundary discussed and decided explicitly, made
+  // real in code, not just true by convention: App.jsx owns identity/
+  // fetching/routing wiring; Shell.jsx owns chrome; each routed panel
+  // owns its own screen and nothing about any other route.
   return (
     <BrowserRouter>
-      <div className="app">
-        <header className="app__header">
-          <h1>Elysium</h1>
-          <nav className="app__nav">
-            <NavLink to="/query" className={({ isActive }) => (isActive ? '' : 'secondary')}>
-              Query
-            </NavLink>
-            <NavLink to="/browse" className={({ isActive }) => (isActive ? '' : 'secondary')}>
-              Browse
-            </NavLink>
-            <NavLink to="/admin" className={({ isActive }) => (isActive ? '' : 'secondary')}>
-              Admin
-            </NavLink>
-            <button className="secondary" onClick={handleLogout}>
-              Log out
-            </button>
-          </nav>
-        </header>
-
-        <main>
-          <Routes>
-            <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
-            <Route
-              path="/browse"
-              element={<ObjectSearchPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
-            />
-            <Route
-              path="/objects/:objectType/:objectId"
-              element={<ObjectDetailPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
-            />
-            <Route path="/admin" element={<AdminPanel onSessionExpired={handleSessionExpired} />} />
-            <Route path="*" element={<Navigate to="/query" replace />} />
-          </Routes>
-        </main>
-      </div>
+      <Routes>
+        <Route element={<Shell visibleApps={visibleApps} onLogout={handleLogout} />}>
+          <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
+          <Route
+            path="/browse"
+            element={<ObjectSearchPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
+          />
+          <Route
+            path="/objects/:objectType/:objectId"
+            element={<ObjectDetailPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
+          />
+          <Route path="/admin" element={<AdminPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="*" element={<Navigate to="/query" replace />} />
+        </Route>
+      </Routes>
     </BrowserRouter>
   )
 }
@@ -175,6 +204,17 @@ export default function App() {
 //   setView() button -- Query/Browse/Admin all gained real,
 //   independently bookmarkable URLs as a free side effect of adding
 //   routing for Object View specifically, not a goal in themselves.
+// - BREAKING REDESIGN, explicitly authorized: nav went from three
+//   hardcoded <NavLink> entries (always shown to every logged-in
+//   user, regardless of what they could actually use) to a real
+//   React Router layout route (Shell.jsx) rendering nav from GET
+//   /me/visible-apps. The user explicitly authorized breaking changes
+//   to the UI for this -- "little to nothing important enough to
+//   preserve" -- so this was a full rebuild of the nav/chrome
+//   relationship, not an incremental patch. The security-critical
+//   early-return guard above was explicitly, deliberately preserved
+//   unchanged through this rewrite -- confirmed directly, not assumed
+//   safe by proximity.
 //
 // DEFERRED (known, intentional, not yet built):
 // - No "return to where I was headed" after being redirected to
@@ -182,3 +222,7 @@ export default function App() {
 //   enhancement, scoped out deliberately for this pass. After
 //   logging in, the person lands on the default view (/query),
 //   same as before routing existed at all.
+// - visibleApps carries no icon/description -- deliberately minimal
+//   (name + gating_permission + path only), chosen specifically to
+//   keep debugging simple. Revisit if the nav ever needs richer
+//   presentation than a plain text link.
