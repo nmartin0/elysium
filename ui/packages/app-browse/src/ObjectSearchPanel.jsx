@@ -90,7 +90,23 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
   return (
     <div className="object-search">
       <div className="object-search__controls">
-        <select value={selectedType} onChange={(event) => setSelectedType(event.target.value)}>
+        <select
+          value={selectedType ?? objectTypes[0]}
+          onChange={(event) => setSelectedType(event.target.value)}
+        >
+          {/* selectedType itself still starts as null -- the effect
+              below sets it to a real value once objectTypes is known,
+              and the search effect further down correctly waits for
+              that real value before firing (gated on `if
+              (!selectedType) return`). This fallback exists ONLY so
+              the <select> element's own displayed value is never
+              null during that brief window -- a real, previously-
+              present React warning ("a component is changing an
+              uncontrolled input to be controlled"), not a
+              hypothetical one. By the time this element renders at
+              all, objectTypes is already confirmed non-null and non-
+              empty (see the two early returns above), so
+              objectTypes[0] is always safe here. */}
           {objectTypes.map((type) => (
             <option key={type} value={type}>
               {type}
@@ -186,6 +202,19 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
 //   actually see that field's own value, falling back to the raw id
 //   otherwise. Matches Palantir's own Object Explorer, which has the
 //   equivalent concept ("title key").
+// - A real, pre-existing React warning ("a component is changing an
+//   uncontrolled input to be controlled") is fixed -- the <select>'s
+//   own value fell back to objectTypes[0] at render time instead of
+//   ever displaying selectedType while it's still null (the brief
+//   window before the effect below catches up and sets a real value).
+//   Confirmed genuinely fixed, not just silenced: ran the real, live
+//   Vite dev server (React's own dev-mode console warnings are
+//   stripped from production builds, so this specifically needed dev
+//   mode, not the production build most other live checks in this
+//   project use), logged in, navigated to this exact screen, and
+//   captured the full browser console -- zero React warnings of any
+//   kind, confirmed directly rather than assumed from the code change
+//   alone.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Live, debounced search (300ms) is a deliberate departure from
