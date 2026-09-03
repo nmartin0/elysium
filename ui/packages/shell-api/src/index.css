@@ -86,33 +86,49 @@ body {
   background: #3a3a42;
 }
 
-/* user-menu -- replaces the old bare "Log out" button; see UserMenu.
-   tsx's own comment on why .user-menu__trigger below is fully self-
-   contained, not relying on the global .secondary class the way the
-   sidebar's own Log-out button once did (and initially broke on,
-   before that fix -- the exact same class of mistake, avoided here
-   from the start instead of repeated and re-fixed). */
-.user-menu {
-  position: relative;
-}
+/* user-menu -- rebuilt on real Blueprint primitives (PopoverNext +
+   Menu + MenuItem); see UserMenu.tsx's own header comment for why
+   this file's own CSS shrank so much -- Blueprint's own CSS now owns
+   the popover panel and menu item styling entirely (.bp6-menu, .bp6-
+   menu-item, .bp6-popover-content), not this file. What's left here
+   is only the genuinely custom part: this specific trigger's own
+   avatar+label layout, and the static (non-MenuItem) profile display
+   inside the popover's own content -- neither of which Blueprint has
+   an opinion about, since neither is a component it ships.
+
+   No .user-menu wrapper rule anymore -- PopoverNext renders no
+   wrapper div of its own around its target (confirmed directly
+   against Blueprint's own docs: no more wrapper element as of a
+   recent major version), so this class no longer exists anywhere in
+   the real DOM at all. */
 
 .user-menu__trigger {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   width: 100%;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #6b6b74;
-  border-radius: 6px;
-  background: transparent;
-  color: #f2f2f3;
-  font-size: 0.85rem;
-  cursor: pointer;
   text-align: left;
 }
 
-.user-menu__trigger:hover {
-  background: #3a3a42;
+/* .user-menu__trigger.bp6-button.bp6-minimal, not just .user-menu__
+   trigger alone -- a real, third occurrence of the same class of bug
+   this project has now hit three times, confirmed precisely this
+   time via the browser's own real, matched CSS rules (not grepped
+   from minified source, not reasoned about): Blueprint's own
+   .bp6-button:not([class*="bp6-intent-"]) rule sets this button's
+   default text color, and that :not()+attribute selector carries
+   TWO class-level selectors worth of specificity -- genuinely higher
+   than this file's own single-class .user-menu__trigger rule, which
+   is why the plain version above lost outright, regardless of source
+   order (confirmed directly: computed color was Blueprint's own dark,
+   light-theme default, not this rule's #f2f2f3, before this fix).
+   Three real classes together, all genuinely present on this same
+   element (confirmed via the real DOM's own classList), for
+   specificity that's safely, unambiguously higher than Blueprint's
+   own two-class-level rule -- not just tied with it and hoping source
+   order still favors this file. */
+.user-menu__trigger.bp6-button.bp6-minimal {
+  color: #f2f2f3;
 }
 
 .user-menu__avatar {
@@ -126,25 +142,6 @@ body {
   background: #4a4a54;
   font-size: 0.75rem;
   font-weight: 600;
-}
-
-/* Opens UPWARD (bottom: 100%), not downward -- the trigger sits at
-   the very bottom of the sidebar (see Shell.tsx's own layout), so a
-   downward-opening panel would render mostly off-screen, below the
-   viewport, on any reasonably-sized window. */
-.user-menu__panel {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 0.4rem;
-  width: 100%;
-  min-width: 12rem;
-  background: white;
-  color: #1a1a1a;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  overflow: hidden;
 }
 
 .user-menu__profile {
@@ -162,23 +159,6 @@ body {
   margin: 0.15rem 0 0;
   color: #666;
   font-size: 0.8rem;
-}
-
-.user-menu__item {
-  display: block;
-  width: 100%;
-  padding: 0.6rem 0.85rem;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: #1a1a1a;
-  font-size: 0.9rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.user-menu__item:hover {
-  background: #f7f7f8;
 }
 
 .app__content {
