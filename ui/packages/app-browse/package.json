@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./ObjectSearchPanel": "./src/ObjectSearchPanel.jsx",
-    "./ObjectDetailPanel": "./src/ObjectDetailPanel.jsx"
+    "./ObjectSearchPanel": "./src/ObjectSearchPanel.tsx",
+    "./ObjectDetailPanel": "./src/ObjectDetailPanel.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*"

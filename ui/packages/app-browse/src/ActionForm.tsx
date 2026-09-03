@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { proposeAction, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName } from '@elysium/shell-api/format'
-import PendingWriteCard from '@elysium/shell-api/components/PendingWriteCard'
+import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
 // Stage 3 of the Palantir-parity UI plan: direct, form-driven action
 // invocation from an Object View, no LLM involved at all. Owns its
@@ -13,6 +13,35 @@ import PendingWriteCard from '@elysium/shell-api/components/PendingWriteCard'
 // closed" (onCancel) or "form closed AND the object may have changed"
 // (onResolved) -- it never needs to know whether the person got as
 // far as seeing a PendingWriteCard at all.
+
+// Not exported -- confirmed via knip that nothing imports this by
+// name anywhere else; every other file that constructs a parameter
+// spec relies on TypeScript's own structural typing against the
+// inline shape, not a named import of this interface. ActionDef
+// itself (below) IS exported, since ObjectDetailPanel.jsx genuinely
+// imports that one by name.
+interface ParameterSpec {
+  type: string
+  required?: boolean
+  object_type?: string
+  default_to_current_object?: boolean
+}
+
+// The real shape of ONE entry in the backend's own GET /me/visible-
+// action-types response (see api/routes.py's own docstring). Exported
+// here, not kept local -- this component only ever reads its own
+// `parameters`, but ObjectDetailPanel.jsx (a KNOWN, not speculative,
+// future consumer -- it's what actually fetches visibleActionTypes
+// and passes ONE entry through as this component's own actionDef
+// prop) also reads affected_object_types/executable on the exact SAME
+// real object, to decide which action buttons to offer at all. One
+// accurate, shared type for the real, whole shape, not two partial
+// ones describing the same object that could quietly drift apart.
+export interface ActionDef {
+  affected_object_types: string[]
+  executable: boolean
+  parameters: Record<string, ParameterSpec>
+}
 
 // A parameter is pre-filled and locked to the CURRENT object ONLY
 // when BOTH of these hold, not either alone:
@@ -31,9 +60,22 @@ import PendingWriteCard from '@elysium/shell-api/components/PendingWriteCard'
 //      the one that matches; pre-filling it with an id of the WRONG
 //      type would be a real, silent correctness bug of its own, not
 //      just a UX one.
-function isLockedToCurrentObject(paramSpec, objectType) {
-  return paramSpec.type === 'object_reference' && paramSpec.default_to_current_object === true &&
+function isLockedToCurrentObject(paramSpec: ParameterSpec, objectType: string): boolean {
+  return (
+    paramSpec.type === 'object_reference' &&
+    paramSpec.default_to_current_object === true &&
     paramSpec.object_type === objectType
+  )
+}
+
+interface ActionFormProps {
+  actionName: string
+  actionDef: ActionDef
+  objectType: string
+  objectId: string
+  onCancel: () => void
+  onResolved: (approved: boolean) => void
+  onSessionExpired: () => void
 }
 
 export default function ActionForm({
@@ -44,9 +86,9 @@ export default function ActionForm({
   onCancel,
   onResolved,
   onSessionExpired,
-}) {
-  const [values, setValues] = useState(() => {
-    const initial = {}
+}: ActionFormProps) {
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {}
     for (const [paramName, paramSpec] of Object.entries(actionDef.parameters)) {
       // Pre-filled, and left DISABLED below (not just pre-filled and
       // still editable) -- the whole point of opening this form from
@@ -59,14 +101,14 @@ export default function ActionForm({
     return initial
   })
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState(null)
-  const [pendingWrite, setPendingWrite] = useState(null)
+  const [error, setError] = useState<string | null>(null)
+  const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
 
-  function handleChange(paramName, rawValue) {
+  function handleChange(paramName: string, rawValue: string) {
     setValues((prev) => ({ ...prev, [paramName]: rawValue }))
   }
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
@@ -77,12 +119,16 @@ export default function ActionForm({
       // parameter VALUE types, only presence/absence (see api/
       // routes.py's own docstring on propose_action_route), so a
       // string would silently reach the backend as one otherwise.
-      const parameters = {}
+      const parameters: Record<string, unknown> = {}
       for (const [paramName, paramSpec] of Object.entries(actionDef.parameters)) {
         const raw = values[paramName]
         parameters[paramName] = paramSpec.type === 'number' && raw !== '' ? Number(raw) : raw
       }
-      const response = await proposeAction(actionName, parameters)
+      // proposeAction() itself returns Promise<unknown> (see api.ts's
+      // own header comment on why) -- asserted to the real, known
+      // success shape here, matching api/routes.py's own documented
+      // contract for propose_action_route's 202 response.
+      const response = (await proposeAction(actionName, parameters)) as { pending_write: PendingWrite }
       setPendingWrite(response.pending_write)
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
@@ -92,7 +138,7 @@ export default function ActionForm({
       // parameters, MAC denial) -- deliberately never more specific
       // than that, by design decided with the user. Nothing to
       // sanitize or reword here; display it as-is.
-      setError(err.message)
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSubmitting(false)
     }
@@ -169,6 +215,10 @@ export default function ActionForm({
 //   be the one that matches; the type-match half of the check is what
 //   keeps this correct in that case too, not just a redundant
 //   leftover from the old logic.
+// - ActionDef/ParameterSpec -- the shared prop-type shape for one
+//   visible-action-types entry -- exported from THIS file (see this
+//   file's own top-of-file comment for why here) once the TypeScript
+//   migration reached this component.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Every OTHER object_reference parameter (one that isn't locked to

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
-import Shell from './Shell'
+import Shell, { type VisibleApp } from './Shell'
 import QueryPanel from '@elysium/app-query/QueryPanel'
 import ObjectSearchPanel from '@elysium/app-browse/ObjectSearchPanel'
-import ObjectDetailPanel from '@elysium/app-browse/ObjectDetailPanel'
+import ObjectDetailPanel, { type VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
 import AdminPanel from '@elysium/app-admin/AdminPanel'
 import { logout, getMyVisibleSchema, getVisibleApps, handleIfSessionExpired } from '@elysium/shell-api/api'
 import '@elysium/shell-api/index.css'
+
+type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn'
 
 // SECURITY, not just structure: the auth-gated render below is an
 // EARLY RETURN, before <BrowserRouter>/<Routes> ever mounts -- not a
@@ -55,9 +57,9 @@ import '@elysium/shell-api/index.css'
 // dropped) -- after logging in, the person lands on the default view,
 // same as today.
 export default function App() {
-  const [authStatus, setAuthStatus] = useState('checking')
-  const [visibleSchema, setVisibleSchema] = useState(null)
-  const [visibleApps, setVisibleApps] = useState([])
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
+  const [visibleSchema, setVisibleSchema] = useState<VisibleSchema | null>(null)
+  const [visibleApps, setVisibleApps] = useState<VisibleApp[]>([])
 
   function handleLoginSuccess() {
     setAuthStatus('loggedIn')
@@ -137,7 +139,11 @@ export default function App() {
     let cancelled = false
     async function loadSchema() {
       try {
-        const schema = await getMyVisibleSchema()
+        // getMyVisibleSchema() itself returns Promise<unknown> (see
+        // api.ts's own header comment on why) -- asserted to the
+        // real, known response shape here, matching api/routes.py's
+        // own documented contract for GET /me/visible-schema.
+        const schema = (await getMyVisibleSchema()) as VisibleSchema
         if (!cancelled) setVisibleSchema(schema)
       } catch (err) {
         handleIfSessionExpired(err, () => {
@@ -167,7 +173,10 @@ export default function App() {
     let cancelled = false
     async function loadApps() {
       try {
-        const apps = await getVisibleApps()
+        // Same reasoning as loadSchema()'s own assertion above --
+        // getVisibleApps() returns Promise<unknown>, asserted to the
+        // real, known response shape matching GET /me/visible-apps.
+        const apps = (await getVisibleApps()) as VisibleApp[]
         if (!cancelled) setVisibleApps(apps)
       } catch (err) {
         handleIfSessionExpired(err, () => {

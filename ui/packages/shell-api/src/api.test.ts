@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import {
   ApiError,
   login,
@@ -21,35 +21,71 @@ import {
   handleIfSessionExpired,
 } from './api'
 
-function jsonResponse(body, { ok = true, status = ok ? 200 : 400 } = {}) {
+// A partial, Response-SHAPED fake, not a real Response -- confirmed
+// directly (not assumed) that api.ts itself only ever touches .ok,
+// .status, and .json() on whatever fetch() resolves to; this fake
+// implements exactly that and nothing more. The `as Response` below
+// is honest given that real, confirmed usage, not a lie -- the full,
+// real Response interface (headers, body, clone(), ...) is never
+// exercised by this file's own code at all.
+function jsonResponse(
+  body: unknown,
+  { ok = true, status = ok ? 200 : 400 }: { ok?: boolean; status?: number } = {},
+): Response {
   return {
     ok,
     status,
     json: async () => body,
-  }
+  } as Response
 }
 
 // The real session token no longer lives in anything this file can
 // see or set at all -- it's a genuine httponly cookie now, invisible
-// to JavaScript by design (see api.js's own header comment). Only
-// elysium_csrf is ever read here, matching what api.js itself can
+// to JavaScript by design (see api.ts's own header comment). Only
+// elysium_csrf is ever read here, matching what api.ts itself can
 // actually access.
-function setCsrfCookie(value) {
+function setCsrfCookie(value: string): void {
   document.cookie = `elysium_csrf=${value}`
 }
 
-function clearCsrfCookie() {
+function clearCsrfCookie(): void {
   document.cookie = 'elysium_csrf=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/'
 }
 
+// A separately-typed reference to the SAME mock assigned to
+// global.fetch -- kept deliberately, not accessed back through
+// `global.fetch` itself, since assigning a mock there gives that
+// property the real, built-in fetch type (Promise<Response>, no
+// mockResolvedValue/.mock.calls at all); this variable is what stays
+// genuinely typed as the mock it actually is.
+let fetchMock: Mock
+
 beforeEach(() => {
   clearCsrfCookie()
-  global.fetch = vi.fn()
+  fetchMock = vi.fn()
+  // globalThis, not `global` -- the standard, portable ECMAScript
+  // reference, correct for this browser-first project; `global` is a
+  // Node.js-specific artifact that only worked here because Vitest's
+  // own test runner happens to run on Node, not a real signal this is
+  // Node-targeted code.
+  globalThis.fetch = fetchMock as unknown as typeof fetch
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
 })
+
+// The real, first call's own [path, options] -- noUncheckedIndexedAccess
+// types mock.calls[0] as possibly-undefined (an array index), even
+// though every real call site below only ever reads this immediately
+// after awaiting the real call that produced it, guaranteeing it
+// exists. A tiny helper, not a `!` at every call site, keeps that one
+// honest assumption in one place instead of repeated throughout.
+function firstCallArgs(): [string, RequestInit] {
+  const call = fetchMock.mock.calls[0]
+  if (!call) throw new Error('fetch was never called')
+  return call as [string, RequestInit]
+}
 
 // The SHARED mechanism every other export in this file funnels
 // through -- tested thoroughly, once, here. A bug in this layer would
@@ -58,48 +94,48 @@ afterEach(() => {
 // further down instead of 15+ near-identical hand-written tests.
 describe('apiFetch / apiFetchOrThrow (via real exported callers)', () => {
   it('prefixes every request with /api', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await login('alice', 'pw')
-    expect(global.fetch).toHaveBeenCalledWith('/api/login', expect.anything())
+    expect(fetchMock).toHaveBeenCalledWith('/api/login', expect.anything())
   })
 
   it('always sends Content-Type: application/json', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await login('alice', 'pw')
-    const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers['Content-Type']).toBe('application/json')
+    const [, options] = firstCallArgs()
+    expect((options.headers as Record<string, string>)['Content-Type']).toBe('application/json')
   })
 
   it('always sets credentials: same-origin -- this is what makes the real, httponly session cookie get sent at all', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await getMyVisibleSchema()
-    const [, options] = global.fetch.mock.calls[0]
+    const [, options] = firstCallArgs()
     expect(options.credentials).toBe('same-origin')
   })
 
   it('attaches a real X-CSRF-Token header, read from the elysium_csrf cookie, on a state-changing request', async () => {
     setCsrfCookie('real-csrf-value')
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await confirmWrite('w1', true)
-    const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers['X-CSRF-Token']).toBe('real-csrf-value')
+    const [, options] = firstCallArgs()
+    expect((options.headers as Record<string, string>)['X-CSRF-Token']).toBe('real-csrf-value')
   })
 
   it('sends no X-CSRF-Token header at all when no elysium_csrf cookie exists yet', async () => {
     // The real, normal case for login() itself -- no session/CSRF
     // cookie pair exists yet at the moment someone is logging in.
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await login('alice', 'pw')
-    const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers['X-CSRF-Token']).toBeUndefined()
+    const [, options] = firstCallArgs()
+    expect((options.headers as Record<string, string>)['X-CSRF-Token']).toBeUndefined()
   })
 
   it("never attaches X-CSRF-Token on a GET request, even when the cookie exists -- matches the backend's own safe-method exemption", async () => {
     setCsrfCookie('real-csrf-value')
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await getMyVisibleSchema()
-    const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers['X-CSRF-Token']).toBeUndefined()
+    const [, options] = firstCallArgs()
+    expect((options.headers as Record<string, string>)['X-CSRF-Token']).toBeUndefined()
   })
 
   it('correctly decodes a URL-encoded CSRF cookie value, not just a plain one', async () => {
@@ -113,24 +149,24 @@ describe('apiFetch / apiFetchOrThrow (via real exported callers)', () => {
     // call). This uses a value that only reads correctly if decoding
     // genuinely happened.
     document.cookie = 'elysium_csrf=hello%20world'
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await confirmWrite('w1', true)
-    const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers['X-CSRF-Token']).toBe('hello world')
+    const [, options] = firstCallArgs()
+    expect((options.headers as Record<string, string>)['X-CSRF-Token']).toBe('hello world')
   })
 
   it('correctly extracts elysium_csrf when other, unrelated cookies are also present', async () => {
     document.cookie = 'unrelated_cookie=abc'
     document.cookie = 'elysium_csrf=real-value'
     document.cookie = 'another_cookie=xyz'
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await confirmWrite('w1', true)
-    const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers['X-CSRF-Token']).toBe('real-value')
+    const [, options] = firstCallArgs()
+    expect((options.headers as Record<string, string>)['X-CSRF-Token']).toBe('real-value')
   })
 
   it("throws ApiError with the real status and the backend's own detail message on failure", async () => {
-    global.fetch.mockResolvedValue(jsonResponse({ detail: 'Invalid username or password' }, { ok: false, status: 401 }))
+    fetchMock.mockResolvedValue(jsonResponse({ detail: 'Invalid username or password' }, { ok: false, status: 401 }))
     await expect(login('alice', 'wrong')).rejects.toMatchObject({
       status: 401,
       message: 'Invalid username or password',
@@ -138,18 +174,18 @@ describe('apiFetch / apiFetchOrThrow (via real exported callers)', () => {
   })
 
   it('throws ApiError as a real instance of ApiError, not a plain object', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({ detail: 'nope' }, { ok: false, status: 403 }))
+    fetchMock.mockResolvedValue(jsonResponse({ detail: 'nope' }, { ok: false, status: 403 }))
     await expect(login('alice', 'wrong')).rejects.toBeInstanceOf(ApiError)
   })
 
   it('falls back to a generic message when the error body is not valid JSON', async () => {
-    global.fetch.mockResolvedValue({
+    fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
       json: async () => {
         throw new Error('not json')
       },
-    })
+    } as unknown as Response)
     await expect(login('alice', 'pw')).rejects.toMatchObject({
       status: 500,
       message: 'Request failed (500)',
@@ -188,7 +224,7 @@ describe('handleIfSessionExpired', () => {
   it('does not call onSessionExpired for a 401-STATUS plain object that is not a real ApiError instance', () => {
     // Confirms the check is genuinely `instanceof ApiError`, not just
     // duck-typing on `.status === 401` -- a real, meaningful
-    // distinction: only OUR OWN api.js ever constructs a real
+    // distinction: only OUR OWN api.ts ever constructs a real
     // ApiError, so this can't be spoofed by some other error shape
     // that happens to carry a matching status field.
     const onSessionExpired = vi.fn()
@@ -207,12 +243,12 @@ describe('handleIfSessionExpired', () => {
 // swallow a network-level failure without letting it propagate.
 describe('login/logout', () => {
   it('login resolves with no value on a successful response', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await expect(login('alice', 'correct-pw')).resolves.toBeUndefined()
   })
 
   it('login throws a real ApiError on a failed response, same as any other apiFetchOrThrow caller', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({ detail: 'Invalid username or password' }, { ok: false, status: 401 }))
+    fetchMock.mockResolvedValue(jsonResponse({ detail: 'Invalid username or password' }, { ok: false, status: 401 }))
     await expect(login('alice', 'wrong-pw')).rejects.toBeInstanceOf(ApiError)
   })
 
@@ -225,28 +261,28 @@ describe('login/logout', () => {
     // any LOCAL cleanup step this needs to guarantee either way (the
     // cookies themselves are managed entirely by the backend's own
     // response), but logout() itself must still never throw.
-    global.fetch.mockRejectedValue(new Error('network down'))
+    fetchMock.mockRejectedValue(new Error('network down'))
     await expect(logout()).resolves.toBeUndefined()
   })
 
   it('logout resolves normally on a real, successful request too', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await expect(logout()).resolves.toBeUndefined()
   })
 
   it('logout attaches the X-CSRF-Token header, same as any other state-changing call', async () => {
     setCsrfCookie('real-csrf-value')
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await logout()
-    const [, options] = global.fetch.mock.calls[0]
-    expect(options.headers['X-CSRF-Token']).toBe('real-csrf-value')
+    const [, options] = firstCallArgs()
+    expect((options.headers as Record<string, string>)['X-CSRF-Token']).toBe('real-csrf-value')
   })
 })
 
 describe('query() -- deliberately does NOT throw on a non-2xx status', () => {
   it('returns the raw Response even for a 409 (permissions changed mid-query)', async () => {
     const fakeResponse = jsonResponse({ detail: 'permissions changed' }, { ok: false, status: 409 })
-    global.fetch.mockResolvedValue(fakeResponse)
+    fetchMock.mockResolvedValue(fakeResponse)
     const result = await query('how many customers do we have?')
     expect(result).toBe(fakeResponse)
     expect(result.ok).toBe(false)
@@ -254,7 +290,7 @@ describe('query() -- deliberately does NOT throw on a non-2xx status', () => {
 
   it('returns the raw Response for a normal 200 too', async () => {
     const fakeResponse = jsonResponse({ answer: '42' })
-    global.fetch.mockResolvedValue(fakeResponse)
+    fetchMock.mockResolvedValue(fakeResponse)
     const result = await query('how many customers do we have?')
     expect(result).toBe(fakeResponse)
   })
@@ -268,12 +304,12 @@ describe('query() -- deliberately does NOT throw on a non-2xx status', () => {
 // without 15+ separate, repetitive test functions for code that has
 // no branching to get wrong.
 describe('every remaining export hits the correct endpoint and method', () => {
-  const cases = [
+  const cases: { name: string; call: () => Promise<unknown>; path: string; method: string | undefined }[] = [
     { name: 'confirmWrite', call: () => confirmWrite('w1', true), path: '/api/writes/w1/confirm', method: 'POST' },
     { name: 'listUsers', call: () => listUsers(), path: '/api/users', method: undefined },
     {
       name: 'createUser',
-      call: () => createUser('bob', 'pw', null, 'editor'),
+      call: () => createUser('bob', 'pw', '', 'editor'),
       path: '/api/users',
       method: 'POST',
     },
@@ -321,17 +357,17 @@ describe('every remaining export hits the correct endpoint and method', () => {
   ]
 
   it.each(cases)('$name hits $path with method $method', async ({ call, path, method }) => {
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await call()
-    const [calledPath, options] = global.fetch.mock.calls[0]
+    const [calledPath, options] = firstCallArgs()
     expect(calledPath).toBe(path)
     expect(options.method).toBe(method)
   })
 
   it('getObjectDetail encodes an id containing a slash, so it cannot split the URL path', async () => {
-    global.fetch.mockResolvedValue(jsonResponse({}))
+    fetchMock.mockResolvedValue(jsonResponse({}))
     await getObjectDetail('Customer', 'weird/id')
-    const [calledPath] = global.fetch.mock.calls[0]
+    const [calledPath] = firstCallArgs()
     expect(calledPath).toBe('/api/objects/Customer/weird%2Fid')
   })
 })

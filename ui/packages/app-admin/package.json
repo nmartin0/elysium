@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./AdminPanel": "./src/AdminPanel.jsx"
+    "./AdminPanel": "./src/AdminPanel.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*"

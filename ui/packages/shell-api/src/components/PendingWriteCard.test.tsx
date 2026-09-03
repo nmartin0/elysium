@@ -3,7 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('../api', () => {
   class ApiError extends Error {
-    constructor(status, message) {
+    status: number
+    constructor(status: number, message: string) {
       super(message)
       this.status = status
     }
@@ -12,8 +13,8 @@ vi.mock('../api', () => {
     confirmWrite: vi.fn(),
     ApiError,
     // A real, working implementation, matching the actual one exactly
-    // -- see api.test.js's own copy of this same reasoning.
-    handleIfSessionExpired: (err, onSessionExpired) => {
+    // -- see api.test.ts's own copy of this same reasoning.
+    handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
       if (err instanceof ApiError && err.status === 401) {
         onSessionExpired()
         return true
@@ -24,13 +25,15 @@ vi.mock('../api', () => {
 })
 
 import { confirmWrite, ApiError } from '../api'
-import PendingWriteCard from './PendingWriteCard'
+import PendingWriteCard, { type PendingWrite } from './PendingWriteCard'
+
+const mockedConfirmWrite = vi.mocked(confirmWrite)
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-function singleObjectWrite(overrides = {}) {
+function singleObjectWrite(overrides: Partial<PendingWrite> = {}): PendingWrite {
   return {
     id: 'write-1',
     action_type_name: 'UpdateCustomerName',
@@ -47,7 +50,7 @@ function singleObjectWrite(overrides = {}) {
   }
 }
 
-function multiObjectWrite() {
+function multiObjectWrite(): PendingWrite {
   return {
     id: 'write-2',
     action_type_name: 'TransferFunds',
@@ -71,17 +74,13 @@ function multiObjectWrite() {
 
 describe('PendingWriteCard -- rendering', () => {
   it('renders the action name and description', () => {
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
-    )
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
     expect(screen.getByText('UpdateCustomerName')).toBeInTheDocument()
     expect(screen.getByText('Update the customer name')).toBeInTheDocument()
   })
 
   it('a single-object write renders fields with NO object_type/object_id label', () => {
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
-    )
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
     expect(screen.queryByText('Customer cust_001')).not.toBeInTheDocument()
   })
 
@@ -92,9 +91,7 @@ describe('PendingWriteCard -- rendering', () => {
   })
 
   it('shows an "old -> new" transition when expected_current_values has the field', () => {
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
-    )
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
     // "Ada Okafor" shares a text node with the trailing arrow (" → "),
     // so an exact getByText('Ada Okafor') can't match it -- a
     // substring check against the element's own full text content is
@@ -153,18 +150,16 @@ describe('PendingWriteCard -- rendering', () => {
 
 describe('PendingWriteCard -- approve', () => {
   it('clicking Approve calls confirmWrite(id, true)', async () => {
-    confirmWrite.mockResolvedValue({})
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
-    )
+    mockedConfirmWrite.mockResolvedValue({})
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
 
-    await waitFor(() => expect(confirmWrite).toHaveBeenCalledWith('write-1', true))
+    await waitFor(() => expect(mockedConfirmWrite).toHaveBeenCalledWith('write-1', true))
   })
 
   it('calls onResolved(true) after a successful approve', async () => {
-    confirmWrite.mockResolvedValue({})
+    mockedConfirmWrite.mockResolvedValue({})
     const onResolved = vi.fn()
     render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={onResolved} />)
 
@@ -174,10 +169,8 @@ describe('PendingWriteCard -- approve', () => {
   })
 
   it('shows "Change applied." and hides the fields/buttons once resolved', async () => {
-    confirmWrite.mockResolvedValue({})
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
-    )
+    mockedConfirmWrite.mockResolvedValue({})
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
 
@@ -189,18 +182,16 @@ describe('PendingWriteCard -- approve', () => {
 
 describe('PendingWriteCard -- reject', () => {
   it('clicking Reject calls confirmWrite(id, false)', async () => {
-    confirmWrite.mockResolvedValue({})
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
-    )
+    mockedConfirmWrite.mockResolvedValue({})
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
 
-    await waitFor(() => expect(confirmWrite).toHaveBeenCalledWith('write-1', false))
+    await waitFor(() => expect(mockedConfirmWrite).toHaveBeenCalledWith('write-1', false))
   })
 
   it('calls onResolved(false) after a successful reject', async () => {
-    confirmWrite.mockResolvedValue({})
+    mockedConfirmWrite.mockResolvedValue({})
     const onResolved = vi.fn()
     render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={onResolved} />)
 
@@ -210,10 +201,8 @@ describe('PendingWriteCard -- reject', () => {
   })
 
   it('shows "Change rejected." once resolved', async () => {
-    confirmWrite.mockResolvedValue({})
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
-    )
+    mockedConfirmWrite.mockResolvedValue({})
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
 
@@ -223,23 +212,25 @@ describe('PendingWriteCard -- reject', () => {
 
 describe('PendingWriteCard -- in-flight and failure handling', () => {
   it('disables both buttons while the request is in flight', async () => {
-    let resolveConfirm
-    confirmWrite.mockReturnValue(new Promise((resolve) => { resolveConfirm = resolve }))
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
+    let resolveConfirm: (value: unknown) => void
+    mockedConfirmWrite.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConfirm = resolve
+      }),
     )
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled())
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
 
-    resolveConfirm({})
+    resolveConfirm!({})
     await waitFor(() => expect(screen.getByText('Change applied.')).toBeInTheDocument())
   })
 
   it("on a non-401 failure, shows the backend's own error message and does NOT resolve", async () => {
-    confirmWrite.mockRejectedValue(new ApiError(500, 'Something went wrong'))
+    mockedConfirmWrite.mockRejectedValue(new ApiError(500, 'Something went wrong'))
     const onResolved = vi.fn()
     render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={onResolved} />)
 
@@ -251,10 +242,8 @@ describe('PendingWriteCard -- in-flight and failure handling', () => {
   })
 
   it('re-enables the buttons after a non-401 failure', async () => {
-    confirmWrite.mockRejectedValue(new ApiError(500, 'Something went wrong'))
-    render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />
-    )
+    mockedConfirmWrite.mockRejectedValue(new ApiError(500, 'Something went wrong'))
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
 
@@ -263,11 +252,15 @@ describe('PendingWriteCard -- in-flight and failure handling', () => {
   })
 
   it('on a 401, calls onSessionExpired and shows NO error message and does NOT resolve', async () => {
-    confirmWrite.mockRejectedValue(new ApiError(401, 'session expired'))
+    mockedConfirmWrite.mockRejectedValue(new ApiError(401, 'session expired'))
     const onSessionExpired = vi.fn()
     const onResolved = vi.fn()
     render(
-      <PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={onSessionExpired} onResolved={onResolved} />
+      <PendingWriteCard
+        pendingWrite={singleObjectWrite()}
+        onSessionExpired={onSessionExpired}
+        onResolved={onResolved}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))

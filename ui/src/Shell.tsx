@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
-// Shell.jsx  (the actual chrome -- header, data-driven nav, and the
+// Shell.tsx  (the actual chrome -- header, data-driven nav, and the
 // route tree's own mount point)
 //
 // Deliberately a SEPARATE file from App.jsx, not more logic folded
@@ -30,7 +30,26 @@ import { NavLink, Outlet } from 'react-router-dom'
 // spinner: this loads near-instantly in practice, and an empty nav
 // for a split second is a safer default than showing something that
 // might be about to disappear.
-export default function Shell({ visibleApps, onLogout }) {
+
+export interface VisibleApp {
+  path: string
+  name: string
+  // Not read by this component at all -- included so the type stays
+  // honest to the real GET /me/visible-apps response shape (see
+  // api/routes.py), matching the same "don't invent a narrower type
+  // than what the real object actually is" reasoning ActionForm.tsx's
+  // own ActionDef already established. string | null, not required:
+  // confirmed against this file's own real test data, which
+  // deliberately includes it either way (null for an ungated app).
+  gating_permission?: string | null
+}
+
+interface ShellProps {
+  visibleApps: VisibleApp[]
+  onLogout: () => void
+}
+
+export default function Shell({ visibleApps, onLogout }: ShellProps) {
   return (
     <div className="app">
       <header className="app__header">

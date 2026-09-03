@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./api": "./src/api.js",
-    "./format": "./src/format.js",
+    "./api": "./src/api.ts",
+    "./format": "./src/format.ts",
     "./index.css": "./src/index.css",
-    "./components/LoginForm": "./src/components/LoginForm.jsx",
-    "./components/PendingWriteCard": "./src/components/PendingWriteCard.jsx"
+    "./components/LoginForm": "./src/components/LoginForm.tsx",
+    "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx"
   },
   "peerDependencies": {
     "react": "^19.2.8"

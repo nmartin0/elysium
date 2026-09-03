@@ -8,11 +8,20 @@ vi.mock('../api', () => ({
 import { login } from '../api'
 import LoginForm from './LoginForm'
 
+// vi.mocked(), not the plain imported `login` -- vi.mock() replaces
+// the real module at runtime, but the IMPORTED binding still carries
+// api.ts's own real function type (a plain async function), not a
+// Mock -- vi.mocked() is Vitest's own, documented way to get back a
+// properly-typed mock reference (mockResolvedValue, mockRejectedValue,
+// ...) while still checked against the real function's own parameter
+// and return types.
+const mockedLogin = vi.mocked(login)
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-function fillAndSubmit(username, password) {
+function fillAndSubmit(username: string, password: string) {
   fireEvent.change(screen.getByLabelText('Username'), { target: { value: username } })
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: password } })
   fireEvent.click(screen.getByRole('button', { name: /log in/i }))
@@ -39,16 +48,16 @@ describe('LoginForm -- rendering', () => {
 
 describe('LoginForm -- submitting', () => {
   it('calls login() with exactly what was typed into each field', async () => {
-    login.mockResolvedValue(undefined)
+    mockedLogin.mockResolvedValue(undefined)
     render(<LoginForm onSuccess={vi.fn()} />)
 
     fillAndSubmit('alice', 'correct-pw')
 
-    await waitFor(() => expect(login).toHaveBeenCalledWith('alice', 'correct-pw'))
+    await waitFor(() => expect(mockedLogin).toHaveBeenCalledWith('alice', 'correct-pw'))
   })
 
   it('calls onSuccess() after a successful login', async () => {
-    login.mockResolvedValue(undefined)
+    mockedLogin.mockResolvedValue(undefined)
     const onSuccess = vi.fn()
     render(<LoginForm onSuccess={onSuccess} />)
 
@@ -60,8 +69,12 @@ describe('LoginForm -- submitting', () => {
   it('shows "Logging in…" and disables the button while the request is in flight', async () => {
     // A promise that never resolves during this test -- lets us
     // observe the genuine, real in-flight state, not just infer it.
-    let resolveLogin
-    login.mockReturnValue(new Promise((resolve) => { resolveLogin = resolve }))
+    let resolveLogin: () => void
+    mockedLogin.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLogin = resolve
+      }),
+    )
     render(<LoginForm onSuccess={vi.fn()} />)
 
     fillAndSubmit('alice', 'correct-pw')
@@ -73,14 +86,14 @@ describe('LoginForm -- submitting', () => {
     // actually flush before the test ends -- otherwise React warns
     // that an update happened outside act(), since the test function
     // would otherwise return while that update was still pending.
-    resolveLogin()
+    resolveLogin!()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
   })
 })
 
 describe('LoginForm -- failure handling', () => {
   it("shows the backend's own error message exactly, not reinterpreted", async () => {
-    login.mockRejectedValue(new Error('Invalid username or password'))
+    mockedLogin.mockRejectedValue(new Error('Invalid username or password'))
     render(<LoginForm onSuccess={vi.fn()} />)
 
     fillAndSubmit('alice', 'wrong-pw')
@@ -89,7 +102,7 @@ describe('LoginForm -- failure handling', () => {
   })
 
   it('does NOT call onSuccess() when login fails', async () => {
-    login.mockRejectedValue(new Error('Invalid username or password'))
+    mockedLogin.mockRejectedValue(new Error('Invalid username or password'))
     const onSuccess = vi.fn()
     render(<LoginForm onSuccess={onSuccess} />)
 
@@ -100,7 +113,7 @@ describe('LoginForm -- failure handling', () => {
   })
 
   it('re-enables the button and clears "Logging in…" after a failure', async () => {
-    login.mockRejectedValue(new Error('Invalid username or password'))
+    mockedLogin.mockRejectedValue(new Error('Invalid username or password'))
     render(<LoginForm onSuccess={vi.fn()} />)
 
     fillAndSubmit('alice', 'wrong-pw')
@@ -110,7 +123,7 @@ describe('LoginForm -- failure handling', () => {
   })
 
   it('clears a previous error on a new submit attempt, even before the new result comes back', async () => {
-    login.mockRejectedValueOnce(new Error('Invalid username or password'))
+    mockedLogin.mockRejectedValueOnce(new Error('Invalid username or password'))
     render(<LoginForm onSuccess={vi.fn()} />)
 
     fillAndSubmit('alice', 'wrong-pw')
@@ -119,7 +132,7 @@ describe('LoginForm -- failure handling', () => {
     // Second attempt -- a real promise that never resolves during this
     // test, so we can observe the CLEARED error state before any new
     // result exists at all.
-    login.mockReturnValue(new Promise(() => {}))
+    mockedLogin.mockReturnValue(new Promise(() => {}))
     fillAndSubmit('alice', 'correct-pw-this-time')
 
     await waitFor(() => expect(screen.queryByText('Invalid username or password')).not.toBeInTheDocument())

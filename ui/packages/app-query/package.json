@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./QueryPanel": "./src/QueryPanel.jsx"
+    "./QueryPanel": "./src/QueryPanel.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*"

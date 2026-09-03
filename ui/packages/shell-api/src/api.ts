@@ -1,4 +1,4 @@
-// api.js  (the ONE place that knows about fetch, the session/CSRF
+// api.ts  (the ONE place that knows about fetch, the session/CSRF
 // cookies, and the /api prefix)
 //
 // Every caller in this file passes a plain, unprefixed path ("/login",
@@ -44,9 +44,24 @@
 // can never construct a matching header value -- even in the rare
 // cases SameSite=Strict alone doesn't fully cover. See api/
 // csrf_middleware.py's own docstring for the complete reasoning.
+//
+// RETURN TYPES: every function here that hands back response.json()
+// is typed Promise<unknown>, deliberately, not a hand-authored
+// interface per endpoint -- fetch's own .json() is typed `any` in
+// TypeScript's built-in lib, and `any` is contagious (it silently
+// disables checking everywhere it flows), which would quietly undo
+// the whole point of converting this file at all. unknown is the
+// honest alternative: cheap here (one word per function), and it
+// forces each REAL consumer to narrow to the specific shape it
+// already assumes from its own usage -- done at each component's own
+// conversion step, not front-loaded here as a much larger, separate
+// piece of work authoring a matching interface for every backend
+// response shape up front.
 
 export class ApiError extends Error {
-  constructor(status, message) {
+  status: number
+
+  constructor(status: number, message: string) {
     super(message)
     this.status = status
   }
@@ -70,7 +85,13 @@ export class ApiError extends Error {
 // handle errors" wrapper too would trade real, if repetitive, clarity
 // at each call site for a more abstract, harder-to-follow one -- not
 // attempted here for that reason, not an oversight.
-export function handleIfSessionExpired(err, onSessionExpired) {
+//
+// err: unknown, not Error -- a catch block's own binding is genuinely
+// unknown in strict mode (useUnknownInCatchVariables, bundled into
+// strict: true) since JavaScript allows throwing anything at all, not
+// just Error instances; the `instanceof ApiError` check below is
+// exactly how a caller safely narrows it.
+export function handleIfSessionExpired(err: unknown, onSessionExpired: () => void): boolean {
   if (err instanceof ApiError && err.status === 401) {
     onSessionExpired()
     return true
@@ -93,12 +114,18 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', undefined]) // undefined
 // cookie exists yet" apart from "it exists and is empty" (which never
 // legitimately happens, but null is still the more honest absence
 // value than an empty string would be).
-function getCsrfCookie() {
+function getCsrfCookie(): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; )${CSRF_COOKIE_NAME}=([^;]*)`))
-  return match ? decodeURIComponent(match[1]) : null
+  // match[1]! -- noUncheckedIndexedAccess types every array index as
+  // possibly-undefined, including a regex match's own capture groups;
+  // genuinely safe here by construction, not assumed: this regex has
+  // exactly one capture group, so a truthy `match` guarantees index 1
+  // matched something real (possibly an empty string, from the `*`,
+  // but never undefined).
+  return match ? decodeURIComponent(match[1]!) : null
 }
 
-async function apiFetch(path, options = {}) {
+async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,
@@ -113,7 +140,7 @@ async function apiFetch(path, options = {}) {
   // exemption, just a natural, harmless consequence of it.
   if (!SAFE_METHODS.has(options.method)) {
     const csrfToken = getCsrfCookie()
-    if (csrfToken) headers[CSRF_HEADER_NAME] = csrfToken
+    if (csrfToken) (headers as Record<string, string>)[CSRF_HEADER_NAME] = csrfToken
   }
   // Every real backend path lives under /api -- see this file's own
   // header comment for the fuller reasoning. This is the ONE place
@@ -132,7 +159,7 @@ async function apiFetch(path, options = {}) {
 // Throws ApiError on any non-2xx response -- used by calls where the
 // caller only cares about success/failure, not the raw status (login,
 // confirming a write). query() is deliberately DIFFERENT -- see below.
-async function apiFetchOrThrow(path, options = {}) {
+async function apiFetchOrThrow(path: string, options: RequestInit = {}): Promise<Response> {
   const response = await apiFetch(path, options)
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
@@ -148,14 +175,14 @@ async function apiFetchOrThrow(path, options = {}) {
 // before -- login() itself is genuinely different from the rest of
 // this file only in that it produces no data of its own to return on
 // success.
-export async function login(username, password) {
+export async function login(username: string, password: string): Promise<void> {
   await apiFetchOrThrow('/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
   })
 }
 
-export async function logout() {
+export async function logout(): Promise<void> {
   try {
     await apiFetch('/logout', { method: 'POST' })
   } catch {
@@ -179,14 +206,14 @@ export async function logout() {
 // pending write, 409 permissions changed, 401 session expired), and
 // the caller needs to branch on the status itself, not just get a
 // generic failure.
-export async function query(queryText) {
+export async function query(queryText: string): Promise<Response> {
   return apiFetch('/query', {
     method: 'POST',
     body: JSON.stringify({ query: queryText }),
   })
 }
 
-export async function confirmWrite(writeId, approved) {
+export async function confirmWrite(writeId: string, approved: boolean): Promise<unknown> {
   const response = await apiFetchOrThrow(`/writes/${writeId}/confirm`, {
     method: 'POST',
     body: JSON.stringify({ approved }),
@@ -200,12 +227,17 @@ export async function confirmWrite(writeId, approved) {
 // a non-admin calling any of these simply gets a real 403 from the
 // server, surfaced the same way as any other ApiError.
 
-export async function listUsers() {
+export async function listUsers(): Promise<unknown> {
   const response = await apiFetchOrThrow('/users')
   return response.json()
 }
 
-export async function createUser(username, password, macValue, roleName) {
+export async function createUser(
+  username: string,
+  password: string,
+  macValue: string,
+  roleName: string,
+): Promise<unknown> {
   const response = await apiFetchOrThrow('/users', {
     method: 'POST',
     body: JSON.stringify({
@@ -218,23 +250,23 @@ export async function createUser(username, password, macValue, roleName) {
   return response.json()
 }
 
-export async function disableUser(username) {
+export async function disableUser(username: string): Promise<void> {
   await apiFetchOrThrow(`/users/${username}/disable`, { method: 'POST' })
 }
 
-export async function enableUser(username) {
+export async function enableUser(username: string): Promise<void> {
   await apiFetchOrThrow(`/users/${username}/enable`, { method: 'POST' })
 }
 
-export async function deleteUser(username) {
+export async function deleteUser(username: string): Promise<void> {
   await apiFetchOrThrow(`/users/${username}`, { method: 'DELETE' })
 }
 
-export async function logoutAllForUser(username) {
+export async function logoutAllForUser(username: string): Promise<void> {
   await apiFetchOrThrow(`/users/${username}/logout-all`, { method: 'POST' })
 }
 
-export async function getVisibleSchema(username) {
+export async function getVisibleSchema(username: string): Promise<unknown> {
   const response = await apiFetchOrThrow(`/users/${username}/visible-schema`)
   return response.json()
 }
@@ -244,23 +276,23 @@ export async function getVisibleSchema(username) {
 // enforced entirely server-side (see api/routes.py's own docstrings
 // for both routes).
 
-export async function getMyVisibleSchema() {
+export async function getMyVisibleSchema(): Promise<unknown> {
   const response = await apiFetchOrThrow('/me/visible-schema')
   return response.json()
 }
 
-export async function getVisibleApps() {
+export async function getVisibleApps(): Promise<unknown> {
   const response = await apiFetchOrThrow('/me/visible-apps')
   return response.json()
 }
 
-export async function searchObjects(objectType, queryText) {
+export async function searchObjects(objectType: string, queryText: string): Promise<unknown> {
   const params = new URLSearchParams({ q: queryText })
   const response = await apiFetchOrThrow(`/objects/${objectType}/search?${params}`)
   return response.json()
 }
 
-export async function getObjectDetail(objectType, objectId) {
+export async function getObjectDetail(objectType: string, objectId: string): Promise<unknown> {
   // objectId, unlike objectType, is genuinely DATA-derived (a real
   // customer_id, a real integer transaction id, ...) rather than a
   // fixed, schema-controlled name -- encoded specifically because an
@@ -273,12 +305,12 @@ export async function getObjectDetail(objectType, objectId) {
 // --- Stage 3: direct action invocation, no LLM involved. Mirrors
 // getMyVisibleSchema()'s own self-service pattern exactly.
 
-export async function getVisibleActionTypes() {
+export async function getVisibleActionTypes(): Promise<unknown> {
   const response = await apiFetchOrThrow('/me/visible-action-types')
   return response.json()
 }
 
-export async function proposeAction(actionTypeName, parameters) {
+export async function proposeAction(actionTypeName: string, parameters: Record<string, unknown>): Promise<unknown> {
   // actionTypeName is a fixed, schema-controlled name (like
   // objectType above), never encoded -- only objectId-shaped, DATA-
   // derived values get that treatment (see getObjectDetail() above).

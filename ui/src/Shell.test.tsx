@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import Shell from './Shell'
+import Shell, { type VisibleApp } from './Shell'
 
-function renderShell(visibleApps, onLogout = vi.fn(), initialPath = '/query') {
+function renderShell(visibleApps: VisibleApp[], onLogout: () => void = vi.fn(), initialPath = '/query') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>

@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import type { PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
 vi.mock('@elysium/shell-api/api', () => {
   class ApiError extends Error {
-    constructor(status, message) {
+    status: number
+    constructor(status: number, message: string) {
       super(message)
       this.status = status
     }
@@ -11,7 +13,7 @@ vi.mock('@elysium/shell-api/api', () => {
   return {
     proposeAction: vi.fn(),
     ApiError,
-    handleIfSessionExpired: (err, onSessionExpired) => {
+    handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
       if (err instanceof ApiError && err.status === 401) {
         onSessionExpired()
         return true
@@ -25,7 +27,7 @@ vi.mock('@elysium/shell-api/components/PendingWriteCard', () => ({
   // test file. This file's own job is only to confirm ActionForm
   // renders it with the right pendingWrite/onResolved once a propose
   // succeeds, not to re-prove its own internal behavior again here.
-  default: ({ pendingWrite, onResolved }) => (
+  default: ({ pendingWrite, onResolved }: { pendingWrite: PendingWrite; onResolved: () => void }) => (
     <div data-testid="pending-write-card">
       <p>{pendingWrite.id}</p>
       <button onClick={onResolved}>fake resolve</button>
@@ -34,29 +36,58 @@ vi.mock('@elysium/shell-api/components/PendingWriteCard', () => ({
 }))
 
 import { proposeAction, ApiError } from '@elysium/shell-api/api'
-import ActionForm from './ActionForm'
+import ActionForm, { type ActionDef } from './ActionForm'
 
-function updateCustomerNameDef() {
+const mockedProposeAction = vi.mocked(proposeAction)
+
+// noUncheckedIndexedAccess types mock.calls[0] (and its own [1]) as
+// possibly-undefined -- every real call site below only ever reads
+// this immediately after awaiting the real call that produced it,
+// guaranteeing it exists. A tiny helper, not a `!` at every call
+// site, matching api.test.ts's own firstCallArgs() pattern.
+function secondArgOfFirstCall(): Record<string, unknown> {
+  const call = mockedProposeAction.mock.calls[0]
+  if (!call) throw new Error('proposeAction was never called')
+  return call[1]
+}
+
+function updateCustomerNameDef(): ActionDef {
   return {
+    // Honestly matching the real, whole GET /me/visible-action-types
+    // entry shape here, even though ActionForm itself only reads
+    // `parameters` -- the real caller (ObjectDetailPanel.jsx) always
+    // passes the full, real object, and this test data should too.
+    affected_object_types: ['Customer'],
+    executable: true,
     parameters: {
-      customer_id: { type: 'object_reference', object_type: 'Customer', required: true, default_to_current_object: true },
+      customer_id: {
+        type: 'object_reference',
+        object_type: 'Customer',
+        required: true,
+        default_to_current_object: true,
+      },
       new_name: { type: 'string', required: true },
     },
   }
 }
 
-function transferFundsDef() {
+function transferFundsDef(): ActionDef {
   // Matches tests/integration/fixtures/ontology_schema.yaml's own
   // REAL, FIXED TransferFunds definition exactly -- from_account_id
   // and to_account_id both declare object_type: Account, but only
   // from_account_id carries default_to_current_object: true. Before
   // this marker existed, BOTH got pre-filled and locked to the same
-  // id (a real, previously-discovered bug -- see ActionForm.jsx's own
+  // id (a real, previously-discovered bug -- see ActionForm.tsx's own
   // AI-notes for the full history); this shape confirms the fix.
   return {
+    affected_object_types: ['Account'],
+    executable: true,
     parameters: {
       from_account_id: {
-        type: 'object_reference', object_type: 'Account', required: true, default_to_current_object: true,
+        type: 'object_reference',
+        object_type: 'Account',
+        required: true,
+        default_to_current_object: true,
       },
       to_account_id: { type: 'object_reference', object_type: 'Account', required: true },
       new_from_balance: { type: 'number', required: true },
@@ -65,7 +96,17 @@ function transferFundsDef() {
   }
 }
 
-function renderForm(overrides = {}) {
+interface RenderFormOverrides {
+  actionName?: string
+  actionDef?: ActionDef
+  objectType?: string
+  objectId?: string
+  onCancel?: () => void
+  onResolved?: (approved: boolean) => void
+  onSessionExpired?: () => void
+}
+
+function renderForm(overrides: RenderFormOverrides = {}) {
   const props = {
     actionName: 'UpdateCustomerName',
     actionDef: updateCustomerNameDef(),
@@ -104,10 +145,15 @@ describe('ActionForm -- rendering', () => {
     // is both marked AND type-matches. Confirms the mechanism locks
     // ONLY the explicitly marked parameter, never an unmarked one,
     // regardless of type.
-    const actionDef = {
+    const actionDef: ActionDef = {
+      affected_object_types: ['Customer'],
+      executable: true,
       parameters: {
         customer_id: {
-          type: 'object_reference', object_type: 'Customer', required: true, default_to_current_object: true,
+          type: 'object_reference',
+          object_type: 'Customer',
+          required: true,
+          default_to_current_object: true,
         },
         linked_account_id: { type: 'object_reference', object_type: 'Account', required: true },
       },
@@ -128,7 +174,7 @@ describe('ActionForm -- rendering', () => {
     // to_account_id (sharing object_type: Account) got pre-filled and
     // locked to the SAME current account's id, with no way to specify
     // a different "to" account through the form at all. See
-    // ActionForm.jsx's own AI-notes for the full history.
+    // ActionForm.tsx's own AI-notes for the full history.
     renderForm({
       actionName: 'TransferFunds',
       actionDef: transferFundsDef(),
@@ -151,10 +197,15 @@ describe('ActionForm -- rendering', () => {
     // Pre-filling a Customer-typed parameter with an Account's own id
     // just because the marker is present would be a real, silent
     // correctness bug of its own, not just a UX one.
-    const actionDef = {
+    const actionDef: ActionDef = {
+      affected_object_types: ['Customer', 'Account'],
+      executable: true,
       parameters: {
         customer_id: {
-          type: 'object_reference', object_type: 'Customer', required: true, default_to_current_object: true,
+          type: 'object_reference',
+          object_type: 'Customer',
+          required: true,
+          default_to_current_object: true,
         },
         account_id: { type: 'object_reference', object_type: 'Account', required: true },
       },
@@ -169,7 +220,12 @@ describe('ActionForm -- rendering', () => {
   })
 
   it('renders a "number" parameter as a real number input', () => {
-    renderForm({ actionName: 'TransferFunds', actionDef: transferFundsDef(), objectType: 'Account', objectId: 'acct_from' })
+    renderForm({
+      actionName: 'TransferFunds',
+      actionDef: transferFundsDef(),
+      objectType: 'Account',
+      objectId: 'acct_from',
+    })
     expect(screen.getByLabelText('New from balance')).toHaveAttribute('type', 'number')
   })
 
@@ -186,7 +242,12 @@ describe('ActionForm -- rendering', () => {
 
 describe('ActionForm -- editing', () => {
   it('typing updates only that specific field, leaving others untouched', () => {
-    renderForm({ actionName: 'TransferFunds', actionDef: transferFundsDef(), objectType: 'Account', objectId: 'acct_from' })
+    renderForm({
+      actionName: 'TransferFunds',
+      actionDef: transferFundsDef(),
+      objectType: 'Account',
+      objectId: 'acct_from',
+    })
 
     fireEvent.change(screen.getByLabelText('New from balance'), { target: { value: '250' } })
 
@@ -200,23 +261,28 @@ describe('ActionForm -- editing', () => {
 
 describe('ActionForm -- submitting', () => {
   it('calls proposeAction with the real, current field values', async () => {
-    proposeAction.mockResolvedValue({ pending_write: { id: 'write-1' } })
+    mockedProposeAction.mockResolvedValue({ pending_write: { id: 'write-1' } })
     renderForm()
 
     fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'Ada Lovelace' } })
     fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
 
     await waitFor(() =>
-      expect(proposeAction).toHaveBeenCalledWith('UpdateCustomerName', {
+      expect(mockedProposeAction).toHaveBeenCalledWith('UpdateCustomerName', {
         customer_id: 'cust_001',
         new_name: 'Ada Lovelace',
-      })
+      }),
     )
   })
 
   it('coerces a "number" parameter\'s string value to a real JSON number, with the now-genuinely-editable to_account_id filled independently', async () => {
-    proposeAction.mockResolvedValue({ pending_write: { id: 'write-1' } })
-    renderForm({ actionName: 'TransferFunds', actionDef: transferFundsDef(), objectType: 'Account', objectId: 'acct_from' })
+    mockedProposeAction.mockResolvedValue({ pending_write: { id: 'write-1' } })
+    renderForm({
+      actionName: 'TransferFunds',
+      actionDef: transferFundsDef(),
+      objectType: 'Account',
+      objectId: 'acct_from',
+    })
 
     fireEvent.change(screen.getByLabelText('To account id'), { target: { value: 'acct_to' } })
     fireEvent.change(screen.getByLabelText('New from balance'), { target: { value: '250' } })
@@ -224,18 +290,18 @@ describe('ActionForm -- submitting', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
 
     await waitFor(() =>
-      expect(proposeAction).toHaveBeenCalledWith('TransferFunds', {
+      expect(mockedProposeAction).toHaveBeenCalledWith('TransferFunds', {
         from_account_id: 'acct_from',
         // Genuinely a different value now -- the fix, confirmed here
         // too, not just in the rendering tests above.
         to_account_id: 'acct_to',
         new_from_balance: 250,
         new_to_balance: 750,
-      })
+      }),
     )
     // Real numbers, not the strings "250"/"750".
-    expect(typeof proposeAction.mock.calls[0][1].new_from_balance).toBe('number')
-    expect(typeof proposeAction.mock.calls[0][1].new_to_balance).toBe('number')
+    expect(typeof secondArgOfFirstCall().new_from_balance).toBe('number')
+    expect(typeof secondArgOfFirstCall().new_to_balance).toBe('number')
   })
 
   it('leaves an empty, non-required "number" parameter as an empty string, not coerced to 0 or NaN', async () => {
@@ -246,20 +312,22 @@ describe('ActionForm -- submitting', () => {
     // browser's own native validation blocks the submit event itself
     // first) -- this is the only way to genuinely exercise this
     // component's own `raw !== ''` coercion guard at all.
-    const actionDef = {
+    const actionDef: ActionDef = {
+      affected_object_types: ['Customer'],
+      executable: true,
       parameters: { optional_amount: { type: 'number', required: false } },
     }
-    proposeAction.mockResolvedValue({ pending_write: { id: 'write-1' } })
+    mockedProposeAction.mockResolvedValue({ pending_write: { id: 'write-1' } })
     renderForm({ actionName: 'SyntheticAction', actionDef, objectType: 'Customer', objectId: 'cust_001' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
 
-    await waitFor(() => expect(proposeAction).toHaveBeenCalled())
-    expect(proposeAction.mock.calls[0][1].optional_amount).toBe('')
+    await waitFor(() => expect(mockedProposeAction).toHaveBeenCalled())
+    expect(secondArgOfFirstCall().optional_amount).toBe('')
   })
 
   it('disables both Propose and Cancel while the request is in flight', async () => {
-    proposeAction.mockReturnValue(new Promise(() => {}))
+    mockedProposeAction.mockReturnValue(new Promise(() => {}))
     renderForm()
 
     fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'Ada Lovelace' } })
@@ -272,7 +340,7 @@ describe('ActionForm -- submitting', () => {
 
 describe('ActionForm -- a successful propose', () => {
   it('shows PendingWriteCard with the real pending_write once proposed', async () => {
-    proposeAction.mockResolvedValue({ pending_write: { id: 'write-42' } })
+    mockedProposeAction.mockResolvedValue({ pending_write: { id: 'write-42' } })
     renderForm()
 
     fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'Ada Lovelace' } })
@@ -283,7 +351,7 @@ describe('ActionForm -- a successful propose', () => {
   })
 
   it("passes ActionForm's own onResolved through to PendingWriteCard unchanged", async () => {
-    proposeAction.mockResolvedValue({ pending_write: { id: 'write-42' } })
+    mockedProposeAction.mockResolvedValue({ pending_write: { id: 'write-42' } })
     const { props } = renderForm()
 
     fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'Ada Lovelace' } })
@@ -298,7 +366,7 @@ describe('ActionForm -- a successful propose', () => {
 
 describe('ActionForm -- failure handling', () => {
   it("shows the backend's own generic error message on a non-401 failure", async () => {
-    proposeAction.mockRejectedValue(new ApiError(403, 'Not authorized to perform this action'))
+    mockedProposeAction.mockRejectedValue(new ApiError(403, 'Not authorized to perform this action'))
     renderForm()
 
     fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'Ada Lovelace' } })
@@ -308,7 +376,7 @@ describe('ActionForm -- failure handling', () => {
   })
 
   it('re-enables the buttons after a non-401 failure, stays on the form', async () => {
-    proposeAction.mockRejectedValue(new ApiError(403, 'Not authorized to perform this action'))
+    mockedProposeAction.mockRejectedValue(new ApiError(403, 'Not authorized to perform this action'))
     renderForm()
 
     fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'Ada Lovelace' } })
@@ -319,7 +387,7 @@ describe('ActionForm -- failure handling', () => {
   })
 
   it('calls onSessionExpired and shows no error text on a 401', async () => {
-    proposeAction.mockRejectedValue(new ApiError(401, 'session expired'))
+    mockedProposeAction.mockRejectedValue(new ApiError(401, 'session expired'))
     const onSessionExpired = vi.fn()
     renderForm({ onSessionExpired })
 
@@ -345,6 +413,6 @@ describe('ActionForm -- cancel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
-    expect(proposeAction).not.toHaveBeenCalled()
+    expect(mockedProposeAction).not.toHaveBeenCalled()
   })
 })

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { searchObjects, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import type { VisibleSchema } from './ObjectDetailPanel'
 
 // The human-facing browse/search screen -- Palantir's own Object
 // Explorer is the closest real-world analog (a real research +
@@ -20,13 +21,23 @@ import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-ap
 // avoid a real request on every single keystroke.
 const DEBOUNCE_MS = 300
 
-export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
-  const [selectedType, setSelectedType] = useState(null)
+export interface SearchResult {
+  id: string
+  fields: Record<string, unknown>
+}
+
+interface ObjectSearchPanelProps {
+  visibleSchema: VisibleSchema | null
+  onSessionExpired: () => void
+}
+
+export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: ObjectSearchPanelProps) {
+  const [selectedType, setSelectedType] = useState<string | null>(null)
   const [queryText, setQueryText] = useState('')
-  const [results, setResults] = useState([])
+  const [results, setResults] = useState<SearchResult[]>([])
   const [totalMatches, setTotalMatches] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
 
   // Guards against a slower, EARLIER request's response overwriting a
   // faster, LATER one's already-correct results -- a real, well-known
@@ -40,7 +51,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
 
   useEffect(() => {
     if (selectedType === null && objectTypes && objectTypes.length > 0) {
-      setSelectedType(objectTypes[0])
+      setSelectedType(objectTypes[0]!)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objectTypes])
@@ -54,14 +65,21 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
 
     const timeoutId = setTimeout(async () => {
       try {
-        const response = await searchObjects(selectedType, queryText)
+        // searchObjects() itself returns Promise<unknown> (see api.ts's
+        // own header comment on why) -- asserted to the real, known
+        // success shape here, matching api/routes.py's own documented
+        // contract for the search route.
+        const response = (await searchObjects(selectedType, queryText)) as {
+          results: SearchResult[]
+          total_matches: number
+        }
         if (thisRequestId !== latestRequestId.current) return
         setResults(response.results)
         setTotalMatches(response.total_matches)
       } catch (err) {
         if (thisRequestId !== latestRequestId.current) return
         if (handleIfSessionExpired(err, onSessionExpired)) return
-        setError(err.message)
+        setError(err instanceof Error ? err.message : String(err))
       } finally {
         if (thisRequestId === latestRequestId.current) setLoading(false)
       }
@@ -87,10 +105,21 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
     )
   }
 
+  // selectedType itself still starts as null -- the effect above sets
+  // it to a real value once objectTypes is known, and the search
+  // effect above correctly waits for that real value before firing
+  // (gated on `if (!selectedType) return`). By the time results has
+  // any entries at all, a real search must already have fired, which
+  // itself guarantees selectedType was already a real string at that
+  // point -- genuinely safe by construction, not assumed, the exact
+  // same reasoning the <select> element's own fallback below already
+  // relied on before this file had any types to make explicit.
+  const currentType = selectedType ?? objectTypes[0]!
+
   return (
     <div className="object-search">
       <div className="object-search__controls">
-        <select value={selectedType ?? objectTypes[0]} onChange={(event) => setSelectedType(event.target.value)}>
+        <select value={currentType} onChange={(event) => setSelectedType(event.target.value)}>
           {/* selectedType itself still starts as null -- the effect
               below sets it to a real value once objectTypes is known,
               and the search effect further down correctly waits for
@@ -114,7 +143,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
           type="text"
           value={queryText}
           onChange={(event) => setQueryText(event.target.value)}
-          placeholder={`Search ${selectedType}…`}
+          placeholder={`Search ${currentType}…`}
         />
       </div>
 
@@ -125,11 +154,11 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
 
       <ul className="object-search__results">
         {results.map((result) => {
-          const titleValue = getDisplayTitle(visibleSchema?.[selectedType], result.fields, result.id)
+          const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
           return (
             <li key={result.id} className="object-search__result">
-              <Link to={`/objects/${selectedType}/${encodeURIComponent(result.id)}`} className="object-search__link">
-                <p className="object-search__result-title">{titleValue}</p>
+              <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
+                <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
                 {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
                 <dl className="object-search__result-fields">
                   {Object.entries(result.fields).map(([field, value]) => (
@@ -209,6 +238,12 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }) {
 //   captured the full browser console -- zero React warnings of any
 //   kind, confirmed directly rather than assumed from the code change
 //   alone.
+// - The TypeScript migration reused the SAME selectedType ?? objectTypes
+//   [0] fallback (renamed currentType, used everywhere selectedType
+//   was needed after the two early returns, not just the <select>'s
+//   own value) rather than inventing a second pattern for the exact
+//   same "safe by construction, TypeScript can't itself prove it"
+//   situation results.map() and the search Link also depend on.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Live, debounced search (300ms) is a deliberate departure from

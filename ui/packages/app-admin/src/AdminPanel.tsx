@@ -10,25 +10,40 @@ import {
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
 
+export interface User {
+  username: string
+  role_name: string
+  mac_value: string | null
+  disabled: boolean
+}
+
+interface AdminPanelProps {
+  onSessionExpired: () => void
+}
+
 // Every action here is gated server-side by manage:users -- this
 // component never decides who's allowed to do what, it just calls the
 // real endpoint and shows whatever the backend actually decides. A
 // non-admin landing here simply sees the real 403 from GET /users,
 // same as any other error -- no separate "am I an admin" check exists
 // or is needed client-side.
-export default function AdminPanel({ onSessionExpired }) {
-  const [users, setUsers] = useState(null)
-  const [error, setError] = useState(null)
-  const [schemaByUsername, setSchemaByUsername] = useState({})
+export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
+  const [users, setUsers] = useState<User[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [schemaByUsername, setSchemaByUsername] = useState<Record<string, unknown>>({})
 
   async function loadUsers() {
     setError(null)
     try {
-      const data = await listUsers()
+      // listUsers() itself returns Promise<unknown> (see api.ts's own
+      // header comment on why) -- asserted to the real, known
+      // response shape here, matching api/routes.py's own documented
+      // contract for GET /users.
+      const data = (await listUsers()) as User[]
       setUsers(data)
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err.message)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -37,18 +52,18 @@ export default function AdminPanel({ onSessionExpired }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function handleAction(action, username) {
+  async function handleAction(action: (username: string) => Promise<void>, username: string) {
     setError(null)
     try {
       await action(username)
       await loadUsers()
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err.message)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
-  async function handleToggleSchema(username) {
+  async function handleToggleSchema(username: string) {
     if (schemaByUsername[username]) {
       setSchemaByUsername((prev) => {
         const next = { ...prev }
@@ -62,11 +77,11 @@ export default function AdminPanel({ onSessionExpired }) {
       setSchemaByUsername((prev) => ({ ...prev, [username]: schema }))
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err.message)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
-  function handleDelete(username) {
+  function handleDelete(username: string) {
     if (window.confirm(`Delete ${username}? This cannot be undone.`)) {
       handleAction(deleteUser, username)
     }
@@ -114,7 +129,17 @@ export default function AdminPanel({ onSessionExpired }) {
                     </button>
                   </td>
                 </tr>
-                {schemaByUsername[user.username] && (
+                {/* !== undefined, not a bare truthy check -- schemaByUsername's
+                    own values are typed unknown (Record<string, unknown>),
+                    and `unknown && <jsx>` is not assignable to ReactNode
+                    (confirmed directly via tsc, not assumed): TypeScript
+                    needs the left side of && to be a real boolean. !==
+                    undefined preserves the exact same real behavior as the
+                    original bare truthy check -- a stored schema value is
+                    always a real, truthy object from the backend, never
+                    null/0/''/false, so the only two real states are
+                    "absent" (undefined) or "a real object" either way. */}
+                {schemaByUsername[user.username] !== undefined && (
                   <tr>
                     <td colSpan={5}>
                       <pre>{JSON.stringify(schemaByUsername[user.username], null, 2)}</pre>
@@ -130,14 +155,20 @@ export default function AdminPanel({ onSessionExpired }) {
   )
 }
 
-function CreateUserForm({ onCreated, onError, onSessionExpired }) {
+interface CreateUserFormProps {
+  onCreated: () => Promise<void>
+  onError: (error: string | null) => void
+  onSessionExpired: () => void
+}
+
+function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserFormProps) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [macValue, setMacValue] = useState('')
   const [roleName, setRoleName] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitting(true)
     onError(null)
@@ -150,7 +181,7 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }) {
       await onCreated()
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      onError(err.message)
+      onError(err instanceof Error ? err.message : String(err))
     } finally {
       setSubmitting(false)
     }

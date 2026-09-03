@@ -4,7 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('@elysium/shell-api/api', () => {
   class ApiError extends Error {
-    constructor(status, message) {
+    status: number
+    constructor(status: number, message: string) {
       super(message)
       this.status = status
     }
@@ -12,7 +13,7 @@ vi.mock('@elysium/shell-api/api', () => {
   return {
     searchObjects: vi.fn(),
     ApiError,
-    handleIfSessionExpired: (err, onSessionExpired) => {
+    handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
       if (err instanceof ApiError && err.status === 401) {
         onSessionExpired()
         return true
@@ -23,9 +24,12 @@ vi.mock('@elysium/shell-api/api', () => {
 })
 
 import { searchObjects, ApiError } from '@elysium/shell-api/api'
-import ObjectSearchPanel from './ObjectSearchPanel'
+import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
+import type { VisibleSchema } from './ObjectDetailPanel'
 
-const CUSTOMER_SCHEMA = {
+const mockedSearchObjects = vi.mocked(searchObjects)
+
+const CUSTOMER_SCHEMA: VisibleSchema = {
   Customer: { title_field: 'name', fields: { name: { type: 'data' }, region: { type: 'data' } } },
   Account: { fields: { balance: { type: 'data' } } },
 }
@@ -41,15 +45,15 @@ const CUSTOMER_SCHEMA = {
 // unshortened 300ms debounce genuinely elapses) but is what actually,
 // reliably passes -- correctness over speed, matching this project's
 // own established testing discipline elsewhere.
-function renderPanel(visibleSchema, onSessionExpired = vi.fn()) {
+function renderPanel(visibleSchema: VisibleSchema | null, onSessionExpired: () => void = vi.fn()) {
   return render(
     <MemoryRouter>
       <ObjectSearchPanel visibleSchema={visibleSchema} onSessionExpired={onSessionExpired} />
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 
-function searchResult(results, totalMatches) {
+function searchResult(results: SearchResult[], totalMatches?: number) {
   return { results, total_matches: totalMatches ?? results.length }
 }
 
@@ -71,13 +75,13 @@ describe('ObjectSearchPanel -- loading and empty states', () => {
   it('does not call searchObjects at all when there is nothing to search', async () => {
     renderPanel({})
     await new Promise((resolve) => setTimeout(resolve, 500))
-    expect(searchObjects).not.toHaveBeenCalled()
+    expect(mockedSearchObjects).not.toHaveBeenCalled()
   })
 })
 
 describe('ObjectSearchPanel -- type selection', () => {
   it('renders every real object type as a select option, defaulting to the first', () => {
-    searchObjects.mockResolvedValue(searchResult([]))
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
     expect(screen.getByRole('combobox')).toHaveValue('Customer')
     expect(screen.getByRole('option', { name: 'Customer' })).toBeInTheDocument()
@@ -85,50 +89,50 @@ describe('ObjectSearchPanel -- type selection', () => {
   })
 
   it('changing the selected type triggers a new, real search for that type', async () => {
-    searchObjects.mockResolvedValue(searchResult([]))
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
-    await waitFor(() => expect(searchObjects).toHaveBeenCalledWith('Customer', ''))
-    searchObjects.mockClear()
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', ''))
+    mockedSearchObjects.mockClear()
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Account' } })
 
-    await waitFor(() => expect(searchObjects).toHaveBeenCalledWith('Account', ''))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Account', ''))
   })
 })
 
 describe('ObjectSearchPanel -- debouncing', () => {
   it('does not call searchObjects immediately on keystroke -- only after the debounce delay', async () => {
-    searchObjects.mockResolvedValue(searchResult([]))
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
-    await waitFor(() => expect(searchObjects).toHaveBeenCalledWith('Customer', ''))
-    searchObjects.mockClear()
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', ''))
+    mockedSearchObjects.mockClear()
 
     fireEvent.change(screen.getByPlaceholderText('Search Customer…'), { target: { value: 'a' } })
-    expect(searchObjects).not.toHaveBeenCalled()
+    expect(mockedSearchObjects).not.toHaveBeenCalled()
 
-    await waitFor(() => expect(searchObjects).toHaveBeenCalledWith('Customer', 'a'))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', 'a'))
   })
 
   it('rapid typing only ever fires ONE real search, for the final, settled value', async () => {
-    searchObjects.mockResolvedValue(searchResult([]))
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
-    await waitFor(() => expect(searchObjects).toHaveBeenCalledWith('Customer', ''))
-    searchObjects.mockClear()
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', ''))
+    mockedSearchObjects.mockClear()
 
     const input = screen.getByPlaceholderText('Search Customer…')
     fireEvent.change(input, { target: { value: 'a' } })
     fireEvent.change(input, { target: { value: 'ad' } })
     fireEvent.change(input, { target: { value: 'ada' } })
 
-    await waitFor(() => expect(searchObjects).toHaveBeenCalledWith('Customer', 'ada'))
-    expect(searchObjects).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', 'ada'))
+    expect(mockedSearchObjects).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('ObjectSearchPanel -- results rendering', () => {
   it('shows real results once the search resolves', async () => {
-    searchObjects.mockResolvedValue(
-      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }])
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
     )
     renderPanel(CUSTOMER_SCHEMA)
 
@@ -139,22 +143,26 @@ describe('ObjectSearchPanel -- results rendering', () => {
     // correctly throw "found multiple elements" here, not a bug in
     // the component, just real, expected redundancy this test needs
     // to be specific enough to see past.
-    await waitFor(() => expect(screen.getByText('Ada Okafor', { selector: '.object-search__result-title' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByText('Ada Okafor', { selector: '.object-search__result-title' })).toBeInTheDocument(),
+    )
     expect(screen.getByText('us-west')).toBeInTheDocument()
   })
 
   it('uses title_field as the title, and shows the raw id as a separate subtitle', async () => {
-    searchObjects.mockResolvedValue(
-      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }])
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
     )
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() => expect(screen.getByText('Ada Okafor', { selector: '.object-search__result-title' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByText('Ada Okafor', { selector: '.object-search__result-title' })).toBeInTheDocument(),
+    )
     expect(screen.getByText('cust_001')).toBeInTheDocument()
   })
 
   it('falls back to the raw id as the title (with NO redundant subtitle) when the type has no title_field', async () => {
-    searchObjects.mockResolvedValue(searchResult([{ id: 'acct_001', fields: { balance: 500 } }]))
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'acct_001', fields: { balance: 500 } }]))
     renderPanel(CUSTOMER_SCHEMA)
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Account' } })
 
@@ -165,8 +173,8 @@ describe('ObjectSearchPanel -- results rendering', () => {
   })
 
   it('links each result to its real object detail page', async () => {
-    searchObjects.mockResolvedValue(
-      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }])
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
     )
     renderPanel(CUSTOMER_SCHEMA)
 
@@ -174,35 +182,33 @@ describe('ObjectSearchPanel -- results rendering', () => {
   })
 
   it('encodes an id containing a slash in the link, so it cannot split the URL path', async () => {
-    searchObjects.mockResolvedValue(searchResult([{ id: 'weird/id', fields: { name: 'Weird', region: 'us' } }]))
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'weird/id', fields: { name: 'Weird', region: 'us' } }]))
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() =>
-      expect(screen.getByRole('link')).toHaveAttribute('href', '/objects/Customer/weird%2Fid')
-    )
+    await waitFor(() => expect(screen.getByRole('link')).toHaveAttribute('href', '/objects/Customer/weird%2Fid'))
   })
 
   it('shows "No results." only once loading has finished and nothing came back', async () => {
-    searchObjects.mockResolvedValue(searchResult([]))
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
 
     await waitFor(() => expect(screen.getByText('No results.')).toBeInTheDocument())
   })
 
   it('shows the "narrow your search" hint when total_matches exceeds the returned results', async () => {
-    searchObjects.mockResolvedValue(
-      searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us' } }], 75)
-    )
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us' } }], 75))
     renderPanel(CUSTOMER_SCHEMA)
 
     await waitFor(() => expect(screen.getByText(/Showing 1 of 75 matches/)).toBeInTheDocument())
   })
 
   it('shows no "narrow your search" hint when every match was returned', async () => {
-    searchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us' } }]))
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us' } }]))
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() => expect(screen.getByText('Ada', { selector: '.object-search__result-title' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByText('Ada', { selector: '.object-search__result-title' })).toBeInTheDocument(),
+    )
     expect(screen.queryByText(/narrow your search/)).not.toBeInTheDocument()
   })
 })
@@ -213,14 +219,14 @@ describe('ObjectSearchPanel -- the "Searching…" loading indicator', () => {
     // fires the moment selectedType is known, not gated behind the
     // debounced setTimeout below it. Confirmed directly against the
     // real component code, not assumed.
-    searchObjects.mockReturnValue(new Promise(() => {}))
+    mockedSearchObjects.mockReturnValue(new Promise(() => {}))
     renderPanel(CUSTOMER_SCHEMA)
 
     expect(screen.getByText('Searching…')).toBeInTheDocument()
   })
 
   it('clears "Searching…" once the real, debounced request resolves', async () => {
-    searchObjects.mockResolvedValue(searchResult([]))
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
     expect(screen.getByText('Searching…')).toBeInTheDocument()
 
@@ -230,14 +236,14 @@ describe('ObjectSearchPanel -- the "Searching…" loading indicator', () => {
 
 describe('ObjectSearchPanel -- error handling', () => {
   it('shows the error message on a non-401 failure', async () => {
-    searchObjects.mockRejectedValue(new ApiError(500, 'Search backend unavailable'))
+    mockedSearchObjects.mockRejectedValue(new ApiError(500, 'Search backend unavailable'))
     renderPanel(CUSTOMER_SCHEMA)
 
     await waitFor(() => expect(screen.getByText('Search backend unavailable')).toBeInTheDocument())
   })
 
   it('calls onSessionExpired and shows no error text on a 401', async () => {
-    searchObjects.mockRejectedValue(new ApiError(401, 'session expired'))
+    mockedSearchObjects.mockRejectedValue(new ApiError(401, 'session expired'))
     const onSessionExpired = vi.fn()
     renderPanel(CUSTOMER_SCHEMA, onSessionExpired)
 
@@ -263,10 +269,10 @@ describe('ObjectSearchPanel -- the real race-condition guard', () => {
     // test, while this form does not; a real, if not fully explained,
     // difference in how the two interact with this component's own
     // effect-driven call timing, not a hypothetical concern.
-    let resolveFirst
-    let resolveSecond
-    searchObjects.mockImplementation(() => {
-      const callNumber = searchObjects.mock.calls.length
+    let resolveFirst: ((value: unknown) => void) | undefined
+    let resolveSecond: ((value: unknown) => void) | undefined
+    mockedSearchObjects.mockImplementation(() => {
+      const callNumber = mockedSearchObjects.mock.calls.length
       return new Promise((resolve) => {
         if (callNumber === 1) resolveFirst = resolve
         else if (callNumber === 2) resolveSecond = resolve
@@ -275,20 +281,22 @@ describe('ObjectSearchPanel -- the real race-condition guard', () => {
 
     renderPanel(CUSTOMER_SCHEMA)
     // Call #1 fires on mount (queryText starts as '').
-    await waitFor(() => expect(searchObjects).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledTimes(1))
 
     // Call #2 fires once the user types and the SECOND debounce
     // period elapses.
     fireEvent.change(screen.getByPlaceholderText('Search Customer…'), { target: { value: 'ada' } })
-    await waitFor(() => expect(searchObjects).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledTimes(2))
 
     // The LATER call resolves FIRST (it was faster).
-    resolveSecond(searchResult([{ id: 'cust_002', fields: { name: 'Correct Result', region: 'us' } }]))
-    await waitFor(() => expect(screen.getByText('Correct Result', { selector: '.object-search__result-title' })).toBeInTheDocument())
+    resolveSecond!(searchResult([{ id: 'cust_002', fields: { name: 'Correct Result', region: 'us' } }]))
+    await waitFor(() =>
+      expect(screen.getByText('Correct Result', { selector: '.object-search__result-title' })).toBeInTheDocument(),
+    )
 
     // The EARLIER call finally resolves LAST (it was slower) -- its
     // stale results must be silently discarded, not applied.
-    resolveFirst(searchResult([{ id: 'cust_001', fields: { name: 'Stale Result', region: 'us' } }]))
+    resolveFirst!(searchResult([{ id: 'cust_001', fields: { name: 'Stale Result', region: 'us' } }]))
     // A real, deliberate wait -- there is no "resolved" signal to
     // await for a discarded response (nothing should happen at all).
     await new Promise((resolve) => setTimeout(resolve, 200))

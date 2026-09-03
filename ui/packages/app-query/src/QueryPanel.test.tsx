@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import type { PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
 vi.mock('@elysium/shell-api/api', () => ({
   query: vi.fn(),
@@ -7,29 +8,39 @@ vi.mock('@elysium/shell-api/api', () => ({
 vi.mock('@elysium/shell-api/components/PendingWriteCard', () => ({
   // A simple stub -- PendingWriteCard has its own, thorough, direct
   // test file (packages/shell-api/src/components/PendingWriteCard.
-  // test.jsx). This file's own job is only to confirm QueryPanel
+  // test.tsx). This file's own job is only to confirm QueryPanel
   // renders it with the RIGHT pendingWrite data when the backend
   // returns one, not to re-prove PendingWriteCard's own internal
   // approve/reject/error behavior a second time here.
-  default: ({ pendingWrite }) => <div data-testid="pending-write-card">{pendingWrite.id}</div>,
+  default: ({ pendingWrite }: { pendingWrite: PendingWrite }) => (
+    <div data-testid="pending-write-card">{pendingWrite.id}</div>
+  ),
 }))
 
 import { query } from '@elysium/shell-api/api'
 import QueryPanel from './QueryPanel'
+
+const mockedQuery = vi.mocked(query)
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
 // query() deliberately returns the raw Response, never throwing on a
-// non-2xx status -- see api.js's own docstring. Every mock below
+// non-2xx status -- see api.ts's own docstring. Every mock below
 // matches that real shape (status + an async json()), not a thrown
-// ApiError the way most other api.js callers use.
-function fakeResponse(status, body) {
-  return { status, json: async () => body }
+// ApiError the way most other api.ts callers use. `as Response`, not
+// `as unknown as Response` -- confirmed directly (via tsc) that this
+// specific partial shape (status + a json() that always resolves,
+// never throws) type-checks fine as a direct cast here, unlike
+// api.test.ts's own inline failing-json() mock, which needed the
+// double-cast; TypeScript's own "sufficient overlap" check for a
+// direct `as` cast is apparently sensitive to that difference.
+function fakeResponse(status: number, body: unknown): Response {
+  return { status, json: async () => body } as Response
 }
 
-function submit(queryText) {
+function submit(queryText: string) {
   fireEvent.change(screen.getByPlaceholderText('Ask a question…'), { target: { value: queryText } })
   fireEvent.click(screen.getByRole('button', { name: /ask/i }))
 }
@@ -49,17 +60,21 @@ describe('QueryPanel -- rendering', () => {
 
 describe('QueryPanel -- submitting', () => {
   it('calls query() with exactly what was typed', async () => {
-    query.mockResolvedValue(fakeResponse(200, { answer: '42' }))
+    mockedQuery.mockResolvedValue(fakeResponse(200, { answer: '42' }))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('how many customers do we have?')
 
-    await waitFor(() => expect(query).toHaveBeenCalledWith('how many customers do we have?'))
+    await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith('how many customers do we have?'))
   })
 
   it('shows "Thinking…" and disables the button while in flight', async () => {
-    let resolveQuery
-    query.mockReturnValue(new Promise((resolve) => { resolveQuery = resolve }))
+    let resolveQuery: ((value: Response) => void) | undefined
+    mockedQuery.mockReturnValue(
+      new Promise((resolve) => {
+        resolveQuery = resolve
+      }),
+    )
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('a question')
@@ -67,14 +82,14 @@ describe('QueryPanel -- submitting', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Thinking…' })).toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Thinking…' })).toBeDisabled()
 
-    resolveQuery(fakeResponse(200, { answer: '42' }))
+    resolveQuery!(fakeResponse(200, { answer: '42' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Ask' })).toBeInTheDocument())
   })
 })
 
 describe('QueryPanel -- a real 200 answer', () => {
   it('shows the answer text', async () => {
-    query.mockResolvedValue(fakeResponse(200, { answer: 'There are 42 customers.' }))
+    mockedQuery.mockResolvedValue(fakeResponse(200, { answer: 'There are 42 customers.' }))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('how many customers?')
@@ -85,7 +100,7 @@ describe('QueryPanel -- a real 200 answer', () => {
 
 describe('QueryPanel -- a 202 proposed write', () => {
   it('renders PendingWriteCard with the real pending_write from the response', async () => {
-    query.mockResolvedValue(fakeResponse(202, { pending_write: { id: 'write-77' } }))
+    mockedQuery.mockResolvedValue(fakeResponse(202, { pending_write: { id: 'write-77' } }))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('update the customer name')
@@ -94,7 +109,7 @@ describe('QueryPanel -- a 202 proposed write', () => {
   })
 
   it('does not show an answer or error alongside a pending write', async () => {
-    query.mockResolvedValue(fakeResponse(202, { pending_write: { id: 'write-77' } }))
+    mockedQuery.mockResolvedValue(fakeResponse(202, { pending_write: { id: 'write-77' } }))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('update the customer name')
@@ -106,7 +121,7 @@ describe('QueryPanel -- a 202 proposed write', () => {
 
 describe('QueryPanel -- a 401 mid-query', () => {
   it('calls onSessionExpired and shows no answer, error, or pending write', async () => {
-    query.mockResolvedValue(fakeResponse(401, {}))
+    mockedQuery.mockResolvedValue(fakeResponse(401, {}))
     const onSessionExpired = vi.fn()
     render(<QueryPanel onSessionExpired={onSessionExpired} />)
 
@@ -119,7 +134,7 @@ describe('QueryPanel -- a 401 mid-query', () => {
 
 describe('QueryPanel -- other failure statuses', () => {
   it("shows the backend's own detail message for e.g. a 409 (permissions changed mid-query)", async () => {
-    query.mockResolvedValue(fakeResponse(409, { detail: 'Permissions changed since this query started.' }))
+    mockedQuery.mockResolvedValue(fakeResponse(409, { detail: 'Permissions changed since this query started.' }))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('a question')
@@ -128,7 +143,7 @@ describe('QueryPanel -- other failure statuses', () => {
   })
 
   it('falls back to a generic "Request failed (status)" when the body has no detail', async () => {
-    query.mockResolvedValue(fakeResponse(500, {}))
+    mockedQuery.mockResolvedValue(fakeResponse(500, {}))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('a question')
@@ -137,7 +152,7 @@ describe('QueryPanel -- other failure statuses', () => {
   })
 
   it('shows "Could not reach the server." on a genuine network failure', async () => {
-    query.mockRejectedValue(new Error('network down'))
+    mockedQuery.mockRejectedValue(new Error('network down'))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('a question')
@@ -148,39 +163,39 @@ describe('QueryPanel -- other failure statuses', () => {
 
 describe('QueryPanel -- a new submit clears stale state from the previous one', () => {
   it('clears a previous answer once a new query is submitted', async () => {
-    query.mockResolvedValueOnce(fakeResponse(200, { answer: 'first answer' }))
+    mockedQuery.mockResolvedValueOnce(fakeResponse(200, { answer: 'first answer' }))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('first question')
     await waitFor(() => expect(screen.getByText('first answer')).toBeInTheDocument())
 
-    query.mockReturnValue(new Promise(() => {}))
+    mockedQuery.mockReturnValue(new Promise(() => {}))
     submit('second question')
 
     await waitFor(() => expect(screen.queryByText('first answer')).not.toBeInTheDocument())
   })
 
   it('clears a previous error once a new query is submitted', async () => {
-    query.mockResolvedValueOnce(fakeResponse(500, {}))
+    mockedQuery.mockResolvedValueOnce(fakeResponse(500, {}))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('first question')
     await waitFor(() => expect(screen.getByText('Request failed (500)')).toBeInTheDocument())
 
-    query.mockReturnValue(new Promise(() => {}))
+    mockedQuery.mockReturnValue(new Promise(() => {}))
     submit('second question')
 
     await waitFor(() => expect(screen.queryByText('Request failed (500)')).not.toBeInTheDocument())
   })
 
   it('clears a previous pending write once a new query is submitted', async () => {
-    query.mockResolvedValueOnce(fakeResponse(202, { pending_write: { id: 'write-1' } }))
+    mockedQuery.mockResolvedValueOnce(fakeResponse(202, { pending_write: { id: 'write-1' } }))
     render(<QueryPanel onSessionExpired={vi.fn()} />)
 
     submit('first question')
     await waitFor(() => expect(screen.getByTestId('pending-write-card')).toBeInTheDocument())
 
-    query.mockReturnValue(new Promise(() => {}))
+    mockedQuery.mockReturnValue(new Promise(() => {}))
     submit('second question')
 
     await waitFor(() => expect(screen.queryByTestId('pending-write-card')).not.toBeInTheDocument())
