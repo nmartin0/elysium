@@ -2,15 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { lazy, type ComponentType } from 'react'
+import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import Shell, { type VisibleApp } from './Shell'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 
-function renderShell(visibleApps: VisibleApp[], onLogout: () => void = vi.fn(), initialPath = '/query') {
+function renderShell(
+  visibleApps: VisibleApp[],
+  onLogout: () => void = vi.fn(),
+  initialPath = '/query',
+  currentUser: CurrentUser | null = null,
+) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
-        <Route element={<Shell visibleApps={visibleApps} onLogout={onLogout} />}>
+        <Route element={<Shell visibleApps={visibleApps} currentUser={currentUser} onLogout={onLogout} />}>
           <Route path="/query" element={<p>query screen</p>} />
           <Route path="/admin" element={<p>admin screen</p>} />
         </Route>
@@ -53,9 +59,12 @@ describe('Shell', () => {
     renderShell([])
     expect(screen.queryAllByRole('link')).toHaveLength(0)
     // Still renders the rest of the chrome -- an empty nav isn't a
-    // broken shell, just a temporarily-empty one.
+    // broken shell, just a temporarily-empty one. The user menu
+    // trigger is always present regardless of nav content -- "Account"
+    // is its own real, predictable label here since these tests all
+    // pass the default currentUser={null}.
     expect(screen.getByText('Elysium')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument()
   })
 
   it('shows Admin only when it is actually present in visibleApps', () => {
@@ -72,29 +81,12 @@ describe('Shell', () => {
     expect(screen.queryByText('query screen')).not.toBeInTheDocument()
   })
 
-  it('calls onLogout when the Log out button is clicked', () => {
+  it('calls onLogout when Log out is clicked inside the (now real, dropdown) user menu', () => {
     const onLogout = vi.fn()
     renderShell([{ name: 'Query', path: '/query', gating_permission: null }], onLogout)
-    fireEvent.click(screen.getByRole('button', { name: 'Log out' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
     expect(onLogout).toHaveBeenCalledTimes(1)
-  })
-
-  it('Log out carries BOTH .secondary and .app__logout together -- a real, previously-shipped contrast bug (dark text on the dark sidebar) came from these two classes existing, but index.css only having a color override for one of them; this is the structural precondition that fix depends on', () => {
-    // jsdom does not apply real CSS at all -- getComputedStyle() here
-    // would return an empty/default value regardless of what index.css
-    // actually says, so a unit test cannot verify the real, visual
-    // outcome (text color, contrast) the way a live, real-browser
-    // check can and did (Playwright, confirmed the computed color
-    // directly against a real, running page before and after the
-    // fix). What a unit test CAN still guard against: a future edit
-    // silently dropping one of these two class names from the JSX,
-    // which would break the CSS selector's own match even if index.
-    // css itself stays correct -- a real, if narrower, regression this
-    // specific class of bug could still take.
-    renderShell([{ name: 'Query', path: '/query', gating_permission: null }])
-    const logoutButton = screen.getByRole('button', { name: 'Log out' })
-    expect(logoutButton).toHaveClass('secondary')
-    expect(logoutButton).toHaveClass('app__logout')
   })
 })
 
@@ -243,7 +235,11 @@ describe('Shell -- the Suspense boundary around lazy-loaded sub-app routes', () 
         <Routes>
           <Route
             element={
-              <Shell visibleApps={[{ name: 'Query', path: '/query', gating_permission: null }]} onLogout={onLogout} />
+              <Shell
+                visibleApps={[{ name: 'Query', path: '/query', gating_permission: null }]}
+                currentUser={null}
+                onLogout={onLogout}
+              />
             }
           >
             <Route path="/slow" element={<LazyComponent />} />
@@ -259,20 +255,21 @@ describe('Shell -- the Suspense boundary around lazy-loaded sub-app routes', () 
     expect(screen.getByText('Loading…')).toBeInTheDocument()
   })
 
-  it('keeps the persistent chrome -- header, nav, Log out -- visible and unaffected while a lazy child is still loading; this is the entire reason the boundary is scoped to Outlet alone, not the whole Shell', () => {
+  it('keeps the persistent chrome -- header, nav, user menu -- visible and unaffected while a lazy child is still loading; this is the entire reason the boundary is scoped to Outlet alone, not the whole Shell', () => {
     const { LazyComponent } = createControlledLazyComponent()
     renderShellWithLazyRoute(LazyComponent)
     expect(screen.getByText('Elysium')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Query' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument()
   })
 
-  it('the Log out button stays genuinely clickable while a lazy child is still loading, not just visually present', () => {
+  it('Log out stays genuinely reachable through the user menu while a lazy child is still loading, not just visually present', () => {
     const onLogout = vi.fn()
     const { LazyComponent } = createControlledLazyComponent()
     renderShellWithLazyRoute(LazyComponent, onLogout)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Log out' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
 
     expect(onLogout).toHaveBeenCalledTimes(1)
   })
@@ -296,7 +293,8 @@ describe('Shell -- the Suspense boundary around lazy-loaded sub-app routes', () 
     resolve()
     await waitFor(() => expect(screen.getByText('slow screen loaded')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Log out' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
     expect(onLogout).toHaveBeenCalledTimes(1)
   })
 })

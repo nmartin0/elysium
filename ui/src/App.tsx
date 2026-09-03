@@ -1,9 +1,16 @@
 import { lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
+import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import Shell, { type VisibleApp } from './Shell'
 import type { VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
-import { logout, getMyVisibleSchema, getVisibleApps, handleIfSessionExpired } from '@elysium/shell-api/api'
+import {
+  logout,
+  getCurrentUser,
+  getMyVisibleSchema,
+  getVisibleApps,
+  handleIfSessionExpired,
+} from '@elysium/shell-api/api'
 import '@elysium/shell-api/index.css'
 
 // Lazy-loaded, deliberately -- each sub-app's own code is no longer
@@ -88,6 +95,7 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [visibleSchema, setVisibleSchema] = useState<VisibleSchema | null>(null)
   const [visibleApps, setVisibleApps] = useState<VisibleApp[]>([])
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
 
   function handleLoginSuccess() {
     setAuthStatus('loggedIn')
@@ -98,12 +106,14 @@ export default function App() {
     setAuthStatus('loggedOut')
     setVisibleSchema(null)
     setVisibleApps([])
+    setCurrentUser(null)
   }
 
   function handleSessionExpired() {
     setAuthStatus('loggedOut')
     setVisibleSchema(null)
     setVisibleApps([])
+    setCurrentUser(null)
   }
 
   // THE initial "is there already a valid session" check -- runs
@@ -222,6 +232,38 @@ export default function App() {
     }
   }, [authStatus])
 
+  // A THIRD, similarly independent effect -- same reasoning as
+  // visibleApps' own comment above: "who is logged in" is a genuinely
+  // different concern from "which object types exist" or "which
+  // sub-apps are visible," even though all three happen to fire at
+  // the same moment.
+  useEffect(() => {
+    if (authStatus !== 'loggedIn') return
+    let cancelled = false
+    async function loadCurrentUser() {
+      try {
+        // getCurrentUser() itself returns Promise<unknown> (see api.
+        // ts's own header comment on why every api.ts call does) --
+        // asserted to the real, known response shape here, matching
+        // api/routes.py's own documented contract for GET /me.
+        const user = (await getCurrentUser()) as CurrentUser
+        if (!cancelled) setCurrentUser(user)
+      } catch (err) {
+        handleIfSessionExpired(err, () => {
+          if (!cancelled) handleSessionExpired()
+        })
+        // Any other error: leave currentUser null. UserMenu already
+        // handles a null/not-yet-loaded profile with a generic
+        // placeholder, not a crash -- see that component's own
+        // comment for why that's the deliberate default.
+      }
+    }
+    loadCurrentUser()
+    return () => {
+      cancelled = true
+    }
+  }, [authStatus])
+
   if (authStatus === 'checking') {
     // Brief, unavoidable moment while the real network round-trip
     // above is in flight -- see this file's own header comment for
@@ -275,7 +317,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<Shell visibleApps={visibleApps} onLogout={handleLogout} />}>
+        <Route element={<Shell visibleApps={visibleApps} currentUser={currentUser} onLogout={handleLogout} />}>
           <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
           <Route
             path="/browse"
@@ -311,6 +353,16 @@ export default function App() {
 // security boundary (server-side auth on every request is).
 //
 // RESOLVED (kept for history):
+// - A real "who am I" profile, fetched via GET /me and shown in
+//   Shell.tsx's own new UserMenu dropdown -- item #3 of the shell/
+//   launcher upgrade plan. A THIRD, independent effect alongside
+//   visibleSchema/visibleApps' own two, same reasoning: "who is
+//   logged in" is a genuinely different concern from either of those,
+//   even though all three fire at the same moment. Researched and
+//   confirmed directly against how established identity platforms do
+//   this (OpenID Connect's own UserInfo endpoint; Palantir Foundry's
+//   own real, documented GET .../admin/users/getCurrent) before
+//   building it, not invented from scratch.
 // - Sub-app routes (QueryPanel, ObjectSearchPanel, ObjectDetailPanel,
 //   AdminPanel) are now lazy-loaded (React.lazy() + Shell.tsx's own
 //   <Suspense> around <Outlet />) -- item #1 of the shell/launcher

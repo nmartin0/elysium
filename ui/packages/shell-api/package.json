@@ -8,7 +8,8 @@
     "./format": "./src/format.ts",
     "./index.css": "./src/index.css",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
-    "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx"
+    "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",
+    "./components/UserMenu": "./src/components/UserMenu.tsx"
   },
   "peerDependencies": {
     "react": "^19.2.8"

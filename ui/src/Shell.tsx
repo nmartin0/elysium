@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 
 // Shell.tsx  (the actual chrome -- a collapsible left sidebar, and
 // the route tree's own mount point)
@@ -89,6 +90,7 @@ export interface VisibleApp {
 
 interface ShellProps {
   visibleApps: VisibleApp[]
+  currentUser: CurrentUser | null
   onLogout: () => void
 }
 
@@ -124,7 +126,7 @@ function getInitialCollapsedState(): boolean {
   return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
 }
 
-export default function Shell({ visibleApps, onLogout }: ShellProps) {
+export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps) {
   const [collapsed, setCollapsed] = useState<boolean>(getInitialCollapsedState)
 
   function toggleCollapsed() {
@@ -173,9 +175,7 @@ export default function Shell({ visibleApps, onLogout }: ShellProps) {
             </NavLink>
           ))}
         </nav>
-        <button className="secondary app__logout" onClick={onLogout}>
-          Log out
-        </button>
+        <UserMenu currentUser={currentUser} onLogout={onLogout} />
       </aside>
 
       <div className="app__content">
@@ -229,6 +229,11 @@ export default function Shell({ visibleApps, onLogout }: ShellProps) {
 // carelessly.
 //
 // RESOLVED (kept for history):
+// - The bare "Log out" button became a real UserMenu dropdown (see
+//   @elysium/shell-api/components/UserMenu) -- item #3 of the shell/
+//   launcher upgrade plan. currentUser is fetched once in App.tsx
+//   (GET /me) and passed down here, the same "fetched once, passed
+//   down" pattern visibleApps/visibleSchema already established.
 // - Defaults to OPEN on a normal desktop viewport, collapsed on a
 //   narrow one -- decided explicitly: with only three real nav items
 //   today, collapsed-by-default on desktop (matching the full

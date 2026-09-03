@@ -86,25 +86,99 @@ body {
   background: #3a3a42;
 }
 
-/* .app__logout.secondary, not just .app__logout -- needs to beat
-   button.secondary's own specificity (element + class) outright, not
-   just tie it and hope source order favors this rule; two classes
-   together genuinely outranks element+class regardless of where
-   either rule sits in the file, which a plain .app__logout rule did
-   NOT (confirmed directly: it silently lost to button.secondary the
-   first time this was tried, the same real bug the sidebar links
-   themselves had before their own fix -- caught here by an actual,
-   live screenshot, not assumed fixed just because the link version
-   already was). button.secondary's own light-page treatment (#333
-   text on transparent) is simply unreadable on this dark sidebar. */
-.app__logout.secondary {
-  align-self: flex-start;
-  color: #f2f2f3;
-  border-color: #6b6b74;
+/* user-menu -- replaces the old bare "Log out" button; see UserMenu.
+   tsx's own comment on why .user-menu__trigger below is fully self-
+   contained, not relying on the global .secondary class the way the
+   sidebar's own Log-out button once did (and initially broke on,
+   before that fix -- the exact same class of mistake, avoided here
+   from the start instead of repeated and re-fixed). */
+.user-menu {
+  position: relative;
 }
 
-.app__logout.secondary:hover {
+.user-menu__trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #6b6b74;
+  border-radius: 6px;
+  background: transparent;
+  color: #f2f2f3;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.user-menu__trigger:hover {
   background: #3a3a42;
+}
+
+.user-menu__avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: #4a4a54;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Opens UPWARD (bottom: 100%), not downward -- the trigger sits at
+   the very bottom of the sidebar (see Shell.tsx's own layout), so a
+   downward-opening panel would render mostly off-screen, below the
+   viewport, on any reasonably-sized window. */
+.user-menu__panel {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 0.4rem;
+  width: 100%;
+  min-width: 12rem;
+  background: white;
+  color: #1a1a1a;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.user-menu__profile {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid #eee;
+}
+
+.user-menu__username {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.user-menu__role {
+  margin: 0.15rem 0 0;
+  color: #666;
+  font-size: 0.8rem;
+}
+
+.user-menu__item {
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #1a1a1a;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-menu__item:hover {
+  background: #f7f7f8;
 }
 
 .app__content {

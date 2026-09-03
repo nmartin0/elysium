@@ -16,6 +16,7 @@ vi.mock('@elysium/shell-api/api', () => {
   }
   return {
     logout: vi.fn(),
+    getCurrentUser: vi.fn(),
     getMyVisibleSchema: vi.fn(),
     getVisibleApps: vi.fn(),
     ApiError,
@@ -45,16 +46,18 @@ vi.mock('@elysium/app-browse/ObjectSearchPanel', () => ({ default: () => <p>brow
 vi.mock('@elysium/app-browse/ObjectDetailPanel', () => ({ default: () => <p>object detail screen</p> }))
 vi.mock('@elysium/app-admin/AdminPanel', () => ({ default: () => <p>admin screen</p> }))
 
-import { logout, getMyVisibleSchema, getVisibleApps, ApiError } from '@elysium/shell-api/api'
+import { logout, getCurrentUser, getMyVisibleSchema, getVisibleApps, ApiError } from '@elysium/shell-api/api'
 import App from './App'
 
 const mockedLogout = vi.mocked(logout)
+const mockedGetCurrentUser = vi.mocked(getCurrentUser)
 const mockedGetMyVisibleSchema = vi.mocked(getMyVisibleSchema)
 const mockedGetVisibleApps = vi.mocked(getVisibleApps)
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockedGetVisibleApps.mockResolvedValue([])
+  mockedGetCurrentUser.mockResolvedValue({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' })
 })
 
 // getMyVisibleSchema() now serves TWO real purposes -- the initial
@@ -126,7 +129,8 @@ describe('App -- the three-state boot sequence (checking / loggedOut / loggedIn)
     render(<App />)
     await waitFor(() => expect(screen.getByText('query screen')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Log out' }))
+    fireEvent.click(screen.getByRole('button', { name: 'testuser' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
 
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
     expect(mockedLogout).toHaveBeenCalledTimes(1)
@@ -134,7 +138,7 @@ describe('App -- the three-state boot sequence (checking / loggedOut / loggedIn)
   })
 })
 
-describe('App -- fetching visibleSchema/visibleApps once logged in', () => {
+describe('App -- fetching visibleSchema/visibleApps/currentUser once logged in', () => {
   it('fetches visibleApps once a session is confirmed to already exist', async () => {
     mockedGetMyVisibleSchema.mockResolvedValue({})
     render(<App />)
@@ -158,6 +162,25 @@ describe('App -- fetching visibleSchema/visibleApps once logged in', () => {
 
     await waitFor(() => expect(mockedGetVisibleApps).toHaveBeenCalledTimes(1))
   })
+
+  it("fetches currentUser once a session is confirmed to already exist, and Shell's own real UserMenu shows it", async () => {
+    // Shell.jsx is deliberately NOT mocked in this file (see the real-
+    // logout test above) -- so this confirms the WHOLE real chain,
+    // not just that getCurrentUser() was called: App.tsx fetches it,
+    // passes it down as a real prop, and Shell's own real UserMenu
+    // actually renders the real username it received.
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    render(<App />)
+    await waitFor(() => expect(mockedGetCurrentUser).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'testuser' })).toBeInTheDocument())
+  })
+
+  it('does not fetch currentUser while the initial session check is still pending or has failed', async () => {
+    mockedGetMyVisibleSchema.mockRejectedValue(new ApiError(401, 'no session'))
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
+    expect(mockedGetCurrentUser).not.toHaveBeenCalled()
+  })
 })
 
 describe('App -- a 401 mid-session returns to the login screen', () => {
@@ -173,6 +196,13 @@ describe('App -- a 401 mid-session returns to the login screen', () => {
   it('a 401 from the visibleApps fetch logs the user back out too', async () => {
     mockedGetMyVisibleSchema.mockResolvedValue({})
     mockedGetVisibleApps.mockRejectedValue(new ApiError(401, 'session expired'))
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
+  })
+
+  it('a 401 from the currentUser fetch logs the user back out too', async () => {
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    mockedGetCurrentUser.mockRejectedValue(new ApiError(401, 'session expired'))
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
   })
