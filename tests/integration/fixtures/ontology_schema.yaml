@@ -233,6 +233,21 @@ action_types:
         type: object_reference
         object_type: Account
         required: true
+        # A real, previously-discovered gap this closes: with BOTH
+        # from_account_id and to_account_id referencing the SAME
+        # object_type (Account), ui/'s own ActionForm.jsx used to
+        # pre-fill and lock BOTH fields to whichever account this
+        # action was opened from -- there was no way to actually
+        # specify a different "to" account through the form at all.
+        # default_to_current_object marks EXACTLY WHICH parameter
+        # should be treated that way -- explicit, by parameter
+        # identity, never inferred from object_type alone (see core/
+        # ontology/action_types.py's own docstring for the full
+        # reasoning, confirmed directly against Palantir Foundry's own
+        # documented mechanism for this exact case). from_account_id,
+        # not to_account_id -- a transfer is naturally framed as
+        # moving money FROM the account whose page you're already on.
+        default_to_current_object: true
       to_account_id:
         type: object_reference
         object_type: Account

@@ -13,6 +13,29 @@ import PendingWriteCard from '@elysium/shell-api/components/PendingWriteCard'
 // closed" (onCancel) or "form closed AND the object may have changed"
 // (onResolved) -- it never needs to know whether the person got as
 // far as seeing a PendingWriteCard at all.
+
+// A parameter is pre-filled and locked to the CURRENT object ONLY
+// when BOTH of these hold, not either alone:
+//   1. its own schema explicitly marks it default_to_current_object
+//      (core/ontology/action_types.py's own validation guarantees at
+//      most one parameter per action carries this -- see that
+//      module's own docstring for the real bug this replaced: type-
+//      matching alone locked EVERY object_reference parameter of a
+//      given type, which silently broke the moment an action had two
+//      of them, e.g. TransferFunds' own from_account_id/to_account_id
+//      both referencing Account).
+//   2. that parameter's own object_type genuinely matches the type of
+//      object THIS form was actually opened from -- an action with
+//      MULTIPLE affected_object_types could be launched from any one
+//      of them, and the marked parameter's own type won't always be
+//      the one that matches; pre-filling it with an id of the WRONG
+//      type would be a real, silent correctness bug of its own, not
+//      just a UX one.
+function isLockedToCurrentObject(paramSpec, objectType) {
+  return paramSpec.type === 'object_reference' && paramSpec.default_to_current_object === true &&
+    paramSpec.object_type === objectType
+}
+
 export default function ActionForm({
   actionName,
   actionDef,
@@ -30,10 +53,8 @@ export default function ActionForm({
       // a specific object's own page is "act on THIS object";
       // letting someone silently retarget it to a different id while
       // still thinking they're acting on the one they navigated to
-      // would be confusing at best. Matches Palantir's own Action
-      // widgets, which lock the "acting on this object" parameter the
-      // same way when opened from that object's own context.
-      initial[paramName] = paramSpec.type === 'object_reference' && paramSpec.object_type === objectType ? objectId : ''
+      // would be confusing at best.
+      initial[paramName] = isLockedToCurrentObject(paramSpec, objectType) ? objectId : ''
     }
     return initial
   })
@@ -85,7 +106,7 @@ export default function ActionForm({
     <form className="action-form" onSubmit={handleSubmit}>
       <h3>{actionName}</h3>
       {Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => {
-        const isLockedToCurrentObject = paramSpec.type === 'object_reference' && paramSpec.object_type === objectType
+        const locked = isLockedToCurrentObject(paramSpec, objectType)
         return (
           <label key={paramName} className="action-form__field">
             <span>{formatFieldName(paramName)}</span>
@@ -93,7 +114,7 @@ export default function ActionForm({
               type={paramSpec.type === 'number' ? 'number' : 'text'}
               value={values[paramName]}
               onChange={(event) => handleChange(paramName, event.target.value)}
-              disabled={isLockedToCurrentObject}
+              disabled={locked}
               required={paramSpec.required}
             />
           </label>
@@ -123,8 +144,34 @@ export default function ActionForm({
 // jsx's own comment for the small, optional onResolved addition this
 // file is the reason for.
 //
+// RESOLVED (kept for history):
+// - A real, previously-undiscovered functional bug, found while
+//   writing this file's own test suite (ActionForm.test.jsx),
+//   documented there directly before being fixed: the old locking
+//   check (`paramSpec.object_type === objectType`, with no marker at
+//   all) locked EVERY object_reference parameter whose own
+//   object_type matched the current page, not just the one the form
+//   was genuinely opened from. TransferFunds' own from_account_id AND
+//   to_account_id both reference Account -- both used to get
+//   pre-filled and disabled with the SAME account's id, leaving no
+//   way to specify a different "to" account through the form at all.
+//   Fixed via a real, explicit, per-parameter schema marker
+//   (default_to_current_object -- see core/ontology/action_types.py's
+//   own docstring for the full design and its own validation),
+//   confirmed directly against Palantir Foundry's own documented
+//   mechanism for exactly this case before designing it (their own
+//   Action-widget "Default value" -> "Environment variable" ->
+//   "Current object" binding -- also explicit, by parameter identity,
+//   never inferred from type alone). isLockedToCurrentObject() now
+//   checks BOTH the marker AND the type-match, not either alone -- an
+//   action with MULTIPLE affected_object_types could be opened from
+//   any one of them, and the marked parameter's own type won't always
+//   be the one that matches; the type-match half of the check is what
+//   keeps this correct in that case too, not just a redundant
+//   leftover from the old logic.
+//
 // DEFERRED (known, intentional, not yet built):
-// - Every OTHER object_reference parameter (one that does NOT match
+// - Every OTHER object_reference parameter (one that isn't locked to
 //   the object this form was opened from -- e.g. TransferFunds'
 //   to_account_id when opened from the FROM account's own page) is
 //   still a plain text input, not a real object picker. A real
