@@ -169,6 +169,21 @@ describe('Shell -- the collapsible sidebar', () => {
     expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
   })
 
+  it('REPEATED clicks on the toggle button correctly alternate every time too, the same real fix as the keyboard shortcut -- toggleCollapsed() is shared code, so this confirms the fix holds for both real trigger paths, not just the one the bug reproduction happened to use', () => {
+    renderShell(VISIBLE_APPS)
+    const toggle = () => screen.getByRole('button', { name: /sidebar/i })
+    expect(toggle().getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(toggle())
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(toggle())
+    expect(toggle().getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(toggle())
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('persists the collapsed choice to localStorage when toggled', () => {
     renderShell(VISIBLE_APPS)
     fireEvent.click(screen.getByRole('button', { name: 'Hide sidebar' }))
@@ -192,6 +207,21 @@ describe('Shell -- the collapsible sidebar', () => {
     renderShell(VISIBLE_APPS)
     fireEvent.keyDown(window, { key: 'b', metaKey: true })
     expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
+  })
+
+  it('REPEATED, separate Cmd+B presses correctly alternate every time, not just the first -- a real, severe, previously-shipped bug (a stale closure meant the shortcut only ever worked once, then got permanently stuck), confirmed fixed with a real, repeated reproduction, not a single press the way the two tests above only ever exercised', () => {
+    renderShell(VISIBLE_APPS)
+    const toggle = () => screen.getByRole('button', { name: /sidebar/i })
+    expect(toggle().getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.keyDown(window, { key: 'b', metaKey: true })
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.keyDown(window, { key: 'b', metaKey: true })
+    expect(toggle().getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.keyDown(window, { key: 'b', metaKey: true })
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
   })
 
   it('an unmodified "b" keydown -- no Ctrl or Cmd -- does NOT toggle the sidebar', () => {
@@ -238,10 +268,30 @@ describe('Shell -- the mobile Drawer', () => {
   // browser would when the viewport actually crosses the breakpoint
   // -- not just asserting the initial, one-time value the way the
   // describe block above already covers.
+  //
+  // A real, second fix needed here, not just the first: Shell.tsx now
+  // reads isMobile via useSyncExternalStore, which re-invokes
+  // getIsMobileSnapshot() (a fresh window.matchMedia(...).matches
+  // read) whenever the subscribed callback fires -- it does NOT read
+  // anything off the fake event object passed to that callback the
+  // way the prior, direct-useState implementation used to. A plain
+  // `matches: initialMatches` field, mutated nowhere, meant every
+  // later getSnapshot() call kept returning the SAME, stale value
+  // regardless of what simulateChange() claimed to change it to --
+  // confirmed directly (a live-switch test failed, still showing the
+  // desktop <aside>, after simulating a change to true). Fixed with a
+  // real getter backing `matches`, which is still genuinely read-only
+  // from any consumer's own perspective (there is no setter) while
+  // letting this helper's own internal, mutable currentMatches
+  // actually drive what every later matchMedia().matches read
+  // returns.
   function mockLiveMediaQueryList(initialMatches: boolean) {
+    let currentMatches = initialMatches
     let changeHandler: ((event: MediaQueryListEvent) => void) | null = null
     const mql = {
-      matches: initialMatches,
+      get matches() {
+        return currentMatches
+      },
       media: '(max-width: 640px)',
       onchange: null,
       addListener: () => {},
@@ -255,6 +305,7 @@ describe('Shell -- the mobile Drawer', () => {
     return {
       mql,
       simulateChange(matches: boolean) {
+        currentMatches = matches
         changeHandler?.({ matches } as MediaQueryListEvent)
       },
     }

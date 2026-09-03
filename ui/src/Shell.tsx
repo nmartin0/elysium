@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Drawer, Menu, MenuItem } from '@blueprintjs/core'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
@@ -128,15 +128,51 @@ function getInitialCollapsedState(): boolean {
   return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
 }
 
+// subscribeToMobileBreakpoint/getIsMobileSnapshot -- module-level, not
+// defined inside the component, deliberately: useSyncExternalStore's
+// own real contract is that a NEW subscribe function identity on every
+// render causes React to unsubscribe and resubscribe on every single
+// render (confirmed directly against React's own docs), which would
+// mean creating and tearing down a real MediaQueryList and event
+// listener on every render -- wasteful, not just inelegant. Module-
+// level functions have a permanently stable identity across the whole
+// app's lifetime, avoiding that entirely.
+//
+// useSyncExternalStore, not useState+useEffect -- the real, current
+// React-recommended pattern specifically for subscribing to a value
+// that lives OUTSIDE React and can change on its own (confirmed
+// directly against React's own docs and a real, matching example
+// using this exact matchMedia use case) -- window.matchMedia is
+// exactly that: a real, external, mutable data source, not React
+// state. useSyncExternalStore is what guarantees a consistent value
+// is read even under concurrent rendering (the "tearing" problem a
+// plain useEffect-based subscription does not protect against), and
+// replaces what used to be a separate useState PLUS a separate
+// useEffect with one, more correct hook call.
+//
+// No getServerSnapshot (the third, optional argument) -- confirmed
+// directly this is genuinely optional for a fully client-rendered app
+// with no SSR at all, which this project is (a plain Vite + React SPA,
+// bootstrapped client-side in main.tsx) -- there is no server render
+// to reconcile against.
+function subscribeToMobileBreakpoint(onChange: () => void): () => void {
+  const mediaQueryList = window.matchMedia(MOBILE_BREAKPOINT_QUERY)
+  mediaQueryList.addEventListener('change', onChange)
+  return () => mediaQueryList.removeEventListener('change', onChange)
+}
+
+function getIsMobileSnapshot(): boolean {
+  return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
+}
+
 export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps) {
   const [collapsed, setCollapsed] = useState<boolean>(getInitialCollapsedState)
-  // A real, LIVE listener now, not just a one-time check at mount --
-  // this is what closes the "no live-resize handling" gap this file's
-  // own AI-notes previously, honestly, deferred. Read once,
-  // synchronously, as the real initial value for the same reason
-  // getInitialCollapsedState() is: avoids one wrong render corrected
-  // by an effect on the next tick.
-  const [isMobile, setIsMobile] = useState<boolean>(() => window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches)
+  // useSyncExternalStore, not useState+useEffect -- see
+  // subscribeToMobileBreakpoint/getIsMobileSnapshot's own header
+  // comment above for the full reasoning. This one hook call replaces
+  // what used to be a separate useState (for the initial read) plus a
+  // separate useEffect (for the live subscription).
+  const isMobile = useSyncExternalStore(subscribeToMobileBreakpoint, getIsMobileSnapshot)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -145,6 +181,15 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // (backdrop click, Escape, a real nav-triggered auto-close below)
   // all go through, so "the sidebar's own remembered state" means the
   // same thing regardless of which of those actually changed it.
+  //
+  // Takes a plain boolean, not a computed toggle -- every real caller
+  // (onClose, the auto-close-on-navigate effect below) always wants
+  // ONE fixed, known target value, never "whatever it currently
+  // isn't." That distinction matters: toggleCollapsed() below is the
+  // ONE caller that used to compute its own next value this way
+  // (`setCollapsedPersisted(!collapsed)`), and that specific pattern
+  // is what caused a real, confirmed bug -- see toggleCollapsed()'s
+  // own comment.
   function setCollapsedPersisted(next: boolean) {
     setCollapsed(next)
     try {
@@ -157,13 +202,53 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     }
   }
 
+  // A real, severe, previously-shipped bug, found and fixed here, not
+  // assumed correct just because a single press worked in existing
+  // tests -- confirmed directly with a real, repeated-press
+  // reproduction before writing this fix, not reasoned about in the
+  // abstract: this used to read `setCollapsedPersisted(!collapsed)`,
+  // computing the next value from `collapsed` captured in this
+  // render's own closure. That closure can be genuinely stale for two
+  // real, independent reasons -- either is enough on its own: (1) the
+  // keydown listener below is registered via a useEffect with an
+  // EMPTY dependency array, so it only ever closes over the
+  // toggleCollapsed from the very first render, forever, and (2) even
+  // ignoring that, two rapid, back-to-back calls within the same
+  // React batch both read the SAME pre-update `collapsed` value,
+  // since neither call has actually re-rendered yet when the second
+  // one fires. Confirmed directly, with real fireEvent presses, not
+  // hypothetically: three separate, discrete Cmd+B presses in a real
+  // test produced true -> false -> false -> false (should alternate
+  // true/false/true/false) -- the shortcut only ever worked once, then
+  // got permanently stuck, silently, since mount.
+  //
+  // Fixed with React's own functional updater form of setState, which
+  // is specifically designed to guarantee the true, latest queued
+  // state regardless of which render's closure a given call happens
+  // to have been made from -- this is what actually, robustly fixes
+  // the bug, not a change to the keydown effect's own dependency array
+  // (which would only address cause (1) above, not (2); this fixes
+  // both at the true source). localStorage's own write lives inside
+  // this same updater, deliberately -- it needs the real, resolved
+  // next value, which only exists inside the updater itself, not in
+  // this function's own outer scope. React 18 Strict Mode invokes
+  // updater functions twice in development specifically to surface
+  // impurities; writing the same, idempotent value to localStorage
+  // twice is harmless (identical end state), not a correctness bug --
+  // this is the same accepted pattern widely-used localStorage-backed
+  // toggle hooks already rely on.
   function toggleCollapsed() {
-    setCollapsedPersisted(!collapsed)
+    setCollapsed((prevCollapsed) => {
+      const next = !prevCollapsed
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
+      } catch {
+        // Same reasoning as getInitialCollapsedState() above.
+      }
+      return next
+    })
   }
 
-  // The real, live matchMedia listener -- addEventListener('change',
-  // ...), not a one-time check.
-  //
   // Forces the sidebar CLOSED specifically when a live resize crosses
   // INTO mobile, deliberately -- a real, genuine UX gap this file's
   // own live testing surfaced directly, not something caught in
@@ -195,17 +280,31 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // it with one tap either way; a second, separate rule for the
   // reverse direction wasn't asked for and isn't obviously more
   // correct than this, simpler default.
+  //
+  // Reacts to a genuine TRANSITION into mobile (false -> true), not
+  // merely "isMobile is currently true" -- wasNotMobileRef holds the
+  // previous render's own isMobile value, read (and then updated)
+  // inside the effect itself. On the very first render, the ref's own
+  // initializer captures whatever isMobile already was at that exact
+  // moment, so the very first effect run always computes
+  // wasNotMobile = !isMobile -- meaning the `isMobile && wasNotMobile`
+  // condition below can never be true on mount, regardless of whether
+  // isMobile starts true or false. That's deliberate, not incidental:
+  // the initial mount-time state is getInitialCollapsedState()'s own,
+  // separate, already-correct responsibility; this effect must only
+  // ever react to a REAL, later change, the same real distinction the
+  // auto-close-on-navigate effect below also has to make, just via a
+  // different mechanism (that one guards the first run explicitly,
+  // this one derives it from comparing against a genuine previous
+  // value instead).
+  const wasNotMobileRef = useRef(!isMobile)
   useEffect(() => {
-    const mediaQueryList = window.matchMedia(MOBILE_BREAKPOINT_QUERY)
-    function handleChange(event: MediaQueryListEvent) {
-      setIsMobile(event.matches)
-      if (event.matches) {
-        setCollapsed(true)
-      }
+    const wasNotMobile = wasNotMobileRef.current
+    wasNotMobileRef.current = !isMobile
+    if (isMobile && wasNotMobile) {
+      setCollapsed(true)
     }
-    mediaQueryList.addEventListener('change', handleChange)
-    return () => mediaQueryList.removeEventListener('change', handleChange)
-  }, [])
+  }, [isMobile])
 
   // Auto-closes the mobile Drawer on navigation -- a real, genuine UX
   // gap CONFIRMED to already exist even before this file touched

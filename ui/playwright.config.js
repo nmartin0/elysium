@@ -9,7 +9,7 @@ import { defineConfig } from '@playwright/test'
 // (tests/integration/, marked @pytest.mark.integration): real,
 // persisted, re-runnable tests, but requiring a manually-started
 // real server, not a fully self-orchestrating pipeline. See e2e/
-// shell.spec.js's own header comment for the exact setup this
+// shell.spec.ts's own header comment for the exact setup this
 // expects.
 export default defineConfig({
   testDir: './e2e',
