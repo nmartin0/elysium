@@ -215,19 +215,16 @@ body {
   overflow: hidden;
 }
 
-/* A real, if basic, responsive floor -- see Shell.tsx's own
-   MOBILE_BREAKPOINT_QUERY (kept in sync with this value) and its own
-   AI-notes on why this is deliberately not a full mobile redesign.
-   Below this width, an OPEN sidebar overlays the content instead of
-   squeezing it into an unusably narrow remaining column. */
-@media (max-width: 640px) {
-  .app:not(.app--sidebar-collapsed) .app__sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 10;
-    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
-  }
-}
+/* No @media (max-width: 640px) rule here anymore -- this used to give
+   an OPEN .app__sidebar `position: fixed` etc. below this width, but
+   that selector can no longer match anything at all: on a narrow
+   viewport, Shell.tsx's own isMobile state now renders a real
+   Blueprint Drawer instead of the plain <aside> this rule targeted,
+   and Drawer portals into document.body by default -- not a
+   descendant of .app in the DOM tree the way this selector required.
+   Drawer's own real overlay/backdrop/positioning replaces what this
+   rule used to hand-roll; removed rather than left as dead CSS that
+   would never match again. */
 
 /* app__pre-auth -- the checking/loggedOut screens in App.tsx, before
    a session exists at all. Genuinely different layout shape from

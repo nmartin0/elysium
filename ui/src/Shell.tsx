@@ -1,6 +1,6 @@
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Menu, MenuItem } from '@blueprintjs/core'
+import { Drawer, Menu, MenuItem } from '@blueprintjs/core'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 
 // Shell.tsx  (the actual chrome -- a collapsible left sidebar, and
@@ -102,11 +102,12 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 // frontend-design skill's "responsive down to mobile" quality-floor
 // requirement -- not a complete mobile redesign, which is real,
 // separate, deferred work (see the AI-only notes at the end of this
-// file). Kept in sync with index.css's own matching media query,
-// which handles the ongoing, LIVE responsive behavior (the sidebar
-// overlaying content instead of squeezing it on a narrow viewport)
-// that this one-time, mount-only check can't -- this constant only
-// ever decides the INITIAL default.
+// file). This same query now drives TWO real, live things below, not
+// just the one-time initial default it originally only decided:
+// getInitialCollapsedState()'s own initial read, AND isMobile's own
+// real, live matchMedia listener, which is what decides whether
+// Drawer or the plain <aside> actually renders, kept current for the
+// whole session, not just at mount.
 const MOBILE_BREAKPOINT_QUERY = '(max-width: 640px)'
 
 // Read once, synchronously, as the real initial value -- not two
@@ -129,23 +130,99 @@ function getInitialCollapsedState(): boolean {
 
 export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps) {
   const [collapsed, setCollapsed] = useState<boolean>(getInitialCollapsedState)
+  // A real, LIVE listener now, not just a one-time check at mount --
+  // this is what closes the "no live-resize handling" gap this file's
+  // own AI-notes previously, honestly, deferred. Read once,
+  // synchronously, as the real initial value for the same reason
+  // getInitialCollapsedState() is: avoids one wrong render corrected
+  // by an effect on the next tick.
+  const [isMobile, setIsMobile] = useState<boolean>(() => window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches)
   const location = useLocation()
   const navigate = useNavigate()
 
-  function toggleCollapsed() {
-    setCollapsed((prev) => {
-      const next = !prev
-      try {
-        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
-      } catch {
-        // Same reasoning as getInitialCollapsedState() above -- a
-        // failed WRITE must never break the toggle interaction
-        // itself; the state still updates in memory for this
-        // session, it just won't be remembered for the next one.
-      }
-      return next
-    })
+  // Persists to localStorage -- the one real, shared implementation
+  // both the desktop toggle and the mobile Drawer's own dismissal
+  // (backdrop click, Escape, a real nav-triggered auto-close below)
+  // all go through, so "the sidebar's own remembered state" means the
+  // same thing regardless of which of those actually changed it.
+  function setCollapsedPersisted(next: boolean) {
+    setCollapsed(next)
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
+    } catch {
+      // Same reasoning as getInitialCollapsedState() above -- a
+      // failed WRITE must never break the interaction itself; the
+      // state still updates in memory for this session, it just
+      // won't be remembered for the next one.
+    }
   }
+
+  function toggleCollapsed() {
+    setCollapsedPersisted(!collapsed)
+  }
+
+  // The real, live matchMedia listener -- addEventListener('change',
+  // ...), not a one-time check. Deliberately does NOT itself open or
+  // close the sidebar on resize -- it only updates which of Drawer
+  // (mobile) or the in-flow <aside> (desktop) actually renders below;
+  // collapsed/expanded stays whatever the person already chose,
+  // exactly like index.css's own media query already treats visual
+  // layout as independent from that choice. Resizing the SAME browser
+  // window across this breakpoint repeatedly is a real but genuinely
+  // rare scenario (a person is normally either on a phone or a
+  // desktop, consistently, not manually dragging a window narrow) --
+  // not engineered around further than this.
+  useEffect(() => {
+    const mediaQueryList = window.matchMedia(MOBILE_BREAKPOINT_QUERY)
+    function handleChange(event: MediaQueryListEvent) {
+      setIsMobile(event.matches)
+    }
+    mediaQueryList.addEventListener('change', handleChange)
+    return () => mediaQueryList.removeEventListener('change', handleChange)
+  }, [])
+
+  // Auto-closes the mobile Drawer on navigation -- a real, genuine UX
+  // gap CONFIRMED to already exist even before this file touched
+  // Drawer at all (live-verified against the prior, CSS-only mobile
+  // overlay: tapping a nav link left the sidebar open, still covering
+  // the newly-navigated screen, requiring a separate, manual tap to
+  // dismiss) -- fixing this here, not just matching what was already
+  // there.
+  //
+  // Depends on [location.pathname] ONLY, deliberately -- reads the
+  // latest isMobile/collapsed via a ref, not as effect dependencies.
+  // Including collapsed itself as a dependency would be a genuine bug,
+  // not just unnecessary: OPENING the drawer changes collapsed, which
+  // would immediately re-run this exact effect and re-close it before
+  // it could ever be seen open at all. This must react ONLY to a real
+  // path change, reading whatever isMobile/collapsed happen to be at
+  // that moment -- not re-run every time either of them changes for
+  // some unrelated reason.
+  //
+  // isFirstRunRef guards against a second, real, CONFIRMED bug, not a
+  // precaution taken on principle -- an effect keyed on
+  // [location.pathname] still runs once on the very first mount, not
+  // only on a genuine, later navigation. Without this guard, a stored
+  // "false" (explicitly OPEN) preference on a narrow viewport was
+  // immediately, incorrectly collapsed again the instant the page
+  // loaded -- caught directly by this file's own "a stored false
+  // preference overrides matchMedia" test, which failed with exactly
+  // that symptom before this guard existed, not reasoned about
+  // in the abstract.
+  const isFirstRunRef = useRef(true)
+  const latestStateRef = useRef({ isMobile, collapsed })
+  latestStateRef.current = { isMobile, collapsed }
+  useEffect(() => {
+    if (isFirstRunRef.current) {
+      isFirstRunRef.current = false
+      return
+    }
+    const { isMobile: currentlyMobile, collapsed: currentlyCollapsed } = latestStateRef.current
+    if (currentlyMobile && !currentlyCollapsed) {
+      setCollapsedPersisted(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
 
   // Cmd/Ctrl+B toggles the sidebar from anywhere -- see this file's
   // own header comment for why this specific combination, not the
@@ -194,15 +271,50 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     />
   ))
 
+  // The same real content, either way -- only the CONTAINER differs
+  // between mobile and desktop (see this file's own AI-notes for why:
+  // Drawer is architecturally right for mobile's own transient,
+  // overlay-on-top-of-content behavior; it is NOT right for desktop's
+  // permanent, in-flow sidebar, which stays this file's own <aside>).
+  const sidebarContent = (
+    <>
+      <div className="app__sidebar-header">
+        <h1>Elysium</h1>
+      </div>
+      <Menu className="app__nav">{navItems}</Menu>
+      <UserMenu currentUser={currentUser} onLogout={onLogout} />
+    </>
+  )
+
   return (
     <div className={collapsed ? 'app app--sidebar-collapsed' : 'app'}>
-      <aside className="app__sidebar" aria-hidden={collapsed}>
-        <div className="app__sidebar-header">
-          <h1>Elysium</h1>
-        </div>
-        <Menu className="app__nav">{navItems}</Menu>
-        <UserMenu currentUser={currentUser} onLogout={onLogout} />
-      </aside>
+      {isMobile ? (
+        // Real Drawer here, not the old CSS-only position: fixed
+        // overlay -- genuinely, architecturally the right fit
+        // (confirmed directly against this project's own earlier
+        // planning: the prior mobile behavior -- position: fixed,
+        // overlaying content, a real box-shadow -- already matched
+        // Drawer's own real design intent, unlike the permanent
+        // desktop sidebar, which does not). onClose fires on every
+        // real Blueprint-provided dismissal (backdrop click, Escape)
+        // -- all routed through the same setCollapsedPersisted() the
+        // toggle button and nav-triggered auto-close above also use,
+        // so "the sidebar's own remembered state" means one consistent
+        // thing regardless of which of those actually changed it.
+        <Drawer
+          isOpen={!collapsed}
+          position="left"
+          size="15rem"
+          onClose={() => setCollapsedPersisted(true)}
+          className="app__sidebar"
+        >
+          {sidebarContent}
+        </Drawer>
+      ) : (
+        <aside className="app__sidebar" aria-hidden={collapsed}>
+          {sidebarContent}
+        </aside>
+      )}
 
       <div className="app__content">
         {/* Lives in the content pane, not inside <aside>, deliberately
@@ -320,6 +432,42 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
 //   the fix with the same real sampling technique, both directions
 //   (collapse: 240 -> 212.9 -> 101.7 -> 35.4 -> 7.3 -> 0; expand: 0 ->
 //   27.0 -> 138.2 -> 204.5 -> 232.7 -> 240 -- genuinely smooth now).
+// - The mobile Drawer, replacing the old CSS-only position: fixed
+//   overlay -- genuinely, architecturally right for mobile specifically
+//   (confirmed via this same migration's own earlier planning: the
+//   prior mobile behavior already matched Drawer's own real design
+//   intent -- overlay-on-top-of-content, a real box-shadow -- unlike
+//   the permanent desktop sidebar, which correctly stays this file's
+//   own <aside>, never Drawer). This is also what closes the "no
+//   live-resize handling" gap this file's own notes previously,
+//   honestly, deferred -- isMobile is now a real, LIVE matchMedia
+//   listener (addEventListener('change', ...)), confirmed working in a
+//   real browser, not just the mocked test environment: resized an
+//   already-loaded desktop session down to a real mobile viewport and
+//   watched it switch to the real Drawer, backdrop and all, with no
+//   reload.
+//   A real, PRE-EXISTING UX gap found and fixed along the way, not
+//   just matched: live-verified, before writing any Drawer code, that
+//   the OLD CSS-only mobile overlay never auto-closed on navigation --
+//   tapping a nav link left the sidebar open, still covering the
+//   newly-navigated screen. Fixed here (auto-closes on a real,
+//   subsequent path change) rather than carried forward into the new
+//   implementation unexamined.
+//   A real bug in that auto-close effect, found by its own test suite,
+//   not shipped unnoticed: an effect keyed on [location.pathname]
+//   still runs once on the very first mount, not only on a genuine
+//   later navigation -- without a first-run guard, a stored, explicitly
+//   OPEN mobile preference was incorrectly re-collapsed the instant the
+//   page loaded. Confirmed via a real negative control: reverting the
+//   guard reproduced exactly one, correct test failure, not a vague
+//   "something's wrong."
+//   A real, second lesson (beyond UserMenu's own PopoverNext one) in
+//   Blueprint's real, empirical event/timing behavior, not assumed:
+//   Drawer's own backdrop dismissal responds to mousedown, not click
+//   -- confirmed directly (a real fireEvent.click() on the backdrop
+//   never triggered onClose at all, even after a full waitFor
+//   timeout), the same real pattern UserMenu's own hand-rolled click-
+//   outside detection already used for the same underlying reason.
 //
 // DEFERRED (known, intentional, not yet built):
 // - No real icon-strip collapsed state -- see this file's own header
@@ -327,16 +475,8 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
 //   visibleApps gains a real icon field, revisit collapsing to a
 //   narrow icon strip instead of fully hiding the sidebar, closer to
 //   the real reference's own collapsed state.
-// - No live-resize handling -- getInitialCollapsedState() only ever
-//   decides the sidebar's own state ONCE, at mount. Resizing an
-//   existing, open session across the mobile breakpoint doesn't
-//   retroactively collapse or reopen it. index.css's own media query
-//   still keeps the sidebar from visually breaking layout at any
-//   width regardless -- this is about the JS-driven default, not
-//   visual correctness, and a real resize listener felt like more
-//   complexity than this specific gap actually justified for a first
-//   pass.
 // - No full mobile redesign -- the sidebar-overlaying-content behavior
-//   at a narrow viewport (see index.css) is the real, if basic,
-//   quality floor this pass targets, not a complete, dedicated mobile
-//   layout audit of every sub-app's own screen.
+//   at a narrow viewport (now the real Drawer, see this file's own
+//   RESOLVED note above) is the real, if basic, quality floor this
+//   pass targets, not a complete, dedicated mobile layout audit of
+//   every sub-app's own screen.
