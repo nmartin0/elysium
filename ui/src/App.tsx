@@ -11,6 +11,14 @@ import {
   getVisibleApps,
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
+// Blueprint's own CSS imported first, our own index.css second --
+// deliberate order: our own remaining, real customizations (see the
+// shell/launcher upgrade plan's own notes on what stays permanently
+// ours even after the Blueprint migration) need to be able to
+// override Blueprint's own defaults where we actually want that, not
+// the reverse. The standard, conventional pattern -- library base
+// styles first, local overrides after.
+import '@blueprintjs/core/lib/css/blueprint.css'
 import '@elysium/shell-api/index.css'
 
 // Lazy-loaded, deliberately -- each sub-app's own code is no longer
