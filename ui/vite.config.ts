@@ -1,3 +1,14 @@
+/// <reference types="vitest/config" />
+// The triple-slash reference above is what makes TypeScript aware of
+// the `test` field below at all -- confirmed directly against
+// Vitest's own current, official docs, not assumed: defineConfig
+// imported from plain 'vite' itself (not 'vitest/config') only knows
+// about Vite's own real config shape on its own; this reference is
+// the documented way to extend it with Vitest's own `test` field
+// without switching the import itself. Vitest's own docs confirm the
+// OLDER `types="vitest"` variant of this same reference is what's
+// being phased out in Vitest 4, not this one -- genuinely current,
+// not a stopgap already due for replacement.
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -89,3 +100,8 @@ export default defineConfig({
 //   Replaced with app.frontend() -- FastAPI's own real, native,
 //   documented SPA-serving mechanism (0.138.0+) -- see api/app.py's
 //   own comment for the fuller reasoning.
+// - Converted from vite.config.js to vite.config.ts, alongside the
+//   rest of this project's own real JS-to-TS hardening pass -- the
+//   last two remaining .js files in the whole repo (this one and
+//   playwright.config.js), confirmed via a fresh, whole-repo search,
+//   not assumed to be the only ones left.

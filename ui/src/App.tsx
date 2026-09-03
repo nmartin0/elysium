@@ -99,6 +99,65 @@ type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn'
 // separate UX enhancement, scoped out for this pass, not silently
 // dropped) -- after logging in, the person lands on the default view,
 // same as today.
+// A real, genuine DRY extraction -- the three effects below (schema,
+// apps, current user) used to each write out the exact same
+// cancelled-flag/try-catch/handleIfSessionExpired shape by hand,
+// differing only in which api.ts function to call and which setter to
+// hand the result to. Confirmed safe to share, not just convenient:
+// the ORIGINAL, separate reasoning for keeping these as three
+// INDEPENDENT effects (see each call site's own comment below) was
+// never about refusing to share this mechanical boilerplate -- it was
+// about NOT merging them into one combined effect/Promise.all, since
+// each is a genuinely separate concern that can succeed or fail on
+// its own. This hook preserves that exactly: calling it three times
+// below still produces three separate, independent useEffect
+// subscriptions internally, each with its own cancellation and its
+// own success/failure handling -- only the repeated MACHINERY moves
+// here, not the semantic independence.
+//
+// fetchFn and setValue are both safe to omit from the effect's own
+// dependency array below, confirmed deliberately, not by oversight:
+// fetchFn is always one of api.ts's own module-level exports
+// (getMyVisibleSchema, getVisibleApps, getCurrentUser), which are
+// permanently stable references, never redefined; setValue is always
+// a useState setter, which React itself guarantees is stable across
+// every render of the component that created it. Neither can ever
+// actually be stale in a way that matters -- unlike Shell.tsx's own
+// toggleCollapsed bug, where the closure genuinely captured a
+// CHANGING piece of state, nothing captured here ever changes
+// meaning between renders.
+function useFetchOnLogin<T>(
+  authStatus: AuthStatus,
+  fetchFn: () => Promise<T>,
+  setValue: (value: T) => void,
+  onSessionExpired: () => void,
+) {
+  useEffect(() => {
+    if (authStatus !== 'loggedIn') return
+    let cancelled = false
+    async function load() {
+      try {
+        const value = await fetchFn()
+        if (!cancelled) setValue(value)
+      } catch (err) {
+        handleIfSessionExpired(err, () => {
+          if (!cancelled) onSessionExpired()
+        })
+        // Any other error: setValue simply never gets called, leaving
+        // whatever this piece of state's own default already is
+        // (null, or []). Every real consumer already treats that
+        // default as a loading/empty state, not a crash -- see each
+        // call site below for the specific reasoning.
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authStatus])
+}
+
 export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [visibleSchema, setVisibleSchema] = useState<VisibleSchema | null>(null)
@@ -142,6 +201,13 @@ export default function App() {
   // service call, not worth special-casing away at the cost of two
   // genuinely different code paths for what is otherwise the exact
   // same fetch.
+  //
+  // NOT built on useFetchOnLogin above, deliberately -- that hook is
+  // gated on authStatus === 'loggedIn' already being true; this
+  // effect's entire job is DECIDING that value in the first place, a
+  // genuinely different shape (runs once, unconditionally, on mount)
+  // from "re-fetch every time we transition into an already-decided
+  // 'loggedIn' state."
   useEffect(() => {
     let cancelled = false
     async function checkSession() {
@@ -180,97 +246,45 @@ export default function App() {
   // exactly the case Context is usually overkill for, not the deeply-
   // nested case it's meant to solve. Worth revisiting if the tree
   // ever grows deeper than that.
-  useEffect(() => {
-    if (authStatus !== 'loggedIn') return
-    let cancelled = false
-    async function loadSchema() {
-      try {
-        // getMyVisibleSchema() itself returns Promise<unknown> (see
-        // api.ts's own header comment on why) -- asserted to the
-        // real, known response shape here, matching api/routes.py's
-        // own documented contract for GET /me/visible-schema.
-        const schema = (await getMyVisibleSchema()) as VisibleSchema
-        if (!cancelled) setVisibleSchema(schema)
-      } catch (err) {
-        handleIfSessionExpired(err, () => {
-          if (!cancelled) handleSessionExpired()
-        })
-        // Any other error: leave visibleSchema null. Consuming views
-        // (ObjectSearchPanel, ObjectDetailPanel) already handle a
-        // null/not-yet-loaded schema as a loading state, not a crash.
-      }
-    }
-    loadSchema()
-    return () => {
-      cancelled = true
-    }
-  }, [authStatus])
+  //
+  // getMyVisibleSchema() itself returns Promise<unknown> (see api.ts's
+  // own header comment on why) -- the arrow function below is what
+  // asserts it to the real, known response shape, matching
+  // api/routes.py's own documented contract for GET /me/visible-
+  // schema. Any error OTHER than session-expiry: visibleSchema stays
+  // null. Consuming views (ObjectSearchPanel, ObjectDetailPanel)
+  // already handle a null/not-yet-loaded schema as a loading state,
+  // not a crash.
+  useFetchOnLogin(
+    authStatus,
+    () => getMyVisibleSchema() as Promise<VisibleSchema>,
+    setVisibleSchema,
+    handleSessionExpired,
+  )
 
-  // A SEPARATE, independent fetch/effect from visibleSchema above --
+  // A SEPARATE, independent fetch from visibleSchema above --
   // deliberately not combined into one Promise.all, even though both
   // run at the same moment: these are genuinely different concerns
   // (nav-level "which apps exist" vs. object-level "which types/
   // fields exist"), and keeping their own error handling isolated
   // matches how getMyVisibleSchema() was already its own independent
-  // effect before this -- one more, similarly-independent effect is
-  // consistent with that, not new complexity.
-  useEffect(() => {
-    if (authStatus !== 'loggedIn') return
-    let cancelled = false
-    async function loadApps() {
-      try {
-        // Same reasoning as loadSchema()'s own assertion above --
-        // getVisibleApps() returns Promise<unknown>, asserted to the
-        // real, known response shape matching GET /me/visible-apps.
-        const apps = (await getVisibleApps()) as VisibleApp[]
-        if (!cancelled) setVisibleApps(apps)
-      } catch (err) {
-        handleIfSessionExpired(err, () => {
-          if (!cancelled) handleSessionExpired()
-        })
-        // Any other error: leave visibleApps as []. Shell already
-        // renders an empty nav in that state, not a crash -- see its
-        // own docstring for why that's the deliberate default, not a
-        // gap.
-      }
-    }
-    loadApps()
-    return () => {
-      cancelled = true
-    }
-  }, [authStatus])
+  // fetch before this -- one more, similarly-independent
+  // useFetchOnLogin() call is consistent with that, not new
+  // complexity. Any error other than session-expiry: visibleApps
+  // stays []. Shell already renders an empty nav in that state, not a
+  // crash -- see its own docstring for why that's the deliberate
+  // default, not a gap.
+  useFetchOnLogin(authStatus, () => getVisibleApps() as Promise<VisibleApp[]>, setVisibleApps, handleSessionExpired)
 
-  // A THIRD, similarly independent effect -- same reasoning as
+  // A THIRD, similarly independent fetch -- same reasoning as
   // visibleApps' own comment above: "who is logged in" is a genuinely
   // different concern from "which object types exist" or "which
   // sub-apps are visible," even though all three happen to fire at
-  // the same moment.
-  useEffect(() => {
-    if (authStatus !== 'loggedIn') return
-    let cancelled = false
-    async function loadCurrentUser() {
-      try {
-        // getCurrentUser() itself returns Promise<unknown> (see api.
-        // ts's own header comment on why every api.ts call does) --
-        // asserted to the real, known response shape here, matching
-        // api/routes.py's own documented contract for GET /me.
-        const user = (await getCurrentUser()) as CurrentUser
-        if (!cancelled) setCurrentUser(user)
-      } catch (err) {
-        handleIfSessionExpired(err, () => {
-          if (!cancelled) handleSessionExpired()
-        })
-        // Any other error: leave currentUser null. UserMenu already
-        // handles a null/not-yet-loaded profile with a generic
-        // placeholder, not a crash -- see that component's own
-        // comment for why that's the deliberate default.
-      }
-    }
-    loadCurrentUser()
-    return () => {
-      cancelled = true
-    }
-  }, [authStatus])
+  // the same moment. Any error other than session-expiry: currentUser
+  // stays null. UserMenu already handles a null/not-yet-loaded
+  // profile with a generic placeholder, not a crash -- see that
+  // component's own comment for why that's the deliberate default.
+  useFetchOnLogin(authStatus, () => getCurrentUser() as Promise<CurrentUser>, setCurrentUser, handleSessionExpired)
 
   if (authStatus === 'checking') {
     // Brief, unavoidable moment while the real network round-trip

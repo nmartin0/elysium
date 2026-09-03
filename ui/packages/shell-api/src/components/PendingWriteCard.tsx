@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { confirmWrite, handleIfSessionExpired } from '../api'
+import { confirmWrite, getErrorMessage, handleIfSessionExpired } from '../api'
 import { formatFieldName, formatValue } from '../format'
 
 // The real shape of one proposed change, as the backend's own /query
@@ -109,7 +109,7 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
       onResolved(approved)
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err instanceof Error ? err.message : String(err))
+      setError(getErrorMessage(err))
     } finally {
       setSubmitting(false)
     }

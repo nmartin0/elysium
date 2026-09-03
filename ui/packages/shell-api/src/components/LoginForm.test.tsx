@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('../api', () => ({
   login: vi.fn(),
+  getErrorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
 }))
 
 import { login } from '../api'

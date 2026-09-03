@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { searchObjects, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { VisibleSchema } from './ObjectDetailPanel'
 
@@ -79,7 +79,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
       } catch (err) {
         if (thisRequestId !== latestRequestId.current) return
         if (handleIfSessionExpired(err, onSessionExpired)) return
-        setError(err instanceof Error ? err.message : String(err))
+        setError(getErrorMessage(err))
       } finally {
         if (thisRequestId === latestRequestId.current) setLoading(false)
       }

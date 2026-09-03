@@ -13,6 +13,7 @@ vi.mock('@elysium/shell-api/api', () => {
   return {
     proposeAction: vi.fn(),
     ApiError,
+    getErrorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
     handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
       if (err instanceof ApiError && err.status === 401) {
         onSessionExpired()

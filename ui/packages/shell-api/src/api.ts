@@ -76,7 +76,7 @@ export class ApiError extends Error {
 // -- every caller's own catch block follows the same shape:
 //
 //   if (handleIfSessionExpired(err, onSessionExpired)) return
-//   setError(err.message)   // or whatever this call site does otherwise
+//   setError(getErrorMessage(err))   // or whatever this call site does otherwise
 //
 // Deliberately narrow -- extracts ONLY the part that was genuinely
 // identical everywhere. The surrounding try/catch/finally shape still
@@ -97,6 +97,24 @@ export function handleIfSessionExpired(err: unknown, onSessionExpired: () => voi
     return true
   }
   return false
+}
+
+// A second, real, whole-codebase DRY extraction, alongside
+// handleIfSessionExpired above -- `err instanceof Error ? err.message
+// : String(err)` was found duplicated, byte-for-byte, NINE times
+// across six different files (AdminPanel four times,
+// ObjectDetailPanel, ActionForm, ObjectSearchPanel, LoginForm,
+// PendingWriteCard), every single one of them the same, standard
+// "safely narrow an unknown catch variable to a real, displayable
+// string" idiom -- ApiError's own real .message (set via its
+// constructor) already carries api.ts's own safe, generic message for
+// every real HTTP failure (see apiFetchOrThrow's own body.detail
+// fallback), so this is never showing a raw, unexpected value to the
+// person using the app; it's just the one, safe way to also handle
+// the rarer case of something non-Error being thrown at all (which
+// JavaScript genuinely permits).
+export function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 const CSRF_COOKIE_NAME = 'elysium_csrf'

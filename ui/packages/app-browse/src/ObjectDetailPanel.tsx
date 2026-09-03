@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getObjectDetail, getVisibleActionTypes, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { getObjectDetail, getVisibleActionTypes, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import ActionForm, { type ActionDef } from './ActionForm'
 
@@ -87,7 +87,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
     } catch (err) {
       if (thisRequestId !== latestRequestId.current) return
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err instanceof Error ? err.message : String(err))
+      setError(getErrorMessage(err))
     } finally {
       if (thisRequestId === latestRequestId.current) setLoading(false)
     }

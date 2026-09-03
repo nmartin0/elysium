@@ -107,6 +107,11 @@
   // entirely) until this was added -- converting a file's own
   // extension to .ts means nothing on its own if tsconfig's own
   // include never covers it; the file would look like TypeScript but
-  // never actually get checked.
-  "include": ["src", "packages/*/src", "e2e"]
+  // never actually get checked. vite.config.ts and
+  // playwright.config.ts added the same way, for the exact same
+  // confirmed reason, once THOSE were converted too -- neither
+  // covered by "src"/"packages/*/src"/"e2e" (they're loose root-level
+  // files), confirmed the same way (a real `tsc --listFiles` check,
+  // not assumed from the pattern of the other three entries).
+  "include": ["src", "packages/*/src", "e2e", "vite.config.ts", "playwright.config.ts"]
 }

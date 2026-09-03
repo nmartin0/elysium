@@ -14,6 +14,7 @@ vi.mock('../api', () => {
     ApiError,
     // A real, working implementation, matching the actual one exactly
     // -- see api.test.ts's own copy of this same reasoning.
+    getErrorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
     handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
       if (err instanceof ApiError && err.status === 401) {
         onSessionExpired()

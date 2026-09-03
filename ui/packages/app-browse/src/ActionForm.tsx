@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { proposeAction, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { proposeAction, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName } from '@elysium/shell-api/format'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
@@ -87,19 +87,27 @@ export default function ActionForm({
   onResolved,
   onSessionExpired,
 }: ActionFormProps) {
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {}
-    for (const [paramName, paramSpec] of Object.entries(actionDef.parameters)) {
-      // Pre-filled, and left DISABLED below (not just pre-filled and
-      // still editable) -- the whole point of opening this form from
-      // a specific object's own page is "act on THIS object";
-      // letting someone silently retarget it to a different id while
-      // still thinking they're acting on the one they navigated to
-      // would be confusing at best.
-      initial[paramName] = isLockedToCurrentObject(paramSpec, objectType) ? objectId : ''
-    }
-    return initial
-  })
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    // Object.fromEntries + .map(), not a mutable accumulator built up
+    // in a for loop -- the same real transform (each parameter name
+    // maps to either its locked-in value or an empty string),
+    // expressed as one, immutable expression rather than a loop that
+    // mutates a local object across iterations. Idiomatic, current
+    // TypeScript for exactly this "transform every key/value pair of
+    // an object" shape.
+    Object.fromEntries(
+      Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => [
+        paramName,
+        // Pre-filled, and left DISABLED below (not just pre-filled
+        // and still editable) -- the whole point of opening this form
+        // from a specific object's own page is "act on THIS object";
+        // letting someone silently retarget it to a different id
+        // while still thinking they're acting on the one they
+        // navigated to would be confusing at best.
+        isLockedToCurrentObject(paramSpec, objectType) ? objectId : '',
+      ]),
+    ),
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
@@ -119,11 +127,15 @@ export default function ActionForm({
       // parameter VALUE types, only presence/absence (see api/
       // routes.py's own docstring on propose_action_route), so a
       // string would silently reach the backend as one otherwise.
-      const parameters: Record<string, unknown> = {}
-      for (const [paramName, paramSpec] of Object.entries(actionDef.parameters)) {
-        const raw = values[paramName]
-        parameters[paramName] = paramSpec.type === 'number' && raw !== '' ? Number(raw) : raw
-      }
+      // Same Object.fromEntries + .map() shape as the initial values
+      // above -- one immutable expression, not a mutable accumulator
+      // built up across loop iterations.
+      const parameters: Record<string, unknown> = Object.fromEntries(
+        Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => {
+          const raw = values[paramName]
+          return [paramName, paramSpec.type === 'number' && raw !== '' ? Number(raw) : raw]
+        }),
+      )
       // proposeAction() itself returns Promise<unknown> (see api.ts's
       // own header comment on why) -- asserted to the real, known
       // success shape here, matching api/routes.py's own documented
@@ -138,7 +150,7 @@ export default function ActionForm({
       // parameters, MAC denial) -- deliberately never more specific
       // than that, by design decided with the user. Nothing to
       // sanitize or reword here; display it as-is.
-      setError(err instanceof Error ? err.message : String(err))
+      setError(getErrorMessage(err))
     } finally {
       setSubmitting(false)
     }

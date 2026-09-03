@@ -7,6 +7,7 @@ import {
   deleteUser,
   logoutAllForUser,
   getVisibleSchema,
+  getErrorMessage,
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
 
@@ -43,7 +44,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       setUsers(data)
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err instanceof Error ? err.message : String(err))
+      setError(getErrorMessage(err))
     }
   }
 
@@ -59,7 +60,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       await loadUsers()
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err instanceof Error ? err.message : String(err))
+      setError(getErrorMessage(err))
     }
   }
 
@@ -77,7 +78,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       setSchemaByUsername((prev) => ({ ...prev, [username]: schema }))
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err instanceof Error ? err.message : String(err))
+      setError(getErrorMessage(err))
     }
   }
 
@@ -181,7 +182,7 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
       await onCreated()
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      onError(err instanceof Error ? err.message : String(err))
+      onError(getErrorMessage(err))
     } finally {
       setSubmitting(false)
     }

@@ -128,6 +128,28 @@ function getInitialCollapsedState(): boolean {
   return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
 }
 
+// The one, real, shared implementation of "try to remember this
+// choice for next time" -- extracted here, module-level, after the
+// exact same try/localStorage.setItem/catch shape was found written
+// out twice, word for word, inside the component below
+// (setCollapsedPersisted() and toggleCollapsed()'s own updater) -- a
+// real, genuine DRY violation, not a stylistic nitpick: the same
+// key, the same String() conversion, the same silently-swallowed
+// failure reasoning, duplicated rather than shared. Module-level, not
+// an inner function, matching getInitialCollapsedState's own -- this
+// doesn't close over any component-local state at all, just a plain
+// boolean argument and the one, shared storage key.
+function persistCollapsedChoice(value: boolean): void {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(value))
+  } catch {
+    // A failed WRITE must never break the interaction that triggered
+    // it -- the caller's own in-memory state still updates regardless
+    // (this function's only job is the persistence attempt itself);
+    // the choice just won't be remembered for the next visit.
+  }
+}
+
 // subscribeToMobileBreakpoint/getIsMobileSnapshot -- module-level, not
 // defined inside the component, deliberately: useSyncExternalStore's
 // own real contract is that a NEW subscribe function identity on every
@@ -192,14 +214,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // own comment.
   function setCollapsedPersisted(next: boolean) {
     setCollapsed(next)
-    try {
-      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
-    } catch {
-      // Same reasoning as getInitialCollapsedState() above -- a
-      // failed WRITE must never break the interaction itself; the
-      // state still updates in memory for this session, it just
-      // won't be remembered for the next one.
-    }
+    persistCollapsedChoice(next)
   }
 
   // A real, severe, previously-shipped bug, found and fixed here, not
@@ -228,23 +243,19 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // to have been made from -- this is what actually, robustly fixes
   // the bug, not a change to the keydown effect's own dependency array
   // (which would only address cause (1) above, not (2); this fixes
-  // both at the true source). localStorage's own write lives inside
+  // both at the true source). localStorage's own write happens inside
   // this same updater, deliberately -- it needs the real, resolved
   // next value, which only exists inside the updater itself, not in
   // this function's own outer scope. React 18 Strict Mode invokes
   // updater functions twice in development specifically to surface
-  // impurities; writing the same, idempotent value to localStorage
-  // twice is harmless (identical end state), not a correctness bug --
-  // this is the same accepted pattern widely-used localStorage-backed
-  // toggle hooks already rely on.
+  // impurities; persistCollapsedChoice() writing the same, idempotent
+  // value twice is harmless (identical end state), not a correctness
+  // bug -- this is the same accepted pattern widely-used localStorage-
+  // backed toggle hooks already rely on.
   function toggleCollapsed() {
     setCollapsed((prevCollapsed) => {
       const next = !prevCollapsed
-      try {
-        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
-      } catch {
-        // Same reasoning as getInitialCollapsedState() above.
-      }
+      persistCollapsedChoice(next)
       return next
     })
   }

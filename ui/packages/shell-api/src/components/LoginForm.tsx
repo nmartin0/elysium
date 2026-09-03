@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { login } from '../api'
+import { login, getErrorMessage } from '../api'
 
 interface LoginFormProps {
   onSuccess: () => void
@@ -23,16 +23,17 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
       // a wrong password, an unknown username, and a disabled account
       // -- shown here exactly as received, not reinterpreted.
       //
-      // err instanceof Error, not a narrower ApiError check -- strict
-      // mode types a catch binding as unknown (JavaScript allows
-      // throwing anything at all, not just Error instances), and
-      // while login() only ever really throws ApiError in practice, a
-      // genuine network-level failure could in theory throw something
-      // else that's still a real Error (with a real, honest .message)
-      // before ever reaching ApiError's own construction. The String()
-      // fallback covers the true, if practically unreached, case of a
-      // non-Error throw.
-      setError(err instanceof Error ? err.message : String(err))
+      // getErrorMessage() (see api.ts) is what actually narrows the
+      // catch binding safely -- a catch binding is typed unknown in
+      // strict mode (JavaScript allows throwing anything at all, not
+      // just Error instances), and while login() only ever really
+      // throws ApiError in practice, a genuine network-level failure
+      // could in theory throw something else that's still a real
+      // Error (with a real, honest .message) before ever reaching
+      // ApiError's own construction. getErrorMessage()'s own
+      // String(err) fallback covers the true, if practically
+      // unreached, case of a non-Error throw.
+      setError(getErrorMessage(err))
     } finally {
       setSubmitting(false)
     }
