@@ -162,20 +162,46 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   }
 
   // The real, live matchMedia listener -- addEventListener('change',
-  // ...), not a one-time check. Deliberately does NOT itself open or
-  // close the sidebar on resize -- it only updates which of Drawer
-  // (mobile) or the in-flow <aside> (desktop) actually renders below;
-  // collapsed/expanded stays whatever the person already chose,
-  // exactly like index.css's own media query already treats visual
-  // layout as independent from that choice. Resizing the SAME browser
-  // window across this breakpoint repeatedly is a real but genuinely
-  // rare scenario (a person is normally either on a phone or a
-  // desktop, consistently, not manually dragging a window narrow) --
-  // not engineered around further than this.
+  // ...), not a one-time check.
+  //
+  // Forces the sidebar CLOSED specifically when a live resize crosses
+  // INTO mobile, deliberately -- a real, genuine UX gap this file's
+  // own live testing surfaced directly, not something caught in
+  // advance: without this, resizing a desktop session (open by
+  // default) down into mobile width carried that same "open" state
+  // straight into the real Drawer, which meant its own real backdrop
+  // appeared and dimmed the whole screen from nothing more than a
+  // resize -- no deliberate tap from the person at all. That's a
+  // genuinely different, lesser-consent action than actually choosing
+  // to open the sidebar, and it broke the same "closed by default,
+  // deliberately opened" pattern already governing both the initial
+  // mobile default (getInitialCollapsedState()) and the auto-close-
+  // on-navigate effect below. Fixed to match those, not left as its
+  // own, inconsistent third rule.
+  //
+  // setCollapsed, NOT setCollapsedPersisted -- deliberately does not
+  // write to localStorage. This is a real, viewport-driven default,
+  // not a deliberate choice the person actually made; persisting it
+  // would silently overwrite a real, separate desktop preference the
+  // next time this same browser loads at a normal width, for a resize
+  // that may have had nothing to do with any real intent about the
+  // sidebar at all.
+  //
+  // Deliberately does NOT do anything special on the reverse
+  // transition (mobile back to desktop) -- collapsed simply stays
+  // whatever it already was (closed, from entering mobile, unless the
+  // person explicitly reopened it while still on mobile), and the
+  // container swaps back to the in-flow <aside>. A person can reopen
+  // it with one tap either way; a second, separate rule for the
+  // reverse direction wasn't asked for and isn't obviously more
+  // correct than this, simpler default.
   useEffect(() => {
     const mediaQueryList = window.matchMedia(MOBILE_BREAKPOINT_QUERY)
     function handleChange(event: MediaQueryListEvent) {
       setIsMobile(event.matches)
+      if (event.matches) {
+        setCollapsed(true)
+      }
     }
     mediaQueryList.addEventListener('change', handleChange)
     return () => mediaQueryList.removeEventListener('change', handleChange)

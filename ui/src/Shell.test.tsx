@@ -289,8 +289,44 @@ describe('Shell -- the mobile Drawer', () => {
     // own dispatched events, confirmed directly (a synchronous
     // assertion right after simulateChange() failed with "expected
     // null not to be null" before this was wrapped in waitFor).
+    //
+    // Entering mobile now force-closes the sidebar (see this file's
+    // own real, live-tested fix) -- Drawer renders no content into the
+    // DOM at all while isOpen={false} (confirmed directly: querying
+    // .bp6-drawer right after simulateChange(true) returned null,
+    // even inside this same waitFor, before the toggle below was
+    // added), so <aside>'s own absence is what actually confirms the
+    // container swapped, checked first on its own; the toggle is then
+    // used to open the now-mobile Drawer and confirm it is real and
+    // functional in this new state, not just "not <aside>."
+    await waitFor(() => expect(document.querySelector('aside.app__sidebar')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Show sidebar' }))
     await waitFor(() => expect(document.querySelector('.bp6-drawer')).not.toBeNull())
-    expect(document.querySelector('aside.app__sidebar')).toBeNull()
+  })
+
+  it("a live resize into mobile force-closes an OPEN desktop sidebar -- fixing a real gap this feature's own live testing surfaced directly: resizing an open desktop session into mobile used to carry that open state straight into Drawer, popping its real backdrop over the whole screen from nothing more than a resize, no deliberate tap at all", async () => {
+    const { mql, simulateChange } = mockLiveMediaQueryList(false)
+    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
+    renderShell(VISIBLE_APPS)
+    // Confirms the real starting condition this bug needed: genuinely
+    // OPEN on desktop, not already collapsed for some other reason.
+    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+
+    simulateChange(true)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument())
+  })
+
+  it('the force-close from entering mobile does NOT persist to localStorage -- a real, viewport-driven default, not a deliberate choice, so it must not silently overwrite a real desktop preference for the next visit', async () => {
+    const { mql, simulateChange } = mockLiveMediaQueryList(false)
+    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
+    renderShell(VISIBLE_APPS)
+    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBeNull()
+
+    simulateChange(true)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument())
+    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBeNull()
   })
 
   it('a real, live matchMedia change switches back from the mobile Drawer to the desktop <aside>', async () => {
