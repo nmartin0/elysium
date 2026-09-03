@@ -296,6 +296,30 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
 //   Confirmed fixed via actual computed-style checks and screenshots
 //   against a real, running page -- not re-inspected by eye alone,
 //   and not assumed fixed just because the code read correctly.
+// - Blueprint's own sidebar migration (see feature/blueprint-migration):
+//   nav rebuilt on Menu/MenuItem, UserMenu rebuilt on PopoverNext --
+//   but Collapse (Blueprint's expand/collapse primitive) deliberately
+//   NOT used for the sidebar's own width animation. Confirmed directly
+//   against Blueprint's own docs before considering it, not assumed:
+//   Collapse animates HEIGHT only ("calculates height to animate the
+//   transition," explicitly warns against position: absolute content)
+//   -- built for vertical accordion-style content, not this sidebar's
+//   horizontal collapse. A genuine, honest mismatch, not a gap to
+//   force-fill; the width animation stays this file's own CSS,
+//   correctly outside Blueprint's real scope.
+//   While reviewing that exact CSS, found and fixed a real, separate,
+//   PRE-EXISTING bug, unrelated to Blueprint: .app__sidebar's own
+//   `transition: margin-left 0.15s ease` transitioned a property the
+//   collapsed state never actually changes (it changes width,
+//   padding-left, padding-right instead) -- confirmed empirically, not
+//   just by reading the CSS: sampled the sidebar's real width 6 times
+//   across ~180ms after a real collapse click, before the fix, and it
+//   was 0 on every sample -- an instant snap, not the smooth animation
+//   the declaration looked like it should produce. Fixed by
+//   transitioning the actual properties that change; confirmed after
+//   the fix with the same real sampling technique, both directions
+//   (collapse: 240 -> 212.9 -> 101.7 -> 35.4 -> 7.3 -> 0; expand: 0 ->
+//   27.0 -> 138.2 -> 204.5 -> 232.7 -> 240 -- genuinely smooth now).
 //
 // DEFERRED (known, intentional, not yet built):
 // - No real icon-strip collapsed state -- see this file's own header

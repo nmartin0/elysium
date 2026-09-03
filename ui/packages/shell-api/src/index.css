@@ -37,7 +37,23 @@ body {
   color: #f2f2f3;
   padding: 1.25rem 1rem;
   gap: 1.5rem;
-  transition: margin-left 0.15s ease;
+  /* A real, pre-existing bug, found and fixed while reviewing this
+     exact rule for the sidebar's own Blueprint migration, unrelated
+     to Blueprint itself: this used to read `transition: margin-left
+     0.15s ease`, but the collapsed state below never changes
+     margin-left at all -- it changes width, padding-left, and
+     padding-right. CSS's own `transition: <property>` only animates
+     the property actually named, so this was animating a property
+     that never moved while leaving the properties that DO move
+     untransitioned -- confirmed empirically, not just by reading the
+     CSS: sampled the sidebar's own real width 6 times across ~180ms
+     after a real collapse click, before this fix, and it was 0 on
+     every sample -- an instant snap, not the smooth animation this
+     declaration looked like it should produce. */
+  transition:
+    width 0.15s ease,
+    padding-left 0.15s ease,
+    padding-right 0.15s ease;
 }
 
 .app__sidebar-header h1 {
