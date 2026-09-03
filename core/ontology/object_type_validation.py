@@ -5,7 +5,7 @@ types' own title_field AND security.field/security.via_field)
 TITLE_FIELD -- an OPTIONAL, per-object-type declaration of which
 field's own value acts as a human-readable display name (see
 core/ontology/schema.py's own get_title_field() for the runtime-lookup
-counterpart, and README.md's own section 9.4 for the deployer-facing
+counterpart, and README.md's own section 3.3 for the deployer-facing
 explanation). Matches Palantir's own "title key" concept directly
 (verified against their docs, not assumed: "Title key: The property
 that acts as a display name for objects of this type") -- named

@@ -5,7 +5,7 @@ A small, static, hand-authored list -- deliberately NOT computed by
 scanning ui/src/ or anything else automatic. Every entry is a real,
 independent statement of "this app exists and this is what gates it,"
 matching this project's own established discipline of fully explicit
-authorization (see README.md's own section 8.5: "nothing is inherited
+authorization (see README.md's own section 3.5: "nothing is inherited
 from anything else").
 
 gating_permission is None for an app available to every logged-in
