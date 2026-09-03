@@ -20,19 +20,168 @@ body {
 }
 
 .app {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar background reuses the existing dark primary-button token
+   (#2d2d34), not a new color -- the same value already carrying
+   "this is the app's own primary chrome" meaning everywhere else
+   (buttons, active-link background). */
+.app__sidebar {
+  flex: none;
+  width: 15rem;
+  display: flex;
+  flex-direction: column;
+  background: #2d2d34;
+  color: #f2f2f3;
+  padding: 1.25rem 1rem;
+  gap: 1.5rem;
+  transition: margin-left 0.15s ease;
+}
+
+.app__sidebar-header h1 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.app__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+/* Fully self-contained, not relying on the plain `button` rule at all
+   -- .app__nav a is a real <a> element (NavLink), which never matched
+   `button` as a selector to begin with; it only inherited that base
+   look via a combined `button, .app__nav a { ... }` selector list
+   before the sidebar redesign, back when both looked the same. Now a
+   genuinely different surface (dark sidebar background, not a button
+   sitting on the light page background), so it needs its own,
+   complete rule -- transparent by default (the dark sidebar
+   background already reads as the "resting" state), a lighter fill
+   only for the active route. */
+.app__nav a {
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  background: transparent;
+  color: #f2f2f3;
+  font-size: 0.95rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  display: block;
+}
+
+.app__nav a:not(.secondary) {
+  background: #4a4a54;
+}
+
+.app__nav a.secondary {
+  border: none;
+}
+
+.app__nav a.secondary:hover {
+  background: #3a3a42;
+}
+
+/* .app__logout.secondary, not just .app__logout -- needs to beat
+   button.secondary's own specificity (element + class) outright, not
+   just tie it and hope source order favors this rule; two classes
+   together genuinely outranks element+class regardless of where
+   either rule sits in the file, which a plain .app__logout rule did
+   NOT (confirmed directly: it silently lost to button.secondary the
+   first time this was tried, the same real bug the sidebar links
+   themselves had before their own fix -- caught here by an actual,
+   live screenshot, not assumed fixed just because the link version
+   already was). button.secondary's own light-page treatment (#333
+   text on transparent) is simply unreadable on this dark sidebar. */
+.app__logout.secondary {
+  align-self: flex-start;
+  color: #f2f2f3;
+  border-color: #6b6b74;
+}
+
+.app__logout.secondary:hover {
+  background: #3a3a42;
+}
+
+.app__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app__sidebar-toggle {
+  align-self: flex-start;
+  margin: 1rem 1rem 0;
+  padding: 0.4rem;
+  background: transparent;
+  color: #555;
+  border: 1px solid #ccc;
+}
+
+.app__sidebar-toggle:hover {
+  background: #eee;
+}
+
+.app__content main {
+  flex: 1;
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 2rem;
+}
+
+/* Collapsed: the sidebar itself is unmounted from layout flow (see
+   Shell.tsx's own aria-hidden on <aside>) -- width and padding both
+   collapse to zero rather than just visually hiding it, so the
+   content pane genuinely reclaims the full width, not just an empty
+   dark strip. */
+.app--sidebar-collapsed .app__sidebar {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
+}
+
+/* A real, if basic, responsive floor -- see Shell.tsx's own
+   MOBILE_BREAKPOINT_QUERY (kept in sync with this value) and its own
+   AI-notes on why this is deliberately not a full mobile redesign.
+   Below this width, an OPEN sidebar overlays the content instead of
+   squeezing it into an unusably narrow remaining column. */
+@media (max-width: 640px) {
+  .app:not(.app--sidebar-collapsed) .app__sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 10;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+  }
+}
+
+/* app__pre-auth -- the checking/loggedOut screens in App.tsx, before
+   a session exists at all. Genuinely different layout shape from
+   .app below (Shell.tsx's own sidebar structure): a simple, narrow,
+   centered column, since there's no sidebar to show yet -- this is
+   exactly .app's own original layout, before the sidebar existed,
+   preserved here under its own name rather than lost when .app
+   itself became a flex row. */
+.app__pre-auth {
   max-width: 640px;
   margin: 0 auto;
   padding: 2rem 1rem;
 }
 
-.app__header {
+.app__pre-auth-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
 }
 
-.app__header h1 {
+.app__pre-auth-header h1 {
   font-size: 1.4rem;
   margin: 0;
 }
@@ -59,8 +208,7 @@ textarea {
   font-family: inherit;
 }
 
-button,
-.app__nav a {
+button {
   padding: 0.55rem 1rem;
   border: none;
   border-radius: 6px;
@@ -77,8 +225,7 @@ button:disabled {
   cursor: default;
 }
 
-button.secondary,
-.app__nav a.secondary {
+button.secondary {
   background: transparent;
   border: 1px solid #999;
   color: #333;
@@ -174,11 +321,6 @@ button.secondary,
 
 .pending-write--resolved {
   color: #1a1a1a;
-}
-
-.app__nav {
-  display: flex;
-  gap: 0.5rem;
 }
 
 .create-user-form {

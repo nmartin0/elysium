@@ -228,9 +228,15 @@ export default function App() {
     // why no synchronous check exists anymore. No spinner/skeleton
     // beyond plain text, matching every other data-fetching
     // component's own existing "Loading…" convention in this app.
+    //
+    // app__pre-auth, not the shared .app -- genuinely different
+    // layout shape from Shell.tsx's own post-login sidebar structure
+    // (a simple, centered, vertical column; there's nothing to
+    // navigate to before a session exists at all), not just an
+    // unstyled placeholder waiting for the real chrome.
     return (
-      <div className="app">
-        <header className="app__header">
+      <div className="app__pre-auth">
+        <header className="app__pre-auth-header">
           <h1>Elysium</h1>
         </header>
         <main>
@@ -242,8 +248,8 @@ export default function App() {
 
   if (authStatus === 'loggedOut') {
     return (
-      <div className="app">
-        <header className="app__header">
+      <div className="app__pre-auth">
+        <header className="app__pre-auth-header">
           <h1>Elysium</h1>
         </header>
         <main>
