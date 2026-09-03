@@ -1,13 +1,41 @@
-import { useEffect, useState } from 'react'
+import { lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
 import Shell, { type VisibleApp } from './Shell'
-import QueryPanel from '@elysium/app-query/QueryPanel'
-import ObjectSearchPanel from '@elysium/app-browse/ObjectSearchPanel'
-import ObjectDetailPanel, { type VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
-import AdminPanel from '@elysium/app-admin/AdminPanel'
+import type { VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
 import { logout, getMyVisibleSchema, getVisibleApps, handleIfSessionExpired } from '@elysium/shell-api/api'
 import '@elysium/shell-api/index.css'
+
+// Lazy-loaded, deliberately -- each sub-app's own code is no longer
+// part of the initial bundle at all; the browser only downloads
+// QueryPanel's own chunk, for instance, the moment someone actually
+// navigates to /query, not on every page load regardless of which
+// sub-app (if any) they end up using. This is the concrete, in-
+// process realization of "the shell mounts/unmounts a sub-app," not
+// a separate performance optimization bolted on afterward -- see
+// Shell.tsx's own <Suspense> boundary around <Outlet />, which is
+// what actually shows a loading state while a chunk is still in
+// flight.
+//
+// LoginForm and Shell itself both stay eager, deliberately, not
+// oversights: LoginForm is the very first meaningful content a
+// logged-out person ever sees, and lazy-loading it would add a real
+// network round-trip before anyone could even log in; Shell IS the
+// persistent chrome itself, so lazy-loading it would mean the chrome
+// flickers in too, defeating the entire point of "persistent."
+//
+// VisibleSchema imported separately, as a real, standalone `import
+// type` -- lazy() itself only ever consumes a module's own default
+// export at runtime (it awaits the dynamic import() and reads
+// .default), so a type-only named export from that same module has
+// to come through its own, ordinary static import instead; `import
+// type` is fully erased at compile time (isolatedModules requires
+// this to be unambiguous), so this adds no second network request
+// and creates no eager reference to the module's own real code.
+const QueryPanel = lazy(() => import('@elysium/app-query/QueryPanel'))
+const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
+const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
+const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
 
 type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn'
 
@@ -277,6 +305,18 @@ export default function App() {
 // security boundary (server-side auth on every request is).
 //
 // RESOLVED (kept for history):
+// - Sub-app routes (QueryPanel, ObjectSearchPanel, ObjectDetailPanel,
+//   AdminPanel) are now lazy-loaded (React.lazy() + Shell.tsx's own
+//   <Suspense> around <Outlet />) -- item #1 of the shell/launcher
+//   upgrade plan. Confirmed with a real production build (separate,
+//   real chunks per sub-app, main bundle shrank by the exact amount
+//   that moved out) AND a live, real browser session against a real
+//   running server: watched actual network requests and confirmed a
+//   sub-app's own chunk loads only the first time someone navigates
+//   there, the persistent chrome (header/nav) never disappears or
+//   flickers during that load, and the newly-loaded screen renders
+//   its own real content correctly -- not assumed correct from the
+//   build output alone.
 // - getMyVisibleSchema() lifted here from ObjectSearchPanel.jsx, once
 //   ObjectDetailPanel.jsx needed the exact same value -- fetched
 //   once, passed down as a prop to both. React Context was considered

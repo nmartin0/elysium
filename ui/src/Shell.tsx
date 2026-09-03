@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 // Shell.tsx  (the actual chrome -- header, data-driven nav, and the
@@ -30,6 +31,16 @@ import { NavLink, Outlet } from 'react-router-dom'
 // spinner: this loads near-instantly in practice, and an empty nav
 // for a split second is a safer default than showing something that
 // might be about to disappear.
+//
+// <Suspense> wraps ONLY <Outlet />, not this component's own header/
+// nav -- App.tsx's own sub-app routes are now lazy-loaded (see that
+// file's own header comment), so the FIRST time someone navigates to
+// a given sub-app, its code chunk is still in flight over the
+// network for a brief moment. This boundary is what shows a loading
+// state during that moment -- deliberately scoped to just the content
+// area, so the persistent chrome (this header, this nav) stays fully
+// rendered and interactive throughout; "persistent" would be a lie if
+// the chrome itself also disappeared behind the same fallback.
 
 export interface VisibleApp {
   path: string
@@ -67,7 +78,9 @@ export default function Shell({ visibleApps, onLogout }: ShellProps) {
       </header>
 
       <main>
-        <Outlet />
+        <Suspense fallback={<p>Loading…</p>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   )
