@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Menu, MenuItem } from '@blueprintjs/core'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 
 // Shell.tsx  (the actual chrome -- a collapsible left sidebar, and
@@ -128,6 +129,8 @@ function getInitialCollapsedState(): boolean {
 
 export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps) {
   const [collapsed, setCollapsed] = useState<boolean>(getInitialCollapsedState)
+  const location = useLocation()
+  const navigate = useNavigate()
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -162,19 +165,42 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // Menu/MenuItem, not NavLink -- Blueprint's own real vocabulary for
+  // exactly this ("side navigation" isn't a distinct Blueprint
+  // component; a vertically-stacked Menu inside your own layout
+  // container IS the real, confirmed pattern -- Navbar has been a
+  // real, open Blueprint feature request for vertical orientation
+  // since 2016, never implemented). MenuItem has no router-aware
+  // "render as" mechanism of its own (confirmed directly, not
+  // assumed), so this uses the same real, standard pattern any
+  // non-router-aware link-like component needs (confirmed against a
+  // real, working MUI example doing the same integration): a real
+  // href for genuine semantics (right-click "open in new tab" etc.
+  // still works correctly), but the actual click is intercepted --
+  // preventDefault() stops MenuItem's own plain <a> from doing a full
+  // page reload, and react-router-dom's own navigate() does the real,
+  // client-side transition instead. active is computed by hand from
+  // useLocation(), since MenuItem has no idea routing exists at all.
+  const navItems = visibleApps.map((app) => (
+    <MenuItem
+      key={app.path}
+      text={app.name}
+      href={app.path}
+      active={location.pathname === app.path}
+      onClick={(event) => {
+        event.preventDefault()
+        navigate(app.path)
+      }}
+    />
+  ))
+
   return (
     <div className={collapsed ? 'app app--sidebar-collapsed' : 'app'}>
       <aside className="app__sidebar" aria-hidden={collapsed}>
         <div className="app__sidebar-header">
           <h1>Elysium</h1>
         </div>
-        <nav className="app__nav">
-          {visibleApps.map((app) => (
-            <NavLink key={app.path} to={app.path} className={({ isActive }) => (isActive ? '' : 'secondary')}>
-              {app.name}
-            </NavLink>
-          ))}
-        </nav>
+        <Menu className="app__nav">{navItems}</Menu>
         <UserMenu currentUser={currentUser} onLogout={onLogout} />
       </aside>
 

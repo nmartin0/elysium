@@ -46,44 +46,42 @@ body {
 }
 
 .app__nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
   flex: 1;
 }
 
-/* Fully self-contained, not relying on the plain `button` rule at all
-   -- .app__nav a is a real <a> element (NavLink), which never matched
-   `button` as a selector to begin with; it only inherited that base
-   look via a combined `button, .app__nav a { ... }` selector list
-   before the sidebar redesign, back when both looked the same. Now a
-   genuinely different surface (dark sidebar background, not a button
-   sitting on the light page background), so it needs its own,
-   complete rule -- transparent by default (the dark sidebar
-   background already reads as the "resting" state), a lighter fill
-   only for the active route. */
-.app__nav a {
-  padding: 0.5rem 0.65rem;
-  border-radius: 6px;
+/* .app__nav.bp6-menu, not just .app__nav alone -- a real, FOURTH
+   occurrence of this same class of bug this migration, caught the
+   same reliable way as the third (queried the real browser directly
+   for the actual matching CSS rule, not guessed): Blueprint's own
+   .bp6-menu rule sets a real, solid white background by default
+   (Menu is normally used floating on its own light surface, like
+   inside a Popover -- confirmed exactly this via UserMenu's own real,
+   correctly-white popover panel). This Menu is different: embedded
+   directly in the dark sidebar itself, not floating on its own light
+   surface, so it needs transparent, not Blueprint's own default.
+   Two real classes together for genuinely higher specificity than
+   Blueprint's own single-class rule, the same proven approach as
+   every other fix of this kind this migration. */
+.app__nav.bp6-menu {
   background: transparent;
+}
+
+/* .app__nav .bp6-menu-item, not just .bp6-menu-item alone -- the same
+   real lesson already learned twice this migration (UserMenu's own
+   trigger, and before that, this project's own pre-Blueprint sidebar
+   contrast bugs): Blueprint's own MenuItem styling is built for a
+   light page background, not this dark sidebar, and a plain, single-
+   class override risks losing to Blueprint's own, more specific rule
+   regardless of source order. Scoped to .app__nav specifically (not a
+   bare .bp6-menu-item override) so this only ever affects sidebar nav
+   items, never some other, future Menu elsewhere in the app that
+   SHOULD keep Blueprint's own default light-theme treatment. */
+.app__nav .bp6-menu-item {
   color: #f2f2f3;
-  font-size: 0.95rem;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-  display: block;
 }
 
-.app__nav a:not(.secondary) {
+.app__nav .bp6-menu-item.bp6-active {
   background: #4a4a54;
-}
-
-.app__nav a.secondary {
-  border: none;
-}
-
-.app__nav a.secondary:hover {
-  background: #3a3a42;
 }
 
 /* user-menu -- rebuilt on real Blueprint primitives (PopoverNext +

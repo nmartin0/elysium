@@ -50,14 +50,14 @@ describe('Shell', () => {
       { name: 'Query', path: '/query', gating_permission: null },
       { name: 'Browse', path: '/browse', gating_permission: null },
     ])
-    expect(screen.getByRole('link', { name: 'Query' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Browse' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Browse' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Admin' })).not.toBeInTheDocument()
   })
 
   it('renders no nav links at all for an empty visibleApps -- the deliberate default before the fetch resolves', () => {
     renderShell([])
-    expect(screen.queryAllByRole('link')).toHaveLength(0)
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0)
     // Still renders the rest of the chrome -- an empty nav isn't a
     // broken shell, just a temporarily-empty one. The user menu
     // trigger is always present regardless of nav content -- "Account"
@@ -72,7 +72,7 @@ describe('Shell', () => {
       { name: 'Query', path: '/query', gating_permission: null },
       { name: 'Admin', path: '/admin', gating_permission: 'manage:users' },
     ])
-    expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Admin' })).toBeInTheDocument()
   })
 
   it('renders the correct child route inside Outlet for the current path', () => {
@@ -135,7 +135,7 @@ describe('Shell -- the collapsible sidebar', () => {
     // hidden, not unmounted) -- querying via role correctly reflects
     // aria-hidden by excluding it, the real, accessible signal that
     // it's no longer reachable, not just visually smaller.
-    expect(screen.queryByRole('link', { name: 'Query' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Query' })).not.toBeInTheDocument()
   })
 
   it('clicking the toggle again re-expands the sidebar', () => {
@@ -144,7 +144,7 @@ describe('Shell -- the collapsible sidebar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show sidebar' }))
 
     expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Query' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
   })
 
   it('persists the collapsed choice to localStorage when toggled', () => {
@@ -259,7 +259,7 @@ describe('Shell -- the Suspense boundary around lazy-loaded sub-app routes', () 
     const { LazyComponent } = createControlledLazyComponent()
     renderShellWithLazyRoute(LazyComponent)
     expect(screen.getByText('Elysium')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Query' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument()
   })
 
