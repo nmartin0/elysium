@@ -83,12 +83,15 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
+from api.csrf_middleware import csrf_protect
 from core.agent.agentic_loop import AgentLoop
 from core.auth.credential_store import CredentialStore
+from core.auth.login_attempt_tracker import LoginAttemptTracker
 from core.auth.session_store import SessionStore
 from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
+from core.lock_store import LockStore
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 from core.user_directory import UserDirectory
@@ -100,6 +103,49 @@ UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
 
 def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app = FastAPI(title="LLM Data Mediator")
+
+    # CSRF validation -- registered BEFORE add_security_headers below,
+    # deliberately: Starlette's own middleware stack makes the LAST-
+    # registered middleware the OUTERMOST one, so add_security_headers
+    # (registered after this) wraps AROUND csrf_protect and therefore
+    # still runs -- and still applies security headers -- even on a
+    # request csrf_protect rejects and short-circuits before it ever
+    # reaches a real route. Verified directly, not assumed: confirmed
+    # live that a genuine 403 CSRF rejection still carries the same
+    # Content-Security-Policy/X-Frame-Options headers as every other
+    # response. See api/csrf_middleware.py's own docstring for why
+    # this exists at all (SameSite=Strict alone, researched directly
+    # against OWASP's own current CSRF guidance, was found insufficient
+    # on its own).
+    app.middleware("http")(csrf_protect)
+
+    # Security headers, applied to EVERY response -- a real, found gap:
+    # this app previously set none at all. Verified directly before
+    # writing a strict CSP, not assumed safe: grepped for inline
+    # style={{}} props (zero), external <script>/<link> tags in
+    # index.html (zero -- one same-origin <script type="module">
+    # only), and any CDN/external CSS reference (zero) -- this app is
+    # genuinely, fully self-contained, same-origin only, so a strict
+    # default-src 'self' covers everything it actually needs, nothing
+    # broken by tightening it this far.
+    #
+    # Strict-Transport-Security deliberately NOT set here -- TLS
+    # termination is typically a deployment/reverse-proxy concern, not
+    # this application's own code; setting it here risks either
+    # conflicting with, or duplicating, whatever the real front-facing
+    # proxy in a given deployment already sets. See README.md's own
+    # "Known limitations, honestly" section for this noted as a real,
+    # deployment-specific responsibility, not silently assumed handled.
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        )
+        return response
 
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
@@ -124,6 +170,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # and core/user_directory.py's own docstrings for the full reasoning.
     app.state.credential_store = CredentialStore(app.state.credentials_db_path)
     app.state.session_store = SessionStore(app.state.credentials_db_path)
+    app.state.login_attempt_tracker = LoginAttemptTracker(app.state.credentials_db_path)
     app.state.user_directory = UserDirectory(app.state.credentials_db_path, config.roles)
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request. Reads its own write_log directly from
@@ -132,6 +179,14 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # constructs mediator with a real write_log, and WriteMediator's
     # own __init__ raises a clear error if that were ever not true.
     app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types)
+    # Generic, resource-agnostic locking -- see core/lock_store.py's
+    # own module docstring for the full mechanism. Its own, dedicated
+    # SQLite file (matches write_log.db's own precedent), built
+    # directly here rather than threaded through load_deployment_
+    # bundle() -- this is shell-level infrastructure, not part of a
+    # specific deployment's own config/schema/mediator the way that
+    # function's own return value is.
+    app.state.lock_store = LockStore(runtime_paths.data_dir / "resource_locks.db")
     # THE resume-on-startup half of crash recovery -- see
     # WriteMediator.resume_pending_writes()'s own docstring for the
     # full mechanism. Runs ONCE, here, before this app ever serves a

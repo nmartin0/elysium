@@ -1,13 +1,45 @@
 import { useState } from 'react'
-import { confirmWrite, ApiError } from '../api'
+import { confirmWrite, handleIfSessionExpired } from '../api'
 import { formatFieldName, formatValue } from '../format'
+
+// The real shape of one proposed change, as the backend's own /query
+// and /actions/{name} responses hand it back (see api/routes.py's
+// own construction of pending_write). Exported here, not kept local
+// -- unlike format.ts's own deliberately-local TitleFieldSchema, this
+// one has KNOWN, certain second and third consumers already (QueryPanel.
+// jsx and ActionForm.jsx both construct/pass a pendingWrite prop to
+// THIS component from their own API responses), not a speculative
+// future one -- co-located with its natural owner (the component that
+// consumes it most thoroughly) rather than a new, separate types file,
+// matching ordinary TypeScript convention for a shared prop type.
+export interface SubWrite {
+  object_type: string
+  object_id: string
+  changes: Record<string, unknown>
+  // ALWAYS a real dict, per api/routes.py's own contract -- see
+  // SubWriteFields's own comment below for why this file trusts that
+  // contract directly rather than guarding against a shape it
+  // structurally rules out.
+  expected_current_values: Record<string, unknown>
+}
+
+export interface PendingWrite {
+  id: string
+  action_type_name: string
+  description: string
+  sub_writes: SubWrite[]
+}
+
+interface SubWriteFieldsProps {
+  subWrite: SubWrite
+}
 
 // One object's own field-by-field changes, as a real "old -> new"
 // transition per field when the backend supplied one (expected_
 // current_values is empty for a "create" sub_write -- nothing
 // existed yet to have an old value, correctly rendered as just the
 // new value, not an error or a missing-data placeholder).
-function SubWriteFields({ subWrite }) {
+function SubWriteFields({ subWrite }: SubWriteFieldsProps) {
   return (
     <dl className="pending-write__fields">
       {Object.keys(subWrite.changes).map((field) => {
@@ -38,6 +70,12 @@ function SubWriteFields({ subWrite }) {
   )
 }
 
+interface PendingWriteCardProps {
+  pendingWrite: PendingWrite
+  onSessionExpired: () => void
+  onResolved: (approved: boolean) => void
+}
+
 // The client-side half of the two-phase write flow -- /query already
 // returned this reference without touching any data; nothing happens
 // until the person clicks one of these two buttons, which is exactly
@@ -57,12 +95,12 @@ function SubWriteFields({ subWrite }) {
 // handleDecision() already computes, once, right where outcome
 // itself gets set, not a second, separately-tracked signal that
 // could drift from what the card itself just displayed.
-export default function PendingWriteCard({ pendingWrite, onSessionExpired, onResolved }) {
+export default function PendingWriteCard({ pendingWrite, onSessionExpired, onResolved }: PendingWriteCardProps) {
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState(null)
-  const [outcome, setOutcome] = useState(null)
+  const [error, setError] = useState<string | null>(null)
+  const [outcome, setOutcome] = useState<string | null>(null)
 
-  async function handleDecision(approved) {
+  async function handleDecision(approved: boolean) {
     setSubmitting(true)
     setError(null)
     try {
@@ -70,11 +108,8 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
       setOutcome(approved ? 'Change applied.' : 'Change rejected.')
       onResolved(approved)
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
-      setError(err.message)
+      if (handleIfSessionExpired(err, onSessionExpired)) return
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSubmitting(false)
     }
@@ -112,18 +147,14 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
           </div>
         ) : (
           <SubWriteFields key={i} subWrite={subWrite} />
-        )
+        ),
       )}
       {error && <p className="error">{error}</p>}
       <div className="pending-write__actions">
         <button onClick={() => handleDecision(true)} disabled={submitting}>
           Approve
         </button>
-        <button
-          className="secondary"
-          onClick={() => handleDecision(false)}
-          disabled={submitting}
-        >
+        <button className="secondary" onClick={() => handleDecision(false)} disabled={submitting}>
           Reject
         </button>
       </div>
@@ -167,6 +198,10 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
 //   second copy that could quietly drift (e.g. one component learning
 //   to handle a new value type the other doesn't). This file's own
 //   behavior is unchanged, just re-imported.
+// - PendingWrite/SubWrite -- the shared prop-type shape -- exported
+//   from THIS file (see this file's own top-of-file comment for why
+//   here, not a new, separate types file) once the TypeScript
+//   migration reached this component.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Still no semantic "role" labeling for a sub_write within its own

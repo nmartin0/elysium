@@ -1,6 +1,16 @@
 import { useState } from 'react'
-import { query } from '../api'
-import PendingWriteCard from './PendingWriteCard'
+import { query } from '@elysium/shell-api/api'
+import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
+
+interface QueryResponseBody {
+  pending_write?: PendingWrite
+  answer?: string
+  detail?: string
+}
+
+interface QueryPanelProps {
+  onSessionExpired: () => void
+}
 
 // Note on status 499 (client disconnected -- see api/routes.py's
 // docstring): deliberately no special handling for it here. By the
@@ -9,14 +19,14 @@ import PendingWriteCard from './PendingWriteCard'
 // -- there's no real scenario where JS code running in a live tab
 // ever observes a resolved response carrying status 499. The generic
 // catch block below already covers it.
-export default function QueryPanel({ onSessionExpired }) {
+export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
   const [queryText, setQueryText] = useState('')
-  const [answer, setAnswer] = useState(null)
-  const [pendingWrite, setPendingWrite] = useState(null)
-  const [error, setError] = useState(null)
+  const [answer, setAnswer] = useState<string | null>(null)
+  const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setAnswer(null)
@@ -24,6 +34,10 @@ export default function QueryPanel({ onSessionExpired }) {
     setSubmitting(true)
 
     try {
+      // query() itself returns a real, typed Response (not
+      // Promise<unknown> like most other api.ts callers -- see that
+      // file's own comment on why: /query has four meaningfully
+      // different outcomes the caller needs to branch on by status).
       const response = await query(queryText)
 
       if (response.status === 401) {
@@ -31,12 +45,16 @@ export default function QueryPanel({ onSessionExpired }) {
         return
       }
 
-      const body = await response.json()
+      // response.json() itself is typed `any` by TypeScript's own
+      // built-in lib -- asserted to the real, known response body
+      // shape here, matching api/routes.py's own documented contract
+      // for the query route.
+      const body = (await response.json()) as QueryResponseBody
 
       if (response.status === 202) {
-        setPendingWrite(body.pending_write)
+        setPendingWrite(body.pending_write ?? null)
       } else if (response.status === 200) {
-        setAnswer(body.answer)
+        setAnswer(body.answer ?? null)
       } else {
         // 403 (stale permissions were already fine at query time but
         // something else denied it), 409 (permissions changed mid-

@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Playwright's own generated output (screenshots, traces, HTML
+# reports from test runs) -- ephemeral, regenerated on every run,
+# never source.
+test-results
+playwright-report
+blob-report
+playwright/.cache
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -17,6 +17,7 @@ roles:
   admin:
     allowed_actions:
       - manage:users
+      - manage:locks
   customer_service:
     allowed_actions:
       - read:Customer

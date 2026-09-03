@@ -526,13 +526,18 @@ class WriteLog:
 #   tests/unit/test_confirm_and_execute_batches.py for direct,
 #   empirical proof (not just inference) that a real write_log_
 #   batches row exists mid-apply and the per-object row is correctly
-#   batch-owned. What's NOT yet done, and is urgent, not just
-#   deferred: resume_pending_writes() (write_mediator.py) has not been
-#   rebuilt to match -- see that file's own AI-notes section (added at
-#   the same time as this update) for the full, concrete consequence,
-#   which is more serious than "incomplete": crash recovery for real,
-#   confirm_and_execute()-originated writes is currently a silent
-#   no-op, not merely partial.
+#   batch-owned.
+# - (RESOLVED, kept for history -- this note used to read "What's NOT
+#   yet done, and is urgent, not just deferred: resume_pending_
+#   writes() has not been rebuilt to match... crash recovery for
+#   real, confirm_and_execute()-originated writes is currently a
+#   silent no-op." Confirmed directly, not assumed stale: write_
+#   mediator.py's own AI-notes now show this as its own RESOLVED
+#   entry -- resume_pending_writes() was rebuilt, scans get_pending_
+#   batches() and walks each incomplete batch via _resume_one_
+#   batch(), with full new test coverage in tests/unit/test_write_
+#   log_resume.py. This file's own note simply never got updated to
+#   match once that landed -- a stale doc, not a real, lingering gap.)
 # - (RESOLVED, kept for history) No real, multi-object action_type
 #   had ever been declared or exercised anywhere -- only synthetic
 #   test fixtures. NOW FIXED: TransferFunds (tests/integration/

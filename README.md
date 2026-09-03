@@ -1,20 +1,35 @@
 # Elysium
 
-An LLM-driven system for answering questions — and, with permission,
-making changes — against your organization's data, without giving the
-model direct database access, and without trusting the model's own
-judgment about what it's allowed to see or do.
+Elysium answers questions — and, with permission, makes changes —
+against your organization's data through an **ontology**: a semantic
+layer of object types, fields, and links, declared once in YAML and
+resolved live against your real databases at the moment they're
+needed, standing between an LLM and your actual data. The model never
+gets direct database access, and is never trusted to judge what it's
+allowed to see or do on its own — see "The security model" below for
+how that's actually enforced.
 
 **One server instance runs one organization's data.** This is a
 single-tenant system.
+
+**Getting this installed and running is covered separately, in
+`INSTALL.md`** — prerequisites, local setup, running the tests, code
+quality tooling, and a real production install. This file is
+architecture, configuration, and the reasoning behind both.
 
 ---
 
 ## 1. How the system is organized
 
 ```
-core/            Generic engine. No knowledge of any organization, any
-                 specific database technology, or any specific LLM
+core/            Generic engine, built around the **ontology** --
+                 core/ontology/'s own semantic schema layer (object
+                 types, fields, links) resolved live against your real
+                 databases, never a materialized copy -- see section
+                 3.3 for the full concept, including multi-datasource
+                 object types (one object type spanning more than one
+                 physical database). No knowledge of any organization,
+                 any specific database technology, or any specific LLM
                  backend.
 adapters/        Concrete backends -- one file per real technology
                  (SQLite, Ollama, an in-memory cache). core/ only ever
@@ -39,7 +54,35 @@ deployment/      YOUR organization's configuration and data, for local
 templates/       Copy-and-edit starting points for the four deployment/
                  YAML files, using a realistic Employee/ExpenseReport
                  example -- genuinely runnable, not just illustrative
-                 prose. See section 8.
+                 prose. See section 3.
+ui/              The React + TypeScript frontend -- Query (ask a
+                 question), Browse (search + per-object detail view),
+                 and Admin (user management), sharing one login/session
+                 flow. An npm workspace, one package per real screen or
+                 shared concern, not one monolithic app:
+                   ui/src/               App.tsx (auth state, routing,
+                                         what's fetched once and passed
+                                         down), Shell.tsx (header/nav
+                                         chrome), main.tsx (entry point).
+                   ui/packages/shell-api/  Shared across every screen:
+                                         the one place that knows about
+                                         fetch/session/CSRF (api.ts),
+                                         display-formatting helpers
+                                         (format.ts), LoginForm,
+                                         PendingWriteCard (the two-phase
+                                         write confirmation UI).
+                   ui/packages/app-query/    QueryPanel -- the LLM
+                                         question/answer screen.
+                   ui/packages/app-browse/   ObjectSearchPanel (live,
+                                         debounced search) and
+                                         ObjectDetailPanel (a real,
+                                         bookmarkable per-object page,
+                                         with direct action invocation
+                                         via forms -- no LLM involved).
+                   ui/packages/app-admin/    AdminPanel -- create/
+                                         disable/enable/delete users,
+                                         inspect a user's own visible
+                                         schema.
 scripts/         Runnable entry points.
 install/         install.sh (fresh-install script) and elysium.service
                  (systemd unit) for a real, running install.
@@ -61,81 +104,18 @@ The LLM is treated as **completely untrustworthy** — a fluent but
 unaccountable component that must never be allowed to make a security
 decision itself. It cannot check its own permissions, filter its own
 output, or decide what it may access. It doesn't even *know* what it
-isn't allowed to see: the schema it's shown is filtered per-user before
-it ever reaches the model, so unauthorized tables, fields, and tools
-simply don't appear to exist. Every actual decision — what's visible,
-what's writable, what's callable — is made by plain Python code the LLM
-never touches, checked fresh on every single access, and logged whether
-allowed or denied. Section 8 explains exactly how to configure this for
-your organization; section 12 explains why it's built this way.
+isn't allowed to see: the ontology it's shown is filtered per-user
+before it ever reaches the model, so unauthorized object types,
+fields, and tools simply don't appear to exist. Every actual decision
+— what's visible, what's writable, what's callable — is made by plain
+Python code the LLM never touches, checked fresh on every single
+access, and logged whether allowed or denied. Section 3 explains
+exactly how to configure this for your organization; section 6
+explains why it's built this way.
 
 ---
 
-## 3. Prerequisites
-
-- **Python 3.10 or later**
-- **[Ollama](https://ollama.com)** installed and running locally
-- Enough free RAM for whatever model you choose to run
-
----
-
-## 4. Installation (local development)
-
-```bash
-git clone <your-repo-url>
-cd <repo-directory>
-
-python3 -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
-
-pip install -r requirements.txt
-```
-
-For a real, running production install, see section 10 instead.
-
----
-
-## 5. Setting up Ollama
-
-```bash
-ollama pull phi4-mini      # example: step-selection model
-ollama pull qwen2.5:3b     # example: answer-synthesis model
-```
-
-Smaller, "reasoning-flavored" models have generally worked better for
-step-selection than larger general-purpose ones — this is genuinely
-trial-and-error; try a model, run the test suite, see how it does.
-
----
-
-## 6. Running the included example
-
-```bash
-python3 -m scripts.run_deployment
-```
-
-No arguments — config, data, and logs are all resolved automatically.
-Runs a few example questions through the full pipeline and prints the
-answers.
-
----
-
-## 7. Running the tests
-
-```bash
-# Fast -- no LLM, no network, run these constantly while developing
-python3 -m pytest tests/unit/ -v
-
-# Slow -- real LLM calls against tests/integration/'s own isolated fixture
-python3 -m pytest tests/integration/ -v -m integration
-
-# api/ layer -- real FastAPI TestClient, mocked LLM, no Ollama needed
-python3 -m pytest tests/integration/test_api.py -v
-```
-
----
-
-## 8. Configuring your organization's deployment
+## 3. Configuring your organization's deployment
 
 **Start from `templates/`** — five genuinely runnable YAML files (an
 Employee/ExpenseReport example, verified end to end, not just
@@ -164,7 +144,7 @@ install uses, just rooted under one project-relative folder instead of
 `resolve_runtime_paths()` (in `core/deployment_loader.py`) is the one
 place that decides where each actually is.
 
-### 8.1 `config.yaml` — operational settings
+### 3.1 `config.yaml` — operational settings
 
 ```yaml
 llm:
@@ -194,7 +174,7 @@ tools:
 | `agent.max_concurrent_requests` | Thread pool size for `api/` and `scripts/serve_requests.py`. |
 | `tools.enabled` | Which registered tools the LLM may call, by name. |
 
-### 8.2 `data_silos.yaml` — where your data physically lives
+### 3.2 `data_silos.yaml` — where your data physically lives
 
 ```yaml
 data_silos:
@@ -214,12 +194,23 @@ config directory. Each object type in `ontology_schema.yaml` declares
 which named silo it lives in via its own `silo:` key — this is what
 lets a deployment span more than one adapter.
 
-### 8.3 `ontology_schema.yaml` — what data exists
+### 3.3 `ontology_schema.yaml` — what data exists
 
 Declares what data **exists** and how it's structured — it does
 **not** by itself make anything visible. Every field, including each
 type's own `id_field`, needs a matching grant in `policy.yaml` before
 any user can see it.
+
+This file **is** the ontology: a semantic schema layer of object
+types, fields, and links, deliberately separate from physical storage
+and resolved **live** against your real databases at the moment a
+question or write actually needs it — never against a separate,
+pre-built copy of your data. An object type's semantic shape (what a
+`Customer` *is*: its fields, its security boundary, its links to
+other types) is what this file declares; its physical backing (which
+real table, which real column, even which real *database*) is a
+genuinely separate concern — see "Multi-datasource object types"
+below for how far that separation actually goes.
 
 - **`silo`** — which named entry in `data_silos.yaml`.
 - **`id_field`** — the identifier's name. **Not automatically safe to expose** — some deployments use identifiers that are themselves sensitive (a password-reset token, a verification code), so this needs its own explicit grant like any other field.
@@ -227,18 +218,71 @@ any user can see it.
 - **`security`** — the MAC boundary for this type: `field: <column>` (carries its own boundary value) or `via_field: <link>` (inherits the linked object's).
 - **`fields`** — `type: data` (plain value) or `type: link` (points to another object; `cardinality: one` is a real foreign key, `cardinality: many` is a reverse relationship needing `via_table`/`via_column`).
 
+**Multi-datasource object types (MDO)** — one object type's different
+fields can each be backed by a genuinely different physical data
+source, not just a different table in the same database. A real,
+working example (trimmed from `tests/integration/fixtures/
+ontology_schema.yaml`):
+
+```yaml
+object_types:
+  Customer:
+    storage:
+      silo: primary_sql
+      table: customers
+      id_column: customer_id
+    additional_storage:
+      risk_db:
+        silo: risk_sql
+        table: customer_risk
+        id_column: cust_ref
+    fields:
+      name:
+        type: data                # primary_sql, implicitly
+      risk_score:
+        type: data
+        storage: risk_db          # risk_sql, explicitly
+        column: score_val         # risk_sql's own column name differs
+```
+
+A field with no `storage` key uses the type's own primary `storage`
+block — exactly as every field did before MDO existed, so a
+single-silo object type needs zero changes. A field that opts into an
+`additional_storage` entry may also declare `column` to override the
+actual SQL column name it maps to, since a real external silo won't
+always happen to name a column exactly like your own field name.
+
+Two things this makes possible, and one deliberate limit:
+- A single object can genuinely be assembled from more than one real
+  database at read time — each field is resolved from whichever
+  storage actually holds it, live, every time, with zero indication
+  in the caller-facing result that some fields came from elsewhere.
+- A **write** touching fields on different storages is not silently
+  unsafe: it commits through a durable, single-write log FIRST (one
+  atomic write, regardless of how many storages the change spans),
+  then applies each storage's own share of the change in order — see
+  `core/ontology/write_log.py`'s own module docstring for the full
+  mechanism. A caller reading mid-write never observes a half-applied
+  state.
+- **The deliberate limit**: a single search or field lookup may only
+  touch fields from ONE storage at a time — resolving a filter that
+  spans two different physical databases within one query is a
+  genuinely unsolved, harder problem, left for later, separately-
+  justified work, not silently assumed solved.
+
 See `templates/ontology_schema.yaml` for a complete, working example
 demonstrating every one of these.
 
-### 8.4 `action_types` — named, independently-governed operations
+### 3.4 `action_types` — named, independently-governed operations
 
 Declared in the same `ontology_schema.yaml`, alongside the object
-types above. Matches Palantir Foundry's own action-type model
-directly (verified against their docs, not assumed): a **named**
-business operation with its own, independent authorization —
-`execute:<ActionName>` — not a generic "update this field" capability
-assembled from individual `write:<Type>.<field>` grants. The object(s)
-an action touches are always just ordinary parameters, the same as
+types above. A **named** business operation with its own, independent
+authorization — `execute:<ActionName>` — not a generic "update this
+field" capability assembled from individual `write:<Type>.<field>`
+grants, matching how established, ontology-backed platforms model
+actions as first-class, independently-governed operations rather than
+implicit side effects of field-level write access. The object(s) an
+action touches are always just ordinary parameters, the same as
 any other input — never a separate, out-of-band argument.
 
 ```yaml
@@ -276,6 +320,20 @@ action_types:
   stops a deployer from writing an arbitrary `type` string here today.
   `required: true` is enforced at proposal time: a required parameter
   missing from a real call is rejected before anything else runs.
+  An `object_reference` parameter may also declare
+  `default_to_current_object: true` — a real boolean, at most one per
+  action, on a parameter whose own `object_type` is genuinely one of
+  `affected_object_types` (all three checked at schema-load time).
+  This is what the UI's own Object View action form uses to pre-fill
+  and lock a parameter to whichever object the form was actually
+  opened from, rather than leaving every `object_reference` field
+  blank — matches a common pattern in production object-action UIs: a
+  default bound to the current object by parameter identity, never
+  inferred from type alone (a real, previously-shipped bug:
+  type-matching alone locked *every* `object_reference` parameter of
+  a given type, which broke silently the moment an action had two of
+  them, like `TransferFunds`' own `from_account_id`/`to_account_id`,
+  both referencing `Account`).
 - **`sub_writes`** — the actual change(s), one entry per object
   touched (see **RBAC** below for what more than one object type
   actually requires). Each needs:
@@ -297,10 +355,10 @@ action_types:
     (literal / `parameter.<name>` / `user.security_value`).
   - **`submission_criteria`** *(optional)* — business-state rules that
     must hold before this specific sub-write proceeds, checked
-    **in addition to** RBAC/MAC, not instead of them. Matches Palantir's
-    own concept and name directly ("submission criteria... support
-    encoding business logic into data editing permissions," verified
-    against their docs). A real, working example:
+    **in addition to** RBAC/MAC, not instead of them — the same concept
+    found in real, production object-action platforms: business logic
+    encoded into data-editing permissions, layered on top of access
+    control rather than replacing it. A real, working example:
 
     ```yaml
     submission_criteria:
@@ -319,9 +377,10 @@ action_types:
     specific call). `operator` is one of `equals`, `not_equals`,
     `greater_than`, `less_than`, `greater_than_or_equal`,
     `less_than_or_equal`, `in` — a small, fixed set, deliberately not a
-    general expression language (the same reasoning, and the same
-    real-world precedent, as Palantir's own condition-template-based
-    UI, not a raw-expression one). The first criterion that fails stops
+    general expression language (the same reasoning any real,
+    production condition-template UI follows: a fixed set of
+    comparisons a form can render and validate safely, not a
+    raw-expression one). The first criterion that fails stops
     the whole action, with its own `description` as the reason — the
     same message a model sees through its own recoverable-mistake
     handling, and the same one a real, human-facing caller would see
@@ -347,7 +406,7 @@ multi-object cross-type action (`TransferFunds`) and
 `submission_criteria` example (a "reopen a closed ticket" rule) in
 context.
 
-### 8.5 `policy.yaml` — who your users are, and exactly what they can do
+### 3.5 `policy.yaml` — who your users are, and exactly what they can do
 
 Two independent, both-required gates, and **everything is fully
 explicit — nothing is inherited from anything else**:
@@ -360,18 +419,18 @@ explicit — nothing is inherited from anything else**:
 | `create:<Type>` | May bring a new object into existence. Still needs `write:<Type>.<field>` for every field being set. |
 | `tool:<name>` | May invoke this specific tool. |
 | `execute:<ActionName>` | May invoke this one named, independently-governed action — the mutations it declares apply regardless of any individual `write:<Type>.<field>` grant, as long as every one of its sub-writes targets a single object type. A sub-write spanning more than one object type additionally needs its own `write:<Type>.<field>` grant per field touched, for each type involved. |
-| `discover:action_types` | A single, blanket grant (not per-action) — see the whole action-type catalog via `GET /me/visible-action-types`, including actions this role holds no `execute:` grant for. Matches Palantir's own real, documented default (verified directly, not assumed) more closely than this project's own default posture, which is intentionally more conservative absent this grant: an unknown action and a real-but-unauthorized one otherwise look identical, by design (see `api/routes.py`'s own `propose_action_route`). A role holding this can still only *invoke* an action with its own, separate `execute:` grant — discovery and execution are genuinely separate axes here, same as in Palantir's real model. |
+| `discover:action_types` | A single, blanket grant (not per-action) — see the whole action-type catalog via `GET /me/visible-action-types`, including actions this role holds no `execute:` grant for. Matches a real, documented default found in production ontology-based platforms more closely than this project's own default posture, which is intentionally more conservative absent this grant: an unknown action and a real-but-unauthorized one otherwise look identical, by design (see `api/routes.py`'s own `propose_action_route`). A role holding this can still only *invoke* an action with its own, separate `execute:` grant — discovery and execution are genuinely separate axes here, matching that broader model. |
 | `manage:users` | May create new database-backed users via `api/`'s `/users` endpoint. |
 
 - **`security_attribute`** — the *mandatory* boundary (MAC). A user can never see data outside their own value for this field, regardless of role.
-- **`users`** — static, only used by `scripts/run_deployment.py` (a simple demo/dev tool). The real running service (`api/`) never reads this section — see section 9.
+- **`users`** — static, only used by `scripts/run_deployment.py` (a simple demo/dev tool). The real running service (`api/`) never reads this section — see section 4.
 
 This is deliberately verbose. A role touching a dozen fields needs a
 dozen lines. That verbosity is the actual point — every one of those
 lines is a decision someone made on purpose, not a default nobody
 thought about.
 
-### 8.6 `example_queries.yaml` and your database
+### 3.6 `example_queries.yaml` and your database
 
 `example_queries.yaml` is `user_id`/`query` pairs for
 `scripts/run_deployment.py`'s demo. Your database is whatever your
@@ -381,7 +440,7 @@ fixture pattern.
 
 ---
 
-## 9. Two ways to run this: `scripts/run_deployment.py` vs. `api/`
+## 4. Two ways to run this: `scripts/run_deployment.py` vs. `api/`
 
 These are **intentionally not unified**:
 
@@ -389,7 +448,7 @@ These are **intentionally not unified**:
 - **`api/`** is the real, running HTTP service. Every user is a real login, created via `core/user_directory.py` (database-backed, runtime-mutable) and authenticated via `core/auth/` (argon2id password hashing, session tokens).
 
 ```bash
-# Local dev, against the venv from section 4:
+# Local dev, against the venv set up in INSTALL.md's own section 2:
 uvicorn api.app:app --reload
 ```
 
@@ -406,41 +465,7 @@ minutes) if never confirmed.
 
 ---
 
-## 10. Installing as a real, running service
-
-`install/install.sh` (run as root, from a checked-out copy of this
-repository) sets up a genuine production install:
-
-- A dedicated **system user and group** (`elysium`), no login shell —
-  the service runs unprivileged, under its own identity, never as the
-  human who ran the install.
-- The **FHS layout** — `/opt/elysium` (code + venv), `/etc/elysium`
-  (config), `/var/lib/elysium` (data — `700` permissions, no group
-  access at all, since this is where `credentials.db` lives),
-  `/var/log/elysium` (logs).
-- A **systemd service** (`install/elysium.service`) running
-  `uvicorn api.app:app` under the `elysium` user, bound to
-  `127.0.0.1` by default.
-- **Root bootstrap** — a real, cryptographically random password,
-  generated once, printed once (never a hardcoded default).
-
-```bash
-sudo ./install/install.sh
-sudo systemctl start elysium.service
-```
-
-### Where this deviates from POSIX, explicitly
-
-This install script's **shell syntax** is POSIX `sh` throughout, but
-several **commands** it calls are Linux-specific, with no POSIX
-equivalent: **systemd** (not part of POSIX at all), **the FHS layout
-itself** (a Linux Foundation convention, not POSIX-mandated),
-**`useradd`/`groupadd`/`getent`** (from `shadow-utils`/glibc, not
-POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
-
----
-
-## 11. Extending the system
+## 5. Extending the system
 
 | To add... | Implement | Register in |
 |---|---|---|
@@ -450,7 +475,7 @@ POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 
 ---
 
-## 12. Why it's built this way — the untrusted-LLM design, point by point
+## 6. Why it's built this way — the untrusted-LLM design, point by point
 
 - **The LLM never sees a schema element it isn't authorized for.**
 - **"Doesn't exist" and "exists but denied" are indistinguishable**, on purpose, everywhere.
@@ -463,12 +488,14 @@ POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 
 ---
 
-## 13. Known limitations, honestly
+## 7. Known limitations, honestly
 
 - **Memory security infrastructure exists but isn't wired into the live query path.** `core/memory/guard.py`'s `MemoryGuard` is built and tested, but `AgentLoop` doesn't currently construct or use one.
+- **Pessimistic locking infrastructure exists but nothing in the UI uses it yet.** `core/lock_store.py` (generic, resource-agnostic, lease-based auto-expiry) and its real `POST /locks/{resource_name}/{acquire,refresh,release,force-release}` + `GET /locks/{resource_name}` routes are built and tested, but no current `ui/` screen ever calls them — built ahead of a planned config-builder UI, not yet consumed by one.
 - **Cross-silo links aren't supported.** Linked object types must currently share a data silo.
 - **Single OS process.** Concurrency protections coordinate threads within one process, not across separate processes. The pending-write store is also in-process memory — a multi-worker deployment would need a shared store instead.
 - **`install.sh` is a fresh-install script, not an upgrade mechanism.**
+- **TLS termination is a deployment responsibility, not this application's own code.** A real, production install sits behind a reverse proxy handling HTTPS -- this project's own security headers (`Content-Security-Policy` etc., see `api/app.py`) and cookie flags (`Secure`, see `core/auth/auth_cookies.py`) assume that proxy exists and is configured correctly; neither `Strict-Transport-Security` nor TLS certificate management is set up by this codebase itself.
 
 None of these are silent gaps — each is a deliberate, documented scope
 decision.

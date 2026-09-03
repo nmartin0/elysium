@@ -1,0 +1,91 @@
+{
+  // TypeScript migration -- Phase 0 (tooling setup, no source files
+  // converted yet). ONE root config, deliberately, not per-package
+  // project references -- this workspace is still small (13 source
+  // files across 4 packages) and genuinely one build/one deploy (see
+  // vite.config.js's own comment on why Vitest already shares ITS
+  // config the same way); project references solve a scale problem
+  // this codebase doesn't have yet.
+  //
+  // moduleResolution: "bundler" -- confirmed directly (not assumed)
+  // as the correct, current (TS 5.0+) choice for a Vite-based
+  // project: respects package.json "exports" maps (which is how
+  // cross-package imports like @elysium/shell-api/api ACTUALLY
+  // resolve here -- confirmed by reading every packages/*/package.
+  // json directly, not a Vite alias), and allows the same
+  // extensionless imports this project's own source already uses
+  // throughout (e.g. `from './ActionForm'`, never `'./ActionForm.
+  // jsx'`).
+  //
+  // noEmit: true -- Vite/esbuild does the real transpiling; this
+  // config exists for type-checking (`tsc --noEmit`) and editor
+  // support only, never for producing output files. rootDir/baseUrl
+  // deliberately absent -- TypeScript 7.0 removed baseUrl outright,
+  // and rootDir only affects EMITTED output structure, which noEmit
+  // makes moot here.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    // strict: true bundles 8 checks together (noImplicitAny,
+    // strictNullChecks, strictFunctionTypes, and others) -- the
+    // person's own explicit request to be "pretty strict... to catch
+    // errors here and now", and the only way this migration actually
+    // delivers the real type safety that's the whole point of doing
+    // it, rather than a conversion that merely renames files.
+    "strict": true,
+
+    // The one addition beyond the core strict bundle: real array/
+    // object index access (`arr[i]`, `obj[key]`) is typed as
+    // possibly-undefined, not silently assumed present. A genuinely
+    // common, real bug class in exactly the kind of code this
+    // project's own components do a lot of (mapping over API
+    // results, looking up a field by name) -- not just a style
+    // preference.
+    "noUncheckedIndexedAccess": true,
+
+    // Deliberately NOT enabled, and why:
+    // - noUnusedLocals / noUnusedParameters: oxlint's own
+    //   no-unused-vars rule already covers this ground (confirmed
+    //   already active and clean across this codebase) -- enabling
+    //   both here too would just be two tools reporting the same
+    //   class of issue, not additional real safety.
+    // - verbatimModuleSyntax: would require manually splitting every
+    //   type-only import into an explicit `import type` throughout
+    //   the conversion -- real, avoidable mechanical work for a
+    //   strict 1:1 conversion whose whole point is minimizing exactly
+    //   that kind of extra effort, not a safety property this
+    //   codebase is missing.
+
+    // @testing-library/jest-dom -- confirmed necessary empirically
+    // (not assumed), while converting the first real test file: its
+    // own matcher type augmentation (toBeInTheDocument, toBeDisabled,
+    // ...) only takes effect for files genuinely part of THIS
+    // TypeScript program, and the file that actually imports it at
+    // runtime (setupTests.js) isn't converted yet -- listing it here
+    // makes the augmentation visible program-wide regardless, the
+    // standard, documented way to do this. vitest/globals was NOT
+    // needed, confirmed the same way: every test file in this project
+    // already imports describe/it/expect/vi explicitly from 'vitest'
+    // rather than relying on the `globals: true` runtime setting.
+    //
+    // vite/client -- confirmed necessary empirically too, while
+    // converting App.tsx: without it, tsc has no ambient module
+    // declaration for a plain CSS side-effect import (`import
+    // '@elysium/shell-api/index.css'`), which Vite itself handles
+    // natively at build time but tsc, checking in isolation, does
+    // not understand on its own. Ships as part of vite itself
+    // (already a real devDependency here), not a separate package.
+    "types": ["@testing-library/jest-dom", "vite/client"]
+  },
+  "include": ["src", "packages/*/src"]
+}

@@ -1,8 +1,35 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getObjectDetail, getVisibleActionTypes, ApiError } from '../api'
-import { formatFieldName, formatValue, getDisplayTitle } from '../format'
-import ActionForm from './ActionForm'
+import { getObjectDetail, getVisibleActionTypes, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import ActionForm, { type ActionDef } from './ActionForm'
+
+// The real shape of ONE object type's own entry within the backend's
+// visible-schema response (GET /me/visible-schema, GET /users/{u}/
+// visible-schema). Exported here, not kept local -- unlike format.
+// ts's own deliberately-local TitleFieldSchema (a strict SUBSET of
+// this same shape, still structurally compatible with it), this
+// component is the first to need MORE of it (fields, for link
+// rendering below), and ObjectSearchPanel.jsx -- a KNOWN, not
+// speculative, future consumer, since it receives the exact same
+// visibleSchema prop and reads it the same way -- will need this
+// full shape too once converted.
+export interface FieldSchema {
+  type: string
+  target?: string
+}
+
+export interface TypeSchema {
+  title_field?: string | null
+  fields?: Record<string, FieldSchema>
+}
+
+export type VisibleSchema = Record<string, TypeSchema>
+
+interface ObjectDetailPanelProps {
+  visibleSchema: VisibleSchema | null
+  onSessionExpired: () => void
+}
 
 // Stage 2 of the Palantir-parity UI plan -- Object View. A real,
 // dedicated page for one specific object: every field the caller can
@@ -13,13 +40,22 @@ import ActionForm from './ActionForm'
 // specific screen is what justified adding real routing at all.
 // Stage 3 adds direct action invocation from this same page -- see
 // ActionForm.jsx's own docstring.
-export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
-  const { objectType, objectId } = useParams()
-  const [fields, setFields] = useState(null)
+export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: ObjectDetailPanelProps) {
+  // useParams() itself types every param as string | undefined
+  // regardless of the generic passed -- react-router-dom's own type
+  // definition, since it can't statically know a given route
+  // pattern's own params are always present. Genuinely guaranteed
+  // here, not assumed: this component only ever renders under
+  // /objects/:objectType/:objectId, a route pattern where both
+  // segments are required, never optional.
+  const params = useParams<{ objectType: string; objectId: string }>()
+  const objectType = params.objectType!
+  const objectId = params.objectId!
+  const [fields, setFields] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [visibleActionTypes, setVisibleActionTypes] = useState(null)
-  const [activeAction, setActiveAction] = useState(null)
+  const [error, setError] = useState<string | null>(null)
+  const [visibleActionTypes, setVisibleActionTypes] = useState<Record<string, ActionDef> | null>(null)
+  const [activeAction, setActiveAction] = useState<string | null>(null)
 
   // Same stale-response guard as ObjectSearchPanel's own live search --
   // here it protects against rapid navigation between two DIFFERENT
@@ -41,16 +77,17 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
     setFields(null)
 
     try {
-      const response = await getObjectDetail(objectType, objectId)
+      // getObjectDetail() itself returns Promise<unknown> (see api.ts's
+      // own header comment on why) -- asserted to the real, known
+      // success shape here, matching api/routes.py's own documented
+      // contract for get_object_detail_route.
+      const response = (await getObjectDetail(objectType, objectId)) as { fields: Record<string, unknown> }
       if (thisRequestId !== latestRequestId.current) return
       setFields(response.fields)
     } catch (err) {
       if (thisRequestId !== latestRequestId.current) return
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return
-      }
-      setError(err.message)
+      if (handleIfSessionExpired(err, onSessionExpired)) return
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       if (thisRequestId === latestRequestId.current) setLoading(false)
     }
@@ -68,13 +105,12 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
   useEffect(() => {
     async function loadActionTypes() {
       try {
-        const response = await getVisibleActionTypes()
+        // Asserted to the real, known success shape, same reasoning
+        // as loadDetail()'s own response above.
+        const response = (await getVisibleActionTypes()) as Record<string, ActionDef>
         setVisibleActionTypes(response)
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
-          onSessionExpired()
-          return
-        }
+        if (handleIfSessionExpired(err, onSessionExpired)) return
         // Deliberately silent otherwise -- a real failure here means
         // no action buttons render at all, which is a safe, honest
         // degradation (never fabricating a button for an action that
@@ -88,7 +124,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
 
   const typeSchema = visibleSchema ? visibleSchema[objectType] : null
 
-  function renderFieldValue(fieldName, value) {
+  function renderFieldValue(fieldName: string, value: unknown): React.ReactNode {
     const fieldSchema = typeSchema?.fields?.[fieldName]
     const isLink = fieldSchema?.type === 'link'
 
@@ -106,9 +142,9 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
     return (
       <span className="object-detail__links">
         {linkedIds.map((linkedId, index) => (
-          <span key={linkedId}>
+          <span key={String(linkedId)}>
             {index > 0 && ', '}
-            <Link to={`/objects/${targetType}/${encodeURIComponent(linkedId)}`}>{String(linkedId)}</Link>
+            <Link to={`/objects/${targetType}/${encodeURIComponent(String(linkedId))}`}>{String(linkedId)}</Link>
           </span>
         ))}
       </span>
@@ -147,7 +183,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
   }
 
   const availableActions = Object.entries(visibleActionTypes ?? {}).filter(
-    ([, actionDef]) => actionDef.affected_object_types.includes(objectType) && actionDef.executable
+    ([, actionDef]) => actionDef.affected_object_types.includes(objectType) && actionDef.executable,
   )
 
   const titleValue = getDisplayTitle(typeSchema, fields, objectId)
@@ -155,7 +191,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
   return (
     <div className="object-detail">
       <p className="object-detail__type">{objectType}</p>
-      <h2 className="object-detail__title">{titleValue}</h2>
+      <h2 className="object-detail__title">{titleValue as React.ReactNode}</h2>
       {titleValue !== objectId && <p className="object-detail__subtitle">{objectId}</p>}
       <dl className="object-detail__fields">
         {Object.entries(fields).map(([fieldName, value]) => (
@@ -179,7 +215,15 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
       {activeAction && (
         <ActionForm
           actionName={activeAction}
-          actionDef={visibleActionTypes[activeAction]}
+          // visibleActionTypes![activeAction]! -- genuinely safe by
+          // construction, not assumed: activeAction only ever gets
+          // set (above) from availableActions' own entries, which are
+          // themselves derived from visibleActionTypes -- a non-empty
+          // availableActions therefore guarantees BOTH that
+          // visibleActionTypes is non-null AND that this specific key
+          // exists in it, even though these are separate state/
+          // derived values TypeScript can't itself connect.
+          actionDef={visibleActionTypes![activeAction]!}
           objectType={objectType}
           objectId={objectId}
           onCancel={() => setActiveAction(null)}
@@ -247,6 +291,11 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }) {
 // invoke make sense to offer HERE," a display decision built on TWO
 // already-real, server-computed authorization facts, not a new
 // security decision of its own.
+//
+// FieldSchema/TypeSchema/VisibleSchema -- the shared prop-type shape
+// for the whole visible-schema response -- exported from THIS file
+// (see this file's own top-of-file comment for why here) once the
+// TypeScript migration reached this component.
 //
 // DEFERRED (known, intentional, not yet built):
 // - No "return to where I was" breadcrumb/back trail across multiple

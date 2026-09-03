@@ -88,6 +88,36 @@ additional to validate against (a declared parameter's own type and
 object_type). A literal or user.security_value object_id is
 structurally fine and simply has nothing further this module can
 check about it at load time.
+
+default_to_current_object -- an OPTIONAL, per-parameter marker on an
+object_reference parameter, e.g. {type: "object_reference",
+object_type: "Account", default_to_current_object: true} -- confirmed
+directly against Palantir Foundry's own documented mechanism for
+exactly this case before designing it (their Action-widget "Default
+value" -> "Environment variable" -> "Current object" binding, set on
+ONE specific parameter by its own unique ID, not inferred from type).
+A REAL, previously-discovered gap this closes: ui/'s own ActionForm.
+jsx used to pre-fill and lock EVERY object_reference parameter whose
+own object_type happened to match the object type of the page the
+form was opened from -- correct for an action with only one such
+parameter, but silently wrong the moment two object_reference
+parameters share the SAME object_type. The real, live TransferFunds
+case is exactly this: from_account_id AND to_account_id both
+reference Account -- before this marker existed, BOTH got pre-filled
+and locked to the SAME current account's id, with no way to specify a
+different "to" account through the form at all. Explicit, by
+parameter identity, exactly matching Palantir's own model, never
+inferred from object_type alone -- see this module's own validation
+below for the three things checked about it: only valid on an
+object_reference parameter; a real boolean, not some other YAML-
+coercible value; at most one such parameter per action_type (never
+more than one "the" current object); and its own object_type must be
+a member of affected_object_types (otherwise it could never actually
+take effect -- ui/'s own ObjectDetailPanel.jsx only ever offers an
+action as a button when the CURRENT page's object_type is a member of
+that action's own affected_object_types, so a marked parameter whose
+type isn't even in that list could never be "the current object" on
+any page this action is reachable from).
 """
 
 MAX_SUB_WRITES = 20
@@ -123,7 +153,7 @@ def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_
         )
 
     declared_params = action_def.get("parameters", {})
-    _validate_object_reference_parameters(action_type_name, declared_params, object_types)
+    _validate_object_reference_parameters(action_type_name, declared_params, object_types, declared_types)
 
     referenced_types: set[str] = set()
     seen_object_refs: set[tuple[str, str]] = set()
@@ -161,15 +191,29 @@ def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_
         )
 
 
-def _validate_object_reference_parameters(action_type_name: str, declared_params: dict, object_types: dict) -> None:
+def _validate_object_reference_parameters(action_type_name: str, declared_params: dict, object_types: dict,
+                                           affected_object_types: list) -> None:
     # Applies to EVERY declared object_reference parameter, not just
     # ones actually used as a sub_write's own object_id -- a parameter
     # referencing an object could legitimately be used only inside a
     # mutation's value or a submission_criteria check instead (e.g.
     # "which employee's manager to notify"), and deserves the same
     # "does this object_type actually exist" scrutiny either way.
+    default_to_current_object_params = []
     for param_name, param_spec in declared_params.items():
         if param_spec.get("type") != "object_reference":
+            if "default_to_current_object" in param_spec:
+                # A real, previously-possible mistake -- this flag
+                # only makes sense on an object_reference parameter
+                # (see this function's own docstring on the flag
+                # itself, right below); on anything else it would
+                # silently do nothing, ever, since ui/'s own
+                # ActionForm.jsx only checks it on parameters it has
+                # already confirmed are type: object_reference.
+                raise ValueError(
+                    f"Action type {action_type_name!r}: parameter {param_name!r} declares "
+                    f"default_to_current_object but is not type 'object_reference'."
+                )
             continue
         referenced_type = param_spec.get("object_type")
         if referenced_type is None:
@@ -182,6 +226,69 @@ def _validate_object_reference_parameters(action_type_name: str, declared_params
                 f"Action type {action_type_name!r}: parameter {param_name!r} references "
                 f"unknown type {referenced_type!r}."
             )
+
+        # default_to_current_object -- OPTIONAL, and by PARAMETER
+        # IDENTITY, never inferred from object_type alone. The real,
+        # previously-discovered gap this closes: ui/'s own ActionForm.
+        # jsx used to pre-fill and lock EVERY object_reference
+        # parameter whose own object_type happened to match the page
+        # it was opened from -- correct for an action with only one
+        # such parameter, but silently wrong the moment two
+        # object_reference parameters share the SAME object_type (the
+        # real, live TransferFunds case: from_account_id AND
+        # to_account_id both reference Account -- both used to get
+        # locked to the SAME id, with no way to specify a different
+        # "to" account at all). Confirmed directly against Palantir's
+        # own documented mechanism for exactly this case (Foundry's
+        # own Action-widget "Default value" -> "Environment variable"
+        # -> "Current object" binding) before designing this: THEIRS
+        # is also explicit, by parameter ID, never inferred from type
+        # -- this mirrors that directly, at the schema level instead
+        # of a separate view-configuration step, since this project
+        # has no separate view-config layer of its own.
+        if "default_to_current_object" in param_spec:
+            value = param_spec["default_to_current_object"]
+            if not isinstance(value, bool):
+                # Same "YAML-coercible surprise" concern _require_str()
+                # exists for elsewhere in this project (e.g. a bare
+                # "true"/"false" STRING here would be truthy in Python
+                # either way, silently masking a real authoring
+                # mistake) -- caught here, explicitly, rather than
+                # left to a confusing failure far away in ui/.
+                raise ValueError(
+                    f"Action type {action_type_name!r}: parameter {param_name!r}'s own "
+                    f"default_to_current_object must be a real boolean, got {value!r}."
+                )
+            if value:
+                default_to_current_object_params.append(param_name)
+                if referenced_type not in affected_object_types:
+                    # Otherwise this marker could never actually take
+                    # effect in real use: ObjectDetailPanel.jsx only
+                    # ever offers an action as a button when the
+                    # CURRENT page's own object_type is a member of
+                    # that action's own affected_object_types -- a
+                    # marked parameter whose type isn't even in that
+                    # list could never be "the current object" on any
+                    # page this action is ever actually reachable
+                    # from.
+                    raise ValueError(
+                        f"Action type {action_type_name!r}: parameter {param_name!r}'s own "
+                        f"default_to_current_object references {referenced_type!r}, which is not in "
+                        f"affected_object_types -- it could never actually be the current object on any "
+                        f"page this action is reachable from."
+                    )
+
+    if len(default_to_current_object_params) > 1:
+        # Exactly one, or none -- never more than one. Matches
+        # Palantir's own model directly: their binding names ONE
+        # specific parameter by its own unique ID, never several at
+        # once -- two parameters both claiming to be "the current
+        # object" is exactly the same class of ambiguity this whole
+        # mechanism exists to close, just reintroduced a different way.
+        raise ValueError(
+            f"Action type {action_type_name!r}: more than one parameter declares "
+            f"default_to_current_object (got {sorted(default_to_current_object_params)}) -- at most one is allowed."
+        )
 
 
 def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, object_types: dict,

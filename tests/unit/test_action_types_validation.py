@@ -388,3 +388,137 @@ def test_mutation_property_check_is_scoped_to_the_right_object_type():
     }
     with pytest.raises(ValueError, match="unknown property 'widget_id'"):
         validate_action_types(action_types, OBJECT_TYPES)
+
+
+# --- default_to_current_object -------------------------------------------
+#
+# The real gap this closes: ui/'s own ActionForm.jsx used to pre-fill
+# and lock EVERY object_reference parameter whose own object_type
+# matched the page it was opened from -- fine for one such parameter,
+# silently wrong the moment two share the same type (the real, live
+# TransferFunds case: from_account_id AND to_account_id both reference
+# Account). This marker is the fix: explicit, by parameter identity,
+# never inferred from type alone -- confirmed directly against
+# Palantir's own documented mechanism for exactly this case before
+# designing it (see this module's own docstring).
+
+def _transfer_style_action(from_default=None, to_default=None):
+    from_widget_id = _obj_ref_param("Widget")
+    to_widget_id = _obj_ref_param("Gadget")
+    if from_default is not None:
+        from_widget_id["default_to_current_object"] = from_default
+    if to_default is not None:
+        to_widget_id["default_to_current_object"] = to_default
+    return {
+        "affected_object_types": ["Widget", "Gadget"],
+        "parameters": {"from_widget_id": from_widget_id, "to_widget_id": to_widget_id},
+        "sub_writes": [
+            _sub_write("Widget", "parameter.from_widget_id"),
+            _sub_write("Gadget", "parameter.to_widget_id"),
+        ],
+    }
+
+
+def test_exactly_one_parameter_marked_is_valid():
+    action_types = {"Transfer": _transfer_style_action(from_default=True)}
+    validate_action_types(action_types, OBJECT_TYPES)  # does not raise
+
+
+def test_no_parameter_marked_is_valid_the_marker_is_optional():
+    action_types = {"Transfer": _transfer_style_action()}
+    validate_action_types(action_types, OBJECT_TYPES)  # does not raise
+
+
+def test_explicitly_false_is_valid_and_does_not_count_as_marked():
+    action_types = {"Transfer": _transfer_style_action(from_default=False, to_default=False)}
+    validate_action_types(action_types, OBJECT_TYPES)  # does not raise
+
+
+def test_two_parameters_both_marked_is_rejected():
+    # The exact class of ambiguity this whole mechanism exists to
+    # close, reintroduced a different way -- must never be allowed.
+    action_types = {"Transfer": _transfer_style_action(from_default=True, to_default=True)}
+    with pytest.raises(ValueError, match="more than one parameter declares default_to_current_object"):
+        validate_action_types(action_types, OBJECT_TYPES)
+
+
+def test_marker_on_a_non_object_reference_parameter_is_rejected():
+    action_types = {
+        "Bad": {
+            "affected_object_types": ["Widget"],
+            "parameters": {
+                "widget_id": _obj_ref_param("Widget"),
+                "amount": {"type": "number", "required": True, "default_to_current_object": True},
+            },
+            "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
+        }
+    }
+    with pytest.raises(ValueError, match="not type 'object_reference'"):
+        validate_action_types(action_types, OBJECT_TYPES)
+
+
+def test_marker_as_a_string_instead_of_a_real_boolean_is_rejected():
+    # The same "YAML-coercible surprise" concern this project already
+    # guards against elsewhere (e.g. core/deployment_loader.py's own
+    # _require_str()) -- a bare "true" STRING is truthy in Python
+    # either way, silently masking a real authoring mistake.
+    widget_id = _obj_ref_param("Widget")
+    widget_id["default_to_current_object"] = "true"
+    action_types = {
+        "Bad": {
+            "affected_object_types": ["Widget"],
+            "parameters": {"widget_id": widget_id},
+            "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
+        }
+    }
+    with pytest.raises(ValueError, match="must be a real boolean"):
+        validate_action_types(action_types, OBJECT_TYPES)
+
+
+def test_marked_parameters_own_object_type_must_be_in_affected_object_types():
+    # Otherwise the marker could never actually take effect: ui/'s own
+    # ObjectDetailPanel.jsx only offers an action as a button when the
+    # CURRENT page's object_type is a member of affected_object_types.
+    gizmo_id = _obj_ref_param("Gizmo")
+    gizmo_id["default_to_current_object"] = True
+    action_types = {
+        "Bad": {
+            "affected_object_types": ["Widget"],  # Gizmo is NOT here
+            "parameters": {"widget_id": _obj_ref_param("Widget"), "gizmo_id": gizmo_id},
+            "sub_writes": [_sub_write("Widget", "parameter.widget_id")],
+        }
+    }
+    with pytest.raises(ValueError, match="not in affected_object_types"):
+        validate_action_types(action_types, OBJECT_TYPES)
+
+
+def test_the_real_transfer_funds_shape_is_valid_once_exactly_one_side_is_marked():
+    # The exact real shape from tests/integration/fixtures/ontology_
+    # schema.yaml -- both from_account_id and to_account_id reference
+    # the SAME object_type, with only from_account_id marked.
+    account_types = {"Account": {"id_field": "account_id", "fields": {"balance": {"type": "data"}}}}
+    from_account_id = {"type": "object_reference", "object_type": "Account", "required": True,
+                        "default_to_current_object": True}
+    to_account_id = {"type": "object_reference", "object_type": "Account", "required": True}
+    action_types = {
+        "TransferFunds": {
+            "affected_object_types": ["Account"],
+            "parameters": {
+                "from_account_id": from_account_id,
+                "to_account_id": to_account_id,
+                "new_from_balance": {"type": "number", "required": True},
+                "new_to_balance": {"type": "number", "required": True},
+            },
+            "sub_writes": [
+                {
+                    "object_type": "Account", "object_id": "parameter.from_account_id", "operation": "update",
+                    "mutations": [{"set": {"property": "balance", "value": "parameter.new_from_balance"}}],
+                },
+                {
+                    "object_type": "Account", "object_id": "parameter.to_account_id", "operation": "update",
+                    "mutations": [{"set": {"property": "balance", "value": "parameter.new_to_balance"}}],
+                },
+            ],
+        }
+    }
+    validate_action_types(action_types, account_types)  # does not raise

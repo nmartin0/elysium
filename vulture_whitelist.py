@@ -43,10 +43,16 @@ enable_user_route
 delete_user_route
 confirm_write_route
 search_objects_route
+my_visible_apps_route
 my_visible_schema_route
 get_object_detail_route
 my_visible_action_types_route
 propose_action_route
+acquire_lock_route
+refresh_lock_route
+release_lock_route
+force_release_lock_route
+lock_status_route
 
 # --- unittest.mock attribute assignment -- `some_mock.return_value = x`
 # / `some_mock.side_effect = fn` are how tests configure a MagicMock;
@@ -84,3 +90,9 @@ supports_atomic_conditional_write
 # authorization logic (always re-derives security live instead), so
 # it genuinely has no in-logic reader by design, not by omission.
 captured_security_value
+
+# Registered via @app.middleware("http") -- called by FastAPI's own
+# internal dispatch mechanism, the same reason every route handler in
+# this file already needs a whitelist entry (see the block above):
+# never referenced by name anywhere in the Python source itself.
+add_security_headers

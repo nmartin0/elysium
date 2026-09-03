@@ -113,14 +113,24 @@ import asyncio
 import logging
 import threading
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
 from core.agent.agentic_loop import AgentLoop
+from core.auth.auth_cookies import (
+    SESSION_COOKIE_NAME,
+    clear_csrf_cookie,
+    clear_session_cookie,
+    generate_csrf_token,
+    set_csrf_cookie,
+    set_session_cookie,
+)
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
+from core.lock_store import LockStore
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 
@@ -132,10 +142,6 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str
     password: str
-
-
-class LoginResponse(BaseModel):
-    token: str
 
 
 class CreateUserRequest(BaseModel):
@@ -157,11 +163,21 @@ class ConfirmWriteRequest(BaseModel):
     approved: bool
 
 
-@router.post("/login", response_model=LoginResponse)
-def login(body: LoginRequest, request: Request) -> LoginResponse:
+@router.post("/login", status_code=204)
+def login(body: LoginRequest, request: Request, response: Response) -> None:
     credential_store = request.app.state.credential_store
     session_store = request.app.state.session_store
     user_directory = request.app.state.user_directory
+    login_attempt_tracker = request.app.state.login_attempt_tracker
+
+    # Checked BEFORE the real password verification below, but NEVER
+    # used to short-circuit it -- see login_attempt_tracker.py's own
+    # module docstring for the full reasoning. verify_credential()
+    # below still runs UNCONDITIONALLY regardless of this result, so a
+    # locked-out response takes exactly as long as a real wrong-
+    # password one, never leaking "this account exists and has recent
+    # failed attempts against it" through response timing alone.
+    locked_out = login_attempt_tracker.is_locked_out(body.username)
 
     # Credential check ALWAYS runs first, unconditionally -- checking
     # is_user_disabled() before this and short-circuiting for a
@@ -170,31 +186,53 @@ def login(body: LoginRequest, request: Request) -> LoginResponse:
     # leaking "this account exists and is disabled" through response
     # timing alone, even with an identical error message). Same timing-
     # safety principle verify_credential() itself already follows.
-    if not credential_store.verify_credential(body.username, body.password):
+    credentials_valid = credential_store.verify_credential(body.username, body.password)
+
+    if locked_out:
+        # Same generic message as every other failure below --
+        # deliberately never distinguishable from a plain wrong
+        # password. Not recorded as a NEW failure here -- already
+        # locked out; another record wouldn't change the outcome.
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    if not credentials_valid:
+        login_attempt_tracker.record_failure(body.username)
         # Generic on purpose -- see module docstring.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     if user_directory.is_user_disabled(body.username):
         # SAME message as a wrong password -- a disabled account must
         # not be distinguishable from one that simply doesn't exist or
-        # was given the wrong password.
+        # was given the wrong password. Deliberately NOT recorded as a
+        # rate-limit failure -- the password itself was genuinely
+        # correct here, blocked by account status alone, a different
+        # thing entirely from a guessing attempt.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
+    login_attempt_tracker.record_success(body.username)
     token = session_store.create_session(body.username)
-    return LoginResponse(token=token)
+    # Real, httponly cookie -- never returned in the JSON body at all;
+    # doing both would defeat the entire point (see core/auth/
+    # auth_cookies.py's own docstring). The CSRF cookie is
+    # deliberately readable (NOT httponly) -- see that same module's
+    # docstring for why, and api/csrf_middleware.py for how it's used.
+    set_session_cookie(response, token)
+    set_csrf_cookie(response, generate_csrf_token())
 
 
 @router.post("/logout", status_code=204)
-def logout(request: Request, authorization: str | None = Header(default=None)) -> None:
+def logout(request: Request, response: Response) -> None:
     # Needs the RAW token (to delete that exact session), not a
     # resolved UserRecord -- the only route with this need, so it
-    # parses the header itself rather than adding a second shape to
+    # reads the cookie directly rather than adding a second shape to
     # the shared auth dependency for one caller.
-    if authorization is not None and authorization.startswith("Bearer "):
-        token = authorization.removeprefix("Bearer ")
-        request.app.state.session_store.invalidate_session(token)
-    # No error even if the header was missing/malformed -- logging out
-    # of a session that isn't valid anyway isn't a meaningful failure.
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_token is not None:
+        request.app.state.session_store.invalidate_session(session_token)
+    # No error even if the cookie was missing -- logging out of a
+    # session that isn't valid anyway isn't a meaningful failure.
+    clear_session_cookie(response)
+    clear_csrf_cookie(response)
 
 
 @router.post("/logout-all", status_code=204)
@@ -294,6 +332,23 @@ async def _watch_for_disconnect(request: Request, cancel_event: threading.Event)
             cancel_event.set()
             return
         await asyncio.sleep(0.5)
+
+
+@router.get("/me/visible-apps")
+def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    # The shell's own nav, made real: which apps exist for THIS
+    # specific caller, computed from their actual grants -- not a
+    # hardcoded, always-shown list every logged-in user saw regardless
+    # of what they could actually use (Admin, before this route
+    # existed, was visible to everyone in the nav even though every
+    # single action inside it was already, separately, gated server-
+    # side by manage:users -- the button itself just never reflected
+    # that). Matches the exact same discipline already applied to
+    # action buttons (see discover:action_types/"executable" on
+    # ObjectDetailPanel.jsx) -- never show a nav entry for something
+    # the caller genuinely cannot use.
+    roles = request.app.state.config.roles
+    return visible_apps_for(current_user, roles)
 
 
 @router.get("/me/visible-schema")
@@ -630,6 +685,91 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
     event_loop = asyncio.get_running_loop()
     outcome = await event_loop.run_in_executor(executor, write_mediator.confirm_and_execute, pending, body.approved)
     return outcome if outcome is not None else {"status": "rejected"}
+
+
+# --- Generic, resource-agnostic locking -- see core/lock_store.py's
+# own module docstring for the full mechanism. Built as part of the
+# app shell, not config-builder-specific -- resource_name is an
+# arbitrary caller-supplied string, and this class has no knowledge
+# of what it actually names. No manage:* gate on acquire/refresh/
+# release/status -- any logged-in user may attempt to lock any named
+# resource; whether that attempt is MEANINGFUL for a given resource
+# (e.g. only a manage:deployment_config holder's attempt to lock the
+# config draft actually matters) is entirely up to whichever future
+# route consumes this lock for a real purpose, not this generic layer
+# itself. force-release is the one exception -- see its own route.
+
+class LockTokenRequest(BaseModel):
+    token: str
+
+
+@router.post("/locks/{resource_name}/acquire")
+def acquire_lock_route(resource_name: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    lock_store: LockStore = request.app.state.lock_store
+    result = lock_store.acquire(resource_name, current_user.user_id)
+    if result is None:
+        # Tells the caller WHO currently holds it -- not a security
+        # leak, since GET /locks/{resource_name} below already exposes
+        # the identical information to any logged-in caller; returning
+        # it here too just saves a second round-trip for the common
+        # "show me why this failed" UI case.
+        status = lock_store.get_status(resource_name)
+        raise HTTPException(status_code=409, detail={"message": "Resource is locked by another user", "lock": status})
+
+    token, expires_at = result
+    return {"token": token, "expires_at": expires_at.isoformat()}
+
+
+@router.post("/locks/{resource_name}/refresh")
+def refresh_lock_route(resource_name: str, body: LockTokenRequest, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    lock_store: LockStore = request.app.state.lock_store
+    new_expires_at = lock_store.refresh(resource_name, current_user.user_id, body.token)
+    if new_expires_at is None:
+        # Uniform denial -- wrong token, wrong user, unknown resource,
+        # and a genuinely already-expired lock all look identical to
+        # the caller. Correct next move on this response is a fresh
+        # acquire(), not a retry of refresh() -- see LockStore.refresh()'s
+        # own docstring for why.
+        raise HTTPException(status_code=409, detail="Lock not held, or already expired -- acquire a new one")
+    return {"expires_at": new_expires_at.isoformat()}
+
+
+@router.post("/locks/{resource_name}/release", status_code=204)
+def release_lock_route(resource_name: str, body: LockTokenRequest, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> None:
+    lock_store: LockStore = request.app.state.lock_store
+    released = lock_store.release(resource_name, current_user.user_id, body.token)
+    if not released:
+        raise HTTPException(status_code=404, detail="Lock not held by you")
+
+
+@router.post("/locks/{resource_name}/force-release", status_code=204)
+def force_release_lock_route(resource_name: str, request: Request,
+                              current_user: UserRecord = Depends(get_current_user)) -> None:
+    # The ONE route in this whole section with a permission gate --
+    # see core/lock_store.py's own module docstring for why the check
+    # belongs entirely here, at the caller, not inside LockStore.
+    # force_release() itself.
+    roles = request.app.state.config.roles
+    if not authorize(current_user, roles, "manage:locks"):
+        raise HTTPException(status_code=403, detail="Not authorized to force-release locks")
+
+    lock_store: LockStore = request.app.state.lock_store
+    released = lock_store.force_release(resource_name)
+    if not released:
+        raise HTTPException(status_code=404, detail="Resource is not currently locked")
+
+
+@router.get("/locks/{resource_name}")
+def lock_status_route(resource_name: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    lock_store: LockStore = request.app.state.lock_store
+    status = lock_store.get_status(resource_name)
+    if status is None:
+        return {"locked": False}
+    return {"locked": True, **status}
 
 
 # =============================================================================
