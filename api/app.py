@@ -86,6 +86,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 
 from api.csrf_middleware import csrf_protect
+from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.agent.agentic_loop import AgentLoop
 from core.auth.credential_store import CredentialStore
 from core.auth.login_attempt_tracker import LoginAttemptTracker
@@ -136,6 +137,24 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # against OWASP's own current CSRF guidance, was found insufficient
     # on its own).
     app.middleware("http")(csrf_protect)
+
+    # Request size limit -- registered SECOND, between csrf_protect and
+    # add_security_headers below, deliberately: a real, found gap this
+    # app had NO protection against at all (confirmed directly, not
+    # assumed -- neither FastAPI nor Starlette enforce a body size
+    # limit by default). Registered AFTER csrf_protect so this runs
+    # BEFORE it -- an oversized body is rejected before CSRF validation
+    # ever spends any real work on it -- but BEFORE add_security_headers
+    # below, so THAT stays the true outermost layer and still wraps
+    # this middleware's own real 413 rejection too (confirmed directly,
+    # with a real, isolated three-middleware test, before choosing this
+    # exact registration order): every real response this app sends,
+    # including a 413, carries the same, consistent security headers.
+    # See api/request_size_limit_middleware.py's own docstring for the
+    # full reasoning, including why this is a real ASGI middleware
+    # class rather than the simpler style csrf_protect/
+    # add_security_headers both use.
+    app.add_middleware(RequestSizeLimitMiddleware)
 
     # Security headers, applied to EVERY response -- a real, found gap:
     # this app previously set none at all. Verified directly before

@@ -172,9 +172,9 @@ modules = ["core.auth", "core.intermediate_layer"]
 # designed from assumption).
 
 [[tool.importlinter.contracts]]
-name = "api/ internal layering (app wires routes + csrf; routes wires apps + auth_dependency)"
+name = "api/ internal layering (app wires routes + csrf + request size limit; routes wires apps + auth_dependency)"
 type = "layers"
-layers = ["app", "routes", "apps | auth_dependency | csrf_middleware"]
+layers = ["app", "routes", "apps | auth_dependency | csrf_middleware | request_size_limit_middleware"]
 containers = ["api"]
 exhaustive = true
 
