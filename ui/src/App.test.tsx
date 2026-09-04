@@ -6,31 +6,27 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 // (auth gating, which effects fire, how a 401 is handled), not each
 // sub-app's own internal behavior, which already has its own tests
 // (or will) closer to where that behavior actually lives.
-vi.mock('@elysium/shell-api/api', () => {
-  class ApiError extends Error {
-    status: number
-    constructor(status: number, message: string) {
-      super(message)
-      this.status = status
-    }
-  }
+//
+// Partial mock via importOriginal, not a hand-duplicated module shape
+// -- confirmed directly against Vitest's own current, official docs,
+// not assumed: spreading the REAL module and overriding only the
+// network-calling functions this file actually needs faked means
+// ApiError and handleIfSessionExpired are the real, actual
+// implementations (never a hand-copied reimplementation that could
+// silently drift out of sync with the real one), and any FUTURE
+// export added to api.ts flows through automatically -- this is the
+// real, structural fix for a real, confirmed fragility: the prior,
+// hand-duplicated mock shape broke in 12 tests across 6 files the
+// moment a new, real, shared getErrorMessage() export was added to
+// api.ts, precisely because those mocks never included it.
+vi.mock('@elysium/shell-api/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
   return {
+    ...actual,
     logout: vi.fn(),
     getCurrentUser: vi.fn(),
     getMyVisibleSchema: vi.fn(),
     getVisibleApps: vi.fn(),
-    ApiError,
-    // A real, working implementation, matching the actual one exactly
-    // -- not just a vi.fn() stub -- so this test genuinely exercises
-    // the real 401-detection logic, not a fake that always/never
-    // fires regardless of what's tested.
-    handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return true
-      }
-      return false
-    },
   }
 })
 vi.mock('@elysium/shell-api/components/LoginForm', () => ({

@@ -2,26 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, Link } from 'react-router-dom'
 
-vi.mock('@elysium/shell-api/api', () => {
-  class ApiError extends Error {
-    status: number
-    constructor(status: number, message: string) {
-      super(message)
-      this.status = status
-    }
-  }
+// Partial mock via importOriginal, not a hand-duplicated module shape
+// -- see App.test.tsx's own header comment for the full reasoning.
+vi.mock('@elysium/shell-api/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
   return {
+    ...actual,
     getObjectDetail: vi.fn(),
     getVisibleActionTypes: vi.fn(),
-    ApiError,
-    getErrorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
-    handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return true
-      }
-      return false
-    },
   }
 })
 vi.mock('./ActionForm', () => ({

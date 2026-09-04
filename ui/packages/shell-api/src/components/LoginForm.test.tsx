@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-vi.mock('../api', () => ({
-  login: vi.fn(),
-  getErrorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
-}))
+// Partial mock via importOriginal, not a hand-duplicated module shape
+// -- see App.test.tsx's own header comment for the full reasoning.
+// login() never throws through handleIfSessionExpired's own logic
+// (there's no session yet at login time), so this file never needed
+// it mocked even before this -- converted to the same, consistent
+// pattern as every other test file mocking this module regardless.
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api')>()
+  return {
+    ...actual,
+    login: vi.fn(),
+  }
+})
 
 import { login } from '../api'
 import LoginForm from './LoginForm'
