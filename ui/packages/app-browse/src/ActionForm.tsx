@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Button, Callout, FormGroup, InputGroup, NumericInput } from '@blueprintjs/core'
 import { proposeAction, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName } from '@elysium/shell-api/format'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
@@ -165,27 +166,50 @@ export default function ActionForm({
       <h3>{actionName}</h3>
       {Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => {
         const locked = isLockedToCurrentObject(paramSpec, objectType)
+        const fieldId = `action-form-${paramName}`
         return (
-          <label key={paramName} className="action-form__field">
-            <span>{formatFieldName(paramName)}</span>
-            <input
-              type={paramSpec.type === 'number' ? 'number' : 'text'}
-              value={values[paramName]}
-              onChange={(event) => handleChange(paramName, event.target.value)}
-              disabled={locked}
-              required={paramSpec.required}
-            />
-          </label>
+          <FormGroup key={paramName} label={formatFieldName(paramName)} labelFor={fieldId}>
+            {/* NumericInput/InputGroup, not one <input> with a
+                conditional type -- these are genuinely different real
+                Blueprint components (different prop shapes entirely:
+                onValueChange vs onChange), not a single element that
+                takes a type prop the way the original HTML <input>
+                did. onValueChange's own second argument (valueAsString)
+                is used, not the first (valueAsNumber) -- confirmed
+                directly against NumericInput's own type definition
+                that this matches this component's own existing design
+                exactly: values itself stays Record<string, string>
+                throughout, only actually coerced to a real number at
+                submit time (see handleSubmit's own comment on why). */}
+            {paramSpec.type === 'number' ? (
+              <NumericInput
+                id={fieldId}
+                value={values[paramName]}
+                onValueChange={(_valueAsNumber, valueAsString) => handleChange(paramName, valueAsString)}
+                disabled={locked}
+                required={paramSpec.required}
+              />
+            ) : (
+              <InputGroup
+                id={fieldId}
+                value={values[paramName]}
+                onChange={(event) => handleChange(paramName, event.target.value)}
+                disabled={locked}
+                required={paramSpec.required}
+              />
+            )}
+          </FormGroup>
         )
       })}
-      {error && <p className="error">{error}</p>}
+      {error && <Callout intent="danger">{error}</Callout>}
       <div className="action-form__actions">
-        <button type="submit" disabled={submitting}>
-          Propose
-        </button>
-        <button type="button" className="secondary" onClick={onCancel} disabled={submitting}>
-          Cancel
-        </button>
+        {/* loading, not a separate disabled prop -- same real reasoning
+            already established for every other Button conversion this
+            migration. variant="outlined" for Cancel -- the same de-
+            emphasized styling already established for every other
+            former className="secondary" button. */}
+        <Button type="submit" text="Propose" loading={submitting} />
+        <Button type="button" variant="outlined" text="Cancel" onClick={onCancel} disabled={submitting} />
       </div>
     </form>
   )
@@ -231,6 +255,54 @@ export default function ActionForm({
 //   visible-action-types entry -- exported from THIS file (see this
 //   file's own top-of-file comment for why here) once the TypeScript
 //   migration reached this component.
+// - Blueprint migration: FormGroup/InputGroup/NumericInput/Button,
+//   replacing the bare <label>/<input>/<button> elements -- the final
+//   step of the whole Blueprint migration roadmap discussed directly
+//   with the person, closing it out entirely.
+//
+//   NumericInput/InputGroup, chosen per-parameter by paramSpec.type,
+//   not one element with a conditional type the way the original bare
+//   <input> could -- these are genuinely different real Blueprint
+//   components (onValueChange vs onChange), confirmed directly
+//   against each one's own type definition before writing this, not
+//   assumed. A real, confirmed difference from the original HTML
+//   input worth remembering: NumericInput does NOT render a real
+//   type="number" input -- confirmed directly against its own live
+//   DOM output -- it renders type="text" internally and mimics
+//   numeric-input behavior via its own JS validation
+//   (allowNumericCharactersOnly), exposing role="spinbutton" as the
+//   real, accessible signal instead. onValueChange's own second
+//   argument (valueAsString), not the first (valueAsNumber), is what
+//   this file actually uses -- values itself stays Record<string,
+//   string> throughout unchanged, only actually coerced to a real
+//   number at submit time, exactly matching this component's own,
+//   already-existing design (see handleSubmit's own comment). Two
+//   existing tests needed real fixes, not just tolerance, once this
+//   difference was confirmed: one asserting a real type="number"
+//   attribute (rewritten to assert role="spinbutton" instead, the
+//   real, meaningful distinguishing signal), and one asserting a
+//   NUMERIC toHaveValue(250)/toHaveValue(null) (rewritten to the real,
+//   correct STRING form testing-library itself uses for a type="text"
+//   input specifically) -- both confirmed as real, necessary updates
+//   via a negative control, not loosened just to make failures go
+//   away.
+//
+//   The error message also converted to Callout intent="danger",
+//   matching every other error Callout this whole migration has used
+//   -- not explicitly named in the roadmap's own shorthand for this
+//   step, but included anyway to close out the one remaining bare
+//   <p className="error"> left in the whole app; leaving it would have
+//   been a real, visible inconsistency with every other sub-app now.
+//
+//   Verified live, beyond the unit suite, using a real, multi-object
+//   action (TransferFunds) specifically because it has real "number"
+//   parameters TO exercise NumericInput with, not just InputGroup:
+//   confirmed the locked from_account_id field renders correctly
+//   disabled, confirmed both NumericInput fields render with their
+//   own real increment/decrement buttons, and confirmed a real,
+//   complete submission correctly coerced both entered values to real
+//   JSON numbers (not strings) in the resulting, real, multi-object
+//   PendingWriteCard.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Every OTHER object_reference parameter (one that isn't locked to
