@@ -210,6 +210,26 @@ describe('AdminPanel -- view/hide schema', () => {
     await waitFor(() => expect(screen.getByText('Could not load schema')).toBeInTheDocument())
   })
 
+  it('clears a stale error from an earlier, unrelated failure once View schema succeeds -- a real, genuine gap found during a later, full-migration review pass: this specific handler never cleared error at the start of its own attempt, unlike every other one in this file', async () => {
+    mockedListUsers.mockResolvedValue([activeUser()])
+    mockedDisableUser.mockRejectedValue(new ApiError(500, 'Could not disable user'))
+    mockedGetVisibleSchema.mockResolvedValue({ Customer: { fields: { name: { type: 'data' } } } })
+    renderPanel()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Disable' })).toBeInTheDocument())
+
+    // A real, unrelated failure first -- Disable, not View schema.
+    fireEvent.click(screen.getByRole('button', { name: 'Disable' }))
+    await waitFor(() => expect(screen.getByText('Could not disable user')).toBeInTheDocument())
+
+    // A completely different, genuinely successful action next.
+    fireEvent.click(screen.getByRole('button', { name: 'View schema' }))
+
+    // The stale error from the earlier, unrelated Disable failure must
+    // be gone -- not left showing indefinitely just because THIS
+    // action happened to succeed.
+    await waitFor(() => expect(screen.queryByText('Could not disable user')).not.toBeInTheDocument())
+  })
+
   it("two different users' own schema toggles operate independently", async () => {
     mockedListUsers.mockResolvedValue([activeUser(), activeUser({ username: 'adminuser', role_name: 'admin' })])
     mockedGetVisibleSchema.mockImplementation(async (username: string) => ({ owner: username }))

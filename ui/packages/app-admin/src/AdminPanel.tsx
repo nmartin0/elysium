@@ -77,6 +77,16 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       })
       return
     }
+    // setError(null) here too -- a real, genuine inconsistency found
+    // during a later, full-migration review pass: every OTHER real
+    // attempt in this file (loadUsers, handleAction, confirmDelete)
+    // already clears a prior error before its own try block; this one
+    // didn't, so a stale error from an earlier, unrelated failure
+    // (e.g. a failed delete) could keep showing even after a
+    // completely different action, this one, succeeded. Pre-existing,
+    // unrelated to Blueprint itself -- found while reviewing this
+    // exact file for the review the person asked for.
+    setError(null)
     try {
       const schema = await getVisibleSchema(username)
       setSchemaByUsername((prev) => ({ ...prev, [username]: schema }))
