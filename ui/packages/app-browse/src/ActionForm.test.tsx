@@ -2,24 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
-vi.mock('@elysium/shell-api/api', () => {
-  class ApiError extends Error {
-    status: number
-    constructor(status: number, message: string) {
-      super(message)
-      this.status = status
-    }
-  }
+// Partial mock via importOriginal, not a hand-duplicated module shape
+// -- see App.test.tsx's own header comment for the full reasoning.
+vi.mock('@elysium/shell-api/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
   return {
+    ...actual,
     proposeAction: vi.fn(),
-    ApiError,
-    handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return true
-      }
-      return false
-    },
   }
 })
 vi.mock('@elysium/shell-api/components/PendingWriteCard', () => ({
@@ -219,14 +208,23 @@ describe('ActionForm -- rendering', () => {
     expect(screen.getByLabelText('Customer id')).not.toBeDisabled()
   })
 
-  it('renders a "number" parameter as a real number input', () => {
+  it('renders a "number" parameter as a real, accessible numeric input (Blueprint\'s own NumericInput, not a real HTML type="number")', () => {
     renderForm({
       actionName: 'TransferFunds',
       actionDef: transferFundsDef(),
       objectType: 'Account',
       objectId: 'acct_from',
     })
-    expect(screen.getByLabelText('New from balance')).toHaveAttribute('type', 'number')
+    // NOT type="number" -- confirmed directly against NumericInput's
+    // own real, rendered DOM output before writing this assertion:
+    // Blueprint's own NumericInput renders a real type="text" input
+    // internally, mimicking native number-input behavior via its own
+    // JS validation (allowNumericCharactersOnly) rather than the
+    // literal HTML input type. role="spinbutton" is the real,
+    // meaningful, accessible signal this IS a genuine numeric input,
+    // not a plain text one -- also confirmed directly against the
+    // same real output, not assumed.
+    expect(screen.getByLabelText('New from balance')).toHaveAttribute('role', 'spinbutton')
   })
 
   it('renders a non-number parameter as a plain text input', () => {
@@ -251,9 +249,19 @@ describe('ActionForm -- editing', () => {
 
     fireEvent.change(screen.getByLabelText('New from balance'), { target: { value: '250' } })
 
-    expect(screen.getByLabelText('New from balance')).toHaveValue(250)
+    // '250' (string), not 250 (number) -- NumericInput's own real,
+    // rendered <input> is type="text" (see the test above's own
+    // comment for why), and testing-library's own toHaveValue()
+    // matcher coerces its expectation differently depending on the
+    // real, rendered input type -- confirmed directly, not assumed.
+    expect(screen.getByLabelText('New from balance')).toHaveValue('250')
     // New_to_balance, a completely separate field, is untouched.
-    expect(screen.getByLabelText('New to balance')).toHaveValue(null)
+    // '' (empty string), not null -- null is specifically testing-
+    // library's own convention for an EMPTY type="number"/type="date"
+    // input; NumericInput renders type="text" (see above), so an
+    // empty value here is a real, empty string instead, confirmed
+    // directly, not assumed.
+    expect(screen.getByLabelText('New to balance')).toHaveValue('')
     // The locked field is untouched too, still showing the current object.
     expect(screen.getByLabelText('From account id')).toHaveValue('acct_from')
   })

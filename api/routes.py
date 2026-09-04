@@ -271,6 +271,27 @@ def _require_manage_users(request: Request, current_user: UserRecord) -> None:
         raise HTTPException(status_code=403, detail="Not authorized to manage users")
 
 
+def _no_store(response: Response) -> None:
+    # Shared by every /me/* route below (dependencies=[Depends(_no_store)])
+    # -- each one returns session-specific data about the CALLER
+    # specifically (their own profile, their own visible schema/apps/
+    # action types), never something safe for a shared or intermediate
+    # cache to persist and later hand back to a different person on
+    # the same machine. Cache-Control: no-store is the real, current,
+    # standard recommendation for exactly this class of response
+    # (confirmed directly against current guidance, not assumed) --
+    # matters most on a shared workstation, a realistic scenario for
+    # an internal tool like this one, not a hypothetical.
+    #
+    # A real, standard FastAPI pattern, not a workaround: a route (or,
+    # as here, a dependency) can declare a plain `response: Response`
+    # parameter and set headers on it directly, while the route itself
+    # still returns an ordinary dict for the body -- FastAPI merges
+    # the two into the one, real response actually sent (confirmed
+    # directly against FastAPI's own docs before using it this way).
+    response.headers["Cache-Control"] = "no-store"
+
+
 @router.get("/users/{username}/visible-schema")
 def visible_schema_route(username: str, request: Request,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
@@ -334,7 +355,34 @@ async def _watch_for_disconnect(request: Request, cancel_event: threading.Event)
         await asyncio.sleep(0.5)
 
 
-@router.get("/me/visible-apps")
+@router.get("/me", dependencies=[Depends(_no_store)])
+def my_profile_route(current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # A real "who am I" endpoint -- confirmed directly against how
+    # established identity platforms do this (OpenID Connect's own
+    # UserInfo endpoint; Palantir Foundry's own real, documented GET
+    # .../admin/users/getCurrent), not invented from scratch. Reuses
+    # get_current_user() exactly like every other protected route --
+    # no new auth logic, no new security surface. Returns the SAME
+    # three UserRecord fields GET /users/{username}/visible-schema's
+    # own sibling routes already expose about OTHER users to an admin
+    # (see list_users() in core/user_directory.py for the matching
+    # field names) -- this is just the self-service, CALLER-only
+    # version of that same shape, gated by nothing more than being
+    # logged in at all, the same as every other /me/* route.
+    #
+    # No "disabled" field -- unlike list_users()'s own response,
+    # there's nothing meaningful to say here: get_current_user() itself
+    # already rejects a disabled account with a 401 before this route
+    # ever runs (see api/auth_dependency.py's own docstring), so a
+    # disabled caller could never reach this line at all.
+    return {
+        "username": current_user.user_id,
+        "role_name": current_user.role_name,
+        "mac_value": current_user.security_value,
+    }
+
+
+@router.get("/me/visible-apps", dependencies=[Depends(_no_store)])
 def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
     # The shell's own nav, made real: which apps exist for THIS
     # specific caller, computed from their actual grants -- not a
@@ -351,7 +399,7 @@ def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(g
     return visible_apps_for(current_user, roles)
 
 
-@router.get("/me/visible-schema")
+@router.get("/me/visible-schema", dependencies=[Depends(_no_store)])
 def my_visible_schema_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
     # The self-service counterpart to GET /users/{username}/visible-
     # schema above -- that one is an ADMIN debugging view (manage:
@@ -457,7 +505,7 @@ class ProposeActionRequest(BaseModel):
     parameters: dict = {}
 
 
-@router.get("/me/visible-action-types")
+@router.get("/me/visible-action-types", dependencies=[Depends(_no_store)])
 def my_visible_action_types_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
     # Self-service counterpart to GET /me/visible-schema above, same
     # pattern -- the browse/search UI needs to know which object TYPES

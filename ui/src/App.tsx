@@ -1,13 +1,56 @@
-import { useEffect, useState } from 'react'
+import { lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
+import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import Shell, { type VisibleApp } from './Shell'
-import QueryPanel from '@elysium/app-query/QueryPanel'
-import ObjectSearchPanel from '@elysium/app-browse/ObjectSearchPanel'
-import ObjectDetailPanel, { type VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
-import AdminPanel from '@elysium/app-admin/AdminPanel'
-import { logout, getMyVisibleSchema, getVisibleApps, handleIfSessionExpired } from '@elysium/shell-api/api'
+import type { VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
+import {
+  logout,
+  getCurrentUser,
+  getMyVisibleSchema,
+  getVisibleApps,
+  handleIfSessionExpired,
+} from '@elysium/shell-api/api'
+// Blueprint's own CSS imported first, our own index.css second --
+// deliberate order: our own remaining, real customizations (see the
+// shell/launcher upgrade plan's own notes on what stays permanently
+// ours even after the Blueprint migration) need to be able to
+// override Blueprint's own defaults where we actually want that, not
+// the reverse. The standard, conventional pattern -- library base
+// styles first, local overrides after.
+import '@blueprintjs/core/lib/css/blueprint.css'
 import '@elysium/shell-api/index.css'
+
+// Lazy-loaded, deliberately -- each sub-app's own code is no longer
+// part of the initial bundle at all; the browser only downloads
+// QueryPanel's own chunk, for instance, the moment someone actually
+// navigates to /query, not on every page load regardless of which
+// sub-app (if any) they end up using. This is the concrete, in-
+// process realization of "the shell mounts/unmounts a sub-app," not
+// a separate performance optimization bolted on afterward -- see
+// Shell.tsx's own <Suspense> boundary around <Outlet />, which is
+// what actually shows a loading state while a chunk is still in
+// flight.
+//
+// LoginForm and Shell itself both stay eager, deliberately, not
+// oversights: LoginForm is the very first meaningful content a
+// logged-out person ever sees, and lazy-loading it would add a real
+// network round-trip before anyone could even log in; Shell IS the
+// persistent chrome itself, so lazy-loading it would mean the chrome
+// flickers in too, defeating the entire point of "persistent."
+//
+// VisibleSchema imported separately, as a real, standalone `import
+// type` -- lazy() itself only ever consumes a module's own default
+// export at runtime (it awaits the dynamic import() and reads
+// .default), so a type-only named export from that same module has
+// to come through its own, ordinary static import instead; `import
+// type` is fully erased at compile time (isolatedModules requires
+// this to be unambiguous), so this adds no second network request
+// and creates no eager reference to the module's own real code.
+const QueryPanel = lazy(() => import('@elysium/app-query/QueryPanel'))
+const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
+const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
+const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
 
 type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn'
 
@@ -56,10 +99,70 @@ type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn'
 // separate UX enhancement, scoped out for this pass, not silently
 // dropped) -- after logging in, the person lands on the default view,
 // same as today.
+// A real, genuine DRY extraction -- the three effects below (schema,
+// apps, current user) used to each write out the exact same
+// cancelled-flag/try-catch/handleIfSessionExpired shape by hand,
+// differing only in which api.ts function to call and which setter to
+// hand the result to. Confirmed safe to share, not just convenient:
+// the ORIGINAL, separate reasoning for keeping these as three
+// INDEPENDENT effects (see each call site's own comment below) was
+// never about refusing to share this mechanical boilerplate -- it was
+// about NOT merging them into one combined effect/Promise.all, since
+// each is a genuinely separate concern that can succeed or fail on
+// its own. This hook preserves that exactly: calling it three times
+// below still produces three separate, independent useEffect
+// subscriptions internally, each with its own cancellation and its
+// own success/failure handling -- only the repeated MACHINERY moves
+// here, not the semantic independence.
+//
+// fetchFn and setValue are both safe to omit from the effect's own
+// dependency array below, confirmed deliberately, not by oversight:
+// fetchFn is always one of api.ts's own module-level exports
+// (getMyVisibleSchema, getVisibleApps, getCurrentUser), which are
+// permanently stable references, never redefined; setValue is always
+// a useState setter, which React itself guarantees is stable across
+// every render of the component that created it. Neither can ever
+// actually be stale in a way that matters -- unlike Shell.tsx's own
+// toggleCollapsed bug, where the closure genuinely captured a
+// CHANGING piece of state, nothing captured here ever changes
+// meaning between renders.
+function useFetchOnLogin<T>(
+  authStatus: AuthStatus,
+  fetchFn: () => Promise<T>,
+  setValue: (value: T) => void,
+  onSessionExpired: () => void,
+) {
+  useEffect(() => {
+    if (authStatus !== 'loggedIn') return
+    let cancelled = false
+    async function load() {
+      try {
+        const value = await fetchFn()
+        if (!cancelled) setValue(value)
+      } catch (err) {
+        handleIfSessionExpired(err, () => {
+          if (!cancelled) onSessionExpired()
+        })
+        // Any other error: setValue simply never gets called, leaving
+        // whatever this piece of state's own default already is
+        // (null, or []). Every real consumer already treats that
+        // default as a loading/empty state, not a crash -- see each
+        // call site below for the specific reasoning.
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authStatus])
+}
+
 export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [visibleSchema, setVisibleSchema] = useState<VisibleSchema | null>(null)
   const [visibleApps, setVisibleApps] = useState<VisibleApp[]>([])
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
 
   function handleLoginSuccess() {
     setAuthStatus('loggedIn')
@@ -70,12 +173,14 @@ export default function App() {
     setAuthStatus('loggedOut')
     setVisibleSchema(null)
     setVisibleApps([])
+    setCurrentUser(null)
   }
 
   function handleSessionExpired() {
     setAuthStatus('loggedOut')
     setVisibleSchema(null)
     setVisibleApps([])
+    setCurrentUser(null)
   }
 
   // THE initial "is there already a valid session" check -- runs
@@ -96,6 +201,13 @@ export default function App() {
   // service call, not worth special-casing away at the cost of two
   // genuinely different code paths for what is otherwise the exact
   // same fetch.
+  //
+  // NOT built on useFetchOnLogin above, deliberately -- that hook is
+  // gated on authStatus === 'loggedIn' already being true; this
+  // effect's entire job is DECIDING that value in the first place, a
+  // genuinely different shape (runs once, unconditionally, on mount)
+  // from "re-fetch every time we transition into an already-decided
+  // 'loggedIn' state."
   useEffect(() => {
     let cancelled = false
     async function checkSession() {
@@ -134,65 +246,45 @@ export default function App() {
   // exactly the case Context is usually overkill for, not the deeply-
   // nested case it's meant to solve. Worth revisiting if the tree
   // ever grows deeper than that.
-  useEffect(() => {
-    if (authStatus !== 'loggedIn') return
-    let cancelled = false
-    async function loadSchema() {
-      try {
-        // getMyVisibleSchema() itself returns Promise<unknown> (see
-        // api.ts's own header comment on why) -- asserted to the
-        // real, known response shape here, matching api/routes.py's
-        // own documented contract for GET /me/visible-schema.
-        const schema = (await getMyVisibleSchema()) as VisibleSchema
-        if (!cancelled) setVisibleSchema(schema)
-      } catch (err) {
-        handleIfSessionExpired(err, () => {
-          if (!cancelled) handleSessionExpired()
-        })
-        // Any other error: leave visibleSchema null. Consuming views
-        // (ObjectSearchPanel, ObjectDetailPanel) already handle a
-        // null/not-yet-loaded schema as a loading state, not a crash.
-      }
-    }
-    loadSchema()
-    return () => {
-      cancelled = true
-    }
-  }, [authStatus])
+  //
+  // getMyVisibleSchema() itself returns Promise<unknown> (see api.ts's
+  // own header comment on why) -- the arrow function below is what
+  // asserts it to the real, known response shape, matching
+  // api/routes.py's own documented contract for GET /me/visible-
+  // schema. Any error OTHER than session-expiry: visibleSchema stays
+  // null. Consuming views (ObjectSearchPanel, ObjectDetailPanel)
+  // already handle a null/not-yet-loaded schema as a loading state,
+  // not a crash.
+  useFetchOnLogin(
+    authStatus,
+    () => getMyVisibleSchema() as Promise<VisibleSchema>,
+    setVisibleSchema,
+    handleSessionExpired,
+  )
 
-  // A SEPARATE, independent fetch/effect from visibleSchema above --
+  // A SEPARATE, independent fetch from visibleSchema above --
   // deliberately not combined into one Promise.all, even though both
   // run at the same moment: these are genuinely different concerns
   // (nav-level "which apps exist" vs. object-level "which types/
   // fields exist"), and keeping their own error handling isolated
   // matches how getMyVisibleSchema() was already its own independent
-  // effect before this -- one more, similarly-independent effect is
-  // consistent with that, not new complexity.
-  useEffect(() => {
-    if (authStatus !== 'loggedIn') return
-    let cancelled = false
-    async function loadApps() {
-      try {
-        // Same reasoning as loadSchema()'s own assertion above --
-        // getVisibleApps() returns Promise<unknown>, asserted to the
-        // real, known response shape matching GET /me/visible-apps.
-        const apps = (await getVisibleApps()) as VisibleApp[]
-        if (!cancelled) setVisibleApps(apps)
-      } catch (err) {
-        handleIfSessionExpired(err, () => {
-          if (!cancelled) handleSessionExpired()
-        })
-        // Any other error: leave visibleApps as []. Shell already
-        // renders an empty nav in that state, not a crash -- see its
-        // own docstring for why that's the deliberate default, not a
-        // gap.
-      }
-    }
-    loadApps()
-    return () => {
-      cancelled = true
-    }
-  }, [authStatus])
+  // fetch before this -- one more, similarly-independent
+  // useFetchOnLogin() call is consistent with that, not new
+  // complexity. Any error other than session-expiry: visibleApps
+  // stays []. Shell already renders an empty nav in that state, not a
+  // crash -- see its own docstring for why that's the deliberate
+  // default, not a gap.
+  useFetchOnLogin(authStatus, () => getVisibleApps() as Promise<VisibleApp[]>, setVisibleApps, handleSessionExpired)
+
+  // A THIRD, similarly independent fetch -- same reasoning as
+  // visibleApps' own comment above: "who is logged in" is a genuinely
+  // different concern from "which object types exist" or "which
+  // sub-apps are visible," even though all three happen to fire at
+  // the same moment. Any error other than session-expiry: currentUser
+  // stays null. UserMenu already handles a null/not-yet-loaded
+  // profile with a generic placeholder, not a crash -- see that
+  // component's own comment for why that's the deliberate default.
+  useFetchOnLogin(authStatus, () => getCurrentUser() as Promise<CurrentUser>, setCurrentUser, handleSessionExpired)
 
   if (authStatus === 'checking') {
     // Brief, unavoidable moment while the real network round-trip
@@ -200,9 +292,15 @@ export default function App() {
     // why no synchronous check exists anymore. No spinner/skeleton
     // beyond plain text, matching every other data-fetching
     // component's own existing "Loading…" convention in this app.
+    //
+    // app__pre-auth, not the shared .app -- genuinely different
+    // layout shape from Shell.tsx's own post-login sidebar structure
+    // (a simple, centered, vertical column; there's nothing to
+    // navigate to before a session exists at all), not just an
+    // unstyled placeholder waiting for the real chrome.
     return (
-      <div className="app">
-        <header className="app__header">
+      <div className="app__pre-auth">
+        <header className="app__pre-auth-header">
           <h1>Elysium</h1>
         </header>
         <main>
@@ -214,8 +312,8 @@ export default function App() {
 
   if (authStatus === 'loggedOut') {
     return (
-      <div className="app">
-        <header className="app__header">
+      <div className="app__pre-auth">
+        <header className="app__pre-auth-header">
           <h1>Elysium</h1>
         </header>
         <main>
@@ -241,7 +339,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<Shell visibleApps={visibleApps} onLogout={handleLogout} />}>
+        <Route element={<Shell visibleApps={visibleApps} currentUser={currentUser} onLogout={handleLogout} />}>
           <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
           <Route
             path="/browse"
@@ -277,6 +375,28 @@ export default function App() {
 // security boundary (server-side auth on every request is).
 //
 // RESOLVED (kept for history):
+// - A real "who am I" profile, fetched via GET /me and shown in
+//   Shell.tsx's own new UserMenu dropdown -- item #3 of the shell/
+//   launcher upgrade plan. A THIRD, independent effect alongside
+//   visibleSchema/visibleApps' own two, same reasoning: "who is
+//   logged in" is a genuinely different concern from either of those,
+//   even though all three fire at the same moment. Researched and
+//   confirmed directly against how established identity platforms do
+//   this (OpenID Connect's own UserInfo endpoint; Palantir Foundry's
+//   own real, documented GET .../admin/users/getCurrent) before
+//   building it, not invented from scratch.
+// - Sub-app routes (QueryPanel, ObjectSearchPanel, ObjectDetailPanel,
+//   AdminPanel) are now lazy-loaded (React.lazy() + Shell.tsx's own
+//   <Suspense> around <Outlet />) -- item #1 of the shell/launcher
+//   upgrade plan. Confirmed with a real production build (separate,
+//   real chunks per sub-app, main bundle shrank by the exact amount
+//   that moved out) AND a live, real browser session against a real
+//   running server: watched actual network requests and confirmed a
+//   sub-app's own chunk loads only the first time someone navigates
+//   there, the persistent chrome (header/nav) never disappears or
+//   flickers during that load, and the newly-loaded screen renders
+//   its own real content correctly -- not assumed correct from the
+//   build output alone.
 // - getMyVisibleSchema() lifted here from ObjectSearchPanel.jsx, once
 //   ObjectDetailPanel.jsx needed the exact same value -- fetched
 //   once, passed down as a prop to both. React Context was considered

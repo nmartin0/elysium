@@ -20,19 +20,233 @@ body {
 }
 
 .app {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar background reuses the existing dark primary-button token
+   (#2d2d34), not a new color -- the same value already carrying
+   "this is the app's own primary chrome" meaning everywhere else
+   (buttons, active-link background). */
+.app__sidebar {
+  flex: none;
+  width: 15rem;
+  display: flex;
+  flex-direction: column;
+  background: #2d2d34;
+  color: #f2f2f3;
+  padding: 1.25rem 1rem;
+  gap: 1.5rem;
+  /* A real, pre-existing bug, found and fixed while reviewing this
+     exact rule for the sidebar's own Blueprint migration, unrelated
+     to Blueprint itself: this used to read `transition: margin-left
+     0.15s ease`, but the collapsed state below never changes
+     margin-left at all -- it changes width, padding-left, and
+     padding-right. CSS's own `transition: <property>` only animates
+     the property actually named, so this was animating a property
+     that never moved while leaving the properties that DO move
+     untransitioned -- confirmed empirically, not just by reading the
+     CSS: sampled the sidebar's own real width 6 times across ~180ms
+     after a real collapse click, before this fix, and it was 0 on
+     every sample -- an instant snap, not the smooth animation this
+     declaration looked like it should produce. */
+  transition:
+    width 0.15s ease,
+    padding-left 0.15s ease,
+    padding-right 0.15s ease;
+}
+
+.app__sidebar-header h1 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.app__nav {
+  flex: 1;
+}
+
+/* .app__nav.bp6-menu, not just .app__nav alone -- a real, FOURTH
+   occurrence of this same class of bug this migration, caught the
+   same reliable way as the third (queried the real browser directly
+   for the actual matching CSS rule, not guessed): Blueprint's own
+   .bp6-menu rule sets a real, solid white background by default
+   (Menu is normally used floating on its own light surface, like
+   inside a Popover -- confirmed exactly this via UserMenu's own real,
+   correctly-white popover panel). This Menu is different: embedded
+   directly in the dark sidebar itself, not floating on its own light
+   surface, so it needs transparent, not Blueprint's own default.
+   Two real classes together for genuinely higher specificity than
+   Blueprint's own single-class rule, the same proven approach as
+   every other fix of this kind this migration. */
+.app__nav.bp6-menu {
+  background: transparent;
+}
+
+/* .app__nav .bp6-menu-item, not just .bp6-menu-item alone -- the same
+   real lesson already learned twice this migration (UserMenu's own
+   trigger, and before that, this project's own pre-Blueprint sidebar
+   contrast bugs): Blueprint's own MenuItem styling is built for a
+   light page background, not this dark sidebar, and a plain, single-
+   class override risks losing to Blueprint's own, more specific rule
+   regardless of source order. Scoped to .app__nav specifically (not a
+   bare .bp6-menu-item override) so this only ever affects sidebar nav
+   items, never some other, future Menu elsewhere in the app that
+   SHOULD keep Blueprint's own default light-theme treatment. */
+.app__nav .bp6-menu-item {
+  color: #f2f2f3;
+}
+
+.app__nav .bp6-menu-item.bp6-active {
+  background: #4a4a54;
+}
+
+/* user-menu -- rebuilt on real Blueprint primitives (PopoverNext +
+   Menu + MenuItem); see UserMenu.tsx's own header comment for why
+   this file's own CSS shrank so much -- Blueprint's own CSS now owns
+   the popover panel and menu item styling entirely (.bp6-menu, .bp6-
+   menu-item, .bp6-popover-content), not this file. What's left here
+   is only the genuinely custom part: this specific trigger's own
+   avatar+label layout, and the static (non-MenuItem) profile display
+   inside the popover's own content -- neither of which Blueprint has
+   an opinion about, since neither is a component it ships.
+
+   No .user-menu wrapper rule anymore -- PopoverNext renders no
+   wrapper div of its own around its target (confirmed directly
+   against Blueprint's own docs: no more wrapper element as of a
+   recent major version), so this class no longer exists anywhere in
+   the real DOM at all. */
+
+.user-menu__trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+}
+
+/* .user-menu__trigger.bp6-button.bp6-minimal, not just .user-menu__
+   trigger alone -- a real, third occurrence of the same class of bug
+   this project has now hit three times, confirmed precisely this
+   time via the browser's own real, matched CSS rules (not grepped
+   from minified source, not reasoned about): Blueprint's own
+   .bp6-button:not([class*="bp6-intent-"]) rule sets this button's
+   default text color, and that :not()+attribute selector carries
+   TWO class-level selectors worth of specificity -- genuinely higher
+   than this file's own single-class .user-menu__trigger rule, which
+   is why the plain version above lost outright, regardless of source
+   order (confirmed directly: computed color was Blueprint's own dark,
+   light-theme default, not this rule's #f2f2f3, before this fix).
+   Three real classes together, all genuinely present on this same
+   element (confirmed via the real DOM's own classList), for
+   specificity that's safely, unambiguously higher than Blueprint's
+   own two-class-level rule -- not just tied with it and hoping source
+   order still favors this file. */
+.user-menu__trigger.bp6-button.bp6-minimal {
+  color: #f2f2f3;
+}
+
+.user-menu__avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: #4a4a54;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.user-menu__profile {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid #eee;
+}
+
+.user-menu__username {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.user-menu__role {
+  margin: 0.15rem 0 0;
+  color: #666;
+  font-size: 0.8rem;
+}
+
+.app__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app__sidebar-toggle {
+  align-self: flex-start;
+  margin: 1rem 1rem 0;
+  padding: 0.4rem;
+  background: transparent;
+  color: #555;
+  border: 1px solid #ccc;
+}
+
+.app__sidebar-toggle:hover {
+  background: #eee;
+}
+
+.app__content main {
+  flex: 1;
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 2rem;
+}
+
+/* Collapsed: the sidebar itself is unmounted from layout flow (see
+   Shell.tsx's own aria-hidden on <aside>) -- width and padding both
+   collapse to zero rather than just visually hiding it, so the
+   content pane genuinely reclaims the full width, not just an empty
+   dark strip. */
+.app--sidebar-collapsed .app__sidebar {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
+}
+
+/* No @media (max-width: 640px) rule here anymore -- this used to give
+   an OPEN .app__sidebar `position: fixed` etc. below this width, but
+   that selector can no longer match anything at all: on a narrow
+   viewport, Shell.tsx's own isMobile state now renders a real
+   Blueprint Drawer instead of the plain <aside> this rule targeted,
+   and Drawer portals into document.body by default -- not a
+   descendant of .app in the DOM tree the way this selector required.
+   Drawer's own real overlay/backdrop/positioning replaces what this
+   rule used to hand-roll; removed rather than left as dead CSS that
+   would never match again. */
+
+/* app__pre-auth -- the checking/loggedOut screens in App.tsx, before
+   a session exists at all. Genuinely different layout shape from
+   .app below (Shell.tsx's own sidebar structure): a simple, narrow,
+   centered column, since there's no sidebar to show yet -- this is
+   exactly .app's own original layout, before the sidebar existed,
+   preserved here under its own name rather than lost when .app
+   itself became a flex row. */
+.app__pre-auth {
   max-width: 640px;
   margin: 0 auto;
   padding: 2rem 1rem;
 }
 
-.app__header {
+.app__pre-auth-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
 }
 
-.app__header h1 {
+.app__pre-auth-header h1 {
   font-size: 1.4rem;
   margin: 0;
 }
@@ -59,8 +273,7 @@ textarea {
   font-family: inherit;
 }
 
-button,
-.app__nav a {
+button {
   padding: 0.55rem 1rem;
   border: none;
   border-radius: 6px;
@@ -77,19 +290,17 @@ button:disabled {
   cursor: default;
 }
 
-button.secondary,
-.app__nav a.secondary {
+button.secondary {
   background: transparent;
   border: 1px solid #999;
   color: #333;
 }
 
-.error {
-  color: #b3261e;
-  font-size: 0.9rem;
-}
+/* .error class removed -- confirmed dead via a real, whole-frontend
+   grep before removing it, not assumed: AdminPanel.tsx and LoginForm.
+   tsx were the last two files using it, both converted to Blueprint's
+   own Callout intent="danger" during a full-migration review pass. */
 
-.answer,
 .pending-write {
   margin-top: 1.25rem;
   padding: 1rem;
@@ -176,11 +387,6 @@ button.secondary,
   color: #1a1a1a;
 }
 
-.app__nav {
-  display: flex;
-  gap: 0.5rem;
-}
-
 .create-user-form {
   margin-bottom: 1.5rem;
   padding: 1rem;
@@ -259,33 +465,60 @@ button.danger {
   font-size: 0.9rem;
 }
 
-.object-search__results {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
+/* CardList/Card, not a bare <ul>/<li> -- see ObjectSearchPanel.tsx's
+   own comment on why Card must be CardList's own DIRECT child
+   (confirmed directly against Blueprint's real, shipped CSS: its own
+   borders/hover states/rounded corners all key off a real
+   `.bp6-card-list > .bp6-card` direct-child selector, which a <Link>
+   wrapper in between would silently break). */
 .object-search__result {
-  border-radius: 8px;
-  overflow: hidden;
+  /* position: relative -- what .object-search__link's own ::after
+     below resolves its inset: 0 against. Without this, the stretched
+     hitbox would expand to the nearest ANY positioned ancestor
+     instead (likely much larger than this one card), not the
+     intended, real element. */
+  position: relative;
 }
 
+/* A real, second Blueprint-CSS-override lesson this migration, beyond
+   Shell.tsx's own sidebar one -- confirmed directly, not assumed: a
+   Card that's CardList's own direct child gets `display: flex;
+   align-items: center` from Blueprint's own real, shipped CSS (its
+   own deliberate "single-line list row" default), which silently laid
+   this card's own multi-line content (title, subtitle, a whole fields
+   table) out side-by-side instead of stacked -- confirmed directly by
+   inspecting the real, live card's own computed style before writing
+   this fix, not guessed at from the CSS source alone (a real, isolated
+   reproduction OUTSIDE a CardList wrapper initially, misleadingly,
+   worked fine, which is exactly what pointed at CardList's own direct-
+   child rule as the real, missing piece). Same specificity-matching
+   discipline already established for the sidebar's own overrides: two
+   real, genuinely-present classes together on each side of the child
+   combinator (0,4,0), reliably beating Blueprint's own 0,2,0 rule
+   regardless of source order. */
+.object-search__results.bp6-card-list > .object-search__result.bp6-card {
+  display: block;
+}
+
+/* The real "stretched link" pattern (the same one Bootstrap's own
+   stretched-link utility uses) -- deliberately NOT the whole card's
+   own visible content wrapped in one <Link> (this file's own earlier,
+   pre-Blueprint version): only the title text itself is real,
+   visible <Link> content, kept in normal flow; the ::after pseudo-
+   element below is what actually expands the real, clickable/
+   keyboard-focusable hitbox to cover the entire card, working
+   correctly regardless of how the rest of the card's own content
+   (subtitle, fields) is laid out around it. */
 .object-search__link {
   display: block;
-  padding: 0.85rem 1rem;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
   color: inherit;
   text-decoration: none;
-  transition: background-color 0.1s ease;
 }
 
-.object-search__link:hover {
-  background: #f7f7f8;
+.object-search__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
 }
 
 .object-search__result-title {

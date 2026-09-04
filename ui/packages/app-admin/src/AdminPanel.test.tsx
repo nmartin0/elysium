@@ -1,15 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
-vi.mock('@elysium/shell-api/api', () => {
-  class ApiError extends Error {
-    status: number
-    constructor(status: number, message: string) {
-      super(message)
-      this.status = status
-    }
-  }
+// Partial mock via importOriginal, not a hand-duplicated module shape
+// -- see App.test.tsx's own header comment for the full reasoning.
+vi.mock('@elysium/shell-api/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
   return {
+    ...actual,
     listUsers: vi.fn(),
     createUser: vi.fn(),
     disableUser: vi.fn(),
@@ -17,14 +14,6 @@ vi.mock('@elysium/shell-api/api', () => {
     deleteUser: vi.fn(),
     logoutAllForUser: vi.fn(),
     getVisibleSchema: vi.fn(),
-    ApiError,
-    handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return true
-      }
-      return false
-    },
   }
 })
 
@@ -221,6 +210,26 @@ describe('AdminPanel -- view/hide schema', () => {
     await waitFor(() => expect(screen.getByText('Could not load schema')).toBeInTheDocument())
   })
 
+  it('clears a stale error from an earlier, unrelated failure once View schema succeeds -- a real, genuine gap found during a later, full-migration review pass: this specific handler never cleared error at the start of its own attempt, unlike every other one in this file', async () => {
+    mockedListUsers.mockResolvedValue([activeUser()])
+    mockedDisableUser.mockRejectedValue(new ApiError(500, 'Could not disable user'))
+    mockedGetVisibleSchema.mockResolvedValue({ Customer: { fields: { name: { type: 'data' } } } })
+    renderPanel()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Disable' })).toBeInTheDocument())
+
+    // A real, unrelated failure first -- Disable, not View schema.
+    fireEvent.click(screen.getByRole('button', { name: 'Disable' }))
+    await waitFor(() => expect(screen.getByText('Could not disable user')).toBeInTheDocument())
+
+    // A completely different, genuinely successful action next.
+    fireEvent.click(screen.getByRole('button', { name: 'View schema' }))
+
+    // The stale error from the earlier, unrelated Disable failure must
+    // be gone -- not left showing indefinitely just because THIS
+    // action happened to succeed.
+    await waitFor(() => expect(screen.queryByText('Could not disable user')).not.toBeInTheDocument())
+  })
+
   it("two different users' own schema toggles operate independently", async () => {
     mockedListUsers.mockResolvedValue([activeUser(), activeUser({ username: 'adminuser', role_name: 'admin' })])
     mockedGetVisibleSchema.mockImplementation(async (username: string) => ({ owner: username }))
@@ -236,38 +245,99 @@ describe('AdminPanel -- view/hide schema', () => {
 })
 
 describe('AdminPanel -- delete', () => {
-  it('shows a real confirm() dialog naming the username before deleting', async () => {
+  it('shows a real Alert naming the username before deleting', async () => {
     mockedListUsers.mockResolvedValue([activeUser()])
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderPanel()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' })).toBeInTheDocument(),
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    // No Alert content until the row's own trigger is actually clicked
+    // -- confirms this isn't just always rendered, hidden by isOpen.
+    expect(screen.queryByText(/This cannot be undone/)).not.toBeInTheDocument()
 
-    expect(confirmSpy).toHaveBeenCalledWith('Delete editoruser? This cannot be undone.')
-    confirmSpy.mockRestore()
+    fireEvent.click(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' }))
+
+    // Real, live Alert content -- the real username, not a generic
+    // message, and not the old, real window.confirm() call this
+    // replaced (native dialogs can't be styled, are easy to miss or
+    // misclick past, and block the whole page's own JS thread while
+    // open).
+    await waitFor(() => expect(screen.getByText('editoruser', { selector: 'strong' })).toBeInTheDocument())
+    expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument()
   })
 
-  it('calls deleteUser and reloads when the confirm dialog is accepted', async () => {
+  it('calls deleteUser and reloads when the Alert is confirmed', async () => {
     mockedListUsers.mockResolvedValue([activeUser()])
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderPanel()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' })).toBeInTheDocument(),
+    )
+    fireEvent.click(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    // Two real "Delete" buttons exist once the Alert is open -- the
+    // row's own trigger, and the Alert's own real confirm button
+    // (confirmButtonText="Delete"). The Alert's own is the LAST one in
+    // DOM order, reliably: it renders via a real portal, appended
+    // after the main content, not assumed from a guessed index.
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]!)
 
     await waitFor(() => expect(mockedDeleteUser).toHaveBeenCalledWith('editoruser'))
     await waitFor(() => expect(mockedListUsers).toHaveBeenCalledTimes(2))
+    // The Alert closes itself once the action completes -- confirms
+    // this isn't left open, silently stuck, after a real success.
+    await waitFor(() => expect(screen.queryByText(/This cannot be undone/)).not.toBeInTheDocument())
   })
 
-  it('never calls deleteUser when the confirm dialog is dismissed', async () => {
+  it('shows a real loading state on the Alert while the delete request is in flight -- a real, genuine gap found during a later, full-migration review pass: `deleting` state was added and wired to loading={deleting} specifically for this, but never had its own, dedicated test confirming it actually does anything', async () => {
+    let resolveDelete: (value: void | PromiseLike<void>) => void
+    mockedDeleteUser.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDelete = resolve
+      }),
+    )
     mockedListUsers.mockResolvedValue([activeUser()])
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderPanel()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' })).toBeInTheDocument(),
+    )
+    fireEvent.click(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
+    const alertConfirmButton = deleteButtons[deleteButtons.length - 1]!
+    fireEvent.click(alertConfirmButton)
 
+    // A real, rendered spinner (role="progressbar", the same real
+    // signal already confirmed and used for PendingWriteCard's own
+    // per-action loading) on the Alert's own confirm button while the
+    // real delete request is still in flight.
+    await waitFor(() => expect(within(alertConfirmButton).getByRole('progressbar')).toBeInTheDocument())
+    // Cancel disabled too -- Blueprint's own real, documented Alert
+    // behavior for loading ("the cancel button, if visible, will be
+    // disabled"), confirmed here as this file's own real, live
+    // integration of it, not just trusted from the library's own docs
+    // in the abstract.
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+
+    resolveDelete!()
+    await waitFor(() => expect(mockedListUsers).toHaveBeenCalledTimes(2))
+  })
+
+  it('never calls deleteUser when the Alert is canceled', async () => {
+    mockedListUsers.mockResolvedValue([activeUser()])
+    renderPanel()
+    await waitFor(() =>
+      expect(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' })).toBeInTheDocument(),
+    )
+    fireEvent.click(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByText(/This cannot be undone/)).not.toBeInTheDocument())
     expect(mockedDeleteUser).not.toHaveBeenCalled()
     expect(mockedListUsers).toHaveBeenCalledTimes(1)
   })

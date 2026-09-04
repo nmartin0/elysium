@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Callout, Card, CardList } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
-import { searchObjects, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import type { SubAppProps } from '@elysium/shell-api/types'
+import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import type { VisibleSchema } from './ObjectDetailPanel'
 
 // The human-facing browse/search screen -- Palantir's own Object
@@ -26,9 +29,12 @@ export interface SearchResult {
   fields: Record<string, unknown>
 }
 
-interface ObjectSearchPanelProps {
+// visibleSchema is real, additional data this route needs beyond the
+// shell's own base contract -- extends SubAppProps rather than
+// redeclaring onSessionExpired independently. See SubAppProps's own
+// header comment for the full reasoning.
+interface ObjectSearchPanelProps extends SubAppProps {
   visibleSchema: VisibleSchema | null
-  onSessionExpired: () => void
 }
 
 export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: ObjectSearchPanelProps) {
@@ -44,8 +50,10 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   // race with live/debounced search, not a hypothetical: two
   // in-flight requests can resolve in either order over a real
   // network. Only the response matching the MOST RECENT request is
-  // ever applied.
-  const latestRequestId = useRef(0)
+  // ever applied. Extracted, shared logic (see useLatestRequestGuard's
+  // own header comment for the full story) -- ObjectDetailPanel.tsx
+  // uses the exact same one, for its own, different, real reason.
+  const { startRequest, isStale } = useLatestRequestGuard()
 
   const objectTypes = visibleSchema ? Object.keys(visibleSchema) : null
 
@@ -59,7 +67,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   useEffect(() => {
     if (!selectedType) return
 
-    const thisRequestId = ++latestRequestId.current
+    const thisRequestId = startRequest()
     setLoading(true)
     setError(null)
 
@@ -73,15 +81,15 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
           results: SearchResult[]
           total_matches: number
         }
-        if (thisRequestId !== latestRequestId.current) return
+        if (isStale(thisRequestId)) return
         setResults(response.results)
         setTotalMatches(response.total_matches)
       } catch (err) {
-        if (thisRequestId !== latestRequestId.current) return
+        if (isStale(thisRequestId)) return
         if (handleIfSessionExpired(err, onSessionExpired)) return
-        setError(err instanceof Error ? err.message : String(err))
+        setError(getErrorMessage(err))
       } finally {
-        if (thisRequestId === latestRequestId.current) setLoading(false)
+        if (!isStale(thisRequestId)) setLoading(false)
       }
     }, DEBOUNCE_MS)
 
@@ -147,32 +155,38 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
         />
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && <Callout intent="danger">{error}</Callout>}
       {loading && <p className="object-search__status">Searching…</p>}
 
       {!loading && results.length === 0 && !error && <p className="object-search__empty">No results.</p>}
 
-      <ul className="object-search__results">
+      <CardList className="object-search__results">
         {results.map((result) => {
           const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
           return (
-            <li key={result.id} className="object-search__result">
+            // interactive -- real hover feedback, matching every other
+            // clickable Card this migration has already used it for.
+            // The real "stretched link" pattern below (see index.css's
+            // own comment on .object-search__link::after) is what
+            // makes the WHOLE card clickable/keyboard-focusable, not
+            // just interactive's own hover styling on its own.
+            <Card key={result.id} interactive className="object-search__result">
               <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
                 <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
-                {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
-                <dl className="object-search__result-fields">
-                  {Object.entries(result.fields).map(([field, value]) => (
-                    <div key={field} className="object-search__result-field">
-                      <dt>{formatFieldName(field)}</dt>
-                      <dd>{formatValue(value)}</dd>
-                    </div>
-                  ))}
-                </dl>
               </Link>
-            </li>
+              {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
+              <dl className="object-search__result-fields">
+                {Object.entries(result.fields).map(([field, value]) => (
+                  <div key={field} className="object-search__result-field">
+                    <dt>{formatFieldName(field)}</dt>
+                    <dd>{formatValue(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </Card>
           )
         })}
-      </ul>
+      </CardList>
 
       {totalMatches > results.length && (
         <p className="object-search__more">
@@ -244,6 +258,73 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
 //   own value) rather than inventing a second pattern for the exact
 //   same "safe by construction, TypeScript can't itself prove it"
 //   situation results.map() and the search Link also depend on.
+// - Blueprint migration: CardList/Card for the results list, replacing
+//   a bare <ul>/<li>; Callout intent="danger" for the error message,
+//   same as every other error Callout this migration -- part of the
+//   ObjectSearchPanel/ObjectDetailPanel step discussed directly with
+//   the person (Card/CardList, Callout, Button).
+//
+//   A real, structural constraint drove the exact shape here, not a
+//   free styling choice: Card must be CardList's own DIRECT child --
+//   confirmed directly against Blueprint's real, shipped CSS, its own
+//   borders/hover states/rounded corners all key off a real
+//   `.bp6-card-list > .bp6-card` selector, which a <Link> wrapper in
+//   between (this file's own original structure -- the whole card
+//   WAS the link) would silently break. Card itself has no href prop
+//   at all (confirmed against its real type definition), and Card
+//   with a bare onClick is NOT keyboard-accessible on its own
+//   (confirmed directly -- no tabindex, no role, no key handling in
+//   its real, rendered DOM output) -- using that instead would have
+//   been a real accessibility regression from the original, already-
+//   accessible <Link>. Resolved with the real "stretched link"
+//   pattern (the same one Bootstrap's own stretched-link utility
+//   uses): only the title text is real, visible <Link> content, kept
+//   in normal flow; a ::after pseudo-element (see index.css's own
+//   comment) expands the actual clickable/keyboard-focusable hitbox
+//   to cover the whole card. Confirmed live, forcing a click through
+//   the overlay specifically (Playwright's own strict click-
+//   interception check initially refused a plain click here, which
+//   is itself real, positive confirmation the overlay genuinely
+//   covers the click target, not a failure) -- clicking a FIELD, not
+//   just the title, correctly navigated to the right, distinct
+//   object.
+//
+//   A real, second Blueprint-CSS-override lesson found and fixed here
+//   too, beyond Shell.tsx's own sidebar one -- confirmed directly, not
+//   guessed at from the CSS source alone: a Card that's CardList's own
+//   direct child gets `display: flex; align-items: center` from
+//   Blueprint's own real, shipped CSS (its own deliberate "single-line
+//   list row" default), which silently laid this card's own multi-line
+//   content (title, subtitle, a whole fields table) out side-by-side
+//   instead of stacked. Genuinely hard to find: an isolated
+//   reproduction OUTSIDE a real CardList wrapper worked fine, which is
+//   exactly what pointed at CardList's own direct-child rule
+//   specifically as the real, missing piece, not the Card/Link markup
+//   itself. Fixed with the same specificity-matching discipline
+//   already established for the sidebar's own overrides -- two real,
+//   genuinely-present classes together on each side of the child
+//   combinator, reliably beating Blueprint's own rule regardless of
+//   source order. A real, honest reminder of why this needed live,
+//   visual verification at all: jsdom-based unit tests never apply
+//   real CSS layout, so all 20 existing tests passed throughout this
+//   entire investigation, oblivious to the real, visually-broken
+//   layout the whole time.
+// - The latestRequestId stale-response guard extracted to a real,
+//   shared useLatestRequestGuard() hook (@elysium/shell-api), found
+//   as a genuine, un-acted-on DRY gap during a later, full-migration
+//   review pass: ObjectDetailPanel.tsx's own comment already,
+//   explicitly said "Same stale-response guard as ObjectSearchPanel's
+//   own live search" -- correctly IDENTIFIED as the same pattern, but
+//   never actually extracted, leaving two real, independent copies
+//   that could silently drift. Same real, live behavior confirmed
+//   unchanged both ways: the existing race-condition test here still
+//   passes unchanged, and a real, live browser walkthrough (live
+//   search, then rapid navigation between two different objects)
+//   confirmed no stale content ever showed. The hook itself also
+//   gained its own, new, isolated unit tests -- a genuine, additional
+//   benefit of extracting it at all, not just observable indirectly
+//   through this file's and ObjectDetailPanel.tsx's own much larger
+//   integration tests.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Live, debounced search (300ms) is a deliberate departure from

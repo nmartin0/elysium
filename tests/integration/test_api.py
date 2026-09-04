@@ -318,6 +318,61 @@ def test_my_visible_schema_returns_the_callers_own_view(client):
     assert set(response.json().keys()) == {"Customer", "Transaction", "SupportTicket"}
 
 
+def test_my_profile_without_token_is_rejected(client):
+    response = client.get("/api/me")
+    assert response.status_code == 401
+
+
+def test_my_profile_returns_the_callers_own_username_role_and_mac_value(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.get("/api/me")
+
+    assert response.status_code == 200
+    assert response.json() == {"username": "alice", "role_name": "customer_service", "mac_value": "us-west"}
+
+
+def test_my_profile_differs_by_which_user_is_logged_in(client):
+    # The same real check test_my_visible_schema_differs_by_role_not_a_
+    # static_response applies to this sibling route too -- a genuinely
+    # caller-specific response, not a value that happens to look right
+    # for whichever user a test logs in as first.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    client.app.state.user_directory.create_user("bob", "correct-pw", "us-east", "customer_service")
+
+    _login(client, "alice", "correct-pw")
+    alice_profile = client.get("/api/me").json()
+
+    client.post("/api/logout")
+    _login(client, "bob", "correct-pw")
+    bob_profile = client.get("/api/me").json()
+
+    assert alice_profile["username"] == "alice"
+    assert alice_profile["mac_value"] == "us-west"
+    assert bob_profile["username"] == "bob"
+    assert bob_profile["mac_value"] == "us-east"
+
+
+def test_me_routes_set_cache_control_no_store(client):
+    # A real, deliberate security property, not incidental -- every
+    # /me/* route returns data specific to whichever session's cookie
+    # is actually presented, and must never be persisted by a shared
+    # browser profile or an intermediate cache and later handed back
+    # to a different person on the same machine (confirmed as the
+    # real, standard recommendation for this class of response before
+    # adopting it, not assumed). Checked directly against the real,
+    # final response headers for every one of the four real /me/*
+    # routes, not just the one this change was originally about.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    for path in ("/api/me", "/api/me/visible-apps", "/api/me/visible-schema", "/api/me/visible-action-types"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store", f"{path} is missing Cache-Control: no-store"
+
+
 def test_visible_apps_hides_admin_without_manage_users(client):
     # editor (fixtures/policy.yaml) holds no manage:users grant --
     # Admin must be genuinely absent from the response, not merely

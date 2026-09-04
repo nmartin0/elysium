@@ -1,26 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
-vi.mock('../api', () => {
-  class ApiError extends Error {
-    status: number
-    constructor(status: number, message: string) {
-      super(message)
-      this.status = status
-    }
-  }
+// Partial mock via importOriginal, not a hand-duplicated module shape
+// -- see App.test.tsx's own header comment for the full reasoning.
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api')>()
   return {
+    ...actual,
     confirmWrite: vi.fn(),
-    ApiError,
-    // A real, working implementation, matching the actual one exactly
-    // -- see api.test.ts's own copy of this same reasoning.
-    handleIfSessionExpired: (err: unknown, onSessionExpired: () => void) => {
-      if (err instanceof ApiError && err.status === 401) {
-        onSessionExpired()
-        return true
-      }
-      return false
-    },
   }
 })
 
@@ -178,6 +165,17 @@ describe('PendingWriteCard -- approve', () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
     expect(screen.queryByText('Ada Okafor')).not.toBeInTheDocument()
   })
+
+  it('the resolved "Change applied." Callout uses intent="success" -- a real, positive outcome, confirmed via the real bp6-intent-success class Blueprint itself applies, not just that the right text shows up', async () => {
+    mockedConfirmWrite.mockResolvedValue({})
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Change applied.').closest('.bp6-callout')).toHaveClass('bp6-intent-success'),
+    )
+  })
 })
 
 describe('PendingWriteCard -- reject', () => {
@@ -208,6 +206,18 @@ describe('PendingWriteCard -- reject', () => {
 
     await waitFor(() => expect(screen.getByText('Change rejected.')).toBeInTheDocument())
   })
+
+  it('the resolved "Change rejected." Callout has NO intent at all -- deliberately neither success nor danger, confirmed directly: declining a change is a genuine, correct decision either way, not a failure, so it must not carry the same bp6-intent-success class the applied case does', async () => {
+    mockedConfirmWrite.mockResolvedValue({})
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+
+    await waitFor(() => expect(screen.getByText('Change rejected.')).toBeInTheDocument())
+    const callout = screen.getByText('Change rejected.').closest('.bp6-callout')
+    expect(callout).not.toHaveClass('bp6-intent-success')
+    expect(callout).not.toHaveClass('bp6-intent-danger')
+  })
 })
 
 describe('PendingWriteCard -- in-flight and failure handling', () => {
@@ -224,6 +234,55 @@ describe('PendingWriteCard -- in-flight and failure handling', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled())
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
+
+    resolveConfirm!({})
+    await waitFor(() => expect(screen.getByText('Change applied.')).toBeInTheDocument())
+  })
+
+  it('shows a real, spinning loading indicator on ONLY the clicked button, not both -- a real, deliberate improvement over a plain shared "submitting" boolean, confirmed directly, not just that both happen to end up disabled', async () => {
+    let resolveConfirm: (value: unknown) => void
+    mockedConfirmWrite.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConfirm = resolve
+      }),
+    )
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+
+    // Reject itself is the one that's actually loading -- a real,
+    // rendered spinner (role="progressbar", confirmed directly against
+    // Button's own real DOM output before writing this assertion, not
+    // assumed) nested inside ITS OWN button specifically.
+    await waitFor(() =>
+      expect(within(screen.getByRole('button', { name: 'Reject' })).getByRole('progressbar')).toBeInTheDocument(),
+    )
+    // Approve is disabled too (preventing a confusing double-submit),
+    // but genuinely NOT loading -- no spinner of its own at all, since
+    // it was never the one actually clicked.
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()
+    expect(within(screen.getByRole('button', { name: 'Approve' })).queryByRole('progressbar')).not.toBeInTheDocument()
+
+    resolveConfirm!({})
+    await waitFor(() => expect(screen.getByText('Change rejected.')).toBeInTheDocument())
+  })
+
+  it('the SAME per-action loading behavior, symmetrically, when Approve is the one clicked instead -- confirmed as its own, separate case, not just assumed from the Reject direction above given the two branches are hand-written, independent conditionals that could silently diverge', async () => {
+    let resolveConfirm: (value: unknown) => void
+    mockedConfirmWrite.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConfirm = resolve
+      }),
+    )
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+
+    await waitFor(() =>
+      expect(within(screen.getByRole('button', { name: 'Approve' })).getByRole('progressbar')).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
+    expect(within(screen.getByRole('button', { name: 'Reject' })).queryByRole('progressbar')).not.toBeInTheDocument()
 
     resolveConfirm!({})
     await waitFor(() => expect(screen.getByText('Change applied.')).toBeInTheDocument())

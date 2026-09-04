@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { Button, Callout } from '@blueprintjs/core'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getObjectDetail, getVisibleActionTypes, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { getObjectDetail, getVisibleActionTypes, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import type { SubAppProps } from '@elysium/shell-api/types'
+import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import ActionForm, { type ActionDef } from './ActionForm'
 
 // The real shape of ONE object type's own entry within the backend's
@@ -26,9 +29,12 @@ export interface TypeSchema {
 
 export type VisibleSchema = Record<string, TypeSchema>
 
-interface ObjectDetailPanelProps {
+// visibleSchema is real, additional data this route needs beyond the
+// shell's own base contract -- extends SubAppProps rather than
+// redeclaring onSessionExpired independently. See SubAppProps's own
+// header comment for the full reasoning.
+interface ObjectDetailPanelProps extends SubAppProps {
   visibleSchema: VisibleSchema | null
-  onSessionExpired: () => void
 }
 
 // Stage 2 of the Palantir-parity UI plan -- Object View. A real,
@@ -57,16 +63,18 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   const [visibleActionTypes, setVisibleActionTypes] = useState<Record<string, ActionDef> | null>(null)
   const [activeAction, setActiveAction] = useState<string | null>(null)
 
-  // Same stale-response guard as ObjectSearchPanel's own live search --
-  // here it protects against rapid navigation between two DIFFERENT
-  // objects on the SAME route pattern (React Router re-renders this
-  // component in place with new params; it does not unmount/remount
-  // it), where an earlier object's slower response could otherwise
-  // overwrite a later object's already-correct one.
-  const latestRequestId = useRef(0)
+  // Same, real, shared stale-response guard as ObjectSearchPanel's own
+  // live search -- extracted (see useLatestRequestGuard's own header
+  // comment for the full story). Here it protects against rapid
+  // navigation between two DIFFERENT objects on the SAME route
+  // pattern (React Router re-renders this component in place with
+  // new params; it does not unmount/remount it), where an earlier
+  // object's slower response could otherwise overwrite a later
+  // object's already-correct one.
+  const { startRequest, isStale } = useLatestRequestGuard()
 
   async function loadDetail() {
-    const thisRequestId = ++latestRequestId.current
+    const thisRequestId = startRequest()
     setLoading(true)
     setError(null)
     // Cleared immediately, not left showing the PREVIOUS object's
@@ -82,14 +90,14 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       // success shape here, matching api/routes.py's own documented
       // contract for get_object_detail_route.
       const response = (await getObjectDetail(objectType, objectId)) as { fields: Record<string, unknown> }
-      if (thisRequestId !== latestRequestId.current) return
+      if (isStale(thisRequestId)) return
       setFields(response.fields)
     } catch (err) {
-      if (thisRequestId !== latestRequestId.current) return
+      if (isStale(thisRequestId)) return
       if (handleIfSessionExpired(err, onSessionExpired)) return
-      setError(err instanceof Error ? err.message : String(err))
+      setError(getErrorMessage(err))
     } finally {
-      if (thisRequestId === latestRequestId.current) setLoading(false)
+      if (!isStale(thisRequestId)) setLoading(false)
     }
   }
 
@@ -162,7 +170,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   if (error) {
     return (
       <div className="object-detail">
-        <p className="error">{error}</p>
+        <Callout intent="danger">{error}</Callout>
       </div>
     )
   }
@@ -204,10 +212,14 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 
       {availableActions.length > 0 && !activeAction && (
         <div className="object-detail__actions">
+          {/* variant="outlined" -- same real, de-emphasized styling
+              already established for every other former
+              className="secondary" button this migration has
+              converted (PendingWriteCard's own Reject, most recently)
+              -- confirmed against Button's real, current variant
+              options: "minimal" | "outlined" | "solid". */}
           {availableActions.map(([actionName]) => (
-            <button key={actionName} className="secondary" onClick={() => setActiveAction(actionName)}>
-              {actionName}
-            </button>
+            <Button key={actionName} variant="outlined" text={actionName} onClick={() => setActiveAction(actionName)} />
           ))}
         </div>
       )}
@@ -296,6 +308,29 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 // for the whole visible-schema response -- exported from THIS file
 // (see this file's own top-of-file comment for why here) once the
 // TypeScript migration reached this component.
+//
+// Blueprint migration: Callout intent="danger" for the error message,
+// same as every other error Callout this migration; Button
+// variant="outlined" for the available-actions buttons, replacing bare
+// <button className="secondary"> elements -- the same real, de-
+// emphasized styling already established for every other former
+// className="secondary" button this migration has converted. Part of
+// the ObjectSearchPanel/ObjectDetailPanel step discussed directly with
+// the person -- see ObjectSearchPanel.tsx's own AI-notes for the real,
+// harder half of this same step (Card/CardList, plus a real, live-
+// only-discoverable Blueprint CSS bug found and fixed along the way).
+//
+// This file's own latestRequestId stale-response guard extracted to a
+// real, shared useLatestRequestGuard() hook (@elysium/shell-api) during
+// a later, full-migration review pass -- see ObjectSearchPanel.tsx's
+// own AI-notes for the full story (this file's own comment already
+// said "Same stale-response guard as ObjectSearchPanel's own" before
+// the extraction, correctly identifying it as the same pattern, just
+// never acted on until this review pass). Same real, live navigation
+// behavior confirmed unchanged: the existing race-condition test here
+// still passes unchanged, and a real, live browser walkthrough (rapid
+// navigation between two different objects) confirmed no stale
+// content ever showed.
 //
 // DEFERRED (known, intentional, not yet built):
 // - No "return to where I was" breadcrumb/back trail across multiple

@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { Button, Callout } from '@blueprintjs/core'
 import { query } from '@elysium/shell-api/api'
+import type { SubAppProps } from '@elysium/shell-api/types'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
 interface QueryResponseBody {
@@ -8,9 +10,11 @@ interface QueryResponseBody {
   detail?: string
 }
 
-interface QueryPanelProps {
-  onSessionExpired: () => void
-}
+// No additional props beyond the shell's own base contract -- see
+// SubAppProps's own header comment for the full reasoning on why this
+// is a real, shared, exported interface now, not an independently
+// redeclared field.
+type QueryPanelProps = SubAppProps
 
 // Note on status 499 (client disconnected -- see api/routes.py's
 // docstring): deliberately no special handling for it here. By the
@@ -79,17 +83,24 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
           rows={3}
           required
         />
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Thinking…' : 'Ask'}
-        </button>
+        {/* loading, not a separate disabled prop -- same real reasoning
+            already established for CreateUserForm/LoginForm's own
+            Button conversions: confirmed directly against Button's own
+            type definition that loading alone already disables the
+            button (even if disabled were explicitly false) while also
+            showing a real, centered spinner. */}
+        <Button type="submit" text={submitting ? 'Thinking…' : 'Ask'} loading={submitting} />
       </form>
 
-      {error && <p className="error">{error}</p>}
-      {answer && (
-        <div className="answer">
-          <p>{answer}</p>
-        </div>
-      )}
+      {/* intent="danger" for the error, deliberately no intent at all
+          for the answer (a plain, neutral Callout) -- the answer isn't
+          a "success" in the same sense an error is a failure, it's
+          just the real, informational content the person was waiting
+          for; success/danger stays reserved for genuinely binary
+          outcomes elsewhere (see PendingWriteCard's own Callout usage
+          for that real contrast). */}
+      {error && <Callout intent="danger">{error}</Callout>}
+      {answer && <Callout>{answer}</Callout>}
       {pendingWrite && (
         // No persistent view of an object here to refresh once
         // resolved (unlike ObjectDetailPanel.jsx's own ActionForm) --
@@ -99,3 +110,40 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
     </div>
   )
 }
+
+// =============================================================================
+// AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+// later) that lacks this conversation's history. Update this section
+// whenever something genuinely open, deferred, or rejected comes up here.
+// =============================================================================
+//
+// Blueprint migration for this file -- the roadmap discussed directly with
+// the person scopes this and PendingWriteCard.tsx together as one step
+// (Button, Callout), each its own commit, matching the same discipline
+// AdminPanel's own multi-step migration already established.
+//
+// RESOLVED (kept for history):
+// - Button for the "Ask" submit button, replacing a bare <button>. Same
+//   real design decision already established for every other Button
+//   conversion this migration: loading, not a separate disabled prop --
+//   confirmed directly against Button's own type definition that loading
+//   alone already disables the button while also showing a real, centered
+//   spinner. Verified live in a real browser (rendering/styling confirmed;
+//   a full submit needs a real, slow LLM round-trip the person has
+//   deliberately deferred testing, so the actual query/answer flow itself
+//   was verified through the existing unit suite, not a live LLM call).
+// - Callout for the error message and the answer display, replacing two
+//   bare, differently-shaped elements (<p className="error"> and
+//   <div className="answer"><p>). intent="danger" for the error; the
+//   answer stays deliberately intent-less (a plain, neutral Callout) --
+//   it isn't a "success" in the sense an error is a failure, just the
+//   real, informational content the person was waiting for; success/
+//   danger stays reserved for genuinely binary outcomes (see
+//   PendingWriteCard's own resolved Callout for that real contrast).
+//   Verified live in a real browser: a genuine, simulated network
+//   failure (going offline right before submitting, not a mocked
+//   error) showed the real, styled danger Callout -- icon, red text,
+//   and background -- correctly.
+//
+// This closes out this file's own half of the QueryPanel/PendingWriteCard
+// Blueprint step -- see PendingWriteCard.tsx's own AI-notes for its half.

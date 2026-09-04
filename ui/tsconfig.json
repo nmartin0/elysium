@@ -85,7 +85,33 @@
     // natively at build time but tsc, checking in isolation, does
     // not understand on its own. Ships as part of vite itself
     // (already a real devDependency here), not a separate package.
-    "types": ["@testing-library/jest-dom", "vite/client"]
+    // node -- added specifically for workspace-boundaries.test.ts,
+    // confirmed empirically, the same way every other entry in this
+    // array was: that file is the first one in this whole project to
+    // use real Node.js built-in modules (fs, path, url) rather than
+    // pure browser/React code, and an explicit `types` array like this
+    // one means TypeScript ONLY includes exactly what's listed here --
+    // it does NOT fall back to auto-including everything installed
+    // under node_modules/@types the way an absent `types` field would.
+    // @types/node was already a real, necessary devDependency once
+    // this file existed; this is the second, separate step (confirmed
+    // directly -- installing it alone was not sufficient on its own,
+    // the same real "Cannot find name 'fs'" error persisted until this
+    // was added too) that actually makes tsc aware of it.
+    "types": ["@testing-library/jest-dom", "vite/client", "node"]
   },
-  "include": ["src", "packages/*/src"]
+  // e2e added alongside src/packages/*/src -- confirmed necessary
+  // empirically, not assumed: e2e/shell.spec.ts existed as real
+  // TypeScript but was NOT actually part of this program at all
+  // (confirmed directly via `tsc --listFiles`, which omitted it
+  // entirely) until this was added -- converting a file's own
+  // extension to .ts means nothing on its own if tsconfig's own
+  // include never covers it; the file would look like TypeScript but
+  // never actually get checked. vite.config.ts and
+  // playwright.config.ts added the same way, for the exact same
+  // confirmed reason, once THOSE were converted too -- neither
+  // covered by "src"/"packages/*/src"/"e2e" (they're loose root-level
+  // files), confirmed the same way (a real `tsc --listFiles` check,
+  // not assumed from the pattern of the other three entries).
+  "include": ["src", "packages/*/src", "e2e", "vite.config.ts", "playwright.config.ts"]
 }

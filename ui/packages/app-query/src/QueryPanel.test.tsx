@@ -2,9 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
-vi.mock('@elysium/shell-api/api', () => ({
-  query: vi.fn(),
-}))
+// Partial mock via importOriginal, not a hand-duplicated module shape
+// -- see App.test.tsx's own header comment for the full reasoning.
+// query() itself never throws ApiError at all (it deliberately
+// returns the raw Response, see this file's own comment further
+// down), so this file never needed handleIfSessionExpired/
+// getErrorMessage mocked even before this -- converted to the same,
+// consistent pattern as every other test file mocking this module
+// regardless, so a FUTURE change to what QueryPanel.tsx imports from
+// api.ts doesn't silently break this file the same way the prior,
+// hand-duplicated shape already broke six others.
+vi.mock('@elysium/shell-api/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
+  return {
+    ...actual,
+    query: vi.fn(),
+  }
+})
 vi.mock('@elysium/shell-api/components/PendingWriteCard', () => ({
   // A simple stub -- PendingWriteCard has its own, thorough, direct
   // test file (packages/shell-api/src/components/PendingWriteCard.

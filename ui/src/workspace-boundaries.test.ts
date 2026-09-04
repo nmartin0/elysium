@@ -1,4 +1,4 @@
-// workspace-boundaries.test.js -- structural tests on the workspace
+// workspace-boundaries.test.ts -- structural tests on the workspace
 // itself, not any one package's runtime behavior. Reads the real
 // package.json files from disk and asserts on their actual content --
 // this is what actually enforces "sub-apps depend on shell-api and
@@ -15,8 +15,23 @@ import path from 'path'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const UI_ROOT = path.resolve(__dirname, '..')
 
-function readPackageJson(relativePath) {
-  return JSON.parse(readFileSync(path.join(UI_ROOT, relativePath, 'package.json'), 'utf-8'))
+// The real, minimal shape this file actually reads out of a
+// package.json -- not the full, real npm package.json schema (which
+// has dozens of optional fields this file never touches), matching
+// this project's own established "don't invent a narrower or wider
+// type than what's actually used" discipline elsewhere (see e.g.
+// Shell.tsx's own VisibleApp). Every field genuinely optional here --
+// a real package.json may omit dependencies/workspaces/exports
+// entirely, and every call site below already, correctly guards for
+// that with `|| {}` / `|| []`.
+interface PackageJson {
+  dependencies?: Record<string, string>
+  workspaces?: string[]
+  exports?: Record<string, string>
+}
+
+function readPackageJson(relativePath: string): PackageJson {
+  return JSON.parse(readFileSync(path.join(UI_ROOT, relativePath, 'package.json'), 'utf-8')) as PackageJson
 }
 
 const SUB_APPS = ['packages/app-query', 'packages/app-browse', 'packages/app-admin']
@@ -57,7 +72,7 @@ describe('the root package.json correctly declares the workspace', () => {
 
   it('depends on every real sub-app and shell-api package by name', () => {
     const pkg = readPackageJson('.')
-    expect(Object.keys(pkg.dependencies)).toEqual(
+    expect(Object.keys(pkg.dependencies || {})).toEqual(
       expect.arrayContaining(['@elysium/shell-api', '@elysium/app-query', '@elysium/app-browse', '@elysium/app-admin']),
     )
   })

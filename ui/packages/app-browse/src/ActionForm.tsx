@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { proposeAction, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { Button, Callout, FormGroup, InputGroup, NumericInput } from '@blueprintjs/core'
+import { proposeAction, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName } from '@elysium/shell-api/format'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
@@ -87,19 +88,27 @@ export default function ActionForm({
   onResolved,
   onSessionExpired,
 }: ActionFormProps) {
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {}
-    for (const [paramName, paramSpec] of Object.entries(actionDef.parameters)) {
-      // Pre-filled, and left DISABLED below (not just pre-filled and
-      // still editable) -- the whole point of opening this form from
-      // a specific object's own page is "act on THIS object";
-      // letting someone silently retarget it to a different id while
-      // still thinking they're acting on the one they navigated to
-      // would be confusing at best.
-      initial[paramName] = isLockedToCurrentObject(paramSpec, objectType) ? objectId : ''
-    }
-    return initial
-  })
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    // Object.fromEntries + .map(), not a mutable accumulator built up
+    // in a for loop -- the same real transform (each parameter name
+    // maps to either its locked-in value or an empty string),
+    // expressed as one, immutable expression rather than a loop that
+    // mutates a local object across iterations. Idiomatic, current
+    // TypeScript for exactly this "transform every key/value pair of
+    // an object" shape.
+    Object.fromEntries(
+      Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => [
+        paramName,
+        // Pre-filled, and left DISABLED below (not just pre-filled
+        // and still editable) -- the whole point of opening this form
+        // from a specific object's own page is "act on THIS object";
+        // letting someone silently retarget it to a different id
+        // while still thinking they're acting on the one they
+        // navigated to would be confusing at best.
+        isLockedToCurrentObject(paramSpec, objectType) ? objectId : '',
+      ]),
+    ),
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
@@ -119,11 +128,15 @@ export default function ActionForm({
       // parameter VALUE types, only presence/absence (see api/
       // routes.py's own docstring on propose_action_route), so a
       // string would silently reach the backend as one otherwise.
-      const parameters: Record<string, unknown> = {}
-      for (const [paramName, paramSpec] of Object.entries(actionDef.parameters)) {
-        const raw = values[paramName]
-        parameters[paramName] = paramSpec.type === 'number' && raw !== '' ? Number(raw) : raw
-      }
+      // Same Object.fromEntries + .map() shape as the initial values
+      // above -- one immutable expression, not a mutable accumulator
+      // built up across loop iterations.
+      const parameters: Record<string, unknown> = Object.fromEntries(
+        Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => {
+          const raw = values[paramName]
+          return [paramName, paramSpec.type === 'number' && raw !== '' ? Number(raw) : raw]
+        }),
+      )
       // proposeAction() itself returns Promise<unknown> (see api.ts's
       // own header comment on why) -- asserted to the real, known
       // success shape here, matching api/routes.py's own documented
@@ -138,7 +151,7 @@ export default function ActionForm({
       // parameters, MAC denial) -- deliberately never more specific
       // than that, by design decided with the user. Nothing to
       // sanitize or reword here; display it as-is.
-      setError(err instanceof Error ? err.message : String(err))
+      setError(getErrorMessage(err))
     } finally {
       setSubmitting(false)
     }
@@ -153,27 +166,50 @@ export default function ActionForm({
       <h3>{actionName}</h3>
       {Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => {
         const locked = isLockedToCurrentObject(paramSpec, objectType)
+        const fieldId = `action-form-${paramName}`
         return (
-          <label key={paramName} className="action-form__field">
-            <span>{formatFieldName(paramName)}</span>
-            <input
-              type={paramSpec.type === 'number' ? 'number' : 'text'}
-              value={values[paramName]}
-              onChange={(event) => handleChange(paramName, event.target.value)}
-              disabled={locked}
-              required={paramSpec.required}
-            />
-          </label>
+          <FormGroup key={paramName} label={formatFieldName(paramName)} labelFor={fieldId}>
+            {/* NumericInput/InputGroup, not one <input> with a
+                conditional type -- these are genuinely different real
+                Blueprint components (different prop shapes entirely:
+                onValueChange vs onChange), not a single element that
+                takes a type prop the way the original HTML <input>
+                did. onValueChange's own second argument (valueAsString)
+                is used, not the first (valueAsNumber) -- confirmed
+                directly against NumericInput's own type definition
+                that this matches this component's own existing design
+                exactly: values itself stays Record<string, string>
+                throughout, only actually coerced to a real number at
+                submit time (see handleSubmit's own comment on why). */}
+            {paramSpec.type === 'number' ? (
+              <NumericInput
+                id={fieldId}
+                value={values[paramName]}
+                onValueChange={(_valueAsNumber, valueAsString) => handleChange(paramName, valueAsString)}
+                disabled={locked}
+                required={paramSpec.required}
+              />
+            ) : (
+              <InputGroup
+                id={fieldId}
+                value={values[paramName]}
+                onChange={(event) => handleChange(paramName, event.target.value)}
+                disabled={locked}
+                required={paramSpec.required}
+              />
+            )}
+          </FormGroup>
         )
       })}
-      {error && <p className="error">{error}</p>}
+      {error && <Callout intent="danger">{error}</Callout>}
       <div className="action-form__actions">
-        <button type="submit" disabled={submitting}>
-          Propose
-        </button>
-        <button type="button" className="secondary" onClick={onCancel} disabled={submitting}>
-          Cancel
-        </button>
+        {/* loading, not a separate disabled prop -- same real reasoning
+            already established for every other Button conversion this
+            migration. variant="outlined" for Cancel -- the same de-
+            emphasized styling already established for every other
+            former className="secondary" button. */}
+        <Button type="submit" text="Propose" loading={submitting} />
+        <Button type="button" variant="outlined" text="Cancel" onClick={onCancel} disabled={submitting} />
       </div>
     </form>
   )
@@ -219,6 +255,54 @@ export default function ActionForm({
 //   visible-action-types entry -- exported from THIS file (see this
 //   file's own top-of-file comment for why here) once the TypeScript
 //   migration reached this component.
+// - Blueprint migration: FormGroup/InputGroup/NumericInput/Button,
+//   replacing the bare <label>/<input>/<button> elements -- the final
+//   step of the whole Blueprint migration roadmap discussed directly
+//   with the person, closing it out entirely.
+//
+//   NumericInput/InputGroup, chosen per-parameter by paramSpec.type,
+//   not one element with a conditional type the way the original bare
+//   <input> could -- these are genuinely different real Blueprint
+//   components (onValueChange vs onChange), confirmed directly
+//   against each one's own type definition before writing this, not
+//   assumed. A real, confirmed difference from the original HTML
+//   input worth remembering: NumericInput does NOT render a real
+//   type="number" input -- confirmed directly against its own live
+//   DOM output -- it renders type="text" internally and mimics
+//   numeric-input behavior via its own JS validation
+//   (allowNumericCharactersOnly), exposing role="spinbutton" as the
+//   real, accessible signal instead. onValueChange's own second
+//   argument (valueAsString), not the first (valueAsNumber), is what
+//   this file actually uses -- values itself stays Record<string,
+//   string> throughout unchanged, only actually coerced to a real
+//   number at submit time, exactly matching this component's own,
+//   already-existing design (see handleSubmit's own comment). Two
+//   existing tests needed real fixes, not just tolerance, once this
+//   difference was confirmed: one asserting a real type="number"
+//   attribute (rewritten to assert role="spinbutton" instead, the
+//   real, meaningful distinguishing signal), and one asserting a
+//   NUMERIC toHaveValue(250)/toHaveValue(null) (rewritten to the real,
+//   correct STRING form testing-library itself uses for a type="text"
+//   input specifically) -- both confirmed as real, necessary updates
+//   via a negative control, not loosened just to make failures go
+//   away.
+//
+//   The error message also converted to Callout intent="danger",
+//   matching every other error Callout this whole migration has used
+//   -- not explicitly named in the roadmap's own shorthand for this
+//   step, but included anyway to close out the one remaining bare
+//   <p className="error"> left in the whole app; leaving it would have
+//   been a real, visible inconsistency with every other sub-app now.
+//
+//   Verified live, beyond the unit suite, using a real, multi-object
+//   action (TransferFunds) specifically because it has real "number"
+//   parameters TO exercise NumericInput with, not just InputGroup:
+//   confirmed the locked from_account_id field renders correctly
+//   disabled, confirmed both NumericInput fields render with their
+//   own real increment/decrement buttons, and confirmed a real,
+//   complete submission correctly coerced both entered values to real
+//   JSON numbers (not strings) in the resulting, real, multi-object
+//   PendingWriteCard.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Every OTHER object_reference parameter (one that isn't locked to
