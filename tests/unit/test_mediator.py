@@ -305,6 +305,25 @@ def test_visible_schema_shows_exactly_the_granted_fields(mediator):
     assert "org_id" not in visible["Author"]["fields"]
 
 
+def test_visible_schema_never_leaks_internal_storage_or_security_config(mediator):
+    # A real, confirmed bug found and fixed during a later review pass:
+    # visible_schema() used to spread the FULL type_def (`**type_def`)
+    # into its own result -- meaning `storage`/`additional_storage`/
+    # `security` (real internal infrastructure detail: which physical
+    # database, table, and column backs a field) leaked out through
+    # this method's own return value, completely unfiltered, to the
+    # two real HTTP routes that return this dict directly as a
+    # response body. TEST_SCHEMA's own real "Author" entry genuinely
+    # has both a real `storage` block AND a real `security` block --
+    # this asserts NEITHER key is present anywhere in the result, for
+    # a real, granted type this user can genuinely see.
+    visible = mediator.visible_schema(_record("alice"))
+    assert set(visible["Author"].keys()) == {"fields", "id_field", "title_field"}
+    assert "storage" not in visible["Author"]
+    assert "additional_storage" not in visible["Author"]
+    assert "security" not in visible["Author"]
+
+
 def test_search_object_reuses_precomputed_visible_schema_if_given(mediator):
     # Finding 2 fix -- an explicitly-passed visible_schema is used
     # as-is, rather than recomputed. Passing a DELIBERATELY WRONG one

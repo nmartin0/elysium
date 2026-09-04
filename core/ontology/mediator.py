@@ -401,8 +401,29 @@ class DataMediator:
                 user_record, self.roles, f"read:{object_type}.{title_field}"
             )
 
+            # A REAL, CONFIRMED BUG, fixed here: this used to spread the
+            # FULL type_def (`**type_def`) into the result, which meant
+            # `storage`/`additional_storage`/`security` -- real,
+            # internal infrastructure detail from ontology_schema.yaml
+            # (which physical database, table, and column backs a
+            # field) -- leaked out through this method's own return
+            # value, completely unfiltered, to EVERY caller, including
+            # the two real HTTP routes (GET /me/visible-schema, GET
+            # /users/{username}/visible-schema) that return this dict
+            # directly as an HTTP response body. Never intentional --
+            # confirmed directly, not assumed, that NOTHING anywhere in
+            # this codebase actually reads those three keys off a
+            # visible_schema() result: not agentic_loop.py's own LLM
+            # prompt-building path, not this file's own internal
+            # search_object()/_filterable_columns() callers (which use
+            # ONLY `fields`/`id_field` from a visible_type_def, and
+            # resolve real storage separately, from self.schema
+            # directly, never from this filtered view). This was pure,
+            # unused bycatch of the old spread pattern, not a real
+            # dependency anywhere -- safe to remove outright, not just
+            # scope down. Only the three real, intentional, semantic
+            # keys below are ever included now.
             visible[object_type] = {
-                **type_def,
                 "fields": visible_fields,
                 "id_field": id_field if id_field_visible else None,
                 "title_field": title_field if title_field_visible else None,
@@ -814,6 +835,40 @@ class DataMediator:
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - visible_schema() used to spread the FULL type_def (`**type_def`)
+#   into its own result -- a real, confirmed, SEVERE bug: `storage`/
+#   `additional_storage`/`security` (real internal infrastructure
+#   detail -- which physical database, table, and column backs a
+#   field) leaked out through this method's own return value,
+#   completely unfiltered, to every caller, including the two real
+#   HTTP routes (GET /me/visible-schema, GET /users/{username}/
+#   visible-schema) that return this dict directly as an HTTP
+#   response body. Found while investigating the real, planned
+#   response_model conversion work (see api/routes.py's own AI-notes
+#   for that broader effort), NOT part of it -- fixed immediately, in
+#   its own separate commit, the moment it was confirmed, rather than
+#   folded into or left waiting on the larger piece of work. Confirmed
+#   directly, not assumed, that NOTHING anywhere in this codebase
+#   actually reads those three keys off a visible_schema() result
+#   before removing them outright: not agentic_loop.py's own LLM
+#   prompt-building path, not this file's own internal
+#   search_object()/_filterable_columns() callers (which use ONLY
+#   `fields`/`id_field` from a visible_type_def, and resolve real
+#   storage separately, from self.schema directly, never from this
+#   filtered view). Pure, unused bycatch of the old spread pattern,
+#   not a real dependency anywhere. A real, new, dedicated test
+#   (test_visible_schema_never_leaks_internal_storage_or_security_
+#   config, tests/unit/test_mediator.py) added specifically because
+#   NO existing test asserted on this method's own key-level shape at
+#   all -- this bug could otherwise have silently reappeared with zero
+#   warning; confirmed meaningful via a real negative control
+#   (reintroducing the old spread reproduced exactly this one, new
+#   test's own failure, with a genuinely useful diff). Verified live,
+#   beyond the unit suite too: a real, running server's own real
+#   /api/me/visible-schema response, fetched through a real,
+#   authenticated browser session, confirmed only `fields`/`id_field`/
+#   `title_field` present, nothing else.
+#
 # - search_object_free_text() + free_text_searchable_fields() (public,
 #   promoted from a private helper mid-build once api/routes.py's own
 #   new /objects/{type}/search endpoint needed the SAME field list
