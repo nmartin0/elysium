@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 // Partial mock via importOriginal, not a hand-duplicated module shape
 // -- see App.test.tsx's own header comment for the full reasoning.
@@ -214,6 +214,34 @@ describe('PendingWriteCard -- in-flight and failure handling', () => {
 
     resolveConfirm!({})
     await waitFor(() => expect(screen.getByText('Change applied.')).toBeInTheDocument())
+  })
+
+  it('shows a real, spinning loading indicator on ONLY the clicked button, not both -- a real, deliberate improvement over a plain shared "submitting" boolean, confirmed directly, not just that both happen to end up disabled', async () => {
+    let resolveConfirm: (value: unknown) => void
+    mockedConfirmWrite.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConfirm = resolve
+      }),
+    )
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+
+    // Reject itself is the one that's actually loading -- a real,
+    // rendered spinner (role="progressbar", confirmed directly against
+    // Button's own real DOM output before writing this assertion, not
+    // assumed) nested inside ITS OWN button specifically.
+    await waitFor(() =>
+      expect(within(screen.getByRole('button', { name: 'Reject' })).getByRole('progressbar')).toBeInTheDocument(),
+    )
+    // Approve is disabled too (preventing a confusing double-submit),
+    // but genuinely NOT loading -- no spinner of its own at all, since
+    // it was never the one actually clicked.
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()
+    expect(within(screen.getByRole('button', { name: 'Approve' })).queryByRole('progressbar')).not.toBeInTheDocument()
+
+    resolveConfirm!({})
+    await waitFor(() => expect(screen.getByText('Change rejected.')).toBeInTheDocument())
   })
 
   it("on a non-401 failure, shows the backend's own error message and does NOT resolve", async () => {

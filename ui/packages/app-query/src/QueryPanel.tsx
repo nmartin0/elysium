@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Button } from '@blueprintjs/core'
 import { query } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
@@ -82,9 +83,13 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
           rows={3}
           required
         />
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Thinking…' : 'Ask'}
-        </button>
+        {/* loading, not a separate disabled prop -- same real reasoning
+            already established for CreateUserForm/LoginForm's own
+            Button conversions: confirmed directly against Button's own
+            type definition that loading alone already disables the
+            button (even if disabled were explicitly false) while also
+            showing a real, centered spinner. */}
+        <Button type="submit" text={submitting ? 'Thinking…' : 'Ask'} loading={submitting} />
       </form>
 
       {error && <p className="error">{error}</p>}
@@ -102,3 +107,29 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
     </div>
   )
 }
+
+// =============================================================================
+// AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+// later) that lacks this conversation's history. Update this section
+// whenever something genuinely open, deferred, or rejected comes up here.
+// =============================================================================
+//
+// Blueprint migration for this file -- the roadmap discussed directly with
+// the person scopes this and PendingWriteCard.tsx together as one step
+// (Button, Callout), each its own commit, matching the same discipline
+// AdminPanel's own multi-step migration already established.
+//
+// RESOLVED (kept for history):
+// - Button for the "Ask" submit button, replacing a bare <button>. Same
+//   real design decision already established for every other Button
+//   conversion this migration: loading, not a separate disabled prop --
+//   confirmed directly against Button's own type definition that loading
+//   alone already disables the button while also showing a real, centered
+//   spinner. Verified live in a real browser (rendering/styling confirmed;
+//   a full submit needs a real, slow LLM round-trip the person has
+//   deliberately deferred testing, so the actual query/answer flow itself
+//   was verified through the existing unit suite, not a live LLM call).
+//
+// PLANNED, NOT YET DONE:
+// - Callout, for the error message and the answer display -- the second
+//   half of this same step, not yet started.

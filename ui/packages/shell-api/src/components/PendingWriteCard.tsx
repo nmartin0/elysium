@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Button } from '@blueprintjs/core'
 import { confirmWrite, getErrorMessage, handleIfSessionExpired } from '../api'
 import { formatFieldName, formatValue } from '../format'
 
@@ -96,12 +97,19 @@ interface PendingWriteCardProps {
 // itself gets set, not a second, separately-tracked signal that
 // could drift from what the card itself just displayed.
 export default function PendingWriteCard({ pendingWrite, onSessionExpired, onResolved }: PendingWriteCardProps) {
-  const [submitting, setSubmitting] = useState(false)
+  // Tracks WHICH of the two actions is actually in flight, not just
+  // whether one is -- a real, deliberate improvement over a plain
+  // shared boolean: Approve and Reject used to disable together with
+  // no way to tell which one a person had actually clicked. Now only
+  // the real, clicked button shows Button's own real loading spinner;
+  // the other stays a plain, disabled button, preventing a confusing
+  // double-submit without pretending both are doing something.
+  const [submittingAction, setSubmittingAction] = useState<'approve' | 'reject' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<string | null>(null)
 
   async function handleDecision(approved: boolean) {
-    setSubmitting(true)
+    setSubmittingAction(approved ? 'approve' : 'reject')
     setError(null)
     try {
       await confirmWrite(pendingWrite.id, approved)
@@ -111,7 +119,7 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
       if (handleIfSessionExpired(err, onSessionExpired)) return
       setError(getErrorMessage(err))
     } finally {
-      setSubmitting(false)
+      setSubmittingAction(null)
     }
   }
 
@@ -151,12 +159,29 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
       )}
       {error && <p className="error">{error}</p>}
       <div className="pending-write__actions">
-        <button onClick={() => handleDecision(true)} disabled={submitting}>
-          Approve
-        </button>
-        <button className="secondary" onClick={() => handleDecision(false)} disabled={submitting}>
-          Reject
-        </button>
+        {/* Each button's own loading reflects ONLY its own, real,
+            clicked action -- not "either one is submitting." disabled
+            on the OTHER button prevents a confusing double-submit
+            (clicking Reject while Approve is still in flight, or vice
+            versa) without falsely showing it as loading too --
+            loading itself already disables its own button (confirmed
+            directly against Button's own type definition), so this
+            explicit disabled is only ever needed for the one NOT
+            currently loading. */}
+        <Button
+          text="Approve"
+          intent="success"
+          loading={submittingAction === 'approve'}
+          disabled={submittingAction === 'reject'}
+          onClick={() => handleDecision(true)}
+        />
+        <Button
+          text="Reject"
+          variant="outlined"
+          loading={submittingAction === 'reject'}
+          disabled={submittingAction === 'approve'}
+          onClick={() => handleDecision(false)}
+        />
       </div>
     </div>
   )
@@ -202,6 +227,30 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
 //   from THIS file (see this file's own top-of-file comment for why
 //   here, not a new, separate types file) once the TypeScript
 //   migration reached this component.
+// - Blueprint's own real Button for Approve/Reject, replacing bare
+//   <button> elements -- part of the QueryPanel/PendingWriteCard
+//   Blueprint step discussed directly with the person. Approve gets
+//   intent="success" (the positive, confirming action); Reject gets
+//   variant="outlined" (de-emphasized, matching the original's own
+//   className="secondary" intent, confirmed against Button's real,
+//   current variant options: "minimal" | "outlined" | "solid").
+//   A real, deliberate improvement made along the way, not just a
+//   like-for-like swap: the old, single, shared `submitting` boolean
+//   disabled both buttons together with no way to tell which one a
+//   person had actually clicked. Replaced with submittingAction
+//   ('approve' | 'reject' | null), so only the real, clicked button
+//   shows Button's own real, spinning loading indicator (confirmed
+//   directly against its real DOM output -- a real role="progressbar"
+//   element -- before writing the new test asserting it); the other
+//   stays a plain, disabled button, preventing a confusing double-
+//   submit without pretending both are doing something. A new,
+//   dedicated test confirms this precisely, backed by a real negative
+//   control (reverting to a shared loading condition reproduced
+//   exactly the one, correct failure). Confirmed live in a real
+//   browser too, with real, throttled network latency specifically so
+//   the in-flight state was actually observable, not just inferred:
+//   clicking Reject showed a real spinner on Reject alone, with
+//   Approve faded and disabled but genuinely not loading.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Still no semantic "role" labeling for a sub_write within its own
