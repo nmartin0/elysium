@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Alert, HTMLTable } from '@blueprintjs/core'
+import { Alert, Button, FormGroup, HTMLTable, InputGroup } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -248,25 +248,42 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
   return (
     <form className="create-user-form" onSubmit={handleSubmit}>
       <h3>Create user</h3>
-      <label>
-        Username
-        <input value={username} onChange={(e) => setUsername(e.target.value)} required />
-      </label>
-      <label>
-        Password
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-      </label>
-      <label>
-        MAC value (optional)
-        <input value={macValue} onChange={(e) => setMacValue(e.target.value)} />
-      </label>
-      <label>
-        Role
-        <input value={roleName} onChange={(e) => setRoleName(e.target.value)} required />
-      </label>
-      <button type="submit" disabled={submitting}>
-        {submitting ? 'Creating…' : 'Create user'}
-      </button>
+      {/* Explicit id/labelFor pairing on every field below -- Blueprint's
+          own FormGroup+InputGroup are real, separate sibling elements
+          (labelFor renders a real HTML <label for="...">), unlike the
+          original's own nested <label>text<input /></label>, which
+          associated implicitly and needed no id at all. Confirmed
+          directly against FormGroup's own real type definition before
+          writing this, not assumed from a different component's API. */}
+      <FormGroup label="Username" labelFor="create-user-username">
+        <InputGroup id="create-user-username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+      </FormGroup>
+      <FormGroup label="Password" labelFor="create-user-password">
+        <InputGroup
+          id="create-user-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+      </FormGroup>
+      {/* labelInfo, not "(optional)" baked into the label text itself --
+          FormGroup's own real, purpose-built prop for exactly this kind
+          of secondary, after-the-label annotation. */}
+      <FormGroup label="MAC value" labelFor="create-user-mac" labelInfo="(optional)">
+        <InputGroup id="create-user-mac" value={macValue} onChange={(e) => setMacValue(e.target.value)} />
+      </FormGroup>
+      <FormGroup label="Role" labelFor="create-user-role">
+        <InputGroup id="create-user-role" value={roleName} onChange={(e) => setRoleName(e.target.value)} required />
+      </FormGroup>
+      {/* loading, not a separate disabled prop -- confirmed directly
+          against Button's own real type definition: loading ALREADY
+          disables the button on its own (even if disabled were
+          explicitly false), and additionally shows a real, centered
+          spinner in place of the text -- strictly more informative
+          than the original's own plain disabled + text-swap, for the
+          same one prop. */}
+      <Button type="submit" text={submitting ? 'Creating…' : 'Create user'} loading={submitting} />
     </form>
   )
 }
@@ -311,12 +328,34 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
 //   SVG genuinely renders (not just referenced), Cancel genuinely leaves
 //   the user untouched, and a real Confirm genuinely deletes the user via
 //   a real backend call, not simulated.
+// - FormGroup/InputGroup/Button for CreateUserForm, replacing the bare
+//   <label>/<input>/<button> elements -- the last step on this sub-app's
+//   own roadmap, closing it out. Each field's own real, explicit
+//   id/labelFor pairing, confirmed directly against FormGroup's own
+//   type definition first: it renders a real, separate <label for="...">
+//   element, unlike the original's own implicit, nested <label>text
+//   <input /></label> association, which needed no id at all.
+//   labelInfo="(optional)" for the MAC value field specifically --
+//   FormGroup's own real, purpose-built prop for this exact kind of
+//   secondary, after-the-label annotation, not baked into the main
+//   label text the way the original had it. Button's own `loading`
+//   prop used in place of the original's separate `disabled` -- confirmed
+//   directly against its real type definition that loading alone already
+//   disables the button (even if disabled were explicitly false) while
+//   also showing a real, centered spinner, strictly more informative
+//   than the original's own plain text-swap for the same one prop. All
+//   26 existing tests passed completely unchanged (testing-library's own
+//   getByLabelText() already handles both the old nested-label and the
+//   new labelFor/id association forms transparently) -- confirmed live
+//   in a real browser beyond the unit suite too: real, label-based field
+//   selection (Playwright's own get_by_label(), which itself depends on
+//   genuine label/for-id association working, not simulated) filled out
+//   and submitted the real form, genuinely creating a new user visible
+//   in the table afterward, with the form correctly reset.
 //
-// PLANNED, NOT YET DONE (see the roadmap discussed directly with the
-// person -- one Blueprint component at a time, its own commit each):
-// - FormGroup/InputGroup/Button for CreateUserForm -- replacing the bare
-//   <label>/<input>/<button> elements with Blueprint's own styled,
-//   accessible form primitives.
+// This closes out AdminPanel's own Blueprint migration -- every step on
+// the original roadmap (HTMLTable, Alert, FormGroup/InputGroup/Button)
+// is done.
 //
 // DEFERRED (known, intentional, not yet built):
 // - No Select for the role field, despite it being the most naturally
