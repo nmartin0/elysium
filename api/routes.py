@@ -516,6 +516,30 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
     # WriteMediator.visible_action_types() already existed for the
     # model-facing prompt (core/llm/agent_step_prompt.py).
     #
+    # EXPLICIT INCLUSION, not `{**action_def, ...}` -- a real, second
+    # fix, alongside GET /me/visible-schema's own (see mediator.py's
+    # own AI-notes for the first): a spread-then-override here would
+    # have leaked `sub_writes` (each mutation's own literal "set
+    # property X to parameter.Y" mechanical logic -- including things
+    # like CreateCustomer silently auto-populating the MAC field from
+    # user.security_value) out to any browser, unfiltered, over HTTP.
+    # Confirmed directly, not assumed, that nothing real needs this
+    # HERE: `affected_object_types` already, independently covers the
+    # only legitimate "what does this action touch" need (a real,
+    # separate, top-level key, never derived from sub_writes at all);
+    # ActionForm.tsx, the real, only frontend consumer of this
+    # response, never references sub_writes anywhere (confirmed by a
+    # direct grep, not assumed); and the model's own real need for
+    # sub_writes (agent_step_prompt.py's own _describe_actions(), for
+    # object_type per sub-write) is entirely INTERNAL --
+    # agentic_loop.py calls WriteMediator.visible_action_types()
+    # directly, inside the same Python process, never through this
+    # HTTP route or across the network at all. Same reasoning `check
+    # in with the person before removing something with real,
+    # confirmed use elsewhere` already correctly held THIS key back
+    # from a same-commit fix as visible_schema()'s own -- resolved
+    # once actually confirmed here, not assumed either way.
+    #
     # "executable" is added HERE, at this HTTP layer, deliberately NOT
     # inside visible_action_types() itself -- that method's own return
     # shape is shared with the model-facing prompt path and has real,
@@ -523,11 +547,7 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
     # action_type definition; this flag is a UI-only concern (which
     # actions can grow a real button, not just appear in a catalog),
     # with no reason to touch that shared, already-correct method or
-    # its own callers/tests at all. {**action_def, ...} builds a
-    # genuinely NEW dict per action -- never mutates action_def in
-    # place, which would otherwise corrupt WriteMediator's own,
-    # shared, long-lived self.action_types for every future caller,
-    # not just this one request.
+    # its own callers/tests at all.
     #
     # For a role WITHOUT discover:action_types, every entry it sees is
     # already execute:-filtered (visible_action_types()'s own existing
@@ -542,7 +562,11 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
     roles = request.app.state.config.roles
     visible = write_mediator.visible_action_types(current_user)
     return {
-        action_name: {**action_def, "executable": authorize(current_user, roles, f"execute:{action_name}")}
+        action_name: {
+            "affected_object_types": action_def["affected_object_types"],
+            "parameters": action_def["parameters"],
+            "executable": authorize(current_user, roles, f"execute:{action_name}"),
+        }
         for action_name, action_def in visible.items()
     }
 
@@ -827,6 +851,39 @@ def lock_status_route(resource_name: str, request: Request,
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - GET /me/visible-action-types used to spread the FULL action_def
+#   (`**action_def`) into its own response -- a real, confirmed
+#   second security bug, found and fixed alongside GET /me/visible-
+#   schema's own (see mediator.py's own AI-notes for the first): each
+#   action's real `sub_writes` -- including the literal, mechanical
+#   "set property X to parameter.Y" mutations logic, e.g.
+#   CreateCustomer silently auto-populating the MAC field (region)
+#   from user.security_value -- leaked out, unfiltered, to any
+#   browser. Deliberately NOT fixed in the same commit as the first,
+#   despite looking similar at a glance -- confirmed directly, not
+#   assumed, that `sub_writes` genuinely differs from `storage`/
+#   `security`: unlike those, sub_writes IS a real, used dependency
+#   (agent_step_prompt.py's own _describe_actions() reads sub_writes
+#   [*].object_type for the model-facing prompt), so a real, separate
+#   check was needed before deciding this was actually safe to strip
+#   from the HTTP-facing view too. Confirmed it was: that need is
+#   entirely INTERNAL (agentic_loop.py calls WriteMediator.
+#   visible_action_types() directly, inside the same Python process,
+#   never through this route); `affected_object_types` already,
+#   independently covers the only legitimate HTTP-facing "what does
+#   this touch" need; and ActionForm.tsx, the real, only frontend
+#   consumer, never references sub_writes anywhere (confirmed by a
+#   direct grep). Now built with explicit inclusion (affected_object_
+#   types/parameters/executable only), matching the exact same fix
+#   already applied to visible_schema() itself. A real, new,
+#   dedicated test (test_visible_action_types_never_leaks_sub_writes_
+#   or_mutations, tests/integration/test_api.py) added specifically
+#   because no existing test asserted on this route's own key-level
+#   shape either; confirmed meaningful via a real negative control.
+#   Verified live too: a real, authenticated browser session's own
+#   real fetch() confirmed the trimmed shape, AND a real navigation
+#   into ActionForm itself confirmed the UI still renders and
+#   functions identically -- zero functional loss from the fix.
 # - GET /objects/{object_type}/{object_id} -- Stage 2 of the Palantir-
 #   parity UI plan (Object View). Needed no new DataMediator method at
 #   all -- pure composition of visible_schema() + get_object(), both

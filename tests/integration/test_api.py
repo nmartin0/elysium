@@ -632,6 +632,34 @@ def test_visible_action_types_returns_the_callers_own_view(client):
     assert body["UpdateCustomerName"]["parameters"]["customer_id"]["type"] == "object_reference"
 
 
+def test_visible_action_types_never_leaks_sub_writes_or_mutations(client):
+    # A real, second, confirmed bug found and fixed alongside GET
+    # /me/visible-schema's own (see api/routes.py's own comment on this
+    # route for the full reasoning): this route used to spread the
+    # FULL action_def (`**action_def`), leaking each action's own real
+    # sub_writes -- including the literal, mechanical "set property X
+    # to parameter.Y" mutations logic -- to any browser, unfiltered,
+    # over HTTP. Confirmed directly that nothing real needs this here:
+    # affected_object_types already, independently covers the only
+    # legitimate "what does this touch" need, and ActionForm.tsx (the
+    # real, only frontend consumer) never references sub_writes at
+    # all. Only the three real, intentional keys are ever included
+    # now -- this asserts sub_writes is entirely absent, for a real
+    # action (CreateCustomer) whose own real mutations set the MAC
+    # field (region) from user.security_value, exactly the kind of
+    # internal mechanic that should never travel to a browser.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    response = client.get("/api/me/visible-action-types")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body["CreateCustomer"].keys()) == {"affected_object_types", "parameters", "executable"}
+    assert "sub_writes" not in body["CreateCustomer"]
+    assert "sub_writes" not in body["UpdateCustomerName"]
+
+
 def test_visible_action_types_differs_by_role_not_a_static_response(client):
     client.app.state.user_directory.create_user("bob", "correct-pw", "us-west", "customer_service")
     _login(client, "bob", "correct-pw")
