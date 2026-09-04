@@ -165,6 +165,17 @@ describe('PendingWriteCard -- approve', () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
     expect(screen.queryByText('Ada Okafor')).not.toBeInTheDocument()
   })
+
+  it('the resolved "Change applied." Callout uses intent="success" -- a real, positive outcome, confirmed via the real bp6-intent-success class Blueprint itself applies, not just that the right text shows up', async () => {
+    mockedConfirmWrite.mockResolvedValue({})
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Change applied.').closest('.bp6-callout')).toHaveClass('bp6-intent-success'),
+    )
+  })
 })
 
 describe('PendingWriteCard -- reject', () => {
@@ -194,6 +205,18 @@ describe('PendingWriteCard -- reject', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
 
     await waitFor(() => expect(screen.getByText('Change rejected.')).toBeInTheDocument())
+  })
+
+  it('the resolved "Change rejected." Callout has NO intent at all -- deliberately neither success nor danger, confirmed directly: declining a change is a genuine, correct decision either way, not a failure, so it must not carry the same bp6-intent-success class the applied case does', async () => {
+    mockedConfirmWrite.mockResolvedValue({})
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+
+    await waitFor(() => expect(screen.getByText('Change rejected.')).toBeInTheDocument())
+    const callout = screen.getByText('Change rejected.').closest('.bp6-callout')
+    expect(callout).not.toHaveClass('bp6-intent-success')
+    expect(callout).not.toHaveClass('bp6-intent-danger')
   })
 })
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button } from '@blueprintjs/core'
+import { Button, Callout } from '@blueprintjs/core'
 import { query } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
@@ -92,12 +92,15 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
         <Button type="submit" text={submitting ? 'Thinking…' : 'Ask'} loading={submitting} />
       </form>
 
-      {error && <p className="error">{error}</p>}
-      {answer && (
-        <div className="answer">
-          <p>{answer}</p>
-        </div>
-      )}
+      {/* intent="danger" for the error, deliberately no intent at all
+          for the answer (a plain, neutral Callout) -- the answer isn't
+          a "success" in the same sense an error is a failure, it's
+          just the real, informational content the person was waiting
+          for; success/danger stays reserved for genuinely binary
+          outcomes elsewhere (see PendingWriteCard's own Callout usage
+          for that real contrast). */}
+      {error && <Callout intent="danger">{error}</Callout>}
+      {answer && <Callout>{answer}</Callout>}
       {pendingWrite && (
         // No persistent view of an object here to refresh once
         // resolved (unlike ObjectDetailPanel.jsx's own ActionForm) --
@@ -129,7 +132,18 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
 //   a full submit needs a real, slow LLM round-trip the person has
 //   deliberately deferred testing, so the actual query/answer flow itself
 //   was verified through the existing unit suite, not a live LLM call).
+// - Callout for the error message and the answer display, replacing two
+//   bare, differently-shaped elements (<p className="error"> and
+//   <div className="answer"><p>). intent="danger" for the error; the
+//   answer stays deliberately intent-less (a plain, neutral Callout) --
+//   it isn't a "success" in the sense an error is a failure, just the
+//   real, informational content the person was waiting for; success/
+//   danger stays reserved for genuinely binary outcomes (see
+//   PendingWriteCard's own resolved Callout for that real contrast).
+//   Verified live in a real browser: a genuine, simulated network
+//   failure (going offline right before submitting, not a mocked
+//   error) showed the real, styled danger Callout -- icon, red text,
+//   and background -- correctly.
 //
-// PLANNED, NOT YET DONE:
-// - Callout, for the error message and the answer display -- the second
-//   half of this same step, not yet started.
+// This closes out this file's own half of the QueryPanel/PendingWriteCard
+// Blueprint step -- see PendingWriteCard.tsx's own AI-notes for its half.

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button } from '@blueprintjs/core'
+import { Button, Callout } from '@blueprintjs/core'
 import { confirmWrite, getErrorMessage, handleIfSessionExpired } from '../api'
 import { formatFieldName, formatValue } from '../format'
 
@@ -106,14 +106,23 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
   // double-submit without pretending both are doing something.
   const [submittingAction, setSubmittingAction] = useState<'approve' | 'reject' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [outcome, setOutcome] = useState<string | null>(null)
+  // A real, typed object, not a plain string -- redesigned specifically
+  // so the resolved Callout below can pick the right, real intent:
+  // approved and rejected are both genuinely SUCCESSFUL outcomes of
+  // this component's own real job (recording a real, deliberate
+  // decision), never a failure -- but only "approved" is a true
+  // Callout intent="success" in the sense of "the change now exists";
+  // "rejected" stays intentionally neutral (no intent at all), since
+  // declining a change isn't a success OR a failure, just a genuine,
+  // correct decision either way.
+  const [outcome, setOutcome] = useState<{ approved: boolean; message: string } | null>(null)
 
   async function handleDecision(approved: boolean) {
     setSubmittingAction(approved ? 'approve' : 'reject')
     setError(null)
     try {
       await confirmWrite(pendingWrite.id, approved)
-      setOutcome(approved ? 'Change applied.' : 'Change rejected.')
+      setOutcome({ approved, message: approved ? 'Change applied.' : 'Change rejected.' })
       onResolved(approved)
     } catch (err) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
@@ -126,7 +135,7 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
   if (outcome) {
     return (
       <div className="pending-write pending-write--resolved">
-        <p>{outcome}</p>
+        <Callout intent={outcome.approved ? 'success' : undefined}>{outcome.message}</Callout>
       </div>
     )
   }
@@ -157,7 +166,7 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
           <SubWriteFields key={i} subWrite={subWrite} />
         ),
       )}
-      {error && <p className="error">{error}</p>}
+      {error && <Callout intent="danger">{error}</Callout>}
       <div className="pending-write__actions">
         {/* Each button's own loading reflects ONLY its own, real,
             clicked action -- not "either one is submitting." disabled
@@ -251,6 +260,42 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
 //   the in-flight state was actually observable, not just inferred:
 //   clicking Reject showed a real spinner on Reject alone, with
 //   Approve faded and disabled but genuinely not loading.
+// - Callout for both the error message and the resolved outcome,
+//   replacing two bare <p> elements -- the second half of this same
+//   step. intent="danger" for the error, same as every other error
+//   Callout this migration. The resolved outcome needed a real,
+//   deliberate redesign to do properly, not a mechanical swap: outcome
+//   used to be a plain string ("Change applied."/"Change rejected."),
+//   with no way to tell WHICH one had happened without re-parsing the
+//   text itself. Redesigned as a real, typed { approved: boolean;
+//   message: string } object specifically so the resolved Callout
+//   could pick the right, real intent -- intent="success" for approved
+//   (a change now genuinely exists), deliberately NO intent at all for
+//   rejected (declining a change is a correct, deliberate decision
+//   either way, not a failure, so it must not look like one). Two new,
+//   dedicated tests confirm this precisely via the real,
+//   Blueprint-applied bp6-intent-success class (confirmed directly
+//   against Callout's own real DOM output for both the success and
+//   no-intent cases before writing either assertion, not assumed),
+//   backed by a real negative control (forcing both outcomes to
+//   intent="success" reproduced exactly the one, correct failure --
+//   the rejected case's own test). Confirmed live in a real browser
+//   too: a genuine, simulated network failure (going offline right
+//   before submitting a query, not a mocked error) showed the real,
+//   styled danger Callout correctly. The resolved success/neutral
+//   Callouts themselves were confirmed via the unit suite's own direct
+//   DOM-class check rather than forced through a live screenshot --
+//   ObjectDetailPanel's own onResolved handling (real, pre-existing
+//   behavior, nothing to do with this change) unmounts the resolved
+//   card almost immediately once clicked, confirmed directly (even a
+//   100ms-later screenshot already showed the action buttons again,
+//   not the resolved card) -- QueryPanel's own onResolved is a no-op
+//   so doesn't have this same issue, but reaching it live needs a
+//   real, slow LLM round-trip the person has deliberately deferred
+//   testing.
+//
+// This closes out this file's own half of the QueryPanel/PendingWriteCard
+// Blueprint step -- see QueryPanel.tsx's own AI-notes for its half.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Still no semantic "role" labeling for a sub_write within its own
