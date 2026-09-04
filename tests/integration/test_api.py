@@ -90,6 +90,23 @@ def _login(client, username, password):
     return client.post("/api/login", json={"username": username, "password": password})
 
 
+def test_docs_redoc_openapi_are_genuinely_unavailable(client):
+    # A real, confirmed finding, part of a broader "backend is a
+    # kernel, frontend is userspace" audit -- FastAPI's own /docs,
+    # /redoc, and /openapi.json are ENABLED BY DEFAULT and were NOT
+    # gated by get_current_user() at all (registered directly on the
+    # app itself, outside the protected router): confirmed live,
+    # before this fix, that a completely unauthenticated request
+    # could browse the FULL API surface this way, including every
+    # admin-only route's own path. No login at all here, deliberately
+    # -- the real point is that these are unreachable regardless of
+    # auth state, not merely rejected for a missing session the way
+    # every other real, protected route is.
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        response = client.get(path)
+        assert response.status_code == 404
+
+
 def _csrf_headers(client):
     # The X-CSRF-Token header matching the CLIENT's own, CURRENTLY
     # active session -- the common case, where only one user is ever

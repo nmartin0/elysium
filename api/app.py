@@ -102,7 +102,25 @@ UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
 
 
 def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
-    app = FastAPI(title="LLM Data Mediator")
+    # docs_url/redoc_url/openapi_url all explicitly None -- a real,
+    # confirmed finding, part of the same broader "backend is a
+    # kernel, frontend is userspace" audit: FastAPI's own /docs,
+    # /redoc, and /openapi.json are ENABLED BY DEFAULT and NOT gated
+    # by get_current_user() at all (registered directly on the app
+    # itself, outside the protected router) -- confirmed live, not
+    # assumed, that an entirely unauthenticated request could browse
+    # the FULL API surface this way, including every admin-only route
+    # path (GET /users/{username}/visible-schema and its own
+    # siblings). Elysium has no third-party API consumers to serve a
+    # public explorer FOR -- the frontend already knows exactly what
+    # it calls, and there is no legitimate audience for this endpoint
+    # left once that's true. Disabled outright, not merely
+    # auth-gated: a real, considered choice, not the path of least
+    # resistance -- gating FastAPI's own built-in docs routes behind
+    # a custom auth check is possible but meaningfully more involved
+    # than this app genuinely needs, for a feature with no real
+    # audience here at all.
+    app = FastAPI(title="LLM Data Mediator", docs_url=None, redoc_url=None, openapi_url=None)
 
     # CSRF validation -- registered BEFORE add_security_headers below,
     # deliberately: Starlette's own middleware stack makes the LAST-
@@ -261,6 +279,31 @@ app = create_app()
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - docs_url/redoc_url/openapi_url all explicitly set to None -- a
+#   real, confirmed security bug, found during a broader "backend is
+#   a kernel, frontend is userspace" audit (see mediator.py's and
+#   api/routes.py's own AI-notes for the three related HTTP-response
+#   leaks this same audit found): FastAPI's own /docs, /redoc, and
+#   /openapi.json are ENABLED BY DEFAULT and are NOT gated by
+#   get_current_user() at all -- they're registered directly on the
+#   app itself, entirely outside the protected router. Confirmed
+#   live, before this fix, that a completely unauthenticated request
+#   could browse the FULL API surface this way, including every
+#   admin-only route's own path. Elysium has no third-party API
+#   consumers to serve a public explorer FOR -- the frontend already
+#   knows exactly what it calls -- so there's no legitimate audience
+#   left for this once that's true. Disabled outright, not merely
+#   auth-gated -- a real, considered choice: gating FastAPI's own
+#   built-in docs routes behind a custom auth check is possible but
+#   meaningfully more involved than warranted for a feature with no
+#   real audience here. A real, new, dedicated test added
+#   (test_docs_redoc_openapi_are_genuinely_unavailable, tests/
+#   integration/test_api.py), deliberately with NO login at all --
+#   the real point is these are unreachable regardless of auth state,
+#   not merely rejected for a missing session. Confirmed meaningful
+#   via a real negative control. Verified live too: a real,
+#   completely unauthenticated curl against a real, running server
+#   confirmed all three now genuinely 404.
 # - TWO real, separate bugs, both found by the user testing Stage 2's
 #   real react-router-dom routing directly, both fixed in the same
 #   pass, neither one caused by the other:
