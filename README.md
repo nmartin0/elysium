@@ -17,6 +17,11 @@ single-tenant system.
 quality tooling, and a real production install. This file is
 architecture, configuration, and the reasoning behind both.
 
+**The real, recurring engineering principles this project has
+actually developed by** — verification discipline, testing
+philosophy, security posture, commit and collaboration discipline —
+are written down separately in `PRINCIPLES.md`, not repeated here.
+
 ---
 
 ## 1. How the system is organized
@@ -476,6 +481,10 @@ minutes) if never confirmed.
 ---
 
 ## 6. Why it's built this way — the untrusted-LLM design, point by point
+
+These same rules generalize past just the LLM boundary into a real,
+project-wide security posture -- see `PRINCIPLES.md`'s own "Security
+is explicit, fail-safe, and never inferred" section.
 
 - **The LLM never sees a schema element it isn't authorized for.**
 - **"Doesn't exist" and "exists but denied" are indistinguishable**, on purpose, everywhere.

@@ -3,8 +3,9 @@
 Setup, running it locally, running the test suites, code quality
 tooling, and a real production install — in that order. See
 `README.md` for the architecture, the security model, and how to
-configure it for your own organization; this file is purely
-operational.
+configure it for your own organization; see `PRINCIPLES.md` for the
+real, recurring engineering discipline behind how this project is
+actually built and reviewed; this file is purely operational.
 
 ---
 
