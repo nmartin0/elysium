@@ -227,6 +227,11 @@ behavior, detail by detail, with the deliberate departures (a
 different keyboard shortcut, hidden instead of icon-strip collapse)
 each justified against *why* the original pattern works the way it
 does, not copied blindly at a scale this project doesn't operate at.
+`ROADMAP.md`'s own sub-app priorities are this same principle applied
+at a larger scale -- a real, structured research pass against
+Foundry's own documentation, translated deliberately, feature by
+feature, into what a smaller, single-tenant architecture actually
+needs, not a wishlist of what a bigger platform happens to have.
 
 ## 10. Code-quality tooling: several genuinely different questions, not one.
 

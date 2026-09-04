@@ -22,6 +22,10 @@ actually developed by** — verification discipline, testing
 philosophy, security posture, commit and collaboration discipline —
 are written down separately in `PRINCIPLES.md`, not repeated here.
 
+**Planned future sub-apps** — modeled on Palantir Foundry's own
+ontology-aware application suite, scoped down to this project's own
+much smaller architecture — are tracked separately in `ROADMAP.md`.
+
 ---
 
 ## 1. How the system is organized
@@ -477,6 +481,10 @@ minutes) if never confirmed.
 | A new database technology | `core/ontology/interface.py`'s `DataSiloAdapter` | `core/deployment_loader.py`'s `_ADAPTER_REGISTRY` |
 | A new LLM backend | `core/llm/interface.py`'s `LLMAdapter` | `core/deployment_loader.py`'s `_LLM_ADAPTER_REGISTRY` |
 | A new tool | `core/tools/interface.py`'s `Tool` | `core/tools/registry.py`'s `_TOOL_REGISTRY` |
+
+For a whole new sub-app (a new top-level screen in `ui/`, not a new
+backend extension point), see `ROADMAP.md`'s own prioritized list
+first — there's a real chance it's already there.
 
 ---
 
