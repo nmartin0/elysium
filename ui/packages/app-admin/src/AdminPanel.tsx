@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { HTMLTable } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -100,7 +101,20 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       {users === null ? (
         <p>Loading…</p>
       ) : (
-        <table className="user-table">
+        // HTMLTable, not a bare <table> -- Blueprint's own styled
+        // wrapper around a real HTML table, confirmed directly against
+        // its real type definition before using it: it only wraps the
+        // outer <table> element itself (extends React's own real
+        // TableHTMLAttributes), so every child below (<thead>,
+        // <tbody>, <tr>, <td>) stays exactly what it already was, not
+        // rewritten into some other, different table abstraction.
+        // interactive: real hover feedback on a genuinely scannable
+        // list of rows; striped: alternating row backgrounds, which
+        // matters here specifically since each user can also expand a
+        // second, full-width schema row directly beneath its own row
+        // (see the schemaByUsername block below) -- striping helps
+        // keep a user's own two rows visually paired at a glance.
+        <HTMLTable className="user-table" interactive striped>
           <thead>
             <tr>
               <th>Username</th>
@@ -153,7 +167,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
               </Fragment>
             ))}
           </tbody>
-        </table>
+        </HTMLTable>
       )}
     </div>
   )
@@ -216,3 +230,51 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
     </form>
   )
 }
+
+// =============================================================================
+// AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+// later) that lacks this conversation's history. Update this section
+// whenever something genuinely open, deferred, or rejected comes up here.
+// =============================================================================
+//
+// Blueprint migration for this sub-app, in progress -- see Shell.tsx's own
+// AI-notes for the sidebar's own, now-complete migration; this file follows
+// the same discipline (verify a component's real, current type definitions
+// directly against node_modules before using it, never assume from memory
+// or from how an earlier Blueprint version worked).
+//
+// RESOLVED (kept for history):
+// - HTMLTable for the user list, replacing a bare <table>. Confirmed
+//   directly against its real type definition before using it: it only
+//   wraps the outer <table> element itself (extends React's own real
+//   TableHTMLAttributes), so every child (<thead>, <tbody>, <tr>, <td>)
+//   needed zero changes -- a genuinely low-risk, structurally-transparent
+//   swap. interactive + striped props added; confirmed live in a real
+//   browser that both the real bp6-html-table/bp6-interactive/
+//   bp6-html-table-striped classes apply and the table renders correctly.
+//
+// PLANNED, NOT YET DONE (see the roadmap discussed directly with the
+// person -- one Blueprint component at a time, its own commit each):
+// - Alert, replacing window.confirm() for the delete-user flow -- a real,
+//   accessible, styled confirmation dialog instead of a native browser
+//   confirm() (which cannot be styled, is easy to miss/misclick past, and
+//   blocks the whole page's own JS thread while open).
+// - FormGroup/InputGroup/Button for CreateUserForm -- replacing the bare
+//   <label>/<input>/<button> elements with Blueprint's own styled,
+//   accessible form primitives.
+//
+// DEFERRED (known, intentional, not yet built):
+// - No Select for the role field, despite it being the most naturally
+//   Select-shaped field in the form (a closed, small set of valid values
+//   in any real deployment) -- confirmed directly, not assumed: the
+//   backend exposes NO endpoint at all that lists valid role names
+//   (checked api/routes.py and api/apps.py directly; role definitions
+//   live only in each deployment's own, server-side policy.yaml,
+//   read via request.app.state.config.roles, never serialized to the
+//   client anywhere). Hardcoding a fixed list of role names in the
+//   frontend would be actively wrong -- role names are genuinely
+//   deployment-specific, not a fixed, universal set this codebase could
+//   ever safely assume. Stays a plain text InputGroup until/unless a
+//   real "list valid role names" endpoint exists to back a genuine
+//   Select -- a real, separate, backend-first change, not attempted as
+//   part of this frontend-only pass.
