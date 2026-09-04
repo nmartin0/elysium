@@ -47,8 +47,8 @@ afterEach(() => {
 describe('Shell', () => {
   it('renders nav links exactly matching the visibleApps it was given', () => {
     renderShell([
-      { name: 'Query', path: '/query', gating_permission: null },
-      { name: 'Browse', path: '/browse', gating_permission: null },
+      { name: 'Query', path: '/query' },
+      { name: 'Browse', path: '/browse' },
     ])
     expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Browse' })).toBeInTheDocument()
@@ -69,21 +69,21 @@ describe('Shell', () => {
 
   it('shows Admin only when it is actually present in visibleApps', () => {
     renderShell([
-      { name: 'Query', path: '/query', gating_permission: null },
-      { name: 'Admin', path: '/admin', gating_permission: 'manage:users' },
+      { name: 'Query', path: '/query' },
+      { name: 'Admin', path: '/admin' },
     ])
     expect(screen.getByRole('menuitem', { name: 'Admin' })).toBeInTheDocument()
   })
 
   it('renders the correct child route inside Outlet for the current path', () => {
-    renderShell([{ name: 'Admin', path: '/admin', gating_permission: 'manage:users' }], vi.fn(), '/admin')
+    renderShell([{ name: 'Admin', path: '/admin' }], vi.fn(), '/admin')
     expect(screen.getByText('admin screen')).toBeInTheDocument()
     expect(screen.queryByText('query screen')).not.toBeInTheDocument()
   })
 
   it('calls onLogout when Log out is clicked inside the (now real, dropdown) user menu', () => {
     const onLogout = vi.fn()
-    renderShell([{ name: 'Query', path: '/query', gating_permission: null }], onLogout)
+    renderShell([{ name: 'Query', path: '/query' }], onLogout)
     fireEvent.click(screen.getByRole('button', { name: 'Account' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
     expect(onLogout).toHaveBeenCalledTimes(1)
@@ -98,7 +98,7 @@ describe('Shell', () => {
 // storage itself is unavailable -- each tested directly against its
 // own real, observable effect, not inferred from the source.
 describe('Shell -- the collapsible sidebar', () => {
-  const VISIBLE_APPS: VisibleApp[] = [{ name: 'Query', path: '/query', gating_permission: null }]
+  const VISIBLE_APPS: VisibleApp[] = [{ name: 'Query', path: '/query' }]
 
   // Shell.tsx's own live matchMedia listener (addEventListener/
   // removeEventListener, added for the mobile Drawer step) needs
@@ -259,8 +259,8 @@ describe('Shell -- the collapsible sidebar', () => {
 // tests query by that real class rather than by role.
 describe('Shell -- the mobile Drawer', () => {
   const VISIBLE_APPS: VisibleApp[] = [
-    { name: 'Query', path: '/query', gating_permission: null },
-    { name: 'Admin', path: '/admin', gating_permission: null },
+    { name: 'Query', path: '/query' },
+    { name: 'Admin', path: '/admin' },
   ]
 
   // Captures the real callback passed to addEventListener('change',
@@ -552,7 +552,7 @@ describe('Shell -- the Suspense boundary around lazy-loaded sub-app routes', () 
           <Route
             element={
               <Shell
-                visibleApps={[{ name: 'Query', path: '/query', gating_permission: null }]}
+                visibleApps={[{ name: 'Query', path: '/query' }]}
                 currentUser={null}
                 onLogout={onLogout}
               />

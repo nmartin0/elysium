@@ -395,8 +395,25 @@ def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(g
     # action buttons (see discover:action_types/"executable" on
     # ObjectDetailPanel.jsx) -- never show a nav entry for something
     # the caller genuinely cannot use.
+    #
+    # `gating_permission` deliberately excluded from the HTTP response
+    # itself -- a real, third finding of the exact same class as GET
+    # /me/visible-schema's own and GET /me/visible-action-types' own
+    # (see mediator.py's and this file's own AI-notes for both):
+    # confirmed directly, not assumed, that no frontend code anywhere
+    # reads `.gating_permission` off a visible-apps entry (a direct
+    # grep found only a TYPE DECLARATION, never an actual read) --
+    # this backend ALREADY does the real filtering (visible_apps_for()
+    # itself, just above, already excludes any app the caller can't
+    # use at all), so the raw internal permission-STRING NAME gating
+    # each entry (e.g. "manage:users") has no legitimate reason to
+    # travel to the browser at all. `gating_permission` stays a real,
+    # needed field on VISIBLE_APPS/visible_apps_for() itself, though
+    # -- that internal filtering logic genuinely reads it; only this
+    # HTTP-facing shape excludes it, same "filter at the boundary, not
+    # the shared internal source" pattern as both prior fixes.
     roles = request.app.state.config.roles
-    return visible_apps_for(current_user, roles)
+    return [{"name": app["name"], "path": app["path"]} for app in visible_apps_for(current_user, roles)]
 
 
 @router.get("/me/visible-schema", dependencies=[Depends(_no_store)])
@@ -851,6 +868,32 @@ def lock_status_route(resource_name: str, request: Request,
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - GET /me/visible-apps used to return VISIBLE_APPS' own entries
+#   as-is, including `gating_permission` -- a real, THIRD finding of
+#   the exact same class as GET /me/visible-schema's own and GET
+#   /me/visible-action-types' own (see mediator.py's and this file's
+#   own AI-notes above for both): the raw, internal permission-STRING
+#   NAME gating each app (e.g. "manage:users") leaked out, unfiltered,
+#   to any browser. This backend already does the real filtering
+#   (visible_apps_for() itself already excludes any app the caller
+#   can't use at all -- the STRING NAME of what gates it was never
+#   needed by anything downstream), and confirmed directly, not
+#   assumed, that no frontend code anywhere reads .gating_permission
+#   off a visible-apps entry (a direct grep found only a TYPE
+#   DECLARATION on the frontend's own VisibleApp interface, never an
+#   actual read) -- that type updated to match (ui/src/Shell.tsx),
+#   along with every real test fixture that constructed one
+#   (ui/src/Shell.test.tsx). `gating_permission` stays a real, needed
+#   field on VISIBLE_APPS/visible_apps_for() itself, though -- that
+#   internal filtering logic genuinely reads it; only this HTTP-
+#   facing shape excludes it now. A real, new, dedicated test added
+#   (test_visible_apps_never_leaks_gating_permission, tests/
+#   integration/test_api.py); confirmed meaningful via a real negative
+#   control. Verified live too: a real, authenticated browser
+#   session's own real fetch() confirmed the trimmed shape for all
+#   three real apps (including Admin's own real "manage:users" grant,
+#   fully absent from the response), and the real, rendered nav
+#   itself still showed all three correctly -- zero functional loss.
 # - GET /me/visible-action-types used to spread the FULL action_def
 #   (`**action_def`) into its own response -- a real, confirmed
 #   second security bug, found and fixed alongside GET /me/visible-

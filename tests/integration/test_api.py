@@ -398,6 +398,28 @@ def test_visible_apps_shows_admin_with_manage_users(client):
     assert "Admin" in names
 
 
+def test_visible_apps_never_leaks_gating_permission(client):
+    # A real, third finding of the exact same class as GET /me/
+    # visible-schema's own and GET /me/visible-action-types' own (see
+    # mediator.py's and this file's own AI-notes for both): the raw,
+    # internal permission-STRING NAME gating each app (e.g.
+    # "manage:users") used to travel to the browser unfiltered.
+    # Confirmed directly that nothing needs this here: this backend
+    # ALREADY does the real filtering (an app the caller can't use is
+    # simply absent, per the two tests just above), and no frontend
+    # code anywhere reads .gating_permission off a visible-apps entry
+    # (confirmed by a direct grep, not assumed). Only name/path are
+    # ever included now.
+    _make_admin(client)
+
+    response = client.get("/api/me/visible-apps")
+
+    assert response.status_code == 200
+    for app in response.json():
+        assert set(app.keys()) == {"name", "path"}
+        assert "gating_permission" not in app
+
+
 def test_my_visible_schema_differs_by_role_not_a_static_response(client):
     # customer_service_no_email (user_dave's real role in fixtures/
     # policy.yaml) withholds read:Customer.email specifically -- proves

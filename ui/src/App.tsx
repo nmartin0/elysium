@@ -438,6 +438,9 @@ export default function App() {
 //   logging in, the person lands on the default view (/query),
 //   same as before routing existed at all.
 // - visibleApps carries no icon/description -- deliberately minimal
-//   (name + gating_permission + path only), chosen specifically to
-//   keep debugging simple. Revisit if the nav ever needs richer
-//   presentation than a plain text link.
+//   (name + path only -- gating_permission is a real, internal-only
+//   field the backend itself uses to decide which apps to include,
+//   deliberately excluded from the HTTP response and the frontend's
+//   own VisibleApp type both, see api/routes.py's own AI-notes),
+//   chosen specifically to keep debugging simple. Revisit if the nav
+//   ever needs richer presentation than a plain text link.

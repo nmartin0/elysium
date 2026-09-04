@@ -41,13 +41,18 @@ import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMe
 // COLLAPSED MEANS FULLY HIDDEN, not shrunk to an icon strip -- the
 // real reference's own collapsed state still shows one icon per
 // section; visibleApps (GET /me/visible-apps) carries no icon data
-// today, only path/name/gating_permission (see this file's own
-// VisibleApp type below), and adding one would be a real backend and
-// type change outside this specific step's own scope (a layout change
-// only, no backend change -- decided explicitly before starting this
-// file). A future icon-strip collapsed state is a real, deferred
-// possibility once that data exists, not forgotten -- see the AI-only
-// notes at the end of this file.
+// today, only path/name (see this file's own VisibleApp type below
+// -- gating_permission is a real, internal-only field the backend
+// itself uses to decide which apps to include at all; deliberately
+// excluded from the HTTP response and this type both, since nothing
+// here needs the raw permission-string name of what gates an app it
+// can already see is visible -- see api/routes.py's own AI-notes),
+// and adding an icon would be a real backend and type change outside
+// this specific step's own scope (a layout change only, no backend
+// change -- decided explicitly before starting this file). A future
+// icon-strip collapsed state is a real, deferred possibility once
+// that data exists, not forgotten -- see the AI-only notes at the
+// end of this file.
 //
 // Nav is DATA-DRIVEN from visibleApps (GET /me/visible-apps) --
 // replaces three hardcoded <NavLink> entries that were ALWAYS shown
@@ -79,14 +84,6 @@ import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMe
 export interface VisibleApp {
   path: string
   name: string
-  // Not read by this component at all -- included so the type stays
-  // honest to the real GET /me/visible-apps response shape (see
-  // api/routes.py), matching the same "don't invent a narrower type
-  // than what the real object actually is" reasoning ActionForm.tsx's
-  // own ActionDef already established. string | null, not required:
-  // confirmed against this file's own real test data, which
-  // deliberately includes it either way (null for an ungated app).
-  gating_permission?: string | null
 }
 
 interface ShellProps {
@@ -529,6 +526,15 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
 // carelessly.
 //
 // RESOLVED (kept for history):
+// - `gating_permission` removed from the VisibleApp interface --
+//   part of a real, third security fix (see api/routes.py's own
+//   AI-notes for the full story): confirmed by a direct grep that
+//   this field was never actually read anywhere on the frontend,
+//   only declared in this type "to stay honest to the real API
+//   response shape" -- but that response shape itself was the real
+//   bug (an internal permission-string name leaking to the browser
+//   unfiltered), now fixed at the route layer. This type updated to
+//   match, staying honest to the NEW real shape instead.
 // - The bare "Log out" button became a real UserMenu dropdown (see
 //   @elysium/shell-api/components/UserMenu) -- item #3 of the shell/
 //   launcher upgrade plan. currentUser is fetched once in App.tsx
