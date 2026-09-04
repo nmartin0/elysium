@@ -46,20 +46,51 @@ inferred.
    Scoped as its own, first step specifically so every route built in
    the phases below is done the right way from day one, not built
    against the old pattern and retrofitted later.
-1. **Schema metadata richness.** Add `description` to object type
-   fields AND action parameters (currently absent from both --
-   confirmed by reading the real YAML directly, not assumed). Add a
-   REAL, structurally-ENFORCED `required` flag to object type fields
-   -- deliberately not just a documentation-only hint, per "I want all
-   schema metadata to actually be something checked by the system":
-   at deployment-load time (the same moment `validate_action_types()`
-   already runs), verify every `create`-operation action targeting a
-   type with `required` fields actually addresses each one (a literal
-   or a parameter reference). Real, honest limit: this is a
-   STRUCTURAL check (was the field addressed at all), not full
-   field-VALUE validation (does the value satisfy a real constraint
-   like a range, pattern, or enum) -- see "Deferred, not blocking the
-   near-term list" below for that fuller feature.
+1. **Define the ontology's own structural shape -- object types,
+   fields, action types, parameters -- as real Pydantic models.**
+   Revisited directly, not the original position: the real case for
+   this isn't a performance one (the schema loads once, at startup,
+   never a hot path), it's genuine DE-DUPLICATION -- one, real
+   definition of "what a field looks like" instead of two
+   independently-maintained ones (the raw dict shape the loader
+   checks, and a separate Pydantic model the schema-viewer API would
+   otherwise need of its own). These models both parse/validate the
+   loaded YAML AND directly serve as, or feed, the API response shapes
+   from item 0 above. `description` added to both object type fields
+   and action parameters this way too (confirmed absent from both
+   today by reading the real YAML directly, not assumed) -- a natural,
+   optional field on the same model, not a separate addition.
+
+   Deliberately, explicitly NOT forcing the existing, genuinely
+   CROSS-REFERENTIAL checks (does an action's `object_reference`
+   parameter point at a real, declared object type elsewhere in the
+   same schema) into this -- confirmed directly, not guessed at, that
+   this doesn't belong inside a single Pydantic model's own
+   `model_validator`: those checks inherently need to see the WHOLE,
+   assembled schema at once, so they stay their own, separate,
+   already-correct pass (the existing `validate_action_types()`/
+   `validate_object_types()`/`validate_roles()`), run AFTER Pydantic
+   has structurally parsed each individual piece -- not retrofit into
+   a shape they were never a natural fit for.
+
+   A REAL, genuine "required" flag on OBJECT TYPE fields (as opposed
+   to action parameters, which already have one) was investigated and
+   deliberately NOT built, once real precedent was actually checked
+   rather than assumed: Palantir's own real, published SDK schema for
+   an action's own parameter (`ParameterDict`, in their public
+   `foundry-platform-python` docs) has `required: StrictBool` -- but
+   there is no equivalent anywhere on the object type's own property
+   definition. `required` is exclusively an action-parameter concept
+   in Palantir's own, real, time-tried model. Elysium's own existing
+   convention already matches this exactly (`required` only ever
+   declared on `action_types.*.parameters.*`), and confirmed directly,
+   already genuinely enforced today, not just declared --
+   `write_mediator.py`'s own real check
+   (`if param_spec.get("required") and param_name not in parameters:
+   raise ValueError(...)`) already rejects a missing required
+   parameter at proposal time. A real, valuable finding that PREVENTED
+   building something with no real precedent anywhere, not a gap that
+   needed closing.
 2. **Real aggregation/counting primitives in `DataMediator`.**
    `count_objects()`, `aggregate_by_field()`, and a count-only variant
    of the reverse-link resolver -- confirmed as a real, total gap
@@ -79,61 +110,48 @@ inferred.
    current hard 50-result cap with `total_matches` returned but no way
    to actually fetch more -- already named as a known gap in the
    route's own existing comments.
-4. **A persistent, reviewer-based `PendingWriteStore` rebuild, on
-   PostgreSQL specifically.** The one genuinely blocking gap for the
-   Approvals inbox: today's store requires the CONFIRMING user to be
-   the exact same person who proposed the write (`pop()`'s own
-   `owner_user_id != requesting_user_id` check) -- there is no
-   "someone else reviews this" concept anywhere in the current model.
-   Also in-memory only (lost on restart; the store's own docstring
-   already, honestly documents this as incompatible with a future
-   multi-worker deployment) and has a 15-minute TTL, fine for "are you
-   sure" but wrong for "wait for a real reviewer." Rebuilt as: real
-   persistence, reviewer eligibility derived from the SAME RBAC check
-   `propose_action` already uses (never a separate ACL), real listing
-   by eligibility (not owner), and a real, much longer lifetime.
-   Scoped to PostgreSQL specifically, not a full-system migration --
-   this is the one piece that already, directly needs what Postgres
-   uniquely provides (real concurrent-writer support, and a real
-   shared store reachable from more than one worker process), so it's
-   the natural, minimal place to start -- see "PostgreSQL scope" below
-   for the fuller reasoning and the SQLite-for-dev/Postgres-for-prod
-   pattern this adopts.
-5. **Real query/read methods on `AuditLog`.** Currently write-only --
-   plenty of real `log_*()` methods, confirmed zero methods that read
-   anything back. Approvals' own "audit trail of past decisions" needs
-   real `get_*()` methods added, not just more logging.
 
 ### PostgreSQL scope
 
-Scoped narrowly and deliberately: the NEW pending-writes store above
-moves to PostgreSQL; every existing SQLite file (`mediator.db`,
-`write_log.db`, `credentials.db`, and the rest) stays on SQLite for
-now. Revisit moving any of the others only if real concurrent-write
-pressure actually shows up there -- not preemptively.
+Deliberately deferred, not scoped into the build order above --
+"let's defer this for now, and continue using the SQLite internally
+but migrate to PostgreSQL eventually." When it IS taken up, the scope
+already worked out stays the right one: NOT a full-system migration,
+just the new, rebuilt pending-writes store (see "Deferred" below) --
+that's the one piece that already, directly needs what Postgres
+uniquely provides (real concurrent-writer support, and a real shared
+store reachable from more than one worker process), confirmed
+directly against the store's own docstring already, honestly
+documenting incompatibility with a future multi-worker deployment.
+Every existing SQLite file (`mediator.db`, `write_log.db`,
+`credentials.db`, and the rest) stays on SQLite regardless, revisited
+only if real concurrent-write pressure actually shows up there too --
+not preemptively.
 
 **Local dev keeps SQLite as the default, production uses Postgres for
-whatever's actually been migrated to it** -- a common, well-supported
-pattern, and a real, direct benefit for this project specifically:
-the backend's own 562-test suite leans on how fast a SQLite file (or
-in-memory DB) is to create and tear down per test, run constantly
-during development. Real, honest risk that comes with this split,
-not just upside: SQLite and PostgreSQL aren't perfectly identical in
-behavior (date/time handling, case sensitivity, some JSON function
-differences) -- something could pass locally on SQLite and break in
-production on Postgres. Mitigation: keep the fast SQLite suite as the
-everyday default, but also run the full suite against a real,
-running Postgres instance in CI (or at minimum periodically) for
-whatever part of the system actually lives there, catching divergence
-before it ships rather than after.
+whatever's actually been migrated to it, whenever that happens** -- a
+common, well-supported pattern, and a real, direct benefit for this
+project specifically: the backend's own 562-test suite leans on how
+fast a SQLite file (or in-memory DB) is to create and tear down per
+test, run constantly during development. Real, honest risk that comes
+with this split, not just upside: SQLite and PostgreSQL aren't
+perfectly identical in behavior (date/time handling, case sensitivity,
+some JSON function differences) -- something could pass locally on
+SQLite and break in production on Postgres. Mitigation, whenever this
+is taken up: keep the fast SQLite suite as the everyday default, but
+also run the full suite against a real, running Postgres instance in
+CI (or at minimum periodically) for whatever part of the system
+actually lives there, catching divergence before it ships rather than
+after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
 - **Full field-VALUE validation** (real constraints -- ranges,
   patterns, enum membership -- not just the structural "was this
-  field addressed" check in phase 1 above). Genuinely valuable, but
-  doesn't block any of the four near-term sub-apps, so it's deferred
-  rather than competing with them for priority right now.
+  field addressed" check the original required-field idea explored).
+  Genuinely valuable, but doesn't block any of the four near-term
+  sub-apps, so it's deferred rather than competing with them for
+  priority right now.
 - **A real shared-properties / interface concept** in the ontology
   schema (RDFS-style, matching what Palantir itself calls
   "Interfaces") -- e.g. a `Timestamped` interface both `Customer` and
@@ -144,19 +162,33 @@ before it ships rather than after.
   validation runs), not a new file format. Deliberately deferred, not
   rejected -- worth real design attention once there's a second real
   need for it, matching this project's own "no speculative code"
-  principle.
-- **A full Pydantic retrofit of the ontology loader's own
-  validation** (as opposed to using Pydantic for new API response
-  models, which is already agreed and in the build-order list above).
-  Considered directly and deliberately NOT adopted, not merely
-  deferred -- the schema loads exactly once, at deployment startup,
-  never a hot path, so Pydantic's own real strengths (fast parsing,
-  automatic coercion, tight per-request integration) don't apply
-  here; the existing `validate_*` functions are real, correct,
-  already-tested code, and converting their genuinely cross-
-  referential checks to Pydantic's own `model_validator` hooks
-  wouldn't make them simpler, only riskier to rewrite for no real
-  gain.
+  principle. A real, concrete design wrinkle flagged for whoever
+  eventually picks this up, not resolved now: should a LINK's own
+  `target` be allowed to name an interface, not just a concrete
+  object type -- e.g. a hypothetical `Comment` object type with
+  `subject: {type: link, target: Auditable, cardinality: one}`,
+  letting one field point at EITHER a `Transaction` or an `Account`
+  (whichever the comment actually concerns), if both implement a
+  shared `Auditable` interface, instead of needing one separate field
+  per possible concrete target type.
+- **A persistent, reviewer-based `PendingWriteStore` rebuild on
+  PostgreSQL, and the real `AuditLog` query methods that would back
+  its own history view.** Deferred together, deliberately -- "let's
+  defer this for now, and continue using SQLite internally but
+  migrate to PostgreSQL eventually." This is still the one, real,
+  confirmed BLOCKING gap for a real Approvals inbox (today's store
+  requires the CONFIRMING user to be the exact same person who
+  proposed the write, is in-memory only, and has a 15-minute TTL --
+  see this file's own git history for the fuller, original finding),
+  so the Approvals sub-app itself (still item 3 in "Near-term" below)
+  is correspondingly on hold until this is taken up, not truly
+  buildable in parallel with the rest of the near-term list above.
+  When it IS taken up, the real design already worked out (reviewer
+  eligibility from the SAME RBAC check `propose_action` already uses,
+  real listing by eligibility not owner, real persistence, a real,
+  much longer lifetime) and the PostgreSQL scoping (see "PostgreSQL
+  scope" above -- just this one new store, not a full-system
+  migration) both still stand.
 - **PostgreSQL row-level security for MAC.** Explicitly held off --
   MAC and RBAC both stay in Python, in `check_access()`, as the one,
   single point of enforcement. Real reasons this was set aside, not
@@ -223,15 +255,18 @@ highest-precedent first, highest-effort/lowest-immediate-ROI last.
    with a real batch cap. A small set of filter-capable charts
    (Listogram, Histogram, Single Statistic) before anything fancier
    (maps, grid plots).
-3. **A Pending Changes / Approvals inbox.** The two-phase
-   propose/confirm mechanism already exists (`write_log.db`,
-   confirm/reject); this is giving it its own queue view across the
-   whole org instead of only inline, per-submission. Reviewer
-   eligibility derived from the SAME RBAC+MAC check that gates the
-   underlying action -- never a separate ACL. A field-level
-   before/after diff (Foundry's own convention: changed value
-   highlighted, prior value muted), itself filtered through MAC so a
-   reviewer never sees a field they couldn't otherwise access.
+3. **A Pending Changes / Approvals inbox.** *(Currently on hold --
+   its own real, blocking backend prerequisite, the `PendingWriteStore`
+   rebuild, is deferred pending an eventual PostgreSQL migration; see
+   "Backend foundation work" above.)* The two-phase propose/confirm
+   mechanism already exists (`write_log.db`, confirm/reject); this is
+   giving it its own queue view across the whole org instead of only
+   inline, per-submission. Reviewer eligibility derived from the SAME
+   RBAC+MAC check that gates the underlying action -- never a separate
+   ACL. A field-level before/after diff (Foundry's own convention:
+   changed value highlighted, prior value muted), itself filtered
+   through MAC so a reviewer never sees a field they couldn't
+   otherwise access.
 4. **Vertex-lite: a minimal, read-only link explorer.** The schema
    already has real `link` fields (confirmed: 5 in the test fixtures,
    2 in the real deployment config) and single-hop link navigation
