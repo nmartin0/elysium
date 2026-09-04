@@ -102,19 +102,31 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 // frontend-design skill's "responsive down to mobile" quality-floor
 // requirement -- not a complete mobile redesign, which is real,
 // separate, deferred work (see the AI-only notes at the end of this
-// file). This same query now drives TWO real, live things below, not
-// just the one-time initial default it originally only decided:
-// getInitialCollapsedState()'s own initial read, AND isMobile's own
-// real, live matchMedia listener, which is what decides whether
-// Drawer or the plain <aside> actually renders, kept current for the
-// whole session, not just at mount.
+// file). This same query now drives THREE real, live things below,
+// not just the one-time initial default it originally only decided:
+// resolveCollapsedFromStorageOrViewport()'s own reads (both at mount
+// AND again on exiting mobile), AND isMobile's own real, live
+// matchMedia listener, which is what decides whether Drawer or the
+// plain <aside> actually renders, kept current for the whole session,
+// not just at mount.
 const MOBILE_BREAKPOINT_QUERY = '(max-width: 640px)'
 
 // Read once, synchronously, as the real initial value -- not two
 // renders (one wrong, then corrected) -- React's own lazy useState
 // initializer form (a function, not a value) runs exactly once, on
 // the very first render, before anything ever paints.
-function getInitialCollapsedState(): boolean {
+//
+// Reused a second time, well after mount, not just at the "initial"
+// moment its own name originally implied -- see the exiting-mobile
+// effect further down, which calls this same function again to
+// restore the real, persisted desktop preference once a live resize
+// crosses back OUT of mobile. That reuse is exactly why this function
+// was never named getInitialCollapsedState in the first place, or
+// renamed here rather than duplicated: the real, underlying logic --
+// "read the persisted choice; if there isn't one, fall back to a
+// live viewport check" -- is identical in both cases, not two
+// different concerns that only coincidentally share a shape.
+function resolveCollapsedFromStorageOrViewport(): boolean {
   try {
     const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
     if (stored !== null) return stored === 'true'
@@ -136,7 +148,8 @@ function getInitialCollapsedState(): boolean {
 // real, genuine DRY violation, not a stylistic nitpick: the same
 // key, the same String() conversion, the same silently-swallowed
 // failure reasoning, duplicated rather than shared. Module-level, not
-// an inner function, matching getInitialCollapsedState's own -- this
+// an inner function, matching resolveCollapsedFromStorageOrViewport's
+// own -- this
 // doesn't close over any component-local state at all, just a plain
 // boolean argument and the one, shared storage key.
 function persistCollapsedChoice(value: boolean): void {
@@ -188,7 +201,7 @@ function getIsMobileSnapshot(): boolean {
 }
 
 export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps) {
-  const [collapsed, setCollapsed] = useState<boolean>(getInitialCollapsedState)
+  const [collapsed, setCollapsed] = useState<boolean>(resolveCollapsedFromStorageOrViewport)
   // useSyncExternalStore, not useState+useEffect -- see
   // subscribeToMobileBreakpoint/getIsMobileSnapshot's own header
   // comment above for the full reasoning. This one hook call replaces
@@ -271,9 +284,9 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // genuinely different, lesser-consent action than actually choosing
   // to open the sidebar, and it broke the same "closed by default,
   // deliberately opened" pattern already governing both the initial
-  // mobile default (getInitialCollapsedState()) and the auto-close-
-  // on-navigate effect below. Fixed to match those, not left as its
-  // own, inconsistent third rule.
+  // mobile default (resolveCollapsedFromStorageOrViewport()) and the
+  // auto-close-on-navigate effect below. Fixed to match those, not
+  // left as its own, inconsistent third rule.
   //
   // setCollapsed, NOT setCollapsedPersisted -- deliberately does not
   // write to localStorage. This is a real, viewport-driven default,
@@ -283,37 +296,50 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // that may have had nothing to do with any real intent about the
   // sidebar at all.
   //
-  // Deliberately does NOT do anything special on the reverse
-  // transition (mobile back to desktop) -- collapsed simply stays
-  // whatever it already was (closed, from entering mobile, unless the
-  // person explicitly reopened it while still on mobile), and the
-  // container swaps back to the in-flow <aside>. A person can reopen
-  // it with one tap either way; a second, separate rule for the
-  // reverse direction wasn't asked for and isn't obviously more
-  // correct than this, simpler default.
+  // On the REVERSE transition (mobile back to desktop), restores the
+  // real, persisted desktop preference from storage -- a real,
+  // deliberate REVISION of this file's own earlier, explicit decision
+  // to leave collapsed exactly as it was on this exact transition,
+  // made directly in response to real, live testing, not an oversight
+  // corrected quietly: resizing down (auto-closing the sidebar above,
+  // correctly, silently) and then immediately back up left the
+  // sidebar hidden until a manual tap, even though the person never
+  // took any action of their own to close it in the first place --
+  // confirmed, directly, to read as genuinely surprising, not merely
+  // "a second, equally valid default." Restoring here is the one place
+  // in this whole file resolveCollapsedFromStorageOrViewport() gets
+  // called a SECOND time, well after mount -- deliberately reusing the
+  // exact same "read the persisted choice; fall back to a live
+  // viewport check" logic the initial mount already relies on, not a
+  // separate, duplicated rule: the force-close two paragraphs up
+  // deliberately never touches storage, precisely so the real,
+  // original desktop preference is still sitting there, untouched,
+  // whenever this moment comes to restore it.
   //
-  // Reacts to a genuine TRANSITION into mobile (false -> true), not
-  // merely "isMobile is currently true" -- wasNotMobileRef holds the
-  // previous render's own isMobile value, read (and then updated)
-  // inside the effect itself. On the very first render, the ref's own
+  // Reacts to a genuine TRANSITION either direction, not merely
+  // "isMobile is currently X" -- wasMobileRef holds the previous
+  // render's own isMobile value, read (and then updated) inside the
+  // effect itself. On the very first render, the ref's own
   // initializer captures whatever isMobile already was at that exact
   // moment, so the very first effect run always computes
-  // wasNotMobile = !isMobile -- meaning the `isMobile && wasNotMobile`
-  // condition below can never be true on mount, regardless of whether
-  // isMobile starts true or false. That's deliberate, not incidental:
-  // the initial mount-time state is getInitialCollapsedState()'s own,
-  // separate, already-correct responsibility; this effect must only
-  // ever react to a REAL, later change, the same real distinction the
-  // auto-close-on-navigate effect below also has to make, just via a
+  // wasMobile === isMobile -- meaning NEITHER branch below can ever
+  // fire on mount, regardless of whether isMobile starts true or
+  // false. That's deliberate, not incidental: the initial mount-time
+  // state is resolveCollapsedFromStorageOrViewport()'s own, separate,
+  // already-correct responsibility; this effect must only ever react
+  // to a REAL, later change, the same real distinction the auto-
+  // close-on-navigate effect below also has to make, just via a
   // different mechanism (that one guards the first run explicitly,
   // this one derives it from comparing against a genuine previous
   // value instead).
-  const wasNotMobileRef = useRef(!isMobile)
+  const wasMobileRef = useRef(isMobile)
   useEffect(() => {
-    const wasNotMobile = wasNotMobileRef.current
-    wasNotMobileRef.current = !isMobile
-    if (isMobile && wasNotMobile) {
+    const wasMobile = wasMobileRef.current
+    wasMobileRef.current = isMobile
+    if (isMobile && !wasMobile) {
       setCollapsed(true)
+    } else if (!isMobile && wasMobile) {
+      setCollapsed(resolveCollapsedFromStorageOrViewport())
     }
   }, [isMobile])
 
@@ -604,6 +630,32 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
 //   never triggered onClose at all, even after a full waitFor
 //   timeout), the same real pattern UserMenu's own hand-rolled click-
 //   outside detection already used for the same underlying reason.
+// - A real, deliberate REVISION of this file's own earlier, explicit
+//   decision to do nothing special on the reverse transition (mobile
+//   back to desktop) -- made directly in response to real, live
+//   testing, not a quietly-corrected oversight: resizing down into
+//   mobile (correctly auto-closing, per the entry above) and then
+//   immediately back up left the sidebar hidden until a separate,
+//   manual tap, even though the person never took any action of their
+//   own to close it -- reported directly as genuinely surprising, not
+//   assumed to be a real problem in advance. Fixed by restoring the
+//   real, persisted desktop preference (via
+//   resolveCollapsedFromStorageOrViewport(), the same function the
+//   initial mount already uses, called a second time here rather than
+//   duplicated) the moment isMobile transitions back to false --
+//   possible specifically because the entering-mobile force-close
+//   deliberately never touches storage, so the real, original
+//   preference is always still sitting there to restore. getInitial-
+//   CollapsedState() renamed to resolveCollapsedFromStorageOrViewport()
+//   as part of this same change, reflecting its now-genuine dual use,
+//   not just the one-time "initial" read its old name implied. Two
+//   new, dedicated tests confirm this precisely: one starting from a
+//   genuinely open desktop preference (restores to open, matching the
+//   real report), one starting from a genuinely, deliberately closed
+//   one (stays closed) -- confirming this restores the real, persisted
+//   choice, not just "always reopens." Both confirmed live in a real
+//   browser too, reproducing the exact reported resize-down-then-up
+//   sequence end to end.
 //
 // DEFERRED (known, intentional, not yet built):
 // - No real icon-strip collapsed state -- see this file's own header

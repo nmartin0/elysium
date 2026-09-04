@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { lazy, type ComponentType } from 'react'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
@@ -332,7 +332,14 @@ describe('Shell -- the mobile Drawer', () => {
     renderShell(VISIBLE_APPS)
     expect(document.querySelector('aside.app__sidebar')).not.toBeNull()
 
-    simulateChange(true)
+    // act(), not a bare call -- entering mobile now also triggers the
+    // force-close branch of the same effect (a real, existing state
+    // update, present before this test file's own restore-on-exit
+    // additions too) -- confirmed directly, not assumed: this exact
+    // test produced a real "not wrapped in act(...)" warning.
+    act(() => {
+      simulateChange(true)
+    })
 
     // changeHandler is invoked directly here, not through a real DOM
     // event/fireEvent -- React does not know to flush the resulting
@@ -363,7 +370,9 @@ describe('Shell -- the mobile Drawer', () => {
     // OPEN on desktop, not already collapsed for some other reason.
     expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
 
-    simulateChange(true)
+    act(() => {
+      simulateChange(true)
+    })
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument())
   })
@@ -374,10 +383,55 @@ describe('Shell -- the mobile Drawer', () => {
     renderShell(VISIBLE_APPS)
     expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBeNull()
 
-    simulateChange(true)
+    act(() => {
+      simulateChange(true)
+    })
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument())
     expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBeNull()
+  })
+
+  it('a resize down into mobile (auto-closing) and immediately back up to desktop restores the sidebar to OPEN, not stuck closed -- a real, reported gap, not a hypothetical: reported directly after live testing that resizing back up left the sidebar hidden until a manual tap, even though nothing was ever deliberately closed', async () => {
+    const { mql, simulateChange } = mockLiveMediaQueryList(false)
+    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
+    renderShell(VISIBLE_APPS)
+    // Genuinely open on desktop first -- no stored preference at all,
+    // so this is the real, default-open starting point the report
+    // itself started from, not a contrived setup.
+    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+
+    act(() => {
+      simulateChange(true)
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument())
+
+    act(() => {
+      simulateChange(false)
+    })
+
+    // The real, reported expectation: back to OPEN, automatically --
+    // not left closed until a separate, manual tap on the toggle.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument())
+  })
+
+  it('the SAME resize round-trip, but starting from a genuinely, deliberately CLOSED desktop preference, stays closed -- confirms this restores the real, persisted choice, not just "always reopens"', async () => {
+    const { mql, simulateChange } = mockLiveMediaQueryList(false)
+    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'true')
+    renderShell(VISIBLE_APPS)
+    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
+
+    act(() => {
+      simulateChange(true)
+    })
+    await waitFor(() => expect(document.querySelector('.bp6-drawer')).toBeNull())
+
+    act(() => {
+      simulateChange(false)
+    })
+
+    await waitFor(() => expect(document.querySelector('aside.app__sidebar')).not.toBeNull())
+    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
   })
 
   it('a real, live matchMedia change switches back from the mobile Drawer to the desktop <aside>', async () => {
@@ -387,7 +441,18 @@ describe('Shell -- the mobile Drawer', () => {
     renderShell(VISIBLE_APPS)
     expect(document.querySelector('.bp6-drawer')).not.toBeNull()
 
-    simulateChange(false)
+    // act(), not a bare call -- new here specifically, not carried
+    // forward unexamined: exiting mobile now ALSO triggers a second,
+    // real state update inside the same effect (restoring the
+    // persisted desktop preference, see Shell.tsx's own comment on
+    // this exact transition), and that second update is genuinely
+    // what a bare, un-act()-wrapped simulateChange() call left
+    // dangling -- confirmed directly, not assumed: a real "not wrapped
+    // in act(...)" warning appeared on this exact test, and only this
+    // one, the moment this second update was added.
+    act(() => {
+      simulateChange(false)
+    })
 
     // Same real, confirmed reason as the test above -- changeHandler
     // is a direct call, not a dispatched DOM event.
