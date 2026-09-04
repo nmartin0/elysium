@@ -466,33 +466,60 @@ button.danger {
   font-size: 0.9rem;
 }
 
-.object-search__results {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
+/* CardList/Card, not a bare <ul>/<li> -- see ObjectSearchPanel.tsx's
+   own comment on why Card must be CardList's own DIRECT child
+   (confirmed directly against Blueprint's real, shipped CSS: its own
+   borders/hover states/rounded corners all key off a real
+   `.bp6-card-list > .bp6-card` direct-child selector, which a <Link>
+   wrapper in between would silently break). */
 .object-search__result {
-  border-radius: 8px;
-  overflow: hidden;
+  /* position: relative -- what .object-search__link's own ::after
+     below resolves its inset: 0 against. Without this, the stretched
+     hitbox would expand to the nearest ANY positioned ancestor
+     instead (likely much larger than this one card), not the
+     intended, real element. */
+  position: relative;
 }
 
+/* A real, second Blueprint-CSS-override lesson this migration, beyond
+   Shell.tsx's own sidebar one -- confirmed directly, not assumed: a
+   Card that's CardList's own direct child gets `display: flex;
+   align-items: center` from Blueprint's own real, shipped CSS (its
+   own deliberate "single-line list row" default), which silently laid
+   this card's own multi-line content (title, subtitle, a whole fields
+   table) out side-by-side instead of stacked -- confirmed directly by
+   inspecting the real, live card's own computed style before writing
+   this fix, not guessed at from the CSS source alone (a real, isolated
+   reproduction OUTSIDE a CardList wrapper initially, misleadingly,
+   worked fine, which is exactly what pointed at CardList's own direct-
+   child rule as the real, missing piece). Same specificity-matching
+   discipline already established for the sidebar's own overrides: two
+   real, genuinely-present classes together on each side of the child
+   combinator (0,4,0), reliably beating Blueprint's own 0,2,0 rule
+   regardless of source order. */
+.object-search__results.bp6-card-list > .object-search__result.bp6-card {
+  display: block;
+}
+
+/* The real "stretched link" pattern (the same one Bootstrap's own
+   stretched-link utility uses) -- deliberately NOT the whole card's
+   own visible content wrapped in one <Link> (this file's own earlier,
+   pre-Blueprint version): only the title text itself is real,
+   visible <Link> content, kept in normal flow; the ::after pseudo-
+   element below is what actually expands the real, clickable/
+   keyboard-focusable hitbox to cover the entire card, working
+   correctly regardless of how the rest of the card's own content
+   (subtitle, fields) is laid out around it. */
 .object-search__link {
   display: block;
-  padding: 0.85rem 1rem;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
   color: inherit;
   text-decoration: none;
-  transition: background-color 0.1s ease;
 }
 
-.object-search__link:hover {
-  background: #f7f7f8;
+.object-search__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
 }
 
 .object-search__result-title {

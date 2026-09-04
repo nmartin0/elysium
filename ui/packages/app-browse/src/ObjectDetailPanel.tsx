@@ -1,3 +1,4 @@
+import { Button, Callout } from '@blueprintjs/core'
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getObjectDetail, getVisibleActionTypes, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
@@ -166,7 +167,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   if (error) {
     return (
       <div className="object-detail">
-        <p className="error">{error}</p>
+        <Callout intent="danger">{error}</Callout>
       </div>
     )
   }
@@ -208,10 +209,14 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 
       {availableActions.length > 0 && !activeAction && (
         <div className="object-detail__actions">
+          {/* variant="outlined" -- same real, de-emphasized styling
+              already established for every other former
+              className="secondary" button this migration has
+              converted (PendingWriteCard's own Reject, most recently)
+              -- confirmed against Button's real, current variant
+              options: "minimal" | "outlined" | "solid". */}
           {availableActions.map(([actionName]) => (
-            <button key={actionName} className="secondary" onClick={() => setActiveAction(actionName)}>
-              {actionName}
-            </button>
+            <Button key={actionName} variant="outlined" text={actionName} onClick={() => setActiveAction(actionName)} />
           ))}
         </div>
       )}
@@ -300,6 +305,17 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 // for the whole visible-schema response -- exported from THIS file
 // (see this file's own top-of-file comment for why here) once the
 // TypeScript migration reached this component.
+//
+// Blueprint migration: Callout intent="danger" for the error message,
+// same as every other error Callout this migration; Button
+// variant="outlined" for the available-actions buttons, replacing bare
+// <button className="secondary"> elements -- the same real, de-
+// emphasized styling already established for every other former
+// className="secondary" button this migration has converted. Part of
+// the ObjectSearchPanel/ObjectDetailPanel step discussed directly with
+// the person -- see ObjectSearchPanel.tsx's own AI-notes for the real,
+// harder half of this same step (Card/CardList, plus a real, live-
+// only-discoverable Blueprint CSS bug found and fixed along the way).
 //
 // DEFERRED (known, intentional, not yet built):
 // - No "return to where I was" breadcrumb/back trail across multiple
