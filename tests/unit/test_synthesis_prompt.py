@@ -10,6 +10,8 @@ mechanism itself, given a scripted answer, the same way the rest of
 tests/unit/ tests mechanisms in isolation from model behavior.
 """
 
+import requests
+
 from core.llm.synthesis_prompt import _has_only_valid_citations, synthesize_insight
 
 
@@ -22,6 +24,22 @@ class _FakeClient:
 
     def chat(self, system_prompt, user_message, json_mode=False, temperature=None):
         return self.scripted_answer
+
+
+class _FailingClient:
+    """A minimal LLMAdapter that always raises, matching a real network failure."""
+    max_concurrent_requests = None
+
+    def chat(self, system_prompt, user_message, json_mode=False, temperature=None):
+        # A REAL requests.RequestException, not a generic Exception --
+        # confirmed directly (not assumed) that a genuine
+        # ConnectionError's own str() representation includes real,
+        # internal infrastructure detail (host/port/URL path), which
+        # is EXACTLY what this test exists to prove never reaches the
+        # caller-facing answer text anymore.
+        raise requests.ConnectionError(
+            "HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded"
+        )
 
 
 # --- _has_only_valid_citations() -- the pure verification logic itself
@@ -91,6 +109,35 @@ def test_synthesize_insight_still_short_circuits_on_empty_records():
     client = _FakeClient("this should never be returned")
     answer = synthesize_insight(client, "What is Alice's department?", [])
     assert "no matching records were found" in answer
+
+
+def test_synthesize_insight_never_leaks_the_raw_llm_backend_exception(caplog):
+    # A real, confirmed bug found and fixed during a broader "backend
+    # is a kernel, frontend is userspace" audit -- the same class of
+    # issue as three real HTTP-response leaks found and fixed
+    # elsewhere in this same audit (see mediator.py's and api/
+    # routes.py's own AI-notes for those). A real
+    # requests.RequestException's own str() genuinely includes
+    # internal infrastructure detail (host/port/URL path) -- this
+    # used to be returned directly as the user-facing "answer" on any
+    # real LLM-backend network failure. The real, original intent
+    # (return an error string, don't crash) stays; only the leaked
+    # CONTENT was ever the bug -- the caller-facing answer must now be
+    # a genuinely generic message, with the real, detailed exception
+    # only ever reaching the server's own log, never the caller.
+    client = _FailingClient()
+    answer = synthesize_insight(client, "What is Alice's department?", [{"department": "engineering"}])
+
+    assert "localhost" not in answer
+    assert "11434" not in answer
+    assert "ConnectionPool" not in answer
+    assert "temporarily unreachable" in answer
+
+    # The real, detailed exception IS still captured -- just server-
+    # side now, not handed to the caller. Confirms this fix didn't
+    # just delete the information, it moved it to the one place it
+    # still legitimately belongs.
+    assert "11434" in caplog.text
 
 
 def test_possibly_incomplete_appends_the_note_to_the_system_prompt():

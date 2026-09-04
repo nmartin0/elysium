@@ -147,7 +147,32 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
     try:
         answer = client.chat(system_prompt, user_message, json_mode=False, temperature=0)
     except requests.RequestException as e:
-        return f"[synthesis_prompt] request failed: {e}"
+        # A real, confirmed leak, fixed here: the raw exception STRING
+        # itself was returned directly as the user-facing "answer" --
+        # confirmed directly, not assumed, that a real
+        # requests.RequestException's own str() genuinely includes the
+        # internal LLM backend's own host/port/URL path (e.g.
+        # "HTTPConnectionPool(host='localhost', port=11434)..."),
+        # meaning a real network failure would have leaked real
+        # internal infrastructure detail straight to the frontend, the
+        # same broader class of bug as the three HTTP-response leaks
+        # found and fixed elsewhere in this same audit (see
+        # mediator.py's and api/routes.py's own AI-notes). The real,
+        # original INTENT here was correct and stays exactly the same
+        # -- synthesis_prompt.py's own adapter docstring already,
+        # explicitly documents "synthesis returns an error string"
+        # rather than crashing or propagating -- only the CONTENT of
+        # that string was ever the bug. The real, detailed exception
+        # is still fully captured, just server-side now (this
+        # project's own established "generic to the caller, detailed
+        # in the log" pattern, used throughout), not handed to
+        # whoever happened to be running a query during a real,
+        # genuine LLM-backend outage.
+        logger.warning(f"synthesize_insight: LLM backend request failed: {e}")
+        return (
+            f'Regarding "{original_query}": the answer could not be generated right '
+            f"now (the language model backend is temporarily unreachable). Please try again."
+        )
 
     if not _has_only_valid_citations(answer, len(records)):
         logger.warning(f"synthesis answer cited a nonexistent record index, discarding: {answer!r}")
@@ -166,3 +191,43 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
         )
 
     return answer
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section whenever
+# something genuinely open, deferred, or rejected comes up for this file.
+# =============================================================================
+#
+# RESOLVED (kept for history):
+# - The requests.RequestException handler in synthesize_insight() used
+#   to return the raw exception's own str() DIRECTLY as the user-
+#   facing "answer" -- a real, confirmed bug, found during a broader
+#   "backend is a kernel, frontend is userspace" audit (see
+#   mediator.py's and api/routes.py's own AI-notes for three related
+#   HTTP-response leaks this same audit found). Confirmed directly,
+#   not assumed, that a real requests.ConnectionError's own str()
+#   genuinely includes internal infrastructure detail -- host, port,
+#   and URL path of the LLM backend itself (e.g.
+#   "HTTPConnectionPool(host='localhost', port=11434)..."). The real,
+#   original INTENT here was always correct (adapters/ollama_
+#   adapter.py's own docstring already documents "synthesis returns
+#   an error string" rather than crashing or propagating) -- only the
+#   leaked CONTENT of that string was ever the bug. Fixed with this
+#   project's own established "generic to the caller, detailed in the
+#   log" pattern: the real, detailed exception is still fully
+#   captured, just server-side now (logger.warning()), never handed
+#   to whoever happened to be running a query during a real LLM-
+#   backend outage. A real, new, dedicated test added
+#   (test_synthesize_insight_never_leaks_the_raw_llm_backend_
+#   exception, tests/unit/test_synthesis_prompt.py), confirmed
+#   meaningful via a real negative control. A real, live, end-to-end
+#   walkthrough (a genuine query against a genuinely-unreachable LLM
+#   backend, no Ollama running at all) confirmed the OTHER, earlier
+#   failure point in this same real call chain -- next_step()'s own
+#   client.chat() call, inside the agent loop itself, one hop before
+#   this function is ever reached -- was already safe (agent_step_
+#   prompt.py already only ever logs that one, never returns it to
+#   the caller); this fix closes the one, real, remaining gap in the
+#   chain, not a second instance of an already-fixed problem.
+
