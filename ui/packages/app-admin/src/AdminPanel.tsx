@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { HTMLTable } from '@blueprintjs/core'
+import { Alert, HTMLTable } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -86,10 +86,27 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
     }
   }
 
-  function handleDelete(username: string) {
-    if (window.confirm(`Delete ${username}? This cannot be undone.`)) {
-      handleAction(deleteUser, username)
-    }
+  // Tracks WHICH user (if any) has a pending delete confirmation --
+  // null means no Alert is open. One, shared Alert instance below is
+  // reused for whichever row's own Delete button was clicked, rather
+  // than one Alert per row -- the standard, efficient pattern for
+  // this exact "confirm THIS row's own destructive action" shape.
+  const [pendingDeleteUsername, setPendingDeleteUsername] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  async function confirmDelete() {
+    if (pendingDeleteUsername === null) return
+    setDeleting(true)
+    // handleAction() above already catches and reports its own errors
+    // (setError, or a real session-expiry redirect) -- it never
+    // rethrows, so this always resolves, regardless of whether the
+    // delete itself actually succeeded. Closing the Alert either way
+    // is the right call here: on success there's nothing left to
+    // confirm; on failure, the real error is already visible on the
+    // main panel the instant the Alert closes, not silently lost.
+    await handleAction(deleteUser, pendingDeleteUsername)
+    setDeleting(false)
+    setPendingDeleteUsername(null)
   }
 
   return (
@@ -142,7 +159,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
                     <button onClick={() => handleToggleSchema(user.username)}>
                       {schemaByUsername[user.username] ? 'Hide schema' : 'View schema'}
                     </button>
-                    <button className="danger" onClick={() => handleDelete(user.username)}>
+                    <button className="danger" onClick={() => setPendingDeleteUsername(user.username)}>
                       Delete
                     </button>
                   </td>
@@ -169,6 +186,29 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
           </tbody>
         </HTMLTable>
       )}
+
+      {/* One, shared Alert, not one per row -- see pendingDeleteUsername's
+          own comment above for why. isOpen is real, controlled state
+          (Alert's own isOpen prop is required, not optional -- confirmed
+          directly against its real type definition), not a bare truthy
+          check on the username itself, since an empty-string username
+          would otherwise, incorrectly, never open this. */}
+      <Alert
+        isOpen={pendingDeleteUsername !== null}
+        intent="danger"
+        icon="trash"
+        confirmButtonText="Delete"
+        cancelButtonText="Cancel"
+        loading={deleting}
+        canEscapeKeyCancel
+        canOutsideClickCancel
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDeleteUsername(null)}
+      >
+        <p>
+          Delete <strong>{pendingDeleteUsername}</strong>? This cannot be undone.
+        </p>
+      </Alert>
     </div>
   )
 }
@@ -252,13 +292,28 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
 //   swap. interactive + striped props added; confirmed live in a real
 //   browser that both the real bp6-html-table/bp6-interactive/
 //   bp6-html-table-striped classes apply and the table renders correctly.
+// - Alert, replacing window.confirm() for the delete-user flow. One,
+//   shared, controlled Alert instance (pendingDeleteUsername tracks
+//   WHICH row, not one Alert per row), with a real loading state while
+//   the delete request is actually in flight -- confirmed directly
+//   against Alert's own real type definition that this specific prop
+//   exists for exactly this situation, not invented. icon="trash" is a
+//   plain string literal, confirmed directly (via tsc, not assumed) to
+//   type-check correctly against Alert's own real IconName type without
+//   needing @blueprintjs/icons added as a direct dependency at all --
+//   nothing here ever imports from that package directly, only passes a
+//   string @blueprintjs/core itself already resolves internally via its
+//   own, already-direct dependency on icons. The three existing tests
+//   that exercised the old window.confirm() mock were rewritten against
+//   the real Alert (open/cancel/confirm), each confirmed meaningful with
+//   a real negative control, not just written and trusted. Confirmed
+//   live in a real browser beyond the unit suite: the real trash icon
+//   SVG genuinely renders (not just referenced), Cancel genuinely leaves
+//   the user untouched, and a real Confirm genuinely deletes the user via
+//   a real backend call, not simulated.
 //
 // PLANNED, NOT YET DONE (see the roadmap discussed directly with the
 // person -- one Blueprint component at a time, its own commit each):
-// - Alert, replacing window.confirm() for the delete-user flow -- a real,
-//   accessible, styled confirmation dialog instead of a native browser
-//   confirm() (which cannot be styled, is easy to miss/misclick past, and
-//   blocks the whole page's own JS thread while open).
 // - FormGroup/InputGroup/Button for CreateUserForm -- replacing the bare
 //   <label>/<input>/<button> elements with Blueprint's own styled,
 //   accessible form primitives.

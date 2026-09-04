@@ -225,38 +225,64 @@ describe('AdminPanel -- view/hide schema', () => {
 })
 
 describe('AdminPanel -- delete', () => {
-  it('shows a real confirm() dialog naming the username before deleting', async () => {
+  it('shows a real Alert naming the username before deleting', async () => {
     mockedListUsers.mockResolvedValue([activeUser()])
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderPanel()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' })).toBeInTheDocument(),
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    // No Alert content until the row's own trigger is actually clicked
+    // -- confirms this isn't just always rendered, hidden by isOpen.
+    expect(screen.queryByText(/This cannot be undone/)).not.toBeInTheDocument()
 
-    expect(confirmSpy).toHaveBeenCalledWith('Delete editoruser? This cannot be undone.')
-    confirmSpy.mockRestore()
+    fireEvent.click(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' }))
+
+    // Real, live Alert content -- the real username, not a generic
+    // message, and not the old, real window.confirm() call this
+    // replaced (native dialogs can't be styled, are easy to miss or
+    // misclick past, and block the whole page's own JS thread while
+    // open).
+    await waitFor(() => expect(screen.getByText('editoruser', { selector: 'strong' })).toBeInTheDocument())
+    expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument()
   })
 
-  it('calls deleteUser and reloads when the confirm dialog is accepted', async () => {
+  it('calls deleteUser and reloads when the Alert is confirmed', async () => {
     mockedListUsers.mockResolvedValue([activeUser()])
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderPanel()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' })).toBeInTheDocument(),
+    )
+    fireEvent.click(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    // Two real "Delete" buttons exist once the Alert is open -- the
+    // row's own trigger, and the Alert's own real confirm button
+    // (confirmButtonText="Delete"). The Alert's own is the LAST one in
+    // DOM order, reliably: it renders via a real portal, appended
+    // after the main content, not assumed from a guessed index.
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]!)
 
     await waitFor(() => expect(mockedDeleteUser).toHaveBeenCalledWith('editoruser'))
     await waitFor(() => expect(mockedListUsers).toHaveBeenCalledTimes(2))
+    // The Alert closes itself once the action completes -- confirms
+    // this isn't left open, silently stuck, after a real success.
+    await waitFor(() => expect(screen.queryByText(/This cannot be undone/)).not.toBeInTheDocument())
   })
 
-  it('never calls deleteUser when the confirm dialog is dismissed', async () => {
+  it('never calls deleteUser when the Alert is canceled', async () => {
     mockedListUsers.mockResolvedValue([activeUser()])
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderPanel()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' })).toBeInTheDocument(),
+    )
+    fireEvent.click(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
+    await waitFor(() => expect(screen.queryByText(/This cannot be undone/)).not.toBeInTheDocument())
     expect(mockedDeleteUser).not.toHaveBeenCalled()
     expect(mockedListUsers).toHaveBeenCalledTimes(1)
   })
