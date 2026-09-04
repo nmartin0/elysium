@@ -296,12 +296,11 @@ button.secondary {
   color: #333;
 }
 
-.error {
-  color: #b3261e;
-  font-size: 0.9rem;
-}
+/* .error class removed -- confirmed dead via a real, whole-frontend
+   grep before removing it, not assumed: AdminPanel.tsx and LoginForm.
+   tsx were the last two files using it, both converted to Blueprint's
+   own Callout intent="danger" during a full-migration review pass. */
 
-.answer,
 .pending-write {
   margin-top: 1.25rem;
   padding: 1rem;

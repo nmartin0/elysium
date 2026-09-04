@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, FormGroup, InputGroup } from '@blueprintjs/core'
+import { Button, Callout, FormGroup, InputGroup } from '@blueprintjs/core'
 import { login, getErrorMessage } from '../api'
 
 interface LoginFormProps {
@@ -75,7 +75,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           required
         />
       </FormGroup>
-      {error && <p className="error">{error}</p>}
+      {error && <Callout intent="danger">{error}</Callout>}
       {/* loading, not a separate disabled prop -- same real reasoning
           as CreateUserForm's own Button: confirmed directly against
           Button's own type definition that loading alone already
@@ -112,11 +112,19 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
 // input[autocomplete=current-password], confirmed still working live,
 // not just in source.
 //
-// The error message itself stays a plain <p className="error"> here,
-// deliberately not converted to a Callout as part of this step -- the
-// roadmap discussed directly with the person scopes Callout to a
-// different, later step (QueryPanel/PendingWriteCard), not this one;
-// kept this step focused rather than expanded beyond what was agreed.
+// The error message was initially left as a plain <p className="error">
+// here, deliberately, when this step was originally scoped -- Callout
+// was scoped to a different, later step (QueryPanel/PendingWriteCard)
+// at the time. Later converted to Callout intent="danger" too, as
+// part of a full-migration review pass, once it turned out to be a
+// real, genuine gap, not an intentional final state: a systematic
+// grep across the whole frontend, done specifically to catch exactly
+// this kind of thing, found this file (and AdminPanel.tsx's own
+// top-level error) were the only two files left still using the old,
+// bare <p className="error"> pattern, after every other sub-app had
+// already, consistently moved to Callout. Fixed to match, and the
+// now-fully-dead .error CSS rule removed in the same pass, confirmed
+// dead first via a real, whole-frontend grep, not assumed.
 //
 // Verified live, beyond the unit suite: a real wrong-password attempt
 // showed the real error message correctly; a real, successful login via

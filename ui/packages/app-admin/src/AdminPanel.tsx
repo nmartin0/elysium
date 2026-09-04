@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Alert, Button, FormGroup, HTMLTable, InputGroup } from '@blueprintjs/core'
+import { Alert, Button, Callout, FormGroup, HTMLTable, InputGroup } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -113,7 +113,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
     <div className="admin-panel">
       <CreateUserForm onCreated={loadUsers} onError={setError} onSessionExpired={onSessionExpired} />
 
-      {error && <p className="error">{error}</p>}
+      {error && <Callout intent="danger">{error}</Callout>}
 
       {users === null ? (
         <p>Loading…</p>
@@ -352,6 +352,21 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
 //   genuine label/for-id association working, not simulated) filled out
 //   and submitted the real form, genuinely creating a new user visible
 //   in the table afterward, with the form correctly reset.
+// - A real, genuine gap found and fixed during a later, full-migration
+//   review pass, not caught during any of the three steps above: this
+//   file's own top-level error state (shared by CreateUserForm's own
+//   onError callback and every handleAction/loadUsers/confirmDelete
+//   failure) was still rendered as a bare <p className="error">,
+//   missed across all three Blueprint steps -- CreateUserForm's own
+//   fields got FormGroup/InputGroup, but this specific, separate error
+//   display was simply never noticed. Found via a systematic,
+//   whole-frontend grep for the old className="error" pattern, done
+//   specifically to catch exactly this kind of gap, not by chance --
+//   LoginForm.tsx had the identical gap, found and fixed in the same
+//   pass (see that file's own AI-notes). Converted to Callout
+//   intent="danger", matching every other error Callout across the
+//   whole app; the now-fully-dead .error CSS rule removed in the same
+//   pass, confirmed dead first via a real grep, not assumed.
 //
 // This closes out AdminPanel's own Blueprint migration -- every step on
 // the original roadmap (HTMLTable, Alert, FormGroup/InputGroup/Button)
