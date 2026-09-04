@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getObjectDetail, getVisibleActionTypes, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import type { SubAppProps } from '@elysium/shell-api/types'
 import ActionForm, { type ActionDef } from './ActionForm'
 
 // The real shape of ONE object type's own entry within the backend's
@@ -26,9 +27,12 @@ export interface TypeSchema {
 
 export type VisibleSchema = Record<string, TypeSchema>
 
-interface ObjectDetailPanelProps {
+// visibleSchema is real, additional data this route needs beyond the
+// shell's own base contract -- extends SubAppProps rather than
+// redeclaring onSessionExpired independently. See SubAppProps's own
+// header comment for the full reasoning.
+interface ObjectDetailPanelProps extends SubAppProps {
   visibleSchema: VisibleSchema | null
-  onSessionExpired: () => void
 }
 
 // Stage 2 of the Palantir-parity UI plan -- Object View. A real,

@@ -10,6 +10,7 @@ import {
   getErrorMessage,
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
+import type { SubAppProps } from '@elysium/shell-api/types'
 
 export interface User {
   username: string
@@ -18,9 +19,11 @@ export interface User {
   disabled: boolean
 }
 
-interface AdminPanelProps {
-  onSessionExpired: () => void
-}
+// No additional props beyond the shell's own base contract -- see
+// SubAppProps's own header comment for the full reasoning on why this
+// is a real, shared, exported interface now, not an independently
+// redeclared field.
+type AdminPanelProps = SubAppProps
 
 // Every action here is gated server-side by manage:users -- this
 // component never decides who's allowed to do what, it just calls the

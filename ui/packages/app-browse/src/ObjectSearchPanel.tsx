@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import type { SubAppProps } from '@elysium/shell-api/types'
 import type { VisibleSchema } from './ObjectDetailPanel'
 
 // The human-facing browse/search screen -- Palantir's own Object
@@ -26,9 +27,12 @@ export interface SearchResult {
   fields: Record<string, unknown>
 }
 
-interface ObjectSearchPanelProps {
+// visibleSchema is real, additional data this route needs beyond the
+// shell's own base contract -- extends SubAppProps rather than
+// redeclaring onSessionExpired independently. See SubAppProps's own
+// header comment for the full reasoning.
+interface ObjectSearchPanelProps extends SubAppProps {
   visibleSchema: VisibleSchema | null
-  onSessionExpired: () => void
 }
 
 export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: ObjectSearchPanelProps) {

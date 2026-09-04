@@ -6,6 +6,7 @@
   "exports": {
     "./api": "./src/api.ts",
     "./format": "./src/format.ts",
+    "./types": "./src/types.ts",
     "./index.css": "./src/index.css",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",

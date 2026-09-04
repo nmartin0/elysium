@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { query } from '@elysium/shell-api/api'
+import type { SubAppProps } from '@elysium/shell-api/types'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
 interface QueryResponseBody {
@@ -8,9 +9,11 @@ interface QueryResponseBody {
   detail?: string
 }
 
-interface QueryPanelProps {
-  onSessionExpired: () => void
-}
+// No additional props beyond the shell's own base contract -- see
+// SubAppProps's own header comment for the full reasoning on why this
+// is a real, shared, exported interface now, not an independently
+// redeclared field.
+type QueryPanelProps = SubAppProps
 
 // Note on status 499 (client disconnected -- see api/routes.py's
 // docstring): deliberately no special handling for it here. By the
