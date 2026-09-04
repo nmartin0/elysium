@@ -138,6 +138,31 @@ describe('ObjectSearchPanel -- results rendering', () => {
     expect(screen.getByText('us-west')).toBeInTheDocument()
   })
 
+  it("each real Card is a DIRECT child of CardList -- a real, structural regression guard, not a stylistic preference: found and fixed as a genuine, hard-to-find live-browser-only CSS bug (Blueprint's own .bp6-card-list > .bp6-card selector applies display:flex, silently breaking this card's own multi-line layout unless the specificity-matching override in index.css keeps matching, which itself depends ENTIRELY on this exact DOM structure never changing -- jsdom cannot catch the visual bug itself, but this at least catches the structural change that would silently reintroduce it)", async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    await waitFor(() =>
+      expect(screen.getByText('Ada Okafor', { selector: '.object-search__result-title' })).toBeInTheDocument(),
+    )
+    const cardList = document.querySelector('.bp6-card-list')!
+    // Element.children, not a descendant query -- genuinely checks
+    // DIRECT children only, the exact real relationship Blueprint's
+    // own CSS selector (and this project's own override) both key
+    // off.
+    const directCardChildren = Array.from(cardList.children).filter((el) => el.classList.contains('bp6-card'))
+    expect(directCardChildren).toHaveLength(1)
+    expect(directCardChildren[0]).toHaveClass('object-search__result')
+    // The real, visible <Link> (the stretched-link pattern's own real
+    // anchor) is somewhere inside that same Card -- confirms the two
+    // real pieces this whole pattern depends on are still actually
+    // nested correctly together, not just independently present
+    // somewhere on the page.
+    expect(directCardChildren[0]!.querySelector('a.object-search__link')).not.toBeNull()
+  })
+
   it('uses title_field as the title, and shows the raw id as a separate subtitle', async () => {
     mockedSearchObjects.mockResolvedValue(
       searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),

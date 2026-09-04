@@ -271,6 +271,41 @@ describe('AdminPanel -- delete', () => {
     await waitFor(() => expect(screen.queryByText(/This cannot be undone/)).not.toBeInTheDocument())
   })
 
+  it('shows a real loading state on the Alert while the delete request is in flight -- a real, genuine gap found during a later, full-migration review pass: `deleting` state was added and wired to loading={deleting} specifically for this, but never had its own, dedicated test confirming it actually does anything', async () => {
+    let resolveDelete: (value: void | PromiseLike<void>) => void
+    mockedDeleteUser.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDelete = resolve
+      }),
+    )
+    mockedListUsers.mockResolvedValue([activeUser()])
+    renderPanel()
+    await waitFor(() =>
+      expect(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' })).toBeInTheDocument(),
+    )
+    fireEvent.click(within(userRow('editoruser')!).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument())
+
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
+    const alertConfirmButton = deleteButtons[deleteButtons.length - 1]!
+    fireEvent.click(alertConfirmButton)
+
+    // A real, rendered spinner (role="progressbar", the same real
+    // signal already confirmed and used for PendingWriteCard's own
+    // per-action loading) on the Alert's own confirm button while the
+    // real delete request is still in flight.
+    await waitFor(() => expect(within(alertConfirmButton).getByRole('progressbar')).toBeInTheDocument())
+    // Cancel disabled too -- Blueprint's own real, documented Alert
+    // behavior for loading ("the cancel button, if visible, will be
+    // disabled"), confirmed here as this file's own real, live
+    // integration of it, not just trusted from the library's own docs
+    // in the abstract.
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+
+    resolveDelete!()
+    await waitFor(() => expect(mockedListUsers).toHaveBeenCalledTimes(2))
+  })
+
   it('never calls deleteUser when the Alert is canceled', async () => {
     mockedListUsers.mockResolvedValue([activeUser()])
     renderPanel()

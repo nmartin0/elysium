@@ -267,6 +267,27 @@ describe('PendingWriteCard -- in-flight and failure handling', () => {
     await waitFor(() => expect(screen.getByText('Change rejected.')).toBeInTheDocument())
   })
 
+  it('the SAME per-action loading behavior, symmetrically, when Approve is the one clicked instead -- confirmed as its own, separate case, not just assumed from the Reject direction above given the two branches are hand-written, independent conditionals that could silently diverge', async () => {
+    let resolveConfirm: (value: unknown) => void
+    mockedConfirmWrite.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConfirm = resolve
+      }),
+    )
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+
+    await waitFor(() =>
+      expect(within(screen.getByRole('button', { name: 'Approve' })).getByRole('progressbar')).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
+    expect(within(screen.getByRole('button', { name: 'Reject' })).queryByRole('progressbar')).not.toBeInTheDocument()
+
+    resolveConfirm!({})
+    await waitFor(() => expect(screen.getByText('Change applied.')).toBeInTheDocument())
+  })
+
   it("on a non-401 failure, shows the backend's own error message and does NOT resolve", async () => {
     mockedConfirmWrite.mockRejectedValue(new ApiError(500, 'Something went wrong'))
     const onResolved = vi.fn()
