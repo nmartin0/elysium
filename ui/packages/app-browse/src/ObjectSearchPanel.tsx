@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Callout, Card, CardList } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
+import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import type { VisibleSchema } from './ObjectDetailPanel'
 
 // The human-facing browse/search screen -- Palantir's own Object
@@ -49,8 +50,10 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   // race with live/debounced search, not a hypothetical: two
   // in-flight requests can resolve in either order over a real
   // network. Only the response matching the MOST RECENT request is
-  // ever applied.
-  const latestRequestId = useRef(0)
+  // ever applied. Extracted, shared logic (see useLatestRequestGuard's
+  // own header comment for the full story) -- ObjectDetailPanel.tsx
+  // uses the exact same one, for its own, different, real reason.
+  const { startRequest, isStale } = useLatestRequestGuard()
 
   const objectTypes = visibleSchema ? Object.keys(visibleSchema) : null
 
@@ -64,7 +67,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   useEffect(() => {
     if (!selectedType) return
 
-    const thisRequestId = ++latestRequestId.current
+    const thisRequestId = startRequest()
     setLoading(true)
     setError(null)
 
@@ -78,15 +81,15 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
           results: SearchResult[]
           total_matches: number
         }
-        if (thisRequestId !== latestRequestId.current) return
+        if (isStale(thisRequestId)) return
         setResults(response.results)
         setTotalMatches(response.total_matches)
       } catch (err) {
-        if (thisRequestId !== latestRequestId.current) return
+        if (isStale(thisRequestId)) return
         if (handleIfSessionExpired(err, onSessionExpired)) return
         setError(getErrorMessage(err))
       } finally {
-        if (thisRequestId === latestRequestId.current) setLoading(false)
+        if (!isStale(thisRequestId)) setLoading(false)
       }
     }, DEBOUNCE_MS)
 
@@ -306,6 +309,22 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
 //   real CSS layout, so all 20 existing tests passed throughout this
 //   entire investigation, oblivious to the real, visually-broken
 //   layout the whole time.
+// - The latestRequestId stale-response guard extracted to a real,
+//   shared useLatestRequestGuard() hook (@elysium/shell-api), found
+//   as a genuine, un-acted-on DRY gap during a later, full-migration
+//   review pass: ObjectDetailPanel.tsx's own comment already,
+//   explicitly said "Same stale-response guard as ObjectSearchPanel's
+//   own live search" -- correctly IDENTIFIED as the same pattern, but
+//   never actually extracted, leaving two real, independent copies
+//   that could silently drift. Same real, live behavior confirmed
+//   unchanged both ways: the existing race-condition test here still
+//   passes unchanged, and a real, live browser walkthrough (live
+//   search, then rapid navigation between two different objects)
+//   confirmed no stale content ever showed. The hook itself also
+//   gained its own, new, isolated unit tests -- a genuine, additional
+//   benefit of extracting it at all, not just observable indirectly
+//   through this file's and ObjectDetailPanel.tsx's own much larger
+//   integration tests.
 //
 // DEFERRED (known, intentional, not yet built):
 // - Live, debounced search (300ms) is a deliberate departure from
