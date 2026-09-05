@@ -443,6 +443,67 @@ def test_data_freshness_needs_no_particular_grant(client):
     assert client.get("/api/data-freshness").status_code == 200
 
 
+def test_visible_schema_never_leaks_per_field_internals(client):
+    # A FOURTH instance of the same leak class this project has now hit
+    # repeatedly (visible_schema's own storage config,
+    # visible_action_types' sub_writes, visible-apps' gating_permission
+    # -- each previously fixed by hand). visible_schema() passes each
+    # field_info dict through WHOLE, so every internal key a field
+    # definition carries reached the browser: storage/column/via_table/
+    # via_column (physical layout) and data_type (ontology bookkeeping).
+    #
+    # This is now structurally impossible rather than merely fixed:
+    # SchemaFieldResponse names exactly the three keys the frontend
+    # genuinely reads, and FastAPI drops everything else. Adding a new
+    # internal key to a field definition can no longer leak it.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.get("/api/me/visible-schema")
+
+    assert response.status_code == 200
+    for type_name, type_schema in response.json().items():
+        for field_name, field_info in type_schema["fields"].items():
+            leaked = set(field_info) - {"type", "target", "cardinality"}
+            assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
+
+
+def test_visible_schema_still_carries_what_links_genuinely_need(client):
+    # The other half, and the real risk of response_model: filtering is
+    # SILENT, so a model omitting a field the frontend uses would break
+    # the UI with no error. ObjectDetailPanel resolves a link from
+    # target + cardinality -- both must survive.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    schema = client.get("/api/me/visible-schema").json()
+    link_fields = [
+        field_info
+        for type_schema in schema.values()
+        for field_info in type_schema["fields"].values()
+        if field_info.get("type") == "link"
+    ]
+
+    assert link_fields, "fixture ontology should declare at least one link field"
+    for field_info in link_fields:
+        assert field_info["target"]
+        assert field_info["cardinality"]
+
+
+def test_visible_schema_still_reports_a_null_title_field(client):
+    # A null title_field is a real SIGNAL ("this type has one, but you
+    # cannot read it"), not absence -- ui/'s own format.ts documents
+    # depending on that distinction. Asserted explicitly because an
+    # over-broad response_model_exclude_none genuinely dropped it
+    # during this work.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    schema = client.get("/api/me/visible-schema").json()
+
+    assert any("title_field" in type_schema for type_schema in schema.values())
+
+
 def test_visible_apps_hides_admin_without_manage_users(client):
     # editor (fixtures/policy.yaml) holds no manage:users grant --
     # Admin must be genuinely absent from the response, not merely

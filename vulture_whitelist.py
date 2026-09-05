@@ -123,3 +123,21 @@ AppendOnlyAdapter
 # -- confirmed directly (a real grep shows three real, live uses) that
 # this is a genuine false positive, not actual dead code.
 _ReadWriteAdapter
+
+# --- Pydantic response_model fields (api/routes.py) -- declared as real
+# model attributes and consumed entirely by Pydantic itself during
+# response serialization, never read by this project's own Python code,
+# so Vulture's by-name analysis cannot see the usage. Same real pattern
+# as the mock/row_factory entries above. Verified directly before
+# whitelisting: each one appears in a genuine response captured from a
+# running server, and REMOVING any of them would silently strip that
+# field from what callers receive -- which is precisely the filtering
+# behavior these models exist to provide.
+acquired_at
+cardinality
+default_to_current_object
+disabled
+held_by
+locked
+source
+total_matches

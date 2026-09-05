@@ -112,6 +112,7 @@ loop for meaningfully longer than intended.
 import asyncio
 import logging
 import threading
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -157,6 +158,157 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
+
+
+# --- Response models -------------------------------------------------
+#
+# Every route below declares a real `response_model`. This is NOT
+# primarily about typing or documentation -- FastAPI's own OpenAPI
+# generation is deliberately disabled in this project (see api/app.py,
+# where docs_url/openapi_url are set to None after the full API surface
+# was found readable without authentication). The reason is narrower
+# and more important: `response_model` makes FastAPI FILTER the
+# response, silently dropping any field the declared model does not
+# name, before it ever reaches the caller.
+#
+# That converts "we remembered to filter" into "it is structurally
+# impossible not to." This project has hit the un-filtered failure FOUR
+# times: visible_schema()'s own storage config, visible_action_types()'
+# sub_writes, visible-apps' gating_permission -- each fixed by hand --
+# and then, found while writing these very models, per-field internals
+# (storage/column/via_table/via_column, plus a data_type key added
+# earlier in this same effort) still leaking one level down inside
+# GET /me/visible-schema's own field dicts. A hand-written filter fixed
+# the first three; nothing prevented the fourth. These models do.
+#
+# The real cost, stated plainly because it is easy to get wrong:
+# filtering is SILENT. A model that omits a field the frontend actually
+# uses breaks the UI with no error anywhere. Every model below was
+# built against responses captured from a real, running server, and
+# the field-level models specifically against a real grep of what the
+# frontend genuinely reads -- not against what the code appeared to
+# return.
+
+
+class ProfileResponse(BaseModel):
+    username: str
+    role_name: str | None
+    mac_value: str | None
+
+
+class DataFreshnessResponse(BaseModel):
+    source: str
+    last_synced_at: str | None
+
+
+class VisibleAppResponse(BaseModel):
+    name: str
+    path: str
+
+
+class SchemaFieldResponse(BaseModel):
+    # target/cardinality serialize as explicit nulls for a plain data
+    # field. That is deliberate, and the lesser of two real evils:
+    # Pydantic's exclude_none is all-or-nothing per RESPONSE, with no
+    # per-model option (verified directly, not assumed), and applying
+    # it here would also drop the enclosing type's own title_field
+    # null -- which is a genuine SIGNAL, not absence. A null
+    # title_field means "this type has one, but you cannot read it",
+    # and ui/'s own format.ts documents depending on exactly that
+    # distinction. Two extra nulls on a data field are harmless noise;
+    # silently changing what a null title_field means is not. The
+    # existing test suite caught this when the exclusion was applied
+    # too broadly.
+    # EXACTLY the three keys the frontend genuinely reads (confirmed by
+    # a real grep of ui/, not assumed): `type` to tell a link from a
+    # data field, `target` and `cardinality` to resolve a link. Every
+    # other key a field definition carries -- storage, column,
+    # via_table, via_column, data_type -- is internal physical layout
+    # or ontology bookkeeping with no legitimate reason to reach a
+    # browser, and was genuinely leaking before this model existed.
+    type: str
+    target: str | None = None
+    cardinality: str | None = None
+
+
+class VisibleObjectTypeResponse(BaseModel):
+    fields: dict[str, SchemaFieldResponse]
+    id_field: str | None
+    title_field: str | None
+
+
+class ActionParameterResponse(BaseModel):
+    # Mirrors SchemaFieldResponse's own reasoning for action parameters
+    # -- ActionForm.tsx reads `type` (to pick an input control and to
+    # spot an object_reference), `object_type`, `required`, and
+    # `default_to_current_object`.
+    type: str
+    object_type: str | None = None
+    required: bool | None = None
+    default_to_current_object: bool | None = None
+
+
+class VisibleActionTypeResponse(BaseModel):
+    affected_object_types: list[str]
+    parameters: dict[str, ActionParameterResponse]
+    executable: bool
+
+
+class UserSummaryResponse(BaseModel):
+    username: str
+    mac_value: str | None
+    role_name: str | None
+    disabled: bool
+
+
+class CreateUserResponse(BaseModel):
+    status: str
+    username: str
+
+
+class SearchResponse(BaseModel):
+    results: list[dict[str, Any]]
+    total_matches: int
+
+
+class ObjectDetailResponse(BaseModel):
+    id: str
+    fields: dict[str, Any]
+
+
+class ConfirmWriteResponse(BaseModel):
+    # object_ids is genuinely OPTIONAL, not defensive typing: this route
+    # returns two real shapes. An APPROVED write returns
+    # {"status": "written", "object_ids": [...]}; a REJECTED one returns
+    # {"status": "rejected"} with no ids at all, because nothing was
+    # written and there are no ids to report. Requiring it here made
+    # every rejection a 500 -- caught by the existing test suite, which
+    # is exactly the kind of behavior change response_model can
+    # otherwise introduce silently.
+    status: str
+    object_ids: list[Any] | None = None
+
+
+class LockAcquiredResponse(BaseModel):
+    token: str
+    expires_at: str
+
+
+class LockRefreshedResponse(BaseModel):
+    expires_at: str
+
+
+class LockStatusResponse(BaseModel):
+    # An UNLOCKED resource returns {"locked": false} alone -- the three
+    # holder fields are genuinely absent, not null. Declaring them
+    # Optional would make FastAPI serialize them as explicit nulls,
+    # changing the response a caller actually receives; response_model_
+    # exclude_none on the route keeps the real shape intact. Confirmed
+    # against the existing test suite, which asserts the exact dict.
+    locked: bool
+    held_by: str | None = None
+    acquired_at: str | None = None
+    expires_at: str | None = None
 
 
 class ConfirmWriteRequest(BaseModel):
@@ -243,13 +395,13 @@ def logout_all(request: Request, current_user: UserRecord = Depends(get_current_
     request.app.state.session_writer.invalidate_all_sessions(current_user.user_id)
 
 
-@router.get("/users")
+@router.get("/users", response_model=list[UserSummaryResponse])
 def list_users_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
     _require_manage_users(request, current_user)
     return request.app.state.user_directory.list_users()
 
 
-@router.post("/users", status_code=201)
+@router.post("/users", status_code=201, response_model=CreateUserResponse)
 def create_user_route(body: CreateUserRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:
     _require_manage_users(request, current_user)
@@ -293,7 +445,7 @@ def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
-@router.get("/users/{username}/visible-schema")
+@router.get("/users/{username}/visible-schema", response_model=dict[str, VisibleObjectTypeResponse])
 def visible_schema_route(username: str, request: Request,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
     _require_manage_users(request, current_user)
@@ -356,7 +508,7 @@ async def _watch_for_disconnect(request: Request, cancel_event: threading.Event)
         await asyncio.sleep(0.5)
 
 
-@router.get("/me", dependencies=[Depends(_no_store)])
+@router.get("/me", dependencies=[Depends(_no_store)], response_model=ProfileResponse)
 def my_profile_route(current_user: UserRecord = Depends(get_current_user)) -> dict:
     # A real "who am I" endpoint -- confirmed directly against how
     # established identity platforms do this (OpenID Connect's own
@@ -383,7 +535,7 @@ def my_profile_route(current_user: UserRecord = Depends(get_current_user)) -> di
     }
 
 
-@router.get("/data-freshness", dependencies=[Depends(_no_store)])
+@router.get("/data-freshness", dependencies=[Depends(_no_store)], response_model=DataFreshnessResponse)
 def data_freshness_route(request: Request,
                           _current_user: UserRecord = Depends(get_current_user)) -> dict:
     # How current the data a caller is reading actually is -- the
@@ -415,7 +567,7 @@ def data_freshness_route(request: Request,
     return {"source": "mirror", "last_synced_at": mediator.mirror_synced_at}
 
 
-@router.get("/me/visible-apps", dependencies=[Depends(_no_store)])
+@router.get("/me/visible-apps", dependencies=[Depends(_no_store)], response_model=list[VisibleAppResponse])
 def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
     # The shell's own nav, made real: which apps exist for THIS
     # specific caller, computed from their actual grants -- not a
@@ -449,7 +601,8 @@ def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(g
     return [{"name": app["name"], "path": app["path"]} for app in visible_apps_for(current_user, roles)]
 
 
-@router.get("/me/visible-schema", dependencies=[Depends(_no_store)])
+@router.get("/me/visible-schema", dependencies=[Depends(_no_store)],
+            response_model=dict[str, VisibleObjectTypeResponse])
 def my_visible_schema_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
     # The self-service counterpart to GET /users/{username}/visible-
     # schema above -- that one is an ADMIN debugging view (manage:
@@ -474,7 +627,7 @@ def my_visible_schema_route(request: Request, current_user: UserRecord = Depends
 MAX_SEARCH_RESULTS = 50
 
 
-@router.get("/objects/{object_type}/search")
+@router.get("/objects/{object_type}/search", response_model=SearchResponse)
 def search_objects_route(object_type: str, request: Request, q: str = "",
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
     # The human-facing browse/search endpoint -- DataMediator.search_
@@ -506,7 +659,7 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     return {"results": results, "total_matches": len(matching_ids)}
 
 
-@router.get("/objects/{object_type}/{object_id}")
+@router.get("/objects/{object_type}/{object_id}", response_model=ObjectDetailResponse)
 def get_object_detail_route(object_type: str, object_id: str, request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:
     # The Object View backend -- every field the CALLER can see for one
@@ -555,7 +708,8 @@ class ProposeActionRequest(BaseModel):
     parameters: dict = {}
 
 
-@router.get("/me/visible-action-types", dependencies=[Depends(_no_store)])
+@router.get("/me/visible-action-types", dependencies=[Depends(_no_store)],
+            response_model=dict[str, VisibleActionTypeResponse], response_model_exclude_none=True)
 def my_visible_action_types_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
     # Self-service counterpart to GET /me/visible-schema above, same
     # pattern -- the browse/search UI needs to know which object TYPES
@@ -797,7 +951,7 @@ async def query(body: QueryRequest, request: Request,
     return QueryResponse(answer=insight)
 
 
-@router.post("/writes/{write_id}/confirm")
+@router.post("/writes/{write_id}/confirm", response_model=ConfirmWriteResponse)
 async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request: Request,
                                current_user: UserRecord = Depends(get_current_user)) -> dict:
     store: PendingWriteStore = request.app.state.pending_writes
@@ -839,7 +993,7 @@ class LockTokenRequest(BaseModel):
     token: str
 
 
-@router.post("/locks/{resource_name}/acquire")
+@router.post("/locks/{resource_name}/acquire", response_model=LockAcquiredResponse)
 def acquire_lock_route(resource_name: str, request: Request,
                         current_user: UserRecord = Depends(get_current_user)) -> dict:
     lock_store: LockStore = request.app.state.lock_store
@@ -857,7 +1011,7 @@ def acquire_lock_route(resource_name: str, request: Request,
     return {"token": token, "expires_at": expires_at.isoformat()}
 
 
-@router.post("/locks/{resource_name}/refresh")
+@router.post("/locks/{resource_name}/refresh", response_model=LockRefreshedResponse)
 def refresh_lock_route(resource_name: str, body: LockTokenRequest, request: Request,
                         current_user: UserRecord = Depends(get_current_user)) -> dict:
     lock_store: LockStore = request.app.state.lock_store
@@ -898,7 +1052,8 @@ def force_release_lock_route(resource_name: str, request: Request,
         raise HTTPException(status_code=404, detail="Resource is not currently locked")
 
 
-@router.get("/locks/{resource_name}")
+@router.get("/locks/{resource_name}", response_model=LockStatusResponse,
+            response_model_exclude_none=True)
 def lock_status_route(resource_name: str, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:
     lock_store: LockStore = request.app.state.lock_store
