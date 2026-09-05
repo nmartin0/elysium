@@ -158,7 +158,52 @@ itself** (a Linux Foundation convention, not POSIX-mandated),
 **`useradd`/`groupadd`/`getent`** (from `shadow-utils`/glibc, not
 POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 
-## 8. Data-access security: what Elysium guarantees, and what you must configure
+## 8. Keeping the local mirror in sync
+
+Elysium can serve reads from a local mirror of your data rather than
+querying your databases on every request. The mirror is populated by
+a sync, which you run on a schedule.
+
+```bash
+python3 -m scripts.run_sync
+```
+
+One run copies every table your ontology references — across every
+silo — into Elysium's own local storage, then exits. It is a
+deliberately separate process, not something the web server does in
+the background: a sync copies whole tables, and running that inside
+the request-serving process would make it compete with real user
+requests for the same CPU.
+
+**Schedule it however you already schedule things.** A cron entry, a
+systemd timer, a Kubernetes CronJob — Elysium has no opinion, and no
+scheduler of its own. Running the command by hand is also the "sync
+now" escape hatch; there is no separate mechanism for it.
+
+**What it syncs is derived from your ontology**, not from a separate
+list you maintain. Add a field or an object type, and the next sync
+picks it up. There is nothing to keep in step by hand.
+
+**It cannot write to your data.** The sync reads through the same
+structurally read-only connection described in the next section.
+
+**Failures are per-table and loud.** If one table fails, the others
+still sync, that table keeps its last good copy rather than being
+left half-written, the real error is printed, and the process exits
+non-zero so your scheduler notices. A silent partial sync is the one
+outcome this is designed to prevent.
+
+```
+synced  primary_sql.customers: 4 rows at 2026-01-15T09:00:01+00:00
+FAILED  risk_sql.customer_risk: no such table: customer_risk
+4/5 tables synced successfully.
+```
+
+**How often?** That depends on how stale your data can safely be.
+Reads served from the mirror are only as fresh as the last sync.
+Writes are unaffected — they always go to your real database, live.
+
+## 9. Data-access security: what Elysium guarantees, and what you must configure
 
 Elysium reads from *your* databases. This section states plainly what
 the software guarantees on its own, and what it cannot guarantee
