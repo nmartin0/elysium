@@ -243,11 +243,31 @@ exact same relationship (ingestion, writeback, schema drift, staleness
 visibility, and cross-source joins), and a real, careful discussion of
 what to adopt at Elysium's own, much smaller scale versus what would
 be disproportionate. A genuinely new, real architecture initiative --
-not a small addition -- covering the entire read path (`DataMediator`);
-the existing write path (`WriteMediator`, `propose_action`,
-`confirm_and_execute`) is explicitly, deliberately UNCHANGED by every
-phase below, and stays live, direct, and exactly as correct as it is
-today.
+not a small addition -- covering the entire read path (`DataMediator`).
+The existing write path (`WriteMediator`, `propose_action`,
+`confirm_and_execute`) is NOT left unchanged, as originally scoped --
+see "External writeback" below for the real, since-settled design
+covering it, developed later in the same conversation as everything
+above.
+
+### The three real roles, once the mirror and the writeback toggle both exist
+
+Settled directly, and worth stating plainly since it resolves an
+open question below: once this whole initiative is done, there are
+exactly three real roles, not the two (read/write) this project has
+had until now -- **external read** (the sync module, reading the
+customer's live database, structurally read-only, covered by Phases
+1-4 below), **internal read** (any of Elysium's own storage --
+the new mirror AND the pre-existing internal SQLite databases alike
+-- always gated by full RBAC/MAC), and **internal write** (the sync/
+transform pipeline populating Elysium's own storage, AND
+`WriteMediator`'s own confirmed actions applying to Elysium's own
+internal state -- see "External writeback" below). External writes
+(actually reaching the customer's real, live database) are NOT a
+fourth, default role at all -- confirmed directly: "we will never be
+doing external writes" as the default; they're a real, separate,
+admin-toggled, off-by-default feature, covered in its own section
+below, not baked into `WriteMediator`'s normal operation.
 
 ### Why this doesn't conflict with TransferFunds' own correctness
 
@@ -262,7 +282,9 @@ never produce an unsafe write. Staleness in the read path is a
 retry-rate question, not a correctness one; this was already true
 before this whole initiative, since a human reviewing a proposal
 between propose and confirm already creates a real staleness window
-today.
+today. The same real mechanism, re-applied at the actual moment of an
+external push (not just at original approval time), is also what
+makes "external writeback: off by default" safe -- see below.
 
 ### Phases, in real dependency order
 
@@ -276,12 +298,14 @@ safely move to a read-only credential until `WriteMediator` has its
 own, independent, still-write-capable adapters. A pure refactor --
 zero behavior change, both mediators still pointing at the exact same
 real database at the end of this phase, just via separate connections.
-**Open question, not yet decided:** does EVERY one of those six
-borrowed methods genuinely need an independent copy, or are some of
-them (e.g. `_type_schema`) legitimate reads `WriteMediator` could keep
-sharing safely? Deliberately not resolved yet -- worth a real, careful
-look at each of the six individually, not a blanket "duplicate
-everything" move.
+**Resolved, no longer open:** all six borrowed methods need real,
+independent copies, not a partial split. Working through the three
+real roles above made this unambiguous -- `WriteMediator`'s own
+connection is now structurally a genuinely different thing from
+whatever `DataMediator` connects to (live source today, or the mirror
+after Phase 4), for every one of the six, not just some of them; the
+earlier doubt came from thinking of this as one blurry read/write
+line rather than clean, separate roles.
 
 **Phase 1 -- the real, two-layer read-only guarantee (depends on
 Phase 0).** Two independent, structurally separate enforcement layers,
@@ -347,6 +371,91 @@ extensive testing pass of the whole project: every existing read route
 identically under both modes, verified with a real, live, side-by-side
 comparison before this is ever the default.
 
+### External writeback: off by default, real precedent, stricter than Foundry's own model
+
+A real, separate design track from Phases 1-4 above (only depends on
+Phase 0's adapter separation, not on the mirror itself existing) --
+"we can retain writing to external databases, but this should be off
+by default. It is a feature that should have to be toggled by an
+admin, and never ship pre-configured. We'll follow Foundry's
+precedent."
+
+**What "off" actually means.** A confirmed action applies to
+Elysium's OWN internal state immediately, regardless of the toggle --
+this was a real, resolved ambiguity, not assumed: Foundry itself has
+two real Webhook modes ("side effect" -- internal change applies
+immediately, external push is best-effort and asynchronous afterward;
+"writeback" -- external push happens FIRST, internal change is gated
+on its success), and Foundry's own DEFAULT is "side effect," not
+"writeback." Elysium matches that default specifically: with external
+writes off, nothing about `confirm_and_execute()`'s own, existing
+internal-apply behavior changes at all -- what's OFF is only the
+separate, additional push to the customer's real system.
+
+**The Outbox Pattern -- a real, named, well-established mechanism,
+not an invented one.** Confirmed directly via real, established
+distributed-systems precedent (the Transactional Outbox Pattern):
+every confirmed action, in addition to applying internally, also gets
+a row in a new, dedicated outbox table -- explicitly NOT merged into
+`write_log.db`, which stays pure audit history; the outbox is "what
+still needs pushing externally," a genuinely different responsibility.
+A background relay process drains this table -- but only runs at all
+once external writes are enabled.
+
+**When external writes ARE enabled -- the stricter "writeback" mode,
+as requested.** For each outbox item, at the ACTUAL moment the relay
+attempts to push it (not when it was originally approved), the
+SAME, already-existing optimistic-concurrency check
+(`confirm_and_execute()`'s own real, current-value comparison) runs
+again, against the customer's real, live, CURRENT value, right before
+the push. Only if that still matches does the real, external write
+proceed. This is deliberately stricter than a naive "just replay
+everything in the backlog" -- confirmed directly why that naive
+version would be unsafe: Elysium is not necessarily the only writer to
+the customer's real database (the same real fact that motivates the
+existing optimistic-concurrency check in the first place), so an
+item queued for hours or days could easily be stale relative to a
+REAL, independent, external change that happened in the meantime; a
+blind replay would silently clobber it. Re-validating at actual push
+time, not at original approval time, is the real fix -- and is
+already a genuine, confirmed improvement over Foundry's own model,
+which evaluates its own "writeback" webhook synchronously, only once,
+at the moment an action is approved, with no equivalent later re-check
+for anything that had to wait.
+
+**Resuming a backlog, once external writes are turned on -- a real,
+established distributed-systems idiom, not a bespoke design.**
+Confirmed directly against the Outbox Pattern's own established
+practice: neither "flush everything at once" nor "only affects items
+from now on" -- the standard, correct behavior is a continuous,
+ORDERED drain, oldest item first, that simply resumes exactly where
+it left off the moment the relay is enabled (whether for the first
+time, or after being off for a while). Each item's own real push is
+independently subject to the re-validation above -- one item failing
+its own, real, current-value check gets flagged for a human to review
+again (the same, already-existing rejection path), not blocked on the
+whole backlog, and not silently skipped either. Retries on a genuine,
+transient failure (the customer's own system briefly unreachable) use
+real, established exponential backoff with jitter, matching the
+Outbox Pattern's own standard practice -- not a tight, immediate retry
+loop. The actual push logic itself needs to be genuinely idempotent
+(safely re-sendable without double-applying), matching the pattern's
+own real, standard "at-least-once delivery" semantics.
+
+**A real, separate, narrow permission for observing the outbox
+itself.** Raised directly -- "an external read data flow should only
+ever pipe into Elysium with nobody gaining permission to see the flow
+coming in, perhaps with the exception of a privilege to see that data
+flow." The sync/outbox processes themselves are internal
+infrastructure, not business data -- they should never be visible
+through the normal, business-data RBAC/MAC paths at all. A new, real,
+narrow permission (something like `observe:sync`) lets an admin
+specifically opt into watching sync/outbox health -- a genuinely
+different KIND of grant than `read:Customer.name`, since it's about
+infrastructure visibility, not data access. Not yet designed in
+detail -- worth its own, real design pass once Phase 0 and the outbox
+table itself exist.
+
 ### The real, settled tool choices, and why
 
 **DuckDB** (confirmed directly: MIT, from the official `duckdb/duckdb`
@@ -371,7 +480,7 @@ real clause distinguishing Apache 2.0 from MIT/BSD (disclosing a
 modification, if one is ever made AND redistributed) can never
 actually trigger under that rule, for any dependency, on any license.
 
-### What this actually adds, once all five phases are done
+### What this actually adds, once everything above is done
 
 Not just an architecture change -- real, concrete new capability:
 1. A real, provable, two-layer read-only guarantee (credential +
@@ -394,9 +503,16 @@ Not just an architecture change -- real, concrete new capability:
 7. A real, queryable history of the data itself, via Iceberg's own
    snapshot mechanism -- not yet built as a user-facing feature, but
    the underlying capability exists the moment the mirror does.
-8. Writes stay exactly as they are today -- live, direct, immediate,
-   with the same real-time correctness check already in place. This
-   whole initiative is additive to the read path only.
+8. A real, admin-toggleable, off-by-default path for Elysium to
+   actually push an approved change out to the customer's real,
+   external system -- something Elysium could not do at all before
+   this initiative -- with its own, real safety property re-validating
+   each item against the customer's live, current data at the actual
+   moment of push, not just at original approval time (a genuine
+   improvement over Foundry's own equivalent mechanism, which only
+   ever checks once, synchronously, at approval). With external writes
+   left off (the required default), `confirm_and_execute()`'s own
+   internal-apply behavior is completely unchanged from today.
 
 ---
 
