@@ -989,11 +989,45 @@ class WriteMediator:
             )
 
             object_ids = []
-            for sub_write in pending.sub_writes:
-                if sub_write.operation == "update":
-                    object_ids.append(self._apply_one_update(sub_write, batch_id, pending.user_id, pending.description))
-                else:
-                    object_ids.append(self._apply_one_create(sub_write, batch_id, pending.user_id, pending.description))
+            try:
+                for sub_write in pending.sub_writes:
+                    if sub_write.operation == "update":
+                        object_ids.append(
+                            self._apply_one_update(sub_write, batch_id, pending.user_id, pending.description)
+                        )
+                    else:
+                        object_ids.append(
+                            self._apply_one_create(sub_write, batch_id, pending.user_id, pending.description)
+                        )
+            except Exception:
+                # A REAL, confirmed bug this closes, found by running two
+                # genuinely concurrent confirm_and_execute() calls against
+                # the same account for the first time (see tests/unit/
+                # test_write_path_concurrency.py).
+                #
+                # The common cause is the optimistic-concurrency check
+                # correctly REJECTING this write because another caller
+                # changed the object first. That rejection is right. What
+                # was wrong is what it left behind: the batch was already
+                # logged as pending, so the exception propagated with the
+                # batch still marked pending forever.
+                #
+                # That is not a cosmetic leak. resume_pending_writes()
+                # runs unguarded at startup (api/app.py's own create_app())
+                # and would find this batch, try to re-apply it, hit the
+                # SAME stale-value check, and raise -- so a single rejected
+                # concurrent write would prevent the server from starting
+                # again. Confirmed directly, not reasoned about.
+                #
+                # Marking it applied is the correct resolution when NOTHING
+                # applied: there is genuinely nothing for recovery to
+                # finish. A PARTIAL failure is deliberately left pending
+                # instead -- that is exactly the state crash recovery
+                # exists to reconcile, and abandoning it would strand a
+                # half-written batch.
+                if not object_ids:
+                    self.write_log.mark_batch_applied(batch_id)
+                raise
 
             self.write_log.mark_batch_applied(batch_id)
 
@@ -1017,6 +1051,11 @@ class WriteMediator:
         )
 
         groups = self._group_changes_by_storage(sub_write.object_type, sub_write.changes)
+        # Tracks whether any storage group has already COMMITTED, which
+        # decides what a later failure means: nothing applied yet is a
+        # clean rejection to abandon, whereas a partially-applied entry
+        # must stay pending for crash recovery to reconcile.
+        applied_groups = 0
         for adapter, resolved_type_config, group_changes in groups:
             group_expected = {
                 field_name: sub_write.expected_current_values[field_name]
@@ -1027,18 +1066,29 @@ class WriteMediator:
                 group_changes, group_expected,
             )
             if not success:
-                # See write_log.py's own docstring for the known,
-                # stated limitation this leaves: if an EARLIER group
-                # already committed successfully before this one
-                # failed, the log entry stays 'pending' indefinitely,
-                # and get_field() will keep reporting the LATER
-                # group's field as updated even though it never was --
-                # deferred, folded into the same crash-recovery work
-                # rather than solved separately here.
+                # NOTHING in this entry committed, so the log row is
+                # abandoned rather than left pending. Without this, a
+                # rejected write leaves a row that get_field()'s own
+                # write-log masking keeps reporting as the object's
+                # value -- a read showing a number that was never
+                # written, indefinitely. Found by running two genuinely
+                # concurrent writes for the first time (see tests/unit/
+                # test_write_path_concurrency.py); previously recorded
+                # as a known limitation, now closed for the case where
+                # it is unambiguously safe to close.
+                #
+                # DELIBERATELY only when applied_groups is empty. If an
+                # EARLIER group already committed, this entry describes
+                # a genuinely half-applied write, and that is precisely
+                # what crash recovery exists to reconcile -- abandoning
+                # it would strand the applied half with no record.
+                if not applied_groups:
+                    self.write_log.mark_applied(log_id)
                 raise ValueError(
                     f"{sub_write.object_type} {sub_write.object_id!r} changed since this "
                     f"write was proposed -- refresh and retry"
                 )
+            applied_groups += 1
 
         self.write_log.mark_applied(log_id)
         return sub_write.object_id
