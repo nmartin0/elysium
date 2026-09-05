@@ -320,3 +320,33 @@ research depth, not all equally ready to scope:
   recurring, if broad, third-party complaint), so this is deliberately
   the last, highest-effort item on the whole roadmap, not started
   until the minimal, read-only version has real, demonstrated use.
+
+---
+
+## Security hardening backlog
+
+A separate, later, real backlog -- from the same "backend is a
+kernel, frontend is userspace" hardening audit that also found and
+fixed several real, confirmed bugs already (see mediator.py's,
+api/routes.py's, api/app.py's, and core/llm/synthesis_prompt.py's own
+AI-notes for those, plus the request-size-limit and /query rate-
+limit additions -- not repeated here). These are real, considered,
+but deliberately DEFERRED items, not gaps that slipped through
+unnoticed:
+
+- **`TrustedHostMiddleware` / `Host` header validation.** Not
+  configured today. Investigated directly before deferring, not
+  assumed low-risk by default: confirmed the `Host` header is never
+  used anywhere in this codebase to construct any real output at all
+  (no password-reset links, no redirects, nothing built from it) --
+  the classic Host-header-injection attack it guards against
+  specifically exploits apps that reflect or build output from that
+  header, which this app simply doesn't do. Real, genuine reasons
+  this stayed deferred rather than fixed outright, not just
+  laziness: it would need a new, deployment-specific `allowed_hosts`
+  config option that doesn't exist today (this project's own code
+  doesn't know its own deployment's real domain name at build time),
+  and Elysium is typically deployed behind a reverse proxy that
+  already handles this concern at that layer. Revisit if a real,
+  concrete reason emerges (e.g. a deployment that runs Elysium
+  directly, with no reverse proxy in front of it at all).
