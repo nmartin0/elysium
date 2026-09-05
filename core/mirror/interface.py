@@ -58,10 +58,15 @@ class SyncResult:
 class MirrorSync(ABC):
     @abstractmethod
     def sync_table(self, silo_name: str, table_name: str, id_column: str,
-                    columns: list[str]) -> SyncResult:
+                    columns: list[str], column_types: dict[str, str] | None = None) -> SyncResult:
         """Copies ONE source table into the local mirror, as one atomic
         snapshot, replacing whatever that table's previous contents
         were -- a full refresh, never an append onto stale rows.
+
+        column_types maps a column to its declared data_type (see
+        core/ontology/field_types.py); a column absent from it defaults
+        to string, so an ontology predating field types entirely still
+        works unchanged.
 
         columns is the real, explicit list of columns to copy, resolved
         from the ontology by the caller -- never `SELECT *`. Deliberate:

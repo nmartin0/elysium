@@ -77,11 +77,42 @@ question" discipline that originally deferred THIS fix in the first
 place.
 """
 
+from core.ontology.field_types import FIELD_DATA_TYPES
+
 
 def validate_object_types(object_types: dict) -> None:
     for object_type_name, type_def in object_types.items():
         _validate_title_field(object_type_name, type_def)
         _validate_security(object_type_name, object_types, visited=frozenset())
+        _validate_field_data_types(object_type_name, type_def)
+
+
+def _validate_field_data_types(object_type_name: str, type_def: dict) -> None:
+    # A typo'd data_type must fail HERE, at deployment load, rather
+    # than at sync time -- by which point it would be a confusing
+    # failure in a scheduled batch job, far from the schema that
+    # actually caused it. Same "fail loudly, as early as possible"
+    # discipline every other check in this file follows.
+    for field_name, field_info in type_def.get("fields", {}).items():
+        declared = field_info.get("data_type")
+        if declared is None:
+            # Genuinely optional -- see core/ontology/field_types.py's
+            # own docstring on why every schema predating this stays
+            # valid.
+            continue
+        if declared not in FIELD_DATA_TYPES:
+            raise ValueError(
+                f"Object type {object_type_name!r}: field {field_name!r} declares unknown "
+                f"data_type {declared!r} -- known types: {sorted(FIELD_DATA_TYPES)}."
+            )
+        if field_info.get("type") == "link":
+            # A link field's own value is an id (or a list of them),
+            # resolved from the TARGET type's own id column -- its type
+            # is that target's business, not this field's to redeclare.
+            raise ValueError(
+                f"Object type {object_type_name!r}: field {field_name!r} is a link and must not "
+                f"declare its own data_type."
+            )
 
 
 def _validate_title_field(object_type_name: str, type_def: dict) -> None:

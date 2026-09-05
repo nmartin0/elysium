@@ -185,6 +185,10 @@ layers = [
     "write_mediator",
     "mediator",
     "interface | schema | write_log | submission_criteria | action_types | object_type_validation",
+    # A real leaf, below everything -- object_type_validation imports it
+    # (to reject an unknown declared data_type at load time) and nothing
+    # in this package imports anything from it back.
+    "field_types",
 ]
 containers = ["core.ontology"]
 exhaustive = true

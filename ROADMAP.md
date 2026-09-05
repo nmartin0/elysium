@@ -454,13 +454,24 @@ formatting on a numeric field gets different behavior depending on a
 config flag, which is exactly the kind of silent divergence this
 project's own discipline rejects.
 
-**So mirror reads must stay opt-in until the mirror carries real
-types.** The fix is ontology-driven typing: the schema already declares
-each field, so the sync can build a genuinely typed Arrow schema from
-the ontology rather than inferring from data -- keeping the
-"schema never changes because data changed" property that motivated
-string-typing in the first place, while producing real types. That is
-the next piece of Phase 4, and it belongs in the sync, not the adapter.
+**RESOLVED, via ontology-declared field types.** The fix as first
+proposed did not survive contact with the schema: the ontology declared
+only `type: data` or `type: link` -- a STRUCTURAL distinction, never a
+data-type one -- so there was nothing to derive Arrow types from.
+Closing the gap properly meant adding real type declarations to the
+ontology itself (`data_type: number`, see core/ontology/field_types.py),
+validated at load time, and having the sync build a genuinely typed
+Arrow schema from them. Confirmed fixed by the same measurement that
+found it: `Account.balance` now reads as `500.0` (float) from BOTH the
+live and mirror paths. Genuinely optional and defaulting to string, so
+every schema predating it stays valid and behaves exactly as before.
+
+The alternative -- reading types from the source database at sync time
+(SQLite's own PRAGMA table_info) -- was rejected deliberately: it makes
+the mirror's own shape depend on the source's, and it rests on
+something untrue, since SQLite's declared column types are advisory
+rather than enforced. The ontology is this project's semantic source of
+truth, and "what type is this field" is a semantic question.
 
 The 17 tests in `tests/unit/test_mirror_read_adapter.py` are written
 as side-by-side comparisons against the real `SQLiteReadAdapter` on the

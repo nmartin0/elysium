@@ -51,6 +51,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.interface import MirrorSync, SyncResult
+from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for, coerce
 from core.ontology.interface import ExternalReadAdapter
 
 
@@ -75,7 +76,7 @@ class IcebergMirrorSync(MirrorSync):
         )
 
     def sync_table(self, silo_name: str, table_name: str, id_column: str,
-                    columns: list[str]) -> SyncResult:
+                    columns: list[str], column_types: dict[str, str] | None = None) -> SyncResult:
         adapter = self.adapters.get(silo_name)
         if adapter is None:
             raise ValueError(
@@ -84,7 +85,7 @@ class IcebergMirrorSync(MirrorSync):
             )
 
         rows = self._read_source_rows(adapter, table_name, id_column, columns)
-        arrow_table = self._to_arrow(rows, columns)
+        arrow_table = self._to_arrow(rows, columns, column_types)
 
         self._ensure_namespace(silo_name)
         identifier = f"{silo_name}.{table_name}"
@@ -171,22 +172,37 @@ class IcebergMirrorSync(MirrorSync):
             rows.append(row)
         return rows
 
-    def _to_arrow(self, rows: list[dict], columns: list[str]) -> pa.Table:
-        # An explicitly string-typed schema for every column, built from
-        # the ontology's own column list rather than inferred from the
-        # data. A real, deliberate simplification for this first
-        # version, stated plainly rather than left as a silent
-        # assumption: inferring types per-sync would let a table's own
-        # mirror schema CHANGE between runs purely because its data
-        # changed (e.g. a nullable numeric column that happens to be all
-        # NULL one day), which is exactly the silent, drifting behavior
-        # this project's "fail loudly, never silently substitute"
-        # discipline rejects. Real type fidelity belongs with the
-        # ontology-driven schema work the roadmap already plans, not
-        # guessed at here.
+    def _to_arrow(self, rows: list[dict], columns: list[str],
+                   column_types: dict[str, str] | None = None) -> pa.Table:
+        # A genuinely TYPED schema, built from what the ontology
+        # DECLARES each field to be -- never inferred from the data
+        # itself. That distinction is the whole point: inference would
+        # let a table's mirror schema CHANGE between runs purely
+        # because its data changed (a nullable numeric column that
+        # happens to be all NULL one day), which is exactly the silent,
+        # drifting behavior this project's "fail loudly, never silently
+        # substitute" discipline rejects. Declaring types in the
+        # ontology keeps the schema stable while making it real.
+        #
+        # A column with no declared type defaults to string -- so a
+        # schema predating field data_types entirely produces exactly
+        # the previous behavior, and no existing deployment breaks.
+        #
+        # coerce() raises on a genuine mismatch (a field declared
+        # `integer` whose source value is "abc") rather than
+        # substituting a default. That surfaces an ontology/source
+        # disagreement loudly, during a sync, instead of quietly
+        # writing a wrong value into the mirror -- and scripts/
+        # run_sync.py's own per-table error handling turns it into a
+        # real, named failure for that one table, leaving its last-good
+        # contents intact.
+        column_types = column_types or {}
+        resolved = {
+            column: column_types.get(column, DEFAULT_FIELD_DATA_TYPE) for column in columns
+        }
         data = {
-            column: [None if row[column] is None else str(row[column]) for row in rows]
+            column: [coerce(row[column], resolved[column]) for row in rows]
             for column in columns
         }
-        schema = pa.schema([(column, pa.string()) for column in columns])
+        schema = pa.schema([(column, arrow_type_for(resolved[column])) for column in columns])
         return pa.table(data, schema=schema)

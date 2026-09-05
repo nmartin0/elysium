@@ -63,6 +63,11 @@ class SyncTarget:
     table_name: str
     id_column: str
     columns: list[str]
+    # column name -> its declared data_type (see core/ontology/
+    # field_types.py). Resolved by the SAME ontology walk that resolves
+    # `columns` itself, deliberately -- deriving them separately would
+    # be two passes that could disagree about which columns exist.
+    column_types: dict[str, str]
 
 
 def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
@@ -77,14 +82,15 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
     by_table: dict[tuple[str, str], dict] = {}
 
     for type_def in schema.get("object_types", {}).values():
-        for silo_name, table_name, id_column, columns in _targets_for_type(type_def):
+        for silo_name, table_name, id_column, columns, column_types in _targets_for_type(type_def):
             key = (silo_name, table_name)
             if key not in by_table:
-                by_table[key] = {"id_column": id_column, "columns": []}
+                by_table[key] = {"id_column": id_column, "columns": [], "column_types": {}}
             existing = by_table[key]["columns"]
             for column in columns:
                 if column not in existing:
                     existing.append(column)
+            by_table[key]["column_types"].update(column_types)
 
     return [
         SyncTarget(
@@ -92,6 +98,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             table_name=table_name,
             id_column=entry["id_column"],
             columns=entry["columns"],
+            column_types=entry["column_types"],
         )
         for (silo_name, table_name), entry in by_table.items()
     ]
@@ -108,6 +115,11 @@ def _targets_for_type(type_def: dict):
     storages.update(additional)
 
     columns_by_storage: dict[str | None, list[str]] = {name: [] for name in storages}
+    # Only columns with a NON-default declared type are recorded --
+    # a column absent from this map takes the default (string), so
+    # an untyped schema produces an empty map and the previous
+    # behavior exactly.
+    types_by_storage: dict[str | None, dict[str, str]] = {name: {} for name in storages}
 
     # The id column of each storage is always needed -- it is what rows
     # are matched on, both during the sync itself and by every read
@@ -130,6 +142,9 @@ def _targets_for_type(type_def: dict):
         column = field_config.get("column", field_name)
         if column not in columns_by_storage[storage_key]:
             columns_by_storage[storage_key].append(column)
+        declared = field_config.get("data_type")
+        if declared is not None:
+            types_by_storage[storage_key][column] = declared
 
     # The MAC security field, when it names a real field on this type
     # rather than a chain through a link. Always required -- see this
@@ -150,4 +165,5 @@ def _targets_for_type(type_def: dict):
             storage["table"],
             storage["id_column"],
             columns_by_storage[storage_key],
+            types_by_storage[storage_key],
         )

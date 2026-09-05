@@ -40,6 +40,7 @@ object_types:
       # risk_score) -- see get_field_column()'s own docstring for why.
       risk_score:
         type: data
+        data_type: number
         storage: risk_db
         column: score_val
       transactions:
@@ -70,6 +71,7 @@ object_types:
     fields:
       amount:
         type: data
+        data_type: number
       currency:
         type: data
       category:
@@ -123,6 +125,7 @@ object_types:
     fields:
       balance:
         type: data
+        data_type: number
       currency:
         type: data
       owner_customer_id:

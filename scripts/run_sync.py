@@ -76,7 +76,8 @@ def run_sync(runtime_paths=None) -> int:
         label = f"{target.silo_name}.{target.table_name}"
         try:
             result = sync.sync_table(
-                target.silo_name, target.table_name, target.id_column, target.columns
+                target.silo_name, target.table_name, target.id_column, target.columns,
+                target.column_types,
             )
         except Exception as exc:
             # Per-table, deliberately -- see this module's docstring.
