@@ -126,7 +126,8 @@ class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
                  silo_for_type: dict[str, str], roles: dict,
                  write_log: WriteLogReader | None = None,
-                 audit_log: AuditLog | None = None):
+                 audit_log: AuditLog | None = None,
+                 mirror_synced_at: str | None = None):
         self.schema = schema
         self.adapters = adapters
         self.silo_for_type = silo_for_type
@@ -141,6 +142,13 @@ class DataMediator:
         # directly rather than taking its own, separately-passed copy,
         # so there is only ever one WriteLog per deployment, not two
         # values that could accidentally drift apart.
+        # When reads come from the local mirror, this is the mirror's
+        # own last-sync timestamp -- what makes the read-your-writes
+        # overlay in _read_field_with_log_check() below bounded rather
+        # than unbounded. None for a live deployment, which disables
+        # the overlay entirely (the live adapter already reads the
+        # real, current value).
+        self.mirror_synced_at = mirror_synced_at
         self.write_log = write_log
         # UNLIKE write_log above, this is NEVER None -- audit logging is
         # a core security requirement this project treats as always-on,
@@ -489,6 +497,31 @@ class DataMediator:
             pending_changes = self.write_log.get_pending_changes(object_type, object_id)
             if pending_changes is not None and field_name in pending_changes:
                 return pending_changes[field_name]
+
+            # THE MIRROR OVERLAY -- read-your-writes when reads come
+            # from the local mirror rather than the live database. A
+            # confirmed write is genuinely applied to the customer's
+            # real database, but the mirror is a point-in-time copy
+            # that hasn't been re-synced yet, so without this a person
+            # would approve a change and not see it until the next
+            # scheduled sync.
+            #
+            # Deliberately consulted AFTER pending_changes above, not
+            # instead of it: the two answer different questions (an
+            # in-flight write vs. an applied-but-not-yet-mirrored one),
+            # and a still-pending write's INTENDED value should win
+            # over an older applied one for the same object.
+            #
+            # mirror_synced_at is None for a live deployment, which
+            # makes this a no-op there -- the live adapter already
+            # reads the real, current value, so there is nothing to
+            # overlay.
+            applied = self.write_log.get_applied_changes_since(
+                object_type, object_id, self.mirror_synced_at
+            )
+            if applied is not None and field_name in applied:
+                return applied[field_name]
+
         column = get_column_for_field(resolved_type_config, field_name)
         return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
 

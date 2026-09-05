@@ -514,16 +514,29 @@ explicitly ephemeral and rebuildable ("all indexed data in object
 databases are considered ephemeral, requiring persistent storing of
 all Ontology data in other ways"), never the source of truth.
 
-**Elysium already has this mechanism, which is the real finding.**
-`WriteLog`'s own pending-changes masking already makes `DataMediator`
-return the INTENDED value for an object with an unapplied write --
-structurally the same idea as Foundry's offset-tracked live index:
-reads reflect edits before the persistent layer catches up. So Phase 4
-should extend that existing masking to cover mirror reads, NOT write
-to the mirror directly and NOT trigger targeted re-syncs. The mirror
-stays sync-written, with the sync as its sole writer -- anything else
-creates two sources of truth for the same fact, which the next sync
-would then overwrite.
+**That earlier claim -- that `WriteLog`'s existing masking already
+solved this -- turned out to be WRONG, and testing is what caught it.**
+`get_pending_changes()` masks writes that are still IN FLIGHT; once
+`confirm_and_execute()` succeeds the entry is marked applied and the
+pending list is empty, so there is nothing left to mask. Measured
+directly: after a confirmed write of 900, a mirror read still returned
+500. Foundry's live index and this project's write log are not the
+same kind of thing -- theirs is a durable serving layer edits are
+applied INTO, ours was transient protection for an in-progress write.
+
+**DONE, via a separate, additive overlay.** `WriteLogReader` gained
+`get_applied_changes_since()` / `get_all_applied_changes_since()` --
+deliberately separate methods rather than a flag on the existing ones,
+since the two answer genuinely different questions and crash recovery
+(`get_pending_batches()`) depends on the existing meaning exactly as
+it is. `DataMediator` consults the overlay after the in-flight check,
+bounded by the mirror's own last-sync timestamp, so each sync narrows
+it and a live deployment (timestamp None) disables it entirely.
+Verified end to end: a confirmed write is immediately visible from the
+mirror, and a re-sync empties the overlay, with the value then coming
+from the mirror itself. The mirror stays sync-written, sole writer the
+sync -- anything else creates two sources of truth for the same fact,
+which the next sync would then overwrite.
 
 **A real constraint on the DuckDB side, verified rather than
 recalled.** DuckDB genuinely CAN write to Iceberg -- full read support

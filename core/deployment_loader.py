@@ -276,6 +276,28 @@ def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
     return ConcurrencyLimitedLLMAdapter(adapter_class(model, config.llm_connection))
 
 
+def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | None:
+    # The OLDEST last-sync time across every mirrored table, not the
+    # newest -- deliberately conservative: a write applied after ANY
+    # table's own last sync may not be reflected in the mirror yet, so
+    # taking the newest would silently drop the overlay for tables that
+    # happen to lag behind. Returns None if nothing has synced at all,
+    # which correctly means "overlay everything applied so far."
+    from core.mirror.iceberg_sync import IcebergMirrorSync
+    from core.mirror.sync_targets import resolve_sync_targets
+
+    sync = IcebergMirrorSync(data_dir / "mirror", {})
+    timestamps = []
+    for target in resolve_sync_targets({"object_types": config.schema}):
+        synced_at = sync.last_synced_at(target.silo_name, target.table_name)
+        if synced_at is None:
+            # A table that has never synced -- nothing in the mirror to
+            # be stale relative to, so no lower bound to impose.
+            continue
+        timestamps.append(synced_at.isoformat())
+    return min(timestamps) if timestamps else None
+
+
 def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
                           data_dir: Path) -> dict[str, ExternalReadAdapter]:
     # THE Phase 4 cutover, and deliberately the whole of it: which
@@ -444,8 +466,13 @@ def load_deployment_bundle(
     # exists and this store is never left without one) -- nothing
     # further to do here in that case.
     audit_log = AuditLog(log_dir / "audit.log") if log_dir is not None else None
+    # The mirror's own last-sync time -- what bounds the read-your-writes
+    # overlay (see DataMediator._read_field_with_log_check()). None for a
+    # live deployment, which disables the overlay entirely.
+    mirror_synced_at = _mirror_last_synced_at(config, data_dir) if config.read_from_mirror else None
     mediator = DataMediator(config.schema, adapters, silo_for_type, config.roles,
-                             write_log=write_log, audit_log=audit_log)
+                             write_log=write_log, audit_log=audit_log,
+                             mirror_synced_at=mirror_synced_at)
     return config, mediator, write_adapters
 
 

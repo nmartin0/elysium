@@ -338,6 +338,84 @@ class WriteLogReader(InternalReadAdapter):
                     return sub_write["changes"]
         return None
 
+    def get_applied_changes_since(self, object_type: str, object_id: Any,
+                                   since: str | None) -> dict | None:
+        """This object's APPLIED changes newer than `since`, or None.
+
+        THE MIRROR OVERLAY, and deliberately a SEPARATE method from
+        get_pending_changes() above rather than a flag on it. The two
+        answer genuinely different questions and must not be conflated:
+
+          - get_pending_changes() hides an IN-FLIGHT window -- a write
+            that is mid-apply, where some storages already reflect it
+            and others don't yet. It is transient by design, and goes
+            away the moment the write completes. Crash recovery
+            (get_pending_batches()) depends on that meaning exactly as
+            it is.
+
+          - this method serves READ-YOUR-WRITES against a mirror. A
+            confirmed write is genuinely APPLIED to the customer's real
+            database, but the local mirror is a point-in-time copy that
+            hasn't been re-synced yet, so a reader would otherwise see
+            the pre-write value until the next scheduled sync. That is
+            a real, user-visible problem (approve a change, don't see
+            it) with nothing transient about it.
+
+        Confirmed directly, by testing rather than assuming, that
+        get_pending_changes() genuinely cannot serve this: after
+        confirm_and_execute() succeeds the entry is marked applied and
+        the pending list is empty, so there is nothing left to mask.
+
+        `since` is the mirror's own last-sync timestamp (ISO-8601, as
+        core/mirror/ records it). Entries at or before it are already
+        reflected in the mirror and are deliberately NOT returned --
+        that is what stops this overlay growing without bound: each
+        sync narrows it, and a caller with no mirror at all passes
+        None and gets nothing.
+        """
+        if since is None:
+            # No mirror in play -- the live path reads the real
+            # database directly and needs no overlay at all.
+            return None
+
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT changes FROM write_log WHERE object_type = ? AND object_id = ? "
+                "AND status = 'applied' AND created_at > ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (object_type, str(object_id), since),
+            ).fetchone()
+        if row is not None:
+            return json.loads(row["changes"])
+        return None
+
+    def get_all_applied_changes_since(self, since: str | None) -> list[dict]:
+        """Every object with applied-but-not-yet-mirrored changes -- the
+        flat-list counterpart to get_applied_changes_since() above, for
+        search reconciliation, mirroring how get_all_pending_writes()
+        relates to get_pending_changes()."""
+        if since is None:
+            return []
+
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT object_type, object_id, changes FROM write_log "
+                "WHERE status = 'applied' AND created_at > ? ORDER BY created_at",
+                (since,),
+            ).fetchall()
+
+        # Later entries win for the same object -- ordering by
+        # created_at ascending and letting a later row overwrite an
+        # earlier one gives the object's most recent applied state.
+        merged: dict[tuple[str, str], dict] = {}
+        for row in rows:
+            key = (row["object_type"], row["object_id"])
+            entry = merged.setdefault(
+                key, {"object_type": row["object_type"], "object_id": row["object_id"], "changes": {}}
+            )
+            entry["changes"].update(json.loads(row["changes"]))
+        return list(merged.values())
+
     def get_sub_write_entry(self, batch_id: str, object_type: str, object_id: Any) -> dict | None:
         # ONE specific sub-write's own write_log row within a batch, if
         # it exists yet AT ALL -- regardless of status (pending OR
