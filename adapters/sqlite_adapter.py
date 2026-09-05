@@ -74,7 +74,37 @@ class SQLiteReadAdapter(ExternalReadAdapter):
 
     @contextmanager
     def _connection(self):
-        conn = _connect(self.db_path)
+        # read_only=True -- a REAL, structural, SQLite-engine-enforced
+        # guarantee (core/sqlite_connection.py's own open_connection(),
+        # using sqlite3.Connection.set_authorizer(); confirmed
+        # directly, empirically, before being relied on anywhere:
+        # SELECT succeeds while INSERT/UPDATE/DELETE/DROP are all
+        # genuinely denied at the engine level itself). Phase 1 of the
+        # read-only mirror initiative (see ROADMAP.md's own
+        # "Read-only data mirror architecture" section).
+        #
+        # Phase 0 gave DataMediator its own, SEPARATE adapter
+        # instances of a genuinely read-only TYPE
+        # (ExternalReadAdapter, no write methods declared at all) --
+        # real, but only half the guarantee: nothing stopped a future
+        # bug, or a raw conn.execute() somewhere in this class, from
+        # issuing a write through the connection anyway. This closes
+        # that: the customer's own, external, third-party business
+        # data is now structurally unwritable through DataMediator's
+        # own read path, in code, regardless of what any caller
+        # intends.
+        #
+        # This is the CODE-LEVEL half of a deliberately two-layer
+        # guarantee. The other half -- a genuinely separate,
+        # SELECT-only DATABASE CREDENTIAL, enforced by the database
+        # itself rather than by Elysium's own code -- is a real,
+        # separate, still-outstanding deployment concern (see
+        # ROADMAP.md, and INSTALL.md once written): confirmed directly
+        # against Palantir's own real, documented practice that the
+        # credential is the primary enforcement point, with
+        # application code as defense in depth, never the reverse.
+        # Neither layer alone is the whole guarantee.
+        conn = _connect(self.db_path, read_only=True)
         try:
             yield conn
         finally:
@@ -179,6 +209,30 @@ class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):
     # docstring).
     max_concurrent_writes = 1
     supports_atomic_conditional_write = True
+
+    @contextmanager
+    def _connection(self):
+        # Overrides SQLiteReadAdapter's own, now read-only
+        # _connection() -- necessary, not incidental: this class
+        # genuinely writes, and inherits from SQLiteReadAdapter
+        # specifically to reuse its four real read implementations
+        # (WriteMediator's own optimistic-concurrency check genuinely
+        # needs to read current values before writing -- see this
+        # class's own docstring above). Without this override, every
+        # inherited read would work but every write would be denied by
+        # the engine, which is exactly the read-only guarantee working
+        # correctly, just applied to the wrong half.
+        #
+        # The real asymmetry this creates is the entire point of the
+        # Phase 0/1 split: DataMediator's own adapters are
+        # structurally unwritable; WriteMediator's own -- reached only
+        # through the two-phase propose/confirm flow, after RBAC/MAC
+        # and a human approval -- genuinely are.
+        conn = _connect(self.db_path)
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def write_fields(self, object_type: str, object_id: Any, changes: dict,
                       expected_current_values: dict, type_config: dict) -> bool:
