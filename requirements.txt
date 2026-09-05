@@ -14,3 +14,18 @@ starlette>=1.0.1  # FastAPI's ASGI layer -- pinned: versions before this had a r
                   # building an authentication system on top of this, this floor is load-bearing,
                   # not a routine version bump.
 httpx2          # test-only -- FastAPI's TestClient (tests/integration/test_api.py) requires it
+# pyiceberg -- the local read-only mirror's own versioned storage (Phase 2 of the
+# read-only mirror architecture; see ROADMAP.md). The [sql-sqlite] extra is the
+# real, deliberate choice: PyIceberg's catalog is backed by a plain SQLite file
+# here, matching every other piece of this project's own internal infrastructure,
+# rather than requiring a separate catalog SERVICE (Hive, Glue, REST) that would
+# be genuinely disproportionate at this project's scale. [pyarrow] is required by
+# PyIceberg itself for actually reading/writing the underlying Parquet data.
+#
+# Verified directly before adding, not assumed: installs cleanly (14 transitive
+# packages), round-trips a real table against a SQLite catalog on the local
+# filesystem, overwrite() genuinely REPLACES rather than duplicating (what a
+# full-refresh sync needs), snapshot history is preserved, and real time travel
+# back to a prior sync's snapshot works. Every package in its own dependency tree
+# is MIT, BSD-3-Clause, or Apache-2.0 -- zero copyleft.
+pyiceberg[sql-sqlite,pyarrow]

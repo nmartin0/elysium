@@ -140,7 +140,7 @@ ignore_imports = [
 [[tool.importlinter.contracts]]
 name = "core/ internal layering (agent orchestrates llm/memory/ontology/tools)"
 type = "layers"
-layers = ["agent", "llm", "memory", "ontology", "auth", "intermediate_layer", "tools"]
+layers = ["agent", "mirror", "llm", "memory", "ontology", "auth", "intermediate_layer", "tools"]
 containers = ["core"]
 exhaustive = true
 exhaustive_ignores = ["adapter_roles", "concurrency", "config", "deployment_loader", "internal_storage", "lock_store", "logging_config", "pending_write_store", "sqlite_connection", "user_directory"]

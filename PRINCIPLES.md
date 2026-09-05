@@ -327,25 +327,34 @@ scratch for no real reason, or ruling out an entire, mature category
 of tooling over a clause this project's own "never modify" rule
 already makes moot.
 
-The real, two-tier bar this project actually applies:
-- **Code imported or linked directly into Elysium's own process**
-  (a real Python import, a real npm dependency) must be permissively
-  licensed -- MIT or BSD preferred, Apache 2.0 (and equivalent
-  permissive, non-copyleft licenses) genuinely acceptable given the
-  "never modify" rule above, confirmed on a per-dependency basis, not
-  assumed from a project's general reputation.
-- **Software merely run alongside Elysium as a separate process**,
-  communicated with only over a network/IPC boundary (never
-  imported, never linked) has real room for a more permissive stance
-  on copyleft licenses too, since no linking or embedding occurs --
-  though this project has not yet had a real, concrete case of this
-  second kind to decide.
+The real bar this project actually applies -- and the distinction
+that matters is MODIFICATION, not dependency:
+- **Using a third-party library is fine regardless of its license**,
+  copyleft included. Importing it, linking against it, calling its
+  public API, running it as a separate process -- none of that
+  triggers any license's modification obligations, because no
+  modification occurs. A copyleft dependency (GPL, LGPL, MPL) placed
+  no requirement on Elysium's own source simply by being depended on.
+  This is a real, deliberate correction of an earlier, overcautious
+  version of this principle, which wrongly barred copyleft
+  dependencies outright: the line was never "what may we depend on."
+- **Any code this project actually MODIFIES must be permissively
+  licensed** -- MIT or BSD preferred, Apache 2.0 and equivalent
+  permissive licenses genuinely acceptable. This is the real line,
+  and the real reason the "never modify" rule above carries so much
+  weight: modifying copyleft code is precisely what pulls its
+  obligations onto the modified work. As long as this project never
+  modifies a dependency's own source, the question stays moot for
+  every dependency regardless of license -- which is why the two
+  rules belong together, not as separate concerns.
 
-A real, automated check (a license-scanning tool -- e.g. `pip-
-licenses` -- run as part of `lint.sh`, the same place `oxlint`/
-`mypy`/`vulture`/`import-linter` already run) is the real, durable
-way to keep enforcing this as dependencies update over time, not a
-one-time manual check trusted forever afterward.
+A practical consequence worth stating, since it is easy to get
+backwards: an automated license scan that FAILS the build on any
+copyleft license anywhere in the dependency tree would enforce the
+wrong rule entirely -- it would block dependencies that are
+completely fine to use. Any real tooling here should check what this
+project actually modifies (which is nothing, by rule), not what it
+merely depends on.
 
 ---
 
