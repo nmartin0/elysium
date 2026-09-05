@@ -317,11 +317,10 @@ class ConfirmWriteRequest(BaseModel):
 
 @router.post("/login", status_code=204)
 def login(body: LoginRequest, request: Request, response: Response) -> None:
-    credential_reader = request.app.state.credential_reader
-    session_writer = request.app.state.session_writer
+    credential_store = request.app.state.credential_store
+    session_store = request.app.state.session_store
     user_directory = request.app.state.user_directory
-    login_attempt_reader = request.app.state.login_attempt_reader
-    login_attempt_writer = request.app.state.login_attempt_writer
+    login_attempt_tracker = request.app.state.login_attempt_tracker
 
     # Checked BEFORE the real password verification below, but NEVER
     # used to short-circuit it -- see login_attempt_tracker.py's own
@@ -330,7 +329,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
     # locked-out response takes exactly as long as a real wrong-
     # password one, never leaking "this account exists and has recent
     # failed attempts against it" through response timing alone.
-    locked_out = login_attempt_reader.is_locked_out(body.username)
+    locked_out = login_attempt_tracker.is_locked_out(body.username)
 
     # Credential check ALWAYS runs first, unconditionally -- checking
     # is_user_disabled() before this and short-circuiting for a
@@ -339,7 +338,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
     # leaking "this account exists and is disabled" through response
     # timing alone, even with an identical error message). Same timing-
     # safety principle verify_credential() itself already follows.
-    credentials_valid = credential_reader.verify_credential(body.username, body.password)
+    credentials_valid = credential_store.verify_credential(body.username, body.password)
 
     if locked_out:
         # Same generic message as every other failure below --
@@ -349,7 +348,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     if not credentials_valid:
-        login_attempt_writer.record_failure(body.username)
+        login_attempt_tracker.record_failure(body.username)
         # Generic on purpose -- see module docstring.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -362,8 +361,8 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
         # thing entirely from a guessing attempt.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    login_attempt_writer.record_success(body.username)
-    token = session_writer.create_session(body.username)
+    login_attempt_tracker.record_success(body.username)
+    token = session_store.create_session(body.username)
     # Real, httponly cookie -- never returned in the JSON body at all;
     # doing both would defeat the entire point (see core/auth/
     # auth_cookies.py's own docstring). The CSRF cookie is
@@ -381,7 +380,7 @@ def logout(request: Request, response: Response) -> None:
     # the shared auth dependency for one caller.
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if session_token is not None:
-        request.app.state.session_writer.invalidate_session(session_token)
+        request.app.state.session_store.invalidate_session(session_token)
     # No error even if the cookie was missing -- logging out of a
     # session that isn't valid anyway isn't a meaningful failure.
     clear_session_cookie(response)
@@ -392,7 +391,7 @@ def logout(request: Request, response: Response) -> None:
 def logout_all(request: Request, current_user: UserRecord = Depends(get_current_user)) -> None:
     # Self-service -- revokes EVERY session for the caller, including
     # whichever one made this request. See module docstring.
-    request.app.state.session_writer.invalidate_all_sessions(current_user.user_id)
+    request.app.state.session_store.invalidate_all_sessions(current_user.user_id)
 
 
 @router.get("/users", response_model=list[UserSummaryResponse])
@@ -463,7 +462,7 @@ def visible_schema_route(username: str, request: Request,
 def logout_all_for_user(username: str, request: Request,
                          current_user: UserRecord = Depends(get_current_user)) -> None:
     _require_manage_users(request, current_user)
-    request.app.state.session_writer.invalidate_all_sessions(username)
+    request.app.state.session_store.invalidate_all_sessions(username)
 
 
 @router.post("/users/{username}/disable", status_code=204)
@@ -871,9 +870,9 @@ async def query(body: QueryRequest, request: Request,
     # extending core/internal_storage.py's own hierarchy); the check
     # genuinely only ever needs to read, the increment genuinely only
     # ever needs to write, and neither needs the other's capability.
-    if request.app.state.query_rate_limiter_reader.is_rate_limited(current_user.user_id):
+    if request.app.state.query_rate_limiter.is_rate_limited(current_user.user_id):
         raise HTTPException(status_code=429, detail="Too many queries -- please wait before trying again")
-    request.app.state.query_rate_limiter_writer.record_query(current_user.user_id)
+    request.app.state.query_rate_limiter.record_query(current_user.user_id)
 
     loop: AgentLoop = request.app.state.loop
     synthesis_client = request.app.state.synthesis_client

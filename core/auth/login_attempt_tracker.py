@@ -2,14 +2,6 @@
 login_attempt_tracker.py  (rate-limit repeated failed logins, per
 username)
 
-Two real, separate classes -- LoginAttemptReader(InternalReadAdapter)
-and LoginAttemptWriter(InternalWriteAdapter) -- not one, combined
-class, matching the same real pattern already proved for
-QueryRateLimiter, CredentialStore, and SessionStore (see core/
-internal_storage.py's own module docstring for the fuller design
-reasoning -- CQRS, Python's own typeshed precedent -- settled before
-any of these four splits was written).
-
 A real, found gap this project shipped without: nothing throttled
 /login at all -- an attacker could script unlimited password guesses
 against any username with no backend-enforced slowdown. Closed here.
@@ -53,30 +45,37 @@ leaking "this account exists and has recent failed attempts against
 it" through response timing alone. Never move that ordering without
 re-reading this.
 
-LoginAttemptWriter's own two methods deliberately do NOT use
-InternalWriteAdapter's own, simpler _connection() -- the same real,
-considered choice already made for every prior split's own writer, for
-the identical reason: the login_attempts table's own schema needs to
-genuinely exist first; core/auth/database.py's own schema-aware
-connection() already, correctly guarantees that. LoginAttemptReader's
-own is_locked_out(), by contrast, DOES use InternalReadAdapter's own,
-real, structurally read-only _connection() directly.
-
 Used by: api/routes.py's own login() route, the only caller.
 """
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from core.auth.database import connection
-from core.internal_storage import InternalReadAdapter, InternalWriteAdapter
 
 MAX_ATTEMPTS = 5
 WINDOW = timedelta(minutes=15)
 
 
-class LoginAttemptReader(InternalReadAdapter):
+class LoginAttemptTracker:
+    """Rate-limits repeated failed logins, per username.
+
+    ONE class, not a Reader/Writer pair. This store was briefly split
+    into two during the read-only mirror work, then deliberately
+    reverted: the split was pattern-matching, not a real requirement.
+    The genuine guarantee that work provides is that Elysium's read
+    path cannot write to the CUSTOMER'S OWN external database --
+    someone else's production system, protected from our bugs. This
+    table is Elysium's own, written only by Elysium, with no third
+    party to protect. Splitting it made callers pick a half for a
+    failure mode that was never real.
+    """
+
+    def __init__(self, db_path: Path):
+        self._db_path = db_path
+
     def is_locked_out(self, username: str) -> bool:
-        with self._connection() as conn:
+        with connection(self._db_path) as conn:
             row = conn.execute(
                 "SELECT failed_count, window_started_at FROM login_attempts WHERE username = ?", (username,)
             ).fetchone()
@@ -97,10 +96,8 @@ class LoginAttemptReader(InternalReadAdapter):
 
         return row["failed_count"] >= MAX_ATTEMPTS
 
-
-class LoginAttemptWriter(InternalWriteAdapter):
     def record_failure(self, username: str) -> None:
-        with connection(self.db_path) as conn:
+        with connection(self._db_path) as conn:
             row = conn.execute(
                 "SELECT failed_count, window_started_at FROM login_attempts WHERE username = ?", (username,)
             ).fetchone()
@@ -130,6 +127,6 @@ class LoginAttemptWriter(InternalWriteAdapter):
         # whoever just authenticated genuinely knows the password now,
         # regardless of how many earlier attempts (their own typos, or
         # someone else's) came before it.
-        with connection(self.db_path) as conn:
+        with connection(self._db_path) as conn:
             conn.execute("DELETE FROM login_attempts WHERE username = ?", (username,))
             conn.commit()

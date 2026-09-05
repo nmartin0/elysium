@@ -36,12 +36,3 @@ class ReadAdapter(ABC):  # noqa: B024 -- deliberately no shared abstract
 class WriteAdapter(ABC):  # noqa: B024 -- see ReadAdapter's own noqa
     """Marker base -- the write-capable counterpart to ReadAdapter,
     including update and delete, not just insert."""
-
-
-class AppendOnlyAdapter(ABC):  # noqa: B024 -- see ReadAdapter's own noqa
-    """Marker base -- deliberately NOT a subtype of WriteAdapter. A
-    genuinely narrower real capability: can only ever ADD a new entry,
-    structurally never update or delete an existing one. See core/
-    internal_storage.py's own module docstring for the real,
-    established precedent (the append-only log / event-sourcing
-    pattern) and the real, motivating example (AuditLog)."""

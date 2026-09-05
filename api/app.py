@@ -88,11 +88,11 @@ from fastapi import FastAPI, Request
 from api.csrf_middleware import csrf_protect
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.agent.agentic_loop import AgentLoop
-from core.auth.credential_store import CredentialReader
+from core.auth.credential_store import CredentialStore
 from core.auth.database import connection
-from core.auth.login_attempt_tracker import LoginAttemptReader, LoginAttemptWriter
-from core.auth.query_rate_limiter import QueryRateLimitReader, QueryRateLimitWriter
-from core.auth.session_store import SessionReader, SessionWriter
+from core.auth.login_attempt_tracker import LoginAttemptTracker
+from core.auth.query_rate_limiter import QueryRateLimiter
+from core.auth.session_store import SessionStore
 from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
 from core.lock_store import LockStore
 from core.ontology.write_mediator import WriteMediator
@@ -227,13 +227,10 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # re-deriving credentials_db_path and calling a free function each
     # time -- see core/auth/credential_store.py, core/auth/session_store.py,
     # and core/user_directory.py's own docstrings for the full reasoning.
-    app.state.credential_reader = CredentialReader(app.state.credentials_db_path)
-    app.state.session_reader = SessionReader(app.state.credentials_db_path)
-    app.state.session_writer = SessionWriter(app.state.credentials_db_path)
-    app.state.login_attempt_reader = LoginAttemptReader(app.state.credentials_db_path)
-    app.state.login_attempt_writer = LoginAttemptWriter(app.state.credentials_db_path)
-    app.state.query_rate_limiter_reader = QueryRateLimitReader(app.state.credentials_db_path)
-    app.state.query_rate_limiter_writer = QueryRateLimitWriter(app.state.credentials_db_path)
+    app.state.credential_store = CredentialStore(app.state.credentials_db_path)
+    app.state.session_store = SessionStore(app.state.credentials_db_path)
+    app.state.login_attempt_tracker = LoginAttemptTracker(app.state.credentials_db_path)
+    app.state.query_rate_limiter = QueryRateLimiter(app.state.credentials_db_path)
     app.state.user_directory = UserDirectory(app.state.credentials_db_path, config.roles)
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request. Reads its own write_log directly from

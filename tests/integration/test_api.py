@@ -274,8 +274,8 @@ def test_login_always_runs_real_password_verification_even_when_already_locked_o
     for _ in range(5):
         _login(client, "alice", "wrong-pw")
 
-    real_verify = client.app.state.credential_reader.verify_credential
-    with patch.object(client.app.state.credential_reader, "verify_credential", wraps=real_verify) as spy:
+    real_verify = client.app.state.credential_store.verify_credential
+    with patch.object(client.app.state.credential_store, "verify_credential", wraps=real_verify) as spy:
         _login(client, "alice", "correct-pw")
         assert spy.called
 
@@ -1171,7 +1171,7 @@ def test_query_is_rejected_429_once_the_rate_limit_is_reached(client):
 
     user_id = client.app.state.user_directory.get_user_record("alice").user_id
     for _ in range(MAX_QUERIES_PER_WINDOW):
-        client.app.state.query_rate_limiter_writer.record_query(user_id)
+        client.app.state.query_rate_limiter.record_query(user_id)
 
     response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
 
@@ -1191,7 +1191,7 @@ def test_a_rejected_query_is_not_itself_recorded_as_a_new_one(client):
 
     user_id = client.app.state.user_directory.get_user_record("alice").user_id
     for _ in range(MAX_QUERIES_PER_WINDOW):
-        client.app.state.query_rate_limiter_writer.record_query(user_id)
+        client.app.state.query_rate_limiter.record_query(user_id)
 
     # Two real, separate rejected calls -- if either were silently
     # ALSO recorded as a genuine query, the real, underlying count
