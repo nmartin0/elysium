@@ -199,9 +199,50 @@ FAILED  risk_sql.customer_risk: no such table: customer_risk
 4/5 tables synced successfully.
 ```
 
-**How often?** That depends on how stale your data can safely be.
-Reads served from the mirror are only as fresh as the last sync.
-Writes are unaffected — they always go to your real database, live.
+**Anyone can check how current the data is.** `GET /api/data-freshness`
+reports whether reads are live or mirror-backed and, if mirrored, when
+the last sync completed. It needs a login but no particular permission,
+since it exposes no business data. Elysium also shows a warning
+directly on any pending change awaiting approval when reads come from
+the mirror, so nobody approves a write without knowing how fresh the
+values they are looking at actually are.
+
+### Choosing a sync interval
+
+There is no correct default, because the right answer depends on your
+data rather than on Elysium. What follows is the actual trade-off, so
+you can decide rather than guess.
+
+**Reads served from the mirror are only as fresh as the last sync.**
+If you sync hourly, someone reading at 10:59 may be looking at data
+from 10:00. Whether that matters depends entirely on the field: a
+customer's name changing an hour late is usually fine; an account
+balance is often not.
+
+**Writes are unaffected.** They always go to your real database,
+live, and a confirmed write is visible immediately even from the
+mirror — Elysium overlays recently-applied writes on top of mirror
+reads until the next sync catches up. So the interval affects how
+quickly you see changes made *outside* Elysium, not changes made
+through it.
+
+**The cost of syncing more often** is load on your database and the
+time each sync takes. A sync reads every row of every table your
+ontology references, so the duration scales with your data size, and
+running it every minute against a large table is real, repeated work.
+
+A reasonable way to decide: start with an interval you are confident
+is safe (many deployments find 15 minutes to an hour comfortable),
+watch how long a sync actually takes from the output, and shorten it
+only if genuine staleness complaints appear. Lengthening it later is
+easy; discovering that hourly was too slow after someone acted on
+stale data is not.
+
+**If any field genuinely cannot tolerate staleness**, the honest
+answer is to leave `read_from_mirror` off for that deployment rather
+than sync aggressively. Live reads have no staleness at all, and the
+mirror's benefits — speed, and surviving a database outage — may not
+be worth it for your case.
 
 ## 9. Data-access security: what Elysium guarantees, and what you must configure
 

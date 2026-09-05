@@ -383,6 +383,38 @@ def my_profile_route(current_user: UserRecord = Depends(get_current_user)) -> di
     }
 
 
+@router.get("/data-freshness", dependencies=[Depends(_no_store)])
+def data_freshness_route(request: Request,
+                          _current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # How current the data a caller is reading actually is -- the
+    # user-visible half of the read-only mirror architecture (see
+    # ROADMAP.md's own "Real, visible data freshness" point).
+    #
+    # A SEPARATE route rather than a field on GET /me, deliberately:
+    # freshness is a property of the DEPLOYMENT, identical for every
+    # caller, and has nothing to do with who someone is. Folding a
+    # deployment-wide fact into an identity endpoint would make /me
+    # mean two unrelated things.
+    #
+    # Requires a login (like every route but /login) but no particular
+    # grant -- this exposes no business data whatsoever, only whether
+    # reads are live and, if not, when the mirror last synced.
+    # Gating it behind a permission would mean the people most likely
+    # to need it (anyone about to approve a write against possibly
+    # stale data) are the least likely to see it.
+    config = request.app.state.config
+    mediator = request.app.state.mediator
+
+    if not config.read_from_mirror:
+        # A live deployment reads the customer's real database on every
+        # request, so "freshness" is not a meaningful question -- said
+        # explicitly rather than returning a null timestamp a caller
+        # would have to interpret.
+        return {"source": "live", "last_synced_at": None}
+
+    return {"source": "mirror", "last_synced_at": mediator.mirror_synced_at}
+
+
 @router.get("/me/visible-apps", dependencies=[Depends(_no_store)])
 def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
     # The shell's own nav, made real: which apps exist for THIS

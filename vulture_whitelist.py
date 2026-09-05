@@ -54,6 +54,7 @@ refresh_lock_route
 release_lock_route
 force_release_lock_route
 lock_status_route
+data_freshness_route
 
 # --- unittest.mock attribute assignment -- `some_mock.return_value = x`
 # / `some_mock.side_effect = fn` are how tests configure a MagicMock;

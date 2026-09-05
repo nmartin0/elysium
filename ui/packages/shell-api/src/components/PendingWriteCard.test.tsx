@@ -8,16 +8,21 @@ vi.mock('../api', async (importOriginal) => {
   return {
     ...actual,
     confirmWrite: vi.fn(),
+    getDataFreshness: vi.fn(),
   }
 })
 
-import { confirmWrite, ApiError } from '../api'
+import { confirmWrite, getDataFreshness, ApiError } from '../api'
 import PendingWriteCard, { type PendingWrite } from './PendingWriteCard'
 
 const mockedConfirmWrite = vi.mocked(confirmWrite)
+const mockedGetDataFreshness = vi.mocked(getDataFreshness)
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Default: a live deployment, so no freshness notice. Individual
+  // tests override this to exercise the mirror-backed case.
+  mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
 })
 
 function singleObjectWrite(overrides: Partial<PendingWrite> = {}): PendingWrite {
@@ -327,5 +332,61 @@ describe('PendingWriteCard -- in-flight and failure handling', () => {
     await waitFor(() => expect(onSessionExpired).toHaveBeenCalledTimes(1))
     expect(screen.queryByText('session expired')).not.toBeInTheDocument()
     expect(onResolved).not.toHaveBeenCalled()
+  })
+})
+
+describe('data freshness notice', () => {
+  it('shows nothing for a live deployment -- there is genuinely nothing to warn about', async () => {
+    mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    // Waits for the fetch to settle before asserting absence, so this
+    // cannot pass merely because the effect had not run yet.
+    await waitFor(() => expect(mockedGetDataFreshness).toHaveBeenCalled())
+    expect(screen.queryByText(/may not be current/i)).not.toBeInTheDocument()
+  })
+
+  it('warns, with the real sync time, when reads come from the mirror', async () => {
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'mirror',
+      last_synced_at: '2026-01-15T09:00:00+00:00',
+    })
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    expect(await screen.findByText(/may not be current/i)).toBeInTheDocument()
+    expect(screen.getByText(/last synced/i)).toBeInTheDocument()
+  })
+
+  it('says so plainly when the mirror has never synced', async () => {
+    mockedGetDataFreshness.mockResolvedValue({ source: 'mirror', last_synced_at: null })
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    expect(await screen.findByText(/have not been synced yet/i)).toBeInTheDocument()
+  })
+
+  it('renders no notice, and no error, if the freshness call fails', async () => {
+    // An advisory banner failing must never interrupt someone in the
+    // middle of approving a real write.
+    mockedGetDataFreshness.mockRejectedValue(new Error('network'))
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    await waitFor(() => expect(mockedGetDataFreshness).toHaveBeenCalled())
+    expect(screen.queryByText(/may not be current/i)).not.toBeInTheDocument()
+    // The Approve control is still genuinely usable.
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled()
+  })
+
+  it('still lets a write be approved while the notice is showing', async () => {
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'mirror',
+      last_synced_at: '2026-01-15T09:00:00+00:00',
+    })
+    mockedConfirmWrite.mockResolvedValue({ status: 'written', object_ids: ['cust_1'] })
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    await screen.findByText(/may not be current/i)
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+
+    await waitFor(() => expect(mockedConfirmWrite).toHaveBeenCalledWith('write-1', true))
   })
 })

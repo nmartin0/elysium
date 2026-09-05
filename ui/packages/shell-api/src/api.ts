@@ -239,6 +239,22 @@ export async function confirmWrite(writeId: string, approved: boolean): Promise<
   return response.json()
 }
 
+// How current the data being read actually is. A deployment-wide fact,
+// identical for every caller -- see api/routes.py's own
+// data_freshness_route() for why it is its own endpoint rather than a
+// field on /me. Requires a login but no particular grant, so anyone
+// about to approve a write can see how fresh what they are approving
+// against actually is.
+export interface DataFreshness {
+  source: 'live' | 'mirror'
+  last_synced_at: string | null
+}
+
+export async function getDataFreshness(): Promise<DataFreshness> {
+  const response = await apiFetchOrThrow('/data-freshness')
+  return response.json() as Promise<DataFreshness>
+}
+
 // --- Admin: account management, all gated server-side by manage:users.
 // This module never checks "is the current user an admin" itself --
 // that's the backend's job (see api/routes.py's _require_manage_users());

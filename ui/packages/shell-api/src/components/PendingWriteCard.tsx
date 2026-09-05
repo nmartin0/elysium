@@ -1,6 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Callout } from '@blueprintjs/core'
-import { confirmWrite, getErrorMessage, handleIfSessionExpired } from '../api'
+import {
+  confirmWrite,
+  getDataFreshness,
+  getErrorMessage,
+  handleIfSessionExpired,
+  type DataFreshness,
+} from '../api'
 import { formatFieldName, formatValue } from '../format'
 
 // The real shape of one proposed change, as the backend's own /query
@@ -29,6 +35,21 @@ export interface PendingWrite {
   action_type_name: string
   description: string
   sub_writes: SubWrite[]
+}
+
+// A real, absolute timestamp rendered in the reader's own locale --
+// deliberately NOT a relative "5 minutes ago". Relative time would
+// need a ticking re-render to stay honest, and a stale relative label
+// is worse than none at all for a person deciding whether to approve a
+// write against this data.
+function formatSyncTime(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp)
+  if (Number.isNaN(parsed.getTime())) {
+    // A malformed timestamp is shown verbatim rather than as "Invalid
+    // Date" -- the raw value is at least diagnosable.
+    return isoTimestamp
+  }
+  return parsed.toLocaleString()
 }
 
 interface SubWriteFieldsProps {
@@ -106,6 +127,32 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
   // double-submit without pretending both are doing something.
   const [submittingAction, setSubmittingAction] = useState<'approve' | 'reject' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Fetched once per card rather than passed down as a prop: freshness
+  // is a deployment-wide fact this component genuinely needs and no
+  // caller currently has, and threading it through every intermediate
+  // component (QueryPanel, ActionForm) purely to reach here would
+  // couple all of them to a concern only this one has.
+  //
+  // A failure here is deliberately swallowed to null rather than
+  // surfaced: this is an advisory notice, and a person in the middle of
+  // approving a real write should not be shown an error about a banner
+  // they did not ask for. Absent freshness renders nothing, which is
+  // the same as the live-deployment case.
+  const [freshness, setFreshness] = useState<DataFreshness | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getDataFreshness()
+      .then((result) => {
+        if (!cancelled) setFreshness(result)
+      })
+      .catch(() => {
+        if (!cancelled) setFreshness(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   // A real, typed object, not a plain string -- redesigned specifically
   // so the resolved Callout below can pick the right, real intent:
   // approved and rejected are both genuinely SUCCESSFUL outcomes of
@@ -165,6 +212,21 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
         ) : (
           <SubWriteFields key={i} subWrite={subWrite} />
         ),
+      )}
+      {/* Shown ONLY when reads come from the mirror -- a live
+          deployment reads the customer's real database on every
+          request, so there is genuinely nothing to warn about and a
+          permanent banner would be noise that trains people to ignore
+          it. Placed directly above the Approve/Reject controls
+          deliberately: this is precisely the moment someone needs to
+          know how current the values they are approving against
+          actually are. */}
+      {freshness?.source === 'mirror' && (
+        <Callout intent="warning" title="Data may not be current">
+          {freshness.last_synced_at
+            ? `These values were last synced ${formatSyncTime(freshness.last_synced_at)}.`
+            : 'These values have not been synced yet.'}
+        </Callout>
       )}
       {error && <Callout intent="danger">{error}</Callout>}
       <div className="pending-write__actions">

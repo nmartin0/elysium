@@ -392,6 +392,57 @@ def test_me_routes_set_cache_control_no_store(client):
         assert response.headers["cache-control"] == "no-store", f"{path} is missing Cache-Control: no-store"
 
 
+def test_data_freshness_requires_a_login(client):
+    # Every route but /login does. A completely unauthenticated request
+    # fails the CSRF check first (403) or the auth check (401) --
+    # either way, genuinely rejected.
+    response = client.get("/api/data-freshness")
+    assert response.status_code in (401, 403)
+
+
+def test_data_freshness_reports_live_when_not_reading_from_the_mirror(client):
+    # The fixture deployment reads live, so this is the real default
+    # path. "live" is said explicitly rather than returning a null
+    # timestamp a caller would have to interpret.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.get("/api/data-freshness")
+
+    assert response.status_code == 200
+    assert response.json() == {"source": "live", "last_synced_at": None}
+
+
+def test_data_freshness_reports_the_mirror_sync_time_when_reading_from_it(client):
+    # Simulates a mirror-backed deployment by setting the same two
+    # values load_deployment_bundle() would set for one -- exercising
+    # the real route rather than mocking it.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    client.app.state.config.read_from_mirror = True
+    client.app.state.mediator.mirror_synced_at = "2026-01-15T09:00:00+00:00"
+
+    response = client.get("/api/data-freshness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source": "mirror",
+        "last_synced_at": "2026-01-15T09:00:00+00:00",
+    }
+
+
+def test_data_freshness_needs_no_particular_grant(client):
+    # A role with essentially no grants must still see this -- the
+    # people most likely to need it (anyone about to approve a write
+    # against possibly stale data) should never be the least likely to
+    # see it. It exposes no business data at all.
+    client.app.state.user_directory.create_user("nobody", "correct-pw", "us-west", "customer_service")
+    _login(client, "nobody", "correct-pw")
+
+    assert client.get("/api/data-freshness").status_code == 200
+
+
 def test_visible_apps_hides_admin_without_manage_users(client):
     # editor (fixtures/policy.yaml) holds no manage:users grant --
     # Admin must be genuinely absent from the response, not merely
