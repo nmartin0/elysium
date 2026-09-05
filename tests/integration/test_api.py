@@ -35,6 +35,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from core.auth.database import connection
+from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW
 from core.deployment_loader import RuntimePaths
 from core.intermediate_layer.auth import UserRecord
 
@@ -1044,6 +1046,51 @@ def test_query_end_to_end_with_mocked_llm(client):
 
     assert response.status_code == 200
     assert response.json()["answer"] == "Here is your answer."
+
+
+def test_query_is_rejected_429_once_the_rate_limit_is_reached(client):
+    # Directly puts the user at the limit via the real
+    # QueryRateLimiter itself (fast, in-process) rather than making
+    # MAX_QUERIES_PER_WINDOW real HTTP requests through a mocked LLM --
+    # exercises the exact same real record/check methods the route
+    # itself calls, just without the slow, repeated round trip.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    user_id = client.app.state.user_directory.get_user_record("alice").user_id
+    for _ in range(MAX_QUERIES_PER_WINDOW):
+        client.app.state.query_rate_limiter.record_query(user_id)
+
+    response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
+
+    assert response.status_code == 429
+    assert "Too many queries" in response.json()["detail"]
+
+
+def test_a_rejected_query_is_not_itself_recorded_as_a_new_one(client):
+    # A real, meaningful behavioral guarantee, not just an
+    # implementation detail: being rejected must never itself count
+    # toward FUTURE limits, or a caller already at the limit could
+    # never recover even once their real window naturally expires,
+    # since each new rejected attempt would keep pushing the window
+    # forward.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    user_id = client.app.state.user_directory.get_user_record("alice").user_id
+    for _ in range(MAX_QUERIES_PER_WINDOW):
+        client.app.state.query_rate_limiter.record_query(user_id)
+
+    # Two real, separate rejected calls -- if either were silently
+    # ALSO recorded as a genuine query, the real, underlying count
+    # would now read MAX_QUERIES_PER_WINDOW + 1 or + 2, not still
+    # exactly MAX_QUERIES_PER_WINDOW.
+    client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
+    client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
+
+    with connection(client.app.state.credentials_db_path) as conn:
+        row = conn.execute("SELECT query_count FROM query_rate_limits WHERE user_id = ?", (user_id,)).fetchone()
+    assert row["query_count"] == MAX_QUERIES_PER_WINDOW
 
 
 def test_query_refuses_if_permissions_changed_during_processing(client):

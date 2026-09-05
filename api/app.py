@@ -90,6 +90,7 @@ from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.agent.agentic_loop import AgentLoop
 from core.auth.credential_store import CredentialStore
 from core.auth.login_attempt_tracker import LoginAttemptTracker
+from core.auth.query_rate_limiter import QueryRateLimiter
 from core.auth.session_store import SessionStore
 from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
 from core.lock_store import LockStore
@@ -208,6 +209,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.credential_store = CredentialStore(app.state.credentials_db_path)
     app.state.session_store = SessionStore(app.state.credentials_db_path)
     app.state.login_attempt_tracker = LoginAttemptTracker(app.state.credentials_db_path)
+    app.state.query_rate_limiter = QueryRateLimiter(app.state.credentials_db_path)
     app.state.user_directory = UserDirectory(app.state.credentials_db_path, config.roles)
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request. Reads its own write_log directly from

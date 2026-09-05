@@ -8,10 +8,11 @@ database stores passwords." This is fixed, private infrastructure, same
 reasoning that kept action tools out of adapters/: pluggability is for
 things a deployer should genuinely get to choose.
 
-Three tables, one physical database, THIS file is the single source of
+Five tables, one physical database, THIS file is the single source of
 truth for what tables exist -- credential_store.py, session_store.py,
-and core/user_directory.py each own the QUERIES against their own
-table, but none of them declares schema independently.
+core/user_directory.py, login_attempt_tracker.py, and
+query_rate_limiter.py each own the QUERIES against their own table,
+but none of them declares schema independently.
 
 db_path is always an explicit parameter, never a hardcoded global path --
 same dependency-injection discipline as every other adapter in this
@@ -61,6 +62,11 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS login_attempts (
     username TEXT PRIMARY KEY,
     failed_count INTEGER NOT NULL DEFAULT 0,
+    window_started_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS query_rate_limits (
+    user_id TEXT PRIMARY KEY,
+    query_count INTEGER NOT NULL DEFAULT 0,
     window_started_at TEXT NOT NULL
 );
 """
