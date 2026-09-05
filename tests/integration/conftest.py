@@ -83,7 +83,7 @@ def _build_sqlite_db(sql_file: Path, db_path: Path) -> None:
     conn.close()
 
 
-def propose_named_action(deployment, mediator, query_text: str, user_id: str = "user_eve"):
+def propose_named_action(deployment, mediator, write_adapters, query_text: str, user_id: str = "user_eve"):
     # Shared by test_named_actions_e2e.py, test_write_confirmation_
     # e2e.py, and test_transfer_funds_e2e.py -- all real-Ollama tests
     # that run a query through a real model, expecting it to produce a
@@ -100,7 +100,7 @@ def propose_named_action(deployment, mediator, query_text: str, user_id: str = "
     # user (user_henry, the dedicated accountant-role user) needed
     # this same shared flow, rather than that test growing its own,
     # near-identical copy of this same logic.
-    write_mediator = WriteMediator(mediator, deployment.roles, deployment.action_types)
+    write_mediator = WriteMediator(mediator, write_adapters, deployment.roles, deployment.action_types)
     loop = AgentLoop.from_deployment(deployment, mediator, write_mediator=write_mediator)
     user_record = resolve_user_record(deployment.users, user_id, deployment.security_attribute)
 
@@ -137,14 +137,27 @@ def _bundle(tmp_path: Path, isolated_audit_log: Path):
 
 @pytest.fixture
 def deployment(_bundle):
-    config, _ = _bundle
+    config, _, _ = _bundle
     return config
 
 
 @pytest.fixture
 def mediator(_bundle):
-    _, mediator = _bundle
+    _, mediator, _ = _bundle
     return mediator
+
+
+@pytest.fixture
+def write_adapters(_bundle):
+    # A real, SEPARATE set of adapter instances from mediator's own --
+    # see WriteMediator's own __init__ docstring for the full story
+    # (Phase 0 of the read-only mirror initiative). Both sets are
+    # built from the exact same fixture data today -- this fixture
+    # exists so real tests can construct a real WriteMediator with its
+    # own, independent adapters, matching how every real deployment
+    # now does the same (see api/app.py and scripts/run_deployment.py).
+    _, _, write_adapters = _bundle
+    return write_adapters
 
 
 # =============================================================================

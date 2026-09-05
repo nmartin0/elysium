@@ -188,7 +188,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
-    config, mediator = load_deployment_bundle(
+    config, mediator, write_adapters = load_deployment_bundle(
         runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
     )
 
@@ -217,7 +217,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # to pass or verify matches here; load_deployment_bundle() always
     # constructs mediator with a real write_log, and WriteMediator's
     # own __init__ raises a clear error if that were ever not true.
-    app.state.write_mediator = WriteMediator(mediator, config.roles, config.action_types)
+    app.state.write_mediator = WriteMediator(mediator, write_adapters, config.roles, config.action_types)
     # Generic, resource-agnostic locking -- see core/lock_store.py's
     # own module docstring for the full mechanism. Its own, dedicated
     # SQLite file (matches write_log.db's own precedent), built

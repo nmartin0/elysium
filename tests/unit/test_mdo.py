@@ -25,7 +25,7 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _build_adapters
+from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -175,7 +175,7 @@ def mediator(tmp_path, isolated_audit_log):
     adapters = _build_adapters({
         "primary_sql": {"adapter": "sqlite", "connection": {"path": db_primary}},
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
-    })
+    }, _WRITE_ADAPTER_REGISTRY)
     silo_for_type = {"Customer": "primary_sql"}
     return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES,
                          write_log=WriteLog(tmp_path / "write_log.db"),
@@ -220,7 +220,7 @@ def test_search_mixing_fields_from_different_storages_is_rejected(mediator):
 
 
 def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.99})
@@ -248,7 +248,7 @@ def test_create_without_explicit_id_is_rejected(mediator):
     # declared mutations mix a primary field (name) and an MDO field
     # (risk_score) without ever naming customer_id itself -- the
     # multi-storage case still exercises this same, now-universal rule.
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
     with pytest.raises(ValueError, match="requires an explicit 'customer_id' value"):
         write_mediator.propose_action(alice, "CreateCustomerWithNameAndRiskScore",
@@ -369,7 +369,7 @@ def test_security_field_that_is_itself_mdo_backed(tmp_path, isolated_audit_log):
     adapters = _build_adapters({
         "primary_sql": {"adapter": "sqlite", "connection": {"path": db_primary}},
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
-    })
+    }, _WRITE_ADAPTER_REGISTRY)
     mediator = DataMediator(schema, adapters, {"Customer": "primary_sql"}, roles,
                              audit_log=AuditLog(isolated_audit_log / "audit.log"))
 
@@ -418,7 +418,7 @@ def test_create_without_setting_security_field_produces_an_unreadable_row(mediat
     # addition, this test never actually verified the log entry fires
     # here, only that the return values are correctly None. A genuine
     # gap between what the docstring claimed and what was proven.
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "CreateCustomerRiskOnly",

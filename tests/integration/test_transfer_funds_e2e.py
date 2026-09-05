@@ -48,8 +48,10 @@ QUERY_TEXT = (
 
 
 @pytest.mark.integration
-def test_real_model_invokes_a_genuinely_multi_object_action(deployment, mediator):
-    write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT, "user_henry")
+def test_real_model_invokes_a_genuinely_multi_object_action(deployment, mediator, write_adapters):
+    write_mediator, pending, user_record = propose_named_action(
+        deployment, mediator, write_adapters, QUERY_TEXT, "user_henry"
+    )
 
     # THE first real, unproven claim: a REAL model's own propose_action
     # call produced TWO sub_writes, touching TWO genuinely different
@@ -85,8 +87,10 @@ def test_real_model_invokes_a_genuinely_multi_object_action(deployment, mediator
 
 
 @pytest.mark.integration
-def test_real_model_transfer_rejected_leaves_both_accounts_unchanged(deployment, mediator):
-    write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT, "user_henry")
+def test_real_model_transfer_rejected_leaves_both_accounts_unchanged(deployment, mediator, write_adapters):
+    write_mediator, pending, user_record = propose_named_action(
+        deployment, mediator, write_adapters, QUERY_TEXT, "user_henry"
+    )
 
     outcome = write_mediator.confirm_and_execute(pending, approved=False)
     print(f"[diagnostic] confirm_and_execute outcome: {outcome}")

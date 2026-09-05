@@ -27,7 +27,7 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _build_adapters
+from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -103,12 +103,12 @@ def write_mediator(tmp_path, isolated_audit_log):
     conn.commit()
     conn.close()
 
-    adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}})
+    adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}}, _WRITE_ADAPTER_REGISTRY)
     write_log = WriteLog(tmp_path / "write_log.db")
     audit_log = AuditLog(isolated_audit_log / "audit.log")
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES,
                              write_log=write_log, audit_log=audit_log)
-    return WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    return WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
 
 
 def test_valid_action_call_succeeds_end_to_end(write_mediator):

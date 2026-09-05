@@ -1,5 +1,5 @@
 """
-Direct, adapter-level tests for SQLiteAdapter.write_fields() -- the
+Direct, adapter-level tests for SQLiteWriteAdapter.write_fields() -- the
 atomic conditional write / lost-update check at the heart of every
 confirmed write in this project. No existing test file exercised this
 directly before -- every prior test went through the higher-level
@@ -24,7 +24,7 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteAdapter
+from adapters.sqlite_adapter import SQLiteWriteAdapter
 
 TYPE_CONFIG = {
     "storage": {"silo": "test", "table": "widgets", "id_column": "widget_id"},
@@ -41,7 +41,7 @@ def adapter(tmp_path):
     """)
     conn.commit()
     conn.close()
-    return SQLiteAdapter({"path": db_path})
+    return SQLiteWriteAdapter({"path": db_path})
 
 
 def test_write_succeeds_when_expected_current_values_match(adapter):

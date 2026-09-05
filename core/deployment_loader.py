@@ -28,22 +28,36 @@ Called by: scripts/run_deployment.py, scripts/serve_requests.py,
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from adapters.ollama_adapter import OllamaAdapter
-from adapters.sqlite_adapter import SQLiteAdapter
+from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.policy_validation import validate_roles
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
 from core.ontology.action_types import validate_action_types
-from core.ontology.interface import DataSiloAdapter
+from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.object_type_validation import validate_object_types
 from core.ontology.write_log import WriteLog
 
-_ADAPTER_REGISTRY: dict[str, type] = {
-    "sqlite": SQLiteAdapter,
+# Two real, SEPARATE registries -- not one, mapping to a (read, write)
+# tuple -- confirmed this is the clearer shape: _build_adapters() below
+# takes an explicit `registry` parameter naming exactly which one it's
+# building from, so a caller (and a reader) can see directly which real
+# capability a given call produces, rather than needing to also track
+# an index into a tuple. See core/ontology/interface.py's own AI-notes
+# for the fuller story behind why DataSiloAdapter itself split into
+# ExternalReadAdapter/ExternalWriteAdapter, which is the real reason
+# this registry split exists at all.
+_READ_ADAPTER_REGISTRY: dict[str, type] = {
+    "sqlite": SQLiteReadAdapter,
+}
+
+_WRITE_ADAPTER_REGISTRY: dict[str, type] = {
+    "sqlite": SQLiteWriteAdapter,
 }
 
 _LLM_ADAPTER_REGISTRY: dict[str, type] = {
@@ -247,15 +261,17 @@ def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
     return ConcurrencyLimitedLLMAdapter(adapter_class(model, config.llm_connection))
 
 
-def _build_adapters(silo_configs: dict) -> dict[str, DataSiloAdapter]:
+def _build_adapters(
+    silo_configs: dict, registry: dict[str, type]
+) -> dict[str, ExternalReadAdapter | ExternalWriteAdapter]:
     adapters = {}
     for silo_name, silo_config in silo_configs.items():
         adapter_key = silo_config["adapter"]
-        adapter_class = _ADAPTER_REGISTRY.get(adapter_key)
+        adapter_class = registry.get(adapter_key)
         if adapter_class is None:
             raise ValueError(
                 f"Unknown adapter type {adapter_key!r} for silo {silo_name!r} "
-                f"-- registered adapters: {sorted(_ADAPTER_REGISTRY.keys())}"
+                f"-- registered adapters: {sorted(registry.keys())}"
             )
         adapters[silo_name] = adapter_class(silo_config["connection"])
     return adapters
@@ -293,8 +309,9 @@ def resolve_runtime_paths() -> RuntimePaths:
     return RuntimePaths(config_dir, data_dir, log_dir)
 
 
-def load_deployment_bundle(config_dir: Path, data_dir: Path | None = None,
-                            log_dir: Path | None = None) -> tuple[DeploymentConfig, DataMediator]:
+def load_deployment_bundle(
+    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None
+) -> tuple[DeploymentConfig, DataMediator, dict[str, ExternalWriteAdapter]]:
     # Loads config, builds one adapter instance per declared silo (see
     # _ADAPTER_REGISTRY above), and wires them into a DataMediator that
     # knows which object types route to which silo.
@@ -321,7 +338,27 @@ def load_deployment_bundle(config_dir: Path, data_dir: Path | None = None,
             connection["path"] = data_dir / connection["path"]
         resolved_silo_configs[silo_name] = {**silo_config, "connection": connection}
 
-    adapters = _build_adapters(resolved_silo_configs)
+    adapters = cast("dict[str, ExternalReadAdapter]", _build_adapters(resolved_silo_configs, _READ_ADAPTER_REGISTRY))
+    # A SECOND, genuinely independent set of adapter instances --
+    # real, separate connection objects, not a second reference to the
+    # same ones -- built specifically for a WriteMediator a caller may
+    # go on to construct around the returned mediator. Phase 0 of the
+    # read-only mirror initiative: a real, found prerequisite -- see
+    # WriteMediator's own AI-notes and __init__ docstring for the full
+    # story. Both sets are built from the exact same resolved_silo_
+    # configs today (same credentials, same real permissions) --
+    # deliberately unchanged behavior for this phase; a LATER phase
+    # is what actually narrows `adapters` above to a genuinely
+    # read-only credential, once DataMediator's own read path is ready
+    # to move. A caller with no need for a WriteMediator at all (e.g.
+    # scripts/serve_requests.py) is free to simply ignore this return
+    # value -- building it unconditionally here, rather than lazily on
+    # first use, keeps this function's own real behavior simple and
+    # predictable regardless of what a given caller goes on to do with
+    # it.
+    write_adapters = cast(
+        "dict[str, ExternalWriteAdapter]", _build_adapters(resolved_silo_configs, _WRITE_ADAPTER_REGISTRY)
+    )
     silo_for_type = _build_silo_for_type(config.schema)
     # DataMediator no longer takes users/security_attribute -- identity
     # is resolved ONCE per request by the caller (see core/
@@ -347,7 +384,7 @@ def load_deployment_bundle(config_dir: Path, data_dir: Path | None = None,
     audit_log = AuditLog(log_dir / "audit.log") if log_dir is not None else None
     mediator = DataMediator(config.schema, adapters, silo_for_type, config.roles,
                              write_log=write_log, audit_log=audit_log)
-    return config, mediator
+    return config, mediator, write_adapters
 
 
 def load_example_queries(config_dir: Path) -> list[dict]:

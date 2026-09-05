@@ -40,7 +40,7 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _build_adapters
+from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -110,12 +110,12 @@ def wm_and_log(tmp_path, isolated_audit_log):
     conn.commit()
     conn.close()
 
-    adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}})
+    adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}}, _WRITE_ADAPTER_REGISTRY)
     write_log = WriteLog(tmp_path / "write_log.db")
     audit_log = AuditLog(isolated_audit_log / "audit.log")
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Account": "primary"}, TEST_ROLES,
                              write_log=write_log, audit_log=audit_log)
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
     return write_mediator, write_log
 
 

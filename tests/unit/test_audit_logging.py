@@ -20,7 +20,7 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteAdapter
+from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -44,7 +44,7 @@ def _record(user_id):
 
 @pytest.fixture
 def mediator(test_db_path, test_schema, isolated_audit_log) -> DataMediator:
-    adapter = SQLiteAdapter({"path": test_db_path})
+    adapter = SQLiteWriteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
     audit_log = AuditLog(isolated_audit_log / "audit.log")
     return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES, audit_log=audit_log)
@@ -152,7 +152,7 @@ def test_orphaned_mdo_style_record_logs_security_resolution_failed(tmp_path, iso
     conn.close()
 
     from tests.conftest import TEST_SCHEMA
-    adapter = SQLiteAdapter({"path": db_path})
+    adapter = SQLiteWriteAdapter({"path": db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in TEST_SCHEMA.items()}
     empty_mediator = DataMediator(TEST_SCHEMA, {"test_silo": adapter}, silo_for_type, TEST_ROLES,
                                    audit_log=AuditLog(isolated_audit_log / "audit.log"))

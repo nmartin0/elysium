@@ -1,29 +1,45 @@
 """
 sqlite_adapter.py  (SQLite-specific -- the only place SQL syntax exists)
 
-Two halves, deliberately merged into one file rather than split across
-adapters/ and a separate connectors/ package: the raw SQLite mechanics
-(_connect/_run_query/_run_query_one) are only ever used by SQLiteAdapter
-below -- a real 1:1 relationship, not a shared layer serving many
-adapters. Splitting them would have added a file without adding a real
+Two real, separate classes -- SQLiteReadAdapter(ExternalReadAdapter) and
+SQLiteWriteAdapter(ExternalWriteAdapter) -- not the single, combined
+SQLiteAdapter this file used to define. A real, direct request, worked
+through carefully: "adapters/ should just be the veneer that extends
+down the implementation-specific interfacing" against the real,
+structural ExternalReadAdapter/ExternalWriteAdapter split in core/
+ontology/interface.py -- see that file's own module docstring for the
+fuller design reasoning. Each class here holds ONLY the SQLite-specific
+connection/query mechanics for its own real role; the shared, module-
+level _run_query()/_run_query_one() helpers below are pure, stateless
+query-execution mechanics, not adapter state or capability, so staying
+shared between both classes doesn't blur the real read/write line this
+whole split exists to draw.
+
+The raw SQLite mechanics (_connect/_run_query/_run_query_one) are only
+ever used by the two classes below -- a real 1:1 relationship, not a
+shared layer serving many adapters. Splitting them into a separate
+connectors/ package would have added a file without adding a real
 architectural seam (see design discussion: adapters/ is pluggable via
 config + registry; there is no equivalent second mechanism for a
 "connector" layer to plug into).
 
-SQLiteAdapter implements core/ontology/interface.py's DataSiloAdapter
-contract. It is purely mechanical -- no security logic, no policy
-judgment. core/ontology/mediator.py's DataMediator is the only caller,
-and only ever calls this after its own checks have already passed.
+Purely mechanical -- no security logic, no policy judgment.
+core/ontology/mediator.py's DataMediator (reads) and core/ontology/
+write_mediator.py's WriteMediator (writes) are the only real callers,
+and only ever call a method here after their own checks have already
+passed.
 
-CONCURRENCY: declares max_concurrent_writes=1 (SQLite's write lock is
-whole-FILE -- see interface.py's docstring for why this is a real,
-honest exception, not the default). Reads and multi-field writes are
-otherwise handled by DataMediator's own per-object lock plus this
-adapter's atomic conditional write_fields() -- see that method's
-docstring for the actual lost-update-prevention mechanism.
+CONCURRENCY: SQLiteWriteAdapter declares max_concurrent_writes=1
+(SQLite's write lock is whole-FILE -- see core/ontology/interface.py's
+own docstring for why this is a real, honest exception, not the
+default). Reads are otherwise handled by DataMediator's own per-object
+lock plus this adapter's atomic conditional write_fields() -- see that
+method's docstring for the actual lost-update-prevention mechanism.
 
-Used by: core/deployment_loader.py (constructs one instance per silo
-         declared in a deployment's data_silos.yaml)
+Used by: core/deployment_loader.py (constructs one READ instance and
+         one, genuinely SEPARATE, WRITE instance per silo declared in
+         a deployment's data_silos.yaml -- see that file's own
+         _build_adapters() and its own AI-notes for why two, not one)
 """
 
 import sqlite3
@@ -31,6 +47,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.sqlite_connection import open_connection as _connect
 
 
@@ -44,14 +61,10 @@ def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> di
     return dict(row) if row is not None else None
 
 
-class SQLiteAdapter:
-    # SQLite's write lock is whole-FILE -- coarser than DataMediator's
-    # per-object correctness lock, which is why this is a real, honest
-    # exception rather than None (see interface.py's docstring). Reads
-    # are genuinely fine concurrently -- SQLite handles that natively.
+class SQLiteReadAdapter(ExternalReadAdapter):
+    # Reads are genuinely fine concurrently -- SQLite handles that
+    # natively.
     max_concurrent_reads = None
-    max_concurrent_writes = 1
-    supports_atomic_conditional_write = True
 
     def __init__(self, connection: dict):
         # connection comes straight from this silo's config.yaml block,
@@ -138,6 +151,35 @@ class SQLiteAdapter:
             )
             return [row[target_id_column] for row in rows]
 
+
+class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):
+    # Extends SQLiteReadAdapter directly -- not a second, parallel
+    # implementation of find_ids/get_raw_field/etc, and not ONLY
+    # ExternalWriteAdapter either. A real, necessary correction caught
+    # directly, not assumed away: WriteMediator's own write flow
+    # genuinely needs to READ a field's current value before writing
+    # it (the optimistic-concurrency check -- see write_mediator.py's
+    # own _read_group_fields()), so the write-side adapter needs BOTH
+    # real capabilities, not write-only. This is the SAME real,
+    # established pattern already cited when choosing the whole
+    # ReadAdapter/WriteAdapter split in the first place (Python's own
+    # typeshed: a concrete type needing both SupportsRead and
+    # SupportsWrite composes them via real inheritance from the
+    # separate, atomic pieces -- never a third, redundant "does
+    # everything" interface invented from scratch). Inheriting from
+    # SQLiteReadAdapter directly, rather than re-declaring the same
+    # four read methods here, means there is exactly ONE real
+    # implementation of find_ids/find_ids_matching_text/get_raw_field/
+    # resolve_reverse_link in this whole file, not two to keep in
+    # sync.
+    #
+    # SQLite's write lock is whole-FILE -- coarser than DataMediator's
+    # per-object correctness lock, which is why this is a real, honest
+    # exception rather than None (see core/ontology/interface.py's own
+    # docstring).
+    max_concurrent_writes = 1
+    supports_atomic_conditional_write = True
+
     def write_fields(self, object_type: str, object_id: Any, changes: dict,
                       expected_current_values: dict, type_config: dict) -> bool:
         # ONE atomic SQL statement -- all fields in `changes` written
@@ -147,8 +189,9 @@ class SQLiteAdapter:
         # nothing: rowcount == 0, we return False, nothing is written.
         # This is a genuine database-level atomicity guarantee -- holds
         # even across separate OS processes, not just threads within
-        # this one (see interface.py's supports_atomic_conditional_write
-        # docstring for why that distinction matters).
+        # this one (see core/ontology/interface.py's own
+        # supports_atomic_conditional_write docstring for why that
+        # distinction matters).
         table = type_config["storage"]["table"]
         id_column = type_config["storage"]["id_column"]
 
@@ -201,6 +244,18 @@ class SQLiteAdapter:
 # =============================================================================
 #
 # RESOLVED (kept for history):
+# - The single, combined SQLiteAdapter class split into
+#   SQLiteReadAdapter/SQLiteWriteAdapter -- see core/ontology/
+#   interface.py's own AI-notes for the fuller story (the same real,
+#   direct request that motivated the ExternalReadAdapter/
+#   ExternalWriteAdapter split this file's two classes now extend).
+#   Both classes still point at the SAME real db_path today (see
+#   core/deployment_loader.py's own _build_adapters(), called twice --
+#   once for DataMediator's own read adapters, once for WriteMediator's
+#   own write adapters) -- this split is the real, STRUCTURAL half of
+#   the guarantee; the credential-level half (a genuinely different,
+#   SELECT-only database user for the read side) is a separate,
+#   later phase, not yet done.
 # - find_ids_matching_text() -- the free-text, CONTAINS-match search
 #   underneath DataMediator.search_object_free_text() (see that
 #   method's own AI-notes for the fuller design and why it's a

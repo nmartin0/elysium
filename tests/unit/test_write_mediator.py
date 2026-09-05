@@ -26,7 +26,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteAdapter
+from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 from core.ontology.write_log import WriteLog
@@ -97,11 +97,11 @@ def _record(user_id):
 
 @pytest.fixture
 def wm(test_db_path, test_schema, tmp_path) -> WriteMediator:
-    adapter = SQLiteAdapter({"path": test_db_path})
+    adapter = SQLiteWriteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
     write_log = WriteLog(tmp_path / "write_log.db")
     mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES, write_log=write_log)
-    return WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    return WriteMediator(mediator, {"test_silo": adapter}, TEST_ROLES, TEST_ACTION_TYPES)
 
 
 def test_visible_action_types_without_discover_grant_shows_only_executable_actions(wm):

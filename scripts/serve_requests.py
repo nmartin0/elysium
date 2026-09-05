@@ -37,7 +37,7 @@ def serve(requests: list[tuple[str, str]], runtime_paths: RuntimePaths | None = 
     # Returns each request's raw gathered result, same order as input.
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
-    config, mediator = load_deployment_bundle(runtime_paths.config_dir, runtime_paths.data_dir)
+    config, mediator, _write_adapters = load_deployment_bundle(runtime_paths.config_dir, runtime_paths.data_dir)
     loop = AgentLoop.from_deployment(config, mediator)
 
     # Identity resolved ONCE per request, here -- AgentLoop.run() takes

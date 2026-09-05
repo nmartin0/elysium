@@ -97,3 +97,26 @@ captured_security_value
 # this file already needs a whitelist entry (see the block above):
 # never referenced by name anywhere in the Python source itself.
 add_security_headers
+
+# --- core/internal_storage.py's InternalReadAdapter/InternalWriteAdapter,
+# and core/adapter_roles.py's AppendOnlyAdapter -- real, declared,
+# deliberate scaffolding, same real pattern as max_concurrent_reads/
+# supports_atomic_conditional_write above: declared ahead of the real
+# capability that will consume them (the internal-store Reader/Writer
+# splits -- QueryRateLimiter, CredentialStore, SessionStore,
+# LoginAttemptTracker, WriteLog, AuditLog -- agreed on directly, not
+# yet built). Re-verify with a real grep before assuming this
+# reasoning still holds once any of those splits actually lands.
+InternalReadAdapter
+InternalWriteAdapter
+AppendOnlyAdapter
+
+# --- core/ontology/write_mediator.py's own _ReadWriteAdapter -- a
+# real, genuinely used TYPE_CHECKING-only intersection type, referenced
+# only via STRING-quoted annotations (adapter: "_ReadWriteAdapter") so
+# it never needs importing at real runtime. Vulture's own by-name
+# analysis can't trace a string-quoted forward reference the same way
+# it can't trace the other dynamic-attribute patterns documented above
+# -- confirmed directly (a real grep shows three real, live uses) that
+# this is a genuine false positive, not actual dead code.
+_ReadWriteAdapter

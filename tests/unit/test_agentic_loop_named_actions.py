@@ -24,7 +24,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import _build_adapters
+from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 from core.ontology.write_log import WriteLog
@@ -92,10 +92,10 @@ def loop(tmp_path):
     conn.commit()
     conn.close()
 
-    adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}})
+    adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}}, _WRITE_ADAPTER_REGISTRY)
     write_log = WriteLog(tmp_path / "write_log.db")
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES, write_log=write_log)
-    write_mediator = WriteMediator(mediator, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
     return AgentLoop(MagicMock(), mediator, write_mediator=write_mediator,
                       max_hops=5, max_consecutive_invalid_steps=2)
 
@@ -172,7 +172,7 @@ def test_propose_action_step_is_rejected_gracefully_when_writes_are_disabled():
     # uncaught crash. Matches propose_write()'s identical behavior
     # exactly (confirmed directly, not assumed, after an earlier
     # version of this test incorrectly expected an uncaught raise).
-    adapters = _build_adapters({})
+    adapters = _build_adapters({}, _WRITE_ADAPTER_REGISTRY)
     mediator = DataMediator({}, adapters, {}, TEST_ROLES)
     loop_no_writes = AgentLoop(MagicMock(), mediator, write_mediator=None)
     lead = _record("lead")

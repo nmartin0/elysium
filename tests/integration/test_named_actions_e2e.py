@@ -34,8 +34,8 @@ QUERY_TEXT = "Update cust_001's name to 'Ada Lovelace'."
 
 
 @pytest.mark.integration
-def test_real_model_invokes_named_action_and_it_actually_changes_the_database(deployment, mediator):
-    write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT)
+def test_real_model_invokes_named_action_and_it_actually_changes_the_database(deployment, mediator, write_adapters):
+    write_mediator, pending, user_record = propose_named_action(deployment, mediator, write_adapters, QUERY_TEXT)
 
     # THE first real, unproven claim: the PendingWrite this produced
     # genuinely came through the resolved-mutations path, not a raw
@@ -63,8 +63,8 @@ def test_real_model_invokes_named_action_and_it_actually_changes_the_database(de
 
 
 @pytest.mark.integration
-def test_real_model_proposal_rejected_leaves_database_unchanged(deployment, mediator):
-    write_mediator, pending, user_record = propose_named_action(deployment, mediator, QUERY_TEXT)
+def test_real_model_proposal_rejected_leaves_database_unchanged(deployment, mediator, write_adapters):
+    write_mediator, pending, user_record = propose_named_action(deployment, mediator, write_adapters, QUERY_TEXT)
 
     outcome = write_mediator.confirm_and_execute(pending, approved=False)
     print(f"[diagnostic] confirm_and_execute outcome: {outcome}")

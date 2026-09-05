@@ -67,7 +67,7 @@ def _terminal_confirm_write(pending: PendingWrite) -> bool:
 def run_deployment(runtime_paths: RuntimePaths | None = None) -> None:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
-    config, mediator = load_deployment_bundle(
+    config, mediator, write_adapters = load_deployment_bundle(
         runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
     )
     examples = load_example_queries(runtime_paths.config_dir)
@@ -80,7 +80,7 @@ def run_deployment(runtime_paths: RuntimePaths | None = None) -> None:
     # its own write_log directly from mediator (see WriteMediator's
     # own write_log property) -- nothing to pass or verify matches
     # here.
-    write_mediator = WriteMediator(mediator, config.roles, config.action_types)
+    write_mediator = WriteMediator(mediator, write_adapters, config.roles, config.action_types)
     # THE resume-on-startup half of crash recovery -- see
     # WriteMediator.resume_pending_writes()'s own docstring for the
     # full mechanism. Runs ONCE, here, before any example query in this

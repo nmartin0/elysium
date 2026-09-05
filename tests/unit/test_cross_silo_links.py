@@ -33,7 +33,7 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _build_adapters
+from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 
@@ -96,7 +96,7 @@ def mediator(tmp_path):
     adapters = _build_adapters({
         "silo_a": {"adapter": "sqlite", "connection": {"path": db_a}},
         "silo_b": {"adapter": "sqlite", "connection": {"path": db_b}},
-    })
+    }, _WRITE_ADAPTER_REGISTRY)
     silo_for_type = {"Employee": "silo_a", "PayrollRecord": "silo_b"}
     return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES)
 

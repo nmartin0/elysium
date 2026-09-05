@@ -22,7 +22,7 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteAdapter
+from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 
@@ -56,7 +56,7 @@ def _record(user_id):
 
 @pytest.fixture
 def mediator(test_db_path, test_schema) -> DataMediator:
-    adapter = SQLiteAdapter({"path": test_db_path})
+    adapter = SQLiteWriteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
     return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
 
@@ -405,7 +405,7 @@ def test_two_mediators_are_independent():
         users_a = {"x_user": {"org_id": "org-x", "role": "reader"}}
         roles_a = {"reader": {"allowed_actions": ["read:Author", "read:Author.name"]}}
 
-        adapter_a = SQLiteAdapter({"path": db_a})
+        adapter_a = SQLiteWriteAdapter({"path": db_a})
         mediator_a = DataMediator(schema_a, {"s": adapter_a}, {"Author": "s"}, roles_a)
         record_a = resolve_user_record(users_a, "x_user", "org_id")
         assert mediator_a.get_field(record_a, "Author", "x", "name") == "Test Author"

@@ -105,13 +105,13 @@ Used by: scripts/run_deployment.py (via core/deployment_loader.py),
 
 import threading
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
-from core.ontology.interface import DataSiloAdapter
+from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.schema import (
     get_column_for_field,
     get_field_storage_name,
@@ -123,7 +123,7 @@ from core.ontology.write_log import WriteLog
 
 
 class DataMediator:
-    def __init__(self, schema: dict, adapters: dict[str, DataSiloAdapter],
+    def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
                  silo_for_type: dict[str, str], roles: dict,
                  write_log: WriteLog | None = None,
                  audit_log: AuditLog | None = None):
@@ -154,10 +154,23 @@ class DataMediator:
         # genuinely does.
         self.audit_log = audit_log if audit_log is not None else AuditLog()
 
-        self._write_limiters = {
-            silo_name: ConcurrencyLimiter(adapter.max_concurrent_writes)
-            for silo_name, adapter in adapters.items()
-        }
+        # Built LAZILY, per-silo, inside _write_limiter_for_silo()
+        # below -- NOT eagerly here. A real, necessary correction:
+        # this used to build one limiter per adapter unconditionally,
+        # reading adapter.max_concurrent_writes -- but a genuine
+        # ExternalReadAdapter (this class's own real, normal case,
+        # once DataMediator's own read path moves to a read-only
+        # credential) has no such attribute at all -- only
+        # ExternalWriteAdapter does. Building this eagerly, for EVERY
+        # DataMediator regardless of whether anything ever calls
+        # _write_limiter_for_silo() on it, would make constructing a
+        # genuinely read-only DataMediator fail outright. Lazy
+        # construction means this code path is only ever exercised by
+        # the one, real caller that actually needs it -- WriteMediator's
+        # own internal, write-capable _adapter_mediator (see that
+        # class's own __init__ docstring) -- never by a real, ordinary,
+        # read-only DataMediator instance at all.
+        self._write_limiters: dict[str, ConcurrencyLimiter] = {}
         self._object_locks = KeyedLockManager()
 
     def _lock_for_object(self, object_type: str, object_id: Any) -> threading.Lock:
@@ -212,9 +225,28 @@ class DataMediator:
         # bug, caught directly by tracing the actual call chain, not
         # just reasoned about (see write_mediator.py's own comment on
         # this at its update-side fix).
+        #
+        # Built lazily, on first real use, not eagerly in __init__ --
+        # see that method's own comment for why: this method (and
+        # therefore max_concurrent_writes) is only ever genuinely
+        # needed on a real, write-capable ExternalWriteAdapter, never
+        # on a genuine, read-only ExternalReadAdapter, which has no
+        # such attribute at all. The cast() below is real, deliberate
+        # type-narrowing, not a way of hiding a genuine mismatch: this
+        # method is ONLY ever called via WriteMediator's own internal,
+        # write-capable _adapter_mediator (see that class's own
+        # __init__ docstring) -- self.adapters there genuinely does
+        # hold ExternalWriteAdapter instances at runtime (in practice,
+        # concretely, adapters/sqlite_adapter.py's own SQLiteWriteAdapter),
+        # even though self.adapters' own STATIC type stays
+        # dict[str, ExternalReadAdapter] for every OTHER, real,
+        # read-only DataMediator this class also serves.
+        if silo_name not in self._write_limiters:
+            adapter = cast(ExternalWriteAdapter, self.adapters[silo_name])
+            self._write_limiters[silo_name] = ConcurrencyLimiter(adapter.max_concurrent_writes)
         return self._write_limiters[silo_name]
 
-    def _adapter_for(self, object_type: str) -> DataSiloAdapter:
+    def _adapter_for(self, object_type: str) -> ExternalReadAdapter:
         silo_name = self.silo_for_type[object_type]
         return self.adapters[silo_name]
 
@@ -224,7 +256,7 @@ class DataMediator:
             raise ValueError(f"Unknown object_type: {object_type}")
         return type_schema
 
-    def _resolve_shared_storage(self, object_type: str, field_names) -> tuple[DataSiloAdapter, dict]:
+    def _resolve_shared_storage(self, object_type: str, field_names) -> tuple[ExternalReadAdapter, dict]:
         # MDO (multi-datasource object types) -- resolves ONE adapter +
         # synthetic type_config shared by every field in field_names.
         # A field may declare its own "storage" (an entry in this
@@ -431,7 +463,7 @@ class DataMediator:
         return visible
 
     def _read_field_with_log_check(self, object_type: str, object_id: Any, field_name: str,
-                                    adapter: DataSiloAdapter, resolved_type_config: dict) -> Any:
+                                    adapter: ExternalReadAdapter, resolved_type_config: dict) -> Any:
         # THE shared "check the write log first, else the real adapter"
         # merge -- factored out of get_field() so search_object()'s
         # write-log reconciliation (_reconcile_search_with_pending_writes()
@@ -628,7 +660,7 @@ class DataMediator:
         ]
 
     def _reconcile_search_with_pending_writes(self, object_type: str, criteria: dict, candidate_ids: list,
-                                               adapter: DataSiloAdapter, resolved_type_config: dict) -> list:
+                                               adapter: ExternalReadAdapter, resolved_type_config: dict) -> list:
         # Closes the gap write_log.py's own module docstring used to
         # name explicitly: search_object() queries the REAL backend
         # directly (via adapter.find_ids() above), which for an object

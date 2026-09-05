@@ -48,8 +48,8 @@ QUERY_TEXT = (
 
 
 @pytest.mark.integration
-def test_real_model_produces_a_well_formed_create_action_proposal(deployment, mediator):
-    write_mediator = WriteMediator(mediator, deployment.roles, deployment.action_types)
+def test_real_model_produces_a_well_formed_create_action_proposal(deployment, mediator, write_adapters):
+    write_mediator = WriteMediator(mediator, write_adapters, deployment.roles, deployment.action_types)
     loop = AgentLoop.from_deployment(deployment, mediator, write_mediator=write_mediator)
     user_record = resolve_user_record(deployment.users, "user_eve", deployment.security_attribute)
 

@@ -34,15 +34,33 @@ Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
-from core.ontology.interface import DataSiloAdapter
+from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.schema import get_column_for_field
 from core.ontology.submission_criteria import evaluate_submission_criteria
 from core.ontology.write_log import WriteLog
+
+if TYPE_CHECKING:
+    # A real, TYPE_CHECKING-only intersection type -- never a runtime
+    # class, never instantiated -- for the one, real, recurring need in
+    # this file: several private helpers below (_read_group_fields,
+    # _write_fields_with_limiter, _create_object_with_limiter) are only
+    # ever called with an adapter obtained via self._adapter_mediator
+    # (this class's own internal, write-capable DataMediator -- see
+    # this class's own __init__ docstring), which in real, concrete
+    # practice always holds an adapter that is BOTH read- and write-
+    # capable (adapters/sqlite_adapter.py's own SQLiteWriteAdapter
+    # genuinely extends both ExternalReadAdapter and
+    # ExternalWriteAdapter). Neither ExternalReadAdapter nor
+    # ExternalWriteAdapter alone has both method sets; this says so
+    # explicitly, at the one real place it's needed, rather than
+    # scattering an unexplained cast() at every individual call site.
+    class _ReadWriteAdapter(ExternalReadAdapter, ExternalWriteAdapter):
+        pass
 
 
 def _fields_to_columns(resolved_type_config: dict, values_by_field: dict) -> dict:
@@ -113,7 +131,9 @@ class PendingWrite:
 
 
 class WriteMediator:
-    def __init__(self, mediator: DataMediator, roles: dict, action_types: dict):
+    def __init__(
+        self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict, action_types: dict
+    ):
         # action_types is required, not optional -- a WriteMediator's
         # only real capability is propose_action(), which is useless
         # without declared actions. Verified directly: EVERY real
@@ -125,6 +145,54 @@ class WriteMediator:
         self.mediator = mediator
         self.roles = roles
         self.action_types = action_types
+        # write_adapters -- a real, SEPARATE, independent set of
+        # adapters, never mediator's own (see this class's own
+        # AI-notes for the full story: Phase 0 of the read-only mirror
+        # initiative, a real, found prerequisite -- WriteMediator used
+        # to borrow SIX of DataMediator's own private methods
+        # (_resolve_shared_storage, _write_limiter_for_silo,
+        # _locks_for_objects, _type_schema, _read_field_with_log_check,
+        # _security_allowed) by reaching directly into
+        # self.mediator, meaning this class had no adapter
+        # identity of its own at all. Once DataMediator's own adapters
+        # move to a genuinely read-only credential, that borrowing
+        # would have silently broken every real write in the system.
+        #
+        # A real, SEPARATE, internal DataMediator instance is built
+        # here specifically to REUSE those six methods' own, already-
+        # correct, already-tested implementations -- not a second,
+        # parallel reimplementation of the same logic, matching this
+        # project's own DRY discipline. schema/silo_for_type/roles are
+        # read-only, ontology-describing dicts, not live connections --
+        # confirmed directly safe to keep sharing from `mediator`
+        # itself, unlike the adapters themselves. write_log/audit_log
+        # ALSO stay the SAME, shared instances mediator itself holds
+        # -- deliberately, confirmed directly as still correct to
+        # share (both are genuinely cross-cutting infrastructure, not
+        # a silo-specific connection/adapter at all; see this class's
+        # own write_log/audit_log properties immediately below, which
+        # keep reading from `mediator` directly, unchanged).
+        # cast(): write_adapters is dict[str, ExternalWriteAdapter] --
+        # DataMediator's own __init__ statically expects dict[str,
+        # ExternalReadAdapter], since that's genuinely all a normal,
+        # real, read-only DataMediator ever needs. This specific
+        # DataMediator instance is never that normal case, though --
+        # it is WriteMediator's own internal, private helper (never
+        # returned, never handed to any other caller), built
+        # specifically to reuse DataMediator's own six already-
+        # correct methods against write_adapters instead of
+        # duplicating them -- so the real, concrete adapters it holds
+        # genuinely are ExternalWriteAdapter instances throughout (in
+        # practice, adapters/sqlite_adapter.py's own SQLiteWriteAdapter,
+        # which -- see that class's own docstring -- also genuinely
+        # implements ExternalReadAdapter's own contract too, via real
+        # inheritance from SQLiteReadAdapter). The cast is safe
+        # specifically because this instance's own adapters are never
+        # read through this constructor's own, narrower, static type.
+        self._adapter_mediator = DataMediator(
+            mediator.schema, cast("dict[str, ExternalReadAdapter]", write_adapters), mediator.silo_for_type, roles,
+            write_log=mediator.write_log, audit_log=mediator.audit_log,
+        )
         # write_log is NOT taken as a separate parameter and stored
         # independently -- see this class's own write_log property.
         # WriteMediator has no legitimate reason to use a DIFFERENT
@@ -195,14 +263,24 @@ class WriteMediator:
         # grouping by adapter identity alone would incorrectly merge.
         groups: dict[int, tuple] = {}
         for field_name in changes:
-            adapter, resolved_type_config = self.mediator._resolve_shared_storage(object_type, [field_name])
+            # cast(): this method's own adapter always genuinely comes
+            # from self._adapter_mediator, this class's own internal,
+            # write-capable helper -- see this class's own __init__
+            # docstring, and the module-level _ReadWriteAdapter type's
+            # own comment, for why the real, concrete object here is
+            # always both read- and write-capable even though
+            # _resolve_shared_storage()'s own STATIC return type
+            # (inherited, unchanged, from DataMediator) only ever
+            # promises ExternalReadAdapter.
+            adapter, resolved_type_config = self._adapter_mediator._resolve_shared_storage(object_type, [field_name])
+            adapter = cast("_ReadWriteAdapter", adapter)
             key = id(resolved_type_config["storage"])
             if key not in groups:
                 groups[key] = (adapter, resolved_type_config, {})
             groups[key][2][field_name] = changes[field_name]
         return list(groups.values())
 
-    def _read_group_fields(self, object_type: str, object_id: Any, adapter: DataSiloAdapter,
+    def _read_group_fields(self, object_type: str, object_id: Any, adapter: "_ReadWriteAdapter",
                             resolved_type_config: dict, field_names) -> dict:
         # THE single home for "read the current, live value of each
         # field in one already-resolved storage group, straight from
@@ -222,7 +300,7 @@ class WriteMediator:
             for field_name in field_names
         }
 
-    def _write_fields_with_limiter(self, object_type: str, object_id: Any, adapter: DataSiloAdapter,
+    def _write_fields_with_limiter(self, object_type: str, object_id: Any, adapter: "_ReadWriteAdapter",
                                     resolved_type_config: dict, new_values: dict, expected_values: dict) -> bool:
         # THE single home for "resolve THIS group's own silo's
         # concurrency limiter, then call write_fields() under it" --
@@ -244,7 +322,7 @@ class WriteMediator:
         # target silo if it has a stricter limit, and needlessly
         # contending for the primary silo's slots for a write that
         # never touches it at all.
-        write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
+        write_limiter = self._adapter_mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
         with write_limiter.limit():
             return adapter.write_fields(
                 object_type, object_id,
@@ -253,14 +331,14 @@ class WriteMediator:
                 resolved_type_config,
             )
 
-    def _create_object_with_limiter(self, object_type: str, adapter: DataSiloAdapter,
+    def _create_object_with_limiter(self, object_type: str, adapter: "_ReadWriteAdapter",
                                      resolved_type_config: dict, values: dict) -> None:
         # THE create-side counterpart to _write_fields_with_limiter()
         # above -- was likewise duplicated at both places a create
         # group's row is actually inserted (_apply_one_create()'s
         # fresh-apply path, and _resume_one_create_entry()'s resume
         # path), identical shape at each.
-        write_limiter = self.mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
+        write_limiter = self._adapter_mediator._write_limiter_for_silo(resolved_type_config["storage"]["silo"])
         with write_limiter.limit():
             adapter.create_object(object_type, _fields_to_columns(resolved_type_config, values), resolved_type_config)
 
@@ -286,7 +364,7 @@ class WriteMediator:
         summary = {"resumed": 0, "already_applied": 0, "ambiguous": 0}
         for batch in self.write_log.get_pending_batches():
             object_refs = [(sw["object_type"], sw["object_id"]) for sw in batch["sub_writes"]]
-            with self.mediator._locks_for_objects(object_refs):
+            with self._adapter_mediator._locks_for_objects(object_refs):
                 outcome = self._resume_one_batch(batch)
             summary[outcome] += 1
         return summary
@@ -480,7 +558,7 @@ class WriteMediator:
         # yet. Checking the id specifically has no such ambiguity.
         object_type = entry["object_type"]
         object_id = entry["object_id"]
-        id_field = self.mediator._type_schema(object_type)["id_field"]
+        id_field = self._adapter_mediator._type_schema(object_type)["id_field"]
         groups = self._group_changes_by_storage(object_type, entry["changes"])
         any_applied_here = False
 
@@ -568,8 +646,8 @@ class WriteMediator:
         needed_fields = {c["field"] for c in criteria if c["check"] == "current_state"}
         current_state = {}
         for field_name in needed_fields:
-            adapter, resolved_type_config = self.mediator._resolve_shared_storage(object_type, [field_name])
-            current_state[field_name] = self.mediator._read_field_with_log_check(
+            adapter, resolved_type_config = self._adapter_mediator._resolve_shared_storage(object_type, [field_name])
+            current_state[field_name] = self._adapter_mediator._read_field_with_log_check(
                 object_type, object_id, field_name, adapter, resolved_type_config
             )
         return current_state
@@ -742,7 +820,7 @@ class WriteMediator:
             else:
                 mac_allowed = (
                     user_record.security_value is not None
-                    and self.mediator._security_allowed(object_type, object_id, user_record.security_value)
+                    and self._adapter_mediator._security_allowed(object_type, object_id, user_record.security_value)
                 )
             self.audit_log.log_access(user_record.user_id, object_type, object_id, execute_action_id,
                                        mac_allowed, rbac_allowed)
@@ -801,7 +879,7 @@ class WriteMediator:
                 # primary key already exist, matching, in every backing
                 # datasource.
                 self._group_changes_by_storage(object_type, changes)
-                id_field = self.mediator._type_schema(object_type)["id_field"]
+                id_field = self._adapter_mediator._type_schema(object_type)["id_field"]
                 if id_field not in changes:
                     raise ValueError(
                         f"Create for {object_type!r} requires an explicit {id_field!r} value "
@@ -893,7 +971,7 @@ class WriteMediator:
         # again inside a per-sub_write helper) would deadlock outright,
         # not just be redundant.
         object_refs = [(sw.object_type, sw.object_id) for sw in pending.sub_writes]
-        with self.mediator._locks_for_objects(object_refs):
+        with self._adapter_mediator._locks_for_objects(object_refs):
             batch_id = self.write_log.log_pending_batch(
                 [
                     {
@@ -971,7 +1049,7 @@ class WriteMediator:
         # primary key already exist, matching, in every backing
         # datasource (verified directly, not assumed -- see
         # https://www.palantir.com/docs/foundry/object-permissioning/multi-datasource-objects).
-        id_field = self.mediator._type_schema(sub_write.object_type)["id_field"]
+        id_field = self._adapter_mediator._type_schema(sub_write.object_type)["id_field"]
         log_id = self.write_log.log_pending_create(
             sub_write.object_type, sub_write.object_id,
             sub_write.changes, user_id, description, batch_id=batch_id,

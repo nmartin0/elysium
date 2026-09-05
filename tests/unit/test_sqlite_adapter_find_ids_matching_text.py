@@ -1,5 +1,5 @@
 """
-Direct, adapter-level tests for SQLiteAdapter.find_ids_matching_text()
+Direct, adapter-level tests for SQLiteReadAdapter.find_ids_matching_text()
 -- the free-text, CONTAINS-match search underneath DataMediator.
 search_object_free_text() (see that method's own docstring/AI-notes
 for the full design). No existing test file exercised this directly
@@ -21,7 +21,7 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteAdapter
+from adapters.sqlite_adapter import SQLiteReadAdapter
 
 TYPE_CONFIG = {
     "storage": {"silo": "test", "table": "widgets", "id_column": "widget_id"},
@@ -41,7 +41,7 @@ def adapter(tmp_path):
     """)
     conn.commit()
     conn.close()
-    return SQLiteAdapter({"path": db_path})
+    return SQLiteReadAdapter({"path": db_path})
 
 
 def test_finds_a_partial_match_in_one_column(adapter):

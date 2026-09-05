@@ -12,7 +12,7 @@ nothing about this assumes silo names correspond 1:1 with adapter
 CLASSES. This file proves that mechanism holds under real, concurrent
 use: independent data, independent RBAC, independent MAC, all
 enforced correctly despite both silos being instances of the exact
-same SQLiteAdapter class.
+same SQLiteWriteAdapter class.
 
 Deliberately NOT a cross-silo LINK test -- see tests/unit/test_cross_silo_links.py
 for that (a security-chain and reverse link both genuinely crossing
@@ -25,8 +25,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteAdapter
-from core.deployment_loader import _build_adapters
+from adapters.sqlite_adapter import SQLiteWriteAdapter
+from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 from core.ontology.write_log import WriteLog
@@ -89,7 +89,7 @@ def mediator(tmp_path):
     adapters = _build_adapters({
         "widget_db": {"adapter": "sqlite", "connection": {"path": widget_db_path}},
         "gadget_db": {"adapter": "sqlite", "connection": {"path": gadget_db_path}},
-    })
+    }, _WRITE_ADAPTER_REGISTRY)
     silo_for_type = {"Widget": "widget_db", "Gadget": "gadget_db"}
     return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES,
                          write_log=WriteLog(tmp_path / "write_log.db"))
@@ -98,8 +98,8 @@ def mediator(tmp_path):
 def test_two_silos_get_genuinely_separate_adapter_instances(mediator):
     widget_adapter = mediator.adapters["widget_db"]
     gadget_adapter = mediator.adapters["gadget_db"]
-    assert isinstance(widget_adapter, SQLiteAdapter)
-    assert isinstance(gadget_adapter, SQLiteAdapter)
+    assert isinstance(widget_adapter, SQLiteWriteAdapter)
+    assert isinstance(gadget_adapter, SQLiteWriteAdapter)
     assert widget_adapter is not gadget_adapter
     assert widget_adapter.db_path != gadget_adapter.db_path
 
@@ -155,7 +155,7 @@ def test_an_action_to_one_silo_never_touches_the_other(mediator):
             }],
         },
     }
-    write_mediator = WriteMediator(mediator, roles, action_types)
+    write_mediator = WriteMediator(mediator, mediator.adapters, roles, action_types)
     pending = write_mediator.propose_action(carol, "RenameWidget", {"widget_id": "w1", "new_name": "Renamed Widget"})
     write_mediator.confirm_and_execute(pending, approved=True)
 

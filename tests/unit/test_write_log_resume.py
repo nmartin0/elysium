@@ -42,7 +42,7 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _build_adapters
+from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -107,10 +107,10 @@ def fixture(tmp_path, isolated_audit_log):
     adapters = _build_adapters({
         "primary_sql": {"adapter": "sqlite", "connection": {"path": db_primary}},
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
-    })
+    }, _WRITE_ADAPTER_REGISTRY)
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Customer": "primary_sql"}, TEST_ROLES,
                              write_log=write_log, audit_log=audit_log)
-    write_mediator = WriteMediator(mediator, TEST_ROLES, {})
+    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, {})
     return mediator, write_mediator, write_log
 
 
