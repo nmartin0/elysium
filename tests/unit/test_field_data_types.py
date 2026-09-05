@@ -192,3 +192,163 @@ def test_filtering_on_a_typed_column_still_works(tmp_path, typed_source):
 
     config = {"storage": {"table": "accounts", "id_column": "account_id"}}
     assert mirror.find_ids("Account", {"label": "checking"}, config) == ["acc_1"]
+
+
+# --- id_type: the type of an object's own identity column ---------------
+#
+# A genuinely separate declaration from a field's own data_type, and
+# deliberately so: `id_field` is NOT an entry under `fields` at all (see
+# core/ontology/schema.py's own get_column_for_field() docstring), so the
+# field-walking data_type mechanism never sees id columns. Declaring
+# `id_type` on the STORAGE block -- beside the id_column it describes --
+# follows this project's own settled position that an object's identity
+# is a property of its storage, never MDO-overridden.
+
+
+def test_validation_rejects_an_unknown_declared_id_type():
+    schema = {
+        "Widget": {
+            "storage": {
+                "silo": "primary", "table": "widgets",
+                "id_column": "widget_id", "id_type": "biginteger",
+            },
+            "id_field": "widget_id",
+            "security": {"field": "region"},
+            "fields": {"region": {"type": "data"}},
+        }
+    }
+    with pytest.raises(ValueError, match="unknown id_type"):
+        validate_object_types(schema)
+
+
+def test_validation_rejects_an_unknown_id_type_on_additional_storage():
+    # Each additional_storage has its OWN id_column and so its own
+    # id_type -- a typo there must fail just as loudly.
+    schema = {
+        "Widget": {
+            "storage": {"silo": "primary", "table": "widgets", "id_column": "widget_id"},
+            "additional_storage": {
+                "extra": {
+                    "silo": "other", "table": "widget_extra",
+                    "id_column": "w_ref", "id_type": "nonsense",
+                }
+            },
+            "id_field": "widget_id",
+            "security": {"field": "region"},
+            "fields": {"region": {"type": "data"}},
+        }
+    }
+    with pytest.raises(ValueError, match="unknown id_type"):
+        validate_object_types(schema)
+
+
+def test_a_storage_declaring_no_id_type_still_validates():
+    schema = {
+        "Widget": {
+            "storage": {"silo": "primary", "table": "widgets", "id_column": "widget_id"},
+            "id_field": "widget_id",
+            "security": {"field": "region"},
+            "fields": {"region": {"type": "data"}},
+        }
+    }
+    validate_object_types(schema)  # does not raise
+
+
+def test_sync_targets_carry_the_declared_id_type():
+    schema = {
+        "object_types": {
+            "Transaction": {
+                "storage": {
+                    "silo": "primary", "table": "transactions",
+                    "id_column": "transaction_id", "id_type": "integer",
+                },
+                "id_field": "transaction_id",
+                "fields": {"amount": {"type": "data", "data_type": "number"}},
+            }
+        }
+    }
+    target = resolve_sync_targets(schema)[0]
+
+    assert target.column_types == {"transaction_id": "integer", "amount": "number"}
+
+
+def test_each_storage_gets_its_own_id_type():
+    # Customer is keyed by customer_id in primary but cust_ref in
+    # risk_db -- genuinely different columns that can have genuinely
+    # different types.
+    schema = {
+        "object_types": {
+            "Customer": {
+                "storage": {
+                    "silo": "primary", "table": "customers",
+                    "id_column": "customer_id", "id_type": "integer",
+                },
+                "additional_storage": {
+                    "risk_db": {"silo": "risk", "table": "customer_risk", "id_column": "cust_ref"}
+                },
+                "id_field": "customer_id",
+                "fields": {"risk_score": {"type": "data", "data_type": "number", "storage": "risk_db"}},
+            }
+        }
+    }
+    by_table = {(t.silo_name, t.table_name): t for t in resolve_sync_targets(schema)}
+
+    assert by_table[("primary", "customers")].column_types == {"customer_id": "integer"}
+    # The MDO storage declared none -- its id column defaults to string.
+    assert "cust_ref" not in by_table[("risk", "customer_risk")].column_types
+
+
+def test_an_integer_id_survives_the_mirror_round_trip_as_an_int(tmp_path):
+    # THE regression test for a real bug found by exercising the full
+    # stack rather than individual pieces: reverse links return LISTS OF
+    # IDS, and those came back as strings from the mirror while the live
+    # path returned ints. The earlier side-by-side verification could
+    # not have caught it -- its own fixtures used string ids.
+    path = tmp_path / "biz.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE transactions (transaction_id INTEGER PRIMARY KEY, customer_id TEXT)")
+    conn.executemany(
+        "INSERT INTO transactions VALUES (?, ?)", [(1, "cust_1"), (2, "cust_1")]
+    )
+    conn.commit()
+    conn.close()
+
+    live = SQLiteReadAdapter({"path": path})
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": live})
+    sync.sync_table(
+        "primary", "transactions", "transaction_id",
+        ["transaction_id", "customer_id"],
+        {"transaction_id": "integer"},
+    )
+    mirror = MirrorReadAdapter(sync._catalog, "primary")
+
+    link_config = {"via_table": "transactions", "via_column": "customer_id"}
+    live_ids = live.resolve_reverse_link("cust_1", link_config, "transaction_id")
+    mirror_ids = mirror.resolve_reverse_link("cust_1", link_config, "transaction_id")
+
+    assert mirror_ids == live_ids == [1, 2]
+    assert all(isinstance(i, int) for i in mirror_ids)
+
+
+def test_an_integer_id_is_still_findable_by_lookup(tmp_path):
+    # Criteria and object_ids are stringified before comparison, so a
+    # genuinely integer-typed id column must still be findable --
+    # otherwise typing ids would silently break every lookup.
+    path = tmp_path / "biz.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE transactions (transaction_id INTEGER PRIMARY KEY, amount REAL)")
+    conn.execute("INSERT INTO transactions VALUES (1, 49.99)")
+    conn.commit()
+    conn.close()
+
+    live = SQLiteReadAdapter({"path": path})
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": live})
+    sync.sync_table(
+        "primary", "transactions", "transaction_id",
+        ["transaction_id", "amount"],
+        {"transaction_id": "integer", "amount": "number"},
+    )
+    mirror = MirrorReadAdapter(sync._catalog, "primary")
+
+    config = {"storage": {"table": "transactions", "id_column": "transaction_id"}}
+    assert mirror.get_raw_field("Transaction", 1, "amount", config) == 49.99

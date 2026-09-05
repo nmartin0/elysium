@@ -473,6 +473,22 @@ something untrue, since SQLite's declared column types are advisory
 rather than enforced. The ontology is this project's semantic source of
 truth, and "what type is this field" is a semantic question.
 
+**A SECOND type bug, found later by exercising the FULL stack rather
+than individual pieces.** Reverse links (`Customer.transactions`)
+returned `[1, 2]` live but `['1', '2']` from the mirror. The cause:
+an object type's `id_field` is NOT an entry under `fields` at all (a
+separate, top-level key -- see core/ontology/schema.py's own
+get_column_for_field() docstring), so the field-walking `data_type`
+mechanism never saw id columns. It mattered more than an ordinary
+field because reverse links return LISTS OF IDS. Fixed by declaring
+`id_type` on the STORAGE block, beside the `id_column` it describes --
+following this project's own settled position that identity is a
+property of storage, never MDO-overridden, and giving each
+`additional_storage` its own (Customer is keyed by `customer_id` in
+primary but `cust_ref` in `risk_db`). Worth noting honestly: the
+earlier side-by-side verification could not have caught this, because
+its own fixtures used string ids.
+
 The 17 tests in `tests/unit/test_mirror_read_adapter.py` are written
 as side-by-side comparisons against the real `SQLiteReadAdapter` on the
 same data, deliberately -- asserting against hardcoded expectations

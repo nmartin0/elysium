@@ -85,6 +85,35 @@ def validate_object_types(object_types: dict) -> None:
         _validate_title_field(object_type_name, type_def)
         _validate_security(object_type_name, object_types, visited=frozenset())
         _validate_field_data_types(object_type_name, type_def)
+        _validate_id_types(object_type_name, type_def)
+
+
+def _validate_id_types(object_type_name: str, type_def: dict) -> None:
+    # `id_type` is declared on the STORAGE block, alongside the
+    # id_column it describes -- not under `fields`, and not on the
+    # top-level id_field key. Deliberate, and following this project's
+    # own established position rather than inventing one: an object's
+    # identity is a property of its storage, never MDO-overridden (see
+    # core/ontology/schema.py's own get_column_for_field() docstring,
+    # which states exactly that). Declaring the type beside the column
+    # keeps the two facts together, and gives each additional_storage
+    # block its own -- Customer is keyed by customer_id in primary but
+    # cust_ref in risk_db, genuinely different columns that could
+    # genuinely have different types.
+    storages = [type_def.get("storage") or {}]
+    storages.extend((type_def.get("additional_storage") or {}).values())
+
+    for storage in storages:
+        declared = storage.get("id_type")
+        if declared is None:
+            # Genuinely optional, defaulting to string -- every schema
+            # predating this stays valid.
+            continue
+        if declared not in FIELD_DATA_TYPES:
+            raise ValueError(
+                f"Object type {object_type_name!r}: storage declares unknown "
+                f"id_type {declared!r} -- known types: {sorted(FIELD_DATA_TYPES)}."
+            )
 
 
 def _validate_field_data_types(object_type_name: str, type_def: dict) -> None:

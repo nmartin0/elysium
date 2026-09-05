@@ -65,6 +65,7 @@ object_types:
       silo: primary_sql
       table: transactions
       id_column: transaction_id
+      id_type: integer
     id_field: transaction_id
     security:
       via_field: customer_id
@@ -87,6 +88,7 @@ object_types:
       silo: support_crm
       table: tickets
       id_column: ticket_id
+      id_type: integer
     id_field: ticket_id
     # A SECURITY CHAIN, not a direct field -- MAC is resolved by
     # following customer_id back to Customer.region, exactly the

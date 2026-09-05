@@ -123,9 +123,18 @@ def _targets_for_type(type_def: dict):
 
     # The id column of each storage is always needed -- it is what rows
     # are matched on, both during the sync itself and by every read
-    # afterward.
+    # afterward. Its type comes from the SAME storage block (`id_type`),
+    # read in this same pass -- an object's identity is a property of
+    # its storage, and each additional_storage has its own id_column
+    # that could genuinely have its own type (Customer is keyed by
+    # customer_id in primary but cust_ref in risk_db). See
+    # core/ontology/object_type_validation.py's own _validate_id_types()
+    # for the fuller reasoning.
     for storage_key, storage in storages.items():
         columns_by_storage[storage_key].append(storage["id_column"])
+        id_type = storage.get("id_type")
+        if id_type is not None:
+            types_by_storage[storage_key][storage["id_column"]] = id_type
 
     for field_name, field_config in type_def.get("fields", {}).items():
         if field_config.get("via_table"):
