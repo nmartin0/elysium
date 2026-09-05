@@ -30,6 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from pyiceberg.catalog.sql import SqlCatalog
+
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
@@ -37,6 +39,7 @@ from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.policy_validation import validate_roles
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
+from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.ontology.action_types import validate_action_types
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.mediator import DataMediator
@@ -83,6 +86,12 @@ class DeploymentConfig:
     silo_configs: dict          # silo name -> {"adapter": ..., "connection": {...}}
     enabled_tools: list[str]      # from config.yaml tools.enabled -- GENUINELY optional,
                                    # unlike everything else here (see load_deployment())
+    read_from_mirror: bool        # Phase 4 of the read-only mirror architecture -- serve
+                                   # READS from the local Iceberg mirror rather than querying
+                                   # the customer's own databases live. Writes are unaffected
+                                   # either way: they always go to the real database. False by
+                                   # default, so the live path stays the default until a
+                                   # deployment explicitly opts in. See ROADMAP.md.
     action_types: dict            # NAMED action types (action-types-redesign branch) --
                                    # a deployment with none declared (the overwhelmingly
                                    # common case today) gets {} here, populated explicitly
@@ -216,6 +225,12 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # "action_types:" key in ontology_schema.yaml at all, and
             # that must remain completely valid.
             action_types=schema_raw.get("action_types", {}),
+            # GENUINELY optional, defaulting to False -- a deployment
+            # that has never run a sync (or simply wants live reads)
+            # must stay completely valid, and the live path stays the
+            # default until a deployment explicitly opts in. Phase 4 of
+            # the read-only mirror architecture; see ROADMAP.md.
+            read_from_mirror=config.get("mirror", {}).get("read_from_mirror", False),
         )
     except KeyError as e:
         raise ValueError(f"Missing expected key {e} in config.yaml/ontology_schema.yaml/policy.yaml.") from e
@@ -259,6 +274,40 @@ def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
             f"providers: {sorted(_LLM_ADAPTER_REGISTRY.keys())}"
         )
     return ConcurrencyLimitedLLMAdapter(adapter_class(model, config.llm_connection))
+
+
+def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
+                          data_dir: Path) -> dict[str, ExternalReadAdapter]:
+    # THE Phase 4 cutover, and deliberately the whole of it: which
+    # adapters DataMediator holds, nothing else. Confirmed directly by
+    # reading the real code before designing this -- every read in
+    # DataMediator resolves its adapter through _adapter_for() or
+    # _resolve_shared_storage(), so a MirrorReadAdapter satisfying the
+    # same ExternalReadAdapter contract slots straight in. search_object(),
+    # get_field(), MDO resolution and reverse links all work unchanged;
+    # there is no branch threaded through any read path.
+    #
+    # WRITES ARE UNAFFECTED either way. load_deployment_bundle()'s own
+    # write_adapters are always built live, against the customer's real
+    # database -- a confirmed write must never land in a copy that the
+    # next sync would simply overwrite. See ROADMAP.md's own Phase 4
+    # section on why the mirror stays sync-written, sole writer.
+    if not config.read_from_mirror:
+        return cast(
+            "dict[str, ExternalReadAdapter]",
+            _build_adapters(resolved_silo_configs, _READ_ADAPTER_REGISTRY),
+        )
+
+    # One shared catalog across every silo -- they all read the same
+    # mirror, and each silo maps to its own Iceberg namespace, matching
+    # exactly what core/mirror/iceberg_sync.py writes.
+    mirror_dir = data_dir / "mirror"
+    catalog = SqlCatalog(
+        "elysium_mirror",
+        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
+        warehouse=f"file://{mirror_dir / 'warehouse'}",
+    )
+    return {silo_name: MirrorReadAdapter(catalog, silo_name) for silo_name in resolved_silo_configs}
 
 
 def _build_adapters(
@@ -338,7 +387,7 @@ def load_deployment_bundle(
             connection["path"] = data_dir / connection["path"]
         resolved_silo_configs[silo_name] = {**silo_config, "connection": connection}
 
-    adapters = cast("dict[str, ExternalReadAdapter]", _build_adapters(resolved_silo_configs, _READ_ADAPTER_REGISTRY))
+    adapters = _build_read_adapters(config, resolved_silo_configs, data_dir)
     # A SECOND, genuinely independent set of adapter instances --
     # real, separate connection objects, not a second reference to the
     # same ones -- built specifically for a WriteMediator a caller may

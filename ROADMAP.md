@@ -428,7 +428,49 @@ batch job ran without an error").
 
 **Phase 4 -- repointing `DataMediator`'s actual reads (highest risk,
 done last, depends on 1-2 independently verified; Phase 3 deferred --
-see above).** A real,
+see above).** **Phase 4 -- repointing `DataMediator`'s actual reads. THE ADAPTER AND
+CONFIG FLAG ARE DONE; a real blocker found before it can be the
+default.** Implemented as `core/mirror/mirror_adapter.py` -- a real
+`MirrorReadAdapter` satisfying the same four-method
+`ExternalReadAdapter` contract, plus a `mirror.read_from_mirror`
+config flag (False by default). The cutover turned out to be
+genuinely just "which adapters does `DataMediator` hold": confirmed
+directly by reading the code first, every read resolves its adapter
+through `_adapter_for()` or `_resolve_shared_storage()`, so
+`search_object()`, `get_field()`, MDO resolution and reverse links all
+work unchanged, with no branch threaded through any read path. Verified
+live: a real server with the flag on serves real reads from the mirror
+while writes still go live to the real database and succeed.
+
+**THE BLOCKER, found by the side-by-side verification rather than in
+production: type fidelity.** `core/mirror/iceberg_sync.py` deliberately
+stores every column as a string (see its own docstring: inferring types
+per-sync would let a table's mirror schema CHANGE between runs purely
+because its data changed). The real, measured consequence, confirmed
+against a running server: reading `Account.balance` returns `900.0`
+(float) live but `'500.0'` (string) from the mirror. That is not a
+cosmetic difference -- any caller doing arithmetic, comparison or
+formatting on a numeric field gets different behavior depending on a
+config flag, which is exactly the kind of silent divergence this
+project's own discipline rejects.
+
+**So mirror reads must stay opt-in until the mirror carries real
+types.** The fix is ontology-driven typing: the schema already declares
+each field, so the sync can build a genuinely typed Arrow schema from
+the ontology rather than inferring from data -- keeping the
+"schema never changes because data changed" property that motivated
+string-typing in the first place, while producing real types. That is
+the next piece of Phase 4, and it belongs in the sync, not the adapter.
+
+The 17 tests in `tests/unit/test_mirror_read_adapter.py` are written
+as side-by-side comparisons against the real `SQLiteReadAdapter` on the
+same data, deliberately -- asserting against hardcoded expectations
+would prove only that the mirror adapter does something; comparing
+against the live adapter proves it does the SAME thing, which is the
+only property that makes a cutover safe. That is also what surfaced
+the type issue above.
+
+A real,
 explicit config flag -- live source, or local mirror -- never an
 unconditional, all-or-nothing cutover with no way back. The most
 extensive testing pass of the whole project: every existing read route
