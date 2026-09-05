@@ -402,6 +402,56 @@ extensive testing pass of the whole project: every existing read route
 identically under both modes, verified with a real, live, side-by-side
 comparison before this is ever the default.
 
+**Phase 4's own read-your-writes requirement -- researched directly,
+and a real correction to an earlier, worse proposal.** Once reads come
+from the mirror, a confirmed write would otherwise not be visible
+until the next scheduled sync: a person approves a change and then
+doesn't see it. An earlier proposal here -- have the sync do a
+targeted re-sync of the affected rows immediately after a confirmed
+write -- was investigated against Foundry's own real behavior and
+abandoned as the wrong shape.
+
+Foundry solves this with THREE layers, not two (confirmed directly
+from their own documentation, not assumed): the source datasets; a
+LIVE INDEX that serves queries and receives edits immediately; and a
+persistent writeback/materialized dataset that catches up on a
+schedule. Their own docs are explicit about both halves -- when an
+Action is applied, "the data-modification logic is immediately applied
+to the index in the object databases," and "if an object read
+occurring as part of an ontology query happens after a user
+modification is sent, the object read is guaranteed to contain the
+user edits" -- while the persistent copy lags deliberately, written
+"into the writeback dataset when it is built," with automatic
+propagation running at "a latency of a few minutes." The live index is
+explicitly ephemeral and rebuildable ("all indexed data in object
+databases are considered ephemeral, requiring persistent storing of
+all Ontology data in other ways"), never the source of truth.
+
+**Elysium already has this mechanism, which is the real finding.**
+`WriteLog`'s own pending-changes masking already makes `DataMediator`
+return the INTENDED value for an object with an unapplied write --
+structurally the same idea as Foundry's offset-tracked live index:
+reads reflect edits before the persistent layer catches up. So Phase 4
+should extend that existing masking to cover mirror reads, NOT write
+to the mirror directly and NOT trigger targeted re-syncs. The mirror
+stays sync-written, with the sync as its sole writer -- anything else
+creates two sources of truth for the same fact, which the next sync
+would then overwrite.
+
+**A real constraint on the DuckDB side, verified rather than
+recalled.** DuckDB genuinely CAN write to Iceberg -- full read support
+and initial write support shipped in v1.4.0, with delete and update
+added in v1.4.2, correcting an earlier, stale assumption that it was
+read-only. But their own docs draw a sharp line that matters here:
+individual tables read directly from storage "require no catalog and
+are read-only," while writing requires attaching an Iceberg REST
+catalog (Polaris, Lakekeeper, S3 Tables). This project deliberately
+chose a SQLite catalog specifically to avoid running a separate
+catalog SERVICE, so DuckDB writes are not available without adopting
+exactly the infrastructure already ruled out as disproportionate. The
+practical division therefore stands -- PyIceberg writes, DuckDB reads
+-- but for this real reason, not because DuckDB lacks the capability.
+
 ### External writeback: off by default, real precedent, stricter than Foundry's own model
 
 A real, separate design track from Phases 1-4 above (only depends on
@@ -493,7 +543,9 @@ table itself exist.
 repository and its original creators, CWI) queries the local mirror at
 read time -- genuinely fast for the aggregation-heavy work already
 planned (see "Backend foundation work" above), and this is the SAME
-tool already recommended there, not a second, separate choice.
+tool already recommended there, not a second, separate choice. READ
+side only, for a real, verified reason rather than a capability limit
+-- see "A real constraint on the DuckDB side" under Phase 4 above.
 
 **PyIceberg** (Apache License 2.0) manages the mirror's own versioned
 storage specifically. Confirmed directly, not assumed, before
