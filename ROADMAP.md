@@ -379,14 +379,18 @@ acknowledgment). A real, automated license-scanning check (e.g.
 `pip-licenses`, added to `lint.sh`) belongs in this phase specifically,
 since it's the phase that actually introduces the new dependency.
 
-**Phase 3 -- the transform pass. DEFERRED, deliberately, after
-examining the real code rather than building it as planned.** The
-original plan: materialize one clean, per-object-type Iceberg table
-(`customer_clean`, etc.), the direct analog to Foundry's own "backing
-dataset per object type," reusing `DataMediator`'s own field/MDO
-resolution via an extracted shared function. Both halves of that plan
-turned out to be wrong on inspection, and both reasons are worth
-recording rather than rediscovering later.
+**Phase 3 -- the transform pass. Deferred after examining the real
+code, then REOPENED on a different justification after checking
+Foundry's own architecture properly.**
+The original plan: materialize one clean, per-object-type Iceberg
+table (`customer_clean`, etc.), reusing `DataMediator`'s own
+field/MDO resolution via an extracted shared function.
+
+Two separate conclusions, and they did not survive equally. The
+shared-function extraction was correctly abandoned and stays
+abandoned. The DEFERRAL OF THE PHASE ITSELF was wrong, and is
+reversed below -- the reasoning rested entirely on join performance,
+which is not why a transform stage exists.
 
 **Why the shared-function extraction was abandoned.** `get_field()`
 is not a resolution function with access control bolted on -- it is
@@ -405,26 +409,51 @@ the parts batch mode doesn't want -- the kind of DRY that makes both
 callers harder to understand, which is the opposite of what this
 project's own DRY principle is for.
 
-**Why the phase itself is deferred, not just its implementation
-approach.** Phase 3 pre-computes an MDO join. What makes MDO
-expensive TODAY is that it crosses genuinely separate databases --
-and Phase 2's mirror already eliminates exactly that: once every silo
-is mirrored into one local Iceberg warehouse, the join is an ordinary
-join within a single query engine, on local Parquet, with no network
-involved. Foundry has a transform layer because their pipelines do
-genuinely heavy work (cleaning, aggregating, reshaping across many
-sources), not because a two-table join is slow. Building this first
-would mean maintaining a second copy of every object type, kept in
-step with the raw tables, to solve a performance problem not yet
-confirmed to exist -- exactly what this project's own "no speculative
-code" principle rejects.
+**Why the phase was deferred -- and why that reasoning was WRONG.**
+The deferral argued: Phase 3 pre-computes an MDO join; what makes MDO
+expensive today is crossing separate databases; the mirror already
+eliminates that, so the join becomes ordinary local work; therefore
+the phase solves an unconfirmed performance problem.
 
-**Revisit with real measurements, not by default.** Phase 4 repoints
-reads at the mirror; if MDO resolution then proves genuinely slow
-against real data, this phase becomes justified and its verification
-plan still stands (read the same real object both live and
-materialized, and diff them -- real proof of correctness, not "the
-batch job ran without an error").
+Every step of that is about JOIN PERFORMANCE, and that was the
+mistake. Checked against Foundry's own documented architecture rather
+than assumed, a transform stage exists for reasons that have nothing
+to do with join cost:
+
+- **Type casting.** Foundry's own build guidance says to "explicitly
+  cast the column types in the raw -> clean transform, even if the
+  schema inference from the data connection has chosen correct
+  values," specifically because it "will help catch breaking changes
+  from the source system if a column type changes or an invalid value
+  creates an incorrect inference during the sync." That is drift
+  DETECTION, not speed.
+- **Ingest stays dumb on purpose.** Their Data Connection layer
+  "deliberately offer[s] minimal options for transforming the data
+  before it arrives in the destination dataset (the starting point of
+  the Foundry pipeline)" -- the raw dataset is the pipeline's START,
+  not its end.
+- **The clean -> ontology step is recommended unconditionally.** Their
+  own words: clean datasets "typically resemble raw data closely and
+  as such may contain many more columns than we need for our Ontology
+  object and link types," and "this intermediate transform step
+  (clean -> ontology) is always recommended, even in cases where it
+  initially feels like a formality."
+
+So the real shape is raw -> clean -> ontology, and Elysium currently
+has only the first stage. There is already a concrete symptom: the
+`data_type` mechanism added in Phase 4 does type-casting work INSIDE
+core/mirror/iceberg_sync.py, which is exactly the "raw -> clean"
+responsibility bolted onto the ingest stage. It works, but it is in
+the wrong place, and the sync is meant to stay as dumb as Foundry's.
+
+**REOPENED as a real transform stage, not a materialization.** The
+justification is drift detection, explicit typing, and column pruning
+-- not pre-computing joins. MDO itself stays exactly as it is: checked
+directly against Foundry, MDOs remain a first-class concept there even
+though every Foundry datasource is already internal, because the
+concept is about column-level access control and provenance, not about
+crossing database boundaries. Our mirror already preserves that (one
+Iceberg namespace per silo), so there is nothing to rename or unwind.
 
 **Phase 4 -- repointing `DataMediator`'s actual reads (highest risk,
 done last, depends on 1-2 independently verified; Phase 3 deferred --
