@@ -168,7 +168,8 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
     credential_reader = request.app.state.credential_reader
     session_writer = request.app.state.session_writer
     user_directory = request.app.state.user_directory
-    login_attempt_tracker = request.app.state.login_attempt_tracker
+    login_attempt_reader = request.app.state.login_attempt_reader
+    login_attempt_writer = request.app.state.login_attempt_writer
 
     # Checked BEFORE the real password verification below, but NEVER
     # used to short-circuit it -- see login_attempt_tracker.py's own
@@ -177,7 +178,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
     # locked-out response takes exactly as long as a real wrong-
     # password one, never leaking "this account exists and has recent
     # failed attempts against it" through response timing alone.
-    locked_out = login_attempt_tracker.is_locked_out(body.username)
+    locked_out = login_attempt_reader.is_locked_out(body.username)
 
     # Credential check ALWAYS runs first, unconditionally -- checking
     # is_user_disabled() before this and short-circuiting for a
@@ -196,7 +197,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     if not credentials_valid:
-        login_attempt_tracker.record_failure(body.username)
+        login_attempt_writer.record_failure(body.username)
         # Generic on purpose -- see module docstring.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -209,7 +210,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
         # thing entirely from a guessing attempt.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    login_attempt_tracker.record_success(body.username)
+    login_attempt_writer.record_success(body.username)
     token = session_writer.create_session(body.username)
     # Real, httponly cookie -- never returned in the JSON body at all;
     # doing both would defeat the entire point (see core/auth/
