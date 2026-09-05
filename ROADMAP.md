@@ -379,22 +379,56 @@ acknowledgment). A real, automated license-scanning check (e.g.
 `pip-licenses`, added to `lint.sh`) belongs in this phase specifically,
 since it's the phase that actually introduces the new dependency.
 
-**Phase 3 -- the transform pass (depends on Phase 2's raw tables
-existing).** Materializes one clean, per-object-type Iceberg table
-(`customer_clean`, etc.) -- the direct analog to Foundry's own
-"backing dataset per object type." **Open question, leaning but not
-yet finalized:** `DataMediator`'s own existing field/MDO resolution
-logic should almost certainly be EXTRACTED into a shared function
-both the live path and this new batch pass call, rather than a second,
-parallel implementation written from scratch -- a direct DRY question,
-not just a detail, given this project's own established discipline
-against exactly this kind of duplication. Verification: read the same
-real object both live and from the new, materialized table, and diff
-them -- the real proof of correctness, not just "the batch job ran
-without an error."
+**Phase 3 -- the transform pass. DEFERRED, deliberately, after
+examining the real code rather than building it as planned.** The
+original plan: materialize one clean, per-object-type Iceberg table
+(`customer_clean`, etc.), the direct analog to Foundry's own "backing
+dataset per object type," reusing `DataMediator`'s own field/MDO
+resolution via an extracted shared function. Both halves of that plan
+turned out to be wrong on inspection, and both reasons are worth
+recording rather than rediscovering later.
+
+**Why the shared-function extraction was abandoned.** `get_field()`
+is not a resolution function with access control bolted on -- it is
+genuinely INTERLEAVED: RBAC/MAC checks, per-user audit logging of
+unknown references (running deliberately INDEPENDENTLY of the access
+check, fixing a real ordering bug documented in its own comments), a
+write-log check that serves a reader the INTENDED value mid-update,
+reverse-link dispatch to a DIFFERENT type's adapter, and MDO storage
+resolution. A batch transform needs almost none of that: no user, so
+no RBAC/MAC and no per-user audit trail; no write-log consultation
+(the mirror should reflect the SOURCE, not one user's pending edit);
+and whole-table processing rather than one field for one object.
+Extracting a shared function would mean pulling apart logic
+interleaved for real reasons, then adding parameters to switch off
+the parts batch mode doesn't want -- the kind of DRY that makes both
+callers harder to understand, which is the opposite of what this
+project's own DRY principle is for.
+
+**Why the phase itself is deferred, not just its implementation
+approach.** Phase 3 pre-computes an MDO join. What makes MDO
+expensive TODAY is that it crosses genuinely separate databases --
+and Phase 2's mirror already eliminates exactly that: once every silo
+is mirrored into one local Iceberg warehouse, the join is an ordinary
+join within a single query engine, on local Parquet, with no network
+involved. Foundry has a transform layer because their pipelines do
+genuinely heavy work (cleaning, aggregating, reshaping across many
+sources), not because a two-table join is slow. Building this first
+would mean maintaining a second copy of every object type, kept in
+step with the raw tables, to solve a performance problem not yet
+confirmed to exist -- exactly what this project's own "no speculative
+code" principle rejects.
+
+**Revisit with real measurements, not by default.** Phase 4 repoints
+reads at the mirror; if MDO resolution then proves genuinely slow
+against real data, this phase becomes justified and its verification
+plan still stands (read the same real object both live and
+materialized, and diff them -- real proof of correctness, not "the
+batch job ran without an error").
 
 **Phase 4 -- repointing `DataMediator`'s actual reads (highest risk,
-done last, depends on 1-3 all independently verified).** A real,
+done last, depends on 1-2 independently verified; Phase 3 deferred --
+see above).** A real,
 explicit config flag -- live source, or local mirror -- never an
 unconditional, all-or-nothing cutover with no way back. The most
 extensive testing pass of the whole project: every existing read route
