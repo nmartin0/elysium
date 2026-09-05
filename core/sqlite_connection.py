@@ -89,6 +89,51 @@ def _deny_all_writes(action_code: int, _arg1: str | None, _arg2: str | None,
     return sqlite3.SQLITE_DENY
 
 
+@contextmanager
+def immediate_transaction(conn: sqlite3.Connection):
+    """Runs a read-modify-write as ONE genuinely atomic transaction.
+
+    THE REAL PROBLEM THIS SOLVES, proven empirically before writing it
+    rather than reasoned about: Python's sqlite3 defaults to
+    isolation_level='' , which opens a transaction lazily on the first
+    INSERT/UPDATE/DELETE -- NOT on a SELECT. So the classic
+    "read current state, decide, then write" sequence has its READ
+    outside any transaction, and two concurrent callers can both read
+    the same pre-state and both proceed.
+
+    A real, reproduced demonstration: two threads calling LockStore's
+    own acquire() against a free resource were BOTH told they had
+    acquired it, while only one actually held it afterwards -- a lock
+    service granting the same lock twice, which defeats its entire
+    purpose.
+
+    BEGIN IMMEDIATE takes SQLite's write lock up front, before the
+    read, so a second caller blocks (up to the connection's own
+    timeout) rather than reading stale state and acting on it. Verified
+    directly: with this in place, exactly one of two concurrent
+    acquirers succeeds and the other is correctly denied.
+
+    Deliberately NOT solved with a Python-level threading.Lock: these
+    stores are reached from a real, multi-worker deployment where two
+    processes can genuinely race, and an in-process lock protects
+    neither. The database is the only shared thing, so the database has
+    to be where the ordering is decided.
+    """
+    # isolation_level=None hands transaction control to us explicitly,
+    # rather than sqlite3 guessing where a transaction should start.
+    previous = conn.isolation_level
+    conn.isolation_level = None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        yield conn
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.isolation_level = previous
+
+
 _schema_verified: set[Path] = set()
 _schema_verified_lock = threading.Lock()
 

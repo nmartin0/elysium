@@ -42,6 +42,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from core.auth.database import connection
+from core.sqlite_connection import immediate_transaction
 
 MAX_QUERIES_PER_WINDOW = 20
 WINDOW = timedelta(minutes=5)
@@ -87,7 +88,12 @@ class QueryRateLimiter:
         return row["query_count"] >= MAX_QUERIES_PER_WINDOW
 
     def record_query(self, user_id: str) -> None:
-        with connection(self._db_path) as conn:
+        # An immediate transaction: this counter is read, compared
+        # against its window, then written. Without it two concurrent
+        # calls can both read the same count and both write count+1 as
+        # the same value -- silently undercounting, which for a rate
+        # limiter means letting through more than the configured limit.
+        with connection(self._db_path) as conn, immediate_transaction(conn):
             row = conn.execute(
                 "SELECT query_count, window_started_at FROM query_rate_limits WHERE user_id = ?", (user_id,)
             ).fetchone()
@@ -110,4 +116,3 @@ class QueryRateLimiter:
                 conn.execute(
                     "UPDATE query_rate_limits SET query_count = query_count + 1 WHERE user_id = ?", (user_id,)
                 )
-            conn.commit()

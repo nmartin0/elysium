@@ -52,6 +52,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from core.auth.database import connection
+from core.sqlite_connection import immediate_transaction
 
 MAX_ATTEMPTS = 5
 WINDOW = timedelta(minutes=15)
@@ -97,7 +98,12 @@ class LoginAttemptTracker:
         return row["failed_count"] >= MAX_ATTEMPTS
 
     def record_failure(self, username: str) -> None:
-        with connection(self._db_path) as conn:
+        # An immediate transaction: this counter is read, compared
+        # against its window, then written. Without it two concurrent
+        # calls can both read the same count and both write count+1 as
+        # the same value -- silently undercounting, which for a rate
+        # limiter means letting through more than the configured limit.
+        with connection(self._db_path) as conn, immediate_transaction(conn):
             row = conn.execute(
                 "SELECT failed_count, window_started_at FROM login_attempts WHERE username = ?", (username,)
             ).fetchone()
@@ -120,7 +126,6 @@ class LoginAttemptTracker:
                 conn.execute(
                     "UPDATE login_attempts SET failed_count = failed_count + 1 WHERE username = ?", (username,)
                 )
-            conn.commit()
 
     def record_success(self, username: str) -> None:
         # Clears any prior failures -- a real, successful login means

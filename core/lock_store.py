@@ -67,7 +67,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import connection_with_schema, immediate_transaction
 
 LEASE_DURATION = timedelta(minutes=30)
 
@@ -124,7 +124,13 @@ class LockStore:
         # next time it tries to validate() or refresh(), rather than
         # two "valid" tokens for the same resource existing at once.
         now = datetime.now(UTC)
-        with self._connection() as conn:
+        # immediate_transaction(), not a bare connection: this is a
+        # read-then-write decision, and without it two concurrent
+        # callers can BOTH read "free" and both be told they acquired
+        # the lock. Reproduced empirically before this fix -- see
+        # core/sqlite_connection.py's own immediate_transaction()
+        # docstring for the real demonstration.
+        with self._connection() as conn, immediate_transaction(conn):
             row = conn.execute(
                 "SELECT user_id, expires_at FROM resource_locks WHERE resource_name = ?", (resource_name,)
             ).fetchone()
@@ -145,7 +151,6 @@ class LockStore:
                 "acquired_at = excluded.acquired_at, expires_at = excluded.expires_at",
                 (resource_name, token, user_id, now.isoformat(), new_expires_at.isoformat()),
             )
-            conn.commit()
         return token, new_expires_at
 
     def refresh(self, resource_name: str, user_id: str, token: str) -> datetime | None:
@@ -160,7 +165,10 @@ class LockStore:
         # meantime. The caller's own next move on a None result should
         # be a fresh acquire(), not a retry of refresh().
         now = datetime.now(UTC)
-        with self._connection() as conn:
+        # Same read-then-write hazard as acquire() above: without an
+        # immediate transaction, a refresh could extend a lease that
+        # another caller has already validly taken over in between.
+        with self._connection() as conn, immediate_transaction(conn):
             row = conn.execute(
                 "SELECT user_id, token, expires_at FROM resource_locks WHERE resource_name = ?", (resource_name,)
             ).fetchone()
@@ -174,7 +182,6 @@ class LockStore:
                 "UPDATE resource_locks SET expires_at = ? WHERE resource_name = ?",
                 (new_expires_at.isoformat(), resource_name),
             )
-            conn.commit()
         return new_expires_at
 
     def release(self, resource_name: str, user_id: str, token: str) -> bool:
