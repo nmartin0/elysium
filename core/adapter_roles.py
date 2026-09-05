@@ -14,7 +14,7 @@ of those two files would have made the other one import from a module
 named after a concern it isn't ("external adapters extending
 internal_storage.ReadAdapter" reads backwards). See core/
 internal_storage.py's own module docstring for the fuller reasoning
-behind the three-way ReadAdapter/WriteAdapter/AppendOnlyAdapter split
+behind the ReadAdapter/WriteAdapter split
 itself (confirmed against real, established precedent -- CQRS, and
 Python's own typeshed SupportsRead/SupportsWrite -- before choosing
 this shape).
