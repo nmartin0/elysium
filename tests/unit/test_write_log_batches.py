@@ -21,7 +21,9 @@ that integration-level proof; this file stays scoped to the WriteLog
 class's own mechanics.
 """
 
-from core.ontology.write_log import WriteLog
+import pytest
+
+from core.ontology.write_log import WriteLogReader, WriteLogWriter
 
 
 def _sub_write(object_type="Account", object_id="acc_1", operation="update",
@@ -36,7 +38,7 @@ def _sub_write(object_type="Account", object_id="acc_1", operation="update",
 
 
 def test_log_pending_batch_is_findable_via_get_pending_batches(tmp_path):
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     sub_writes = [_sub_write("Account", "acc_1"), _sub_write("Account", "acc_2")]
 
     batch_id = write_log.log_pending_batch(sub_writes, "alice", "TransferFunds(...)")
@@ -50,7 +52,7 @@ def test_log_pending_batch_is_findable_via_get_pending_batches(tmp_path):
 
 
 def test_mark_batch_applied_removes_it_from_pending_batches(tmp_path):
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     batch_id = write_log.log_pending_batch([_sub_write()], "alice", "desc")
 
     write_log.mark_batch_applied(batch_id)
@@ -62,7 +64,7 @@ def test_get_pending_changes_falls_back_to_a_pending_batch(tmp_path):
     # THE core, positive proof: an object with NO per-object write_log
     # row yet (its own sub-write hasn't started applying) is still
     # found via the batch's own, already-declared intent.
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     write_log.log_pending_batch(
         [_sub_write("Account", "acc_1", changes={"balance": 400})], "alice", "desc"
     )
@@ -71,7 +73,7 @@ def test_get_pending_changes_falls_back_to_a_pending_batch(tmp_path):
 
 
 def test_get_pending_changes_batch_fallback_finds_the_right_sub_write_among_several(tmp_path):
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     write_log.log_pending_batch(
         [
             _sub_write("Account", "acc_1", changes={"balance": 400}),
@@ -87,7 +89,7 @@ def test_get_pending_changes_batch_fallback_finds_the_right_sub_write_among_seve
 def test_get_pending_changes_batch_fallback_respects_object_type_too(tmp_path):
     # The SAME id string, genuinely different types -- must not
     # cross-match.
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     write_log.log_pending_batch(
         [_sub_write("Account", "shared_id", changes={"balance": 400})], "alice", "desc"
     )
@@ -100,7 +102,7 @@ def test_get_pending_changes_returns_none_once_the_batch_is_applied(tmp_path):
     # intent must NOT keep surfacing for an object that never got its
     # own per-object write_log row at all (e.g. a batch with only one
     # sub-write, applied so quickly no reader ever raced it).
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     batch_id = write_log.log_pending_batch(
         [_sub_write("Account", "acc_1", changes={"balance": 400})], "alice", "desc"
     )
@@ -114,7 +116,7 @@ def test_get_pending_changes_prefers_the_per_object_row_over_the_batch(tmp_path)
     # applying), that row -- not the batch's own, now-superseded
     # declaration -- is what get_pending_changes() must return. Uses a
     # DIFFERENT changes value on each to prove which one actually won.
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     batch_id = write_log.log_pending_batch(
         [_sub_write("Account", "acc_1", changes={"balance": 400})], "alice", "desc"
     )
@@ -126,7 +128,7 @@ def test_get_pending_changes_prefers_the_per_object_row_over_the_batch(tmp_path)
 
 
 def test_get_pending_changes_returns_none_for_an_object_no_batch_mentions(tmp_path):
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     write_log.log_pending_batch(
         [_sub_write("Account", "acc_1", changes={"balance": 400})], "alice", "desc"
     )
@@ -144,7 +146,7 @@ def test_get_sub_write_entry_only_finds_it_under_the_correct_batch(tmp_path):
     # scoped replacement for "is this row batch-owned, and by which
     # batch specifically" -- proven here both ways: found under its
     # own real batch_id, NOT found under an unrelated one.
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     real_batch_id = write_log.log_pending_batch([_sub_write("Account", "acc_1")], "alice", "batch desc")
     write_log.log_pending_update(
         "Account", "acc_1", {"balance": 400}, {"balance": 500}, "alice", "batch desc", batch_id=real_batch_id
@@ -163,7 +165,7 @@ def test_get_all_pending_writes_finds_ordinary_standalone_writes(tmp_path):
     # writes (batch_id left as the default None), not just batch-owned
     # ones, even though nothing in the real system produces standalone
     # writes anymore now that confirm_and_execute() always batches.
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     write_log.log_pending_update("Account", "acc_1", {"balance": 1}, {"balance": 2}, "alice", "desc")
     write_log.log_pending_create("Account", "acc_2", {"balance": 1}, "alice", "desc")
 
@@ -173,7 +175,7 @@ def test_get_all_pending_writes_finds_ordinary_standalone_writes(tmp_path):
 
 
 def test_log_pending_create_also_accepts_a_batch_id(tmp_path):
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     batch_id = write_log.log_pending_batch(
         [_sub_write("Account", "acc_1", operation="create", changes={"balance": 0})], "alice", "desc"
     )
@@ -183,3 +185,27 @@ def test_log_pending_create_also_accepts_a_batch_id(tmp_path):
     assert write_log.get_sub_write_entry(batch_id, "Account", "acc_1") is not None
     # But still resolvable via the per-object row directly.
     assert write_log.get_pending_changes("Account", "acc_1") == {"balance": 0}
+
+
+def test_reader_connection_is_structurally_read_only(tmp_path):
+    # A real, direct proof of the actual safety property this store's
+    # own Reader/Writer split exists for -- not just "the tests still
+    # pass with two classes instead of one." Confirmed directly,
+    # empirically: a real attempt to write through WriteLogReader's own
+    # connection is denied at the SQLite engine level itself, not
+    # merely unused by that class's own methods.
+    #
+    # The Writer is constructed FIRST here, deliberately -- it is what
+    # actually creates this store's own schema (WriteLogReader
+    # structurally cannot, see its own _connection() docstring), the
+    # same real ordering core/deployment_loader.py's own explicit
+    # startup step guarantees in production.
+    writer = WriteLogWriter(tmp_path / "write_log.db")
+    writer.log_pending_update("Account", "acc_1", {"balance": 1}, {"balance": 2}, "alice", "desc")
+
+    reader = WriteLogReader(tmp_path / "write_log.db")
+    # Reads through the reader genuinely work.
+    assert reader.get_pending_changes("Account", "acc_1") == {"balance": 1}
+
+    with reader._connection() as conn, pytest.raises(Exception, match="not authorized"):
+        conn.execute("UPDATE write_log SET status = 'applied' WHERE object_id = 'acc_1'")

@@ -42,7 +42,7 @@ from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.schema import get_column_for_field
 from core.ontology.submission_criteria import evaluate_submission_criteria
-from core.ontology.write_log import WriteLog
+from core.ontology.write_log import WriteLogWriter
 
 if TYPE_CHECKING:
     # A real, TYPE_CHECKING-only intersection type -- never a runtime
@@ -208,25 +208,30 @@ class WriteMediator:
                 "write_log -- confirm_and_execute() depends on it entirely for both "
                 "'update' and 'create'."
             )
+        # A real, SEPARATE, write-capable WriteLogWriter, derived from
+        # the reader's OWN db_path -- deliberately not taken as its own
+        # constructor parameter. Deriving it this way makes it
+        # structurally impossible for the two to point at different
+        # physical databases (the exact "two values that could
+        # accidentally drift apart" problem this class's own write_log
+        # property was originally written to avoid), while still giving
+        # this class the genuinely write-capable instance it needs --
+        # see that property's own docstring.
+        self._write_log_writer = WriteLogWriter(mediator.write_log.db_path)
 
     @property
-    def write_log(self) -> WriteLog:
-        # Always the SAME instance self.mediator itself holds -- never
-        # a separately-stored copy, so there is nothing here that could
-        # ever drift out of sync with it.
-        #
-        # The assert below is a type-narrowing hint for mypy only, not
-        # the real runtime guard -- mediator.write_log is typed
-        # WriteLog | None (genuinely optional on DataMediator itself,
-        # see its own docstring), but this class's own __init__ already
-        # raises a real, non-stripped ValueError if it were None,
-        # before a WriteMediator claiming this property exists at all.
-        # mypy can't trace that guarantee across to a different
-        # object's attribute, so it's restated here, in the one place
-        # that needs it, rather than loosening this property's own
-        # return type for every caller.
-        assert self.mediator.write_log is not None
-        return self.mediator.write_log
+    def write_log(self) -> WriteLogWriter:
+        # A real, SEPARATE WriteLogWriter -- no longer the same
+        # instance self.mediator holds. A necessary change, matching
+        # the same real precedent write_adapters already set in this
+        # same class: DataMediator's own write_log is now a genuinely
+        # read-only WriteLogReader (structurally incapable of the
+        # log_pending_*/mark_* writes every method below depends on),
+        # so borrowing it would break every real write. Both still
+        # point at the SAME physical database file, so there is still
+        # exactly one real write log per deployment -- only the
+        # capability differs, which is the entire point of the split.
+        return self._write_log_writer
 
     @property
     def audit_log(self) -> AuditLog:

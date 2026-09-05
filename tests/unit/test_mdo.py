@@ -29,7 +29,7 @@ from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLog
+from core.ontology.write_log import WriteLogWriter
 from core.ontology.write_mediator import WriteMediator
 from tests.conftest import read_audit_log
 
@@ -178,7 +178,7 @@ def mediator(tmp_path, isolated_audit_log):
     }, _WRITE_ADAPTER_REGISTRY)
     silo_for_type = {"Customer": "primary_sql"}
     return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES,
-                         write_log=WriteLog(tmp_path / "write_log.db"),
+                         write_log=WriteLogWriter(tmp_path / "write_log.db"),
                          audit_log=AuditLog(isolated_audit_log / "audit.log"))
 
 

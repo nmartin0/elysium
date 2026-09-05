@@ -41,7 +41,7 @@ from core.ontology.action_types import validate_action_types
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.object_type_validation import validate_object_types
-from core.ontology.write_log import WriteLog
+from core.ontology.write_log import WriteLogReader, WriteLogWriter
 
 # Two real, SEPARATE registries -- not one, mapping to a (read, write)
 # tuple -- confirmed this is the clearer shape: _build_adapters() below
@@ -372,7 +372,20 @@ def load_deployment_bundle(
     # WriteMediator around this same DataMediator reads it back via
     # mediator.write_log (see WriteMediator's own __init__), never
     # constructs or is passed a second, separate one.
-    write_log = WriteLog(data_dir / "write_log.db")
+    # A real, explicit schema-creation step, run once, here, before
+    # the WriteLogReader below is ever constructed -- necessary, not
+    # defensive boilerplate: this store's schema used to be created
+    # lazily by whichever half touched the database first, but a
+    # genuinely read-only WriteLogReader structurally cannot run
+    # CREATE TABLE (see its own _connection() docstring). Constructing
+    # the WRITER first, and opening one real connection through it, is
+    # what actually creates the schema -- the same explicit,
+    # order-independent guarantee api/app.py's own equivalent step
+    # already provides for credentials.db's own four internal stores.
+    write_log_writer = WriteLogWriter(data_dir / "write_log.db")
+    with write_log_writer._connection():
+        pass
+    write_log = WriteLogReader(data_dir / "write_log.db")
     # audit_log is genuinely OPTIONAL here, unlike write_log above --
     # log_dir defaults to None (not resolved against data_dir or
     # config_dir, since it's a genuinely third, independent location --

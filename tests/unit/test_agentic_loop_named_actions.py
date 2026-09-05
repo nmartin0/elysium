@@ -27,7 +27,7 @@ from core.agent.agentic_loop import AgentLoop
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLog
+from core.ontology.write_log import WriteLogWriter
 from core.ontology.write_mediator import WriteMediator
 
 TEST_SCHEMA = {
@@ -93,7 +93,7 @@ def loop(tmp_path):
     conn.close()
 
     adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}}, _WRITE_ADAPTER_REGISTRY)
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES, write_log=write_log)
     write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
     return AgentLoop(MagicMock(), mediator, write_mediator=write_mediator,

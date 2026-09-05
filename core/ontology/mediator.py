@@ -119,13 +119,13 @@ from core.ontology.schema import (
     is_link_field,
     is_searchable_field,
 )
-from core.ontology.write_log import WriteLog
+from core.ontology.write_log import WriteLogReader
 
 
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
                  silo_for_type: dict[str, str], roles: dict,
-                 write_log: WriteLog | None = None,
+                 write_log: WriteLogReader | None = None,
                  audit_log: AuditLog | None = None):
         self.schema = schema
         self.adapters = adapters

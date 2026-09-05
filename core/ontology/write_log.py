@@ -210,15 +210,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.internal_storage import InternalReadAdapter, InternalWriteAdapter
 from core.sqlite_connection import connection_with_schema
 
 
-class WriteLog:
+class WriteLogReader(InternalReadAdapter):
     """
-    Durable persistence and read-masking for pending writes -- see this
-    module's own docstring for the full mechanism, history, and scope.
-    One instance per deployment, shared by DataMediator and
-    WriteMediator.
+    The READ half -- see this module's own docstring for the full
+    mechanism, history, and scope, and for why this store's own split
+    differs structurally from the other four internal stores'.
+
+    Every method here is genuinely read-only. DataMediator (the real
+    read path) uses ONLY this half -- confirmed directly, not assumed:
+    it calls exactly two of these methods (get_pending_changes() and
+    get_all_pending_writes()) and none of WriteLogWriter's below.
     """
 
     SCHEMA = """
@@ -247,96 +252,26 @@ class WriteLog:
     """
 
     def __init__(self, db_path: Path):
-        self._db_path = db_path
+        self.db_path = db_path
 
     def _connection(self):
-        return connection_with_schema(self._db_path, self.SCHEMA)
-
-    def log_pending_update(self, object_type: str, object_id: Any, changes: dict,
-                            expected_current_values: dict, user_id: str, description: str,
-                            batch_id: str | None = None) -> str:
-        # ONE row, ONE write, trivially atomic regardless of how many
-        # storages `changes` will eventually resolve across -- this single
-        # INSERT is the entire mechanism's real atomicity boundary. Takes
-        # the pending write's fields individually rather than a
-        # PendingWrite object directly -- this class has no reason to
-        # depend on write_mediator.py's own dataclass, keeping the
-        # dependency direction strictly one-way (write_mediator depends on
-        # this class, never the reverse).
-        #
-        # batch_id is None for an ordinary, standalone write -- the
-        # overwhelming majority of calls, entirely unaffected by this
-        # module docstring's own MULTI-OBJECT BATCHES section above. Set
-        # only when this row represents one sub-write within a larger
-        # write_log_batches entry.
-        log_id = str(uuid.uuid4())
-        with self._connection() as conn:
-            conn.execute(
-                "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
-                "expected_current_values, status, user_id, description, created_at, batch_id) "
-                "VALUES (?, ?, ?, 'update', ?, ?, 'pending', ?, ?, ?, ?)",
-                (
-                    log_id, object_type, str(object_id), json.dumps(changes),
-                    json.dumps(expected_current_values), user_id, description,
-                    datetime.now(UTC).isoformat(), batch_id,
-                ),
-            )
-            conn.commit()
-        return log_id
-
-    def log_pending_create(self, object_type: str, object_id: Any, changes: dict,
-                            user_id: str, description: str, batch_id: str | None = None) -> str:
-        # THE create-side counterpart to log_pending_update() above -- no
-        # expected_current_values parameter at all, unlike update: there's
-        # nothing to compare against or protect from a lost update, since
-        # nothing exists yet for this object anywhere. Stored as an empty
-        # JSON object in that same column rather than giving create its own
-        # separate table -- every other piece of this mechanism
-        # (get_pending_changes(), get_all_pending_writes(), the schema
-        # itself) stays genuinely shared between both operations; only
-        # what gets written into that one column differs.
-        log_id = str(uuid.uuid4())
-        with self._connection() as conn:
-            conn.execute(
-                "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
-                "expected_current_values, status, user_id, description, created_at, batch_id) "
-                "VALUES (?, ?, ?, 'create', ?, '{}', 'pending', ?, ?, ?, ?)",
-                (
-                    log_id, object_type, str(object_id), json.dumps(changes),
-                    user_id, description, datetime.now(UTC).isoformat(), batch_id,
-                ),
-            )
-            conn.commit()
-        return log_id
-
-    def mark_applied(self, log_id: str) -> None:
-        with self._connection() as conn:
-            conn.execute("UPDATE write_log SET status = 'applied' WHERE id = ?", (log_id,))
-            conn.commit()
-
-    def log_pending_batch(self, sub_writes: list[dict], user_id: str, description: str) -> str:
-        # ONE row, written BEFORE any of the batch's own sub-writes begin
-        # applying -- see this module's own MULTI-OBJECT BATCHES docstring
-        # section for the full mechanism. sub_writes here is the FULL
-        # resolved intent for every sub-write (object_type, object_id,
-        # operation, changes, expected_current_values -- each already a
-        # plain dict, JSON-serializable directly), not a WriteMediator
-        # SubWrite object -- same one-way dependency direction as
-        # log_pending_update()/log_pending_create() above.
-        batch_id = str(uuid.uuid4())
-        with self._connection() as conn:
-            conn.execute(
-                "INSERT INTO write_log_batches (id, sub_writes, status, user_id, description, created_at) "
-                "VALUES (?, ?, 'pending', ?, ?, ?)",
-                (batch_id, json.dumps(sub_writes), user_id, description, datetime.now(UTC).isoformat()),
-            )
-            conn.commit()
-        return batch_id
-
-    def mark_batch_applied(self, batch_id: str) -> None:
-        with self._connection() as conn:
-            conn.execute("UPDATE write_log_batches SET status = 'applied' WHERE id = ?", (batch_id,))
-            conn.commit()
+        # A REAL, structurally read-only connection (core/
+        # internal_storage.py's own InternalReadAdapter, via core/
+        # sqlite_connection.py's own open_connection(read_only=True))
+        # -- NOT connection_with_schema(). This store owns its OWN
+        # database and schema (SCHEMA above), unlike the four internal
+        # stores that share credentials.db, so its schema was
+        # previously created lazily here, on first use. That lazy
+        # CREATE TABLE IF NOT EXISTS is itself a write, which a
+        # genuinely read-only connection correctly denies -- so schema
+        # creation moved OUT of this reader entirely, to a real,
+        # explicit step run once at startup, before either half is
+        # constructed (see core/deployment_loader.py's own
+        # load_deployment_bundle(), and api/app.py's own equivalent
+        # step for credentials.db). WriteLogWriter below still uses
+        # connection_with_schema(), same as every other internal
+        # store's own writer.
+        return InternalReadAdapter._connection(self)
 
     def get_pending_batches(self) -> list[dict]:
         # The batch-level entry point WriteMediator.resume_pending_
@@ -498,6 +433,122 @@ class WriteLog:
                     "description": batch["description"],
                 })
         return results
+
+
+
+
+
+class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
+    """
+    The WRITE half -- extends WriteLogReader directly rather than
+    only InternalWriteAdapter, a real, deliberate choice matching the
+    same established composition pattern adapters/sqlite_adapter.py's
+    own SQLiteWriteAdapter already uses: WriteMediator genuinely needs
+    BOTH halves (confirmed directly -- it calls get_pending_batches()
+    and get_sub_write_entry() alongside every write method here), so
+    composing the two from the separate,
+    atomic pieces is more honest than either duplicating the read
+    methods or inventing a third "does everything" class.
+    """
+
+    def _connection(self):
+        # Overrides WriteLogReader's own, read-only _connection() --
+        # necessary, not incidental: this half genuinely writes, and
+        # (unlike the reader) is also the half that legitimately
+        # creates this store's own schema on first use, via core/
+        # sqlite_connection.py's own connection_with_schema(). Same
+        # real division every other internal store's own Reader/Writer
+        # pair already has, just expressed here as an override rather
+        # than two independent classes, since WriteLogWriter genuinely
+        # inherits the read methods too (see this class's own docstring).
+        return connection_with_schema(self.db_path, self.SCHEMA)
+
+    def log_pending_update(self, object_type: str, object_id: Any, changes: dict,
+                            expected_current_values: dict, user_id: str, description: str,
+                            batch_id: str | None = None) -> str:
+        # ONE row, ONE write, trivially atomic regardless of how many
+        # storages `changes` will eventually resolve across -- this single
+        # INSERT is the entire mechanism's real atomicity boundary. Takes
+        # the pending write's fields individually rather than a
+        # PendingWrite object directly -- this class has no reason to
+        # depend on write_mediator.py's own dataclass, keeping the
+        # dependency direction strictly one-way (write_mediator depends on
+        # this class, never the reverse).
+        #
+        # batch_id is None for an ordinary, standalone write -- the
+        # overwhelming majority of calls, entirely unaffected by this
+        # module docstring's own MULTI-OBJECT BATCHES section above. Set
+        # only when this row represents one sub-write within a larger
+        # write_log_batches entry.
+        log_id = str(uuid.uuid4())
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
+                "expected_current_values, status, user_id, description, created_at, batch_id) "
+                "VALUES (?, ?, ?, 'update', ?, ?, 'pending', ?, ?, ?, ?)",
+                (
+                    log_id, object_type, str(object_id), json.dumps(changes),
+                    json.dumps(expected_current_values), user_id, description,
+                    datetime.now(UTC).isoformat(), batch_id,
+                ),
+            )
+            conn.commit()
+        return log_id
+
+    def log_pending_create(self, object_type: str, object_id: Any, changes: dict,
+                            user_id: str, description: str, batch_id: str | None = None) -> str:
+        # THE create-side counterpart to log_pending_update() above -- no
+        # expected_current_values parameter at all, unlike update: there's
+        # nothing to compare against or protect from a lost update, since
+        # nothing exists yet for this object anywhere. Stored as an empty
+        # JSON object in that same column rather than giving create its own
+        # separate table -- every other piece of this mechanism
+        # (get_pending_changes(), get_all_pending_writes(), the schema
+        # itself) stays genuinely shared between both operations; only
+        # what gets written into that one column differs.
+        log_id = str(uuid.uuid4())
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
+                "expected_current_values, status, user_id, description, created_at, batch_id) "
+                "VALUES (?, ?, ?, 'create', ?, '{}', 'pending', ?, ?, ?, ?)",
+                (
+                    log_id, object_type, str(object_id), json.dumps(changes),
+                    user_id, description, datetime.now(UTC).isoformat(), batch_id,
+                ),
+            )
+            conn.commit()
+        return log_id
+
+    def mark_applied(self, log_id: str) -> None:
+        with self._connection() as conn:
+            conn.execute("UPDATE write_log SET status = 'applied' WHERE id = ?", (log_id,))
+            conn.commit()
+
+    def log_pending_batch(self, sub_writes: list[dict], user_id: str, description: str) -> str:
+        # ONE row, written BEFORE any of the batch's own sub-writes begin
+        # applying -- see this module's own MULTI-OBJECT BATCHES docstring
+        # section for the full mechanism. sub_writes here is the FULL
+        # resolved intent for every sub-write (object_type, object_id,
+        # operation, changes, expected_current_values -- each already a
+        # plain dict, JSON-serializable directly), not a WriteMediator
+        # SubWrite object -- same one-way dependency direction as
+        # log_pending_update()/log_pending_create() above.
+        batch_id = str(uuid.uuid4())
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO write_log_batches (id, sub_writes, status, user_id, description, created_at) "
+                "VALUES (?, ?, 'pending', ?, ?, ?)",
+                (batch_id, json.dumps(sub_writes), user_id, description, datetime.now(UTC).isoformat()),
+            )
+            conn.commit()
+        return batch_id
+
+    def mark_batch_applied(self, batch_id: str) -> None:
+        with self._connection() as conn:
+            conn.execute("UPDATE write_log_batches SET status = 'applied' WHERE id = ?", (batch_id,))
+            conn.commit()
+
 
 
 # =============================================================================

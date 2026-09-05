@@ -29,7 +29,7 @@ from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLog
+from core.ontology.write_log import WriteLogWriter
 
 TEST_SCHEMA = {
     "Widget": {
@@ -92,7 +92,7 @@ def mediator(tmp_path):
     }, _WRITE_ADAPTER_REGISTRY)
     silo_for_type = {"Widget": "widget_db", "Gadget": "gadget_db"}
     return DataMediator(TEST_SCHEMA, adapters, silo_for_type, TEST_ROLES,
-                         write_log=WriteLog(tmp_path / "write_log.db"))
+                         write_log=WriteLogWriter(tmp_path / "write_log.db"))
 
 
 def test_two_silos_get_genuinely_separate_adapter_instances(mediator):

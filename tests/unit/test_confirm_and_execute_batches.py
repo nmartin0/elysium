@@ -26,7 +26,7 @@ import pytest
 from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLog
+from core.ontology.write_log import WriteLogWriter
 from core.ontology.write_mediator import WriteMediator
 
 TEST_USERS = {"alice": {"org_id": "org-a", "role": "editor"}}
@@ -56,7 +56,7 @@ def _record(user_id):
 def wm_and_log(test_db_path, test_schema, tmp_path):
     adapter = SQLiteWriteAdapter({"path": test_db_path})
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES, write_log=write_log)
     write_mediator = WriteMediator(mediator, {"test_silo": adapter}, TEST_ROLES, TEST_ACTION_TYPES)
     return write_mediator, write_log

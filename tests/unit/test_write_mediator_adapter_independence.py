@@ -19,7 +19,7 @@ import sqlite3
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLog
+from core.ontology.write_log import WriteLogWriter
 from core.ontology.write_mediator import WriteMediator
 
 TEST_SCHEMA = {
@@ -79,7 +79,7 @@ def test_a_confirmed_write_lands_in_write_adapters_own_database_not_mediators(tm
     read_adapter = SQLiteReadAdapter({"path": read_db})
     write_adapter = SQLiteWriteAdapter({"path": write_db})
 
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(TEST_SCHEMA, {"primary": read_adapter}, {"Widget": "primary"}, TEST_ROLES,
                              write_log=write_log)
     write_mediator = WriteMediator(mediator, {"primary": write_adapter}, TEST_ROLES, TEST_ACTION_TYPES)
@@ -114,7 +114,7 @@ def test_write_mediator_never_reaches_into_mediators_own_adapters_dict(tmp_path)
     _make_widgets_db(tmp_path / "read.db", initial_name="x")
     _make_widgets_db(tmp_path / "write.db", initial_name="x")
 
-    write_log = WriteLog(tmp_path / "write_log.db")
+    write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(TEST_SCHEMA, {"primary": read_adapter}, {"Widget": "primary"}, TEST_ROLES,
                              write_log=write_log)
     write_mediator = WriteMediator(mediator, {"primary": write_adapter}, TEST_ROLES, TEST_ACTION_TYPES)
