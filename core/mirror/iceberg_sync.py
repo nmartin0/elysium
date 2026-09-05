@@ -51,7 +51,8 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.interface import MirrorSync, SyncResult
-from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for, coerce
+from core.mirror.transform import describe_drift, transform_rows
+from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for
 from core.ontology.interface import ExternalReadAdapter
 
 
@@ -84,8 +85,27 @@ class IcebergMirrorSync(MirrorSync):
                 f"known silos: {sorted(self.adapters.keys())}"
             )
 
-        rows = self._read_source_rows(adapter, table_name, id_column, columns)
-        arrow_table = self._to_arrow(rows, columns, column_types)
+        raw_rows = self._read_source_rows(adapter, table_name, id_column, columns)
+
+        # THE raw -> clean stage (Phase 3). Casting lives here, between
+        # reading and writing, rather than inside _to_arrow() where it
+        # used to be -- see core/mirror/transform.py for why that
+        # separation is the point rather than a detail.
+        #
+        # Drift FAILS THIS TABLE'S SYNC LOUDLY, leaving the last-good
+        # mirror contents in place: a column whose real values no
+        # longer match what the ontology declares means the customer's
+        # source system changed underneath us, which is exactly the
+        # "fail loudly, never silently substitute" case. The error
+        # names the table, the column, the declared type and a real
+        # offending value, so scripts/run_sync.py's own per-table
+        # handling turns it into a genuinely diagnosable failure rather
+        # than a stack trace.
+        transformed = transform_rows(raw_rows, columns, column_types)
+        if transformed.has_drift:
+            raise ValueError(describe_drift(silo_name, table_name, transformed.drift))
+
+        arrow_table = self._to_arrow(transformed.rows, columns, column_types)
 
         self._ensure_namespace(silo_name)
         identifier = f"{silo_name}.{table_name}"
@@ -174,35 +194,23 @@ class IcebergMirrorSync(MirrorSync):
 
     def _to_arrow(self, rows: list[dict], columns: list[str],
                    column_types: dict[str, str] | None = None) -> pa.Table:
-        # A genuinely TYPED schema, built from what the ontology
-        # DECLARES each field to be -- never inferred from the data
-        # itself. That distinction is the whole point: inference would
-        # let a table's mirror schema CHANGE between runs purely
-        # because its data changed (a nullable numeric column that
-        # happens to be all NULL one day), which is exactly the silent,
-        # drifting behavior this project's "fail loudly, never silently
-        # substitute" discipline rejects. Declaring types in the
-        # ontology keeps the schema stable while making it real.
+        # Builds the Arrow table from rows the TRANSFORM stage has
+        # already cleaned -- this method no longer casts anything
+        # itself. Phase 3 moved that out: type casting is a raw ->
+        # clean responsibility, and the ingest stage is deliberately
+        # kept as dumb as Foundry's own ("minimal options for
+        # transforming the data before it arrives in the destination
+        # dataset"). See core/mirror/transform.py.
         #
-        # A column with no declared type defaults to string -- so a
-        # schema predating field data_types entirely produces exactly
-        # the previous behavior, and no existing deployment breaks.
-        #
-        # coerce() raises on a genuine mismatch (a field declared
-        # `integer` whose source value is "abc") rather than
-        # substituting a default. That surfaces an ontology/source
-        # disagreement loudly, during a sync, instead of quietly
-        # writing a wrong value into the mirror -- and scripts/
-        # run_sync.py's own per-table error handling turns it into a
-        # real, named failure for that one table, leaving its last-good
-        # contents intact.
+        # The declared types still determine the SCHEMA here, which is
+        # a different thing from casting the values: a column declared
+        # `number` gets a real float64 Arrow column. That has to happen
+        # at write time, since it is a property of the table being
+        # written, not of the rows.
         column_types = column_types or {}
         resolved = {
             column: column_types.get(column, DEFAULT_FIELD_DATA_TYPE) for column in columns
         }
-        data = {
-            column: [coerce(row[column], resolved[column]) for row in rows]
-            for column in columns
-        }
+        data = {column: [row[column] for row in rows] for column in columns}
         schema = pa.schema([(column, arrow_type_for(resolved[column])) for column in columns])
         return pa.table(data, schema=schema)
