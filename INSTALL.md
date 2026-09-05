@@ -157,3 +157,55 @@ equivalent: **systemd** (not part of POSIX at all), **the FHS layout
 itself** (a Linux Foundation convention, not POSIX-mandated),
 **`useradd`/`groupadd`/`getent`** (from `shadow-utils`/glibc, not
 POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
+
+## 8. Data-access security: what Elysium guarantees, and what you must configure
+
+Elysium reads from *your* databases. This section states plainly what
+the software guarantees on its own, and what it cannot guarantee
+without configuration on your side. Both halves matter; neither alone
+is the whole picture.
+
+### What Elysium guarantees in code, with no configuration from you
+
+**The read path cannot write to your data.** Elysium's read path
+(everything the LLM does, all browsing and search) uses a connection
+that is structurally incapable of writing. This is enforced by SQLite
+itself, not by convention: an `UPDATE`, `DELETE`, or `DROP` issued
+through that connection is refused by the database engine, even if it
+somehow originated from a bug inside Elysium's own code. See
+`tests/unit/test_external_read_adapter_is_read_only.py`, which proves
+this directly by attempting raw writes and confirming they are
+refused.
+
+**Writes only happen through an explicit, human-approved path.** The
+only code that can write to your data is the action system, and every
+write goes through a two-phase propose/confirm flow: the LLM can
+*propose* a change, but nothing is applied until a human with the
+right permissions approves it. Permission checks (RBAC and MAC) run
+in Python before either phase.
+
+### What you must configure, because Elysium cannot enforce it alone
+
+**Use a read-only database account for the read connection, if your
+database supports one.** SQLite has no concept of database users or
+`GRANT`s at all — a "connection" is just a file path — so for SQLite
+silos, the code-level guarantee above is the whole story. For any
+server-backed database (PostgreSQL, MySQL, and similar), the account
+Elysium connects with should be granted `SELECT` only, and nothing
+else, on exactly the tables your ontology references.
+
+This is not redundant with the code-level guarantee — it is the more
+important of the two. A database-enforced permission holds regardless
+of what any application does, including one with a bug. Application
+code is the second layer, not the first. This mirrors the practice
+Palantir documents for Foundry, whose own documentation warns plainly
+that a sync "can change the source system if the source credentials
+allow it — for instance... dropping data from a database via
+arbitrary SQL." The credential is the real boundary.
+
+**A note on scope:** Elysium currently ships a SQLite adapter only.
+When a server-backed adapter is added, its configuration in
+`data_silos.yaml` will accept real connection credentials, and this
+is the point at which the guidance above becomes directly actionable.
+Until then it is recorded here so the requirement is not discovered
+late.

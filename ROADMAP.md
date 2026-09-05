@@ -308,24 +308,36 @@ earlier doubt came from thinking of this as one blurry read/write
 line rather than clean, separate roles.
 
 **Phase 1 -- the real, two-layer read-only guarantee (depends on
-Phase 0).** Two independent, structurally separate enforcement layers,
-resolved directly, not left as a tradeoff:
-- **Credential-level**: a genuinely separate, `SELECT`-only database
-  credential for `DataMediator`'s own adapters specifically, documented
-  as a real, required deployment step in `INSTALL.md` -- matching
-  Palantir's own real, confirmed practice (their own docs: "syncs can
-  change the source system if the source credentials allow it... you
-  should only grant Edit access... to users whom you would also grant
-  full access to the account"). The credential is the real enforcement
-  point, not application code alone -- confirmed as Palantir's own
-  actual practice, not assumed.
-- **Code-level**: `sqlite3.Connection.set_authorizer()`, confirmed
-  directly, empirically, before proposing it (a real, isolated test:
-  SELECT succeeded, INSERT/UPDATE/DROP were all genuinely denied at
-  the SQLite engine level itself, not just skipped by application
-  code) -- a second, structurally independent layer, so a bug in
-  either the credential or the authorizer callback alone still leaves
-  the other holding.
+Phase 0). CODE-LEVEL HALF DONE; credential half documented, pending a
+real server-backed adapter.** Two independent, structurally separate
+enforcement layers, resolved directly, not left as a tradeoff:
+- **Code-level: DONE.** `sqlite3.Connection.set_authorizer()`, via
+  `core/sqlite_connection.py`'s own `open_connection(read_only=True)`,
+  now used by `SQLiteReadAdapter`'s own `_connection()`. Confirmed
+  directly, empirically, and covered by a real, dedicated test file
+  (`tests/unit/test_external_read_adapter_is_read_only.py`) proving a
+  raw UPDATE/DELETE/DROP issued straight through the reader's own
+  connection is refused by the engine itself -- not merely absent from
+  its public methods (that was Phase 0, true by type alone).
+  `SQLiteWriteAdapter` overrides `_connection()` to stay genuinely
+  write-capable, since it inherits the reader's four real read
+  implementations for WriteMediator's own optimistic-concurrency
+  check.
+- **Credential-level: DOCUMENTED, not yet implementable.** A
+  genuinely separate, `SELECT`-only database credential for
+  `DataMediator`'s own adapters -- matching Palantir's own real,
+  confirmed practice (their own docs: "syncs can change the source
+  system if the source credentials allow it... you should only grant
+  Edit access... to users whom you would also grant full access to the
+  account"). The credential is the real enforcement point, not
+  application code alone. Confirmed directly why this cannot be
+  implemented yet rather than deferred vaguely: SQLite has no concept
+  of a database user or GRANT at all -- a "connection" is just a file
+  path -- and Elysium currently ships a SQLite adapter only. Recorded
+  as real, actionable deployment guidance in `INSTALL.md`'s own
+  "Data-access security" section so the requirement isn't discovered
+  late; becomes directly implementable the moment a real server-backed
+  adapter (PostgreSQL or similar) exists.
 
 **Phase 2 -- raw ingest sync module (depends on Phase 1's read-only
 credential existing).** PyIceberg (confirmed directly: Apache License
@@ -335,7 +347,26 @@ mirror's own versioned storage; a new `core/mirror/` package
 established `DataSiloAdapter` interface-then-implementation
 convention) reads through the Phase 1 credential and writes one raw
 Iceberg table per real source table -- matching Foundry's own "ingest
-as-is" philosophy. Sync cadence: a real, configurable deployment
+as-is" philosophy.
+
+**Process shape -- SETTLED: a separate CLI process, not an in-process
+background thread.** A new `scripts/run_sync.py` performs ONE sync and
+exits; scheduling is external (cron, systemd timer, Kubernetes
+CronJob). Three real reasons, decided directly rather than by default:
+it matches how this project already works (`scripts/run_deployment.py`
+and `scripts/serve_requests.py` are already standalone entry points
+sharing the same `core/`); a sync copies entire tables, which is
+genuinely heavy work that would otherwise compete with request
+handling in the same process (and, under Python's GIL, measurably slow
+it), while a badly-failing sync in-process could take the web server
+down with it -- separate processes fail independently; and it matches
+the real precedent already researched, since Foundry itself runs syncs
+as scheduled builds, entirely separate from the service answering
+queries. The honest cost, named rather than glossed: it is a second
+thing to deploy and schedule, which for a single-machine deployment is
+genuinely more setup than "it just happens."
+
+Sync cadence: a real, configurable deployment
 setting (time-based, with a manual "sync now" escape hatch), not
 hardcoded -- the exact default interval is not yet decided. Schema
 drift: the schema is pinned at sync time; a column the ontology
