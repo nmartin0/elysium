@@ -234,6 +234,172 @@ after.
 
 ---
 
+## Read-only data mirror architecture
+
+Raised directly -- "we must be able to provide a GUARANTEE that the
+outside, third-party databases are READ-ONLY" -- followed by a real,
+structured research pass into how Palantir Foundry itself handles the
+exact same relationship (ingestion, writeback, schema drift, staleness
+visibility, and cross-source joins), and a real, careful discussion of
+what to adopt at Elysium's own, much smaller scale versus what would
+be disproportionate. A genuinely new, real architecture initiative --
+not a small addition -- covering the entire read path (`DataMediator`);
+the existing write path (`WriteMediator`, `propose_action`,
+`confirm_and_execute`) is explicitly, deliberately UNCHANGED by every
+phase below, and stays live, direct, and exactly as correct as it is
+today.
+
+### Why this doesn't conflict with TransferFunds' own correctness
+
+A real, resolved objection, worth recording since it shaped the whole
+design: `confirm_and_execute()`'s own optimistic-concurrency check
+(comparing `expected_current_values` against the real, CURRENT value
+at write time) doesn't care how the original read was obtained --
+live, or from a mirror synced minutes ago. It only checks whether the
+value right now, at write time, still matches. A stale read can only
+ever produce a real, correct rejection asking for a retry -- it can
+never produce an unsafe write. Staleness in the read path is a
+retry-rate question, not a correctness one; this was already true
+before this whole initiative, since a human reviewing a proposal
+between propose and confirm already creates a real staleness window
+today.
+
+### Phases, in real dependency order
+
+**Phase 0 -- prerequisite refactor, discovered during scoping, not
+originally planned.** `WriteMediator` does not have its own adapter
+set today -- confirmed directly: it reaches into `self.mediator`'s own
+adapters (`_resolve_shared_storage`, `_write_limiter_for_silo`,
+`_locks_for_objects`, `_type_schema`, `_read_field_with_log_check`,
+`_security_allowed`) to perform its own writes. `DataMediator` cannot
+safely move to a read-only credential until `WriteMediator` has its
+own, independent, still-write-capable adapters. A pure refactor --
+zero behavior change, both mediators still pointing at the exact same
+real database at the end of this phase, just via separate connections.
+**Open question, not yet decided:** does EVERY one of those six
+borrowed methods genuinely need an independent copy, or are some of
+them (e.g. `_type_schema`) legitimate reads `WriteMediator` could keep
+sharing safely? Deliberately not resolved yet -- worth a real, careful
+look at each of the six individually, not a blanket "duplicate
+everything" move.
+
+**Phase 1 -- the real, two-layer read-only guarantee (depends on
+Phase 0).** Two independent, structurally separate enforcement layers,
+resolved directly, not left as a tradeoff:
+- **Credential-level**: a genuinely separate, `SELECT`-only database
+  credential for `DataMediator`'s own adapters specifically, documented
+  as a real, required deployment step in `INSTALL.md` -- matching
+  Palantir's own real, confirmed practice (their own docs: "syncs can
+  change the source system if the source credentials allow it... you
+  should only grant Edit access... to users whom you would also grant
+  full access to the account"). The credential is the real enforcement
+  point, not application code alone -- confirmed as Palantir's own
+  actual practice, not assumed.
+- **Code-level**: `sqlite3.Connection.set_authorizer()`, confirmed
+  directly, empirically, before proposing it (a real, isolated test:
+  SELECT succeeded, INSERT/UPDATE/DROP were all genuinely denied at
+  the SQLite engine level itself, not just skipped by application
+  code) -- a second, structurally independent layer, so a bug in
+  either the credential or the authorizer callback alone still leaves
+  the other holding.
+
+**Phase 2 -- raw ingest sync module (depends on Phase 1's read-only
+credential existing).** PyIceberg (confirmed directly: Apache License
+2.0, from `apache/iceberg-python`'s own `pyproject.toml`) manages the
+mirror's own versioned storage; a new `core/mirror/` package
+(`interface.py` then a concrete `iceberg_sync.py`, matching the
+established `DataSiloAdapter` interface-then-implementation
+convention) reads through the Phase 1 credential and writes one raw
+Iceberg table per real source table -- matching Foundry's own "ingest
+as-is" philosophy. Sync cadence: a real, configurable deployment
+setting (time-based, with a manual "sync now" escape hatch), not
+hardcoded -- the exact default interval is not yet decided. Schema
+drift: the schema is pinned at sync time; a column the ontology
+expects but the sync can no longer find fails the sync loudly, leaving
+the last-good mirror in place -- matching this project's own existing
+"fail loudly, never silently substitute" discipline, and matching
+Foundry's own real, confirmed behavior (schemas pinned at deploy,
+column removal is a real, named "state-break" requiring explicit
+acknowledgment). A real, automated license-scanning check (e.g.
+`pip-licenses`, added to `lint.sh`) belongs in this phase specifically,
+since it's the phase that actually introduces the new dependency.
+
+**Phase 3 -- the transform pass (depends on Phase 2's raw tables
+existing).** Materializes one clean, per-object-type Iceberg table
+(`customer_clean`, etc.) -- the direct analog to Foundry's own
+"backing dataset per object type." **Open question, leaning but not
+yet finalized:** `DataMediator`'s own existing field/MDO resolution
+logic should almost certainly be EXTRACTED into a shared function
+both the live path and this new batch pass call, rather than a second,
+parallel implementation written from scratch -- a direct DRY question,
+not just a detail, given this project's own established discipline
+against exactly this kind of duplication. Verification: read the same
+real object both live and from the new, materialized table, and diff
+them -- the real proof of correctness, not just "the batch job ran
+without an error."
+
+**Phase 4 -- repointing `DataMediator`'s actual reads (highest risk,
+done last, depends on 1-3 all independently verified).** A real,
+explicit config flag -- live source, or local mirror -- never an
+unconditional, all-or-nothing cutover with no way back. The most
+extensive testing pass of the whole project: every existing read route
+(`search_object`, `get_field`, everything the LLM touches) must behave
+identically under both modes, verified with a real, live, side-by-side
+comparison before this is ever the default.
+
+### The real, settled tool choices, and why
+
+**DuckDB** (confirmed directly: MIT, from the official `duckdb/duckdb`
+repository and its original creators, CWI) queries the local mirror at
+read time -- genuinely fast for the aggregation-heavy work already
+planned (see "Backend foundation work" above), and this is the SAME
+tool already recommended there, not a second, separate choice.
+
+**PyIceberg** (Apache License 2.0) manages the mirror's own versioned
+storage specifically. Confirmed directly, not assumed, before
+accepting this: every mature, real "table format" library in this
+exact space (Apache Iceberg, Apache Hudi, and Delta Lake's own
+tooling, including its non-JVM `delta-rs`/`deltalake` Python package)
+converges on Apache 2.0, by real, structural Apache-Software-
+Foundation governance necessity, not project-by-project preference --
+there is no genuinely mature, MIT/BSD-licensed alternative at this
+level of production-readiness. Confirmed acceptable under this
+project's own real licensing rule (see `PRINCIPLES.md`'s own "Third-
+party code: install and import, never modify" principle) specifically
+because Elysium never modifies third-party source at all -- the one
+real clause distinguishing Apache 2.0 from MIT/BSD (disclosing a
+modification, if one is ever made AND redistributed) can never
+actually trigger under that rule, for any dependency, on any license.
+
+### What this actually adds, once all five phases are done
+
+Not just an architecture change -- real, concrete new capability:
+1. A real, provable, two-layer read-only guarantee (credential +
+   code-level), not a promise resting on application-code discipline
+   alone.
+2. Resilience to the customer's own database being unreachable --
+   Elysium keeps answering real questions from the last-good mirror
+   instead of going dark entirely.
+3. Faster query and LLM response times -- no live network round trip
+   to the customer's own infrastructure on the most common path
+   through the whole system.
+4. A real, practical foundation for the already-planned aggregation/
+   analytics work (Object Explorer parity, charts) -- this phase is
+   what makes that OTHER roadmap item fast and practical to build well,
+   not just a safety measure in isolation.
+5. Real, visible data freshness -- a genuine "last synced at," usable
+   anywhere a person needs to know how current their information is
+   (the schema viewer, a pending proposal's own review screen).
+6. Safe, loud failure on schema drift, instead of silent corruption.
+7. A real, queryable history of the data itself, via Iceberg's own
+   snapshot mechanism -- not yet built as a user-facing feature, but
+   the underlying capability exists the moment the mirror does.
+8. Writes stay exactly as they are today -- live, direct, immediate,
+   with the same real-time correctness check already in place. This
+   whole initiative is additive to the read path only.
+
+---
+
 ## Near-term (prioritized, in build order)
 
 Recommended order, from the original research: lowest-risk and

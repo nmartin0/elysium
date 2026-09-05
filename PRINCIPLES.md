@@ -295,6 +295,58 @@ fully independent of each other; these are enforced on every run of
 `./lint.sh`, not just documented intentions someone could quietly
 drift away from.
 
+## 13. Third-party code: install and import, never modify. Permissive licenses only.
+
+A real, hard rule, decided directly, not a default assumption: this
+project never modifies a third-party dependency's own source --
+never patches it, never vendors a locally-edited copy into this
+repository. Every real dependency is installed unmodified, from the
+real package index (PyPI, npm), and used only through its own,
+public, documented API -- extending a library via its own documented
+extension point (a subclass, a callback, a plugin interface -- the
+same real pattern already used for SQLite's own `set_authorizer`)
+is normal, expected use, not modification, and creates no obligation
+under any license at all. If a real, genuine need to modify a
+dependency's own source ever arises, that is a rare, serious
+decision requiring real, explicit authorization first -- never done
+quietly, as a small fix, in passing.
+
+This rule is *why* license choice is simpler than it might first
+appear, not a way of avoiding the question: the one real clause that
+distinguishes a permissive-but-not-minimal license like Apache 2.0
+from MIT/BSD -- disclosing that you modified a file, if you modified
+AND redistributed it -- can never actually trigger under this rule,
+for any dependency, on any license. Confirmed directly, not assumed,
+before adopting PyIceberg specifically: every mature, real "table
+format" library in that entire space (Apache Iceberg, Apache Hudi,
+and Delta Lake's own tooling) converges on Apache 2.0 by structural,
+Apache-Software-Foundation governance necessity, not project-by-
+project preference -- so treating Apache 2.0 as unacceptable here
+would have meant either building real, equivalent functionality from
+scratch for no real reason, or ruling out an entire, mature category
+of tooling over a clause this project's own "never modify" rule
+already makes moot.
+
+The real, two-tier bar this project actually applies:
+- **Code imported or linked directly into Elysium's own process**
+  (a real Python import, a real npm dependency) must be permissively
+  licensed -- MIT or BSD preferred, Apache 2.0 (and equivalent
+  permissive, non-copyleft licenses) genuinely acceptable given the
+  "never modify" rule above, confirmed on a per-dependency basis, not
+  assumed from a project's general reputation.
+- **Software merely run alongside Elysium as a separate process**,
+  communicated with only over a network/IPC boundary (never
+  imported, never linked) has real room for a more permissive stance
+  on copyleft licenses too, since no linking or embedding occurs --
+  though this project has not yet had a real, concrete case of this
+  second kind to decide.
+
+A real, automated check (a license-scanning tool -- e.g. `pip-
+licenses` -- run as part of `lint.sh`, the same place `oxlint`/
+`mypy`/`vulture`/`import-linter` already run) is the real, durable
+way to keep enforcing this as dependencies update over time, not a
+one-time manual check trusted forever afterward.
+
 ---
 
 If a future session — human or Claude — is unsure how to approach a
@@ -305,6 +357,8 @@ negative control; check anything visual in a real, live browser,
 since the unit suite structurally cannot; keep security explicit and
 fail-safe, never inferred; leave an honest, findable trail of what's
 still open and why; extract only real, at-risk duplication; build
-only what's concretely needed now; and never make a breaking change,
-or invent a new pattern from scratch, without checking real precedent
-or getting real authorization first.
+only what's concretely needed now; never make a breaking change, or
+invent a new pattern from scratch, without checking real precedent
+or getting real authorization first; and never modify a third-party
+dependency's own source, ever, without treating it as a rare,
+serious decision in its own right.
