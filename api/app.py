@@ -88,7 +88,7 @@ from fastapi import FastAPI, Request
 from api.csrf_middleware import csrf_protect
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.agent.agentic_loop import AgentLoop
-from core.auth.credential_store import CredentialStore
+from core.auth.credential_store import CredentialReader
 from core.auth.database import connection
 from core.auth.login_attempt_tracker import LoginAttemptTracker
 from core.auth.query_rate_limiter import QueryRateLimitReader, QueryRateLimitWriter
@@ -227,7 +227,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # re-deriving credentials_db_path and calling a free function each
     # time -- see core/auth/credential_store.py, core/auth/session_store.py,
     # and core/user_directory.py's own docstrings for the full reasoning.
-    app.state.credential_store = CredentialStore(app.state.credentials_db_path)
+    app.state.credential_reader = CredentialReader(app.state.credentials_db_path)
     app.state.session_store = SessionStore(app.state.credentials_db_path)
     app.state.login_attempt_tracker = LoginAttemptTracker(app.state.credentials_db_path)
     app.state.query_rate_limiter_reader = QueryRateLimitReader(app.state.credentials_db_path)

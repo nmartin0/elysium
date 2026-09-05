@@ -165,7 +165,7 @@ class ConfirmWriteRequest(BaseModel):
 
 @router.post("/login", status_code=204)
 def login(body: LoginRequest, request: Request, response: Response) -> None:
-    credential_store = request.app.state.credential_store
+    credential_reader = request.app.state.credential_reader
     session_store = request.app.state.session_store
     user_directory = request.app.state.user_directory
     login_attempt_tracker = request.app.state.login_attempt_tracker
@@ -186,7 +186,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
     # leaking "this account exists and is disabled" through response
     # timing alone, even with an identical error message). Same timing-
     # safety principle verify_credential() itself already follows.
-    credentials_valid = credential_store.verify_credential(body.username, body.password)
+    credentials_valid = credential_reader.verify_credential(body.username, body.password)
 
     if locked_out:
         # Same generic message as every other failure below --

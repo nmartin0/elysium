@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from core.auth.credential_store import CredentialStore
+from core.auth.credential_store import CredentialReader
 from core.auth.session_store import SessionStore
 from core.user_directory import UserDirectory
 
@@ -27,7 +27,7 @@ TEST_ROLES = {"analyst": {"allowed_actions": ["read:Employee"]}}
 @pytest.fixture
 def directory_and_stores(tmp_path: Path):
     db_path = tmp_path / "db.sqlite"
-    return UserDirectory(db_path, TEST_ROLES), CredentialStore(db_path), SessionStore(db_path)
+    return UserDirectory(db_path, TEST_ROLES), CredentialReader(db_path), SessionStore(db_path)
 
 
 def test_create_user_rejects_unknown_role_before_any_write(directory_and_stores):

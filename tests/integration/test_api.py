@@ -274,8 +274,8 @@ def test_login_always_runs_real_password_verification_even_when_already_locked_o
     for _ in range(5):
         _login(client, "alice", "wrong-pw")
 
-    real_verify = client.app.state.credential_store.verify_credential
-    with patch.object(client.app.state.credential_store, "verify_credential", wraps=real_verify) as spy:
+    real_verify = client.app.state.credential_reader.verify_credential
+    with patch.object(client.app.state.credential_reader, "verify_credential", wraps=real_verify) as spy:
         _login(client, "alice", "correct-pw")
         assert spy.called
 
