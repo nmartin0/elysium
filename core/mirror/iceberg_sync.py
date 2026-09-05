@@ -44,7 +44,6 @@ Used by: scripts/run_sync.py
 import warnings
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import pyarrow as pa
 from pyiceberg.catalog.sql import SqlCatalog
@@ -165,32 +164,19 @@ class IcebergMirrorSync(MirrorSync):
 
     def _read_source_rows(self, adapter: ExternalReadAdapter, table_name: str,
                            id_column: str, columns: list[str]) -> list[dict]:
-        # Reads through the adapter's own public, read-only interface --
-        # find_ids() for the real id list, then get_raw_field() per
-        # column. Deliberately NOT a raw "SELECT * FROM table" through
-        # the adapter's private connection: going through the real
-        # interface keeps this sync engine-agnostic (a future Postgres
-        # or REST adapter works here unchanged), which is the entire
-        # reason ExternalReadAdapter exists.
+        # ONE bulk read for the whole table. This previously went
+        # through find_ids() then get_raw_field() per field per row --
+        # the per-object shape that is right for serving a request and
+        # wrong for copying a table. Measured before the fix: 10,001
+        # queries to copy 2,000 rows of a five-column table.
         #
-        # A real, honest cost of that choice, named rather than hidden:
-        # this is one query per field per row, not one bulk scan. Fine
-        # at this project's current scale and for a job that runs on a
-        # schedule rather than per request -- but the first thing to
-        # revisit if sync duration ever becomes a real problem, most
-        # likely by adding a real bulk-read method to
-        # ExternalReadAdapter itself rather than by reaching around it
-        # here.
+        # Still engine-agnostic: read_all_rows() is part of the real
+        # ExternalReadAdapter contract, so a future Postgres or REST
+        # adapter implements it in whatever way is bulk-efficient for
+        # that backend, rather than this module reaching around the
+        # interface into raw SQL.
         type_config = {"storage": {"table": table_name, "id_column": id_column}}
-        ids = adapter.find_ids(table_name, {}, type_config)
-
-        rows = []
-        for object_id in ids:
-            row: dict[str, Any] = {}
-            for column in columns:
-                row[column] = adapter.get_raw_field(table_name, object_id, column, type_config)
-            rows.append(row)
-        return rows
+        return adapter.read_all_rows(table_name, columns, type_config)
 
     def _to_arrow(self, rows: list[dict], columns: list[str],
                    column_types: dict[str, str] | None = None) -> pa.Table:

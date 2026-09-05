@@ -252,34 +252,3 @@ def _validate_security(object_type_name: str, object_types: dict, visited: froze
     # real request via infinite recursion in mediator.py's own,
     # identically-shaped runtime resolution.
     _validate_security(target_type, object_types, visited)
-
-
-# =============================================================================
-# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
-# later) that lacks this conversation's history. Update this section whenever
-# something genuinely open, deferred, or rejected comes up for this file.
-# =============================================================================
-#
-# RESOLVED (kept for history):
-# - security.field/security.via_field referential validation -- see
-#   this module's own docstring for the full, four-part gap this
-#   closed and why each part was found by reading mediator.py's own
-#   _get_security_value() directly, not assumed from the schema
-#   format. Closed as its own, separately-considered pass, exactly as
-#   originally, explicitly deferred to be -- not scope creep from an
-#   unrelated feature, prompted directly by the config builder about
-#   to make editing this exact file meaningfully easier to get wrong.
-#
-# DEFERRED (known, intentional, not yet built):
-# - id_field itself was considered for this module too and dropped:
-#   there is genuinely nothing to validate it against at this level
-#   (it's a declared name the rest of the system treats as
-#   authoritative, not a reference into "fields" the way title_field
-#   is) -- validate_identifier_types() already covers the one thing
-#   that IS checkable about it (that it's a real string).
-# - A general link field's own "target" -- for a link field that is
-#   NOT a security.via_field -- still has no referential validation
-#   anywhere in this project. A real, separate, broader gap; not
-#   closed here, matching this module's own discipline against scope
-#   creep from an unrelated, lower-stakes question. Worth its own,
-#   separately-considered pass if it's ever actually observed to bite.

@@ -76,26 +76,3 @@ def test_real_model_proposal_rejected_leaves_database_unchanged(deployment, medi
         f"Expected the database to remain at the original seed value "
         f"after rejection, but found {real_value!r}"
     )
-
-
-# =============================================================================
-# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
-# later) that lacks this conversation's history. Update this section whenever
-# something genuinely open, deferred, or rejected comes up for this file.
-# =============================================================================
-#
-# RESOLVED (kept for history):
-# - A prior pass migrating PendingWrite's own object_id retirement
-#   fixed the outcome assertion's own "object_id" reference in this
-#   file, but MISSED two other, identical stale references (both in
-#   get_field() calls, one per test function) -- pending.object_id,
-#   which does not exist on PendingWrite at all (confirmed directly:
-#   PendingWrite.__dataclass_fields__ has no such key). This went
-#   uncaught for a real reason, not carelessness: this whole file
-#   requires a real, locally-running Ollama server, which was not
-#   available in the environment(s) that ran the fast suite throughout
-#   that migration, so it was never actually exercised. Found and
-#   fixed by directly checking PendingWrite's own real attributes,
-#   not assumed from the surrounding code's own apparent intent.
-#   Fixed to pending.sub_writes[0].object_id, matching every other
-#   already-migrated reference in this same file.

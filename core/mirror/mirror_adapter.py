@@ -143,6 +143,21 @@ class MirrorReadAdapter(ExternalReadAdapter):
             return None
         return arrow.column(field_name)[0].as_py()
 
+    def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
+        # Implemented for contract completeness rather than for a real
+        # caller: the sync reads from the customer's own source, never
+        # from the mirror it writes. A mirror-to-mirror copy is not a
+        # thing this system does. Kept honest rather than raising
+        # NotImplementedError, since it is trivially expressible here
+        # and a future caller (a re-export, a diff tool) would
+        # reasonably expect it to work.
+        if not columns:
+            return []
+        arrow = self._scan(table_name, selected_fields=tuple(columns))
+        if arrow is None:
+            return []
+        return arrow.to_pylist()
+
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         via_table = field_config["via_table"]
         via_column = field_config["via_column"]

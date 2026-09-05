@@ -171,6 +171,20 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             )
             return row[field_name] if row else None
 
+    def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
+        # ONE query for the whole table, versus one per field per row
+        # through get_raw_field(). Column NAMES come from the ontology
+        # (resolved by core/mirror/sync_targets.py) and are validated
+        # before reaching any adapter, same as find_ids() -- never
+        # caller-supplied strings, so interpolating them here carries
+        # the same, already-established trust as every other query in
+        # this file.
+        if not columns:
+            return []
+        column_list = ", ".join(columns)
+        with self._connection() as conn:
+            return _run_query(conn, f"SELECT {column_list} FROM {table_name}")
+
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         via_table = field_config["via_table"]
         via_column = field_config["via_column"]
@@ -289,44 +303,3 @@ class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):
             # meaningless -- fall back to whatever the caller supplied
             # as the id_column value directly, if present.
             return fields.get(id_column, new_id)
-
-
-# =============================================================================
-# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
-# later) that lacks this conversation's history. Update this section whenever
-# something genuinely open, deferred, or rejected comes up for this file.
-# =============================================================================
-#
-# RESOLVED (kept for history):
-# - The single, combined SQLiteAdapter class split into
-#   SQLiteReadAdapter/SQLiteWriteAdapter -- see core/ontology/
-#   interface.py's own AI-notes for the fuller story (the same real,
-#   direct request that motivated the ExternalReadAdapter/
-#   ExternalWriteAdapter split this file's two classes now extend).
-#   Both classes still point at the SAME real db_path today (see
-#   core/deployment_loader.py's own _build_adapters(), called twice --
-#   once for DataMediator's own read adapters, once for WriteMediator's
-#   own write adapters) -- this split is the real, STRUCTURAL half of
-#   the guarantee; the credential-level half (a genuinely different,
-#   SELECT-only database user for the read side) is a separate,
-#   later phase, not yet done.
-# - find_ids_matching_text() -- the free-text, CONTAINS-match search
-#   underneath DataMediator.search_object_free_text() (see that
-#   method's own AI-notes for the fuller design and why it's a
-#   genuinely separate method from find_ids(), not a mode flag on it).
-#   A real, confirmed SQL gotcha caught DIRECTLY, empirically, before
-#   this method ever shipped, not assumed away: SQLite's own LIKE
-#   operator treats "%" and "_" as genuine wildcards, not literal
-#   characters -- an unescaped search for a literal "50%" would ALSO
-#   match "50X" and similar (proven with a real, in-memory SQLite
-#   query before writing the fix, then re-proven with a real row in
-#   tests/unit/test_sqlite_adapter_find_ids_matching_text.py, both
-#   "%" and "_" separately). Fixed via backslash-escaping both
-#   characters in the query text before wrapping it in %...%, plus an
-#   explicit ESCAPE '\\' clause on every LIKE. Also confirmed directly
-#   (not assumed): SQLite's LIKE is already case-insensitive for ASCII
-#   by default, so no explicit LOWER() was needed on either side; and
-#   SQLite's own dynamic typing correctly coerces a real INTEGER
-#   column to text for a LIKE comparison, so numeric fields (e.g. a
-#   year) are genuinely free-text-searchable too, not silently
-#   unmatchable.

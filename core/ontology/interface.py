@@ -97,6 +97,26 @@ class ExternalReadAdapter(ReadAdapter):
         calls this after confirming access is already allowed."""
 
     @abstractmethod
+    def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
+        """Every row of one table, as a list of dicts keyed by column.
+
+        A genuine BULK read, for the sync (core/mirror/). The
+        per-object methods above answer "one field of one object" --
+        the right shape for serving a request, and the wrong shape
+        entirely for copying a whole table: doing that through
+        find_ids() plus get_raw_field() costs one query PER FIELD PER
+        ROW. Measured, not estimated: 10,001 queries to copy 2,000
+        rows of a five-column table, which extrapolates to roughly 13
+        minutes for a million rows where a bulk read is seconds.
+
+        Deliberately NOT security-filtered, like every other method
+        here -- the sync reads through a structurally read-only
+        connection and copies the customer's own data verbatim, and
+        RBAC/MAC is applied at read time by DataMediator, never at
+        ingest.
+        """
+
+    @abstractmethod
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         """IDs of objects referencing this one. target_id_column is
         pre-resolved by DataMediator (it requires cross-type schema
@@ -126,36 +146,3 @@ class ExternalWriteAdapter(WriteAdapter):
         """Creates a new object, returns its new ID. Same trust model as
         write_fields. No lost-update concern -- there's no existing
         object to conflict with yet."""
-
-
-# =============================================================================
-# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
-# later) that lacks this conversation's history. Update this section whenever
-# something genuinely open, deferred, or rejected comes up for this file.
-# =============================================================================
-#
-# RESOLVED (kept for history):
-# - DataSiloAdapter (a single Protocol bundling all six methods, four
-#   read and two write) split into ExternalReadAdapter/
-#   ExternalWriteAdapter -- a real, direct request: "we need a Python
-#   abstract class or parent class that defines external reads,
-#   external writes, internal reads, and internal writes." Confirmed
-#   directly this was a genuine, structural gap, not just a style
-#   preference: nothing about the OLD, combined Protocol made it
-#   impossible to call write_fields() on an adapter instance meant to
-#   be read-only -- the only thing preventing that was that nobody's
-#   code happened to do it, not that the type itself couldn't. See
-#   core/internal_storage.py's own module docstring for the fuller
-#   design reasoning (CQRS, Python's own typeshed precedent, and why
-#   internal/external stay separate types rather than one pair
-#   differentiated only by RBAC/MAC).
-#
-# CONTEXT: find_ids_matching_text() was added as a new, separate
-# protocol method alongside find_ids() -- a genuinely different KIND
-# of match (CONTAINS, not exact), not a mode flag bolted onto the
-# existing one. adapters/sqlite_adapter.py has the one real
-# implementation and its own AI-notes for the concrete SQL-level
-# reasoning (a real LIKE-wildcard-escaping gotcha caught directly);
-# core/ontology/mediator.py's own AI-notes cover the higher-level
-# design (why this exists at all -- a human-facing browse/search UI,
-# not the model's own precise search_object() steps).

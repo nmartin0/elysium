@@ -256,34 +256,3 @@ def test_raw_unsorted_acquisition_would_deadlock_without_the_fix():
         "if both threads actually finished, this file's own detection methodology is not "
         "trustworthy, and every OTHER test in this file needs re-examining, not just this one"
     )
-
-
-# =============================================================================
-# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
-# later) that lacks this conversation's history. Update this section whenever
-# something genuinely open, deferred, or rejected comes up for this file.
-# =============================================================================
-#
-# RESOLVED (kept for history):
-# - test_raw_unsorted_acquisition_would_deadlock_without_the_fix's own
-#   two intentionally-deadlocked threads originally had NO daemon=True
-#   -- a real bug, found by actually running the negative control in
-#   isolation (a bare subprocess, no external timeout wrapper), not
-#   assumed safe by construction: the two permanently-blocked, non-
-#   daemon threads silently prevented the whole Python process from
-#   ever exiting, hanging past 30s even though the test's own
-#   assertion had already passed. Every test run in-process alongside
-#   this one (the fast suite as a whole) was equally at risk, not just
-#   this file run alone -- confirmed fixed the same way, a bare
-#   subprocess run of the fast suite completing and exiting cleanly.
-#
-# DEFERRED (known, intentional, not yet built):
-# - Every test here uses DataMediator's OWN locking directly
-#   (_lock_for_object()/_locks_for_objects()), not a full, real
-#   confirm_and_execute() call under genuine multi-threaded contention
-#   -- e.g. two REAL, concurrent TransferFunds requests (see tests/
-#   unit/test_transfer_funds.py) whose own account sets genuinely
-#   overlap, racing through the WHOLE write path, not just the locking
-#   primitive in isolation. This file proves the underlying mechanism
-#   is sound; a full-stack concurrent-write test would be a separate,
-#   larger piece of work, not attempted here.

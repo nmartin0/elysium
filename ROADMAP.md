@@ -146,6 +146,42 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
+*The items below were extracted from per-file "AI-ONLY NOTES" blocks
+when those were removed. They are genuine known gaps; the rest of those
+blocks was settled history (23 RESOLVED entries against 1 OPEN) and
+went with them. Deferred work belongs here, in one place that is
+actually maintained, rather than scattered across 23 source files where
+it went stale unnoticed.*
+
+- **Full-stack concurrent write test.** `tests/unit/test_concurrency.py`
+  exercises `DataMediator`'s locking primitives directly, not two real,
+  concurrent `confirm_and_execute()` calls with genuinely overlapping
+  account sets racing through the whole write path. The primitive is
+  proven sound; the full stack under contention is not.
+- **YAML value coercion.** `core/config.py` rejects duplicate keys and
+  `validate_identifier_types()` checks identifiers, but a mutation's
+  own literal VALUE can still be silently coerced by YAML: leading-zero
+  numerals (`010` -> 8), scientific notation (`1e2` -> 100.0), implicit
+  dates (`2024-01-01` -> a real `datetime.date`). Fixing this properly
+  needs a schema-aware check that knows where a value (rather than a
+  number) is expected -- not something to bolt onto the generic loader.
+- **Partial-overlap duplicate detection in the agent loop.** A
+  `get_field` followed by a larger `get_object` including that same
+  field is not caught as duplicate work. `get_object`'s signature is
+  the whole frozenset of field names as one unit, so there is no
+  per-field entry for the earlier call to match against.
+- **Grant-pattern drift.** If an eighth grant prefix is ever added at
+  an `authorize()` call site, `_validate_one_grant()` needs a matching
+  branch. Nothing structurally guarantees the two stay in sync.
+- **Referential validation for link targets.** A link field's `target`
+  is not validated against the declared object types, except where it
+  is also a `security.via_field`.
+- **"Declared but unused" lint for action types.** An
+  `object_reference` parameter that nothing references (no sub_write
+  object_id, no mutation value, no submission criterion) is not
+  flagged. A genuinely different kind of check from the "does this
+  reference something real" validation that exists today.
+
 - **Full field-VALUE validation** (real constraints -- ranges,
   patterns, enum membership -- not just the structural "was this
   field addressed" check the original required-field idea explored).

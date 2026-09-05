@@ -197,3 +197,84 @@ def test_two_silos_stay_genuinely_separate(tmp_path, source_db):
 
     assert _mirror_rows(sync, "primary", "customers")["customer_id"] == ["c1", "c2"]
     assert _mirror_rows(sync, "secondary", "customers")["customer_id"] == ["x1"]
+
+
+def test_a_sync_issues_one_bulk_query_not_one_per_field_per_row(tmp_path):
+    # A REGRESSION GUARD for a real, measured defect. The sync used to
+    # read through find_ids() then get_raw_field() -- the per-object
+    # shape that is right for serving a request and wrong for copying a
+    # table. Measured before the fix: 10,001 queries to copy 2,000 rows
+    # of a five-column table, extrapolating to roughly 13 minutes for a
+    # million rows.
+    #
+    # Counting real queries rather than timing: a timing assertion would
+    # be flaky, while the query count is exactly the thing that was
+    # wrong.
+    import adapters.sqlite_adapter as sqlite_adapter_module
+
+    path = tmp_path / "bulk.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE customers (customer_id TEXT PRIMARY KEY, name TEXT, region TEXT)")
+    conn.executemany(
+        "INSERT INTO customers VALUES (?, ?, ?)",
+        [(f"c{i}", f"name{i}", "us-west") for i in range(50)],
+    )
+    conn.commit()
+    conn.close()
+
+    real_run_query = sqlite_adapter_module._run_query
+    real_run_query_one = sqlite_adapter_module._run_query_one
+    counted = {"n": 0}
+
+    def counting_run_query(*args, **kwargs):
+        counted["n"] += 1
+        return real_run_query(*args, **kwargs)
+
+    def counting_run_query_one(*args, **kwargs):
+        counted["n"] += 1
+        return real_run_query_one(*args, **kwargs)
+
+    sqlite_adapter_module._run_query = counting_run_query
+    sqlite_adapter_module._run_query_one = counting_run_query_one
+    try:
+        sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": path})})
+        result = sync.sync_table(
+            "primary", "customers", "customer_id", ["customer_id", "name", "region"]
+        )
+    finally:
+        sqlite_adapter_module._run_query = real_run_query
+        sqlite_adapter_module._run_query_one = real_run_query_one
+
+    assert result.row_count == 50
+    # One bulk read. The old behaviour would have been 50 * 3 + 1 = 151.
+    assert counted["n"] == 1, f"expected one bulk query, got {counted['n']}"
+
+
+def test_the_bulk_read_returns_the_same_data_the_per_field_reads_did(tmp_path):
+    # The speedup must not have changed WHAT is copied -- compared
+    # against the live adapter's own per-field reads on the same data.
+    path = tmp_path / "same.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE customers (customer_id TEXT PRIMARY KEY, name TEXT, region TEXT)")
+    conn.executemany(
+        "INSERT INTO customers VALUES (?, ?, ?)",
+        [("c1", "Ada", "us-west"), ("c2", None, "eu")],
+    )
+    conn.commit()
+    conn.close()
+
+    adapter = SQLiteReadAdapter({"path": path})
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": adapter})
+    sync.sync_table("primary", "customers", "customer_id", ["customer_id", "name", "region"])
+
+    mirrored = sync._catalog.load_table("primary.customers").scan().to_arrow().to_pydict()
+    config = {"storage": {"table": "customers", "id_column": "customer_id"}}
+
+    for index, object_id in enumerate(mirrored["customer_id"]):
+        for column in ("name", "region"):
+            assert mirrored[column][index] == adapter.get_raw_field(
+                "Customer", object_id, column, config
+            )
+    # NULL specifically -- the case most likely to differ between a
+    # bulk SELECT and a per-field read.
+    assert None in mirrored["name"]

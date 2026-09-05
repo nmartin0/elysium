@@ -158,24 +158,3 @@ def write_adapters(_bundle):
     # now does the same (see api/app.py and scripts/run_deployment.py).
     _, _, write_adapters = _bundle
     return write_adapters
-
-
-# =============================================================================
-# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
-# later) that lacks this conversation's history. Update this section whenever
-# something genuinely open, deferred, or rejected comes up for this file.
-# =============================================================================
-#
-# RESOLVED (kept for history):
-# - propose_named_action() used to hardcode "user_eve" -- generalized
-#   with a user_id parameter (defaulting to "user_eve", so every
-#   existing caller stayed unchanged) once tests/integration/test_
-#   transfer_funds_e2e.py needed the SAME shared flow for a genuinely
-#   different user (user_henry, the dedicated accountant-role user --
-#   see policy.yaml's own comment for why a dedicated user, not an
-#   extension of user_eve's existing grants). Caught the alternative
-#   (a second, near-duplicate helper) directly, before it happened --
-#   this file's own docstring already names the exact prior instance
-#   of this class of duplication (propose_named_action()'s own
-#   original extraction) as the reason to generalize rather than
-#   repeat it.

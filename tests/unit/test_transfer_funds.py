@@ -220,32 +220,3 @@ def test_transfer_batch_is_logged_with_both_sub_writes(wm_and_log, monkeypatch):
     assert {sw["object_id"] for sw in batch["sub_writes"]} == {"acc_checking", "acc_savings"}
     # Resolved once, and applied -- no batch left pending afterward.
     assert write_log.get_pending_batches() == []
-
-
-# =============================================================================
-# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
-# later) that lacks this conversation's history. Update this section whenever
-# something genuinely open, deferred, or rejected comes up for this file.
-# =============================================================================
-#
-# CONTEXT: this file exists to close a long-tracked item -- a real,
-# deliberately-authored multi-object action_type, proving the whole
-# sub_writes/write_log_batches mechanism end to end, not just against
-# synthetic fixtures. See core/ontology/write_mediator.py's own AI-
-# notes for the fuller history, and tests/integration/test_transfer_
-# funds_e2e.py (real Ollama, this file's own direct counterpart) for
-# the real-model half of the proof.
-#
-# DEFERRED (known, intentional, not yet built):
-# - No dedicated multi-THREADED concurrency test here -- every test in
-#   this file runs single-threaded; the sorted-order locking mechanism
-#   is exercised structurally (two real locks acquired, in order) but
-#   never under genuine concurrent contention. See core/ontology/
-#   mediator.py's own AI-notes for where that separate, still-open
-#   item stands.
-# - test_transfer_to_the_same_account_twice_is_rejected is the FIRST
-#   test anywhere in this project for the resolved-id duplicate check
-#   in WriteMediator.propose_action() -- found, while building this
-#   file, to have had NO coverage at all before now. Worth checking
-#   whether a similarly uncovered gap exists elsewhere in propose_
-#   action() if this file is ever revisited for a second real action.
