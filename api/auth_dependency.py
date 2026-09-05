@@ -25,7 +25,7 @@ still-unexpired session token, not just block future logins. It runs
 BEFORE get_user_record() resolves a real UserRecord -- a disabled
 account never gets one at all, same as an invalid token.
 
-Reads the shared session_store/user_directory instances from
+Reads the shared session_reader/user_directory instances from
 request.app.state, built once at startup by api/app.py's create_app()
 -- never reconstructed or re-derived here.
 
@@ -46,10 +46,10 @@ def get_current_user(
     if session_token is None:
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
 
-    session_store = request.app.state.session_store
+    session_reader = request.app.state.session_reader
     user_directory = request.app.state.user_directory
 
-    username = session_store.validate_session(session_token)
+    username = session_reader.validate_session(session_token)
     if username is None:
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
 

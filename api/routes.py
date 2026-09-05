@@ -166,7 +166,7 @@ class ConfirmWriteRequest(BaseModel):
 @router.post("/login", status_code=204)
 def login(body: LoginRequest, request: Request, response: Response) -> None:
     credential_reader = request.app.state.credential_reader
-    session_store = request.app.state.session_store
+    session_writer = request.app.state.session_writer
     user_directory = request.app.state.user_directory
     login_attempt_tracker = request.app.state.login_attempt_tracker
 
@@ -210,7 +210,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     login_attempt_tracker.record_success(body.username)
-    token = session_store.create_session(body.username)
+    token = session_writer.create_session(body.username)
     # Real, httponly cookie -- never returned in the JSON body at all;
     # doing both would defeat the entire point (see core/auth/
     # auth_cookies.py's own docstring). The CSRF cookie is
@@ -228,7 +228,7 @@ def logout(request: Request, response: Response) -> None:
     # the shared auth dependency for one caller.
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if session_token is not None:
-        request.app.state.session_store.invalidate_session(session_token)
+        request.app.state.session_writer.invalidate_session(session_token)
     # No error even if the cookie was missing -- logging out of a
     # session that isn't valid anyway isn't a meaningful failure.
     clear_session_cookie(response)
@@ -239,7 +239,7 @@ def logout(request: Request, response: Response) -> None:
 def logout_all(request: Request, current_user: UserRecord = Depends(get_current_user)) -> None:
     # Self-service -- revokes EVERY session for the caller, including
     # whichever one made this request. See module docstring.
-    request.app.state.session_store.invalidate_all_sessions(current_user.user_id)
+    request.app.state.session_writer.invalidate_all_sessions(current_user.user_id)
 
 
 @router.get("/users")
@@ -310,7 +310,7 @@ def visible_schema_route(username: str, request: Request,
 def logout_all_for_user(username: str, request: Request,
                          current_user: UserRecord = Depends(get_current_user)) -> None:
     _require_manage_users(request, current_user)
-    request.app.state.session_store.invalidate_all_sessions(username)
+    request.app.state.session_writer.invalidate_all_sessions(username)
 
 
 @router.post("/users/{username}/disable", status_code=204)

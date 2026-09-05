@@ -110,7 +110,7 @@ class LockStore:
         # definitely knows at the moment it succeeds.
         #
         # Succeeds (issuing a real, fresh, unpredictable token -- same
-        # secrets.token_urlsafe() mechanism as SessionStore's own
+        # secrets.token_urlsafe() mechanism as SessionWriter's own
         # session tokens, never anything hand-rolled) in every case
         # EXCEPT one: a currently-valid, non-expired lock already held
         # by a DIFFERENT user. This deliberately includes the SAME
@@ -178,7 +178,7 @@ class LockStore:
         return new_expires_at
 
     def release(self, resource_name: str, user_id: str, token: str) -> bool:
-        # Matches SessionStore's own invalidate_session(): no expiry
+        # Matches SessionWriter's own invalidate_session(): no expiry
         # check here at all -- releasing your own already-expired
         # lock is a harmless no-op-shaped cleanup, not something worth
         # a separate failure case. Only user_id AND token must match;
@@ -212,7 +212,7 @@ class LockStore:
         # caller originally acquired the lock. Deliberately does NOT
         # distinguish "no lock exists," "token doesn't match," and
         # "lock expired" -- same uniform-denial principle used
-        # throughout this project (e.g. SessionStore.validate_session());
+        # throughout this project (e.g. SessionReader.validate_session());
         # the caller only needs to know "still valid, or not," not why.
         with self._connection() as conn:
             row = conn.execute(

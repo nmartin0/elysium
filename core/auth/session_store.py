@@ -1,11 +1,20 @@
 """
 session_store.py  (create/validate/invalidate login sessions)
 
-A CLASS, not free functions taking db_path on every call -- same
-reasoning as core/auth/credential_store.py's own CredentialStore (see
-its docstring): db_path is genuinely this store's own state, belongs
-on self. One instance, constructed once at app-startup, shared by
-every caller -- see api/app.py.
+Two real, separate classes -- SessionReader(InternalReadAdapter) and
+SessionWriter(InternalWriteAdapter) -- not one, combined class,
+matching the same real pattern already established and proved for
+QueryRateLimiter and CredentialStore (see core/internal_storage.py's
+own module docstring for the fuller design reasoning -- CQRS, Python's
+own typeshed precedent -- settled before any of these three splits was
+written). Unlike either of those two, BOTH halves here have real,
+active, production callers -- validate_session() runs on every single
+authenticated request (api/auth_dependency.py's own get_current_user()),
+and all three write methods are each a real route's own, direct
+mechanism (login, logout, logout-all, and the admin "revoke this
+user's sessions" path) -- so both SessionReader and SessionWriter are
+genuinely wired into app.state, unlike CredentialWriter's own,
+currently-unwired case.
 
 Tokens via secrets.token_urlsafe() -- cryptographically secure,
 unpredictable, never anything hand-rolled (e.g. never a UUID derived
@@ -31,38 +40,35 @@ conservative than trying to carve out "all except this one," and
 matches the same "if in doubt, everyone re-authenticates" discipline
 used throughout this project's security design.
 
-Used by: api/'s auth dependency, resolving a request's token into a
-         real user_id before anything downstream (AgentLoop,
-         WriteMediator, DataMediator) is ever touched.
+SessionWriter's own methods deliberately do NOT use InternalWriteAdapter's
+own, simpler _connection() -- the same real, considered choice already
+made for QueryRateLimitWriter and CredentialWriter, for the identical
+reason: the sessions table's own schema needs to genuinely exist before
+any write succeeds, and core/auth/database.py's own schema-aware
+connection() (lazy, idempotent CREATE TABLE IF NOT EXISTS) is the real,
+already-correct mechanism for that. SessionReader's own
+validate_session(), by contrast, DOES use InternalReadAdapter's own
+_connection() directly -- a real, structurally read-only guarantee.
+
+Used by: api/'s auth dependency (SessionReader only), resolving a
+         request's token into a real user_id before anything
+         downstream (AgentLoop, WriteMediator, DataMediator) is ever
+         touched; api/routes.py (SessionWriter, for login/logout/
+         logout-all/admin-revoke).
 """
 
 import secrets
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from core.auth.database import connection
+from core.internal_storage import InternalReadAdapter, InternalWriteAdapter
 
 SESSION_LIFETIME = timedelta(hours=24)
 
 
-class SessionStore:
-    def __init__(self, db_path: Path):
-        self._db_path = db_path
-
-    def create_session(self, username: str) -> str:
-        token = secrets.token_urlsafe(32)
-        now = datetime.now(UTC)
-        expires_at = now + SESSION_LIFETIME
-        with connection(self._db_path) as conn:
-            conn.execute(
-                "INSERT INTO sessions (token, username, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                (token, username, now.isoformat(), expires_at.isoformat()),
-            )
-            conn.commit()
-        return token
-
+class SessionReader(InternalReadAdapter):
     def validate_session(self, token: str) -> str | None:
-        with connection(self._db_path) as conn:
+        with self._connection() as conn:
             row = conn.execute(
                 "SELECT username, expires_at FROM sessions WHERE token = ?", (token,)
             ).fetchone()
@@ -76,12 +82,26 @@ class SessionStore:
 
         return row["username"]
 
+
+class SessionWriter(InternalWriteAdapter):
+    def create_session(self, username: str) -> str:
+        token = secrets.token_urlsafe(32)
+        now = datetime.now(UTC)
+        expires_at = now + SESSION_LIFETIME
+        with connection(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions (token, username, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                (token, username, now.isoformat(), expires_at.isoformat()),
+            )
+            conn.commit()
+        return token
+
     def invalidate_session(self, token: str) -> None:
-        with connection(self._db_path) as conn:
+        with connection(self.db_path) as conn:
             conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
             conn.commit()
 
     def invalidate_all_sessions(self, username: str) -> None:
-        with connection(self._db_path) as conn:
+        with connection(self.db_path) as conn:
             conn.execute("DELETE FROM sessions WHERE username = ?", (username,))
             conn.commit()
