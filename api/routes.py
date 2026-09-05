@@ -678,11 +678,15 @@ async def query(body: QueryRequest, request: Request,
     # already over their own limit before the agent loop, or the real
     # LLM itself, ever spends any real work on this specific request.
     # NOT recorded as a new query here (see query_rate_limiter.py's own
-    # docstring) -- a rejected request never actually ran one.
-    query_rate_limiter = request.app.state.query_rate_limiter
-    if query_rate_limiter.is_rate_limited(current_user.user_id):
+    # docstring) -- a rejected request never actually ran one. Two
+    # real, separate instances now, not one -- see core/auth/
+    # query_rate_limiter.py's own module docstring (Reader/Writer,
+    # extending core/internal_storage.py's own hierarchy); the check
+    # genuinely only ever needs to read, the increment genuinely only
+    # ever needs to write, and neither needs the other's capability.
+    if request.app.state.query_rate_limiter_reader.is_rate_limited(current_user.user_id):
         raise HTTPException(status_code=429, detail="Too many queries -- please wait before trying again")
-    query_rate_limiter.record_query(current_user.user_id)
+    request.app.state.query_rate_limiter_writer.record_query(current_user.user_id)
 
     loop: AgentLoop = request.app.state.loop
     synthesis_client = request.app.state.synthesis_client

@@ -89,8 +89,9 @@ from api.csrf_middleware import csrf_protect
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.agent.agentic_loop import AgentLoop
 from core.auth.credential_store import CredentialStore
+from core.auth.database import connection
 from core.auth.login_attempt_tracker import LoginAttemptTracker
-from core.auth.query_rate_limiter import QueryRateLimiter
+from core.auth.query_rate_limiter import QueryRateLimitReader, QueryRateLimitWriter
 from core.auth.session_store import SessionStore
 from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
 from core.lock_store import LockStore
@@ -200,6 +201,26 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # should use the shared store instances instead of re-deriving this
     # path and calling a free function on every single request.
     app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
+    # A real, explicit schema-creation step, run here, once, before ANY
+    # internal store below is constructed -- a real, necessary addition,
+    # not previously needed: every store here used to lazily create its
+    # own share of credentials.db's schema itself, on first real use
+    # (core/auth/database.py's own connection() -- schema-verified once
+    # per db_path, in-process, the first time ANY of these stores
+    # actually ran a real query). That was always fine for a WRITE-
+    # capable connection, since CREATE TABLE IF NOT EXISTS is itself a
+    # write. It stops being fine the moment a genuinely READ-ONLY
+    # connection (core/internal_storage.py's own InternalReadAdapter,
+    # first real consumer: QueryRateLimitReader below) might be the
+    # FIRST thing to ever touch this database -- a read-only connection
+    # structurally cannot run CREATE TABLE either (see core/
+    # sqlite_connection.py's own docstring: the authorizer denies it,
+    # same as any other write-type operation), so relying on "whichever
+    # store happens to run first" to create the schema would be a real,
+    # order-dependent gap. This makes the guarantee explicit and
+    # unconditional instead.
+    with connection(app.state.credentials_db_path):
+        pass
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request, same reasoning as write_mediator
     # below. Every route now goes through these instances rather than
@@ -209,7 +230,8 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.credential_store = CredentialStore(app.state.credentials_db_path)
     app.state.session_store = SessionStore(app.state.credentials_db_path)
     app.state.login_attempt_tracker = LoginAttemptTracker(app.state.credentials_db_path)
-    app.state.query_rate_limiter = QueryRateLimiter(app.state.credentials_db_path)
+    app.state.query_rate_limiter_reader = QueryRateLimitReader(app.state.credentials_db_path)
+    app.state.query_rate_limiter_writer = QueryRateLimitWriter(app.state.credentials_db_path)
     app.state.user_directory = UserDirectory(app.state.credentials_db_path, config.roles)
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request. Reads its own write_log directly from

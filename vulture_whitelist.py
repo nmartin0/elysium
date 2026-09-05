@@ -98,17 +98,19 @@ captured_security_value
 # never referenced by name anywhere in the Python source itself.
 add_security_headers
 
-# --- core/internal_storage.py's InternalReadAdapter/InternalWriteAdapter,
-# and core/adapter_roles.py's AppendOnlyAdapter -- real, declared,
+# --- core/adapter_roles.py's AppendOnlyAdapter -- real, declared,
 # deliberate scaffolding, same real pattern as max_concurrent_reads/
 # supports_atomic_conditional_write above: declared ahead of the real
-# capability that will consume them (the internal-store Reader/Writer
-# splits -- QueryRateLimiter, CredentialStore, SessionStore,
-# LoginAttemptTracker, WriteLog, AuditLog -- agreed on directly, not
-# yet built). Re-verify with a real grep before assuming this
-# reasoning still holds once any of those splits actually lands.
-InternalReadAdapter
-InternalWriteAdapter
+# capability that will consume it (AuditLog's own real split, agreed on
+# directly, not yet built). InternalReadAdapter/InternalWriteAdapter,
+# its own real siblings, no longer need an entry here at all -- both
+# are now genuinely, directly used (core/auth/query_rate_limiter.py's
+# own QueryRateLimitReader/QueryRateLimitWriter, the first real
+# internal store to actually extend the hierarchy) -- confirmed
+# directly, empirically, before removing them: a real `vulture` run
+# with both entries deleted still passes cleanly. Re-verify with a
+# real grep before assuming AppendOnlyAdapter's own reasoning still
+# holds once AuditLog's own split actually lands.
 AppendOnlyAdapter
 
 # --- core/ontology/write_mediator.py's own _ReadWriteAdapter -- a
