@@ -20,6 +20,13 @@
 
 object_types:
   Employee:
+    # Display metadata is entirely OPTIONAL -- omit it and Elysium
+    # derives a readable label from the name ("full_name" becomes "Full
+    # Name"). Declare it when the derived label is wrong or too terse,
+    # which is what these three exist for.
+    display_name: Employee
+    plural_display_name: Employees
+    description: Someone who works here and can file expenses.
     storage:
       silo: primary_sql             # must match a name under data_silos.yaml
       table: employees               # the real table name
@@ -50,12 +57,41 @@ object_types:
         type: data
       full_name:
         type: data
+        # A field can carry its own label and description too. Both
+        # optional; both surface in the UI and in what the agent is
+        # told about the ontology.
+        display_name: Name
+        description: The employee's full name, as it appears on payroll.
+
+  Project:
+    display_name: Project
+    plural_display_name: Projects
+    storage:
+      silo: primary_sql
+      table: projects
+      id_column: project_id
+    id_field: project_id
+    title_field: name
+    security:
+      field: department
+    fields:
+      name:
+        type: data
+      department:
+        type: data
 
   ExpenseReport:
+    display_name: Expense Report
+    plural_display_name: Expense Reports
     storage:
       silo: primary_sql
       table: expense_reports
       id_column: report_id
+      # id_type declares what the ID COLUMN holds, and matters for the
+      # same reason data_type does -- an integer key read back as a
+      # string breaks comparisons and link lookups. Both keys here are
+      # text, which is the default, so neither declares it. If yours is
+      # an INTEGER PRIMARY KEY, add: id_type: integer
     id_field: report_id
     security:
       via_field: employee_id        # this type doesn't carry its own boundary
@@ -64,6 +100,13 @@ object_types:
     fields:
       amount:
         type: data
+        # data_type tells the mirror what this field really holds, so a
+        # number stays a number rather than becoming a string. Optional
+        # -- undeclared fields are treated as text -- but declare it for
+        # anything you will sum, compare, or sort.
+        # One of: string, integer, number, boolean.
+        data_type: number
+        display_name: Amount
       status:
         type: data
 
@@ -105,6 +148,22 @@ object_types:
 #     all.
 
 link_types:
+  # A MANY-TO-MANY link: an employee works on several projects and a
+  # project has several employees, so neither table can hold the
+  # other's key. It is backed by a join table of key pairs -- which
+  # must contain ONLY those two columns; anything else stored there
+  # means the relationship is really two one-to-many links through a
+  # third object type.
+  EmployeeProjects:
+    display_name: Projects
+    source: {object_type: Employee, api_name: projects}
+    target: {object_type: Project, api_name: employees}
+    cardinality: many_to_many
+    join_table:
+      table: employee_projects
+      source_column: employee_id
+      target_column: project_id
+
   # Link types are first-class ontology entities: ONE declaration, both
   # directions generated from it. See core/ontology/link_types.py.
   EmployeeExpenseReports:
@@ -150,3 +209,24 @@ action_types:
           - set: {property: employee_id, value: parameter.employee_id}
           - set: {property: full_name, value: parameter.full_name}
           - set: {property: department, value: user.security_value}
+
+  # DELETE removes an object from the ontology WITHOUT deleting the row
+  # from your database. Elysium records the removal in its own write
+  # log; your source data is never destroyed, and a later write to the
+  # same object makes it visible again. That is deliberate -- Elysium
+  # does not write destructively to systems it does not own.
+  #
+  # A delete names an object and declares no mutations: there is
+  # nothing to change, only something to remove.
+  RemoveExpenseReport:
+    affected_object_types:
+      - ExpenseReport
+    parameters:
+      report_id:
+        type: object_reference
+        object_type: ExpenseReport
+        required: true
+    sub_writes:
+      - object_type: ExpenseReport
+        object_id: $report_id
+        operation: delete

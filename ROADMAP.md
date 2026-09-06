@@ -157,6 +157,17 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
+- **No full propose-and-apply of a DELETE through the agent loop.**
+  The two halves are each covered -- a delete action type reaches the
+  agent's prompt (tests/unit/test_agent_object_query.py) and a delete
+  applies through confirm_and_execute()
+  (tests/unit/test_delete_operation.py) -- but not the whole path in
+  one test. An attempt was made and abandoned rather than half-built:
+  the write-path fixture's parameter resolution and MAC chain are set
+  up for TransferFunds, and a delete through it was denied at the MAC
+  check for a reason not run down. Worth doing with a fixture built
+  for it rather than by bending one that exists.
+
 - **Snapshot pagination is not implemented.** Foundry offers two
   consistency behaviours: their DEFAULT "returns the latest results"
   and, in their own words, "may lead to duplicate entries or missing

@@ -83,6 +83,11 @@ roles:
       - read:Employee
       - read:Employee.employee_id
       - read:Employee.full_name
+      - read:Employee.projects
+      - read:Project
+      - read:Project.name
+      - read:Project.department
+      - read:Project.employees
       - read:Employee.department
       - read:Employee.expense_reports
       - read:ExpenseReport

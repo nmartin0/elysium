@@ -290,3 +290,37 @@ def test_a_non_boolean_auto_execute_is_rejected_at_load():
 
     with pytest.raises(ValueError, match="must be true or false"):
         _validate_auto_execute("Bad", {"auto_execute": "yes"})
+
+
+def test_a_delete_action_type_reaches_the_agents_prompt(write_loop):
+    """Point 13 built the delete operation; Point 17 established that
+    action types reach the prompt from the deployment's own
+    declaration with no code change. This asserts that specifically
+    for a DELETE, which the two points never exercised together.
+
+    Scoped to the prompt half deliberately. Applying a delete through
+    confirm_and_execute() is already covered by
+    tests/unit/test_delete_operation.py; what was genuinely unproven
+    was whether a delete ACTION TYPE is visible to the agent at all.
+    Driving a full propose-and-apply through the loop needs a fixture
+    whose parameter resolution and MAC chain are set up for it, and is
+    recorded in ROADMAP.md rather than half-built here.
+    """
+    from core.llm.agent_step_prompt import _describe_actions
+
+    delete_action = {
+        "affected_object_types": ["Account"],
+        "parameters": {
+            "account_id": {"type": "object_reference", "object_type": "Account"}
+        },
+        "sub_writes": [
+            {"object_type": "Account", "object_id": "$account_id", "operation": "delete"}
+        ],
+        "executable": True,
+    }
+
+    described = _describe_actions({"RemoveAccount": delete_action}, [])
+
+    assert "RemoveAccount" in described
+    assert "propose_action" in described
+    assert "account_id" in described
