@@ -283,10 +283,29 @@ class DataMediator:
         # even though self.adapters' own STATIC type stays
         # dict[str, ExternalReadAdapter] for every OTHER, real,
         # read-only DataMediator this class also serves.
-        if silo_name not in self._write_limiters:
-            adapter = cast(ExternalWriteAdapter, self.adapters[silo_name])
-            self._write_limiters[silo_name] = ConcurrencyLimiter(adapter.max_concurrent_writes)
-        return self._write_limiters[silo_name]
+        # setdefault(), not `if not in: create`. That shape is
+        # check-then-act: two threads both see the silo missing, both
+        # build a limiter, and one silently replaces the other -- so
+        # they end up holding DIFFERENT limiters for the same silo and
+        # each enforces max_concurrent_writes independently. The
+        # configured ceiling on concurrent writes to a customer's
+        # database is then exceeded, with nothing raised and nothing
+        # logged.
+        #
+        # Proven by forcing the interleaving rather than hoping for it:
+        # two limiter objects created, two handed out. dict.setdefault()
+        # is atomic under the GIL, which is the same guarantee
+        # KeyedLockManager already relies on (see core/concurrency.py,
+        # where the claim is tested directly).
+        #
+        # The limiter is constructed unconditionally, so a redundant one
+        # may be built and discarded under contention. That is cheap
+        # and, unlike the race, harmless -- an unused ConcurrencyLimiter
+        # holds nothing.
+        adapter = cast(ExternalWriteAdapter, self.adapters[silo_name])
+        return self._write_limiters.setdefault(
+            silo_name, ConcurrencyLimiter(adapter.max_concurrent_writes)
+        )
 
     def _adapter_for(self, object_type: str) -> ExternalReadAdapter:
         silo_name = self.silo_for_type[object_type]

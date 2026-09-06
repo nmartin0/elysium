@@ -194,14 +194,24 @@ def connection_with_schema(db_path: Path, schema: str,
     # case avoid the redundant work, not guarantee exactly-once.
     conn = open_connection(db_path)
     try:
+        # The lock is held ACROSS the check, the work and the add --
+        # not released in between. Releasing it made this a
+        # check-then-act: two threads both saw the database
+        # unverified, and both ran the schema and every migration.
+        #
+        # That is harmless TODAY only because the schema uses CREATE
+        # TABLE IF NOT EXISTS and the one existing migration catches
+        # the "column already exists" error. It is safe by coincidence,
+        # not by construction: a future migration that is not
+        # idempotent would corrupt the database, and nothing here would
+        # have warned anyone. Holding the lock costs a brief
+        # serialization once per database and removes the trap.
         with _schema_verified_lock:
-            already_verified = db_path in _schema_verified
-        if not already_verified:
-            conn.executescript(schema)
-            for migrate in migrations:
-                migrate(conn)
-            conn.commit()
-            with _schema_verified_lock:
+            if db_path not in _schema_verified:
+                conn.executescript(schema)
+                for migrate in migrations:
+                    migrate(conn)
+                conn.commit()
                 _schema_verified.add(db_path)
         yield conn
     finally:

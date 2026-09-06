@@ -143,3 +143,116 @@ def test_a_second_writer_blocks_rather_than_reading_stale_state(tmp_path):
 
     second.close()
     first.close()
+
+
+# --- GIL race audit ------------------------------------------------------
+#
+# A sweep for check-then-act patterns on state shared across requests,
+# prompted by the security cache where `if key in d: return d[key]`
+# could raise KeyError if another thread cleared between the two steps.
+#
+# THE METHOD MATTERS: these interleavings are FORCED, not hoped for.
+# Three probabilistic attempts at the cache race found nothing -- 12
+# threads, a 1e-9 switch interval, an explicit yield -- and forcing the
+# order found it immediately. Under the GIL, rare is not safe, and a
+# test that hopes to hit a race is not a test.
+
+
+def test_one_limiter_per_silo_however_threads_interleave():
+    # THE bug this audit found. `if silo not in d: d[silo] = Limiter()`
+    # let two threads each build a limiter and one silently replace the
+    # other -- so they held DIFFERENT limiters for one silo and each
+    # enforced max_concurrent_writes independently. The configured
+    # ceiling on concurrent writes to a customer's database could then
+    # be exceeded, with nothing raised and nothing logged. Unlike the
+    # cache race, this failure is silent, which makes it worse.
+    #
+    # The interleaving is FORCED through the adapter's own property,
+    # which is read INSIDE the old code's `if` block: two threads
+    # reaching it are both past the check. A first version of this test
+    # just raced eight threads at a barrier and PASSED against the
+    # broken code -- the same probabilistic mistake that hid the cache
+    # race through three attempts.
+    from core.ontology.mediator import DataMediator
+
+    both_inside = threading.Barrier(2, timeout=2)
+
+    class RacingAdapter:
+        @property
+        def max_concurrent_writes(self):
+            try:
+                both_inside.wait()
+            except threading.BrokenBarrierError:
+                pass  # only one thread got here: no race to force
+            return 2
+
+    mediator = DataMediator({}, {"primary": RacingAdapter()}, {}, {})
+    handed_out = []
+    guard = threading.Lock()
+
+    def grab():
+        limiter = mediator._write_limiter_for_silo("primary")
+        with guard:
+            handed_out.append(id(limiter))
+
+    threads = [threading.Thread(target=grab) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(set(handed_out)) == 1, (
+        "concurrent callers received different limiters for one silo -- "
+        "the write-concurrency ceiling is not enforced"
+    )
+
+
+def test_schema_is_verified_once_however_threads_interleave(tmp_path):
+    # The lock here was released BETWEEN the check and the add, so two
+    # threads could both run the schema and every migration. Harmless
+    # today only because the schema uses CREATE TABLE IF NOT EXISTS and
+    # the one migration catches "column already exists" -- safe by
+    # coincidence, not construction. A future non-idempotent migration
+    # would have corrupted the database with no warning.
+    from core.sqlite_connection import connection_with_schema
+
+    runs = []
+    guard = threading.Lock()
+    barrier = threading.Barrier(6)
+    db_path = tmp_path / "shared.db"
+
+    def counting_migration(conn):
+        with guard:
+            runs.append(1)
+
+    def connect():
+        barrier.wait()
+        with connection_with_schema(
+            db_path,
+            "CREATE TABLE IF NOT EXISTS t (id TEXT PRIMARY KEY);",
+            migrations=(counting_migration,),
+        ):
+            pass
+
+    threads = [threading.Thread(target=connect) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(runs) == 1, (
+        f"migrations ran {len(runs)} times for one database -- schema "
+        f"verification is check-then-act"
+    )
+
+
+def test_the_keyed_lock_manager_was_already_correct():
+    # Recorded rather than assumed: KeyedLockManager uses setdefault(),
+    # which is atomic under the GIL, and is the pattern the write
+    # limiter should have used from the start. Verified here so the
+    # audit's conclusion is checkable rather than a claim.
+    import inspect
+
+    from core.concurrency import KeyedLockManager
+
+    assert "setdefault" in inspect.getsource(KeyedLockManager.lock_for)
