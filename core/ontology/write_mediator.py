@@ -96,7 +96,7 @@ class SubWrite:
     # special-casing by operation kind.
     object_type: str
     object_id: Any
-    operation: Literal["update", "create"]
+    operation: Literal["update", "create", "delete"]
     changes: dict
     expected_current_values: dict = field(default_factory=dict)  # for update lost-update checks
 
@@ -1004,7 +1004,13 @@ class WriteMediator:
             object_ids: list[Any] = []
             try:
                 for sub_write in pending.sub_writes:
-                    if sub_write.operation == "update":
+                    if sub_write.operation == "delete":
+                        object_ids.append(
+                            self._apply_one_delete(
+                                sub_write, batch_id, pending.user_id, pending.description
+                            )
+                        )
+                    elif sub_write.operation == "update":
                         object_ids.append(
                             self._apply_one_update(
                                 sub_write, batch_id, pending.user_id, pending.description,
@@ -1140,6 +1146,43 @@ class WriteMediator:
         assert applied_groups == len(groups), (
             f"{sub_write.object_type} {sub_write.object_id!r}: marking applied with "
             f"{applied_groups} of {len(groups)} storage groups written"
+        )
+        self.write_log.mark_applied(log_id)
+        return sub_write.object_id
+
+    def _apply_one_delete(self, sub_write: SubWrite, batch_id: str, user_id: str,
+                           description: str) -> Any:
+        """Records a delete. Writes NOTHING to the customer's database.
+
+        Following Foundry directly: a delete there is an EDIT, written
+        to the writeback layer rather than the backing datasource, so
+        "users have access to both the original data and the edited
+        data." Their resolution rule is that when an object's latest
+        edit is a delete it "is not visible in the ontology, regardless
+        of whether any corresponding row is in one of the data
+        sources."
+
+        Three real consequences follow, and all of them are why this is
+        the right model here rather than a compromise:
+          - Elysium's external read-only guarantee stays intact. We
+            never destroy a row we do not own.
+          - The delete is REVERSIBLE. A later create for the same id
+            wins, because the read path takes the latest applied
+            operation.
+          - Crash recovery is trivial where a destructive delete would
+            be genuinely ambiguous. A missing row cannot tell you
+            whether YOUR delete succeeded, someone else's did, or it
+            never existed -- but this record lives in storage this
+            project owns and can simply be read.
+
+        Marked applied immediately, because writing the log entry IS
+        the whole operation. There is no second step that could fail
+        partway.
+        """
+        log_id = self.write_log.log_pending_update(
+            sub_write.object_type, sub_write.object_id,
+            {}, sub_write.expected_current_values,
+            user_id, description, batch_id=batch_id, operation="delete",
         )
         self.write_log.mark_applied(log_id)
         return sub_write.object_id

@@ -139,15 +139,28 @@ def test_sub_write_referencing_unknown_object_type_is_rejected():
         validate_action_types(action_types, OBJECT_TYPES)
 
 
-def test_sub_write_operation_must_be_create_or_update():
+def test_sub_write_operation_must_be_a_known_operation():
+    # "delete" was this test's own example of an INVALID operation
+    # before Point 13 made it a real one -- replaced with something
+    # genuinely unknown rather than loosening the assertion.
     action_types = {
         "Bad": {
             "affected_object_types": ["Widget"],
-            "sub_writes": [_sub_write(operation="delete")],
+            "sub_writes": [_sub_write(operation="upsert")],
         }
     }
-    with pytest.raises(ValueError, match="'create' or 'update'"):
+    with pytest.raises(ValueError, match="'create', 'update' or 'delete'"):
         validate_action_types(action_types, OBJECT_TYPES)
+
+
+def test_delete_is_a_valid_operation():
+    action_types = {
+        "RemoveWidget": {
+            "affected_object_types": ["Widget"],
+            "sub_writes": [_sub_write(operation="delete", mutations=[])],
+        }
+    }
+    validate_action_types(action_types, OBJECT_TYPES)
 
 
 def test_sub_write_mutations_must_be_a_non_empty_list():

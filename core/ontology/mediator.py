@@ -441,6 +441,22 @@ class DataMediator:
 
         raise ValueError(f"No security resolution declared for object_type {object_type!r}")
 
+    def _without_deleted(self, object_type: str, object_ids: list) -> list:
+        """Drops objects whose latest applied write is a delete.
+
+        Read in BULK, one query for the whole candidate set rather than
+        one per object -- the same discipline Point 9 applied to
+        security resolution, and for the same reason: a per-object
+        check here would reintroduce exactly the N+1 that was just
+        removed.
+        """
+        if self.write_log is None or not object_ids:
+            return object_ids
+        deleted = self.write_log.deleted_object_ids(object_type)
+        if not deleted:
+            return object_ids
+        return [object_id for object_id in object_ids if str(object_id) not in deleted]
+
     def _prefetch_security_values(self, object_type: str, object_ids: list) -> None:
         """Resolves the security value for many objects at once, into
         the per-request cache _get_security_value() already reads.
@@ -640,6 +656,15 @@ class DataMediator:
         # id_field -- so this is a behavior-preserving generalization,
         # not a divergence, for get_field()'s own existing use.
         if self.write_log is not None:
+            # A deleted object is not visible in the ontology, matching
+            # Foundry's own rule: when the latest edit is a delete the
+            # object is hidden "regardless of whether any corresponding
+            # row is in one of the data sources". Checked BEFORE any
+            # masking or adapter read, so a deleted object never leaks
+            # a value through either path.
+            if self.write_log.is_deleted(object_type, object_id):
+                return None
+
             pending_changes = self.write_log.get_pending_changes(object_type, object_id)
             if pending_changes is not None and field_name in pending_changes:
                 return pending_changes[field_name]
@@ -739,6 +764,7 @@ class DataMediator:
             object_type, criteria, candidate_ids, adapter, resolved_type_config
         )
         action = f"read:{object_type}"
+        candidate_ids = self._without_deleted(object_type, candidate_ids)
 
         # Resolves every candidate's security value in bulk before the
         # per-object checks below. check_access() itself is unchanged --
@@ -839,6 +865,7 @@ class DataMediator:
             candidate_ids = adapter.find_ids(object_type, {}, resolved_type_config)
 
         action = f"read:{object_type}"
+        candidate_ids = self._without_deleted(object_type, candidate_ids)
         # Same bulk pre-resolution as search_object() above.
         self._prefetch_security_values(object_type, candidate_ids)
         return [

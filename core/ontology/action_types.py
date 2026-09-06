@@ -293,7 +293,14 @@ def _validate_object_reference_parameters(action_type_name: str, declared_params
 
 def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, object_types: dict,
                              declared_params: dict) -> None:
-    required_keys = {"object_type", "object_id", "operation", "mutations"}
+    # A delete has nothing to mutate -- it records the object's removal
+    # from the ontology, not a change to its values -- so `mutations` is
+    # required for create and update only. Declaring an empty list is
+    # still accepted, so an author who writes one is not corrected for
+    # no reason.
+    required_keys = {"object_type", "object_id", "operation"}
+    if sub_write.get("operation") != "delete":
+        required_keys.add("mutations")
     missing = required_keys - sub_write.keys()
     if missing:
         raise ValueError(f"Action type {action_type_name!r}: sub_writes[{index}] missing key(s) {sorted(missing)}.")
@@ -305,11 +312,23 @@ def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, 
         )
 
     operation = sub_write["operation"]
-    if operation not in ("create", "update"):
+    if operation not in ("create", "update", "delete"):
         raise ValueError(
             f"Action type {action_type_name!r}: sub_writes[{index}].operation must be "
-            f"'create' or 'update', got {operation!r}."
+            f"'create', 'update' or 'delete', got {operation!r}."
         )
+
+    if operation == "delete":
+        # Nothing further to check: a delete names an object, not a
+        # change to it. An empty mutations list is accepted here rather
+        # than rejected, since an author who writes one has expressed
+        # exactly what a delete means.
+        if sub_write.get("mutations"):
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}] is a delete and "
+                f"must not declare mutations."
+            )
+        return
 
     if not isinstance(sub_write["mutations"], list) or not sub_write["mutations"]:
         raise ValueError(f"Action type {action_type_name!r}: sub_writes[{index}].mutations must be a non-empty list.")

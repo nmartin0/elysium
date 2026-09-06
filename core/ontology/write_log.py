@@ -416,6 +416,53 @@ class WriteLogReader(InternalReadAdapter):
             entry["changes"].update(json.loads(row["changes"]))
         return list(merged.values())
 
+    def deleted_object_ids(self, object_type: str) -> set:
+        """Every object of this type whose latest write is a delete.
+
+        THE EDIT-LAYER MODEL, following Foundry directly. A Foundry
+        delete is an EDIT, not a DELETE statement: "edits are written
+        to the writeback dataset and not the dataset backing an object
+        type... This ensures that users have access to both the
+        original data and the edited data." Their own resolution rule
+        is that when the latest edit for an object is a delete, the
+        object "is not visible in the ontology, regardless of whether
+        any corresponding row is in one of the data sources."
+
+        So Elysium never issues a DELETE against a customer's database.
+        The delete lives here, in storage this project owns, and the
+        read path filters on it. That keeps the external read-only
+        guarantee intact and makes the delete reversible: a later
+        create for the same id wins, exactly as Foundry describes.
+
+        LATEST WINS, which is why this reads the newest row per object
+        rather than "does any delete exist". delete-then-recreate must
+        leave the object visible, and recreate-then-delete must leave
+        it hidden.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT object_id, operation FROM write_log "
+                "WHERE object_type = ? AND status = 'applied' "
+                "ORDER BY created_at, id",
+                (object_type,),
+            ).fetchall()
+
+        latest: dict = {}
+        for row in rows:
+            latest[row["object_id"]] = row["operation"]
+        return {object_id for object_id, op in latest.items() if op == "delete"}
+
+    def is_deleted(self, object_type: str, object_id: Any) -> bool:
+        """Whether this one object's latest applied write is a delete."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT operation FROM write_log "
+                "WHERE object_type = ? AND object_id = ? AND status = 'applied' "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (object_type, str(object_id)),
+            ).fetchone()
+        return row is not None and row["operation"] == "delete"
+
     def get_sub_write_entry(self, batch_id: str, object_type: str, object_id: Any) -> dict | None:
         # ONE specific sub-write's own write_log row within a batch, if
         # it exists yet AT ALL -- regardless of status (pending OR
@@ -543,7 +590,7 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
 
     def log_pending_update(self, object_type: str, object_id: Any, changes: dict,
                             expected_current_values: dict, user_id: str, description: str,
-                            batch_id: str | None = None) -> str:
+                            batch_id: str | None = None, operation: str = "update") -> str:
         # ONE row, ONE write, trivially atomic regardless of how many
         # storages `changes` will eventually resolve across -- this single
         # INSERT is the entire mechanism's real atomicity boundary. Takes
@@ -563,9 +610,9 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
             conn.execute(
                 "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
                 "expected_current_values, status, user_id, description, created_at, batch_id) "
-                "VALUES (?, ?, ?, 'update', ?, ?, 'pending', ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
                 (
-                    log_id, object_type, str(object_id), json.dumps(changes),
+                    log_id, object_type, str(object_id), operation, json.dumps(changes),
                     json.dumps(expected_current_values), user_id, description,
                     datetime.now(UTC).isoformat(), batch_id,
                 ),
