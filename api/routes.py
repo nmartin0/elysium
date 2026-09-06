@@ -228,12 +228,22 @@ class SchemaFieldResponse(BaseModel):
     type: str
     target: str | None = None
     cardinality: str | None = None
+    # Always present -- core/ontology/schema.py's humanize() supplies a
+    # readable fallback when none is declared, so a UI never has to
+    # decide what to render for an unlabelled field.
+    display_name: str
+    description: str | None = None
 
 
 class VisibleObjectTypeResponse(BaseModel):
     fields: dict[str, SchemaFieldResponse]
     id_field: str | None
     title_field: str | None
+    # Matching Foundry's own object type metadata (displayName,
+    # pluralDisplayName, description), in this project's snake_case.
+    display_name: str
+    plural_display_name: str
+    description: str | None = None
 
 
 class ActionParameterResponse(BaseModel):

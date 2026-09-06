@@ -119,11 +119,10 @@ _ReadWriteAdapter
 # running server, and REMOVING any of them would silently strip that
 # field from what callers receive -- which is precisely the filtering
 # behavior these models exist to provide.
-acquired_at
 cardinality
 default_to_current_object
 disabled
-held_by
-locked
 source
 total_matches
+display_name
+plural_display_name

@@ -86,6 +86,37 @@ def validate_object_types(object_types: dict) -> None:
         _validate_security(object_type_name, object_types, visited=frozenset())
         _validate_field_data_types(object_type_name, type_def)
         _validate_id_types(object_type_name, type_def)
+        _validate_display_metadata(object_type_name, type_def)
+
+
+def _validate_display_metadata(object_type_name: str, type_def: dict) -> None:
+    # Display metadata is entirely optional -- every ontology predating
+    # it stays valid, and core/ontology/schema.py's own humanize()
+    # supplies a readable fallback. What IS checked is that a declared
+    # value is a real, non-empty string: an empty display_name is worse
+    # than none at all, because it renders as blank in a UI rather than
+    # falling back to something readable.
+    def check(owner: str, definition: dict, keys: tuple[str, ...]) -> None:
+        for key in keys:
+            if key not in definition:
+                continue
+            value = definition[key]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"{owner}: {key} must be a non-empty string, got {value!r}"
+                )
+
+    check(
+        f"Object type {object_type_name!r}",
+        type_def,
+        ("display_name", "plural_display_name", "description"),
+    )
+    for field_name, field_info in (type_def.get("fields") or {}).items():
+        check(
+            f"Object type {object_type_name!r}, field {field_name!r}",
+            field_info,
+            ("display_name", "description"),
+        )
 
 
 def _validate_id_types(object_type_name: str, type_def: dict) -> None:

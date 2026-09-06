@@ -318,7 +318,11 @@ def test_visible_schema_never_leaks_internal_storage_or_security_config(mediator
     # this asserts NEITHER key is present anywhere in the result, for
     # a real, granted type this user can genuinely see.
     visible = mediator.visible_schema(_record("alice"))
-    assert set(visible["Author"].keys()) == {"fields", "id_field", "title_field"}
+    assert set(visible["Author"].keys()) == {
+        "fields", "id_field", "title_field",
+        # Display metadata, deliberately exposed for UI rendering.
+        "display_name", "plural_display_name", "description",
+    }
     assert "storage" not in visible["Author"]
     assert "additional_storage" not in visible["Author"]
     assert "security" not in visible["Author"]

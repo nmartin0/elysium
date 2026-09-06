@@ -18,6 +18,44 @@ Used by: core/ontology/mediator.py, and core/llm/agent_step_prompt.py
 """
 
 
+def humanize(name: str) -> str:
+    """A readable label from an identifier, for when none is declared.
+
+    `owner_customer_id` -> "Owner Customer", `transaction_date` ->
+    "Transaction Date". The trailing `_id` is dropped because it names
+    the STORAGE mechanism rather than the thing a reader cares about --
+    a field linking to a customer reads better as "Owner Customer" than
+    "Owner Customer Id".
+
+    A fallback, never a replacement: any explicitly declared
+    display_name wins. This exists so an ontology that declares nothing
+    still renders something a person can read, rather than forcing
+    every deployment to label every field before its UI is usable.
+    """
+    stem = name[:-3] if name.endswith("_id") and len(name) > 3 else name
+    return " ".join(word.capitalize() for word in stem.split("_")) or name
+
+
+def get_display_name(definition: dict, fallback_name: str) -> str:
+    """The declared display_name, or a humanized fallback."""
+    return definition.get("display_name") or humanize(fallback_name)
+
+
+def get_plural_display_name(type_def: dict, type_name: str) -> str:
+    """The declared plural, or the singular with a naive 's'.
+
+    Deliberately naive rather than a pluralization library: this is a
+    FALLBACK for an undeclared value, and a deployment with an
+    irregular plural declares it. Guessing harder would produce
+    confidently wrong output for exactly the cases that need declaring
+    ("Person" -> "Persons"), which is worse than an obvious default.
+    """
+    declared = type_def.get("plural_display_name")
+    if declared:
+        return declared
+    return get_display_name(type_def, type_name) + "s"
+
+
 def get_id_field(schema: dict, object_type: str) -> str:
     # Which field name is this object type's identifier (e.g. "customer_id").
     type_schema = schema.get(object_type)

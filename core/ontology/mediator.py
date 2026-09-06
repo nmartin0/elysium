@@ -115,8 +115,10 @@ from core.intermediate_layer.auth import UserRecord, authorize
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.schema import (
     get_column_for_field,
+    get_display_name,
     get_field_storage_name,
     get_link_target,
+    get_plural_display_name,
     is_link_field,
     is_searchable_field,
 )
@@ -546,7 +548,10 @@ class DataMediator:
                 continue
 
             visible_fields = {
-                field_name: field_info
+                field_name: {
+                    **field_info,
+                    "display_name": get_display_name(field_info, field_name),
+                }
                 for field_name, field_info in type_def["fields"].items()
                 if authorize(user_record, self.roles, f"read:{object_type}.{field_name}")
             }
@@ -598,6 +603,16 @@ class DataMediator:
                 "fields": visible_fields,
                 "id_field": id_field if id_field_visible else None,
                 "title_field": title_field if title_field_visible else None,
+                # Display metadata, resolved here rather than in the
+                # route: it is a property of the ONTOLOGY, and every
+                # consumer (HTTP, the agent's own prompt) should see
+                # the same label for the same field. Always present --
+                # humanize() supplies a readable fallback -- so a UI
+                # never has to decide what to show when none is
+                # declared.
+                "display_name": get_display_name(type_def, object_type),
+                "plural_display_name": get_plural_display_name(type_def, object_type),
+                "description": type_def.get("description"),
             }
         return visible
 

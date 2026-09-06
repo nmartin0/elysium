@@ -464,7 +464,12 @@ def test_visible_schema_never_leaks_per_field_internals(client):
     assert response.status_code == 200
     for type_name, type_schema in response.json().items():
         for field_name, field_info in type_schema["fields"].items():
-            leaked = set(field_info) - {"type", "target", "cardinality"}
+            # display_name and description are DELIBERATELY exposed --
+            # they exist so a UI can render a readable label. Everything
+            # else a field definition carries is internal.
+            leaked = set(field_info) - {
+                "type", "target", "cardinality", "display_name", "description",
+            }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 
 
@@ -488,6 +493,35 @@ def test_visible_schema_still_carries_what_links_genuinely_need(client):
     for field_info in link_fields:
         assert field_info["target"]
         assert field_info["cardinality"]
+
+
+def test_visible_schema_carries_display_metadata_for_the_ui(client):
+    # The whole point of Point 10: a UI must be able to render readable
+    # labels without inventing them. Every object type and field has a
+    # display_name whether or not the ontology declared one.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    schema = client.get("/api/me/visible-schema").json()
+
+    for type_name, type_schema in schema.items():
+        assert type_schema["display_name"], f"{type_name} has no display_name"
+        assert type_schema["plural_display_name"], f"{type_name} has no plural"
+        for field_name, field_info in type_schema["fields"].items():
+            assert field_info["display_name"], f"{type_name}.{field_name} has no display_name"
+
+
+def test_declared_display_metadata_reaches_the_caller_verbatim(client):
+    # A declared label must survive response_model filtering -- the
+    # exact failure mode that silently dropped fields before.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    customer = client.get("/api/me/visible-schema").json()["Customer"]
+
+    assert customer["display_name"] == "Customer"
+    assert customer["plural_display_name"] == "Customers"
+    assert customer["description"]
 
 
 def test_visible_schema_still_reports_a_null_title_field(client):
