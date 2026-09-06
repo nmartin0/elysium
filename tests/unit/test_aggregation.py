@@ -219,3 +219,83 @@ def test_aggregation_reads_data_in_bulk_not_per_object(mediator):
     assert with_aggregation - search_only <= 2, (
         f"aggregation added {with_aggregation - search_only} queries over search alone"
     )
+
+
+def test_the_cost_of_an_aggregate_is_dominated_by_mac_not_by_reading(tmp_path):
+    # Point 8 of the machinery audit, pinned as a test rather than left
+    # as a number in a commit message.
+    #
+    # The question was whether to add a second query engine (DuckDB)
+    # for analytical work. Profiling aggregate_by_field() over 20,000
+    # objects answered it: 98% of the time is check_access(), 1% is
+    # reading and grouping the data. An engine that made the data half
+    # infinitely fast would save 1%.
+    #
+    # MAC cannot move into a query engine, because a security value is
+    # reached by following via_field chains that can cross silos. So
+    # the bottleneck is structurally outside any engine's reach, and
+    # the useful optimization is batching MAC resolution instead.
+    #
+    # Asserted as a RATIO of query counts rather than wall-clock time,
+    # which would be flaky. If this ever inverts -- if reading starts
+    # to dominate -- the second-engine question genuinely deserves
+    # reopening, and this test is what should prompt that.
+    import adapters.sqlite_adapter as sqlite_adapter_module
+
+    db_path = tmp_path / "many.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(open(FIXTURES + "schema.sql").read())
+    conn.executemany(
+        "INSERT INTO transactions (customer_id, amount, currency, category, transaction_date) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [("cust_001", i * 1.5, "USD", ["a", "b", "c"][i % 3], "2024-01-01") for i in range(500)],
+    )
+    conn.commit()
+    conn.close()
+
+    schema = yaml.safe_load(open(FIXTURES + "ontology_schema.yaml"))
+    policy = yaml.safe_load(open(FIXTURES + "policy.yaml"))
+    adapters = _build_adapters(
+        {"primary_sql": {"adapter": "sqlite", "connection": {"path": db_path}}},
+        _WRITE_ADAPTER_REGISTRY,
+    )
+    object_types = {
+        name: type_def
+        for name, type_def in schema["object_types"].items()
+        if name in ("Customer", "Transaction")
+    }
+    mediator = DataMediator(
+        object_types, adapters, dict.fromkeys(object_types, "primary_sql"), policy["roles"]
+    )
+
+    real_run_query = sqlite_adapter_module._run_query
+    real_run_query_one = sqlite_adapter_module._run_query_one
+    counted = {"n": 0}
+
+    def counting(fn):
+        def wrapper(*args, **kwargs):
+            counted["n"] += 1
+            return fn(*args, **kwargs)
+        return wrapper
+
+    sqlite_adapter_module._run_query = counting(real_run_query)
+    sqlite_adapter_module._run_query_one = counting(real_run_query_one)
+    try:
+        counted["n"] = 0
+        visible = mediator.search_object(CUSTOMER_SERVICE, "Transaction", {})
+        mac_queries = counted["n"]
+
+        counted["n"] = 0
+        mediator._read_fields_for_ids(
+            CUSTOMER_SERVICE, "Transaction", set(visible), ["category", "amount"]
+        )
+        data_queries = counted["n"]
+    finally:
+        sqlite_adapter_module._run_query = real_run_query
+        sqlite_adapter_module._run_query_one = real_run_query_one
+
+    assert data_queries <= 2, "reading the data should be a constant, not per-object"
+    assert mac_queries > 100 * data_queries, (
+        f"MAC cost {mac_queries} queries against {data_queries} for data -- "
+        f"if this ratio inverts, revisit whether a second query engine is worth it"
+    )

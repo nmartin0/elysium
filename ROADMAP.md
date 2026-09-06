@@ -659,6 +659,30 @@ exactly the infrastructure already ruled out as disproportionate. The
 practical division therefore stands -- PyIceberg writes, DuckDB reads
 -- but for this real reason, not because DuckDB lacks the capability.
 
+**RE-CONFIRMED after building the analytical layer, on far better
+evidence than the first decision had.** Point 8 of the machinery audit
+revisited this once Points 6 and 7 existed -- real aggregation
+primitives and Search Around -- so that the question could be measured
+against genuine analytical queries rather than a substring search.
+
+Profiling `aggregate_by_field()` over 20,000 objects: 6.25s total, of
+which 6.10s is `check_access()`. **98% of an analytical query is MAC,
+not the query engine.** Split another way: 4.47s resolving row-level
+security, 0.05s reading and grouping the data. An engine that made the
+data half INFINITELY FAST would save 1%.
+
+That is the real finding, and it is not about DuckDB's merits. MAC
+cannot move into any query engine, because a security value is reached
+by following `security.via_field` chains that cross silos -- the
+reason this layer is a service rather than exposed SQL, and the same
+reason Foundry built OSS rather than a SQL endpoint. So the bottleneck
+is structurally outside the engine's reach.
+
+**The genuinely useful optimization is batching MAC resolution**, now
+recorded in the deferred list above. That is worth real work; a second
+query engine is not, until it is measured against a workload where the
+data half actually dominates.
+
 **DECIDED: DuckDB is NOT adopted, and the "DuckDB reads" half of that
 division is dropped.** Point 4 of the machinery audit went looking for
 what DuckDB would actually do, and found nothing it needs to. All five
