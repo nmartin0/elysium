@@ -200,3 +200,110 @@ def test_a_missing_side_is_rejected():
 
     with pytest.raises(ValueError, match="missing 'target'"):
         validate_link_types(bad, OBJECT_TYPES)
+
+
+# --- The deployment linter -----------------------------------------------
+
+
+def _lint(tmp_path, mutate=None):
+    """Copies the real fixture deployment, optionally breaks it, and
+    lints it -- exercising the actual CLI path an operator uses."""
+    import shutil
+
+    from scripts.lint_deployment import lint_deployment
+
+    config_dir = tmp_path / "config"
+    shutil.copytree("tests/integration/fixtures", config_dir)
+    if mutate:
+        schema_path = config_dir / "ontology_schema.yaml"
+        schema_path.write_text(mutate(schema_path.read_text()))
+
+    import io
+    from contextlib import redirect_stdout
+
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        valid = lint_deployment(config_dir)
+    return valid, captured.getvalue()
+
+
+def test_the_linter_accepts_the_real_fixture_deployment(tmp_path):
+    valid, _output = _lint(tmp_path)
+
+    assert valid
+
+
+def test_the_linter_rejects_a_link_to_an_unknown_object_type(tmp_path):
+    valid, output = _lint(
+        tmp_path,
+        lambda text: text.replace(
+            "target: {object_type: Tag, api_name: customers}",
+            "target: {object_type: NoSuchType, api_name: customers}",
+        ),
+    )
+
+    assert not valid
+    assert "NoSuchType" in output
+
+
+def test_the_linter_rejects_many_to_many_without_a_join_table(tmp_path):
+    import re
+
+    valid, output = _lint(
+        tmp_path,
+        lambda text: re.sub(
+            r"    join_table:\n      table: customer_tags\n"
+            r"      source_column: customer_id\n      target_column: tag_id\n",
+            "",
+            text,
+        ),
+    )
+
+    assert not valid
+    assert "requires a join_table" in output
+
+
+def test_a_broken_link_type_is_reported_in_the_right_file(tmp_path):
+    # THE bug this closes. Link fields are GENERATED from link_types,
+    # so checking roles against the UNEXPANDED types reported spurious
+    # "unknown field 'accounts'" errors against policy.yaml when the
+    # real fault was a broken link type in ontology_schema.yaml --
+    # pointing an author at the wrong file entirely.
+    valid, output = _lint(
+        tmp_path,
+        lambda text: text.replace(
+            "target: {object_type: Tag, api_name: customers}",
+            "target: {object_type: NoSuchType, api_name: customers}",
+        ),
+    )
+
+    assert not valid
+    assert "ontology_schema.yaml" in output
+    assert "Link type" in output
+    assert "policy.yaml" not in output, (
+        "the linter blamed policy.yaml for a fault in ontology_schema.yaml"
+    )
+
+
+def test_grants_on_GENERATED_link_fields_are_not_reported_as_unknown(tmp_path):
+    # read:Customer.accounts is valid even though "accounts" appears
+    # nowhere in the raw YAML -- it is generated from a link type.
+    #
+    # Reaching the code that matters needs care, and a first version of
+    # this test did NOT: the linter only falls back to per-item error
+    # collection when load_deployment() has already failed, so a valid
+    # deployment never exercises it. This breaks an ACTION TYPE, so the
+    # load fails for an unrelated reason and the fallback runs with
+    # link grants present -- exactly the situation where an unexpanded
+    # check would report spurious "unknown field" errors.
+    valid, output = _lint(
+        tmp_path,
+        lambda text: text.replace("operation: update", "operation: nonsense", 1),
+    )
+
+    assert not valid
+    # The REAL fault is reported...
+    assert "nonsense" in output
+    # ...and the generated link fields are not blamed alongside it.
+    assert "unknown field 'accounts'" not in output
+    assert "unknown field 'tags'" not in output

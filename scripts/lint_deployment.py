@@ -89,6 +89,7 @@ from core.deployment_loader import (
 )
 from core.intermediate_layer.policy_validation import validate_roles
 from core.ontology.action_types import validate_action_types
+from core.ontology.link_types import expand_link_types, validate_link_types
 
 
 def _report_invalid(config_dir: Path, errors: list[str]) -> bool:
@@ -167,6 +168,31 @@ def _collect_action_type_and_role_errors(schema_raw: dict, policy_raw: dict, ena
     # so this is where the fuller picture matters most -- and where
     # per-GRANT position lookup (not just per-role) matters most too.
     object_types = schema_raw.get("object_types", {})
+    link_types = schema_raw.get("link_types", {})
+
+    # LINK TYPES FIRST, and expanded before anything else is checked.
+    # Link fields are GENERATED from link_types at load, so a role
+    # granting read:Customer.accounts is valid even though "accounts"
+    # appears nowhere in the raw YAML. Checking roles against the
+    # unexpanded types reported a spurious "unknown field" error in
+    # policy.yaml when the REAL fault was a broken link type in
+    # ontology_schema.yaml -- pointing an author at the wrong file
+    # entirely.
+    link_errors = []
+    for link_name, link_def in link_types.items():
+        try:
+            validate_link_types({link_name: link_def}, object_types)
+        except ValueError as e:
+            position = _describe_position(
+                schema_text, "ontology_schema.yaml", ["link_types", link_name]
+            )
+            link_errors.append(f"{e}{position}")
+    if link_errors:
+        # Stop here rather than cascade into downstream errors that
+        # describe symptoms instead of the cause.
+        return link_errors
+
+    object_types = expand_link_types(link_types, object_types)
     action_types = schema_raw.get("action_types", {})
     roles = policy_raw.get("roles", {})
 
