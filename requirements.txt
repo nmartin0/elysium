@@ -1,19 +1,32 @@
+# Runtime dependencies. Test-only packages live in requirements-dev.txt.
+#
+# UPPER BOUNDS, not pins. Three of these are pre-1.0 (fastapi 0.141,
+# uvicorn 0.52, pyiceberg 0.12), and their own release policy is that a
+# minor bump may break. Unbounded, a breaking release lands silently in
+# the next deployment anyone builds -- including every "verified on a
+# fresh clone" check, which resolves whatever pip serves that hour
+# rather than what a customer will get.
+#
+# Bounds catch that case cheaply. They do NOT give reproducible builds:
+# two installs a month apart still differ within the allowed range.
+# Real reproducibility needs a lockfile, which needs a release process
+# to maintain -- deliberately deferred, see ROADMAP.md. Note that
+# containerising would not solve this either: a Dockerfile running an
+# unpinned pip install produces a different image each build.
+
 # requirements.txt
 # Python packages this project needs installed (run: pip install -r requirements.txt)
 #
 # sqlite3 is NOT listed here -- it ships built into Python itself.
-anthropic       # unused for now, no paid key -- kept for a possible future LLM adapter
-requests        # HTTP calls to the local Ollama API
-pyyaml          # reading deployment config/schema/policy YAML files
-pytest          # test suite (tests/unit -- fast; tests/integration -- slow, needs Ollama running)
-argon2-cffi     # password hashing for core/auth/ -- argon2id, the current OWASP-recommended algorithm
-fastapi         # api/ -- the HTTP layer
-uvicorn         # ASGI server to actually run api/app.py
-starlette>=1.0.1  # FastAPI's ASGI layer -- pinned: versions before this had a real, disclosed
+requests<3.0        # HTTP calls to the local Ollama API
+pyyaml<7.0          # reading deployment config/schema/policy YAML files
+argon2-cffi<26.0     # password hashing for core/auth/ -- argon2id, the current OWASP-recommended algorithm
+fastapi<1.0         # api/ -- the HTTP layer
+uvicorn<1.0         # ASGI server to actually run api/app.py
+starlette>=1.0.1,<2.0  # FastAPI's ASGI layer -- pinned: versions before this had a real, disclosed
                   # authentication-bypass CVE (CVE-2026-48710), fixed in 1.0.1. Since we're
                   # building an authentication system on top of this, this floor is load-bearing,
                   # not a routine version bump.
-httpx2          # test-only -- FastAPI's TestClient (tests/integration/test_api.py) requires it
 # pyiceberg -- the local read-only mirror's own versioned storage (Phase 2 of the
 # read-only mirror architecture; see ROADMAP.md). The [sql-sqlite] extra is the
 # real, deliberate choice: PyIceberg's catalog is backed by a plain SQLite file
@@ -28,4 +41,4 @@ httpx2          # test-only -- FastAPI's TestClient (tests/integration/test_api.
 # full-refresh sync needs), snapshot history is preserved, and real time travel
 # back to a prior sync's snapshot works. Every package in its own dependency tree
 # is MIT, BSD-3-Clause, or Apache-2.0 -- zero copyleft.
-pyiceberg[sql-sqlite,pyarrow]
+pyiceberg[sql-sqlite,pyarrow]<1.0

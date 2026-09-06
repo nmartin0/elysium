@@ -174,6 +174,28 @@ after.
   Revisit only alongside a real rotation story -- reopening on SIGHUP,
   or writing through a logging handler that already handles it.
 
+- **No lockfile, and no container.** Runtime dependencies carry upper
+  bounds rather than pins. Bounds catch the case that actually bites --
+  three of them are pre-1.0 (fastapi 0.141, uvicorn 0.52, pyiceberg
+  0.12) and their own policy is that a minor bump may break -- but they
+  do NOT give reproducible builds: two installs a month apart still
+  differ within the allowed range.
+
+  Worth being precise about what a container would and would not fix,
+  since it is the obvious next thought. Docker freezes the OS layer and
+  the Python interpreter; a Dockerfile running an unpinned `pip
+  install` still produces a different image each build. Reproducibility
+  needs a lockfile either way, and the two are complementary rather
+  than alternatives.
+
+  Deferred because both need a release process to be worth their
+  maintenance, and because install.sh plus the systemd unit already
+  work. Revisit when there are real releases to reproduce. One genuine
+  side benefit if a container does arrive: the entrypoint becomes a
+  reviewable file in this repository rather than whatever an operator
+  writes, which is exactly the path require_assertions_enabled() was
+  added to defend.
+
 - **Snapshot pagination is not implemented.** Foundry offers two
   consistency behaviours: their DEFAULT "returns the latest results"
   and, in their own words, "may lead to duplicate entries or missing
