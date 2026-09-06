@@ -186,8 +186,13 @@ class MirrorReadAdapter(ExternalReadAdapter):
             # where that error genuinely belongs.
             return None
 
-        scan = table.scan(selected_fields=selected_fields)
-        if row_filter is not None:
+        # Built once, with the filter folded in -- the previous version
+        # called table.scan() twice when a filter was present and threw
+        # the first result away. Harmless but wasteful, and misleading
+        # to read.
+        if row_filter is None:
+            scan = table.scan(selected_fields=selected_fields)
+        else:
             scan = table.scan(selected_fields=selected_fields, row_filter=row_filter)
         return scan.to_arrow()
 

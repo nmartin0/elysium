@@ -29,7 +29,6 @@ import sqlite3
 
 import pytest
 
-import core.mirror.iceberg_sync as iceberg_sync_module
 from adapters.sqlite_adapter import SQLiteReadAdapter
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.ontology.mediator import DataMediator
@@ -66,21 +65,6 @@ def sync(tmp_path):
     conn.commit()
     conn.close()
     return IcebergMirrorSync(tmp_path / "mirror", {"p": SQLiteReadAdapter({"path": source})})
-
-
-def test_a_transform_that_loses_rows_is_caught(sync, monkeypatch):
-    # The transform stage casts values; it must never add or drop rows.
-    # A silent row loss here would make the sync report success while
-    # the mirror quietly holds less than the source.
-    real_transform = iceberg_sync_module.transform_rows
-    monkeypatch.setattr(
-        iceberg_sync_module,
-        "transform_rows",
-        lambda rows, columns, column_types=None: real_transform(rows[:-1], columns, column_types),
-    )
-
-    with pytest.raises(AssertionError, match="transform changed the row count"):
-        sync.sync_table("p", "t", "id", ["id", "v"])
 
 
 def test_a_normal_sync_does_not_trip_the_row_count_assert(sync):

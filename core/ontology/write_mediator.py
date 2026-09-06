@@ -371,6 +371,19 @@ class WriteMediator:
             object_refs = [(sw["object_type"], sw["object_id"]) for sw in batch["sub_writes"]]
             with self._adapter_mediator._locks_for_objects(object_refs):
                 outcome = self._resume_one_batch(batch)
+            # INVARIANT: every resume method returns one of exactly
+            # three outcome names. There are five separate return sites
+            # across three methods, all producing bare strings with
+            # nothing enforcing the vocabulary -- a typo or a new
+            # fourth outcome would otherwise surface as a bare KeyError
+            # during crash recovery at startup, which is both the worst
+            # moment and the least informative message. Naming the
+            # offending value makes it immediately obvious what went
+            # wrong.
+            assert outcome in summary, (
+                f"resume returned unknown outcome {outcome!r} -- "
+                f"expected one of {sorted(summary)}"
+            )
             summary[outcome] += 1
         return summary
 

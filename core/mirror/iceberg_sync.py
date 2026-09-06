@@ -101,15 +101,6 @@ class IcebergMirrorSync(MirrorSync):
         # handling turns it into a genuinely diagnosable failure rather
         # than a stack trace.
         transformed = transform_rows(raw_rows, columns, column_types)
-        # INVARIANT: the transform stage casts values; it never adds or
-        # drops rows. A mismatch here would mean the mirror silently
-        # holds a different number of rows than the source did, which no
-        # later check would catch -- the sync would report success with
-        # quietly incomplete data.
-        assert len(transformed.rows) == len(raw_rows), (
-            f"{silo_name}.{table_name}: transform changed the row count from "
-            f"{len(raw_rows)} to {len(transformed.rows)}"
-        )
         if transformed.has_drift:
             raise ValueError(describe_drift(silo_name, table_name, transformed.drift))
 

@@ -92,6 +92,25 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
                     existing.append(column)
             by_table[key]["column_types"].update(column_types)
 
+    for (silo_name, table_name), entry in by_table.items():
+        # INVARIANT: the id column is always synced, and every typed
+        # column is one that is actually being copied. Both dicts are
+        # merged across separate object types in the loop above, so
+        # they can drift apart without either being obviously wrong on
+        # its own. A missing id column silently produces a mirror table
+        # nothing can be looked up in; a type naming an absent column
+        # surfaces later as a KeyError inside the sync, far from the
+        # schema that caused it.
+        assert entry["id_column"] in entry["columns"], (
+            f"{silo_name}.{table_name}: id column {entry['id_column']!r} is not "
+            f"among the columns being synced"
+        )
+        unknown = set(entry["column_types"]) - set(entry["columns"])
+        assert not unknown, (
+            f"{silo_name}.{table_name}: declared types for columns that are not "
+            f"being synced: {sorted(unknown)}"
+        )
+
     return [
         SyncTarget(
             silo_name=silo_name,
