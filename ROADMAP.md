@@ -32,7 +32,12 @@ inferred.
 
 ### In build order
 
-0. **Convert every existing API route to a real, typed Pydantic
+0. **DONE (Point 11).** Every route now declares a `response_model`;
+   the work also closed a fourth instance of the internal-config leak
+   this item existed to prevent. Reasoning kept below because the
+   *why* still governs any route added later.
+
+   **Convert every existing API route to a real, typed Pydantic
    `response_model`.** Most routes currently return a bare `dict`.
    Two real, independent reasons this matters, not just one: (a)
    FastAPI's own built-in OpenAPI generation only knows a route's real
@@ -91,7 +96,13 @@ inferred.
    parameter at proposal time. A real, valuable finding that PREVENTED
    building something with no real precedent anywhere, not a gap that
    needed closing.
-2. **Real aggregation/counting primitives in `DataMediator`.**
+2. **DONE (Points 6, 7, 11, 17).** `count_objects()`,
+   `aggregate_by_field()` and `search_around()` exist, are exposed over
+   HTTP, and are reachable by the agent. The MAC constraint described
+   below is exactly why they are mediator methods rather than pushed-
+   down SQL, and still governs anything analytical added later.
+
+   **Real aggregation/counting primitives in `DataMediator`.**
    `count_objects()`, `aggregate_by_field()`, and a count-only variant
    of the reverse-link resolver -- confirmed as a real, total gap
    today (DataMediator's entire public surface is 6 methods, none of
@@ -199,18 +210,6 @@ after.
   Adding network access deserves its own decision, not a quiet
   extension of this one.
 
-- **Per-object MAC resolution is an N+1.** Measured while building the
-  aggregation primitives: `search_object()` on 2,004 objects costs
-  4,021 SQL queries on its own, because `check_access()` resolves each
-  object's security value individually, following `security.via_field`
-  chains one object at a time. Aggregation adds only ONE query on top
-  of that (a single bulk read), so this is inherited, not introduced.
-  Fixing it means batching security-value resolution -- genuinely
-  harder than the sync's bulk read was, because a via_field chain can
-  cross silos and each hop needs its own batched lookup. Worth doing
-  before any large deployment; deliberately out of scope for the
-  aggregation work itself.
-
 - **Incremental (APPEND) syncs.** Elysium is SNAPSHOT-only: every sync
   re-copies each table in full. Foundry offers incremental APPEND
   precisely because, in their words, "if the dataset grows over time,
@@ -232,11 +231,6 @@ went with them. Deferred work belongs here, in one place that is
 actually maintained, rather than scattered across 23 source files where
 it went stale unnoticed.*
 
-- **Full-stack concurrent write test.** `tests/unit/test_concurrency.py`
-  exercises `DataMediator`'s locking primitives directly, not two real,
-  concurrent `confirm_and_execute()` calls with genuinely overlapping
-  account sets racing through the whole write path. The primitive is
-  proven sound; the full stack under contention is not.
 - **YAML value coercion.** `core/config.py` rejects duplicate keys and
   `validate_identifier_types()` checks identifiers, but a mutation's
   own literal VALUE can still be silently coerced by YAML: leading-zero
