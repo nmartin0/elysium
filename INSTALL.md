@@ -207,6 +207,13 @@ directly on any pending change awaiting approval when reads come from
 the mirror, so nobody approves a write without knowing how fresh the
 values they are looking at actually are.
 
+**Overlapping runs are handled for you.** If a sync is still running
+when the next one is triggered, the second exits immediately with a
+message on stderr and a success code — it does not queue, and it does
+not fail your scheduler. This matters because the mirror's storage
+format rejects two simultaneous writers to the same table by design,
+so without this guard an overlapping run would fail partway through.
+
 ### Choosing a sync interval
 
 There is no correct default, because the right answer depends on your

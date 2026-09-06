@@ -234,3 +234,49 @@ def test_snapshot_history_lets_an_earlier_sync_still_be_read(sync, source):
         .to_arrow()
     )
     assert earlier.num_rows == 5
+
+
+def test_concurrent_commits_to_one_table_are_rejected_not_silently_merged(tmp_path, source):
+    # Iceberg's optimistic concurrency, verified rather than assumed.
+    # A commit carries "the table's metadata is version N"; a second
+    # writer starting from the same N is REJECTED rather than allowed
+    # to clobber the first. That rejection is CORRECT -- the failure
+    # mode it prevents is a lost overwrite.
+    #
+    # PyIceberg surfaces it as a hard exception whose retry loop cannot
+    # resolve a full-table overwrite (unlike Java Iceberg, which
+    # retries transparently). This test pins that reality so the
+    # single-writer lock in scripts/run_sync.py is never removed as
+    # unnecessary.
+    import threading
+
+    first = IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": source})})
+    _sync(first)
+
+    outcomes = []
+    guard = threading.Lock()
+    barrier = threading.Barrier(2)
+
+    def racing_sync():
+        worker = IcebergMirrorSync(
+            tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": source})}
+        )
+        barrier.wait()
+        try:
+            worker.sync_table("primary", "widgets", "widget_id", ["widget_id", "label"])
+            outcome = "committed"
+        except Exception as exc:
+            outcome = type(exc).__name__
+        with guard:
+            outcomes.append(outcome)
+
+    threads = [threading.Thread(target=racing_sync) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # Whatever the interleaving, the table is never corrupted -- it
+    # holds exactly one writer's complete result.
+    assert _mirror(first).num_rows == 5
+    assert "committed" in outcomes

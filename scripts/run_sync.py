@@ -47,6 +47,7 @@ Run from the project root:
     python3 -m scripts.run_sync
 """
 
+import fcntl
 import sys
 
 from core.deployment_loader import load_deployment_bundle, resolve_runtime_paths
@@ -61,36 +62,73 @@ def run_sync(runtime_paths=None) -> int:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
-    # The read adapters specifically -- load_deployment_bundle()'s own
-    # third return value is the WRITE set, deliberately ignored here.
-    # A sync only ever reads from the source.
-    config, mediator, _write_adapters = load_deployment_bundle(
-        runtime_paths.config_dir, runtime_paths.data_dir
-    )
+    # SINGLE WRITER, enforced with a real OS lock rather than by
+    # convention. Iceberg uses optimistic concurrency: a commit carries
+    # "the table's metadata is version N", and a second writer starting
+    # from the same N is REJECTED rather than allowed to clobber. That
+    # is correct behaviour, but PyIceberg surfaces it as a hard
+    # ValidationException that its retry loop cannot resolve for a
+    # full-table overwrite -- confirmed directly by running two syncs
+    # concurrently, where one succeeded and the other failed with
+    # "Added data files were found matching the filter".
+    #
+    # This is genuinely reachable, not hypothetical: INSTALL.md tells
+    # operators to schedule syncs with cron or a systemd timer, and
+    # nothing stops a slow run from overlapping the next scheduled one.
+    #
+    # flock is advisory but process-wide and released automatically if
+    # the process dies -- no stale lock file to clean up after a crash,
+    # which a hand-rolled PID file would leave behind. A second sync
+    # exits immediately and cleanly rather than blocking: the run it
+    # collided with is already copying the same data, so waiting would
+    # only queue redundant work.
+    lock_path = runtime_paths.data_dir / "sync.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(
+            "another sync is already running -- exiting without doing anything",
+            file=sys.stderr,
+        )
+        lock_file.close()
+        return 0
 
-    targets = resolve_sync_targets({"object_types": config.schema})
-    sync = IcebergMirrorSync(runtime_paths.data_dir / "mirror", mediator.adapters)
+    try:
+        # The read adapters specifically -- load_deployment_bundle()'s own
+        # third return value is the WRITE set, deliberately ignored here.
+        # A sync only ever reads from the source.
+        config, mediator, _write_adapters = load_deployment_bundle(
+            runtime_paths.config_dir, runtime_paths.data_dir
+        )
 
-    failures = 0
-    for target in targets:
-        label = f"{target.silo_name}.{target.table_name}"
-        try:
-            result = sync.sync_table(
-                target.silo_name, target.table_name, target.id_column, target.columns,
-                target.column_types,
-            )
-        except Exception as exc:
-            # Per-table, deliberately -- see this module's docstring.
-            # The exception itself is printed rather than swallowed into
-            # a generic message: this is an operator-facing tool, and
-            # the real cause is exactly what an operator needs.
-            failures += 1
-            print(f"FAILED  {label}: {exc}", file=sys.stderr)
-            continue
-        print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
+        targets = resolve_sync_targets({"object_types": config.schema})
+        sync = IcebergMirrorSync(runtime_paths.data_dir / "mirror", mediator.adapters)
 
-    print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
-    return failures
+        failures = 0
+        for target in targets:
+            label = f"{target.silo_name}.{target.table_name}"
+            try:
+                result = sync.sync_table(
+                    target.silo_name, target.table_name, target.id_column, target.columns,
+                    target.column_types,
+                )
+            except Exception as exc:
+                # Per-table, deliberately -- see this module's docstring.
+                # The exception itself is printed rather than swallowed into
+                # a generic message: this is an operator-facing tool, and
+                # the real cause is exactly what an operator needs.
+                failures += 1
+                print(f"FAILED  {label}: {exc}", file=sys.stderr)
+                continue
+            print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
+
+        print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
+        return failures
+    finally:
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
 
 
 if __name__ == "__main__":
