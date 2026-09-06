@@ -988,12 +988,15 @@ class WriteMediator:
                 pending.user_id, pending.description,
             )
 
-            object_ids = []
+            object_ids: list[Any] = []
             try:
                 for sub_write in pending.sub_writes:
                     if sub_write.operation == "update":
                         object_ids.append(
-                            self._apply_one_update(sub_write, batch_id, pending.user_id, pending.description)
+                            self._apply_one_update(
+                                sub_write, batch_id, pending.user_id, pending.description,
+                                batch_already_committed=bool(object_ids),
+                            )
                         )
                     else:
                         object_ids.append(
@@ -1033,7 +1036,8 @@ class WriteMediator:
 
         return object_ids
 
-    def _apply_one_update(self, sub_write: SubWrite, batch_id: str, user_id: str, description: str) -> Any:
+    def _apply_one_update(self, sub_write: SubWrite, batch_id: str, user_id: str, description: str,
+                           batch_already_committed: bool = False) -> Any:
         # ONE sub_write's own share of a (possibly multi-object) batch
         # -- see _apply_batch() above for the locking and batch-logging
         # this is always called from within, and for why this no
@@ -1082,7 +1086,16 @@ class WriteMediator:
                 # a genuinely half-applied write, and that is precisely
                 # what crash recovery exists to reconcile -- abandoning
                 # it would strand the applied half with no record.
-                if not applied_groups:
+                # Abandoned ONLY when this write changed nothing AND
+                # nothing earlier in the same batch did either. A
+                # multi-object action whose FIRST sub-write already
+                # committed is genuinely half-applied: marking this row
+                # applied would tell crash recovery there is nothing to
+                # reconcile, stranding the mismatch permanently and
+                # leaving get_field() masking a value that will never
+                # exist. That state must stay pending -- see
+                # _apply_batch()'s own handling.
+                if not applied_groups and not batch_already_committed:
                     self.write_log.mark_applied(log_id)
                 raise ValueError(
                     f"{sub_write.object_type} {sub_write.object_id!r} changed since this "
