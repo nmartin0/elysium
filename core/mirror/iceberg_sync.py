@@ -101,6 +101,15 @@ class IcebergMirrorSync(MirrorSync):
         # handling turns it into a genuinely diagnosable failure rather
         # than a stack trace.
         transformed = transform_rows(raw_rows, columns, column_types)
+        # INVARIANT: the transform stage casts values; it never adds or
+        # drops rows. A mismatch here would mean the mirror silently
+        # holds a different number of rows than the source did, which no
+        # later check would catch -- the sync would report success with
+        # quietly incomplete data.
+        assert len(transformed.rows) == len(raw_rows), (
+            f"{silo_name}.{table_name}: transform changed the row count from "
+            f"{len(raw_rows)} to {len(transformed.rows)}"
+        )
         if transformed.has_drift:
             raise ValueError(describe_drift(silo_name, table_name, transformed.drift))
 
@@ -128,6 +137,18 @@ class IcebergMirrorSync(MirrorSync):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Delete operation did not match any records")
             table.overwrite(arrow_table)
+
+        # INVARIANT: the committed snapshot holds exactly what was
+        # handed to overwrite(). Checked against the CATALOG rather than
+        # the local object, so this genuinely confirms the commit landed
+        # -- a SNAPSHOT sync reporting a row count it did not actually
+        # write is the one failure mode that would corrupt every
+        # downstream read while looking entirely successful.
+        committed = self._catalog.load_table(identifier).scan().to_arrow()
+        assert committed.num_rows == arrow_table.num_rows, (
+            f"{identifier}: wrote {arrow_table.num_rows} rows but the committed "
+            f"snapshot holds {committed.num_rows}"
+        )
 
         return SyncResult(
             silo_name=silo_name,

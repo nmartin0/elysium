@@ -211,6 +211,18 @@ class DataMediator:
         # two different purposes; conflating them would be a real bug,
         # not just a style inconsistency.
         sorted_refs = sorted(object_refs, key=lambda ref: (ref[0], str(ref[1])))
+        # INVARIANT: no object appears twice. threading.Lock is NOT
+        # reentrant, so acquiring the same lock twice in this loop
+        # deadlocks the caller against itself, immediately and
+        # permanently. A duplicate can arrive legitimately -- an action
+        # whose sub-writes both touch one object -- so this is a real
+        # reachable state, not a hypothetical, and it hangs rather than
+        # raising, which makes it miserable to diagnose without this
+        # check.
+        assert len(set(sorted_refs)) == len(sorted_refs), (
+            f"duplicate object in lock set {sorted_refs} -- "
+            f"threading.Lock is not reentrant, this would self-deadlock"
+        )
         locks = [self._lock_for_object(object_type, object_id) for object_type, object_id in sorted_refs]
         acquired = []
         try:

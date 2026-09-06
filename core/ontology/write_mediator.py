@@ -1032,6 +1032,21 @@ class WriteMediator:
                     self.write_log.mark_batch_applied(batch_id)
                 raise
 
+            # INVARIANT: a batch is only marked applied when every one
+            # of its sub-writes produced a real object id. If these ever
+            # diverge, the batch is being recorded as complete while
+            # part of it never ran -- the exact corruption Point 2 of
+            # the machinery audit found and fixed, where crash recovery
+            # then skips a write that never happened. Asserted rather
+            # than commented because a silent divergence here is
+            # unrecoverable: once marked applied, nothing ever revisits
+            # it.
+            assert len(object_ids) == len(pending.sub_writes) and all(
+                object_id is not None for object_id in object_ids
+            ), (
+                f"batch {batch_id} marking applied with {len(object_ids)} of "
+                f"{len(pending.sub_writes)} sub-writes done, ids={object_ids}"
+            )
             self.write_log.mark_batch_applied(batch_id)
 
         return object_ids
@@ -1103,6 +1118,16 @@ class WriteMediator:
                 )
             applied_groups += 1
 
+        # INVARIANT: every storage group committed before this row is
+        # marked applied. An MDO object spans several physical tables,
+        # and marking the row applied with only some of them written
+        # would leave get_field() reporting the unwritten ones as
+        # updated -- a read showing a value that does not exist, with
+        # nothing left pending for recovery to notice.
+        assert applied_groups == len(groups), (
+            f"{sub_write.object_type} {sub_write.object_id!r}: marking applied with "
+            f"{applied_groups} of {len(groups)} storage groups written"
+        )
         self.write_log.mark_applied(log_id)
         return sub_write.object_id
 
