@@ -55,6 +55,7 @@ from pathlib import Path
 from core.deployment_loader import load_deployment_bundle, resolve_runtime_paths
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.sync_targets import resolve_sync_targets
+from core.sqlite_connection import require_assertions_enabled
 
 
 @contextmanager
@@ -96,6 +97,11 @@ def run_sync(runtime_paths=None) -> int:
     """Syncs every ontology-referenced table. Returns the number of
     tables that FAILED -- 0 meaning a fully successful run, so a
     caller (and __main__ below) can use it directly as an exit code."""
+    # The sync has its own invariant asserts -- that the committed
+    # snapshot holds exactly what was written -- so it needs the same
+    # guarantee the server does.
+    require_assertions_enabled()
+
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 

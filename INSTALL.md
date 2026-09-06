@@ -214,6 +214,13 @@ not fail your scheduler. This matters because the mirror's storage
 format rejects two simultaneous writers to the same table by design,
 so without this guard an overlapping run would fail partway through.
 
+**Do not run Elysium with `-O` or `PYTHONOPTIMIZE`.** Several
+data-integrity checks are enforced by Python assertions, which those
+options strip. Elysium refuses to start if they are set, and tells you
+so — but it is worth knowing why before you reach for them: the
+failures those checks catch do not get louder without them, they get
+silent.
+
 **A note on paged results.** Endpoints that return lists are paged:
 the response carries a `next_page_token`, and you pass it back to get
 the next page. Treat the token as opaque — its format will change, and

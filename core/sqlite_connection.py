@@ -89,6 +89,44 @@ def _deny_all_writes(action_code: int, _arg1: str | None, _arg2: str | None,
     return sqlite3.SQLITE_DENY
 
 
+def require_assertions_enabled() -> None:
+    """Refuses to start if Python's assertions have been disabled.
+
+    Several of this project's INVARIANTS are enforced by `assert`, not
+    by raises: that a batch is only marked applied when every sub-write
+    produced an id, that a write-log row is only marked applied when
+    every storage group committed, that a lock set contains no
+    duplicate (threading.Lock is not reentrant, so a duplicate HANGS),
+    and that a committed mirror snapshot holds what was written.
+
+    Running with -O or PYTHONOPTIMIZE=1 strips all of them. The
+    failures they catch do not become louder -- they become silent, and
+    two of them are unrecoverable once missed: a batch marked applied
+    is never revisited, and a stale index row nothing reconciles.
+
+    REFUSING TO START rather than warning, deliberately. This project's
+    stated discipline is to fail loudly rather than silently
+    substitute, and running with invariants stripped while the
+    documentation says they are live is exactly a silent substitution.
+    Nobody sets -O for this application by accident and on purpose at
+    the same time; if they did, they should be told what it costs.
+
+    This check was added because the claim "asserts are live in
+    production" had been made in PRINCIPLES.md and a commit message
+    after checking install/ and scripts/ -- and NOT the systemd unit or
+    any container entrypoint, which are the paths that would actually
+    carry the setting. The claim happened to be true. It was not
+    verified.
+    """
+    if not __debug__:
+        raise RuntimeError(
+            "Elysium requires Python assertions to be enabled: several data-integrity "
+            "invariants are enforced by `assert` and are stripped by -O / "
+            "PYTHONOPTIMIZE. Remove -O from the interpreter flags and unset "
+            "PYTHONOPTIMIZE, then start again."
+        )
+
+
 @contextmanager
 def immediate_transaction(conn: sqlite3.Connection):
     """Runs a read-modify-write as ONE genuinely atomic transaction.

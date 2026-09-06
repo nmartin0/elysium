@@ -21,8 +21,16 @@ UNRECOVERABLE or UNDIAGNOSABLE:
     HANGS rather than raising -- the hardest possible failure to
     diagnose from a stack trace
 
-Nothing runs Python with -O in this project (verified directly), so
-these are live in production, which is the point.
+These run in production because the application REFUSES TO START
+without them -- see require_assertions_enabled(), called by both
+api/app.py and scripts/run_sync.py.
+
+That guard exists because the original claim here was not verified.
+It said nothing runs Python with -O "verified directly", and the check
+had covered install/ and scripts/ but not the systemd unit or any
+container entrypoint -- the paths that would actually carry the
+setting. The claim happened to be true; it was not established. A
+guard makes it true by construction rather than by inspection.
 """
 
 import sqlite3
@@ -71,3 +79,54 @@ def test_a_normal_sync_does_not_trip_the_row_count_assert(sync):
     result = sync.sync_table("p", "t", "id", ["id", "v"])
 
     assert result.row_count == 4
+
+
+# --- The guarantee that these run at all ---------------------------------
+
+
+def test_the_startup_guard_passes_when_assertions_are_enabled():
+    from core.sqlite_connection import require_assertions_enabled
+
+    require_assertions_enabled()  # does not raise
+
+
+def test_the_startup_guard_refuses_when_assertions_are_stripped():
+    """Runs a real subprocess under -O, because a test process cannot
+    strip its own assertions -- __debug__ is fixed at interpreter
+    start. Simulating it by patching a flag would test the simulation,
+    not the guard."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-O", "-c",
+         "from core.sqlite_connection import require_assertions_enabled;"
+         " require_assertions_enabled()"],
+        capture_output=True, text=True, cwd=".",
+    )
+
+    assert result.returncode != 0
+    assert "assertions to be enabled" in result.stderr
+    assert "PYTHONOPTIMIZE" in result.stderr, "the message must name the fix"
+
+
+def test_both_entry_points_call_the_guard():
+    # A guard nothing calls is worse than none: it reads as a
+    # guarantee while providing nothing. Asserted structurally, since
+    # the runtime behaviour needs a separate interpreter.
+    assert "require_assertions_enabled()" in open("api/app.py").read()
+    assert "require_assertions_enabled()" in open("scripts/run_sync.py").read()
+
+
+def test_the_refusal_message_names_the_fix():
+    # An operator hitting this at 3am needs to know what to change,
+    # not merely that something is wrong.
+    from core.sqlite_connection import require_assertions_enabled
+
+    source = require_assertions_enabled.__doc__ or ""
+    import inspect
+    body = inspect.getsource(require_assertions_enabled)
+
+    assert "PYTHONOPTIMIZE" in body
+    assert "-O" in body
+    assert source

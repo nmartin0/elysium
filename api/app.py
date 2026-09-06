@@ -96,6 +96,7 @@ from core.auth.session_store import SessionStore
 from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
+from core.sqlite_connection import require_assertions_enabled
 from core.user_directory import UserDirectory
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,12 @@ UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
 
 
 def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
+    # BEFORE anything else, including config loading. Several
+    # data-integrity invariants in this project are enforced by
+    # `assert` and are stripped by -O / PYTHONOPTIMIZE; starting
+    # without them means silent corruption rather than louder failure.
+    require_assertions_enabled()
+
     # docs_url/redoc_url/openapi_url all explicitly None -- a real,
     # confirmed finding, part of the same broader "backend is a
     # kernel, frontend is userspace" audit: FastAPI's own /docs,
