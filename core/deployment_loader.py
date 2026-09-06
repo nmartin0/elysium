@@ -35,6 +35,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
+from core.functions.registry import validate_function_declarations
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.policy_validation import validate_roles
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
@@ -200,6 +201,14 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # every other field below. Uses .get() with a default specifically
     # so this stays outside the strict required-key error handling.
     enabled_tools = config.get("tools", {}).get("enabled", [])
+
+    # Validated HERE, at load, alongside every other deployment config
+    # error. A function declaring an object type the ontology does not
+    # have would otherwise surface mid-conversation, after a user has
+    # already asked a question, as a failure whose message names
+    # nothing useful. Foundry runs its own compatibility checks before
+    # publishing a function for the same reason.
+    validate_function_declarations(enabled_tools, schema_raw.get("object_types", {}))
 
     try:
         deployment_config = DeploymentConfig(

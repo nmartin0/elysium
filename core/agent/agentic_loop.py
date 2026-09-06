@@ -69,14 +69,15 @@ from dataclasses import dataclass
 
 from core.concurrency import ConcurrencyLimiter
 from core.deployment_loader import build_llm_adapter
+from core.functions.interface import Function
+from core.functions.ontology_access import OntologyAccess
+from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.agent_step_prompt import next_step
 from core.llm.interface import LLMAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
-from core.tools.interface import Tool
-from core.tools.registry import get_enabled_tools
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ def _step_signature(step: dict):
         # them in either time.
         return ("get_object", step["object_type"], step["object_id"], frozenset(step["field_names"]))
     if step["step"] == "use_tool":
-        # Tool args can contain UNHASHABLE values (e.g. lists for
+        # Function args can contain UNHASHABLE values (e.g. lists for
         # x_values/y_values) -- frozenset(dict.items()), used for the
         # other step types, would crash on these. JSON serialization
         # (sort_keys=True for determinism) handles nested lists/dicts
@@ -167,7 +168,7 @@ class AgentLoop:
         "rejected_duplicate", "completeness_check", "rejected_invalid_step", "rejected_business_rule",
     })
 
-    def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Tool] | None = None,
+    def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Function] | None = None,
                  write_mediator: WriteMediator | None = None,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
                  max_consecutive_invalid_steps: int = 2):
@@ -202,7 +203,7 @@ class AgentLoop:
         # passing one gets a loop with writes fully disabled, the correct
         # default.
         client = build_llm_adapter(deployment, deployment.step_model)
-        tools = get_enabled_tools(deployment.enabled_tools)
+        tools = get_enabled_functions(deployment.enabled_tools)
         return cls(
             client, mediator, tools=tools,
             write_mediator=write_mediator,
@@ -334,8 +335,24 @@ class AgentLoop:
                     # doesn't exist" above -- distinguishing the two
                     # would let a user probe which tools exist.
                     raise ValueError(f"Unknown tool: {tool_name!r}")
+                # A function that declared object types receives a
+                # capability bound to THIS caller and restricted to
+                # those types -- never a mediator, and never a
+                # UserRecord. One that declared none receives nothing
+                # extra and provably cannot reach the ontology.
+                #
+                # Passed as a reserved keyword rather than a
+                # constructor argument so a function instance stays
+                # stateless and shareable: the caller changes per
+                # request, the instance does not.
+                call_args = dict(step["args"])
+                declared = getattr(tool, "reads_object_types", []) or []
+                if declared:
+                    call_args["ontology"] = OntologyAccess(
+                        self.mediator, user_record, declared
+                    )
                 with self._tool_limiters[tool.name].limit():
-                    result = tool.run(**step["args"])
+                    result = tool.run(**call_args)
             elif step["step"] == "propose_action":
                 # The NAMED-action-type proposal path -- see
                 # core/ontology/write_mediator.py's propose_action() for

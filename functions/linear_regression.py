@@ -22,9 +22,14 @@ model is calling it.
 """
 
 
-class LinearRegressionTool:
+class LinearRegressionFunction:
     name = "linear_regression"
     max_concurrent_calls = None  # pure computation, zero shared state
+    # Declares NO object types, so it receives no ontology access at
+    # all and provably cannot reach data -- the zero-ambient-authority
+    # property, now visible in the declaration rather than trusted in
+    # the implementation.
+    reads_object_types: list[str] = []
     description = (
         "Fits a least-squares line to paired (x, y) numeric data and "
         "returns slope, intercept, and R-squared (goodness of fit, 0 to 1)."

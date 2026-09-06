@@ -1,6 +1,6 @@
 """
 Tests for per-user tool authorization in core/agent/agentic_loop.py's
-AgentLoop._execute_step(). Uses LinearRegressionTool directly (real,
+AgentLoop._execute_step(). Uses LinearRegressionFunction directly (real,
 not mocked) plus a real DataMediator/AgentLoop, but mocks the LLM
 client itself -- these tests are about the AUTHORIZATION gate around a
 tool call, not about the model's own step-selection.
@@ -14,8 +14,8 @@ from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
+from functions.linear_regression import LinearRegressionFunction
 from tests.conftest import scripted_llm_client
-from tools.linear_regression import LinearRegressionTool
 
 TEST_USERS = {
     "alice": {"org_id": "org-a", "role": "authorized"},
@@ -40,7 +40,7 @@ def mediator(test_db_path, test_schema) -> DataMediator:
 
 
 def _loop_with_mocked_llm(mediator, scripted_steps):
-    return AgentLoop(scripted_llm_client(scripted_steps), mediator, tools=[LinearRegressionTool()])
+    return AgentLoop(scripted_llm_client(scripted_steps), mediator, tools=[LinearRegressionFunction()])
 
 
 def test_authorized_user_can_use_tool(mediator):

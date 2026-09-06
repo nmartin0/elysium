@@ -34,10 +34,10 @@ import logging
 
 import requests
 
+from core.functions.interface import Function
 from core.llm.interface import LLMAdapter
 from core.ontology.schema import is_searchable_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation, evaluate_submission_criteria
-from core.tools.interface import Tool
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +134,9 @@ def _describe_schema(visible_schema: dict) -> str:
     )
 
 
-def _describe_tools(tools: list[Tool]) -> str:
+def _describe_tools(tools: list[Function]) -> str:
     # Renders available tools into prompt text, generated from each
-    # Tool's own name/description/parameters -- never hardcoded, so
+    # Function's own name/description/parameters -- never hardcoded, so
     # this works unchanged for any deployment's enabled tool set.
     blocks = []
     for tool in tools:
@@ -284,7 +284,7 @@ def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
     return "\n".join(blocks)
 
 
-def _build_system_prompt(visible_schema: dict, tools: list[Tool], writes_enabled: bool,
+def _build_system_prompt(visible_schema: dict, tools: list[Function], writes_enabled: bool,
                           visible_action_types: dict, gathered: list[dict]) -> str:
     tools_section = ""
     if tools:
@@ -375,7 +375,7 @@ a list and silently skip others.
 
 
 def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
-              gathered_so_far: list[dict], tools: list[Tool], writes_enabled: bool,
+              gathered_so_far: list[dict], tools: list[Function], writes_enabled: bool,
               visible_action_types: dict) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that

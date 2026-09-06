@@ -102,7 +102,7 @@ root_packages = ["core", "api", "adapters"]
 # must never know which concrete backend it's actually talking to
 # (dependency inversion -- core defines the interfaces adapters/ own
 # files implement, e.g. core.ontology.interface, core.llm.interface,
-# core.tools.interface, core.memory.interface).
+# core.functions.interface, core.memory.interface).
 #
 # Confirmed directly against this project's REAL, current imports
 # before writing this (not assumed): api and adapters genuinely never
@@ -127,20 +127,20 @@ ignore_imports = [
 # directly against this project's actual import graph before writing
 # this list (not designed from memory or assumption): core.agent (the
 # LLM-driven agentic loop) sits at the top, orchestrating everything
-# else; core.tools and core.intermediate_layer are true leaves (never
+# else; core.functions and core.intermediate_layer are true leaves (never
 # import from any other core.X submodule). The middle ordering
 # (llm, memory, ontology) reflects real, confirmed dependencies --
-# core.llm imports core.ontology and core.tools; core.memory imports
+# core.llm imports core.ontology and core.functions; core.memory imports
 # core.intermediate_layer and core.ontology; core.ontology imports
 # core.intermediate_layer. core.auth has no real position requirement
 # of its own (nothing else in core/ depends on it directly -- its
 # only real consumer within core/ is core.user_directory, and
 # ultimately api/ itself for the login/session endpoints), placed
-# here as a leaf alongside core.intermediate_layer and core.tools.
+# here as a leaf alongside core.intermediate_layer and core.functions.
 [[tool.importlinter.contracts]]
-name = "core/ internal layering (agent orchestrates llm/memory/ontology/tools)"
+name = "core/ internal layering (agent orchestrates llm/memory/ontology/functions)"
 type = "layers"
-layers = ["agent", "mirror", "llm", "memory", "ontology", "auth", "intermediate_layer", "tools"]
+layers = ["agent", "mirror", "llm", "memory", "ontology", "auth", "intermediate_layer", "functions"]
 containers = ["core"]
 exhaustive = true
 exhaustive_ignores = ["adapter_roles", "concurrency", "config", "deployment_loader", "internal_storage", "logging_config", "pending_write_store", "sqlite_connection", "user_directory"]

@@ -146,6 +146,47 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
+- **Function versioning is deliberately absent, with a real trigger for
+  revisiting.** Foundry publishes functions with SemVer and lets
+  applications depend on version ranges, because their functions live
+  in separate code repositories and are consumed by independently
+  deployed applications -- "Workshop, Actions, and Automate can now
+  depend on functions at version ranges", and a consumer that picks up
+  a breaking change is told to "pin your Function dependency to the
+  last working version". That is a DISTRIBUTED DEPENDENCY problem: the
+  function author and the application author are different people on
+  different release cadences, and nobody can update both atomically.
+
+  Elysium has no such problem. Functions are Python modules inside the
+  deployment, shipped with it, called by an agent loop in the same
+  codebase, and already versioned by git at the deployment level.
+  Change a signature and you change its one caller in the same commit.
+  Adding SemVer would mean maintaining metadata nothing reads.
+
+  **REVISIT when any PERSISTED artifact references a function by
+  name** -- a saved chart, dashboard, or derived column. That
+  reference outlives the deployment that created it, which
+  reintroduces exactly the independent-cadence problem versioning
+  exists to solve. Foundry's own function-backed columns are this
+  pattern, so it is a plausible piece of UI work rather than a
+  hypothetical.
+
+- **Functions cannot make ontology edits, deliberately.** Foundry
+  allows it, but routes function edits through ACTIONS, so their
+  validation and approval still apply. Elysium already has that path
+  in propose_action(); a function editing directly would bypass
+  submission criteria and the confirm step. Revisit only alongside a
+  design for how a function-authored edit would be reviewed.
+
+- **Functions cannot call external systems.** Foundry supports this
+  explicitly ("querying external systems to enrich objects in the
+  Ontology through external functions"). Ours cannot, and that is the
+  same zero-ambient-authority property that makes an LLM-invoked
+  function safe here -- a function reaches only what its declared
+  object types allow, under the calling user's own authorization.
+  Adding network access deserves its own decision, not a quiet
+  extension of this one.
+
 - **Per-object MAC resolution is an N+1.** Measured while building the
   aggregation primitives: `search_object()` on 2,004 objects costs
   4,021 SQL queries on its own, because `check_access()` resolves each
