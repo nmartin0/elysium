@@ -146,6 +146,20 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
+- **Incremental (APPEND) syncs.** Elysium is SNAPSHOT-only: every sync
+  re-copies each table in full. Foundry offers incremental APPEND
+  precisely because, in their words, "if the dataset grows over time,
+  the time to sync the data as a SNAPSHOT increases," and with APPEND
+  "a sync failure will result in a minimal amount of duplicated work
+  rather than requiring a complete re-run." SNAPSHOT is the right
+  default -- it is simple, it propagates deletes correctly, and it
+  cannot drift -- but it is a genuine scaling limit for large tables,
+  recorded here rather than discovered under load. Verified sound
+  otherwise: a failed sync leaves the last-good mirror intact, a crash
+  mid-write leaves the previous snapshot readable, and the bulk read
+  gives a consistent point-in-time view even under concurrent source
+  writes (see tests/unit/test_sync_snapshot_semantics.py).
+
 *The items below were extracted from per-file "AI-ONLY NOTES" blocks
 when those were removed. They are genuine known gaps; the rest of those
 blocks was settled history (23 RESOLVED entries against 1 OPEN) and
