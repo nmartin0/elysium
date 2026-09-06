@@ -101,3 +101,38 @@ def test_the_lock_is_released_so_a_later_sync_still_runs(deployment):
 
     assert second.returncode == 0
     assert "5/5 tables synced successfully" in stdout
+
+
+def test_a_hard_killed_holder_leaves_no_stale_lock(deployment, tmp_path):
+    # THE property that justified flock over a PID file, verified
+    # rather than asserted in a comment. A process killed with SIGKILL
+    # runs no cleanup at all -- the kernel releases the lock, so the
+    # next sync proceeds normally. A hand-rolled PID file would be left
+    # behind here and would block every subsequent run until someone
+    # removed it by hand.
+    import signal
+    import time
+
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            f"import fcntl, time; f = open({str(deployment / 'sync.lock')!r}, 'w'); "
+            "fcntl.flock(f, fcntl.LOCK_EX); print('held', flush=True); time.sleep(60)",
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    holder.stdout.readline()
+
+    blocked = _run_sync(deployment)
+    _out, err = blocked.communicate(timeout=120)
+    assert "another sync is already running" in err
+
+    holder.send_signal(signal.SIGKILL)
+    holder.wait(timeout=10)
+    time.sleep(0.3)
+
+    recovered = _run_sync(deployment)
+    stdout, _stderr = recovered.communicate(timeout=120)
+    assert "5/5 tables synced successfully" in stdout

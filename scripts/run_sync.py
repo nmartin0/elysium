@@ -49,10 +49,47 @@ Run from the project root:
 
 import fcntl
 import sys
+from contextlib import contextmanager
+from pathlib import Path
 
 from core.deployment_loader import load_deployment_bundle, resolve_runtime_paths
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.sync_targets import resolve_sync_targets
+
+
+@contextmanager
+def _single_writer(lock_path: Path):
+    """Holds an exclusive lock for the duration of a sync, or yields
+    False if another sync already holds it.
+
+    Iceberg uses optimistic concurrency: a commit carries "the table's
+    metadata is version N", and a second writer that started from the
+    same N is rejected rather than allowed to clobber the first. That
+    design is correct -- it is what prevents a lost overwrite. But
+    PyIceberg surfaces the rejection as a hard exception its retry loop
+    cannot resolve for a full-table overwrite (Java Iceberg retries
+    transparently; PyIceberg's equivalent is still open upstream).
+    Confirmed by running two syncs at once: one committed, the other
+    failed with "Added data files were found matching the filter".
+
+    Genuinely reachable rather than hypothetical -- INSTALL.md tells
+    operators to schedule syncs with cron or a systemd timer, and
+    nothing stops a slow run from overlapping the next scheduled one.
+
+    flock rather than a PID file: it is released automatically when the
+    process dies, so a crash leaves nothing stale to clean up.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def run_sync(runtime_paths=None) -> int:
@@ -62,47 +99,24 @@ def run_sync(runtime_paths=None) -> int:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
-    # SINGLE WRITER, enforced with a real OS lock rather than by
-    # convention. Iceberg uses optimistic concurrency: a commit carries
-    # "the table's metadata is version N", and a second writer starting
-    # from the same N is REJECTED rather than allowed to clobber. That
-    # is correct behaviour, but PyIceberg surfaces it as a hard
-    # ValidationException that its retry loop cannot resolve for a
-    # full-table overwrite -- confirmed directly by running two syncs
-    # concurrently, where one succeeded and the other failed with
-    # "Added data files were found matching the filter".
-    #
-    # This is genuinely reachable, not hypothetical: INSTALL.md tells
-    # operators to schedule syncs with cron or a systemd timer, and
-    # nothing stops a slow run from overlapping the next scheduled one.
-    #
-    # flock is advisory but process-wide and released automatically if
-    # the process dies -- no stale lock file to clean up after a crash,
-    # which a hand-rolled PID file would leave behind. A second sync
-    # exits immediately and cleanly rather than blocking: the run it
-    # collided with is already copying the same data, so waiting would
-    # only queue redundant work.
-    lock_path = runtime_paths.data_dir / "sync.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_file = open(lock_path, "w")
-    try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        print(
-            "another sync is already running -- exiting without doing anything",
-            file=sys.stderr,
-        )
-        lock_file.close()
-        return 0
+    with _single_writer(runtime_paths.data_dir / "sync.lock") as acquired:
+        if not acquired:
+            # Exits rather than waiting: the run this collided with is
+            # already copying the same data, so queueing would only
+            # duplicate work. Exit code 0 -- a skipped run is a normal
+            # outcome, not something a scheduler should alert on.
+            print(
+                "another sync is already running -- exiting without doing anything",
+                file=sys.stderr,
+            )
+            return 0
 
-    try:
-        # The read adapters specifically -- load_deployment_bundle()'s own
-        # third return value is the WRITE set, deliberately ignored here.
-        # A sync only ever reads from the source.
+        # The read adapters specifically -- load_deployment_bundle()'s
+        # own third return value is the WRITE set, deliberately ignored
+        # here. A sync only ever reads from the source.
         config, mediator, _write_adapters = load_deployment_bundle(
             runtime_paths.config_dir, runtime_paths.data_dir
         )
-
         targets = resolve_sync_targets({"object_types": config.schema})
         sync = IcebergMirrorSync(runtime_paths.data_dir / "mirror", mediator.adapters)
 
@@ -111,14 +125,14 @@ def run_sync(runtime_paths=None) -> int:
             label = f"{target.silo_name}.{target.table_name}"
             try:
                 result = sync.sync_table(
-                    target.silo_name, target.table_name, target.id_column, target.columns,
-                    target.column_types,
+                    target.silo_name, target.table_name, target.id_column,
+                    target.columns, target.column_types,
                 )
             except Exception as exc:
                 # Per-table, deliberately -- see this module's docstring.
-                # The exception itself is printed rather than swallowed into
-                # a generic message: this is an operator-facing tool, and
-                # the real cause is exactly what an operator needs.
+                # The exception itself is printed rather than swallowed
+                # into a generic message: this is an operator-facing
+                # tool, and the real cause is what an operator needs.
                 failures += 1
                 print(f"FAILED  {label}: {exc}", file=sys.stderr)
                 continue
@@ -126,9 +140,6 @@ def run_sync(runtime_paths=None) -> int:
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
         return failures
-    finally:
-        fcntl.flock(lock_file, fcntl.LOCK_UN)
-        lock_file.close()
 
 
 if __name__ == "__main__":
