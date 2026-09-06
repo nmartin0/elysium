@@ -1054,6 +1054,47 @@ class DataMediator:
                 allowed.append(target_id)
         return allowed
 
+    def edit_history(self, user_record: UserRecord, object_type: str, object_id: Any) -> list[dict]:
+        """Every applied write to one object, newest first, if the
+        caller may read that object.
+
+        Foundry's own rule, quoted because it settles the security
+        question cleanly: "Users who have access to the current state
+        of an object (object with the same primary key) can access the
+        entire history of the object." So authorization is the SAME
+        check as reading the object itself -- no separate grant, and no
+        way to learn about an object's past that you could not learn
+        about its present.
+
+        A caller who cannot read the object gets an empty list, not an
+        error: the same uniform denial every other read path uses, so
+        the response never distinguishes "no history" from "not
+        allowed" from "no such object".
+
+        CHANGED FIELDS ARE FILTERED per-field, not just per-object. A
+        caller granted read:Customer but not read:Customer.email must
+        not learn that the email changed, or to what, by reading
+        history -- that would be a genuine way around field-level RBAC.
+        An entry whose changes are entirely ungranted still appears,
+        with empty changes, because the FACT that someone edited this
+        object at a given time is exactly what an audit trail is for.
+        """
+        if self.write_log is None:
+            return []
+        if not check_access(self, user_record, self.roles, object_type, object_id,
+                            f"read:{object_type}"):
+            return []
+
+        readable = {
+            field_name
+            for field_name in (self.schema.get(object_type) or {}).get("fields", {})
+            if authorize(user_record, self.roles, f"read:{object_type}.{field_name}")
+        }
+        return [
+            {**entry, "changes": {k: v for k, v in entry["changes"].items() if k in readable}}
+            for entry in self.write_log.edit_history(object_type, object_id)
+        ]
+
     def count_objects(self, user_record: UserRecord, object_type: str, criteria: dict) -> int:
         """How many objects of this type the CALLER can see, matching
         criteria.

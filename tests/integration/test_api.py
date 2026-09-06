@@ -1992,3 +1992,87 @@ def test_ordering_stays_consistent_across_pages(client):
         r["fields"]["name"] for r in second["results"]
     ]
     assert names == sorted(names)
+
+
+# --- Edit history (Point 14). Foundry's Edit History widget answers
+# "what changed, by whom, and when?" over an immutable audit trail.
+# Authorization follows their rule directly: "Users who have access to
+# the current state of an object can access the entire history."
+
+
+def _record_edit(client, changes, description, user_id="alice"):
+    """Writes a real, applied log entry against the deployment's own
+    write log. The mediator holds a READER (correctly -- the read path
+    must not be able to write), so this constructs a writer over the
+    same database, exactly as the app's own WriteMediator does."""
+    from core.ontology.write_log import WriteLogWriter
+
+    writer = WriteLogWriter(client.app.state.mediator.write_log.db_path)
+    writer.mark_applied(
+        writer.log_pending_update(
+            "Customer", "cust_001", changes, {}, user_id, description
+        )
+    )
+
+
+def test_object_history_is_empty_for_an_unedited_object(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.get("/api/objects/Customer/cust_001/history")
+
+    assert response.status_code == 200
+    assert response.json() == {"entries": [], "total": 0, "next_page_token": None}
+
+
+def test_object_history_returns_an_edit(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+    _record_edit(client, {"name": "Ada v2"}, "renamed")
+
+    body = client.get("/api/objects/Customer/cust_001/history").json()
+
+    assert body["total"] == 1
+    assert body["entries"][0]["user_id"] == "alice"
+    assert body["entries"][0]["changes"] == {"name": "Ada v2"}
+
+
+def test_object_history_denies_a_caller_who_cannot_read_the_object(client):
+    # Access to the history follows access to the object -- and the
+    # denial is uniform, so it looks identical to "no history".
+    client.app.state.user_directory.create_user("east", "correct-pw", "us-east", "customer_service")
+    _login(client, "east", "correct-pw")
+    _record_edit(client, {"name": "Ada v2"}, "renamed")
+
+    body = client.get("/api/objects/Customer/cust_001/history").json()
+
+    assert body["entries"] == []
+    assert body["total"] == 0
+
+
+def test_object_history_requires_authentication(client):
+    response = client.get("/api/objects/Customer/cust_001/history")
+
+    assert response.status_code in (401, 403)
+
+
+def test_object_history_pages(client):
+    # An object with a long history is exactly what a timeline widget
+    # scrolls through, so it uses the same paging as search rather than
+    # a second scheme.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+    for index in range(12):
+        _record_edit(client, {"name": f"v{index}"}, f"edit {index}")
+
+    first = client.get("/api/objects/Customer/cust_001/history?page_size=5").json()
+    second = client.get(
+        f"/api/objects/Customer/cust_001/history?page_size=5"
+        f"&page_token={first['next_page_token']}"
+    ).json()
+
+    assert first["total"] == 12
+    assert len(first["entries"]) == 5
+    assert len(second["entries"]) == 5
+    first_ids = {entry["id"] for entry in first["entries"]}
+    assert not (first_ids & {entry["id"] for entry in second["entries"]})

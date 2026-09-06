@@ -416,6 +416,47 @@ class WriteLogReader(InternalReadAdapter):
             entry["changes"].update(json.loads(row["changes"]))
         return list(merged.values())
 
+    def edit_history(self, object_type: str, object_id: Any) -> list[dict]:
+        """Every applied write to one object, newest first.
+
+        Foundry's Edit History widget, in miniature: an "immutable
+        audit trail of all changes made to ontology objects", answering
+        "what changed, by whom, and when?"
+
+        APPLIED ONLY. A pending entry is a write still in flight, not a
+        thing that happened -- showing it as history would report a
+        change that may yet be rejected. A rejected write leaves no
+        entry at all, so nothing is hidden by this filter.
+
+        Deliberately NOT deletable or editable through any path.
+        Foundry is explicit that changelog records "cannot be deleted
+        or modified by end users, even if the corresponding ontology
+        edits are reverted or deleted" -- and the same holds here for a
+        simpler reason: this log IS the write mechanism, so removing
+        entries would rewrite what the read path believes about the
+        object.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT id, operation, changes, user_id, description, created_at, batch_id "
+                "FROM write_log WHERE object_type = ? AND object_id = ? AND status = 'applied' "
+                "ORDER BY created_at DESC, id DESC",
+                (object_type, str(object_id)),
+            ).fetchall()
+
+        return [
+            {
+                "id": row["id"],
+                "operation": row["operation"],
+                "changes": json.loads(row["changes"]),
+                "user_id": row["user_id"],
+                "description": row["description"],
+                "created_at": row["created_at"],
+                "batch_id": row["batch_id"],
+            }
+            for row in rows
+        ]
+
     def deleted_object_ids(self, object_type: str) -> set:
         """Every object of this type whose latest write is a delete.
 

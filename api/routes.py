@@ -344,6 +344,25 @@ class SearchAroundResponse(BaseModel):
     total: int
 
 
+class EditHistoryEntryResponse(BaseModel):
+    id: str
+    operation: str
+    changes: dict[str, Any]
+    user_id: str
+    description: str
+    created_at: str
+    # Present when the edit was part of a multi-object action, so a UI
+    # can group the writes that happened together -- Foundry links a
+    # single action log to every object it edited for the same reason.
+    batch_id: str | None = None
+
+
+class EditHistoryResponse(BaseModel):
+    entries: list[EditHistoryEntryResponse]
+    total: int
+    next_page_token: str | None = None
+
+
 class ConfirmWriteRequest(BaseModel):
     approved: bool
 
@@ -1158,4 +1177,33 @@ def search_around_route(object_type: str, body: SearchAroundRequest, request: Re
     mediator = request.app.state.mediator
     ids = mediator.search_around(current_user, object_type, body.criteria, body.link_field)
     return {"ids": ids, "total": len(ids)}
+
+@router.get("/objects/{object_type}/{object_id}/history", response_model=EditHistoryResponse)
+def object_history_route(object_type: str, object_id: str, request: Request,
+                          page_size: int | None = None, page_token: str | None = None,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # Foundry's Edit History widget, answering "what changed, by whom,
+    # and when?" over the write log this project already keeps.
+    #
+    # Authorization is the SAME check as reading the object, following
+    # Foundry directly: "Users who have access to the current state of
+    # an object can access the entire history of the object." A caller
+    # who cannot read it gets an empty list rather than an error --
+    # uniform denial, so the response never distinguishes "no history"
+    # from "not allowed" from "no such object".
+    #
+    # Paged with the same machinery as search, rather than a second
+    # scheme: an object with a long edit history is exactly what a
+    # timeline widget scrolls through.
+    mediator = request.app.state.mediator
+    entries = mediator.edit_history(current_user, object_type, object_id)
+
+    start, size = _page_bounds(page_size, page_token, len(entries))
+    page = entries[start:start + size]
+    next_start = start + size
+    return {
+        "entries": page,
+        "total": len(entries),
+        "next_page_token": str(next_start) if next_start < len(entries) else None,
+    }
 

@@ -58,6 +58,7 @@ data_freshness_route
 count_objects_route
 aggregate_objects_route
 search_around_route
+object_history_route
 
 # --- unittest.mock attribute assignment -- `some_mock.return_value = x`
 # / `some_mock.side_effect = fn` are how tests configure a MagicMock;
@@ -131,3 +132,7 @@ display_name
 plural_display_name
 total
 next_page_token
+entries
+batch_id
+created_at
+operation
