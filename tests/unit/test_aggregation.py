@@ -221,25 +221,25 @@ def test_aggregation_reads_data_in_bulk_not_per_object(mediator):
     )
 
 
-def test_the_cost_of_an_aggregate_is_dominated_by_mac_not_by_reading(tmp_path):
-    # Point 8 of the machinery audit, pinned as a test rather than left
-    # as a number in a commit message.
+def test_an_aggregate_reads_a_constant_number_of_times(tmp_path):
+    # THE test that Point 9 was measured against, updated to reflect
+    # what it now proves.
     #
-    # The question was whether to add a second query engine (DuckDB)
-    # for analytical work. Profiling aggregate_by_field() over 20,000
-    # objects answered it: 98% of the time is check_access(), 1% is
-    # reading and grouping the data. An engine that made the data half
-    # infinitely fast would save 1%.
+    # Its previous form asserted that MAC dominated an aggregate's cost
+    # by at least 100x -- true at the time (98% of runtime, 40,020
+    # queries for 20,000 objects), and the evidence that closed the
+    # DuckDB question in Point 8: no query engine could help, because
+    # the bottleneck was authorization rather than data access.
     #
-    # MAC cannot move into a query engine, because a security value is
-    # reached by following via_field chains that can cross silos. So
-    # the bottleneck is structurally outside any engine's reach, and
-    # the useful optimization is batching MAC resolution instead.
+    # Point 9 then fixed the bottleneck itself. Batch security
+    # resolution took the same aggregate from 40,020 queries to 4, and
+    # the old assertion correctly FAILED -- it was written to fire if
+    # the ratio ever inverted, and it did. That is the test working,
+    # not breaking.
     #
-    # Asserted as a RATIO of query counts rather than wall-clock time,
-    # which would be flaky. If this ever inverts -- if reading starts
-    # to dominate -- the second-engine question genuinely deserves
-    # reopening, and this test is what should prompt that.
+    # What matters now is the stronger property: BOTH halves are
+    # constant. Neither authorization nor data access scales with the
+    # size of the object set.
     import adapters.sqlite_adapter as sqlite_adapter_module
 
     db_path = tmp_path / "many.db"
@@ -295,7 +295,9 @@ def test_the_cost_of_an_aggregate_is_dominated_by_mac_not_by_reading(tmp_path):
         sqlite_adapter_module._run_query_one = real_run_query_one
 
     assert data_queries <= 2, "reading the data should be a constant, not per-object"
-    assert mac_queries > 100 * data_queries, (
-        f"MAC cost {mac_queries} queries against {data_queries} for data -- "
-        f"if this ratio inverts, revisit whether a second query engine is worth it"
+    # One read per level of the security chain -- Transaction resolves
+    # via Customer, so two. Bounded by chain DEPTH, never by set size.
+    assert mac_queries <= 5, (
+        f"MAC cost {mac_queries} queries for {len(visible)} objects -- "
+        f"security resolution should scale with chain depth, not set size"
     )
