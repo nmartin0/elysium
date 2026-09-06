@@ -12,16 +12,17 @@ DataMediator resolves its adapter through _adapter_for() or
 _resolve_shared_storage(), so swapping WHICH adapters the mediator
 holds is genuinely the whole cutover. No read logic changes at all.
 
-QUERIES VIA PYICEBERG, NOT DUCKDB'S ICEBERG EXTENSION -- a real,
-verified choice rather than a limitation worked around. DuckDB can
-genuinely write to and read Iceberg (v1.4.0+), but its own docs are
-explicit that catalog-managed access -- the full feature set --
-requires attaching an Iceberg REST catalog (Polaris, Lakekeeper, S3
-Tables), and this project deliberately uses a SQLite catalog to avoid
-running a separate catalog SERVICE. PyIceberg reads the catalog
-natively and hands back an Arrow table; DuckDB can query THAT
-directly if a future caller needs real SQL over it (verified
-directly). So nothing here is blocked by that constraint.
+QUERIES VIA PYICEBERG, and no second query engine. DuckDB was
+considered for the read side and rejected after measuring rather than
+assuming: PyIceberg already serves every read this adapter performs,
+with real predicate pushdown (row_filter) and column projection
+(selected_fields). The one operation Iceberg's expression language
+cannot express is substring search, done in Python below -- measured
+at 16ms against 12ms in DuckDB over 100,000 rows, with Python faster
+at smaller sizes where DuckDB's per-query overhead dominates. A 4ms
+difference does not buy a dependency, a second engine, and two ways to
+express every read. See ROADMAP.md's Phase 4 section for the full
+measurements.
 
 PUSHDOWN IS REAL, not a scan-everything-then-filter fallback --
 verified directly before relying on it: PyIceberg's own scan()

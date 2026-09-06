@@ -647,6 +647,30 @@ exactly the infrastructure already ruled out as disproportionate. The
 practical division therefore stands -- PyIceberg writes, DuckDB reads
 -- but for this real reason, not because DuckDB lacks the capability.
 
+**DECIDED: DuckDB is NOT adopted, and the "DuckDB reads" half of that
+division is dropped.** Point 4 of the machinery audit went looking for
+what DuckDB would actually do, and found nothing it needs to. All five
+methods MirrorReadAdapter implements are already served by PyIceberg
+with real predicate pushdown and column projection. The one genuinely
+Python-side operation is substring search, which Iceberg's expression
+language cannot express -- so it was measured rather than assumed.
+
+Measured properly (both paths warmed, best of three, same Arrow table):
+100,000 rows searched across two columns takes 16ms in Python and 12ms
+in DuckDB. At 1,000 and 10,000 rows Python is FASTER, because DuckDB's
+per-query overhead dominates. A first, careless measurement suggested a
+9x DuckDB win; that was a cold DuckDB against an unwarmed Python path,
+with the Arrow-to-Python conversion counted on one side only, and it is
+recorded here because it is exactly the kind of number that would
+otherwise have justified a dependency on its own.
+
+A 4ms difference at 100,000 rows does not justify a new dependency, a
+second query engine, two ways to express every read, or the
+Arrow-to-DuckDB registration on every call. If substring search ever
+becomes a real bottleneck against real data, the honest first move is
+an index or a search-specific column, not a second engine. Revisit with
+measurements, not by default.
+
 ### External writeback: off by default, real precedent, stricter than Foundry's own model
 
 A real, separate design track from Phases 1-4 above (only depends on
@@ -734,13 +758,17 @@ table itself exist.
 
 ### The real, settled tool choices, and why
 
-**DuckDB** (confirmed directly: MIT, from the official `duckdb/duckdb`
-repository and its original creators, CWI) queries the local mirror at
-read time -- genuinely fast for the aggregation-heavy work already
-planned (see "Backend foundation work" above), and this is the SAME
-tool already recommended there, not a second, separate choice. READ
-side only, for a real, verified reason rather than a capability limit
--- see "A real constraint on the DuckDB side" under Phase 4 above.
+**DuckDB -- considered and REJECTED.** It was listed here as the
+mirror's read-time query engine before anything needed one. Point 4 of
+the machinery audit checked what it would actually do and found
+PyIceberg already serves every read the mirror performs, with real
+predicate pushdown and column projection. The one operation Iceberg
+cannot express is substring search, and measured properly that is
+16ms in Python versus 12ms in DuckDB over 100,000 rows -- with Python
+FASTER at smaller sizes, where DuckDB's per-query overhead dominates.
+Not adopted; see the decision under Phase 4 above for the full
+measurements, including a careless first result that would have
+justified it wrongly.
 
 **PyIceberg** (Apache License 2.0) manages the mirror's own versioned
 storage specifically. Confirmed directly, not assumed, before

@@ -253,3 +253,51 @@ def test_the_mirror_serves_the_last_sync_not_later_source_changes(adapters, sour
     conn.close()
 
     assert mirror.get_raw_field("Customer", "cust_001", "name", CUSTOMER_CONFIG) == "Ada Okafor"
+
+
+def test_substring_search_reads_only_the_searched_columns(tmp_path):
+    # Point 4 of the machinery audit rejected adding DuckDB as a second
+    # query engine, on the grounds that the one operation Iceberg cannot
+    # push down -- substring search -- is fast enough in Python. That
+    # argument only holds while this method keeps PROJECTING: it must
+    # read the id column plus the searched columns, never whole rows.
+    #
+    # Asserted structurally (which columns are fetched) rather than by
+    # timing, which would be flaky. If someone later widens this to a
+    # full-row scan, the DuckDB decision genuinely deserves revisiting,
+    # and this test is what should force that conversation.
+    path = tmp_path / "wide.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE people (person_id TEXT PRIMARY KEY, name TEXT, "
+        "bio TEXT, unrelated_a TEXT, unrelated_b TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO people VALUES (?, ?, ?, ?, ?)",
+        [(f"p{i}", f"Person {i}", f"bio {i}", "x" * 50, "y" * 50) for i in range(200)],
+    )
+    conn.commit()
+    conn.close()
+
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": path})})
+    sync.sync_table(
+        "primary", "people", "person_id",
+        ["person_id", "name", "bio", "unrelated_a", "unrelated_b"],
+    )
+    adapter = MirrorReadAdapter(sync._catalog, "primary")
+
+    scanned_fields = {}
+    real_scan = adapter._scan
+
+    def recording_scan(table_name, selected_fields, row_filter=None):
+        scanned_fields["fields"] = selected_fields
+        return real_scan(table_name, selected_fields, row_filter)
+
+    adapter._scan = recording_scan
+    config = {"storage": {"table": "people", "id_column": "person_id"}}
+    matches = adapter.find_ids_matching_text("Person", ["name"], "Person 42", config)
+
+    assert matches == ["p42"]
+    assert set(scanned_fields["fields"]) == {"person_id", "name"}, (
+        "substring search must project, not read whole rows"
+    )
