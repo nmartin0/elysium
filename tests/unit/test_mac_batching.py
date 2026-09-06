@@ -235,3 +235,134 @@ def test_security_resolution_scales_with_chain_depth_not_set_size(tmp_path):
         f"{len(small_ids)} objects cost {small_queries} queries but "
         f"{len(large_ids)} cost {large_queries} -- security resolution is still per-object"
     )
+
+
+# --- The cache under concurrent requests ---------------------------------
+#
+# The cache lives on a DataMediator shared across requests. The
+# argument for that being safe -- a security value is a property of the
+# OBJECT, not the caller, so a cross-request hit returns the same
+# correct answer -- was written down and never tested.
+#
+# It was also INCOMPLETE. It reasoned about whether the cached VALUE is
+# right and said nothing about whether the lookup itself can fail. The
+# original code was `if key in cache: return cache[key]`, and another
+# request's prefetch clearing between those two lines raises KeyError.
+# Confirmed by forcing that exact interleaving; the GIL makes it rare,
+# not impossible.
+
+
+def test_concurrent_requests_from_different_users_get_their_own_answers(tmp_path):
+    # THE property the shared cache rests on. Two users hammering one
+    # mediator must each see only their own objects, however the cache
+    # interleaves between them.
+    import threading
+
+    mediator = _mediator(tmp_path, extra_transactions=40)
+    results: dict = {"west": [], "east": [], "errors": []}
+    stop = threading.Barrier(2)
+
+    def hammer(user, key):
+        try:
+            stop.wait()
+            for _ in range(25):
+                results[key].append(tuple(sorted(map(str, mediator.search_object(user, "Transaction", {})))))
+        except Exception as exc:
+            results["errors"].append(f"{type(exc).__name__}: {exc}")
+
+    threads = [
+        threading.Thread(target=hammer, args=(WEST, "west")),
+        threading.Thread(target=hammer, args=(EAST, "east")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert results["errors"] == [], f"concurrent access raised: {results['errors']}"
+    # Every one of a user's reads returned the SAME set -- no request
+    # ever saw the other user's cache bleed into its answer.
+    assert len(set(results["west"])) == 1
+    assert len(set(results["east"])) == 1
+    assert results["west"][0] != results["east"][0]
+
+
+def test_a_cache_cleared_mid_lookup_does_not_raise(tmp_path):
+    # The check-then-get race, FORCED rather than hoped for. The GIL
+    # makes this interleaving rare, so a probabilistic test passes
+    # against the broken code -- which is exactly how it went
+    # unnoticed. Three attempts at provoking it by timing found
+    # nothing; forcing the order found it immediately.
+    import threading
+
+    checked = threading.Event()
+
+    class RacingCache(dict):
+        """Signals that a lookup has begun, so a clear lands before it
+        completes.
+
+        Intercepts BOTH `in` and `.get`, because the two code shapes
+        use different ones -- and a first version of this test hooked
+        only `.get`, so the old check-then-get shape never signalled
+        and the control passed against broken code. The whole point is
+        to catch that shape.
+        """
+
+        def __contains__(self, key):
+            present = super().__contains__(key)
+            checked.set()
+            cleared.wait(2)
+            return present
+
+        def get(self, key, default=None):
+            checked.set()
+            cleared.wait(2)
+            return super().get(key, default)
+
+    cleared = threading.Event()
+    mediator = _mediator(tmp_path)
+    mediator._security_value_cache = RacingCache(
+        {("Customer", "cust_001"): "us-west"}
+    )
+
+    def clearer():
+        checked.wait(2)
+        mediator._security_value_cache.clear()
+        cleared.set()
+
+    thread = threading.Thread(target=clearer)
+    thread.start()
+    try:
+        # Must not raise: the old `if key in cache: return cache[key]`
+        # would have, because the key vanished between the two steps.
+        mediator._get_security_value("Customer", "cust_001")
+    finally:
+        thread.join()
+
+
+def test_a_cached_none_is_not_treated_as_a_cache_miss(tmp_path):
+    # None is a REAL security value: the object has none, so it is
+    # visible to nobody. A sentinel-less `.get()` would treat it as
+    # absent, sending every such object down the slow path forever and
+    # making a genuine None indistinguishable from no entry at all.
+    mediator = _mediator(tmp_path)
+    mediator._security_value_cache[("Customer", "phantom")] = None
+
+    assert mediator._get_security_value("Customer", "phantom") is None
+
+
+def test_the_cached_value_does_not_depend_on_who_populated_it(tmp_path):
+    # The argument itself, finally asserted: a security value is a
+    # property of the object. Whoever warmed the cache, the answer is
+    # the same.
+    mediator = _mediator(tmp_path)
+
+    mediator.search_object(EAST, "Customer", {})
+    east_warmed = mediator._get_security_value("Customer", "cust_001")
+
+    mediator._security_value_cache.clear()
+    mediator._security_link_cache.clear()
+    mediator.search_object(WEST, "Customer", {})
+    west_warmed = mediator._get_security_value("Customer", "cust_001")
+
+    assert east_warmed == west_warmed

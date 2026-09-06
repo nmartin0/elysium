@@ -133,6 +133,11 @@ _AGGREGATES: dict[str, Callable[[list], Any]] = {
 }
 
 
+# Sentinel for "absent from the cache", distinct from a cached None --
+# which is a real security value meaning the object has none.
+_MISSING = object()
+
+
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
                  silo_for_type: dict[str, str], roles: dict,
@@ -372,11 +377,25 @@ class DataMediator:
         # per-object reads below unchanged, so correctness never depends
         # on the cache being warm -- it only ever makes the same answer
         # cheaper to reach.
+        # A SINGLE .get() per cache, not `if key in cache: return
+        # cache[key]`. That shape is a check-then-get, and another
+        # request's prefetch clearing the cache between the two raises
+        # KeyError -- proven by forcing the interleaving directly, since
+        # the GIL makes it rare rather than impossible.
+        #
+        # _MISSING rather than None as the sentinel: None is a REAL
+        # cached security value, meaning "this object has none and is
+        # therefore visible to nobody". Treating it as a miss would send
+        # every such object down the slow path forever, and worse,
+        # would make a genuine None indistinguishable from an absent
+        # entry.
         cache_key = (object_type, str(object_id))
-        if cache_key in self._security_value_cache:
-            return self._security_value_cache[cache_key]
-        if cache_key in self._security_link_cache:
-            target_type, linked_id = self._security_link_cache[cache_key]
+        cached = self._security_value_cache.get(cache_key, _MISSING)
+        if cached is not _MISSING:
+            return cached
+        link = self._security_link_cache.get(cache_key)
+        if link is not None:
+            target_type, linked_id = link
             if linked_id is None:
                 return None
             return self._get_security_value(target_type, linked_id)
