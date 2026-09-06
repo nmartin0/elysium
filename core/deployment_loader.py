@@ -43,6 +43,7 @@ from core.llm.interface import LLMAdapter
 from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.ontology.action_types import validate_action_types
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
+from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.mediator import DataMediator
 from core.ontology.object_type_validation import validate_object_types
 from core.ontology.write_log import WriteLogReader, WriteLogWriter
@@ -208,7 +209,17 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # already asked a question, as a failure whose message names
     # nothing useful. Foundry runs its own compatibility checks before
     # publishing a function for the same reason.
-    validate_function_declarations(enabled_tools, schema_raw.get("object_types", {}))
+    # LINK TYPES: validated then expanded into the per-field entries
+    # every read path already consumes. The authoring surface is
+    # link_types; the field form is internal and never authored -- see
+    # core/ontology/link_types.py for why the old per-field
+    # declarations had to go rather than be extended.
+    object_types_raw = schema_raw.get("object_types", {})
+    link_types_raw = schema_raw.get("link_types", {})
+    validate_link_types(link_types_raw, object_types_raw)
+    schema_raw["object_types"] = expand_link_types(link_types_raw, object_types_raw)
+
+    validate_function_declarations(enabled_tools, schema_raw["object_types"])
 
     try:
         deployment_config = DeploymentConfig(

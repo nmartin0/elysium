@@ -50,12 +50,6 @@ object_types:
         type: data
       full_name:
         type: data
-      expense_reports:
-        type: link                  # a reverse relationship -- NOT a real
-        target: ExpenseReport       # column on this table, needs via_table/
-        cardinality: many           # via_column to say where to find the rows
-        via_table: expense_reports
-        via_column: employee_id
 
   ExpenseReport:
     storage:
@@ -72,10 +66,6 @@ object_types:
         type: data
       status:
         type: data
-      employee_id:
-        type: link                  # a forward reference -- a real foreign-key
-        target: Employee             # column on THIS table (cardinality: one)
-        cardinality: one
 
 # NAMED ACTION TYPES -- the ONLY way an LLM-driven agent may ever
 # change data (see write_mediator.py's own module docstring). Each
@@ -113,6 +103,18 @@ object_types:
 #     admin; a parameter reference would let the model assign a new
 #     hire to a department the acting user has no authority over at
 #     all.
+
+link_types:
+  # Link types are first-class ontology entities: ONE declaration, both
+  # directions generated from it. See core/ontology/link_types.py.
+  EmployeeExpenseReports:
+    display_name: Expense Reports
+    source: {object_type: Employee, api_name: expense_reports}
+    target: {object_type: ExpenseReport, api_name: employee_id}
+    cardinality: one_to_many
+    foreign_key_column: employee_id
+
+
 action_types:
   UpdateEmployeeDepartment:
     affected_object_types: [Employee]

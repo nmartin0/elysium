@@ -334,7 +334,9 @@ def test_my_visible_schema_returns_the_callers_own_view(client):
     assert response.status_code == 200
     # confirmed directly against a real mediator.visible_schema() call
     # for the customer_service role, not assumed.
-    assert set(response.json().keys()) == {"Customer", "Transaction", "SupportTicket"}
+    # Tag joined this set in Point 16, as the target of the fixture's
+    # many-to-many link type.
+    assert set(response.json().keys()) == {"Customer", "Transaction", "SupportTicket", "Tag"}
 
 
 def test_my_profile_without_token_is_rejected(client):

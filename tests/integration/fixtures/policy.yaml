@@ -51,6 +51,12 @@ roles:
       # either). See customer_service_link_only below for the role
       # that removes this alternate path specifically.
       - read:Customer.support_tickets
+      - read:Customer.accounts
+      - read:Customer.tags
+      - read:Tag
+      - read:Tag.label
+      - read:Tag.region
+      - read:Tag.customers
       - read:SupportTicket
       - read:SupportTicket.ticket_id
       - read:SupportTicket.subject
@@ -125,6 +131,12 @@ roles:
       - read:Customer
       - read:Customer.customer_id
       - read:Customer.support_tickets
+      - read:Customer.accounts
+      - read:Customer.tags
+      - read:Tag
+      - read:Tag.label
+      - read:Tag.region
+      - read:Tag.customers
       - read:SupportTicket
       - read:SupportTicket.subject
       - read:SupportTicket.status

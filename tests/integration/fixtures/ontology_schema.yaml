@@ -46,23 +46,11 @@ object_types:
         data_type: number
         storage: risk_db
         column: score_val
-      transactions:
-        type: link
-        target: Transaction
-        cardinality: many
-        via_table: transactions
-        via_column: customer_id
       # Reverse link into a GENUINELY SEPARATE database (support_crm,
       # see config.yaml) -- for tests/integration/test_cross_silo_e2e.py,
       # a real model discovering and following a cross-silo link on its
       # own, not a scripted one (already proven by tests/unit/
       # test_cross_silo_links.py).
-      support_tickets:
-        type: link
-        target: SupportTicket
-        cardinality: many
-        via_table: tickets
-        via_column: customer_id
   Transaction:
     storage:
       silo: primary_sql
@@ -82,10 +70,6 @@ object_types:
         type: data
       transaction_date:
         type: data
-      customer_id:
-        type: link
-        target: Customer
-        cardinality: one
   SupportTicket:
     storage:
       silo: support_crm
@@ -107,10 +91,6 @@ object_types:
         type: data
       status:
         type: data
-      customer_id:
-        type: link
-        target: Customer
-        cardinality: one
   # For tests/integration/test_transfer_funds_e2e.py and
   # tests/unit/test_transfer_funds.py -- the first REAL, deliberately-
   # authored multi-object action_type (TransferFunds, below), the
@@ -133,11 +113,6 @@ object_types:
         data_type: number
       currency:
         type: data
-      owner_customer_id:
-        display_name: Account Owner
-        type: link
-        target: Customer
-        cardinality: one
 
 # NAMED ACTION TYPES (action-types-redesign branch) -- for
 # tests/integration/test_named_actions_e2e.py, proving a real model
@@ -161,6 +136,66 @@ object_types:
 # that isolation concern no longer applied -- user_grace was
 # consolidated away as genuinely redundant footprint, not a risk
 # reduction anymore.
+
+  Tag:
+    display_name: Tag
+    plural_display_name: Tags
+    storage:
+      silo: primary_sql
+      table: tags
+      id_column: tag_id
+    id_field: tag_id
+    title_field: label
+    security:
+      field: region
+    fields:
+      label:
+        type: data
+      region:
+        type: data
+
+
+link_types:
+  # Link types are first-class ontology entities -- each declares ONE
+  # relationship, and both directions are generated from it, so they
+  # can no longer drift apart the way two independent field
+  # declarations could.
+  CustomerTransactions:
+    display_name: Transactions
+    description: Transactions belonging to a customer.
+    source: {object_type: Customer, api_name: transactions}
+    target: {object_type: Transaction, api_name: customer_id}
+    cardinality: one_to_many
+    foreign_key_column: customer_id
+
+  CustomerSupportTickets:
+    display_name: Support Tickets
+    source: {object_type: Customer, api_name: support_tickets}
+    target: {object_type: SupportTicket, api_name: customer_id}
+    cardinality: one_to_many
+    foreign_key_column: customer_id
+
+  CustomerAccounts:
+    display_name: Accounts
+    source: {object_type: Customer, api_name: accounts}
+    target: {object_type: Account, api_name: owner_customer_id}
+    cardinality: one_to_many
+    foreign_key_column: owner_customer_id
+
+  # MANY-TO-MANY, which the old per-field form could not express at
+  # all: neither object can hold the other's key without duplicating
+  # rows, so the relationship is backed by a join table of key pairs.
+  CustomerTags:
+    display_name: Tags
+    source: {object_type: Customer, api_name: tags}
+    target: {object_type: Tag, api_name: customers}
+    cardinality: many_to_many
+    join_table:
+      table: customer_tags
+      source_column: customer_id
+      target_column: tag_id
+
+
 action_types:
   UpdateCustomerName:
     affected_object_types: [Customer]

@@ -187,18 +187,19 @@ class SQLiteReadAdapter(ExternalReadAdapter):
 
         via_table = field_config["via_table"]
         via_column = field_config["via_column"]
+        result_column = field_config.get("via_target_column", target_id_column)
         placeholders = ", ".join("?" for _ in object_ids)
         with self._connection() as conn:
             rows = _run_query(
                 conn,
-                f"SELECT {target_id_column}, {via_column} FROM {via_table} "
+                f"SELECT {result_column}, {via_column} FROM {via_table} "
                 f"WHERE {via_column} IN ({placeholders})",
                 tuple(object_ids),
             )
 
         grouped: dict = {}
         for row in rows:
-            grouped.setdefault(row[via_column], []).append(row[target_id_column])
+            grouped.setdefault(row[via_column], []).append(row[result_column])
         return grouped
 
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
@@ -218,12 +219,17 @@ class SQLiteReadAdapter(ExternalReadAdapter):
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         via_table = field_config["via_table"]
         via_column = field_config["via_column"]
-
+        # For a MANY-TO-MANY link the row lives in a join table, so the
+        # id to return is that table's own target column -- the join
+        # table does not have the target type's id column at all. A
+        # foreign-key link declares no via_target_column and reads the
+        # target's id column as before.
+        result_column = field_config.get("via_target_column", target_id_column)
         with self._connection() as conn:
             rows = _run_query(
-                conn, f"SELECT {target_id_column} FROM {via_table} WHERE {via_column} = ?", (object_id,)
+                conn, f"SELECT {result_column} FROM {via_table} WHERE {via_column} = ?", (object_id,)
             )
-            return [row[target_id_column] for row in rows]
+            return [row[result_column] for row in rows]
 
 
 class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):

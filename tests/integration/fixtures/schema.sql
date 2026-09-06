@@ -60,3 +60,25 @@ INSERT INTO transactions (customer_id, amount, currency, category, transaction_d
 INSERT INTO accounts (account_id, owner_customer_id, balance, currency) VALUES
     ('acc_checking', 'cust_001', 500.00,  'USD'),
     ('acc_savings',  'cust_001', 1000.00, 'USD');
+
+CREATE TABLE tags (
+    tag_id TEXT PRIMARY KEY,
+    label  TEXT NOT NULL,
+    region TEXT NOT NULL
+);
+
+-- A true many-to-many join table: key pairs only. Foundry's own rule
+-- is that a join carrying any other information "is no longer a
+-- many-to-many relation but two separate many-to-one relations".
+CREATE TABLE customer_tags (
+    customer_id TEXT NOT NULL,
+    tag_id      TEXT NOT NULL,
+    PRIMARY KEY (customer_id, tag_id)
+);
+
+INSERT INTO tags VALUES ('tag_vip', 'VIP', 'us-west');
+INSERT INTO tags VALUES ('tag_new', 'New', 'us-west');
+
+INSERT INTO customer_tags VALUES ('cust_001', 'tag_vip');
+INSERT INTO customer_tags VALUES ('cust_001', 'tag_new');
+INSERT INTO customer_tags VALUES ('cust_002', 'tag_vip');

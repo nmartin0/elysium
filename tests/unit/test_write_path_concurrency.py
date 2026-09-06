@@ -36,6 +36,7 @@ import yaml
 
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.auth import UserRecord
+from core.ontology.link_types import expand_link_types
 from core.ontology.mediator import DataMediator
 from core.ontology.write_log import WriteLogWriter
 from core.ontology.write_mediator import WriteMediator
@@ -51,6 +52,11 @@ def _deployment(tmp_path, trial):
     real write log, real mediators. Nothing mocked -- the point is to
     exercise the actual write path."""
     schema = yaml.safe_load(open(FIXTURES + "ontology_schema.yaml"))
+    # Link fields are GENERATED from link_types at load; the raw
+    # YAML no longer declares them (see core/ontology/link_types.py).
+    schema["object_types"] = expand_link_types(
+        schema.get("link_types", {}), schema["object_types"]
+    )
     policy = yaml.safe_load(open(FIXTURES + "policy.yaml"))
 
     db_path = tmp_path / f"m{trial}.db"

@@ -156,7 +156,8 @@ class MirrorReadAdapter(ExternalReadAdapter):
 
         via_table = field_config["via_table"]
         via_column = field_config["via_column"]
-        arrow = self._scan(via_table, selected_fields=(target_id_column, via_column))
+        result_column = field_config.get("via_target_column", target_id_column)
+        arrow = self._scan(via_table, selected_fields=(result_column, via_column))
         if arrow is None:
             return {}
 
@@ -166,7 +167,7 @@ class MirrorReadAdapter(ExternalReadAdapter):
             source = row[via_column]
             if str(source) not in wanted:
                 continue
-            grouped.setdefault(source, []).append(row[target_id_column])
+            grouped.setdefault(source, []).append(row[result_column])
         return grouped
 
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:

@@ -188,7 +188,7 @@ layers = [
     # A real leaf, below everything -- object_type_validation imports it
     # (to reject an unknown declared data_type at load time) and nothing
     # in this package imports anything from it back.
-    "field_types",
+    "field_types | link_types",
 ]
 containers = ["core.ontology"]
 exhaustive = true

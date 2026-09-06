@@ -146,6 +146,18 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
+- **Object-backed link types are not adopted.** Foundry's third link
+  backing lets a join carry its own properties -- their example is a
+  FlightManifest linking Aircraft and Flight while holding Pilot and
+  First Mate. Elysium supports the other two (foreign key, join
+  table). This one is already expressible as two ordinary one-to-many
+  links through a real object type, which is arguably clearer, and
+  Foundry's own guidance agrees on the modelling point: a join table
+  carrying extra information "is no longer a many-to-many relation but
+  two separate many-to-one relations". Revisit only if a real
+  deployment wants link properties WITHOUT the middle object being a
+  first-class thing in its own right.
+
 - **Function versioning is deliberately absent, with a real trigger for
   revisiting.** Foundry publishes functions with SemVer and lets
   applications depend on version ranges, because their functions live

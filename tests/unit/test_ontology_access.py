@@ -31,6 +31,7 @@ import yaml
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.functions.ontology_access import OntologyAccess
 from core.intermediate_layer.auth import UserRecord
+from core.ontology.link_types import expand_link_types
 from core.ontology.mediator import DataMediator
 
 FIXTURES = "tests/integration/fixtures/"
@@ -41,6 +42,11 @@ EAST = UserRecord(user_id="b", security_value="us-east", role_name="customer_ser
 @pytest.fixture
 def mediator(tmp_path):
     schema = yaml.safe_load(open(FIXTURES + "ontology_schema.yaml"))
+    # Link fields are GENERATED from link_types at load; the raw
+    # YAML no longer declares them (see core/ontology/link_types.py).
+    schema["object_types"] = expand_link_types(
+        schema.get("link_types", {}), schema["object_types"]
+    )
     policy = yaml.safe_load(open(FIXTURES + "policy.yaml"))
 
     db_path = tmp_path / "business.db"

@@ -209,7 +209,7 @@ def test_a_field_referencing_an_unknown_storage_fails_loudly():
         resolve_sync_targets(schema)
 
 
-def test_the_real_fixture_ontology_resolves_to_its_five_real_tables():
+def test_the_real_fixture_ontology_resolves_to_its_real_tables():
     # A real, end-to-end check against the actual fixture schema rather
     # than only synthetic ones -- confirms the resolver handles a real
     # ontology, MDO and all.
@@ -224,6 +224,8 @@ def test_the_real_fixture_ontology_resolves_to_its_five_real_tables():
         ("primary_sql", "accounts"),
         ("risk_sql", "customer_risk"),
         ("support_crm", "tickets"),
+        # Tag, added with the many-to-many link type in Point 16.
+        ("primary_sql", "tags"),
     }
     # The real MDO column override, resolved correctly.
     assert "score_val" in by_table[("risk_sql", "customer_risk")].columns
