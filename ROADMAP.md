@@ -146,6 +146,18 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
+- **Per-object MAC resolution is an N+1.** Measured while building the
+  aggregation primitives: `search_object()` on 2,004 objects costs
+  4,021 SQL queries on its own, because `check_access()` resolves each
+  object's security value individually, following `security.via_field`
+  chains one object at a time. Aggregation adds only ONE query on top
+  of that (a single bulk read), so this is inherited, not introduced.
+  Fixing it means batching security-value resolution -- genuinely
+  harder than the sync's bulk read was, because a via_field chain can
+  cross silos and each hop needs its own batched lookup. Worth doing
+  before any large deployment; deliberately out of scope for the
+  aggregation work itself.
+
 - **Incremental (APPEND) syncs.** Elysium is SNAPSHOT-only: every sync
   re-copies each table in full. Foundry offers incremental APPEND
   precisely because, in their words, "if the dataset grows over time,
