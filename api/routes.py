@@ -257,6 +257,10 @@ class ActionParameterResponse(BaseModel):
     object_type: str | None = None
     required: bool | None = None
     default_to_current_object: bool | None = None
+    # A parameter is what a person is asked to fill in. Without these
+    # a form can only label it "new_from_balance".
+    display_name: str | None = None
+    description: str | None = None
 
 
 class VisibleActionTypeResponse(BaseModel):

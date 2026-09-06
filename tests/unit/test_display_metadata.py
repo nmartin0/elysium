@@ -97,3 +97,117 @@ def test_an_empty_field_display_name_is_rejected():
 
     with pytest.raises(ValueError, match="non-empty string"):
         validate_object_types(schema)
+
+
+# --- Action parameters ---------------------------------------------------
+#
+# Object types and fields gained display metadata earlier; action
+# parameters did not, which left it missing from the one place it
+# matters most. A parameter is what a person is asked to fill in and
+# what the model is asked to supply, and "new_from_balance (number,
+# required)" tells neither of them whether that is the resulting
+# balance or the amount to move.
+
+
+def _action(**param_extras):
+    return {
+        "Transfer": {
+            "affected_object_types": ["Widget"],
+            "parameters": {
+                "widget_id": {
+                    "type": "object_reference", "object_type": "Widget", **param_extras
+                }
+            },
+            "sub_writes": [
+                {
+                    "object_type": "Widget", "object_id": "$widget_id",
+                    "operation": "update",
+                    "mutations": [{"set": {"property": "region", "value": "x"}}],
+                }
+            ],
+        }
+    }
+
+
+def test_an_action_parameter_may_declare_display_metadata():
+    from core.ontology.action_types import validate_action_types
+
+    validate_action_types(
+        _action(display_name="Widget", description="Which widget to move."),
+        {
+            "Widget": {
+                "storage": {"silo": "p", "table": "w", "id_column": "widget_id"},
+                "id_field": "widget_id",
+                "fields": {"region": {"type": "data"}},
+            }
+        },
+    )
+
+
+@pytest.mark.parametrize("key", ["display_name", "description"])
+def test_an_empty_parameter_display_value_is_rejected(key):
+    # Same rule as object types and fields: an empty label renders
+    # blank rather than falling back to something readable.
+    from core.ontology.action_types import validate_action_types
+
+    with pytest.raises(ValueError, match="non-empty string"):
+        validate_action_types(
+            _action(**{key: "  "}),
+            {
+                "Widget": {
+                    "storage": {"silo": "p", "table": "w", "id_column": "widget_id"},
+                    "id_field": "widget_id",
+                    "fields": {"region": {"type": "data"}},
+                }
+            },
+        )
+
+
+def test_a_parameter_description_reaches_the_agents_prompt():
+    # THE reason this gap mattered. The model has to supply the value,
+    # and the type alone does not say what the value means.
+    from core.llm.agent_step_prompt import _describe_actions
+
+    described = _describe_actions(
+        {
+            "TransferFunds": {
+                "affected_object_types": ["Account"],
+                "parameters": {
+                    "new_from_balance": {
+                        "type": "number", "required": True,
+                        "description": "the balance the source should END with",
+                    }
+                },
+                "sub_writes": [
+                    {"object_type": "Account", "object_id": "$x", "operation": "update"}
+                ],
+                "executable": True,
+            }
+        },
+        [],
+    )
+
+    assert "the balance the source should END with" in described
+
+
+def test_a_parameter_without_a_description_is_described_as_before():
+    # The addition must not change how an undeclared parameter reads --
+    # every existing deployment has none.
+    from core.llm.agent_step_prompt import _describe_actions
+
+    described = _describe_actions(
+        {
+            "Plain": {
+                "affected_object_types": ["Account"],
+                "parameters": {"amount": {"type": "number", "required": True}},
+                "sub_writes": [
+                    {"object_type": "Account", "object_id": "$x", "operation": "update"}
+                ],
+                "executable": True,
+            }
+        },
+        [],
+    )
+
+    assert "amount (number, required)" in described
+    assert "--" not in described.split("\n")[0]

@@ -226,6 +226,11 @@ action_types:
         type: object_reference
         object_type: ExpenseReport
         required: true
+        # display_name and description are optional on a parameter, and
+        # this is where they matter most: a parameter is what a person
+        # is asked to fill in and what the model is asked to supply.
+        display_name: Expense report
+        description: The report to remove from the ontology.
     sub_writes:
       - object_type: ExpenseReport
         object_id: $report_id

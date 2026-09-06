@@ -154,6 +154,7 @@ def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_
         )
 
     declared_params = action_def.get("parameters", {})
+    _validate_parameter_display_metadata(action_type_name, declared_params)
     _validate_object_reference_parameters(action_type_name, declared_params, object_types, declared_types)
 
     referenced_types: set[str] = set()
@@ -290,6 +291,34 @@ def _validate_object_reference_parameters(action_type_name: str, declared_params
             f"Action type {action_type_name!r}: more than one parameter declares "
             f"default_to_current_object (got {sorted(default_to_current_object_params)}) -- at most one is allowed."
         )
+
+
+def _validate_parameter_display_metadata(action_type_name: str, declared_params: dict) -> None:
+    """Checks the optional display_name and description on parameters.
+
+    Object types and fields gained these earlier; action parameters did
+    not, which left the one place they matter MOST without them. A
+    parameter is what a person is asked to fill in and what the model
+    is asked to supply, and "new_from_balance" tells neither of them
+    what it is for.
+
+    Optional, and validated the same way the others are: a declared
+    value must be a real, non-empty string. An empty display_name is
+    worse than none, because it renders blank instead of falling back
+    to something readable.
+    """
+    for param_name, param_def in (declared_params or {}).items():
+        if not isinstance(param_def, dict):
+            continue
+        for key in ("display_name", "description"):
+            if key not in param_def:
+                continue
+            value = param_def[key]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"Action type {action_type_name!r}: parameter {param_name!r} {key} "
+                    f"must be a non-empty string, got {value!r}"
+                )
 
 
 def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:

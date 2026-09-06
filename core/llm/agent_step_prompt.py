@@ -268,8 +268,14 @@ def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
         # ones included -- no special-casing needed here at all; the
         # object(s) an action touches are just ordinary parameters now
         # (see WriteMediator.propose_action()'s own top-level comment).
+        # A parameter's description is included when declared. This is
+        # where it earns most: the model has to SUPPLY the value, and
+        # "new_from_balance (number, required)" says nothing about
+        # whether that is the new balance or the amount to move.
         param_desc = ", ".join(
-            f"{name} ({info['type']}{', required' if info.get('required') else ', optional'})"
+            f"{name} ({info['type']}"
+            f"{', required' if info.get('required') else ', optional'})"
+            + (f" -- {info['description']}" if info.get("description") else "")
             for name, info in params.items()
         ) or "no parameters"
         param_json = ", ".join(f'"{name}": "<value>"' for name in params)

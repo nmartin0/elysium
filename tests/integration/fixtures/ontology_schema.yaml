@@ -298,9 +298,13 @@ action_types:
         required: true
       new_from_balance:
         type: number
+        display_name: New source balance
+        description: The balance the source account should END with -- not the amount to move.
         required: true
       new_to_balance:
         type: number
+        display_name: New destination balance
+        description: The balance the destination account should END with.
         required: true
     sub_writes:
       - object_type: Account
