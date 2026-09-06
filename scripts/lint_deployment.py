@@ -90,6 +90,7 @@ from core.deployment_loader import (
 from core.intermediate_layer.policy_validation import validate_roles
 from core.ontology.action_types import validate_action_types
 from core.ontology.link_types import expand_link_types, validate_link_types
+from core.ontology.object_type_validation import validate_object_types
 
 
 def _report_invalid(config_dir: Path, errors: list[str]) -> bool:
@@ -197,6 +198,31 @@ def _collect_action_type_and_role_errors(schema_raw: dict, policy_raw: dict, ena
     roles = policy_raw.get("roles", {})
 
     errors = []
+    # OBJECT TYPES, per entry, with position. These were previously
+    # surfaced only through load_deployment()'s generic ValueError, so
+    # a field-level fault -- an unknown data_type, a link declaring
+    # one, an empty display_name -- named the object type and field in
+    # its message but pointed at NO line in NO file, while a link-type
+    # fault three lines away reported "(ontology_schema.yaml, line
+    # 188)". The position machinery already walked arbitrary key paths;
+    # object types simply never reached it.
+    #
+    # Per entry rather than all at once, matching action types and
+    # roles below: validate_object_types() is eager-fail, so linting
+    # the whole dict at once would surface only the first bad type and
+    # hide the rest.
+    for object_type_name in object_types:
+        try:
+            # The WHOLE dict, narrowed with `only` -- a single-entry
+            # dict would make every legitimate security.via_field
+            # reference look like an unknown object type.
+            validate_object_types(object_types, only=object_type_name)
+        except ValueError as e:
+            position = _describe_position(
+                schema_text, "ontology_schema.yaml", ["object_types", object_type_name]
+            )
+            errors.append(f"{e}{position}")
+
     for action_type_name, action_def in action_types.items():
         try:
             validate_action_types({action_type_name: action_def}, object_types)

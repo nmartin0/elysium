@@ -80,8 +80,21 @@ place.
 from core.ontology.field_types import FIELD_DATA_TYPES
 
 
-def validate_object_types(object_types: dict) -> None:
+def validate_object_types(object_types: dict, only: str | None = None) -> None:
+    """Validates every object type, or just `only` if given.
+
+    `only` narrows WHICH type is checked without narrowing what the
+    checks can SEE. That distinction matters: _validate_security()
+    below resolves a security.via_field against the other object types,
+    so handing it a single-entry dict would report every legitimate
+    cross-reference as an unknown type. The linter uses this to
+    validate one entry at a time -- so an eager-fail check surfaces
+    every bad type rather than only the first -- while still resolving
+    references against the whole schema.
+    """
     for object_type_name, type_def in object_types.items():
+        if only is not None and object_type_name != only:
+            continue
         _validate_title_field(object_type_name, type_def)
         _validate_security(object_type_name, object_types, visited=frozenset())
         _validate_field_data_types(object_type_name, type_def)

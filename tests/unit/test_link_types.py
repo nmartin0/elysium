@@ -307,3 +307,63 @@ def test_grants_on_GENERATED_link_fields_are_not_reported_as_unknown(tmp_path):
     # ...and the generated link fields are not blamed alongside it.
     assert "unknown field 'accounts'" not in output
     assert "unknown field 'tags'" not in output
+
+
+# --- Object-type errors get positions too --------------------------------
+
+
+def test_an_object_type_error_reports_its_file_and_line(tmp_path):
+    # These were surfaced only through load_deployment()'s generic
+    # ValueError, so a field-level fault named the object type and
+    # field in its message but pointed at NO line in NO file -- while a
+    # link-type fault a few lines away reported "(ontology_schema.yaml,
+    # line 188)". The position machinery already walked arbitrary key
+    # paths; object types simply never reached it.
+    valid, output = _lint(
+        tmp_path,
+        lambda text: text.replace("        data_type: number", "        data_type: nonsense", 1),
+    )
+
+    assert not valid
+    assert "nonsense" in output
+    assert "ontology_schema.yaml, line" in output
+
+
+def test_every_bad_object_type_is_reported_not_just_the_first(tmp_path):
+    # validate_object_types() is eager-fail, so linting the whole dict
+    # at once would surface one fault and hide the rest. An author
+    # fixing them one round-trip at a time is the thing per-entry
+    # collection exists to prevent.
+    valid, output = _lint(
+        tmp_path,
+        lambda text: text.replace(
+            "        data_type: number", "        data_type: nonsense", 1
+        ).replace('    display_name: Tag', '    display_name: ""', 1),
+    )
+
+    assert not valid
+    assert "nonsense" in output
+    assert "non-empty string" in output
+
+
+def test_narrowing_to_one_type_still_resolves_cross_references(tmp_path):
+    # THE bug a first version of this had. Validating a single-entry
+    # dict made every legitimate security.via_field reference look like
+    # an unknown object type -- three false errors on a deployment
+    # whose only real fault was one typo'd data_type. `only=` narrows
+    # WHICH type is checked without narrowing what the checks can SEE.
+    valid, output = _lint(
+        tmp_path,
+        lambda text: text.replace("        data_type: number", "        data_type: nonsense", 1),
+    )
+
+    assert not valid
+    assert "targets unknown object type" not in output, (
+        "narrowing broke cross-reference resolution"
+    )
+
+
+def test_a_valid_deployment_is_unaffected_by_the_narrowing(tmp_path):
+    valid, output = _lint(tmp_path)
+
+    assert valid, output

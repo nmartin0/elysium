@@ -51,51 +51,30 @@ inferred.
    Scoped as its own, first step specifically so every route built in
    the phases below is done the right way from day one, not built
    against the old pattern and retrofitted later.
-1. **Define the ontology's own structural shape -- object types,
-   fields, action types, parameters -- as real Pydantic models.**
-   Revisited directly, not the original position: the real case for
-   this isn't a performance one (the schema loads once, at startup,
-   never a hot path), it's genuine DE-DUPLICATION -- one, real
-   definition of "what a field looks like" instead of two
-   independently-maintained ones (the raw dict shape the loader
-   checks, and a separate Pydantic model the schema-viewer API would
-   otherwise need of its own). These models both parse/validate the
-   loaded YAML AND directly serve as, or feed, the API response shapes
-   from item 0 above. `description` added to both object type fields
-   and action parameters this way too (confirmed absent from both
-   today by reading the real YAML directly, not assumed) -- a natural,
-   optional field on the same model, not a separate addition.
+1. **NOT DOING -- the case for this evaporated.** The argument was
+   de-duplication: one definition of "what a field looks like" instead
+   of the loader's dict shape and a separate Pydantic model the API
+   would otherwise need. Checked directly, those are not two
+   definitions of one thing. `SchemaFieldResponse` exposes five keys;
+   a real field definition carries twelve, and the difference --
+   `storage`, `column`, `via_table`, `data_type`, `link_type` -- is
+   exactly the internal-config leak `response_model` was added to
+   close. They did not drift apart; they were pulled apart
+   deliberately, and merging them would reintroduce the leak.
 
-   Deliberately, explicitly NOT forcing the existing, genuinely
-   CROSS-REFERENTIAL checks (does an action's `object_reference`
-   parameter point at a real, declared object type elsewhere in the
-   same schema) into this -- confirmed directly, not guessed at, that
-   this doesn't belong inside a single Pydantic model's own
-   `model_validator`: those checks inherently need to see the WHOLE,
-   assembled schema at once, so they stay their own, separate,
-   already-correct pass (the existing `validate_action_types()`/
-   `validate_object_types()`/`validate_roles()`), run AFTER Pydantic
-   has structurally parsed each individual piece -- not retrofit into
-   a shape they were never a natural fit for.
+   The other half of the rationale was that `description` would come
+   along "as a natural, optional field on the same model". It was
+   added by hand instead. Only action PARAMETERS still lack one, which
+   is a ten-line addition rather than a schema refactor.
 
-   A REAL, genuine "required" flag on OBJECT TYPE fields (as opposed
-   to action parameters, which already have one) was investigated and
-   deliberately NOT built, once real precedent was actually checked
-   rather than assumed: Palantir's own real, published SDK schema for
-   an action's own parameter (`ParameterDict`, in their public
-   `foundry-platform-python` docs) has `required: StrictBool` -- but
-   there is no equivalent anywhere on the object type's own property
-   definition. `required` is exclusively an action-parameter concept
-   in Palantir's own, real, time-tried model. Elysium's own existing
-   convention already matches this exactly (`required` only ever
-   declared on `action_types.*.parameters.*`), and confirmed directly,
-   already genuinely enforced today, not just declared --
-   `write_mediator.py`'s own real check
-   (`if param_spec.get("required") and param_name not in parameters:
-   raise ValueError(...)`) already rejects a missing required
-   parameter at proposal time. A real, valuable finding that PREVENTED
-   building something with no real precedent anywhere, not a gap that
-   needed closing.
+   What would have been left: five structural validators replaced by
+   models, four cross-referential ones (`_validate_security` walks
+   link chains with cycle detection) kept regardless, and both
+   maintained. Better error POSITIONS looked like a real gain, and
+   turned out to be a separate fix that needed no Pydantic at all --
+   see the per-entry object-type collection in
+   scripts/lint_deployment.py.
+
 2. **DONE (Points 6, 7, 11, 17).** `count_objects()`,
    `aggregate_by_field()` and `search_around()` exist, are exposed over
    HTTP, and are reachable by the agent. The MAC constraint described
