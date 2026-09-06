@@ -214,6 +214,15 @@ not fail your scheduler. This matters because the mirror's storage
 format rejects two simultaneous writers to the same table by design,
 so without this guard an overlapping run would fail partway through.
 
+**A note on paged results.** Endpoints that return lists are paged:
+the response carries a `next_page_token`, and you pass it back to get
+the next page. Treat the token as opaque — its format will change, and
+anything that parses it will break. Results reflect the data as it is
+at the moment each page is fetched, so if rows are being written while
+you page through them, you may see an item twice or miss one. That is
+fine for browsing and wrong for an export; for an export, read the
+data once rather than paging a moving target.
+
 ### Choosing a sync interval
 
 There is no correct default, because the right answer depends on your

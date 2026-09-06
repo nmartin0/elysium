@@ -2078,3 +2078,90 @@ def test_object_history_pages(client):
     assert len(second["entries"]) == 5
     first_ids = {entry["id"] for entry in first["entries"]}
     assert not (first_ids & {entry["id"] for entry in second["entries"]})
+
+
+# --- Opaque page tokens. Foundry's own format is a version prefix and
+# a base64 payload ("v1.QnVpbGQgdGhlIEZ1dHVyZTo..."), and their
+# guidance is that a client treats a token as opaque and passes it
+# back unchanged.
+
+
+def test_a_page_token_is_opaque_not_an_offset(client):
+    # A bare offset is something a client can construct, guess, or
+    # build logic around -- and every such client breaks the day the
+    # encoding changes.
+    _many_customers(client, count=20)
+
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=5").json()
+
+    token = body["next_page_token"]
+    assert token
+    assert token.startswith("v1."), "token should carry a version prefix"
+    assert not token.isdigit(), "token should not be a bare offset"
+
+
+def test_an_opaque_token_round_trips(client):
+    from api.routes import _decode_page_token, _encode_page_token
+
+    for start in (0, 3, 50, 999999):
+        assert _decode_page_token(_encode_page_token(start)) == start
+
+
+def test_a_bare_offset_is_no_longer_accepted(client):
+    # The old format. Rejecting it matters: a client that hardcoded
+    # page_token=5 should restart cleanly rather than silently keep
+    # working until the encoding changes again.
+    _many_customers(client, count=30)
+
+    body = client.get(
+        "/api/objects/Customer/search?q=Person&page_size=3&page_token=5"
+    ).json()
+
+    assert body["results"][0]["id"] == "c0000", "a bare offset should not resolve"
+
+
+def test_every_malformed_token_shape_falls_back_to_the_first_page(client):
+    # Foundry's tokens are short-lived and meant for immediate
+    # sequential use, so a garbled one is a client bug -- but failing
+    # the request would turn a display glitch into an error page.
+    _many_customers(client, count=30)
+
+    for bad in ("garbage", "v2.abc", "v1.", "v1.!!!", "v1.bm90YW51bQ=="):
+        body = client.get(
+            f"/api/objects/Customer/search?q=Person&page_size=3&page_token={bad}"
+        ).json()
+        assert body["results"][0]["id"] == "c0000", f"{bad!r} did not fall back"
+
+
+def test_paging_with_opaque_tokens_still_yields_everything_once(client):
+    # The property from before, re-asserted through the new encoding:
+    # changing the token format must not change what paging returns.
+    total = _many_customers(client)
+
+    seen = []
+    token = None
+    while True:
+        url = "/api/objects/Customer/search?q=Person&page_size=25"
+        if token:
+            url += f"&page_token={token}"
+        body = client.get(url).json()
+        seen.extend(result["id"] for result in body["results"])
+        token = body["next_page_token"]
+        if not token:
+            break
+
+    assert len(seen) == total
+    assert len(seen) == len(set(seen))
+
+
+def test_history_tokens_are_opaque_too(client):
+    # Both paged endpoints share the encoding rather than each
+    # inventing one.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+    for index in range(12):
+        _record_edit(client, {"name": f"v{index}"}, f"edit {index}")
+
+    body = client.get("/api/objects/Customer/cust_001/history?page_size=5").json()
+
+    assert body["next_page_token"].startswith("v1.")

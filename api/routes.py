@@ -110,6 +110,7 @@ loop for meaningfully longer than intended.
 """
 
 import asyncio
+import base64
 import logging
 import threading
 from typing import Any
@@ -684,15 +685,55 @@ DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 500
 
 
+# Page tokens are OPAQUE, following Foundry's own format: a version
+# prefix and a base64 payload ("v1.QnVpbGQgdGhlIEZ1dHVyZTo..."). This
+# is about coupling, not secrecy. A bare offset like page_token=3 is
+# something a client can construct, guess, or build logic around, and
+# every such client breaks the day the encoding changes. A version
+# prefix also means the encoding CAN change: a v2 token is
+# distinguishable from a v1 one rather than silently misread.
+#
+# Deliberately NOT signed or encrypted. It carries no secret -- a
+# caller already knows their own position in their own result set --
+# and signing would imply a tamper guarantee this does not make.
+_PAGE_TOKEN_VERSION = "v1"
+
+
+def _encode_page_token(start: int) -> str:
+    payload = base64.urlsafe_b64encode(str(start).encode()).decode().rstrip("=")
+    return f"{_PAGE_TOKEN_VERSION}.{payload}"
+
+
+def _decode_page_token(token: str) -> int | None:
+    """The offset a token encodes, or None if it is not one of ours.
+
+    Returns None rather than raising for ANY malformed input --
+    wrong version, bad base64, non-numeric payload. Foundry's guidance
+    is that a client should treat a token as opaque and pass it back
+    unchanged, so a garbled token is a client bug; but failing the
+    whole request would turn a display glitch into an error page, and
+    restarting at page one is both recoverable and obvious.
+    """
+    version, _, payload = token.partition(".")
+    if version != _PAGE_TOKEN_VERSION or not payload:
+        return None
+    try:
+        padded = payload + "=" * (-len(payload) % 4)
+        return int(base64.urlsafe_b64decode(padded).decode())
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 def _page_bounds(page_size: int | None, page_token: str | None, total: int) -> tuple[int, int]:
     """Resolves a request's paging parameters into (start, size).
 
-    A malformed or out-of-range token resolves to the FIRST page rather
-    than raising. Foundry's own guidance is that a client should treat
-    a token as opaque and simply pass it back, so a client that garbles
-    one has a bug -- but failing the whole request would turn a display
-    glitch into an error page, and starting over is both recoverable
-    and obvious.
+    CONSISTENCY, stated because Foundry states it: this is their
+    "default" pagination behaviour, which "returns the latest results"
+    and "may lead to duplicate entries or missing items as data changes
+    between page requests". Their opt-in "snapshot" mode, which
+    captures the result set before paging begins, is not implemented --
+    see ROADMAP.md. Tokens are short-lived and intended for immediate
+    sequential use.
 
     An oversized page_size is clamped rather than rejected, matching
     Foundry: "Requests for more than the maximum page size will be
@@ -701,10 +742,9 @@ def _page_bounds(page_size: int | None, page_token: str | None, total: int) -> t
     size = DEFAULT_PAGE_SIZE if page_size is None else max(1, min(page_size, MAX_PAGE_SIZE))
     start = 0
     if page_token:
-        try:
-            start = int(page_token)
-        except (TypeError, ValueError):
-            start = 0
+        decoded = _decode_page_token(page_token)
+        if decoded is not None:
+            start = decoded
     if start < 0 or start >= total:
         start = 0
     return start, size
@@ -798,7 +838,8 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
         # Absent, not empty, when there is no further page -- Foundry's
         # own contract is that "the presence of the nextPageToken field
         # indicates that there are more results."
-        "next_page_token": str(next_start) if next_start < len(matching_ids) else None,
+        "next_page_token": (_encode_page_token(next_start)
+                            if next_start < len(matching_ids) else None),
     }
 
 
@@ -1204,6 +1245,7 @@ def object_history_route(object_type: str, object_id: str, request: Request,
     return {
         "entries": page,
         "total": len(entries),
-        "next_page_token": str(next_start) if next_start < len(entries) else None,
+        "next_page_token": (_encode_page_token(next_start)
+                            if next_start < len(entries) else None),
     }
 

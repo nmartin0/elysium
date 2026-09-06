@@ -157,6 +157,21 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
+- **Snapshot pagination is not implemented.** Foundry offers two
+  consistency behaviours: their DEFAULT "returns the latest results"
+  and, in their own words, "may lead to duplicate entries or missing
+  items as data changes between page requests"; their opt-in SNAPSHOT
+  mode "captures data at a specific point in time before pagination
+  begins". Elysium implements the default only, which is the same
+  behaviour Foundry ships and documents -- not a deviation from it.
+
+  Building snapshot mode means holding a result set across requests
+  with an expiry policy, which is real state and real cleanup. Worth
+  doing when a caller genuinely needs it (an export, a reconciliation
+  job) rather than by default, exactly as Foundry treats it. The
+  behaviour we DO have is now documented in _page_bounds() so a caller
+  can know what they are getting.
+
 - **Object-backed link types are not adopted.** Foundry's third link
   backing lets a join carry its own properties -- their example is a
   FlightManifest linking Aircraft and Flight while holding Pilot and
