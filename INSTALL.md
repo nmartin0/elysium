@@ -214,6 +214,22 @@ not fail your scheduler. This matters because the mirror's storage
 format rejects two simultaneous writers to the same table by design,
 so without this guard an overlapping run would fail partway through.
 
+**Installing dependencies.** For a real deployment, install from the
+lock file rather than from `requirements.txt`:
+
+```
+pip install --require-hashes -r requirements.lock
+```
+
+`requirements.txt` states which packages Elysium needs and roughly
+which versions are acceptable; `requirements.lock` states exactly what
+was resolved from that, with a SHA-256 hash for every package
+including transitive ones. `--require-hashes` makes pip refuse to
+install anything whose contents do not match, which is what turns a
+version record into a supply-chain check.
+
+Use `requirements-dev.lock` if you also want the test and lint tools.
+
 **Do not run Elysium with `-O` or `PYTHONOPTIMIZE`.** Several
 data-integrity checks are enforced by Python assertions, which those
 options strip. Elysium refuses to start if they are set, and tells you

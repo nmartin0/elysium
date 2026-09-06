@@ -56,6 +56,12 @@ echo "--- vulture ---"
 vulture || STATUS=1
 
 echo
+echo "--- lock files ---"
+# A lock that has drifted from its requirements reads as a guarantee
+# and is not one. Cheap, offline, and catches the failure that actually
+# happens: a dependency added or removed without regenerating.
+python3 -m scripts.check_lockfiles || FAILED=1
+
 echo "--- import-linter ---"
 lint-imports || STATUS=1
 

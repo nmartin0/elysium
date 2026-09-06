@@ -14,6 +14,19 @@ the *how*; that one is the *why*.
 
 ## Commands
 
+Dependencies are locked. `requirements.txt` carries bounds and is what
+a human edits; `requirements.lock` and `requirements-dev.lock` are
+generated and carry exact versions with hashes. After changing either
+requirements file, regenerate:
+
+```bash
+uv pip compile requirements.txt --generate-hashes -o requirements.lock
+uv pip compile requirements.txt requirements-dev.txt --generate-hashes \
+  -o requirements-dev.lock
+```
+
+`./lint.sh` fails if they have drifted.
+
 ```bash
 ./lint.sh                                    # ruff, mypy, vulture, import-linter
 python -m pytest tests/ -q -m "not integration"   # the suite that must pass
