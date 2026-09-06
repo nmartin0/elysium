@@ -508,7 +508,6 @@ is explicit, fail-safe, and never inferred" section.
 ## 7. Known limitations, honestly
 
 - **Memory security infrastructure exists but isn't wired into the live query path.** `core/memory/guard.py`'s `MemoryGuard` is built and tested, but `AgentLoop` doesn't currently construct or use one.
-- **Pessimistic locking infrastructure exists but nothing in the UI uses it yet.** `core/lock_store.py` (generic, resource-agnostic, lease-based auto-expiry) and its real `POST /locks/{resource_name}/{acquire,refresh,release,force-release}` + `GET /locks/{resource_name}` routes are built and tested, but no current `ui/` screen ever calls them — built ahead of a planned config-builder UI, not yet consumed by one.
 - **Cross-silo links aren't supported.** Linked object types must currently share a data silo.
 - **Single OS process.** Concurrency protections coordinate threads within one process, not across separate processes. The pending-write store is also in-process memory — a multi-worker deployment would need a shared store instead.
 - **`install.sh` is a fresh-install script, not an upgrade mechanism.**

@@ -10,10 +10,12 @@ state, decide, then write" sequence had its READ outside any
 transaction, and two concurrent callers could both read the same
 pre-state and both act on it.
 
-Demonstrated concretely before any fix was written: two threads calling
-LockStore.acquire() against a free resource were BOTH told they had
-acquired it, while only one actually held it afterwards. A lock service
-that grants the same lock twice does not do its job.
+Demonstrated concretely before any fix was written, using what was then
+LockStore.acquire(): two threads acquiring a free resource were BOTH
+told they had it, while only one actually did. That store has since
+been removed (it served a config-builder UI that was never built), but
+the bug it exposed was in the shared connection handling, and the
+tests below cover that directly through the stores that remain.
 
 The existing suite never caught this because every test was
 single-threaded. These tests are deliberately concurrent, with a real
@@ -29,7 +31,6 @@ import pytest
 
 from core.auth.login_attempt_tracker import MAX_ATTEMPTS, LoginAttemptTracker
 from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW, QueryRateLimiter
-from core.lock_store import LockStore
 
 
 def _run_concurrently(fn, count):
@@ -51,55 +52,6 @@ def _run_concurrently(fn, count):
     for t in threads:
         t.join()
     return results
-
-
-# Repeated across many trials, deliberately. The race is REAL but
-# INTERMITTENT -- it needs both threads to complete their SELECT before
-# either INSERTs, which a single trial hits only sometimes. Measured
-# directly against the unfixed code: 7 of 200 trials granted the same
-# lock to both callers. A one-shot test passed against the broken
-# implementation, which is exactly how this bug survived the existing
-# suite in the first place.
-_RACE_TRIALS = 60
-
-
-def test_two_concurrent_acquirers_never_both_get_the_same_lock(tmp_path):
-    # THE bug this audit found. Before the fix, both callers were
-    # sometimes told they had acquired it.
-    for trial in range(_RACE_TRIALS):
-        store = LockStore(tmp_path / f"locks_{trial}.db")
-
-        results = _run_concurrently(
-            lambda i, s=store: s.acquire("shared_resource", f"user_{i}"), count=2
-        )
-
-        granted = [r for r in results if r is not None]
-        assert len(granted) == 1, (
-            f"trial {trial}: exactly one caller may acquire, got {len(granted)}"
-        )
-        assert store.get_status("shared_resource") is not None
-
-
-def test_many_concurrent_acquirers_still_yield_exactly_one_holder(tmp_path):
-    for trial in range(_RACE_TRIALS):
-        store = LockStore(tmp_path / f"many_{trial}.db")
-        results = _run_concurrently(
-            lambda i, s=store: s.acquire("shared_resource", f"user_{i}"), count=8
-        )
-        assert sum(1 for r in results if r is not None) == 1, f"trial {trial}"
-
-
-def test_the_same_user_reacquiring_concurrently_is_not_treated_as_contention(tmp_path):
-    # A real, legitimate case: one user with two browser tabs. Both may
-    # succeed -- acquire() deliberately allows the SAME user to
-    # re-acquire (see its own docstring) -- but the store must stay
-    # consistent rather than corrupt.
-    store = LockStore(tmp_path / "locks.db")
-
-    results = _run_concurrently(lambda i: store.acquire("r", "same_user"), count=4)
-
-    assert all(r is not None for r in results)
-    assert store.get_status("r") is not None
 
 
 def test_concurrent_failed_logins_are_not_undercounted(tmp_path):
