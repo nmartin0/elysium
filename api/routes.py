@@ -1237,15 +1237,20 @@ def object_history_route(object_type: str, object_id: str, request: Request,
     # scheme: an object with a long edit history is exactly what a
     # timeline widget scrolls through.
     mediator = request.app.state.mediator
-    entries = mediator.edit_history(current_user, object_type, object_id)
 
-    start, size = _page_bounds(page_size, page_token, len(entries))
-    page = entries[start:start + size]
+    # Bounds resolved against the COUNT, then only that page is read --
+    # rather than reading the whole history and slicing it in Python,
+    # which wasted exactly the work paging exists to avoid.
+    _empty, total = mediator.edit_history(current_user, object_type, object_id, limit=0)
+    start, size = _page_bounds(page_size, page_token, total)
+    page, _total = mediator.edit_history(
+        current_user, object_type, object_id, limit=size, offset=start
+    )
     next_start = start + size
     return {
         "entries": page,
-        "total": len(entries),
+        "total": total,
         "next_page_token": (_encode_page_token(next_start)
-                            if next_start < len(entries) else None),
+                            if next_start < total else None),
     }
 

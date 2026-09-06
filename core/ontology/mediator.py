@@ -1054,7 +1054,8 @@ class DataMediator:
                 allowed.append(target_id)
         return allowed
 
-    def edit_history(self, user_record: UserRecord, object_type: str, object_id: Any) -> list[dict]:
+    def edit_history(self, user_record: UserRecord, object_type: str, object_id: Any,
+                      limit: int | None = None, offset: int = 0) -> tuple[list[dict], int]:
         """Every applied write to one object, newest first, if the
         caller may read that object.
 
@@ -1080,20 +1081,25 @@ class DataMediator:
         object at a given time is exactly what an audit trail is for.
         """
         if self.write_log is None:
-            return []
+            return [], 0
         if not check_access(self, user_record, self.roles, object_type, object_id,
                             f"read:{object_type}"):
-            return []
+            return [], 0
 
         readable = {
             field_name
             for field_name in (self.schema.get(object_type) or {}).get("fields", {})
             if authorize(user_record, self.roles, f"read:{object_type}.{field_name}")
         }
-        return [
+        # Returns (page, total) together so the MAC check above happens
+        # ONCE. A separate count method would have to repeat it, and a
+        # count that forgot would leak how much history exists for an
+        # object the caller cannot read.
+        entries = [
             {**entry, "changes": {k: v for k, v in entry["changes"].items() if k in readable}}
-            for entry in self.write_log.edit_history(object_type, object_id)
+            for entry in self.write_log.edit_history(object_type, object_id, limit, offset)
         ]
+        return entries, self.write_log.edit_history_count(object_type, object_id)
 
     def count_objects(self, user_record: UserRecord, object_type: str, criteria: dict) -> int:
         """How many objects of this type the CALLER can see, matching

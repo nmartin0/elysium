@@ -444,7 +444,8 @@ class WriteLogReader(InternalReadAdapter):
             entry["changes"].update(json.loads(row["changes"]))
         return list(merged.values())
 
-    def edit_history(self, object_type: str, object_id: Any) -> list[dict]:
+    def edit_history(self, object_type: str, object_id: Any,
+                      limit: int | None = None, offset: int = 0) -> list[dict]:
         """Every applied write to one object, newest first.
 
         Foundry's Edit History widget, in miniature: an "immutable
@@ -464,13 +465,23 @@ class WriteLogReader(InternalReadAdapter):
         entries would rewrite what the read path believes about the
         object.
         """
+        query = (
+            "SELECT id, operation, changes, user_id, description, created_at, batch_id "
+            "FROM write_log WHERE object_type = ? AND object_id = ? AND status = 'applied' "
+            "ORDER BY created_at DESC, id DESC"
+        )
+        params: tuple = (object_type, str(object_id))
+        if limit is not None:
+            # PAGED IN SQL, not in Python. Reading an object's whole
+            # history to return twenty rows is the same shape as the
+            # N+1s fixed elsewhere: fine at ten edits, wasteful at ten
+            # thousand, and the waste grows with exactly the history a
+            # timeline widget exists to scroll through.
+            query += " LIMIT ? OFFSET ?"
+            params = (*params, limit, max(0, offset))
+
         with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT id, operation, changes, user_id, description, created_at, batch_id "
-                "FROM write_log WHERE object_type = ? AND object_id = ? AND status = 'applied' "
-                "ORDER BY created_at DESC, id DESC",
-                (object_type, str(object_id)),
-            ).fetchall()
+            rows = conn.execute(query, params).fetchall()
 
         return [
             {
@@ -484,6 +495,21 @@ class WriteLogReader(InternalReadAdapter):
             }
             for row in rows
         ]
+
+    def edit_history_count(self, object_type: str, object_id: Any) -> int:
+        """How many applied writes this object has.
+
+        A COUNT rather than len() of the full history: the caller wants
+        a number for page metadata, and materialising every row to
+        produce it would defeat the paging it is metadata for.
+        """
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT count(*) AS n FROM write_log "
+                "WHERE object_type = ? AND object_id = ? AND status = 'applied'",
+                (object_type, str(object_id)),
+            ).fetchone()
+        return row["n"]
 
     def deleted_object_ids(self, object_type: str) -> set:
         """Objects of this type whose latest applied write is a delete.
