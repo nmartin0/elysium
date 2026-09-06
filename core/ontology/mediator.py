@@ -823,6 +823,73 @@ class DataMediator:
                 result_by_str.pop(object_id, None)
         return list(result_by_str.values())
 
+    def search_around(self, user_record: UserRecord, object_type: str, criteria: dict,
+                       link_field: str) -> list:
+        """Follows a link from every object matching criteria, returning
+        the ids on the far side that the caller can also see.
+
+        Foundry's own Search Around: "takes an incoming object set and
+        runs a secondary filter on another object set based on a
+        certain property of the incoming set." Asking "every
+        transaction belonging to a us-west customer" is one call here
+        rather than one per customer.
+
+        MAC IS APPLIED ON BOTH SIDES, and that is the point. The source
+        set comes from search_object(), so a caller only traverses from
+        objects they can see; the resulting target ids are then
+        authorized individually, so following a link can never reveal
+        an object the caller could not have read directly. Skipping
+        either check would turn a link into a way around the security
+        boundary.
+
+        Returns a deduplicated list -- two source objects legitimately
+        linking to the same target should yield it once.
+        """
+        source_ids = self.search_object(user_record, object_type, criteria)
+        if not source_ids:
+            return []
+
+        visible_type_def = self.visible_schema(user_record).get(object_type)
+        field_info = (visible_type_def or {}).get("fields", {}).get(link_field)
+        if field_info is None or not is_link_field(field_info):
+            # Same uniform-denial shape as every other read: a caller
+            # learns nothing about whether the field exists, is a link,
+            # or is merely ungranted.
+            return []
+
+        target_type = get_link_target(field_info)
+        raw_field_info = self.schema[object_type]["fields"][link_field]
+        if "via_table" not in raw_field_info:
+            # A FORWARD link -- the id lives on the source object
+            # itself, so there is nothing to traverse in batch; reading
+            # the field per source is already the whole operation.
+            targets = []
+            for source_id in source_ids:
+                value = self.get_field(user_record, object_type, source_id, link_field)
+                if value is None:
+                    continue
+                targets.extend(value if isinstance(value, list) else [value])
+        else:
+            target_adapter = self._adapter_for(target_type)
+            target_id_column = self.schema[target_type]["storage"]["id_column"]
+            grouped = target_adapter.resolve_reverse_links_batch(
+                source_ids, raw_field_info, target_id_column
+            )
+            targets = [
+                target_id for target_ids in grouped.values() for target_id in target_ids
+            ]
+
+        action = f"read:{target_type}"
+        seen = set()
+        allowed = []
+        for target_id in targets:
+            if target_id in seen:
+                continue
+            seen.add(target_id)
+            if check_access(self, user_record, self.roles, target_type, target_id, action):
+                allowed.append(target_id)
+        return allowed
+
     def count_objects(self, user_record: UserRecord, object_type: str, criteria: dict) -> int:
         """How many objects of this type the CALLER can see, matching
         criteria.

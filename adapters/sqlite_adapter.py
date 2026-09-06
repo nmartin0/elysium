@@ -171,6 +171,36 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             )
             return row[field_name] if row else None
 
+    def resolve_reverse_links_batch(self, object_ids: list, field_config: dict,
+                                     target_id_column: str) -> dict:
+        # ONE query for every source object, grouped in Python. The
+        # via_column is selected alongside the target id specifically so
+        # the results can be grouped back to their source without a
+        # second lookup.
+        #
+        # Table and column names come from the ontology, exactly as in
+        # resolve_reverse_link() above; only the id VALUES are
+        # parameterised, and they are placeholder-bound rather than
+        # interpolated.
+        if not object_ids:
+            return {}
+
+        via_table = field_config["via_table"]
+        via_column = field_config["via_column"]
+        placeholders = ", ".join("?" for _ in object_ids)
+        with self._connection() as conn:
+            rows = _run_query(
+                conn,
+                f"SELECT {target_id_column}, {via_column} FROM {via_table} "
+                f"WHERE {via_column} IN ({placeholders})",
+                tuple(object_ids),
+            )
+
+        grouped: dict = {}
+        for row in rows:
+            grouped.setdefault(row[via_column], []).append(row[target_id_column])
+        return grouped
+
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
         # ONE query for the whole table, versus one per field per row
         # through get_raw_field(). Column NAMES come from the ontology

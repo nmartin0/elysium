@@ -144,6 +144,31 @@ class MirrorReadAdapter(ExternalReadAdapter):
             return None
         return arrow.column(field_name)[0].as_py()
 
+    def resolve_reverse_links_batch(self, object_ids: list, field_config: dict,
+                                     target_id_column: str) -> dict:
+        # One scan projecting the target id and the via column, then
+        # grouped in Python. Iceberg's expression language has no IN
+        # predicate over an arbitrary list, so the filter is applied
+        # after the scan -- still ONE read rather than one per source
+        # object, which is the property that matters here.
+        if not object_ids:
+            return {}
+
+        via_table = field_config["via_table"]
+        via_column = field_config["via_column"]
+        arrow = self._scan(via_table, selected_fields=(target_id_column, via_column))
+        if arrow is None:
+            return {}
+
+        wanted = {str(object_id) for object_id in object_ids}
+        grouped: dict = {}
+        for row in arrow.to_pylist():
+            source = row[via_column]
+            if str(source) not in wanted:
+                continue
+            grouped.setdefault(source, []).append(row[target_id_column])
+        return grouped
+
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
         # Implemented for contract completeness rather than for a real
         # caller: the sync reads from the customer's own source, never
