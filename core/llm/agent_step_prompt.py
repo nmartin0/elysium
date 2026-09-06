@@ -7,6 +7,8 @@ plus everything gathered so far, and returns exactly one of:
 
   {"step": "search_object", "object_type": ..., "filter": {...}}
   {"step": "get_field", "object_type": ..., "object_id": ..., "field_name": ...}
+  {"step": "aggregate_object", "object_type": ..., "aggregate": ..., ...}
+  {"step": "search_around", "object_type": ..., "link_field": ...}
   {"step": "finish"}
 
 The schema describing available object types/fields is rendered into the
@@ -333,6 +335,20 @@ To read SEVERAL fields of the SAME object in one step -- prefer this
 over several separate get_field calls whenever you already know you
 need more than one field from the same object:
   {{"step": "get_object", "object_type": "<type>", "object_id": "<id>", "field_names": ["<field1>", "<field2>"]}}
+
+To COUNT or TOTAL across many objects -- always prefer this over
+reading each object one at a time, which is slower and may run out of
+steps on a large set. Aggregate is one of: count, sum, avg, min, max.
+"field_name" is required for every aggregate except count, and
+"group_by" is optional:
+
+  {{"step": "aggregate_object", "object_type": "<type>", "filter": {{}},
+   "aggregate": "sum", "field_name": "<field>", "group_by": "<field>"}}
+
+To follow a LINK from every object matching a filter, getting the ids
+on the far side in one step rather than one lookup per object:
+
+  {{"step": "search_around", "object_type": "<type>", "filter": {{"<field>": "<value>"}}, "link_field": "<link field>"}}
 
 If you have gathered enough to answer the question, or nothing further
 would help:

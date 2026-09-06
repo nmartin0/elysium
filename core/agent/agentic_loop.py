@@ -66,6 +66,7 @@ import json
 import logging
 import threading
 from dataclasses import dataclass
+from typing import Any
 
 from core.concurrency import ConcurrencyLimiter
 from core.deployment_loader import build_llm_adapter
@@ -112,6 +113,16 @@ def _step_signature(step: dict):
         # (sort_keys=True for determinism) handles nested lists/dicts
         # safely and still produces a stable, hashable signature.
         return ("use_tool", step["tool_name"], json.dumps(step["args"], sort_keys=True))
+    # Set-based steps are deterministic for the same inputs, so
+    # repeating one wastes a step exactly as a repeated get_field does
+    # -- worth catching by the same duplicate detection.
+    if step["step"] == "aggregate_object":
+        return ("aggregate_object", step["object_type"],
+                frozenset((step.get("filter") or {}).items()),
+                step["aggregate"], step.get("field_name"), step.get("group_by"))
+    if step["step"] == "search_around":
+        return ("search_around", step["object_type"],
+                frozenset((step.get("filter") or {}).items()), step["link_field"])
     return None
 
 
@@ -280,6 +291,11 @@ class AgentLoop:
         # rejection shouldn't count against the same strike cap as
         # genuine confusion.
         try:
+            # Genuinely heterogeneous across steps: a list of ids, a
+            # single field value, a dict of fields, or a dict of
+            # aggregates. Annotated rather than inferred from
+            # whichever branch happens to come first.
+            result: Any
             if step["step"] == "search_object":
                 # visible_schema passed through explicitly -- already
                 # computed ONCE for this whole request by run(), not
@@ -290,6 +306,28 @@ class AgentLoop:
             elif step["step"] == "get_field":
                 result = self.mediator.get_field(
                     user_record, step["object_type"], step["object_id"], step["field_name"]
+                )
+            elif step["step"] == "aggregate_object":
+                # Foundry's own object query tool supports "filtering,
+                # aggregation, inspection, and traversal of links".
+                # Elysium had the first and third; these two steps add
+                # the others.
+                #
+                # This is what stops the model HOPPING. Asked for a
+                # total, it previously had to get_field its way through
+                # every matching object one at a time -- correct, but
+                # slow, token-hungry, and capped by the step budget on
+                # any real dataset. One aggregate answers it.
+                result = self.mediator.aggregate_by_field(
+                    user_record, step["object_type"], step.get("filter") or {},
+                    group_by=step.get("group_by"),
+                    aggregate=step["aggregate"],
+                    field_name=step.get("field_name"),
+                )
+            elif step["step"] == "search_around":
+                result = self.mediator.search_around(
+                    user_record, step["object_type"], step.get("filter") or {},
+                    step["link_field"],
                 )
             elif step["step"] == "get_object":
                 # Expands into ONE get_field-shaped gathered[] entry
