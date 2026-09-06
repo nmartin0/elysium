@@ -450,6 +450,23 @@ class AgentLoop:
             )
             return consecutive_invalid, new_count, should_stop, None
         except (ValueError, TypeError, PermissionError) as e:
+            if isinstance(e, TypeError):
+                # A TypeError here is far more likely OUR bug than the
+                # model's -- a mediator called with the wrong arity, a
+                # None where a dict was expected. Treated as a
+                # recoverable model mistake it becomes invisible: the
+                # model is told its step was invalid, retries, fails
+                # again, and the loop stops with "too many consecutive
+                # invalid steps" while the real defect never surfaces.
+                #
+                # Still recovered rather than raised, because a model
+                # CAN genuinely provoke one (a nested dict where an id
+                # belongs) and crashing a user's query on an ambiguous
+                # signal is worse. But logged at error level with a
+                # traceback, so it is findable rather than buried among
+                # genuine model mistakes at warning level.
+                logger.error(f"TypeError executing {step} -- likely a bug, not a bad step",
+                             exc_info=True)
             new_count, should_stop = _handle_recoverable_mistake(
                 gathered, consecutive_invalid, self.max_consecutive_invalid_steps,
                 detail=f"{step} -- {e}",

@@ -47,7 +47,11 @@ from pathlib import Path
 
 import pyarrow as pa
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+from pyiceberg.exceptions import (
+    NamespaceAlreadyExistsError,
+    NoSuchNamespaceError,
+    NoSuchTableError,
+)
 
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.transform import describe_drift, transform_rows
@@ -166,12 +170,19 @@ class IcebergMirrorSync(MirrorSync):
     def _ensure_namespace(self, silo_name: str) -> None:
         try:
             self._catalog.create_namespace(silo_name)
-        except Exception:
-            # Already exists -- the only expected case. PyIceberg raises
-            # a catalog-specific error type here rather than a single
-            # documented one, so this stays broad deliberately; a real,
-            # different failure surfaces immediately below anyway, when
-            # the table operation itself fails.
+        except NamespaceAlreadyExistsError:
+            # The only expected case, and the only one swallowed.
+            #
+            # This was `except Exception: pass`, with a comment claiming
+            # PyIceberg "raises a catalog-specific error type here
+            # rather than a single documented one". That was not true --
+            # it raises NamespaceAlreadyExistsError, verified directly.
+            # The old handler therefore swallowed every real failure too
+            # (a permissions problem, a full disk, a corrupt catalog),
+            # and the comment's own defence was that such a failure
+            # "surfaces immediately below anyway, when the table
+            # operation itself fails" -- which turns a clear cause into
+            # a confusing symptom one step removed from it.
             pass
 
     def _read_source_rows(self, adapter: ExternalReadAdapter, table_name: str,

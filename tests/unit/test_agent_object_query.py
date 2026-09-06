@@ -324,3 +324,69 @@ def test_a_delete_action_type_reaches_the_agents_prompt(write_loop):
     assert "RemoveAccount" in described
     assert "propose_action" in described
     assert "account_id" in described
+
+
+def test_a_type_error_is_logged_as_a_likely_bug_not_just_a_bad_step(caplog):
+    """A TypeError from _execute_step is far more likely OUR bug than
+    the model's. Treated as a plain recoverable mistake it becomes
+    invisible -- the model is told its step was invalid, retries, fails
+    again, and the loop stops with "too many consecutive invalid
+    steps" while the real defect never surfaces.
+
+    Still recovered rather than raised (a model CAN provoke one, and
+    crashing a user's query on an ambiguous signal is worse), but
+    logged at ERROR with a traceback so it is findable.
+    """
+    import logging
+
+    class ExplodingMediator:
+        roles: dict = {}
+        schema: dict = {}
+
+        def visible_schema(self, user_record):
+            return {}
+
+        def search_object(self, *args, **kwargs):
+            raise TypeError("wrong arity -- a real bug, not a bad step")
+
+    loop = AgentLoop(client=None, mediator=ExplodingMediator())
+    gathered: list[dict] = []
+
+    with caplog.at_level(logging.ERROR):
+        loop._execute_step(
+            {"step": "search_object", "object_type": "Customer", "filter": {}},
+            WEST, {}, gathered, 0, 0,
+        )
+
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors, "a TypeError was recovered with no error-level record"
+    assert "likely a bug" in errors[0].message
+    assert errors[0].exc_info, "the traceback is what makes it findable"
+
+
+def test_a_value_error_is_still_treated_as_an_ordinary_bad_step(caplog):
+    # The distinction has to hold both ways: a ValueError IS usually
+    # the model's fault, and logging every one at error level would
+    # bury the TypeErrors again.
+    import logging
+
+    class RejectingMediator:
+        roles: dict = {}
+        schema: dict = {}
+
+        def visible_schema(self, user_record):
+            return {}
+
+        def search_object(self, *args, **kwargs):
+            raise ValueError("no such field")
+
+    loop = AgentLoop(client=None, mediator=RejectingMediator())
+    gathered: list[dict] = []
+
+    with caplog.at_level(logging.DEBUG):
+        loop._execute_step(
+            {"step": "search_object", "object_type": "Customer", "filter": {}},
+            WEST, {}, gathered, 0, 0,
+        )
+
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]

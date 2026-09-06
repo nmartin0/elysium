@@ -280,3 +280,36 @@ def test_concurrent_commits_to_one_table_are_rejected_not_silently_merged(tmp_pa
     # holds exactly one writer's complete result.
     assert _mirror(first).num_rows == 5
     assert "committed" in outcomes
+
+
+def test_a_real_namespace_failure_is_not_swallowed(tmp_path, source):
+    """_ensure_namespace() used `except Exception: pass`, with a comment
+    claiming PyIceberg "raises a catalog-specific error type here rather
+    than a single documented one". That was not true -- it raises
+    NamespaceAlreadyExistsError -- so the handler swallowed every REAL
+    failure too: a permissions problem, a full disk, a corrupt catalog.
+
+    Its own defence was that such a failure "surfaces immediately below
+    anyway, when the table operation itself fails", which turns a clear
+    cause into a confusing symptom one step removed from it.
+    """
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": source})})
+
+    def exploding_create_namespace(*args, **kwargs):
+        raise PermissionError("cannot write to the warehouse directory")
+
+    sync._catalog.create_namespace = exploding_create_namespace
+
+    with pytest.raises(PermissionError, match="cannot write"):
+        _sync(sync)
+
+
+def test_an_existing_namespace_is_still_tolerated(tmp_path, source):
+    # The one case that SHOULD be swallowed -- syncing twice must not
+    # fail on the second run.
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": source})})
+
+    _sync(sync)
+    _sync(sync)
+
+    assert _mirror(sync).num_rows == 5
