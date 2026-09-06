@@ -1575,3 +1575,223 @@ def test_delete_nonexistent_user_is_404(client):
     _make_admin(client)
     response = client.delete("/api/users/totally_fake_user", headers=_csrf_headers(client))
     assert response.status_code == 404
+
+
+# --- Object Set operations (Point 11): count, aggregate, and search-
+# around over HTTP. Foundry's own Object Set Service serves
+# "searching, filtering, aggregating, and loading" -- Elysium had the
+# first two exposed and neither of the last, so these existed on
+# DataMediator with zero route references.
+#
+# POST rather than GET for all three: each takes a structured criteria
+# object, and encoding nested JSON into query parameters would be both
+# uglier and length-limited. They are reads despite the verb, which
+# does mean they are CSRF-gated like any other POST -- asserted below
+# rather than assumed.
+
+def _post(client, path, body):
+    return client.post(path, json=body, headers=_csrf_headers(client))
+
+
+def test_count_returns_what_the_caller_can_see(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = _post(client, "/api/objects/Customer/count", {"criteria": {}})
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 2}
+
+
+def test_count_applies_criteria(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    matching = _post(client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"}})
+    missing = _post(client, "/api/objects/Customer/count", {"criteria": {"region": "nowhere"}})
+
+    assert matching.json()["count"] == 2
+    assert missing.json()["count"] == 0
+
+
+def test_two_users_get_genuinely_different_counts(client):
+    # THE security property. A count that ignored MAC would leak the
+    # existence of rows outside the caller's boundary -- you would
+    # learn how many objects you cannot see.
+    client.app.state.user_directory.create_user("west", "correct-pw", "us-west", "customer_service")
+    client.app.state.user_directory.create_user("east", "correct-pw", "us-east", "customer_service")
+
+    _login(client, "west", "correct-pw")
+    west_count = _post(client, "/api/objects/Transaction/count", {"criteria": {}}).json()["count"]
+
+    # A fresh login as the other user, through the same client -- the
+    # new session cookie replaces the old one.
+    _login(client, "east", "correct-pw")
+    east_count = _post(client, "/api/objects/Transaction/count", {"criteria": {}}).json()["count"]
+
+    assert west_count and east_count
+    assert west_count != east_count
+
+
+def test_aggregate_groups_and_sums(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = _post(
+        client, "/api/objects/Transaction/aggregate",
+        {"criteria": {}, "aggregate": "sum", "field": "amount", "group_by": "category"},
+    )
+
+    results = response.json()["results"]
+    assert results["hardware"] == 199.0
+    assert results["refund"] == -20.0
+
+
+def test_aggregate_with_no_group_by_returns_one_result_under_an_empty_key(client):
+    # A caller asking for one aggregate over the whole set must get a
+    # result back. JSON object keys must be strings, so the None group
+    # becomes "" rather than being dropped.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = _post(
+        client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "count"}
+    )
+
+    assert response.json()["results"] == {"": 4}
+
+
+def test_an_unknown_aggregate_is_a_400_not_a_500(client):
+    # A caller mistake, not a server fault -- and the message names the
+    # real options rather than being generic.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = _post(
+        client, "/api/objects/Transaction/aggregate",
+        {"criteria": {}, "aggregate": "median", "field": "amount"},
+    )
+
+    assert response.status_code == 400
+    assert "median" in response.json()["detail"]
+
+
+def test_an_aggregate_missing_its_field_is_a_400(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = _post(
+        client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "sum"}
+    )
+
+    assert response.status_code == 400
+    assert "field_name" in response.json()["detail"]
+
+
+def test_invalid_criteria_is_a_400(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = _post(
+        client, "/api/objects/Customer/count", {"criteria": {"not_a_real_field": "x"}}
+    )
+
+    assert response.status_code == 400
+
+
+def test_search_around_traverses_a_link(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = _post(
+        client, "/api/objects/Customer/search-around",
+        {"criteria": {"region": "us-west"}, "link_field": "transactions"},
+    )
+
+    body = response.json()
+    assert body["total"] == len(body["ids"])
+    assert body["ids"]
+
+
+def test_search_around_returns_only_ids_the_caller_could_read_directly(client):
+    # Following a link must never reveal an object a direct read would
+    # deny -- otherwise a link becomes a way around the MAC boundary.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    ids = _post(
+        client, "/api/objects/Customer/search-around",
+        {"criteria": {}, "link_field": "transactions"},
+    ).json()["ids"]
+
+    for object_id in ids:
+        detail = client.get(f"/api/objects/Transaction/{object_id}")
+        assert detail.status_code == 200
+        assert any(value is not None for value in detail.json()["fields"].values()), (
+            f"search-around returned {object_id!r}, which a direct read denies"
+        )
+
+
+def test_search_around_on_an_ungranted_field_returns_empty_not_an_error(client):
+    # Uniform denial: a caller learns nothing about whether the field
+    # exists, is a link, or is merely ungranted.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = _post(
+        client, "/api/objects/Customer/search-around",
+        {"criteria": {}, "link_field": "not_a_real_field"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ids": [], "total": 0}
+
+
+def test_the_new_routes_require_authentication(client):
+    for path, body in (
+        ("/api/objects/Customer/count", {"criteria": {}}),
+        ("/api/objects/Customer/aggregate", {"criteria": {}, "aggregate": "count"}),
+        ("/api/objects/Customer/search-around", {"criteria": {}, "link_field": "x"}),
+    ):
+        response = client.post(path, json=body)
+        assert response.status_code in (401, 403), f"{path} was reachable unauthenticated"
+
+
+def test_the_new_routes_require_a_csrf_token(client):
+    # They are POSTs, so they are CSRF-gated like every other POST --
+    # a real consequence of choosing POST for a read, asserted rather
+    # than assumed.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.post("/api/objects/Customer/count", json={"criteria": {}})
+
+    assert response.status_code == 403
+
+
+def test_the_object_detail_route_still_works(client):
+    # /objects/{type}/count sits alongside /objects/{type}/{object_id}.
+    # They do not collide -- one is POST, the other GET -- but that is
+    # exactly the kind of thing worth pinning rather than trusting.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.get("/api/objects/Customer/cust_001")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "cust_001"
+
+
+def test_an_object_genuinely_named_count_is_still_reachable(client):
+    # The collision that WOULD matter: a GET for an object whose id is
+    # literally "count". The GET route still matches it, because the
+    # new routes are POST-only.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    response = client.get("/api/objects/Customer/count")
+
+    # Not a 405 (method-not-allowed from the POST route shadowing it)
+    # -- the GET route handled it, and simply found no such object.
+    assert response.status_code == 200
+    assert json.loads(response.content)["id"] == "count"

@@ -55,6 +55,9 @@ release_lock_route
 force_release_lock_route
 lock_status_route
 data_freshness_route
+count_objects_route
+aggregate_objects_route
+search_around_route
 
 # --- unittest.mock attribute assignment -- `some_mock.return_value = x`
 # / `some_mock.side_effect = fn` are how tests configure a MagicMock;
@@ -126,3 +129,4 @@ source
 total_matches
 display_name
 plural_display_name
+total

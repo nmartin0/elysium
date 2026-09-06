@@ -298,6 +298,49 @@ class ConfirmWriteResponse(BaseModel):
     object_ids: list[Any] | None = None
 
 
+class ObjectSetQueryRequest(BaseModel):
+    """Criteria selecting the object set an operation runs over.
+
+    Mirrors Foundry's own aggregate API, where a `query` field "can be
+    used to select which objects to aggregate" -- the set is chosen
+    first, then the operation applies to it. An empty criteria dict
+    means every object of the type the caller can see, which is a
+    legitimate and common request rather than an error.
+    """
+
+    criteria: dict[str, Any] = {}
+
+
+class AggregateRequest(ObjectSetQueryRequest):
+    # Named to match Foundry's own vocabulary: an aggregation with an
+    # optional groupBy. `field` is required for every aggregate except
+    # count, which aggregates the set itself rather than a property.
+    aggregate: str
+    field: str | None = None
+    group_by: str | None = None
+
+
+class SearchAroundRequest(ObjectSetQueryRequest):
+    link_field: str
+
+
+class CountResponse(BaseModel):
+    count: int
+
+
+class AggregateResponse(BaseModel):
+    # {group_value: metric}, with the group key stringified for JSON.
+    # A None group (no group_by requested) becomes the empty string
+    # rather than being dropped -- a caller asking for one aggregate
+    # over the whole set must get a result back, not an empty object.
+    results: dict[str, Any]
+
+
+class SearchAroundResponse(BaseModel):
+    ids: list[Any]
+    total: int
+
+
 class ConfirmWriteRequest(BaseModel):
     approved: bool
 
@@ -961,3 +1004,63 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
     event_loop = asyncio.get_running_loop()
     outcome = await event_loop.run_in_executor(executor, write_mediator.confirm_and_execute, pending, body.approved)
     return outcome if outcome is not None else {"status": "rejected"}
+
+# --- Object Set operations: the analytical half of the read surface.
+# Foundry's own Object Set Service serves "searching, filtering,
+# aggregating, and loading"; Elysium had the first two exposed over
+# HTTP and neither of the last, so count/aggregate/search-around were
+# reachable in DataMediator but not from any UI.
+#
+# POST rather than GET for all three, deliberately: each takes a
+# structured criteria object, and encoding nested JSON into query
+# parameters would be both uglier and length-limited. These are reads
+# with no side effects despite the verb -- the same trade every
+# search-with-a-body API makes.
+
+
+@router.post("/objects/{object_type}/count", response_model=CountResponse)
+def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The count is of objects THIS CALLER can see, never the raw row
+    # count -- two users legitimately get different answers, and a
+    # count ignoring MAC would leak the existence of rows outside the
+    # caller's boundary.
+    mediator = request.app.state.mediator
+    try:
+        return {"count": mediator.count_objects(current_user, object_type, body.criteria)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/objects/{object_type}/aggregate", response_model=AggregateResponse)
+def aggregate_objects_route(object_type: str, body: AggregateRequest, request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    mediator = request.app.state.mediator
+    try:
+        results = mediator.aggregate_by_field(
+            current_user, object_type, body.criteria,
+            group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
+        )
+    except ValueError as e:
+        # An unknown aggregate name or a missing field is a caller
+        # mistake, not a server fault.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Group values become strings for JSON object keys. None -- meaning
+    # "no grouping requested" -- becomes "" rather than being dropped.
+    return {"results": {("" if group is None else str(group)): metric
+                        for group, metric in results.items()}}
+
+
+@router.post("/objects/{object_type}/search-around", response_model=SearchAroundResponse)
+def search_around_route(object_type: str, body: SearchAroundRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # MAC applies on BOTH sides: the caller only traverses from objects
+    # they can see, and every returned id is authorized individually.
+    # An ungranted or non-link field yields an empty list rather than
+    # an error -- the same uniform denial every other read path uses,
+    # so a caller learns nothing about whether the field exists.
+    mediator = request.app.state.mediator
+    ids = mediator.search_around(current_user, object_type, body.criteria, body.link_field)
+    return {"ids": ids, "total": len(ids)}
+
