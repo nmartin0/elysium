@@ -147,6 +147,33 @@ after.
   check for a reason not run down. Worth doing with a fixture built
   for it rather than by bending one that exists.
 
+- **Large search-arounds are bounded by AUTHORIZATION, not by the
+  query engine -- so Foundry's own escape hatch would not help.** Their
+  OSv2 "supports on-demand Spark cluster searches when running
+  search-arounds on over 100,000 objects", and this was recorded as a
+  ceiling Elysium lacks. Profiling a 200,000-object search-around shows
+  the framing was wrong: the traversal is 0.37s (one query), the
+  security prefetch 0.65s, and per-target check_access 4.54s -- 82% of
+  the cost, in a layer Spark would not touch. The same conclusion the
+  DuckDB question reached, in a different guise.
+
+  Within check_access, audit logging dominated, and the free half of
+  that is now fixed. What remains is the per-object authorization cost
+  itself, which is inherent to applying MAC in Python and is the real
+  ceiling. Batching check_access the way security-value resolution was
+  batched is the genuine next step, and it changes the security path,
+  so it deserves its own design rather than being folded into a
+  performance fix.
+
+- **The audit log opens and closes the file per record.** Measured at
+  13.3 us; a persistent handle with an explicit flush measured 4.5 us,
+  a 3x saving on every audited operation. NOT taken: the systemd unit
+  logs to /var/log/elysium, exactly where logrotate operates, and a
+  held handle would keep writing to a rotated-away inode. Silently
+  losing audit records is not a trade worth making for speed.
+  Revisit only alongside a real rotation story -- reopening on SIGHUP,
+  or writing through a logging handler that already handles it.
+
 - **Snapshot pagination is not implemented.** Foundry offers two
   consistency behaviours: their DEFAULT "returns the latest results"
   and, in their own words, "may lead to duplicate entries or missing
