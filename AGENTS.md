@@ -52,6 +52,17 @@ code path only runs after a *different* failure).
 Prefer real servers over mocks for anything user-visible. `jsdom`
 cannot see CSS.
 
+**Name the measurement; do not assert the property.** Write "one
+query, 0.5 ms at 100 rows and 144 ms at 55,000" rather than "one
+query". Write "asserts are live; checked the systemd unit, the
+container entrypoint and `scripts/`" rather than "asserts are live".
+
+Both of those were claimed here without the number, and both were
+wrong in the same way: the single query was a full-history scan, and
+the path that was never checked was the one that mattered. Counting
+queries is adjacent to measuring cost; checking install scripts is
+adjacent to checking the service. Adjacent is not the same.
+
 ## Non-negotiable invariants
 
 **Elysium never writes to a customer's database through a read path.**
@@ -85,9 +96,8 @@ intended use.
 
 ## Do not add speculative code
 
-If nothing calls it, do not write it. `AppendOnlyAdapter` and
-`link_type_summaries` were both deleted for this reason. `vulture`
-will catch it, but noticing first is better.
+If nothing calls it, do not write it. `vulture` catches it; noticing
+first is better.
 
 ## Commit messages
 
@@ -113,7 +123,6 @@ expanding there too, or it will blame the wrong file.
 
 ## Files you should not hand-edit
 
-- `venv/`, `ui/node_modules/` — generated
-- `vulture_whitelist.py` — append only, with a comment saying why
-- Anything under `tests/integration/fixtures/` without updating all
-  three deployments together
+`vulture_whitelist.py` is append-only, and each entry needs a comment
+saying why. Fixture schemas under `tests/integration/fixtures/` are
+one of three deployments that must change together.
