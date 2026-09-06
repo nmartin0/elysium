@@ -18,6 +18,25 @@ Used by: core/ontology/mediator.py, and core/llm/agent_step_prompt.py
 """
 
 
+def sort_key(value):
+    """A total ordering across mixed id types.
+
+    Object ids are genuinely heterogeneous -- integers for
+    autoincrement primary keys, strings elsewhere -- and Python refuses
+    to compare int with str. Sorting by (type-name, value) gives a
+    deterministic order without needing every id in a set to share a
+    type, which matters because PAGINATION IS ONLY CORRECT IF THE
+    ORDER IS STABLE: an unstable order silently skips or duplicates
+    rows across page boundaries.
+
+    None sorts first rather than raising, so a null value in an
+    order_by column cannot break a page.
+    """
+    if value is None:
+        return ("", "")
+    return (type(value).__name__, value)
+
+
 def humanize(name: str) -> str:
     """A readable label from an identifier, for when none is declared.
 

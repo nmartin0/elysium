@@ -690,7 +690,7 @@ def test_search_objects_blocks_cross_region_mac(client):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"results": [], "total_matches": 0}
+    assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
 
 
 def test_search_objects_no_match_returns_empty_results(client):
@@ -702,7 +702,7 @@ def test_search_objects_no_match_returns_empty_results(client):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"results": [], "total_matches": 0}
+    assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
 
 
 def test_search_objects_unknown_type_returns_empty_results_not_error(client):
@@ -714,7 +714,7 @@ def test_search_objects_unknown_type_returns_empty_results_not_error(client):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"results": [], "total_matches": 0}
+    assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
 
 
 def test_object_detail_without_token_is_rejected(client):
@@ -1795,3 +1795,200 @@ def test_an_object_genuinely_named_count_is_still_reachable(client):
     # -- the GET route handled it, and simply found no such object.
     assert response.status_code == 200
     assert json.loads(response.content)["id"] == "count"
+
+
+# --- Paging and sorting (Point 12). Foundry's own model: pageSize +
+# pageToken in, nextPageToken + totalCount back, and orderBy with an
+# optional :asc/:desc suffix. Elysium previously returned a hard 50
+# results with total_matches reported but NO way to fetch the rest.
+
+
+def _many_customers(client, count=137):
+    directory = client.app.state.user_directory
+    directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+    adapter = client.app.state.mediator.adapters["primary_sql"]
+    conn = sqlite3.connect(adapter.db_path)
+    conn.executemany(
+        "INSERT INTO customers VALUES (?, ?, ?, ?)",
+        [(f"c{i:04d}", f"Person {i:04d}", "us-west", f"e{i}@x.com") for i in range(count)],
+    )
+    conn.commit()
+    conn.close()
+    return count
+
+
+def test_paging_returns_every_result_exactly_once(client):
+    # THE property pagination exists for, and the one most easily got
+    # wrong: walking every page must yield the whole set with nothing
+    # skipped and nothing repeated.
+    total = _many_customers(client)
+
+    seen = []
+    token = None
+    pages = 0
+    while True:
+        url = "/api/objects/Customer/search?q=Person&page_size=25"
+        if token:
+            url += f"&page_token={token}"
+        body = client.get(url).json()
+        pages += 1
+        seen.extend(result["id"] for result in body["results"])
+        token = body["next_page_token"]
+        if not token:
+            break
+        assert pages < 50, "paging did not terminate"
+
+    assert len(seen) == total
+    assert len(seen) == len(set(seen)), "a result appeared on more than one page"
+
+
+def test_the_last_page_has_no_next_token(client):
+    # Foundry's contract: "the presence of the nextPageToken field
+    # indicates that there are more results." Absent, not empty.
+    _many_customers(client, count=10)
+
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=500").json()
+
+    assert body["next_page_token"] is None
+
+
+def test_total_matches_counts_everything_not_just_the_page(client):
+    total = _many_customers(client)
+
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=5").json()
+
+    assert len(body["results"]) == 5
+    assert body["total_matches"] == total
+
+
+def test_an_oversized_page_size_is_clamped_not_rejected(client):
+    # Foundry: "Requests for more than the maximum page size will be
+    # reduced to the maximum."
+    _many_customers(client, count=20)
+
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=99999").json()
+
+    assert body["results"]
+    assert len(body["results"]) <= 500
+
+
+def test_a_malformed_page_token_returns_the_first_page(client):
+    # A client should treat a token as opaque, so garbling one is a
+    # client bug -- but failing the request would turn a display glitch
+    # into an error page. Starting over is recoverable and obvious.
+    _many_customers(client, count=30)
+
+    body = client.get(
+        "/api/objects/Customer/search?q=Person&page_size=3&page_token=not-a-number"
+    ).json()
+
+    assert len(body["results"]) == 3
+    assert body["results"][0]["id"] == "c0000"
+
+
+def test_an_out_of_range_page_token_returns_the_first_page(client):
+    _many_customers(client, count=10)
+
+    body = client.get(
+        "/api/objects/Customer/search?q=Person&page_size=3&page_token=99999"
+    ).json()
+
+    assert body["results"][0]["id"] == "c0000"
+
+
+def test_results_are_ordered_by_a_requested_field(client):
+    _many_customers(client, count=20)
+
+    ascending = client.get(
+        "/api/objects/Customer/search?q=Person&page_size=4&order_by=name"
+    ).json()
+    descending = client.get(
+        "/api/objects/Customer/search?q=Person&page_size=4&order_by=name:desc"
+    ).json()
+
+    ascending_names = [r["fields"]["name"] for r in ascending["results"]]
+    descending_names = [r["fields"]["name"] for r in descending["results"]]
+
+    assert ascending_names == sorted(ascending_names)
+    assert descending_names == sorted(descending_names, reverse=True)
+    assert ascending_names[0] != descending_names[0]
+
+
+def test_an_unknown_order_by_field_is_ignored_rather_than_scrambling(client):
+    # get_field() returns None for anything the caller cannot read, so
+    # an ungranted sort column would otherwise order everything by None
+    # -- silently scrambling results while looking successful.
+    _many_customers(client, count=10)
+
+    unsorted_ids = [
+        r["id"] for r in client.get("/api/objects/Customer/search?q=Person&page_size=5").json()["results"]
+    ]
+    bogus_ids = [
+        r["id"]
+        for r in client.get(
+            "/api/objects/Customer/search?q=Person&page_size=5&order_by=not_a_field"
+        ).json()["results"]
+    ]
+
+    assert bogus_ids == unsorted_ids
+
+
+def test_paging_survives_an_unstable_underlying_order(client):
+    # The pre-paging sort exists because pagination is only correct if
+    # the order is stable, and the underlying SELECT has no ORDER BY.
+    #
+    # Worth recording: removing that sort does NOT break the other
+    # tests here, because SQLite happens to return primary-key order
+    # today. That is an implementation detail, not a guarantee -- so
+    # this test SHUFFLES what the mediator returns, which is what an
+    # adapter with a different plan (or a different engine entirely)
+    # could legitimately do.
+    import random
+
+    total = _many_customers(client, count=40)
+    mediator = client.app.state.mediator
+    real_search = mediator.search_object_free_text
+
+    def shuffled(*args, **kwargs):
+        ids = list(real_search(*args, **kwargs))
+        random.shuffle(ids)
+        return ids
+
+    mediator.search_object_free_text = shuffled
+    try:
+        seen = []
+        token = None
+        while True:
+            url = "/api/objects/Customer/search?q=Person&page_size=7"
+            if token:
+                url += f"&page_token={token}"
+            body = client.get(url).json()
+            seen.extend(result["id"] for result in body["results"])
+            token = body["next_page_token"]
+            if not token:
+                break
+    finally:
+        mediator.search_object_free_text = real_search
+
+    assert len(seen) == total
+    assert len(seen) == len(set(seen)), "an unstable source order broke paging"
+
+
+def test_ordering_stays_consistent_across_pages(client):
+    # Sorting and paging must compose: page two of a sorted result must
+    # continue where page one left off, not re-sort a different subset.
+    _many_customers(client, count=20)
+
+    first = client.get(
+        "/api/objects/Customer/search?q=Person&page_size=5&order_by=name"
+    ).json()
+    second = client.get(
+        f"/api/objects/Customer/search?q=Person&page_size=5&order_by=name"
+        f"&page_token={first['next_page_token']}"
+    ).json()
+
+    names = [r["fields"]["name"] for r in first["results"]] + [
+        r["fields"]["name"] for r in second["results"]
+    ]
+    assert names == sorted(names)

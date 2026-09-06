@@ -131,6 +131,7 @@ from core.auth.auth_cookies import (
 )
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
+from core.ontology.schema import sort_key
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 
@@ -278,6 +279,8 @@ class CreateUserResponse(BaseModel):
 class SearchResponse(BaseModel):
     results: list[dict[str, Any]]
     total_matches: int
+    # Present only when there are more results -- see the route.
+    next_page_token: str | None = None
 
 
 class ObjectDetailResponse(BaseModel):
@@ -653,11 +656,81 @@ def my_visible_schema_route(request: Request, current_user: UserRecord = Depends
 # triggering an unbounded number of get_object() calls (each already
 # its own N-field loop of get_field() calls -- see DataMediator.
 # get_object()'s own docstring), not just an unbounded RESPONSE size.
-MAX_SEARCH_RESULTS = 50
+# Paging, matching Foundry's own model: pageSize + pageToken in, and
+# nextPageToken + totalCount back. Their documented default is 1,000
+# with the default also acting as the maximum; ours is smaller because
+# each result costs a real per-object field read, and a UI table shows
+# far fewer than a thousand rows at once anyway.
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 500
+
+
+def _page_bounds(page_size: int | None, page_token: str | None, total: int) -> tuple[int, int]:
+    """Resolves a request's paging parameters into (start, size).
+
+    A malformed or out-of-range token resolves to the FIRST page rather
+    than raising. Foundry's own guidance is that a client should treat
+    a token as opaque and simply pass it back, so a client that garbles
+    one has a bug -- but failing the whole request would turn a display
+    glitch into an error page, and starting over is both recoverable
+    and obvious.
+
+    An oversized page_size is clamped rather than rejected, matching
+    Foundry: "Requests for more than the maximum page size will be
+    reduced to the maximum."
+    """
+    size = DEFAULT_PAGE_SIZE if page_size is None else max(1, min(page_size, MAX_PAGE_SIZE))
+    start = 0
+    if page_token:
+        try:
+            start = int(page_token)
+        except (TypeError, ValueError):
+            start = 0
+    if start < 0 or start >= total:
+        start = 0
+    return start, size
+
+
+def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
+                      order_by: str) -> list:
+    """Orders ids by a field value, `field` or `field:desc`.
+
+    Foundry's own orderBy syntax, simplified to ONE field: theirs
+    accepts a comma-separated list, and multi-field ordering is a real
+    but separate piece of work rather than something to half-build
+    here.
+
+    An unknown or ungranted field leaves the order untouched rather
+    than raising. get_field() already returns None for anything the
+    caller cannot read, so an ungranted sort column would otherwise
+    order everything by None -- silently scrambling results while
+    looking successful. Falling back to the stable id order is both
+    honest and more useful.
+    """
+    field_name, _, direction = order_by.partition(":")
+    descending = direction.strip().lower() == "desc"
+
+    visible = mediator.visible_schema(user_record).get(object_type) or {}
+    if field_name not in (visible.get("fields") or {}):
+        return object_ids
+
+    values = {
+        object_id: mediator.get_field(user_record, object_type, object_id, field_name)
+        for object_id in object_ids
+    }
+    # Secondary sort on the id itself, so rows sharing a value keep a
+    # deterministic order across pages rather than drifting.
+    return sorted(
+        object_ids,
+        key=lambda object_id: (sort_key(values[object_id]), sort_key(object_id)),
+        reverse=descending,
+    )
 
 
 @router.get("/objects/{object_type}/search", response_model=SearchResponse)
 def search_objects_route(object_type: str, request: Request, q: str = "",
+                          page_size: int | None = None, page_token: str | None = None,
+                          order_by: str | None = None,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
     # The human-facing browse/search endpoint -- DataMediator.search_
     # object_free_text() underneath, a forgiving CONTAINS match across
@@ -680,12 +753,34 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     matching_ids = mediator.search_object_free_text(current_user, object_type, q)
     summary_fields = mediator.free_text_searchable_fields(current_user, object_type)
 
-    capped_ids = matching_ids[:MAX_SEARCH_RESULTS]
+    # SORTED BEFORE PAGING, always. Pagination is only correct if the
+    # order is stable: without it a row can silently appear on two
+    # pages or on none. The underlying SELECT has no ORDER BY, and
+    # while SQLite happens to return primary-key order today, that is
+    # an implementation detail -- verified directly, and not something
+    # paging should rest on.
+    matching_ids = sorted(matching_ids, key=sort_key)
+    if order_by:
+        matching_ids = _sorted_by_field(
+            mediator, current_user, object_type, matching_ids, order_by
+        )
+
+    start, size = _page_bounds(page_size, page_token, len(matching_ids))
+    page_ids = matching_ids[start:start + size]
+    next_start = start + size
+
     results = [
         {"id": object_id, "fields": mediator.get_object(current_user, object_type, object_id, summary_fields)}
-        for object_id in capped_ids
+        for object_id in page_ids
     ]
-    return {"results": results, "total_matches": len(matching_ids)}
+    return {
+        "results": results,
+        "total_matches": len(matching_ids),
+        # Absent, not empty, when there is no further page -- Foundry's
+        # own contract is that "the presence of the nextPageToken field
+        # indicates that there are more results."
+        "next_page_token": str(next_start) if next_start < len(matching_ids) else None,
+    }
 
 
 @router.get("/objects/{object_type}/{object_id}", response_model=ObjectDetailResponse)
