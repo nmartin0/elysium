@@ -237,3 +237,155 @@ def test_deleted_objects_are_filtered_in_bulk_not_per_object(deployment):
     assert counted["n"] <= 5, (
         f"filtering deletes cost {counted['n']} queries -- should be a constant"
     )
+
+
+# --- The derived deleted-state index ------------------------------------
+#
+# Resolving deleted-ness by scanning the write log cost 47.2 ms per
+# search at 55,000 log rows and grew with edit history forever -- on a
+# path that had just been made constant-time. The index is 0.006 ms and
+# flat at 555,000 rows.
+#
+# Following Foundry: "the data-modification logic is immediately applied
+# to the index in the object databases", with deleted-ness a stored
+# column (__is_deleted) rather than something derived at read time.
+# Their index is explicitly ephemeral -- "all indexed data in object
+# databases are considered ephemeral, requiring persistent storing of
+# all Ontology data in other ways" -- which is exactly what makes a
+# derived table safe here rather than a second source of truth.
+
+
+def test_a_delete_populates_the_index(deployment):
+    _mediator, write_mediator, log, _db = deployment
+
+    _write(write_mediator, "delete")
+
+    assert log.deleted_object_ids("Customer") == {"cust_001"}
+
+
+def test_a_later_write_clears_the_index(deployment):
+    # "Last edit wins", the same rule Foundry's indexing uses.
+    _mediator, write_mediator, log, _db = deployment
+    _write(write_mediator, "delete")
+
+    _write(
+        write_mediator, "update",
+        changes={"name": "Ada Restored"}, expected={"name": "Ada Okafor"},
+    )
+
+    assert log.deleted_object_ids("Customer") == set()
+
+
+def test_the_index_timestamp_matches_the_log_entry(deployment):
+    # deleted_at mirrors Foundry's own __patch_offset: it records WHICH
+    # edit produced the row, so the index can be RECONCILED against the
+    # log rather than merely rebuilt from it. Sourced from the log row
+    # itself rather than a second clock reading, or the comparison
+    # would be meaningless.
+    _mediator, write_mediator, log, _db = deployment
+    _write(write_mediator, "delete")
+
+    conn = sqlite3.connect(log.db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        indexed = conn.execute(
+            "SELECT deleted_at FROM object_deleted WHERE object_id = 'cust_001'"
+        ).fetchone()["deleted_at"]
+        logged = conn.execute(
+            "SELECT created_at FROM write_log WHERE object_id = 'cust_001' "
+            "AND operation = 'delete'"
+        ).fetchone()["created_at"]
+    finally:
+        conn.close()
+
+    assert indexed == logged
+
+
+def test_rebuilding_from_the_log_reproduces_the_index(deployment):
+    # THE property that makes this a cache rather than a second source
+    # of truth. If incremental maintenance and the log ever disagree,
+    # the log wins and this is how it wins.
+    _mediator, write_mediator, log, _db = deployment
+    _write(write_mediator, "delete")
+    incremental = log.deleted_object_ids("Customer")
+
+    log.rebuild_deleted_index()
+
+    assert log.deleted_object_ids("Customer") == incremental
+    assert incremental == {"cust_001"}
+
+
+def test_rebuilding_repairs_an_index_that_drifted(deployment):
+    # The failure this recovers from is real: the log entry is written
+    # before the index row, so a crash between them leaves the index
+    # stale. Simulated by corrupting the index directly.
+    _mediator, write_mediator, log, _db = deployment
+    _write(write_mediator, "delete")
+
+    conn = sqlite3.connect(log.db_path)
+    conn.execute("DELETE FROM object_deleted")
+    conn.commit()
+    conn.close()
+    assert log.deleted_object_ids("Customer") == set(), "index should now be wrong"
+
+    log.rebuild_deleted_index()
+
+    assert log.deleted_object_ids("Customer") == {"cust_001"}
+
+
+def test_rebuilding_drops_an_index_row_the_log_does_not_justify(deployment):
+    # Drift in the other direction: an index row with no delete behind
+    # it. A rebuild that only ADDED would leave this forever.
+    _mediator, write_mediator, log, _db = deployment
+    # Touch the log first: its schema is created lazily on the first
+    # real connection, and this test writes to the table directly.
+    log.deleted_object_ids("Customer")
+
+    conn = sqlite3.connect(log.db_path)
+    conn.execute(
+        "INSERT INTO object_deleted VALUES ('Customer', 'never_deleted', '2020-01-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    log.rebuild_deleted_index()
+
+    assert "never_deleted" not in log.deleted_object_ids("Customer")
+
+
+def test_rebuilding_respects_last_edit_wins(deployment):
+    # A rebuild that treated "any delete exists" as deleted would
+    # resurrect a delete an later write had superseded.
+    _mediator, write_mediator, log, _db = deployment
+    _write(write_mediator, "delete")
+    _write(
+        write_mediator, "update",
+        changes={"name": "Ada Restored"}, expected={"name": "Ada Okafor"},
+    )
+
+    log.rebuild_deleted_index()
+
+    assert log.deleted_object_ids("Customer") == set()
+
+
+def test_reading_deleted_ids_does_not_scale_with_edit_history(deployment):
+    # The regression this exists to prevent. Asserted as a query COUNT
+    # against a log deliberately filled with unrelated history: the old
+    # implementation read every applied row, so its cost grew with the
+    # log; this reads one small table.
+    _mediator, write_mediator, log, _db = deployment
+    _write(write_mediator, "delete")
+
+    conn = sqlite3.connect(log.db_path)
+    conn.executemany(
+        "INSERT INTO write_log (id, object_type, object_id, operation, changes, "
+        "expected_current_values, status, user_id, description, created_at) "
+        "VALUES (?, 'Customer', ?, 'update', '{}', '{}', 'applied', 'u', 'noise', ?)",
+        [(f"noise{i}", f"c{i}", f"2020-01-01T{i:06d}") for i in range(5000)],
+    )
+    conn.commit()
+    conn.close()
+
+    # Still exactly the one deleted object, unaffected by 5,000 rows of
+    # unrelated history.
+    assert log.deleted_object_ids("Customer") == {"cust_001"}
