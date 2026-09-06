@@ -172,3 +172,121 @@ def test_both_new_steps_are_advertised_in_the_prompt():
 
     assert "aggregate_object" in source
     assert "search_around" in source
+
+
+# --- Auto-execute (Foundry parity) --------------------------------------
+
+
+@pytest.fixture
+def write_loop(tmp_path):
+    from core.ontology.write_log import WriteLogWriter
+    from core.ontology.write_mediator import WriteMediator
+
+    schema = yaml.safe_load(open(FIXTURES + "ontology_schema.yaml"))
+    policy = yaml.safe_load(open(FIXTURES + "policy.yaml"))
+    schema["object_types"] = expand_link_types(
+        schema.get("link_types", {}), schema["object_types"]
+    )
+    db_path = tmp_path / "business.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(open(FIXTURES + "schema.sql").read())
+    conn.commit()
+    conn.close()
+
+    adapters = _build_adapters(
+        {"primary_sql": {"adapter": "sqlite", "connection": {"path": db_path}}},
+        _WRITE_ADAPTER_REGISTRY,
+    )
+    object_types = {
+        name: type_def
+        for name, type_def in schema["object_types"].items()
+        if name in ("Customer", "Account")
+    }
+    mediator = DataMediator(
+        object_types, adapters, dict.fromkeys(object_types, "primary_sql"),
+        policy["roles"], write_log=WriteLogWriter(tmp_path / "wl.db"),
+    )
+
+    def build(auto_execute=None):
+        action_types = {
+            name: (dict(action, auto_execute=auto_execute) if auto_execute is not None
+                   else dict(action))
+            for name, action in schema["action_types"].items()
+        }
+        write_mediator = WriteMediator(mediator, adapters, policy["roles"], action_types)
+        return AgentLoop(client=None, mediator=mediator, write_mediator=write_mediator), mediator
+
+    return build
+
+
+TRANSFER = {
+    "step": "propose_action", "action_type": "TransferFunds",
+    "parameters": {
+        "from_account_id": "acc_checking", "to_account_id": "acc_savings",
+        "new_from_balance": 900, "new_to_balance": 600,
+    },
+}
+ACCOUNTANT = UserRecord(user_id="u", security_value="us-west", role_name="accountant")
+
+
+def test_the_default_is_to_pause_for_confirmation(write_loop):
+    # A deployment that says nothing gets the safe behaviour.
+    loop, mediator = write_loop()
+    gathered: list[dict] = []
+
+    _c, _b, _f, pending = loop._execute_step(
+        TRANSFER, ACCOUNTANT, mediator.visible_schema(ACCOUNTANT), gathered, 0, 0
+    )
+
+    assert pending is not None, "a write ran without confirmation by default"
+    assert mediator.get_field(ACCOUNTANT, "Account", "acc_checking", "balance") == 500.0
+
+
+def test_auto_execute_writes_without_a_confirmation_step(write_loop):
+    # Foundry's Action tool "can be configured to run automatically or
+    # to run after confirmation from the user".
+    loop, mediator = write_loop(auto_execute=True)
+    gathered: list[dict] = []
+
+    _c, _b, _f, pending = loop._execute_step(
+        TRANSFER, ACCOUNTANT, mediator.visible_schema(ACCOUNTANT), gathered, 0, 0
+    )
+
+    assert pending is None
+    assert gathered[-1]["result"]["status"] == "auto_executed"
+    assert mediator.get_field(ACCOUNTANT, "Account", "acc_checking", "balance") == 900
+
+
+def test_auto_execute_false_is_the_same_as_absent(write_loop):
+    loop, mediator = write_loop(auto_execute=False)
+    gathered: list[dict] = []
+
+    _c, _b, _f, pending = loop._execute_step(
+        TRANSFER, ACCOUNTANT, mediator.visible_schema(ACCOUNTANT), gathered, 0, 0
+    )
+
+    assert pending is not None
+
+
+def test_the_model_cannot_request_auto_execution(write_loop):
+    # THE property that makes this enforceable. The flag is read from
+    # the DEPLOYMENT's action type, never from the step the model
+    # emitted -- a model that could ask to skip confirmation would make
+    # the setting advisory, and the whole point is that it is not.
+    loop, mediator = write_loop()
+    gathered: list[dict] = []
+
+    _c, _b, _f, pending = loop._execute_step(
+        {**TRANSFER, "auto_execute": True},
+        ACCOUNTANT, mediator.visible_schema(ACCOUNTANT), gathered, 0, 0
+    )
+
+    assert pending is not None, "the model talked its way past confirmation"
+    assert mediator.get_field(ACCOUNTANT, "Account", "acc_checking", "balance") == 500.0
+
+
+def test_a_non_boolean_auto_execute_is_rejected_at_load():
+    from core.ontology.action_types import _validate_auto_execute
+
+    with pytest.raises(ValueError, match="must be true or false"):
+        _validate_auto_execute("Bad", {"auto_execute": "yes"})

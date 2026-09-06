@@ -401,6 +401,32 @@ class AgentLoop:
                 pending = self.write_mediator.propose_action(
                     user_record, step["action_type"], step["parameters"]
                 )
+
+                # AUTO-EXECUTE, decided HERE in Python rather than by
+                # the model. Foundry's Action tool "can be configured
+                # to run automatically or to run after confirmation
+                # from the user", and their governance model puts that
+                # decision in the ACTION config, per action type.
+                #
+                # Read from the DEPLOYMENT's own declaration, never
+                # from the step the model emitted: a model that could
+                # ask to skip confirmation would make the setting
+                # advisory, and the whole point is that it is not.
+                # Absent means confirm, so a deployment that says
+                # nothing gets the safe behaviour.
+                #
+                # Everything else still applies: the caller needed the
+                # execute: grant to propose at all, submission criteria
+                # were already checked, and the write goes through the
+                # same confirm_and_execute() path with the same audit
+                # logging -- this only removes the human pause.
+                action_def = self.write_mediator.action_types.get(step["action_type"]) or {}
+                if action_def.get("auto_execute") is True:
+                    self.write_mediator.confirm_and_execute(pending, approved=True)
+                    result = {"status": "auto_executed", "action_type": step["action_type"]}
+                    gathered.append({"step": step, "result": result})
+                    return 0, 0, False, None
+
                 return 0, 0, True, pending
             else:
                 # shouldn't happen -- agent_step_prompt already validates this

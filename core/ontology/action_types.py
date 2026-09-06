@@ -130,6 +130,7 @@ def validate_action_types(action_types: dict, object_types: dict) -> None:
             # why this used to be silently skipped instead of rejected.
             raise ValueError(f"Action type {action_type_name!r}: missing required key 'sub_writes'.")
         _validate_sub_writes_action(action_type_name, action_def, object_types)
+        _validate_auto_execute(action_type_name, action_def)
 
 
 def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_types: dict) -> None:
@@ -288,6 +289,31 @@ def _validate_object_reference_parameters(action_type_name: str, declared_params
         raise ValueError(
             f"Action type {action_type_name!r}: more than one parameter declares "
             f"default_to_current_object (got {sorted(default_to_current_object_params)}) -- at most one is allowed."
+        )
+
+
+def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:
+    """Checks the optional auto_execute flag.
+
+    Foundry's own Action tool "can be configured to run automatically
+    or to run after confirmation from the user", and their governance
+    model puts that decision in the ACTION config -- "controls which
+    business mutations the agent can perform, and whether confirmation
+    is required". Per action type, not a global switch: a deployment
+    should be able to let an agent file a low-stakes note without also
+    letting it move money unattended.
+
+    Absent means False. The default is confirmation, and it is enforced
+    in Python at the point of execution rather than by asking the model
+    to behave -- a prompt can be talked around, a branch cannot.
+    """
+    if "auto_execute" not in action_def:
+        return
+    value = action_def["auto_execute"]
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"Action type {action_type_name!r}: auto_execute must be true or false, "
+            f"got {value!r}."
         )
 
 

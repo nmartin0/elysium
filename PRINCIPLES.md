@@ -1,5 +1,9 @@
 # Elysium: project principles
 
+*Why the code is the way it is. Operational instructions -- exact
+commands, the patch workflow, commit format, files not to hand-edit --
+live in `AGENTS.md`, which is the how to this file's why.*
+
 This is not a style guide. It's a record of the real, recurring
 decisions this project has already made, over and over, across both
 the backend and the frontend — written down so they stop being
@@ -233,57 +237,7 @@ Foundry's own documentation, translated deliberately, feature by
 feature, into what a smaller, single-tenant architecture actually
 needs, not a wishlist of what a bigger platform happens to have.
 
-## 10. Code-quality tooling: several genuinely different questions, not one.
-
-Both halves of this codebase run a small set of tools chosen because
-each one catches something structurally different from the others —
-never redundant, never decorative:
-
-**Backend** (`./lint.sh`): Ruff (is this file well-formed, locally?),
-MyPy (do the types actually agree with each other — the only one of
-the four that understands data *shape*?), Vulture (does anything in
-the rest of the codebase still use this, at all — whole-program dead
-code analysis Ruff structurally cannot do per-file?), Import Linter
-(is X even *allowed* to import Y, regardless of whether it compiles?).
-
-**Frontend** (`cd ui && npm run lint / knip / format:check`): oxlint
-(style/correctness), `tsc --noEmit` (do the types agree), knip (does
-anything still use this file/export/dependency at all), oxfmt
-(formatting). The same four-way split as the backend, deliberately.
-
-`ruff format` is deliberately never run — not an oversight, a real,
-checked decision (`pyproject.toml`'s own comment has the specifics):
-it would rewrite genuine, deliberate, hand-placed formatting choices
-already established throughout this codebase into its own generic
-style, on every file, forever. A tool earns its place here by
-catching something objectively wrong; overriding a real, considered
-authorial choice is not that.
-
-## 11. Commit discipline: one real, coherent change, honestly explained.
-
-A commit is one logical unit of work, not a batch of whatever
-happened to be edited in the same sitting. When two genuinely
-separate concerns end up touching overlapping work, they get split
-into separate commits even after the fact — confirmed real and
-practiced, not just stated: an early commit combining a test-mock fix
-with an unrelated type-safety change was deliberately un-committed
-and re-split into two, once it was noticed the two file sets never
-actually overlapped.
-
-A commit message explains *why*, not just *what* — the real
-motivation, the real alternative considered and rejected, the real
-verification performed (which tests, which negative control, what a
-live browser check actually showed), not a changelog-style summary
-of the diff. Every commit is verified clean (the full relevant test
-suite, lint, build) *before* it's made, never after, and every commit
-this project hands off across the sandbox/real-machine boundary gets
-its own patch, generated against its own real, explicit parent
-commit, and round-trip tested by applying it to a completely fresh
-clone before it's ever handed over — confirming the patch is correct
-in isolation, not just "worked when I had all my other context still
-loaded."
-
-## 12. Architecture: explicit layers, enforced, not aspirational.
+## 10. Architecture: explicit layers, enforced, not aspirational.
 
 Package and module boundaries in this codebase are real, checked
 contracts (`import-linter`'s own contracts, `ui/`'s own npm workspace
@@ -295,7 +249,7 @@ fully independent of each other; these are enforced on every run of
 `./lint.sh`, not just documented intentions someone could quietly
 drift away from.
 
-## 13. Third-party code: install and import, never modify. Permissive licenses only.
+## 11. Third-party code: install and import, never modify. Permissive licenses only.
 
 A real, hard rule, decided directly, not a default assumption: this
 project never modifies a third-party dependency's own source --
