@@ -319,12 +319,6 @@ it went stale unnoticed.*
   scanner that cannot see the case it exists to catch is worse than
   having none, because it reads as coverage.
 
-- **"Declared but unused" lint for action types.** An
-  `object_reference` parameter that nothing references (no sub_write
-  object_id, no mutation value, no submission criterion) is not
-  flagged. A genuinely different kind of check from the "does this
-  reference something real" validation that exists today.
-
 - **Full field-VALUE validation** (real constraints -- ranges,
   patterns, enum membership -- not just the structural "was this
   field addressed" check the original required-field idea explored).

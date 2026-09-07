@@ -292,6 +292,78 @@ def test_a_non_boolean_auto_execute_is_rejected_at_load():
         _validate_auto_execute("Bad", {"auto_execute": "yes"})
 
 
+def test_a_delete_goes_from_the_agents_prompt_through_to_applied(write_loop):
+    """The whole path: a delete action type reaches the agent, the
+    agent proposes it, confirming applies it, and the object is gone
+    from reads while its row survives in the source database.
+
+    ABANDONED ONCE, and the reason is worth recording. A first attempt
+    was denied at the MAC check and I could not explain it -- the
+    security value resolved correctly when called directly. The cause
+    was in the fixture, not the authorization: the sub_write said
+    `object_id: $account_id`, which is not a parameter reference. Only
+    strings beginning "parameter." are expanded, so MAC was asked
+    whether the caller could modify an Account whose id is the literal
+    characters "$account_id". No such object exists, so it correctly
+    said no.
+
+    The authorization layer was right and my fixture was wrong, which
+    is the opposite of what I assumed at the time. The validation
+    added since now rejects that form outright.
+    """
+    from core.llm.agent_step_prompt import _describe_actions
+
+    loop, mediator = write_loop()
+    delete_action = {
+        "affected_object_types": ["Account"],
+        "parameters": {
+            "account_id": {"type": "object_reference", "object_type": "Account"}
+        },
+        "sub_writes": [
+            {
+                "object_type": "Account",
+                "object_id": "parameter.account_id",
+                "operation": "delete",
+            }
+        ],
+        "executable": True,
+    }
+
+    # It reaches the prompt from the deployment's own declaration, with
+    # no code change.
+    described = _describe_actions({"RemoveAccount": delete_action}, [])
+    assert "RemoveAccount" in described
+    assert "propose_action" in described
+
+    loop.write_mediator.action_types["RemoveAccount"] = delete_action
+    loop.write_mediator.roles["accountant"]["allowed_actions"].append("execute:RemoveAccount")
+
+    gathered: list[dict] = []
+    _c, _b, _f, pending = loop._execute_step(
+        {
+            "step": "propose_action", "action_type": "RemoveAccount",
+            "parameters": {"account_id": "acc_checking"},
+        },
+        ACCOUNTANT, mediator.visible_schema(ACCOUNTANT), gathered, 0, 0,
+    )
+
+    assert pending is not None, "a delete should still pause for confirmation"
+    loop.write_mediator.confirm_and_execute(pending, approved=True)
+
+    # Gone from reads...
+    assert mediator.get_field(ACCOUNTANT, "Account", "acc_checking", "balance") is None
+    # ...and the source row untouched, which is what makes a delete here
+    # an edit rather than destruction.
+    adapter = mediator.adapters["primary_sql"]
+    conn = sqlite3.connect(adapter.db_path)
+    try:
+        assert conn.execute(
+            "SELECT count(*) FROM accounts WHERE account_id = 'acc_checking'"
+        ).fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
 def test_a_delete_action_type_reaches_the_agents_prompt(write_loop):
     """Point 13 built the delete operation; Point 17 established that
     action types reach the prompt from the deployment's own

@@ -861,10 +861,19 @@ class WriteMediator:
             # Resolve this sub_write's own declared mutations into a
             # concrete field-value dict -- this, not free-form model
             # input, is what actually gets written.
+            # A DELETE HAS NO MUTATIONS. Validation has allowed that
+            # since deletes were added -- a delete names an object, not
+            # a change to it -- but this path still required the key,
+            # so a delete action validated cleanly at load and raised
+            # KeyError the moment an agent proposed one.
+            #
+            # Each half was tested and the SEAM between them was not,
+            # which is what the end-to-end test that found this exists
+            # for.
             changes = {
                 mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"],
                                                                             parameters, user_record)
-                for mutation in sw_def["mutations"]
+                for mutation in (sw_def.get("mutations") or [])
             }
 
             # For "update," expected_current_values is built PER
@@ -872,7 +881,21 @@ class WriteMediator:
             # confirm_and_execute() itself uses) -- this is what makes
             # a multi-storage update possible at all; see write_log.py's
             # own module docstring for the full mechanism.
-            if operation == "update":
+            if operation == "delete":
+                # A DELETE HAS NOTHING TO RESOLVE. It names an object,
+                # not a change to it: no mutations to group, no current
+                # values to read, and none of the create path's
+                # explicit-id requirement.
+                #
+                # It previously fell into the `else` branch below --
+                # the CREATE path -- because this dispatch only knew
+                # two operations. A delete action therefore validated
+                # cleanly at load and then failed at proposal with
+                # "Create for 'Account' requires an explicit
+                # 'account_id' value in its own mutations", which names
+                # an operation the author never asked for.
+                expected_current_values: dict = {}
+            elif operation == "update":
                 expected_current_values = {}
                 for adapter, resolved_type_config, group_changes in self._group_changes_by_storage(
                     object_type, changes
