@@ -334,11 +334,29 @@ after.
   no expectation to violate and inventing one would reject valid
   schemas. Declaring data_type is how an author opts into the check.
 
-- **Partial-overlap duplicate detection in the agent loop.** A
-  `get_field` followed by a larger `get_object` including that same
-  field is not caught as duplicate work. `get_object`'s signature is
-  the whole frozenset of field names as one unit, so there is no
-  per-field entry for the earlier call to match against.
+- **Partial-overlap duplicate detection: CLOSED, and it must NOT be
+  added.** The observation was that a `get_field` followed by a wider
+  `get_object` including that field is not flagged as duplicate work.
+  True, and correct.
+
+  A detected duplicate is REJECTED, not merely noted: the step does
+  not execute, the model is told it repeated itself, and enough of
+  them stop the loop. So flagging a wider `get_object` as a duplicate
+  of an earlier `get_field` would reject a step that returns data the
+  model does not have -- the other fields -- and then stop the loop
+  for persisting. A correctness bug traded for one redundant field
+  read, which since the per-read security prefetch is a single query.
+
+  The exact-subset case (`get_object` for precisely one already-
+  fetched field) is genuinely missed and genuinely wasteful, but it
+  requires the model to ask for a one-field `get_object` after a
+  `get_field` for that same field. Narrow enough that special-casing
+  it costs more clarity in `_step_signature()` than it saves in
+  steps.
+
+  The entry conflated the two cases. Only one is safe to catch, and it
+  is the one that almost never happens.
+
 - **Grant-pattern drift, and why the obvious check does not work.**
   If a new grant prefix is added at an `authorize()` call site,
   `_validate_one_grant()` needs a matching branch, and nothing ties

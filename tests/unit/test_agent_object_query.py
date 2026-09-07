@@ -530,3 +530,41 @@ def test_both_adapters_raise_the_same_type_for_an_unreachable_backend():
             f"{module.__name__} does not raise the shared unavailable type"
         )
     assert issubclass(LLMUnavailable, Exception)
+
+
+def test_a_wider_get_object_is_not_treated_as_a_duplicate():
+    """A get_field followed by a get_object including that field must
+    NOT be flagged as duplicate work.
+
+    A detected duplicate is REJECTED -- the step does not execute and
+    enough of them stop the loop -- so flagging this would block a
+    step that returns fields the model does not have yet, then end the
+    run for persisting. The roadmap listed it as a gap; it is the
+    correct behaviour, and this pins it.
+    """
+    from core.agent.agentic_loop import _step_signature
+
+    narrow = _step_signature(
+        {"step": "get_field", "object_type": "Customer",
+         "object_id": "cust_001", "field_name": "name"}
+    )
+    wider = _step_signature(
+        {"step": "get_object", "object_type": "Customer",
+         "object_id": "cust_001", "field_names": ["name", "email"]}
+    )
+
+    assert narrow != wider, (
+        "a wider get_object matched an earlier get_field's signature -- it "
+        "would be rejected as a duplicate despite returning new fields"
+    )
+
+
+def test_an_identical_get_object_is_still_caught():
+    # The distinction has to hold: repeating the SAME request is what
+    # duplicate detection exists for.
+    from core.agent.agentic_loop import _step_signature
+
+    step = {"step": "get_object", "object_type": "Customer",
+            "object_id": "cust_001", "field_names": ["name", "email"]}
+
+    assert _step_signature(step) == _step_signature(dict(step))
