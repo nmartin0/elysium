@@ -19,6 +19,8 @@ import { Callout, HTMLTable, Icon, InputGroup, Spinner, Tab, Tabs, Tag } from '@
 import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
 import ActionTypes from './ActionTypes'
+import Discover from './Discover'
+import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
 import './SchemaPanel.css'
 
@@ -148,6 +150,10 @@ function ObjectTypeCard({ apiName, type }: { apiName: string; type: SchemaObject
 
 interface SchemaPanelProps extends SubAppProps {
   visibleSchema: Schema | null
+  /** Whose favourites and history to read. Browser storage is
+   *  per-machine, so without this a second user on the same browser
+   *  would inherit the first's. */
+  username: string
 }
 
 /**
@@ -164,8 +170,11 @@ interface SchemaPanelProps extends SubAppProps {
  * Worth recording because the first fix was aimed at the symptom the
  * log showed, and the log was pointing at something larger.
  */
-export default function SchemaPanel({ visibleSchema, onSessionExpired }: SchemaPanelProps) {
+export default function SchemaPanel({ visibleSchema, username, onSessionExpired }: SchemaPanelProps) {
   const [filter, setFilter] = useState('')
+  const [selectedTab, setSelectedTab] = useState<string>('discover')
+  // Storage is not reactive, so a toggle has to say it happened.
+  const [favouriteVersion, setFavouriteVersion] = useState(0)
   const schema = visibleSchema
 
   const matches = useMemo(() => {
@@ -196,7 +205,29 @@ export default function SchemaPanel({ visibleSchema, onSessionExpired }: SchemaP
           /me/visible-action-types whether or not anyone opens that
           tab. A hidden panel doing network work is the same class of
           waste this panel was just fixed for. */}
-      <Tabs id="schema-tabs" defaultSelectedTabId="object-types" renderActiveTabPanelOnly>
+      <Tabs
+        id="schema-tabs"
+        selectedTabId={selectedTab}
+        onChange={(tabId) => setSelectedTab(String(tabId))}
+        renderActiveTabPanelOnly
+      >
+        <Tab
+          id="discover"
+          title="Discover"
+          panel={
+            <Discover
+              schema={schema}
+              username={username}
+              version={favouriteVersion}
+              onFavouriteChange={() => setFavouriteVersion((n) => n + 1)}
+              onOpen={(objectType) => {
+                recordVisit(username, objectType)
+                setFilter(objectType)
+                setSelectedTab('object-types')
+              }}
+            />
+          }
+        />
         <Tab
           id="object-types"
           title="Object types"

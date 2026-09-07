@@ -3,6 +3,13 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
 import SchemaPanel from './SchemaPanel'
 
+/** Opens the Object types tab. The panel now lands on Discover, which
+ *  is the useful default for a real user and means these tests have to
+ *  navigate the way one does. */
+function openObjectTypes() {
+  fireEvent.click(screen.getByRole('tab', { name: 'Object types' }))
+}
+
 const CUSTOMER = {
   display_name: 'Customer',
   plural_display_name: 'Customers',
@@ -28,7 +35,8 @@ const noop = () => {}
 
 describe('SchemaPanel', () => {
   it('renders an object type with its display name and description', () => {
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} onSessionExpired={noop} />)
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
 
     expect(screen.getByText('Customer')).toBeInTheDocument()
     expect(screen.getByText('Someone the business serves.')).toBeInTheDocument()
@@ -39,7 +47,8 @@ describe('SchemaPanel', () => {
     // prominent properties get their own table, normal ones a regular
     // one. The separation is what carries the ontology author's intent
     // about which fields matter.
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} onSessionExpired={noop} />)
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
 
     expect(screen.getByText('Prominent')).toBeInTheDocument()
     expect(screen.getByText('Name')).toBeInTheDocument()
@@ -50,13 +59,15 @@ describe('SchemaPanel', () => {
     // Cosmetic, not security -- the value is still in the response.
     // This view honours the author's intent not to show it; it is not
     // withholding anything, and nothing here should suggest it is.
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} onSessionExpired={noop} />)
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
 
     expect(screen.queryByText('Internal')).not.toBeInTheDocument()
   })
 
   it('shows a link field with its target and cardinality', () => {
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} onSessionExpired={noop} />)
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
 
     expect(screen.getByText('Transactions')).toBeInTheDocument()
     expect(screen.getByText(/many Transaction/)).toBeInTheDocument()
@@ -66,9 +77,11 @@ describe('SchemaPanel', () => {
     render(
       <SchemaPanel
         visibleSchema={{ Customer: { ...CUSTOMER, status: 'deprecated' } }}
+        username="alice"
         onSessionExpired={noop}
       />,
     )
+    openObjectTypes()
 
     expect(screen.getByText('deprecated')).toBeInTheDocument()
   })
@@ -77,7 +90,8 @@ describe('SchemaPanel', () => {
     // A user with no read: grants gets an empty ontology rather than a
     // forbidden page -- the same uniform denial every read path uses.
     // Rendering nothing at all would look like a loading failure.
-    render(<SchemaPanel visibleSchema={{}} onSessionExpired={noop} />)
+    render(<SchemaPanel visibleSchema={{}} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
 
     expect(screen.getByText(/do not have read access/)).toBeInTheDocument()
   })
@@ -86,7 +100,8 @@ describe('SchemaPanel', () => {
     // null is "not loaded yet", a different state from {} -- "loaded,
     // and you can see nothing". Conflating them would show a
     // permissions message during a normal page load.
-    render(<SchemaPanel visibleSchema={null} onSessionExpired={noop} />)
+    // No tab to open: nothing is rendered until the schema arrives.
+    render(<SchemaPanel visibleSchema={null} username="alice" onSessionExpired={noop} />)
 
     expect(screen.queryByText(/do not have read access/)).not.toBeInTheDocument()
   })
@@ -98,9 +113,11 @@ describe('SchemaPanel', () => {
           Customer: CUSTOMER,
           Widget: { ...CUSTOMER, display_name: 'Widget', group: 'Inventory', fields: {} },
         }}
+        username="alice"
         onSessionExpired={noop}
       />,
     )
+    openObjectTypes()
 
     fireEvent.change(screen.getByPlaceholderText(/Filter object types/), {
       target: { value: 'Inventory' },
@@ -122,7 +139,8 @@ describe('SchemaPanel', () => {
     // The log was pointing at something larger than the symptom it
     // showed. Rendering with no network available at all is the
     // property that matters.
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} onSessionExpired={noop} />)
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
 
     expect(screen.getByText('Customer')).toBeInTheDocument()
   })

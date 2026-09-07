@@ -26,3 +26,15 @@
   opacity: 0.6;
   font-family: var(--pt-font-family-monospace, monospace);
 }
+
+.schema-panel__discover-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-block-end: 1rem;
+}
+
+.schema-panel__discover-item {
+  display: inline-flex;
+  align-items: center;
+}
