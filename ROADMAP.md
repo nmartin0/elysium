@@ -292,9 +292,33 @@ it went stale unnoticed.*
   field is not caught as duplicate work. `get_object`'s signature is
   the whole frozenset of field names as one unit, so there is no
   per-field entry for the earlier call to match against.
-- **Grant-pattern drift.** If an eighth grant prefix is ever added at
-  an `authorize()` call site, `_validate_one_grant()` needs a matching
-  branch. Nothing structurally guarantees the two stay in sync.
+- **Grant-pattern drift, and why the obvious check does not work.**
+  If a new grant prefix is added at an `authorize()` call site,
+  `_validate_one_grant()` needs a matching branch, and nothing ties
+  the two together.
+
+  Attempted as a source-scanning test and ABANDONED, because both
+  attempts were wrong in opposite directions and the second only
+  surfaced because a negative control caught the first:
+
+  - Scanning the text syntactically inside `authorize(...)` missed
+    every grant built into a variable first (`action = f"tool:{name}"`
+    then `authorize(..., action)`), which made a LIVE prefix look like
+    dead vocabulary. I drew conclusions from that before checking.
+  - Scanning every `<word>:` literal instead caught `silo:` from
+    /health's own response keys, which is not a grant at all.
+
+  Distinguishing a grant literal from any other colon-prefixed string
+  needs real parsing -- resolving the variable handed to `authorize()`
+  back to its assignment. That is an AST-walking exercise, not the
+  cheap lint this was filed as. A hand-maintained list of prefixes
+  would be a third thing that can drift, which is the problem
+  restated rather than solved.
+
+  Worth doing properly with an AST visitor, or not at all. Shipping a
+  scanner that cannot see the case it exists to catch is worse than
+  having none, because it reads as coverage.
+
 - **"Declared but unused" lint for action types.** An
   `object_reference` parameter that nothing references (no sub_write
   object_id, no mutation value, no submission criterion) is not
