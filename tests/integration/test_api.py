@@ -2241,3 +2241,42 @@ def test_a_missing_sqlite_file_is_not_reported_healthy(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         adapter.health_check()
+
+
+def test_a_link_field_carries_its_link_type_through_the_response_model(client):
+    """The one value joining both ends of a relationship.
+
+    Both directions arrive as separate fields on separate object types;
+    link_type is all that says they are one relationship. The schema
+    browser's Link types view is built on it.
+
+    Written after it was MISSING from SchemaFieldResponse and nothing
+    noticed. The response model lists exactly the keys a caller may
+    see, which has caught four real leaks -- and this is its other
+    edge: a field the client legitimately needs is just as invisible
+    as one it must not have. The frontend tests passed throughout,
+    against a fixture that included the key the API did not send.
+    """
+    client.app.state.user_directory.create_user("linkuser", "pw", "us-west", "customer_service")
+    client.post("/api/login", json={"username": "linkuser", "password": "pw"})
+
+    body = client.get("/api/me/visible-schema").json()
+    transactions = body["Customer"]["fields"]["transactions"]
+
+    assert transactions["type"] == "link"
+    assert transactions["link_type"] == "CustomerTransactions"
+
+
+def test_both_ends_of_a_relationship_report_the_same_link_type(client):
+    # The property that makes client-side grouping possible at all. If
+    # the two ends ever disagreed, a browser would show one
+    # relationship as two.
+    client.app.state.user_directory.create_user("linkuser2", "pw", "us-west", "customer_service")
+    client.post("/api/login", json={"username": "linkuser2", "password": "pw"})
+
+    body = client.get("/api/me/visible-schema").json()
+
+    assert (
+        body["Customer"]["fields"]["transactions"]["link_type"]
+        == body["Transaction"]["fields"]["customer_id"]["link_type"]
+    )

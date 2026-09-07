@@ -230,6 +230,18 @@ class SchemaFieldResponse(BaseModel):
     type: str
     target: str | None = None
     cardinality: str | None = None
+    # The relationship this link field belongs to. Both ends of one
+    # relationship carry the SAME link_type, and it is the only thing
+    # joining them -- the API expands link types into per-type fields,
+    # so without it a client cannot tell that Customer.transactions and
+    # Transaction.customer_id are two ends of one link rather than two
+    # unrelated fields. The schema browser's Link types view is built
+    # on exactly this.
+    #
+    # Not internal config: it is the relationship's declared name, the
+    # same one an ontology author wrote. The storage details beside it
+    # -- via_table, via_column, via_target_column -- stay filtered out.
+    link_type: str | None = None
     # Always present -- core/ontology/schema.py's humanize() supplies a
     # readable fallback when none is declared, so a UI never has to
     # decide what to render for an unlabelled field.

@@ -141,3 +141,4 @@ color
 icon
 visibility
 checks
+link_type
