@@ -77,6 +77,25 @@ that passed without the cache clear (each prefetch overwrote its own
 keys), and a linter test that passed against the reverted fix (the
 code path only runs after a *different* failure).
 
+**A concurrency test must FORCE the interleaving, not hope for it.**
+Racing N threads at a barrier is not a test: under the GIL the losing
+order is rare, so it passes against broken code. That happened three
+times here, and each time forcing the order found the bug at once.
+Use a stand-in that blocks inside the critical section -- a dict
+subclass whose `__contains__` waits -- so two callers are provably
+inside together. Two traps: hook every path the correct AND broken
+versions take (a hook on `setdefault` never fires against
+`if key not in d`), and assert the GUARANTEE, not an artefact of it
+(comparing what two callers were handed cannot see a lock created and
+overwritten -- assert the second cannot acquire while the first
+holds).
+
+**A test asserting a WORD appears in source is not a test.** Both
+`assert "setdefault" in getsource(f)` and its sibling were satisfied
+by deleting the behaviour and leaving the word in a comment. Scanning
+source is fine for drift checks that COUNT or compare sets; it is not
+a substitute for calling the code.
+
 Prefer real servers over mocks for anything user-visible. `jsdom`
 cannot see CSS.
 
