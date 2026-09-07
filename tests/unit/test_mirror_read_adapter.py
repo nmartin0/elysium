@@ -312,3 +312,133 @@ def test_substring_search_reads_only_the_searched_columns(tmp_path):
     assert set(scanned_fields["fields"]) == {"person_id", "name"}, (
         "substring search must project, not read whole rows"
     )
+
+
+# --- Filter operators, against live as the oracle ------------------------
+#
+# The Iceberg translation for in, not_in, range and date_range was
+# written and shipped with NO test -- only the `contains` rejection was
+# covered. A coverage run found lines 294-305 untouched, which is the
+# whole of _term_for's operator handling.
+#
+# They work. I did not know that when I shipped them, and "it happened
+# to be right" is not verification.
+#
+# Every one compares against the LIVE adapter rather than an expected
+# list: the mirror's job is to answer identically, so live is the
+# oracle. An expectation written by hand would encode what I think the
+# fixture contains, which is the same guess twice.
+
+
+def test_in_matches_live(adapters):
+    live, mirror = adapters
+    conditions = [FieldFilter("region", "in", ["us-west", "us-east"])]
+
+    assert sorted(mirror.find_ids("Customer", conditions, CUSTOMER_CONFIG)) == sorted(
+        live.find_ids("Customer", conditions, CUSTOMER_CONFIG)
+    )
+
+
+def test_in_with_one_value_matches_live(adapters):
+    # The degenerate case: IN with a single literal must behave like
+    # equality, not like something Iceberg special-cases away.
+    live, mirror = adapters
+    conditions = [FieldFilter("region", "in", ["us-west"])]
+
+    assert sorted(mirror.find_ids("Customer", conditions, CUSTOMER_CONFIG)) == sorted(
+        live.find_ids("Customer", conditions, CUSTOMER_CONFIG)
+    )
+
+
+def test_not_in_matches_live(adapters):
+    live, mirror = adapters
+    conditions = [FieldFilter("region", "not_in", ["us-east"])]
+
+    assert sorted(mirror.find_ids("Customer", conditions, CUSTOMER_CONFIG)) == sorted(
+        live.find_ids("Customer", conditions, CUSTOMER_CONFIG)
+    )
+
+
+def test_a_two_sided_range_matches_live(adapters):
+    live, mirror = adapters
+    conditions = [FieldFilter("name", "range", {"min": "A", "max": "z"})]
+
+    assert sorted(mirror.find_ids("Customer", conditions, CUSTOMER_CONFIG)) == sorted(
+        live.find_ids("Customer", conditions, CUSTOMER_CONFIG)
+    )
+
+
+def test_a_one_sided_range_matches_live(adapters):
+    # The branch that builds ONE bound rather than an And of two --
+    # untested, and a different code path.
+    live, mirror = adapters
+    conditions = [FieldFilter("name", "range", {"min": "A"})]
+
+    assert sorted(mirror.find_ids("Customer", conditions, CUSTOMER_CONFIG)) == sorted(
+        live.find_ids("Customer", conditions, CUSTOMER_CONFIG)
+    )
+
+
+def test_several_conditions_are_anded(adapters):
+    # _conditions_to_filter's And-folding loop, which only runs with
+    # more than one condition.
+    live, mirror = adapters
+    conditions = [
+        FieldFilter("region", "in", ["us-west", "us-east"]),
+        FieldFilter("name", "range", {"min": "A"}),
+    ]
+
+    assert sorted(mirror.find_ids("Customer", conditions, CUSTOMER_CONFIG)) == sorted(
+        live.find_ids("Customer", conditions, CUSTOMER_CONFIG)
+    )
+
+
+def test_a_filter_matching_nothing_matches_live(adapters):
+    live, mirror = adapters
+    conditions = [FieldFilter("region", "in", ["nowhere", "elsewhere"])]
+
+    assert mirror.find_ids("Customer", conditions, CUSTOMER_CONFIG) == live.find_ids(
+        "Customer", conditions, CUSTOMER_CONFIG
+    )
+
+
+def test_read_fields_for_ids_matches_live(adapters):
+    """The mirror's narrow read, added with the SQL-alignment work and
+    shipped with no test of its own.
+
+    Found by the same coverage run: lines 202-208 untouched. It works.
+    That it happened to work is not the same as having checked.
+    """
+    live, mirror = adapters
+
+    assert mirror.read_fields_for_ids(
+        "customers", "customer_id", ["cust_001"], ["name"], CUSTOMER_CONFIG
+    ) == live.read_fields_for_ids(
+        "customers", "customer_id", ["cust_001"], ["name"], CUSTOMER_CONFIG
+    )
+
+
+def test_read_fields_for_ids_with_no_ids_reads_nothing(adapters):
+    # The early return, and the case a caller hits whenever a
+    # pushed-down filter matched nothing.
+    _live, mirror = adapters
+
+    assert mirror.read_fields_for_ids(
+        "customers", "customer_id", [], ["name"], CUSTOMER_CONFIG
+    ) == []
+
+
+def test_read_fields_for_ids_returns_only_the_ids_asked_for(adapters):
+    # The Iceberg path filters after a projected scan, because the
+    # format has no IN predicate over an arbitrary list. That filter is
+    # the whole correctness of this method.
+    live, mirror = adapters
+    all_ids = live.find_ids("Customer", [], CUSTOMER_CONFIG)
+    wanted = all_ids[:1]
+
+    rows = mirror.read_fields_for_ids(
+        "customers", "customer_id", wanted, ["name"], CUSTOMER_CONFIG
+    )
+
+    assert [row["customer_id"] for row in rows] == wanted
+    assert len(all_ids) > 1, "the fixture needs more than one row, or this proves nothing"

@@ -240,6 +240,21 @@ is a different kind of blocked from this.
   Recorded rather than fixed: adding `shutdown()` would duplicate what
   uvicorn already does and change nothing observable.
 
+- **Three uncovered blocks remain in the mirror adapter**, all
+  pre-existing rather than from the filter work:
+  `resolve_reverse_links_batch`'s join-table path (lines 170-187),
+  `read_all_rows` (218-223), and two early returns. The adapter sits
+  at 77%, up from 63% once the filter translation was tested.
+
+  Recorded rather than fixed here because they are a different piece
+  of work from the audit that found them, and because each needs a
+  mirror fixture with a join table -- the existing one has none.
+
+  The measurement that found them is worth keeping: `coverage run -m
+  pytest`, then ranking PRODUCTION files by coverage rather than
+  reading the top of the list. The backend is at 96% overall, which
+  hides a 63% file entirely.
+
 - **No container.** Dependencies are locked with hashes and the lint
   fails on drift, so builds are reproducible from a checkout. What is
   still missing is a reproducible RUNTIME: the OS layer and the Python

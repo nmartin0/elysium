@@ -14,3 +14,4 @@ deployment/var/lib/write_log.db
 *.swo
 .vscode/
 .idea/
+.coverage
