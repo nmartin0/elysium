@@ -342,7 +342,7 @@ export default function App() {
       <Routes>
         <Route element={<Shell visibleApps={visibleApps} currentUser={currentUser} onLogout={handleLogout} />}>
           <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
-          <Route path="/schema" element={<SchemaPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/schema" element={<SchemaPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />} />
           <Route
             path="/browse"
             element={<ObjectSearchPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}

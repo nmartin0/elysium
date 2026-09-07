@@ -20,11 +20,30 @@ import ActionForm, { type ActionDef } from './ActionForm'
 export interface FieldSchema {
   type: string
   target?: string
+  // Added by SchemaPanel, the next consumer to need more of this
+  // shape -- optional, so nothing that already reads it changes.
+  display_name?: string
+  description?: string | null
+  cardinality?: string | null
+  link_type?: string | null
+  visibility?: string
+  status?: string
 }
 
 export interface TypeSchema {
   title_field?: string | null
   fields?: Record<string, FieldSchema>
+  // Display metadata. Every one is optional at the API too -- an
+  // ontology declaring none of it is valid, and renders from derived
+  // labels.
+  display_name?: string
+  plural_display_name?: string
+  description?: string | null
+  icon?: string | null
+  color?: string | null
+  status?: string
+  group?: string | null
+  id_field?: string | null
 }
 
 export type VisibleSchema = Record<string, TypeSchema>

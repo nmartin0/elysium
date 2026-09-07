@@ -14,37 +14,17 @@
  * withheld.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Callout, HTMLTable, Icon, InputGroup, Spinner, Tag } from '@blueprintjs/core'
-import { getMyVisibleSchema, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
+import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
 import './SchemaPanel.css'
 
-interface SchemaField {
-  type: string
-  display_name: string
-  description?: string | null
-  visibility?: string
-  status?: string
-  target?: string | null
-  cardinality?: string | null
-  link_type?: string | null
-}
-
-interface SchemaObjectType {
-  display_name: string
-  plural_display_name: string
-  description?: string | null
-  icon?: string | null
-  color?: string | null
-  status?: string
-  group?: string | null
-  id_field: string | null
-  title_field: string | null
-  fields: Record<string, SchemaField>
-}
-
-type Schema = Record<string, SchemaObjectType>
+// The shared shape, widened where this panel needed more of it. Not
+// redeclared here: two definitions of one response is how they drift.
+type SchemaField = FieldSchema
+type SchemaObjectType = TypeSchema
+type Schema = VisibleSchema
 
 /**
  * The three visibility levels, rendered as the reference
@@ -81,11 +61,11 @@ function FieldTable({ fields }: { fields: [string, SchemaField][] }) {
         {fields.map(([apiName, field]) => (
           <tr key={apiName}>
             <td>
-              <strong>{field.display_name}</strong>
+              <strong>{field.display_name ?? apiName}</strong>
               {/* The API name is what a caller uses programmatically,
                   and is worth showing -- but only when it differs from
                   the label, or it is the same word twice. */}
-              {apiName !== field.display_name && (
+              {apiName !== (field.display_name ?? apiName) && (
                 <div className="schema-panel__api-name">{apiName}</div>
               )}
             </td>
@@ -126,7 +106,7 @@ function ObjectTypeCard({ apiName, type }: { apiName: string; type: SchemaObject
   return (
     <section className="schema-panel__type" data-testid={`object-type-${apiName}`}>
       <h3>
-        {type.icon && <Icon icon={type.icon as never} />} {type.display_name}
+        {type.icon && <Icon icon={type.icon as never} />} {type.display_name ?? apiName}
         {type.status && type.status !== 'active' && (
           <>
             {' '}
@@ -142,7 +122,7 @@ function ObjectTypeCard({ apiName, type }: { apiName: string; type: SchemaObject
           </>
         )}
       </h3>
-      {apiName !== type.display_name && (
+      {apiName !== (type.display_name ?? apiName) && (
         <div className="schema-panel__api-name">{apiName}</div>
       )}
       {type.description && <p>{type.description}</p>}
@@ -164,38 +144,27 @@ function ObjectTypeCard({ apiName, type }: { apiName: string; type: SchemaObject
   )
 }
 
-export default function SchemaPanel({ onSessionExpired }: SubAppProps) {
-  const [schema, setSchema] = useState<Schema | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState('')
+interface SchemaPanelProps extends SubAppProps {
+  visibleSchema: Schema | null
+}
 
-  // Fetches ONCE on mount. Depending on `onSessionExpired` re-runs the
-  // effect whenever the shell re-renders, because the shell declares
-  // that handler as a plain function -- a new object every time. Your
-  // logs showed the schema fetched three times for one page load,
-  // which is how this was found: the browser gave no sign of it.
-  //
-  // `onSessionExpired` is still called from inside, which is safe: the
-  // effect closes over the handler current at mount, and the shell's
-  // handler only resets auth state.
-  //
-  // Matches AdminPanel's own pattern rather than changing the shell.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    let cancelled = false
-    getMyVisibleSchema()
-      .then((body) => {
-        if (!cancelled) setSchema(body as Schema)
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        if (handleIfSessionExpired(err, onSessionExpired)) return
-        setError(getErrorMessage(err))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+/**
+ * Takes the schema the SHELL already fetched rather than fetching its
+ * own, matching ObjectSearchPanel and ObjectDetailPanel.
+ *
+ * The first version called getMyVisibleSchema() on mount. A server log
+ * showed THREE requests per page load, which was traced to an effect
+ * dependency -- but the real fault was one level up: the shell holds
+ * this data already and hands it to every other panel. Fixing the
+ * dependency would have taken three requests down to two, and left the
+ * second one just as unnecessary as the third.
+ *
+ * Worth recording because the first fix was aimed at the symptom the
+ * log showed, and the log was pointing at something larger.
+ */
+export default function SchemaPanel({ visibleSchema }: SchemaPanelProps) {
+  const [filter, setFilter] = useState('')
+  const schema = visibleSchema
 
   const matches = useMemo(() => {
     if (!schema) return []
@@ -204,12 +173,14 @@ export default function SchemaPanel({ onSessionExpired }: SubAppProps) {
       .filter(([apiName, type]) =>
         needle === ''
         || apiName.toLowerCase().includes(needle)
-        || type.display_name.toLowerCase().includes(needle)
+        || (type.display_name ?? apiName).toLowerCase().includes(needle)
         || (type.group ?? '').toLowerCase().includes(needle))
-      .sort(([, a], [, b]) => a.display_name.localeCompare(b.display_name))
+      .sort(([, a], [, b]) => (a.display_name ?? '').localeCompare(b.display_name ?? ''))
   }, [schema, filter])
 
-  if (error) return <Callout intent="danger">{error}</Callout>
+  // null means the shell has not finished loading it, not that
+  // anything failed -- an empty object is the "you can see nothing"
+  // case, handled below.
   if (!schema) return <Spinner />
 
   return (
