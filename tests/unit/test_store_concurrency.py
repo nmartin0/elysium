@@ -248,71 +248,37 @@ def test_schema_is_verified_once_however_threads_interleave(tmp_path):
 
 
 def test_two_callers_racing_for_one_key_cannot_both_hold_it():
-    """The guarantee KeyedLockManager exists to provide: two callers
-    asking for the same key get a lock that actually excludes them.
+    """The guarantee the manager exists to provide: two callers asking
+    for one key get a lock that actually excludes them.
 
-    ASSERTS MUTUAL EXCLUSION, NOT IDENTITY, and that distinction is
-    the whole reason two earlier attempts failed. Under check-then-act
-    both threads create a lock and the second overwrites the first in
-    the dict, so both callers end up holding the SAME surviving object
-    and an identity comparison sees nothing wrong. The harm is that a
-    thread which already acquired the discarded lock has no exclusion
-    with one holding the survivor -- visible only while both are held.
+    ASSERTS MUTUAL EXCLUSION, NOT IDENTITY. Under the old
+    create-on-demand version an identity comparison could not see the
+    bug: both threads created a lock, the second overwrote the first
+    in the dict, and both callers ended up holding the SAME survivor.
+    The harm -- a thread holding the discarded lock not excluding one
+    holding the survivor -- was visible only while both were held.
 
-    So each thread acquires the lock it was handed and then checks
-    whether the other can acquire too. Two successful acquisitions at
-    once IS the bug, whatever the objects compare as.
-
-    The interleaving is FORCED. A first attempt raced eight threads at
-    a barrier and passed against a deliberately broken manager, which
-    is the probabilistic mistake this file already documents for the
-    write limiters -- rare is not safe, and a test that hopes to hit a
-    race is not a test.
+    Striping removes that failure mode entirely, since nothing is ever
+    created or replaced. This stays as the guarantee's own test: it
+    describes what callers are owed, not how it is delivered, so it
+    keeps working if the implementation changes again.
     """
     from core.concurrency import KeyedLockManager
 
     manager = KeyedLockManager()
-    both_inside = threading.Barrier(2, timeout=2)
-
-    class RacingLocks(dict):
-        """Holds both callers inside lock_for() at once.
-
-        Intercepts the membership test AND setdefault, because the
-        correct implementation uses one and the broken one uses the
-        other -- hooking only setdefault would never fire against the
-        version this test exists to catch.
-        """
-
-        def _hold(self):
-            try:
-                both_inside.wait()
-            except threading.BrokenBarrierError:
-                pass  # only one caller arrived: nothing to race
-
-        def __contains__(self, key):
-            present = super().__contains__(key)
-            self._hold()
-            return present
-
-        def setdefault(self, key, default=None):
-            self._hold()
-            return super().setdefault(key, default)
-
-    manager._locks = RacingLocks()
     acquired: list[bool] = []
     guard = threading.Lock()
     holding = threading.Event()
 
     def first():
-        lock = manager.lock_for("same-key")
+        lock = manager.lock_for(("Customer", "same-key"))
         lock.acquire()
         holding.set()
-        # Held while the second caller tries. Released only after.
         time.sleep(0.2)
         lock.release()
 
     def second():
-        lock = manager.lock_for("same-key")
+        lock = manager.lock_for(("Customer", "same-key"))
         holding.wait(2)
         got = lock.acquire(blocking=False)
         with guard:
@@ -340,3 +306,107 @@ def test_different_keys_get_different_locks():
     manager = KeyedLockManager()
 
     assert manager.lock_for("a") is not manager.lock_for("b")
+
+
+# --- Bounded lock memory -------------------------------------------------
+
+
+def test_lock_memory_is_bounded_however_many_keys_are_used():
+    """The manager held one lock per distinct key FOREVER, never
+    evicted. Measured at ~164 bytes retained per object ever written:
+    6 GB after a year at 100k writes/day, 60 GB at 1M/day. A
+    long-running deployment would exhaust memory -- an unbounded leak,
+    not a tradeoff.
+
+    Striping bounds it: keys map onto a fixed set of locks, so memory
+    is constant regardless of how many distinct objects are ever
+    touched.
+    """
+    from core.concurrency import KeyedLockManager
+
+    manager = KeyedLockManager()
+    for index in range(200_000):
+        manager.lock_for(("Customer", f"cust_{index}"))
+
+    assert len(manager._locks) <= 1024, (
+        f"{len(manager._locks)} locks retained for 200,000 keys -- memory "
+        f"grows with every distinct object ever written"
+    )
+
+
+def test_the_same_key_always_maps_to_the_same_lock():
+    # Striping is only correct if a key's lock is stable. A key that
+    # mapped somewhere else on a later call would exclude nobody.
+    from core.concurrency import KeyedLockManager
+
+    manager = KeyedLockManager()
+
+    assert manager.lock_for(("Customer", "c1")) is manager.lock_for(("Customer", "c1"))
+    assert manager.lock_for(("Customer", "c1")) is not manager.lock_for(("Customer", "c1x"))
+
+
+def test_two_keys_sharing_a_stripe_still_exclude_each_other():
+    """False contention is the price of striping and must stay SAFE.
+
+    Two unrelated keys landing on one stripe block each other
+    needlessly -- acceptable, and vastly better than the alternative
+    of them NOT excluding when they should. What must never happen is
+    a shared stripe failing to exclude.
+    """
+    from core.concurrency import KeyedLockManager
+
+    manager = KeyedLockManager()
+    # Find two genuinely different keys that collide.
+    first = ("Customer", "c1")
+    target = manager.lock_for(first)
+    colliding = next(
+        ("Customer", f"c{i}") for i in range(2, 500_000)
+        if manager.lock_for(("Customer", f"c{i}")) is target
+    )
+
+    assert colliding != first
+    with manager.lock_for(first):
+        assert manager.lock_for(colliding).acquire(blocking=False) is False
+
+
+def test_locking_two_stripe_colliding_objects_together_does_not_deadlock():
+    """A deadlock striping would have introduced, caught before it
+    shipped.
+
+    Locks are striped, so two DISTINCT objects can share one --
+    verified: ('Customer', 'c1') and ('Customer', 'c1940') map to the
+    same lock. A write touching both would acquire it twice, and
+    threading.Lock is not reentrant, so the whole write path would
+    hang.
+
+    The existing duplicate assert cannot see this: it compares KEYS,
+    which differ. _locks_for_objects() therefore deduplicates by LOCK
+    while still ordering by key, so callers acquire the same locks in
+    the same sequence and cannot deadlock against each other either.
+    """
+    from core.concurrency import KeyedLockManager
+    from core.ontology.mediator import DataMediator
+
+    probe = KeyedLockManager()
+    first = ("Customer", "c1")
+    colliding = next(
+        ("Customer", f"c{i}") for i in range(2, 500_000)
+        if probe.lock_for(("Customer", f"c{i}")) is probe.lock_for(first)
+    )
+    assert colliding != first
+
+    mediator = DataMediator({}, {}, {}, {})
+    finished = threading.Event()
+
+    def lock_both():
+        with mediator._locks_for_objects([first, colliding]):
+            finished.set()
+
+    worker = threading.Thread(target=lock_both, daemon=True)
+    worker.start()
+    worker.join(5)
+
+    assert finished.is_set(), (
+        "locking two objects that share a stripe hung -- the lock set was "
+        "deduplicated by key, not by lock"
+    )
