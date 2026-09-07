@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-const getVisibleActionTypes = vi.fn()
+const getVisibleActionTypesCached = vi.fn()
 
 vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
-  return { ...actual, getVisibleActionTypes: () => getVisibleActionTypes() }
+  // Mocks what the component CALLS. The caching itself belongs to
+  // shell-api and is tested there -- mocking the uncached fetch here
+  // would not reach the cached wrapper's internal call anyway, since
+  // that binds to the module-local function rather than the export.
+  return { ...actual, getVisibleActionTypesCached: () => getVisibleActionTypesCached() }
 })
 
-const actionTypesModule = await import('./ActionTypes')
-const ActionTypes = actionTypesModule.default
+const ActionTypes = (await import('./ActionTypes')).default
 
 const TRANSFER = {
   affected_object_types: ['Account'],
@@ -24,11 +27,8 @@ const TRANSFER = {
 }
 
 beforeEach(() => {
-  getVisibleActionTypes.mockReset()
-  // The cache is module-level so it survives between tests, which is
-  // exactly what it is for in the browser and exactly what would make
-  // these interfere.
-  actionTypesModule.resetActionTypeCache()
+  getVisibleActionTypesCached.mockReset()
+
 })
 
 describe('ActionTypes', () => {
@@ -36,7 +36,7 @@ describe('ActionTypes', () => {
     // The description is why this matters: "new_from_balance (number,
     // required)" does not say whether that is the resulting balance or
     // the amount to move. The ontology can now say, and this shows it.
-    getVisibleActionTypes.mockResolvedValue({ TransferFunds: TRANSFER })
+    getVisibleActionTypesCached.mockResolvedValue({ TransferFunds: TRANSFER })
 
     render(<ActionTypes onSessionExpired={() => {}} />)
 
@@ -47,7 +47,7 @@ describe('ActionTypes', () => {
   })
 
   it('shows the API name only when it differs from the label', async () => {
-    getVisibleActionTypes.mockResolvedValue({ TransferFunds: TRANSFER })
+    getVisibleActionTypesCached.mockResolvedValue({ TransferFunds: TRANSFER })
 
     render(<ActionTypes onSessionExpired={() => {}} />)
 
@@ -59,7 +59,7 @@ describe('ActionTypes', () => {
   })
 
   it('names which object types an action affects', async () => {
-    getVisibleActionTypes.mockResolvedValue({ TransferFunds: TRANSFER })
+    getVisibleActionTypesCached.mockResolvedValue({ TransferFunds: TRANSFER })
 
     render(<ActionTypes onSessionExpired={() => {}} />)
 
@@ -69,7 +69,7 @@ describe('ActionTypes', () => {
   it('says so plainly when the caller can execute nothing', async () => {
     // Filtered server-side: an action the caller cannot execute is
     // ABSENT, not disabled. Same uniform denial as everywhere else.
-    getVisibleActionTypes.mockResolvedValue({})
+    getVisibleActionTypesCached.mockResolvedValue({})
 
     render(<ActionTypes onSessionExpired={() => {}} />)
 
@@ -77,39 +77,23 @@ describe('ActionTypes', () => {
   })
 
   it('surfaces the API error rather than replacing it', async () => {
-    getVisibleActionTypes.mockRejectedValue(new Error('action types unavailable'))
+    getVisibleActionTypesCached.mockRejectedValue(new Error('action types unavailable'))
 
     render(<ActionTypes onSessionExpired={() => {}} />)
 
     expect(await screen.findByText(/action types unavailable/)).toBeInTheDocument()
   })
 
-  it('does not refetch when the tab is reopened', async () => {
-    // renderActiveTabPanelOnly UNMOUNTS this panel on a tab switch, so
-    // component state dies with it. A real log showed six requests for
-    // three visits before the cache existed.
-    getVisibleActionTypes.mockResolvedValue({ TransferFunds: TRANSFER })
-
-    const first = render(<ActionTypes onSessionExpired={() => {}} />)
-    await screen.findByText('TransferFunds')
-    first.unmount()
-
-    render(<ActionTypes onSessionExpired={() => {}} />)
-    await screen.findByText('TransferFunds')
-
-    expect(getVisibleActionTypes).toHaveBeenCalledTimes(1)
-  })
-
   it('fetches once, not on every render', async () => {
     // The same bug the schema panel had: depending on
     // onSessionExpired, which the shell recreates each render.
-    getVisibleActionTypes.mockResolvedValue({ TransferFunds: TRANSFER })
+    getVisibleActionTypesCached.mockResolvedValue({ TransferFunds: TRANSFER })
 
     const { rerender } = render(<ActionTypes onSessionExpired={() => {}} />)
     await screen.findByText('TransferFunds')
     rerender(<ActionTypes onSessionExpired={() => {}} />)
     rerender(<ActionTypes onSessionExpired={() => {}} />)
 
-    expect(getVisibleActionTypes).toHaveBeenCalledTimes(1)
+    expect(getVisibleActionTypesCached).toHaveBeenCalledTimes(1)
   })
 })

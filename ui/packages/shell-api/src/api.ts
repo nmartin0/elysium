@@ -352,6 +352,30 @@ export async function getObjectDetail(objectType: string, objectId: string): Pro
 // --- Stage 3: direct action invocation, no LLM involved. Mirrors
 // getMyVisibleSchema()'s own self-service pattern exactly.
 
+// Cached, because two components need this and neither should pay for
+// the other's copy: ObjectDetailPanel (to offer actions on an object)
+// and app-schema's ActionTypes tab. Both previously fetched
+// independently, so opening one then the other fetched twice.
+//
+// Cached HERE rather than in either component, so a third consumer
+// gets the sharing for free instead of inventing a third cache. The
+// contents change only when the deployment's YAML does, so a reload
+// picking up a change is the same freshness every other schema read
+// in this app has.
+let cachedActionTypes: unknown = null
+
+/** Clears the cache. For tests, which would otherwise share it. */
+export function resetVisibleActionTypesCache(): void {
+  cachedActionTypes = null
+}
+
+export async function getVisibleActionTypesCached(): Promise<unknown> {
+  if (cachedActionTypes === null) {
+    cachedActionTypes = await getVisibleActionTypes()
+  }
+  return cachedActionTypes
+}
+
 export async function getVisibleActionTypes(): Promise<unknown> {
   const response = await apiFetchOrThrow('/me/visible-action-types')
   return response.json()

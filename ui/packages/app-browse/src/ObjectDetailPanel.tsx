@@ -1,7 +1,7 @@
 import { Button, Callout } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getObjectDetail, getVisibleActionTypes, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { getObjectDetail, getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
@@ -134,7 +134,10 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       try {
         // Asserted to the real, known success shape, same reasoning
         // as loadDetail()'s own response above.
-        const response = (await getVisibleActionTypes()) as Record<string, ActionDef>
+        // The CACHED fetch, shared with app-schema's ActionTypes tab.
+        // Opening a detail page and then that tab used to fetch this
+        // twice.
+        const response = (await getVisibleActionTypesCached()) as Record<string, ActionDef>
         setVisibleActionTypes(response)
       } catch (err) {
         if (handleIfSessionExpired(err, onSessionExpired)) return

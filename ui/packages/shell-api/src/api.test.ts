@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import {
+  getVisibleActionTypesCached,
+  resetVisibleActionTypesCache,
   ApiError,
   login,
   logout,
@@ -369,5 +371,46 @@ describe('every remaining export hits the correct endpoint and method', () => {
     await getObjectDetail('Customer', 'weird/id')
     const [calledPath] = firstCallArgs()
     expect(calledPath).toBe('/api/objects/Customer/weird%2Fid')
+  })
+})
+
+describe('getVisibleActionTypesCached', () => {
+  // Two components need action types -- ObjectDetailPanel, to offer
+  // actions on an object, and app-schema's ActionTypes tab. They
+  // previously fetched independently, so opening one then the other
+  // fetched twice. Caching HERE rather than in either one means a
+  // third consumer gets the sharing instead of inventing a third
+  // cache.
+  beforeEach(() => {
+    resetVisibleActionTypesCache()
+  })
+
+  it('fetches once and serves the same answer afterwards', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ TransferFunds: {} }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const first = await getVisibleActionTypesCached()
+    const second = await getVisibleActionTypesCached()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(second).toBe(first)
+  })
+
+  it('fetches again after a reset', async () => {
+    // The reset exists for tests, which would otherwise share the
+    // cache -- the real hazard of module-level state, and worth an
+    // explicit door rather than leaving each test to find its own.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({}),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getVisibleActionTypesCached()
+    resetVisibleActionTypesCache()
+    await getVisibleActionTypesCached()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

@@ -9,7 +9,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     getObjectDetail: vi.fn(),
-    getVisibleActionTypes: vi.fn(),
+    getVisibleActionTypesCached: vi.fn(),
   }
 })
 vi.mock('./ActionForm', () => ({
@@ -34,11 +34,11 @@ vi.mock('./ActionForm', () => ({
   ),
 }))
 
-import { getObjectDetail, getVisibleActionTypes, ApiError } from '@elysium/shell-api/api'
+import { getObjectDetail, getVisibleActionTypesCached, ApiError } from '@elysium/shell-api/api'
 import ObjectDetailPanel, { type VisibleSchema } from './ObjectDetailPanel'
 
 const mockedGetObjectDetail = vi.mocked(getObjectDetail)
-const mockedGetVisibleActionTypes = vi.mocked(getVisibleActionTypes)
+const mockedGetVisibleActionTypes = vi.mocked(getVisibleActionTypesCached)
 
 const CUSTOMER_SCHEMA: VisibleSchema = {
   Customer: {
@@ -106,7 +106,7 @@ beforeEach(() => {
 describe('ObjectDetailPanel -- loading and basic rendering', () => {
   it('shows "Loading…" before the real fetch resolves', async () => {
     mockedGetObjectDetail.mockReturnValue(new Promise(() => {}))
-    // getVisibleActionTypes is a separate, independent effect that
+    // getVisibleActionTypesCached is a separate, independent effect that
     // still resolves (the beforeEach default) even while this test is
     // only interested in the object-detail fetch's own pending state
     // -- left unresolved here too, so its own state update can't land

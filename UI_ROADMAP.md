@@ -185,6 +185,37 @@ that and is the reference for the shape.
 
 ---
 
+## Conventions, so there is one way to do each thing
+
+Found by auditing the four sub-apps for needless variety. Recorded
+because the rules were real and followed, but written down nowhere --
+which made correct differences look like inconsistency.
+
+**Where data comes from.** Shell-held and passed as a prop when most
+pages need it: the visible schema, visible apps, identity. Fetched by
+the panel, through a cached helper in `shell-api`, when specific
+screens need it: action types. The split tracks a real difference --
+the schema has three consumers on nearly every page, action types have
+two that a user reaches deliberately -- and putting the second in the
+shell would cost every login a request most users never use.
+
+**Caching lives in `shell-api`, not in a component.** Two components
+need action types; caching in either would leave the other paying, and
+caching in both is two caches. A third consumer should get the sharing
+rather than invent a third.
+
+**Guarding a stale response.** A refetching effect uses
+`useLatestRequestGuard` -- an old response must not overwrite a newer
+one. A fetch-once-on-mount effect uses NOTHING, because there is no
+second request to race. Both patterns are correct for their case, and
+a third (a `cancelled` flag) was removed rather than kept alongside
+them.
+
+**Errors.** `handleIfSessionExpired` first, then `getErrorMessage`,
+and show the API's own message rather than a generic one -- the
+backend writes real ones, and an unknown aggregate names the valid
+ones.
+
 ## Known inefficiencies in the shell
 
 **The session probe fetches the whole ontology to ask a yes/no
