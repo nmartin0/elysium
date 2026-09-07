@@ -103,36 +103,42 @@ inferred.
 
 ### PostgreSQL scope
 
-Deliberately deferred, not scoped into the build order above --
-"let's defer this for now, and continue using the SQLite internally
-but migrate to PostgreSQL eventually." When it IS taken up, the scope
-already worked out stays the right one: NOT a full-system migration,
-just the new, rebuilt pending-writes store (see "Deferred" below) --
-that's the one piece that already, directly needs what Postgres
-uniquely provides (real concurrent-writer support, and a real shared
-store reachable from more than one worker process), confirmed
-directly against the store's own docstring already, honestly
-documenting incompatibility with a future multi-worker deployment.
-Every existing SQLite file (`mediator.db`, `write_log.db`,
-`credentials.db`, and the rest) stays on SQLite regardless, revisited
-only if real concurrent-write pressure actually shows up there too --
-not preemptively.
+Deliberately deferred, and the scope narrowed since this was first
+written -- the earlier version said the rebuilt pending-writes store
+"directly needs what Postgres uniquely provides". Re-examined, it does
+not.
 
-**Local dev keeps SQLite as the default, production uses Postgres for
-whatever's actually been migrated to it, whenever that happens** -- a
-common, well-supported pattern, and a real, direct benefit for this
-project specifically: the backend's own 562-test suite leans on how
-fast a SQLite file (or in-memory DB) is to create and tear down per
-test, run constantly during development. Real, honest risk that comes
-with this split, not just upside: SQLite and PostgreSQL aren't
-perfectly identical in behavior (date/time handling, case sensitivity,
-some JSON function differences) -- something could pass locally on
-SQLite and break in production on Postgres. Mitigation, whenever this
-is taken up: keep the fast SQLite suite as the everyday default, but
-also run the full suite against a real, running Postgres instance in
-CI (or at minimum periodically) for whatever part of the system
-actually lives there, catching divergence before it ships rather than
-after.
+The stated reasons were real concurrent-writer support and a store
+reachable from more than one worker process. Neither requires
+Postgres:
+
+- The shipped service runs a single uvicorn process -- no `--workers`
+  flag -- so there is one writer today.
+- SQLite already backs `write_log.db` and `credentials.db` under
+  concurrent writers, through `immediate_transaction()` and a real
+  concurrency suite that forces the interleavings rather than hoping
+  for them.
+- A file-backed store is reachable from several processes; SQLite's
+  locking handles that, which is the case the in-memory store cannot
+  handle at all.
+
+So the pending-writes rebuild is blocked on its DESIGN -- who may
+approve, whether a proposer may self-approve, what expiry means when a
+human is slow -- and not on a database. Those two were conflated, and
+separating them means the Approvals inbox does not have to wait for a
+migration that has no other driver.
+
+WHAT WOULD ACTUALLY JUSTIFY POSTGRES: sustained concurrent write
+pressure that SQLite's single-writer lock cannot absorb, or a
+deployment genuinely running multiple workers against one store. Both
+are measurable, and neither has been measured because neither exists
+yet. Every existing SQLite file stays on SQLite until one of them
+does.
+
+Row-level security and column-level GRANT (both in the deferred list
+below) remain genuinely Postgres-dependent, since SQLite has neither
+concept -- they are waiting on an adapter that does not exist, which
+is a different kind of blocked from this.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
