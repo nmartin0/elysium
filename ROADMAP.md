@@ -371,25 +371,40 @@ after.
   Genuinely valuable, but doesn't block any of the four near-term
   sub-apps, so it's deferred rather than competing with them for
   priority right now.
-- **A real shared-properties / interface concept** in the ontology
-  schema (RDFS-style, matching what Palantir itself calls
-  "Interfaces") -- e.g. a `Timestamped` interface both `Customer` and
+- **Interfaces / shared properties: still open, and the design
+  question is the whole of it.** An interface both `Customer` and
   `Account` could `implement`, instead of declaring the same fields
-  twice, independently, with no shared contract. Confirmed YAML is
-  fully sufficient to represent this -- the real work is entirely in
-  the loader (resolving `implements` and merging fields before
-  validation runs), not a new file format. Deliberately deferred, not
-  rejected -- worth real design attention once there's a second real
-  need for it, matching this project's own "no speculative code"
-  principle. A real, concrete design wrinkle flagged for whoever
-  eventually picks this up, not resolved now: should a LINK's own
-  `target` be allowed to name an interface, not just a concrete
-  object type -- e.g. a hypothetical `Comment` object type with
-  `subject: {type: link, target: Auditable, cardinality: one}`,
-  letting one field point at EITHER a `Transaction` or an `Account`
-  (whichever the comment actually concerns), if both implement a
-  shared `Auditable` interface, instead of needing one separate field
-  per possible concrete target type.
+  twice with no shared contract. YAML represents it fine; the loader
+  work -- resolving `implements` and merging fields before validation
+  -- is straightforward.
+
+  NO SECOND NEED HAS MATERIALISED. Checked rather than assumed: across
+  the fixture ontology, exactly two field names appear on more than one
+  object type (`region` on two, `currency` on two), and `region` is
+  there because it is the security field, not because a shared
+  contract is missing. Two duplicated names in a demo schema is not
+  the evidence this was waiting for.
+
+  THE FIELD MERGE IS NOT THE FEATURE, which is the part worth
+  recording. Foundry's interfaces earn their keep by being TARGETABLE:
+  a link can point at an interface, so one field reaches any object
+  implementing it -- a `Comment` whose `subject` is either a
+  `Transaction` or an `Account`, without one field per concrete type.
+  Their interfaces also carry their own display metadata, the same way
+  object types do. Shipping only the merge would deliver the name
+  without the capability, which is worse than not shipping it.
+
+  POINT 16 RESHAPED THE OPEN QUESTION. When this was written, links
+  were field attributes, so "can a link target an interface" was a
+  question about a field's `target`. Link types are now first-class
+  entities with their own source and target object types, so it is a
+  question about what a `link_type` may name -- and the answer has to
+  cover how `search_around` traverses to a set of concrete types
+  rather than one.
+
+  Worth real design attention when a deployment has genuinely shared
+  structure. Not before, and not merged-fields-only when it happens.
+
 - **A persistent, reviewer-based `PendingWriteStore` rebuild on
   PostgreSQL, and the real `AuditLog` query methods that would back
   its own history view.** Deferred together, deliberately -- "let's
