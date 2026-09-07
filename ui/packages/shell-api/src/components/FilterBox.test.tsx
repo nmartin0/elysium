@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { useState } from 'react'
 
-import FilterBox from './FilterBox'
+import FilterBox, { RECENT_SENT, rememberSent } from './FilterBox'
 
 /**
  * Stands in for the URL: a parent whose value updates one render
@@ -87,5 +87,52 @@ describe('FilterBox', () => {
 
     expect(screen.getByPlaceholderText('Filter...')).toHaveValue('')
     expect(onChange).toHaveBeenCalledWith('')
+  })
+})
+
+describe('rememberSent', () => {
+  it('never grows past the bound', () => {
+    // Found in a memory-leak audit: the echo record was an unbounded
+    // Set, so a long session of typing without navigating accumulated
+    // every prefix ever entered.
+    //
+    // Tested on the FUNCTION, not through the component. A first
+    // version typed 500 characters into the box and asserted the box
+    // looked right, which passed against a deliberately unbounded
+    // version -- the bound is invisible from rendered output.
+    let record: string[] = []
+    for (let index = 0; index < 500; index += 1) {
+      record = rememberSent(record, `query-${index}`)
+    }
+
+    expect(record).toHaveLength(RECENT_SENT)
+  })
+
+  it('keeps the NEWEST values, since an echo is always recent', () => {
+    // Dropping the oldest is only safe because a lagging parent is at
+    // most a render or two behind. Dropping the newest would break the
+    // thing the record exists for.
+    let record: string[] = []
+    for (const value of ['a', 'b', 'c']) record = rememberSent(record, value)
+
+    expect(record[record.length - 1]).toBe('c')
+  })
+})
+
+describe('FilterBox -- bounded memory', () => {
+  it('still keeps every character when the parent lags', () => {
+    // The bound must not reintroduce the bug it sits beside. An echo
+    // arrives at most a render or two late, so dropping older entries
+    // is safe -- but that is the claim, and this is what checks it.
+    const seen: string[] = []
+    render(<LaggingParent onValue={(value) => seen.push(value)} />)
+    const box = screen.getByPlaceholderText('Filter...')
+
+    for (const value of ['C', 'Cu', 'Cus', 'Cust', 'Custo', 'Custom', 'Customer']) {
+      fireEvent.change(box, { target: { value } })
+    }
+
+    expect(box).toHaveValue('Customer')
+    expect(seen[seen.length - 1]).toBe('Customer')
   })
 })

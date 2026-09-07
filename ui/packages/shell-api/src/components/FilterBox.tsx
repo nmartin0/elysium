@@ -13,6 +13,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, InputGroup } from '@blueprintjs/core'
 
+/** How many recently-sent values to remember. An echo arrives at most
+ *  a render or two late, so sixteen is generous. */
+export const RECENT_SENT = 16
+
+/**
+ * The echo record, bounded, newest last.
+ *
+ * A separate exported function because the BOUND is the property worth
+ * testing and it cannot be observed from rendered output -- a test
+ * that only types into the box and asserts the box looks right passes
+ * whether or not the record grows. That test was written first and
+ * proved hollow against a deliberately unbounded version.
+ */
+export function rememberSent(previous: readonly string[], next: string): string[] {
+  return [...previous, next].slice(-RECENT_SENT)
+}
+
 interface FilterBoxProps {
   value: string
   onChange: (value: string) => void
@@ -34,32 +51,39 @@ export default function FilterBox({ value, onChange, placeholder }: FilterBoxPro
   // shows.
   const [text, setText] = useState(value)
 
-  // EVERY value this box has sent upward, not just the latest.
+  // The recent values this box has sent upward, newest last.
   //
-  // Comparing against only the latest was not enough: a lagging parent
-  // echoes back an OLDER value, so "Cus" arriving after "Cust" was
-  // typed did not match the latest and looked like external
-  // navigation -- which adopted it and swallowed the "t". Typing
-  // "Cust" produced "Cus".
+  // Distinguishes our own echo from real navigation. A lagging parent
+  // echoes back an OLDER value: "Cus" arriving after "Cust" was typed
+  // must be ignored, or adopting it swallows the "t". Comparing
+  // against only the LAST value sent was not enough for exactly that
+  // reason.
   //
-  // A value this box has ever sent is its own echo and is ignored.
-  // Anything else is real navigation -- Back, a cross-reference, a tab
-  // switch -- and is adopted.
-  const sent = useRef(new Set([value]))
+  // BOUNDED, because an unbounded record grows one entry per keystroke
+  // for as long as someone types without navigating. A dropped echo
+  // is safe here in a way a dropped recent one is not: the parent is
+  // at most a render or two behind, so anything older than the last
+  // few values cannot still be in flight.
+  //
+  // Not a prefix test instead -- "is the incoming value a prefix of
+  // what I have?" looks equivalent and breaks on deletion: backspace
+  // from "Cust" to "Cus" while the parent echoes "Cust", and the
+  // deleted character comes back.
+  const sent = useRef<string[]>([value])
 
   useEffect(() => {
-    if (!sent.current.has(value)) {
+    if (!sent.current.includes(value)) {
       // A genuinely external value. Start the record over, so a later
       // echo of something typed before this navigation cannot suppress
       // it.
-      sent.current = new Set([value])
+      sent.current = [value]
       setText(value)
     }
   }, [value])
 
   function update(next: string) {
     setText(next)
-    sent.current.add(next)
+    sent.current = rememberSent(sent.current, next)
     onChange(next)
   }
 
