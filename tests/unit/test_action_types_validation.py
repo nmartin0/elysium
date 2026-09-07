@@ -611,3 +611,92 @@ def test_a_parameter_referenced_only_in_a_mutation_counts():
 
 def test_an_action_with_no_parameters_validates():
     validate_action_types(_action_with("literal", parameters={}), OBJECT_TYPES)
+
+
+# --- YAML silently retyping a literal value ------------------------------
+#
+# A mutation writing to a field declared `data_type: string` should be
+# writing a string. YAML does not agree: an unquoted 010 arrives as 8,
+# 2024-01-01 as a date object, and yes as True -- all before any code
+# here sees them, and indistinguishable afterwards from a value someone
+# meant that way.
+#
+# Checkable only because fields carry a declared data_type. When this
+# was first recorded there was none.
+
+_TYPED = {
+    "Widget": {
+        "id_field": "widget_id",
+        "fields": {
+            "code": {"type": "data", "data_type": "string"},
+            "amount": {"type": "data", "data_type": "number"},
+            "untyped": {"type": "data"},
+        },
+    }
+}
+
+
+def _sets(property_name, value):
+    return {
+        "Set": {
+            "affected_object_types": ["Widget"],
+            "parameters": {"widget_id": {"type": "object_reference", "object_type": "Widget"}},
+            "sub_writes": [
+                {
+                    "object_type": "Widget",
+                    "object_id": "parameter.widget_id",
+                    "operation": "update",
+                    "mutations": [{"set": {"property": property_name, "value": value}}],
+                }
+            ],
+        }
+    }
+
+
+def test_a_leading_zero_numeral_is_rejected_for_a_string_field():
+    # Written as 010 in YAML; arrives as 8.
+    with pytest.raises(ValueError, match="leading zero as octal"):
+        validate_action_types(_sets("code", 8), _TYPED)
+
+
+def test_an_unquoted_date_is_rejected_for_a_string_field():
+    import datetime
+
+    with pytest.raises(ValueError, match="unquoted ISO date"):
+        validate_action_types(_sets("code", datetime.date(2024, 1, 1)), _TYPED)
+
+
+def test_an_unquoted_yes_is_rejected_for_a_string_field():
+    # The one the original note did not mention: YAML reads yes/on/true
+    # as booleans.
+    with pytest.raises(ValueError, match="y/yes/true/on"):
+        validate_action_types(_sets("code", True), _TYPED)
+
+
+def test_the_error_says_how_to_fix_it():
+    # An author seeing "010 is not a string" without being told YAML
+    # turned it into 8 has no idea what to change.
+    with pytest.raises(ValueError, match="Quote the value"):
+        validate_action_types(_sets("code", 8), _TYPED)
+
+
+def test_a_quoted_string_is_accepted():
+    validate_action_types(_sets("code", "010"), _TYPED)
+
+
+def test_a_number_on_a_number_field_is_accepted():
+    # The check is about a field declaring `string` and receiving
+    # something else, not about numbers being suspicious.
+    validate_action_types(_sets("amount", 1.2), _TYPED)
+
+
+def test_a_field_with_no_declared_data_type_is_not_second_guessed():
+    # data_type is optional. Without one there is no expectation to
+    # violate, and inventing one would reject valid schemas.
+    validate_action_types(_sets("untyped", 8), _TYPED)
+
+
+def test_a_parameter_reference_is_not_a_literal():
+    # References are strings by construction and resolved at proposal
+    # time; they are never the value YAML retyped.
+    validate_action_types(_sets("code", "parameter.widget_id"), _TYPED)

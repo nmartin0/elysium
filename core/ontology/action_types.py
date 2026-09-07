@@ -162,6 +162,7 @@ def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_
     seen_object_refs: set[tuple[str, str]] = set()
     for i, sub_write in enumerate(sub_writes):
         _validate_one_sub_write(action_type_name, i, sub_write, object_types, declared_params)
+        _validate_literal_value_types(action_type_name, i, sub_write, object_types)
         object_type = sub_write["object_type"]
         referenced_types.add(object_type)
 
@@ -347,6 +348,72 @@ def _collect_parameter_references(action_def: dict) -> set[str]:
         for value in (criterion or {}).values():
             note(value)
     return referenced
+
+
+_YAML_COERCED = {
+    bool: "YAML reads y/yes/true/on as a boolean",
+    int: "YAML reads a bare numeral as an integer, and a leading zero as octal (010 is 8)",
+    float: "YAML reads a decimal as a float, losing trailing zeros (1.20 is 1.2)",
+}
+
+
+def _describe_coercion(value) -> str | None:
+    """How YAML turned a written value into something else, if it did.
+
+    `date` is checked separately because datetime.date is not a
+    builtin scalar the way the others are, and its coercion is the
+    least obvious: an unquoted 2024-01-01 becomes a real date object,
+    not the string anyone writing it expects to store.
+    """
+    from datetime import date, datetime
+
+    if isinstance(value, bool):
+        return _YAML_COERCED[bool]
+    if isinstance(value, (date, datetime)):
+        return "YAML reads an unquoted ISO date as a date object"
+    if isinstance(value, int):
+        return _YAML_COERCED[int]
+    if isinstance(value, float):
+        return _YAML_COERCED[float]
+    return None
+
+
+def _validate_literal_value_types(action_type_name: str, index: int, sub_write: dict,
+                                   object_types: dict) -> None:
+    """Catches a literal mutation value that YAML silently retyped.
+
+    A mutation writing to a field declared `data_type: string` should
+    be writing a string. YAML does not agree: an unquoted 010 arrives
+    as 8, 2024-01-01 as a date object, and yes as True -- all before
+    any code here sees them, and all indistinguishable afterwards from
+    a value someone meant to write that way.
+
+    Checkable only because fields carry a declared data_type. When this
+    was first recorded there was none, and the note correctly said a
+    fix "needs a schema-aware check that knows where a value is
+    expected". The schema now knows.
+
+    LITERALS ONLY. A value beginning "parameter." is a reference
+    resolved at proposal time, and is always a string by construction.
+    """
+    object_type = sub_write.get("object_type")
+    fields = (object_types.get(object_type) or {}).get("fields") or {}
+
+    for mutation in sub_write.get("mutations") or []:
+        setter = mutation.get("set") or {}
+        property_name, value = setter.get("property"), setter.get("value")
+        if isinstance(value, str):
+            continue  # a literal string, or a parameter reference
+        declared = (fields.get(property_name) or {}).get("data_type")
+        if declared != "string":
+            continue
+        coercion = _describe_coercion(value)
+        if coercion is not None:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}] sets "
+                f"{property_name!r} to {value!r}, but that field declares "
+                f"data_type 'string' -- {coercion}. Quote the value to keep it a string."
+            )
 
 
 def _validate_parameters_are_used(action_type_name: str, action_def: dict) -> None:

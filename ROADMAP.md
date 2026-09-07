@@ -315,13 +315,25 @@ after.
   deployment has a table large enough for sync duration to matter AND
   can state truthfully that it is append-only.
 
-- **YAML value coercion.** `core/config.py` rejects duplicate keys and
-  `validate_identifier_types()` checks identifiers, but a mutation's
-  own literal VALUE can still be silently coerced by YAML: leading-zero
-  numerals (`010` -> 8), scientific notation (`1e2` -> 100.0), implicit
-  dates (`2024-01-01` -> a real `datetime.date`). Fixing this properly
-  needs a schema-aware check that knows where a value (rather than a
-  number) is expected -- not something to bolt onto the generic loader.
+- **YAML value coercion: CLOSED for mutation values.** A literal
+  written into a mutation is retyped by YAML before any code here sees
+  it, and afterwards is indistinguishable from a value someone meant
+  that way. Now rejected when the target field declares
+  `data_type: string`.
+
+  The original note said fixing this "needs a schema-aware check that
+  knows where a value is expected". It was right, and the schema now
+  knows -- fields carry a declared data_type, which they did not when
+  this was written.
+
+  It was also wrong on the specifics, found by testing rather than
+  reading: `1e2` is NOT coerced (it stays a string), while `yes` ->
+  True and `1.20` -> 1.2 both are, and neither was listed.
+
+  Still uncovered: a field with no declared data_type, where there is
+  no expectation to violate and inventing one would reject valid
+  schemas. Declaring data_type is how an author opts into the check.
+
 - **Partial-overlap duplicate detection in the agent loop.** A
   `get_field` followed by a larger `get_object` including that same
   field is not caught as duplicate work. `get_object`'s signature is
