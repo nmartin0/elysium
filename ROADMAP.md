@@ -204,6 +204,42 @@ is a different kind of blocked from this.
   different answers, and picking one silently would be the worst of
   them.
 
+- **No statement timeout on a write, and the object lock is held for
+  its duration.** `lock.acquire()` takes no timeout, and the lock is
+  held across the adapter write. A pathologically slow statement
+  therefore queues every other write to that object -- and, since
+  locks are striped, to any object sharing its stripe.
+
+  INVESTIGATED, AND SMALLER THAN IT FIRST LOOKED. I reported this as
+  an unbounded wait and then measured it: SQLite's busy timeout is 5
+  seconds by default and RAISES rather than hanging, so a contended
+  write fails cleanly and the `finally` releases the lock. What
+  remains is a genuinely slow-but-valid statement -- a large scan, a
+  stalled disk -- which has no bound.
+
+  Not fixed, because every fix needs a number nobody can justify yet.
+  A lock timeout too low breaks legitimate slow writes; too high does
+  not help. The useful version is a metric -- how long writes wait --
+  and that belongs with real deployment data rather than a guess.
+
+  Striping slightly widened the blast radius here, which is the cost
+  recorded when it was chosen: false contention is slow where the leak
+  it replaced was fatal.
+
+- **The request executor is never explicitly shut down.** No lifespan
+  handler calls `shutdown()` on `app.state.executor`.
+
+  ALSO INVESTIGATED AND ALSO A NON-ISSUE, measured rather than
+  assumed. A `/query` handler awaits `run_in_executor`, so the ASGI
+  request stays pending and uvicorn's own graceful shutdown already
+  waits for it. On SIGTERM the process exits immediately -- verified
+  directly, 0.0s with a 30-second task in flight -- and an in-flight
+  WRITE killed that way is exactly what the write log's resume path
+  exists to recover.
+
+  Recorded rather than fixed: adding `shutdown()` would duplicate what
+  uvicorn already does and change nothing observable.
+
 - **No container.** Dependencies are locked with hashes and the lint
   fails on drift, so builds are reproducible from a checkout. What is
   still missing is a reproducible RUNTIME: the OS layer and the Python
