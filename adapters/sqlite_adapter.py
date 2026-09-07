@@ -47,6 +47,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from core.ontology.filters import UnsupportedFilter
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.sqlite_connection import open_connection as _connect
 
@@ -59,6 +60,55 @@ def _run_query(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[d
 def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> dict | None:
     row = conn.execute(sql, params).fetchone()
     return dict(row) if row is not None else None
+
+
+def _clause_for(condition) -> tuple[str, list]:
+    """One condition as a SQL fragment plus its bound values.
+
+    A separate function because the mapping from operator to SQL is
+    the part worth testing directly: whether `in` produces the right
+    number of placeholders is not observable from a query's results
+    when the fixture happens to have one matching row.
+
+    Every branch returns placeholders, never a value spliced into the
+    string. `field` is a column name the mediator has already checked
+    against the caller's own visible schema.
+    """
+    field, operator, value = condition.field, condition.operator, condition.value
+
+    if operator == "equals":
+        return f"{field} = ?", [value]
+    if operator in ("in", "not_in"):
+        placeholders = ", ".join("?" for _ in value)
+        keyword = "IN" if operator == "in" else "NOT IN"
+        return f"{field} {keyword} ({placeholders})", list(value)
+    if operator == "range":
+        return _bounded_clause(field, value.get("min"), value.get("max"))
+    if operator == "date_range":
+        # Compared as TEXT, which is correct for ISO-8601: lexical
+        # order matches chronological order, which is the property the
+        # format was designed for. A non-ISO date column would compare
+        # wrongly, and that is why date_range requires ISO input.
+        return _bounded_clause(field, value.get("start"), value.get("end"))
+    if operator == "contains":
+        # LIKE with the wildcards in the BOUND value, not the pattern,
+        # so a value containing % or _ cannot widen its own match.
+        return f"{field} LIKE ?", [f"%{_escape_like(value)}%"]
+
+    raise UnsupportedFilter(f"SQLite adapter cannot express {operator!r}")
+
+
+def _bounded_clause(field: str, low, high) -> tuple[str, list]:
+    if low is not None and high is not None:
+        return f"{field} BETWEEN ? AND ?", [low, high]
+    if low is not None:
+        return f"{field} >= ?", [low]
+    return f"{field} <= ?", [high]
+
+
+def _escape_like(value: str) -> str:
+    # Without this, searching for "50%" matches anything starting "50".
+    return value.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
 
 
 class SQLiteReadAdapter(ExternalReadAdapter):
@@ -110,21 +160,34 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         finally:
             conn.close()
 
-    def find_ids(self, object_type: str, criteria: dict, type_config: dict) -> list[Any]:
+    def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
         table = type_config["storage"]["table"]
         id_column = type_config["storage"]["id_column"]
 
         # Column NAMES are validated by DataMediator before this is ever
         # called; VALUES are always bound params, never interpolated.
-        where_clause = " AND ".join(f"{key} = ?" for key in criteria.keys())
-        values = tuple(criteria.values())
+        # That split is what makes the operator set safe to widen: every
+        # clause below builds placeholders and hands the values
+        # separately, so a value can never become SQL.
+        clauses: list[str] = []
+        values: list[Any] = []
+        for condition in conditions:
+            clause, bound = _clause_for(condition)
+            clauses.append(clause)
+            values.extend(bound)
+
+        where_clause = " AND ".join(clauses)
 
         with self._connection() as conn:
             if where_clause:
-                rows = _run_query(conn, f"SELECT {id_column} FROM {table} WHERE {where_clause}", values)
+                rows = _run_query(
+                    conn,
+                    f"SELECT {id_column} FROM {table} WHERE {where_clause}",
+                    tuple(values),
+                )
             else:
                 rows = _run_query(conn, f"SELECT {id_column} FROM {table}")
-            return [row[id_column] for row in rows]
+        return [row[id_column] for row in rows]
 
     def find_ids_matching_text(self, object_type: str, columns: list[str], query_text: str,
                                 type_config: dict) -> list[Any]:

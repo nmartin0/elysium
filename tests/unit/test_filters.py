@@ -201,3 +201,97 @@ def test_a_filter_error_is_a_value_error():
     # So callers already catching ValueError -- the API's own 400 path
     # among them -- keep working without change.
     assert issubclass(FilterError, ValueError)
+
+
+# --- Operators as SQL ----------------------------------------------------
+#
+# The mapping from operator to SQL is worth testing directly: whether
+# `in` produces the right number of placeholders is not observable
+# from a query's results when the fixture happens to have one matching
+# row.
+
+
+def test_in_produces_one_placeholder_per_value():
+    from adapters.sqlite_adapter import _clause_for
+
+    clause, values = _clause_for(FieldFilter("region", "in", ["a", "b", "c"]))
+
+    assert clause == "region IN (?, ?, ?)"
+    assert values == ["a", "b", "c"]
+
+
+def test_a_value_never_becomes_sql():
+    # The whole reason the operator set could be widened safely: every
+    # branch binds values separately, so a value cannot be a fragment.
+    from adapters.sqlite_adapter import _clause_for
+
+    hostile = "'; DROP TABLE customers; --"
+    clause, values = _clause_for(FieldFilter("region", "equals", hostile))
+
+    assert hostile not in clause
+    assert values == [hostile]
+
+
+def test_a_one_sided_range_does_not_bind_a_missing_bound():
+    from adapters.sqlite_adapter import _clause_for
+
+    assert _clause_for(FieldFilter("n", "range", {"min": 10})) == ("n >= ?", [10])
+    assert _clause_for(FieldFilter("n", "range", {"max": 10})) == ("n <= ?", [10])
+    assert _clause_for(FieldFilter("n", "range", {"min": 1, "max": 9})) == (
+        "n BETWEEN ? AND ?", [1, 9]
+    )
+
+
+def test_contains_escapes_wildcards_in_the_search_text():
+    # Without this, searching for "50%" matches anything starting "50".
+    from adapters.sqlite_adapter import _clause_for
+
+    _, values = _clause_for(FieldFilter("name", "contains", "50%"))
+
+    assert values == [r"%50\%%"]
+
+
+def test_the_mirror_declines_contains_rather_than_approximating_it():
+    """Iceberg has In, NotIn and range comparisons but no substring
+    predicate. StartsWith is the closest and is NOT the same thing.
+
+    Declining is honest. Translating contains to StartsWith would
+    return a subset of the right rows and look like it worked -- a
+    wrong answer reporting success, which is the failure this project
+    keeps finding.
+    """
+    from core.mirror.mirror_adapter import MirrorReadAdapter
+    from core.ontology.filters import UnsupportedFilter
+
+    adapter = MirrorReadAdapter.__new__(MirrorReadAdapter)
+
+    with pytest.raises(UnsupportedFilter):
+        adapter._term_for(FieldFilter("name", "contains", "ada"))
+
+
+# --- The same semantics, in Python ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "condition,row,expected",
+    [
+        (FieldFilter("r", "equals", "west"), {"r": "west"}, True),
+        (FieldFilter("r", "equals", "west"), {"r": "east"}, False),
+        (FieldFilter("r", "in", ["west", "east"]), {"r": "east"}, True),
+        (FieldFilter("r", "in", ["west"]), {"r": "east"}, False),
+        (FieldFilter("r", "not_in", ["west"]), {"r": "east"}, True),
+        (FieldFilter("n", "range", {"min": 1, "max": 9}), {"n": 5}, True),
+        (FieldFilter("n", "range", {"min": 1, "max": 9}), {"n": 50}, False),
+        (FieldFilter("n", "range", {"min": 1}), {"n": None}, False),
+        (FieldFilter("s", "contains", "da"), {"s": "ada"}, True),
+        (FieldFilter("s", "contains", "zz"), {"s": "ada"}, False),
+        (FieldFilter("s", "contains", "da"), {"s": None}, False),
+    ],
+)
+def test_python_evaluation_matches_the_sql_semantics(condition, row, expected):
+    # The fallback path uses these when a storage cannot push an
+    # operator down. Two definitions of "what does `in` mean" drifting
+    # apart would make results depend on which storage answered.
+    from core.ontology.filters import row_matches
+
+    assert row_matches(row, condition) is expected

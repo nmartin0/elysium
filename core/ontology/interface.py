@@ -78,9 +78,26 @@ class ExternalReadAdapter(ReadAdapter):
     max_concurrent_reads: int | None
 
     @abstractmethod
-    def find_ids(self, object_type: str, criteria: dict, type_config: dict) -> list[Any]:
+    def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
         """Matching IDs. NOT security-filtered -- DataMediator filters
-        after calling this."""
+        after calling this.
+
+        `conditions` is a list of FieldFilter (see
+        core/ontology/filters.py), ANDed together, with `field` already
+        translated to this storage's column name. An empty list means
+        every row.
+
+        WAS a {column: value} dict, which could express only equality.
+        Selecting two values on a chart means "in these two", and that
+        had no representation at all.
+
+        AN ADAPTER MAY DECLINE AN OPERATOR by raising
+        UnsupportedFilter, and the mediator will apply it in Python
+        instead. That is a real escape hatch, not a loophole: Iceberg
+        has In, NotIn and range comparisons natively but no substring
+        predicate, so `contains` genuinely cannot be pushed down there.
+        Declining is honest; silently returning wrong rows is not.
+        """
 
     @abstractmethod
     def find_ids_matching_text(self, object_type: str, columns: list[str], query_text: str,

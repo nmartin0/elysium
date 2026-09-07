@@ -75,6 +75,17 @@ class FieldFilter:
     value: Any
 
 
+class UnsupportedFilter(Exception):
+    """Raised by an adapter that cannot push a given operator down.
+
+    Deliberately NOT a FilterError: a FilterError means the filter is
+    wrong and the caller must fix it, while this means the filter is
+    fine and this storage cannot express it. The mediator catches this
+    one and applies the condition in Python; letting it reach a caller
+    as a 400 would report a backend limitation as user error.
+    """
+
+
 class FilterError(ValueError):
     """A filter that cannot be honoured as written.
 
@@ -263,3 +274,36 @@ def resolve_relative_date(value: dict, now: datetime | None = None) -> dict:
     if value.get("until_days_ago") is not None:
         resolved["end"] = (reference - timedelta(days=value["until_days_ago"])).isoformat()
     return resolved
+
+
+def row_matches(row: dict, condition: FieldFilter) -> bool:
+    """Whether one row satisfies one condition, in Python.
+
+    The SAME semantics the adapters express in SQL, for the fallback
+    path when a storage cannot push an operator down. Kept beside the
+    vocabulary rather than in the mediator so the two definitions of
+    each operator sit in one file and can be read against each other --
+    two implementations of "what does `in` mean" drifting apart would
+    make results depend on which storage answered.
+    """
+    value = row.get(condition.field)
+    operand = condition.value
+
+    if condition.operator == "equals":
+        return value == operand
+    if condition.operator == "in":
+        return value in operand
+    if condition.operator == "not_in":
+        return value not in operand
+    if condition.operator == "contains":
+        return isinstance(value, str) and operand in value
+    if condition.operator in ("range", "date_range"):
+        low = operand.get("min") if condition.operator == "range" else operand.get("start")
+        high = operand.get("max") if condition.operator == "range" else operand.get("end")
+        if value is None:
+            return False
+        if low is not None and value < low:
+            return False
+        return not (high is not None and value > high)
+
+    raise FilterError(f"Cannot evaluate {condition.operator!r} in Python.")

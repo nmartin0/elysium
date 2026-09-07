@@ -54,8 +54,17 @@ from typing import Any
 
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
-from pyiceberg.expressions import And, BooleanExpression, EqualTo
+from pyiceberg.expressions import (
+    And,
+    BooleanExpression,
+    EqualTo,
+    GreaterThanOrEqual,
+    In,
+    LessThanOrEqual,
+    NotIn,
+)
 
+from core.ontology.filters import UnsupportedFilter
 from core.ontology.interface import ExternalReadAdapter
 
 
@@ -73,14 +82,14 @@ class MirrorReadAdapter(ExternalReadAdapter):
         self._catalog = catalog
         self.silo_name = silo_name
 
-    def find_ids(self, object_type: str, criteria: dict, type_config: dict) -> list[Any]:
+    def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
         table_name = type_config["storage"]["table"]
         id_column = type_config["storage"]["id_column"]
 
         arrow = self._scan(
             table_name,
             selected_fields=(id_column,),
-            row_filter=self._criteria_to_filter(criteria),
+            row_filter=self._conditions_to_filter(conditions),
         )
         if arrow is None:
             return []
@@ -244,18 +253,52 @@ class MirrorReadAdapter(ExternalReadAdapter):
             scan = table.scan(selected_fields=selected_fields, row_filter=row_filter)
         return scan.to_arrow()
 
-    def _criteria_to_filter(self, criteria: dict):
-        # Every value stringified, matching what the sync writes -- see
-        # this module's own docstring.
-        if not criteria:
+    def _conditions_to_filter(self, conditions: list):
+        """Filter conditions as an Iceberg expression.
+
+        Iceberg has In, NotIn and range comparisons natively, so most
+        of the vocabulary pushes down. It has NO substring predicate --
+        StartsWith is the closest, and is not the same thing -- so
+        `contains` is declined and the mediator applies it in Python.
+
+        Declining is honest. Translating `contains` to StartsWith would
+        return a subset of the right rows and look like it worked,
+        which is the failure mode this project keeps finding: a wrong
+        answer that reports success.
+        """
+        if not conditions:
             return None
-        terms: list[BooleanExpression] = [
-            EqualTo(term=column, literal=str(value))  # type: ignore[call-arg]
-            for column, value in criteria.items()
-        ]
-        if len(terms) == 1:
-            return terms[0]
+
+        terms: list[BooleanExpression] = []
+        for condition in conditions:
+            terms.append(self._term_for(condition))
+
         combined = terms[0]
         for term in terms[1:]:
             combined = And(combined, term)
         return combined
+
+    def _term_for(self, condition):
+        field, operator, value = condition.field, condition.operator, condition.value
+
+        if operator == "equals":
+            return EqualTo(term=field, literal=str(value))  # type: ignore[call-arg]
+        if operator == "in":
+            return In(term=field, literals=[str(item) for item in value])  # type: ignore[call-arg]
+        if operator == "not_in":
+            return NotIn(term=field, literals=[str(item) for item in value])  # type: ignore[call-arg]
+        if operator in ("range", "date_range"):
+            low = value.get("min") if operator == "range" else value.get("start")
+            high = value.get("max") if operator == "range" else value.get("end")
+            bounds = []
+            if low is not None:
+                bounds.append(GreaterThanOrEqual(term=field, literal=low))  # type: ignore[call-arg]
+            if high is not None:
+                bounds.append(LessThanOrEqual(term=field, literal=high))  # type: ignore[call-arg]
+            return bounds[0] if len(bounds) == 1 else And(bounds[0], bounds[1])
+
+        # `contains` and anything added later that Iceberg cannot
+        # express.
+        raise UnsupportedFilter(
+            f"the mirror cannot express {operator!r}"
+        )

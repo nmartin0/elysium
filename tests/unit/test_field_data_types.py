@@ -18,7 +18,20 @@ from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.mirror.sync_targets import resolve_sync_targets
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for, coerce
+from core.ontology.filters import FieldFilter
 from core.ontology.object_type_validation import validate_object_types
+
+
+def _as_conditions(criteria: dict) -> list[FieldFilter]:
+    """The old {column: value} shape as equality conditions.
+
+    find_ids now takes a condition list -- one value per field could
+    not express "in these two", which is what selecting values on a
+    chart means. This test predates that and only ever used equality.
+    """
+    return [FieldFilter(field=k, operator="equals", value=v) for k, v in criteria.items()]
+
+
 
 
 def test_coerce_returns_real_types_not_strings():
@@ -191,7 +204,7 @@ def test_filtering_on_a_typed_column_still_works(tmp_path, typed_source):
     mirror = MirrorReadAdapter(sync._catalog, "primary")
 
     config = {"storage": {"table": "accounts", "id_column": "account_id"}}
-    assert mirror.find_ids("Account", {"label": "checking"}, config) == ["acc_1"]
+    assert mirror.find_ids("Account", _as_conditions({"label": "checking"}), config) == ["acc_1"]
 
 
 # --- id_type: the type of an object's own identity column ---------------

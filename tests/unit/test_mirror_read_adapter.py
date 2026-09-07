@@ -25,6 +25,17 @@ import pytest
 from adapters.sqlite_adapter import SQLiteReadAdapter
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.mirror_adapter import MirrorReadAdapter
+from core.ontology.filters import FieldFilter
+
+
+def _as_conditions(criteria: dict) -> list[FieldFilter]:
+    """The old {column: value} shape as equality conditions.
+
+    find_ids now takes a condition list -- one value per field could
+    not express "in these two", which is what selecting values on a
+    chart means. These tests predate that and only ever used equality.
+    """
+    return [FieldFilter(field=k, operator="equals", value=v) for k, v in criteria.items()]
 
 CUSTOMER_CONFIG = {"storage": {"table": "customers", "id_column": "customer_id"}}
 CUSTOMER_COLUMNS = ["customer_id", "name", "region", "email"]
@@ -74,16 +85,16 @@ def adapters(tmp_path, source_db):
 
 def test_find_ids_with_no_criteria_matches_live(adapters):
     live, mirror = adapters
-    assert sorted(mirror.find_ids("Customer", {}, CUSTOMER_CONFIG)) == sorted(
-        live.find_ids("Customer", {}, CUSTOMER_CONFIG)
+    assert sorted(mirror.find_ids("Customer", [], CUSTOMER_CONFIG)) == sorted(
+        live.find_ids("Customer", [], CUSTOMER_CONFIG)
     )
 
 
 def test_find_ids_with_one_criterion_matches_live(adapters):
     live, mirror = adapters
     criteria = {"region": "us-west"}
-    assert sorted(mirror.find_ids("Customer", criteria, CUSTOMER_CONFIG)) == sorted(
-        live.find_ids("Customer", criteria, CUSTOMER_CONFIG)
+    assert sorted(mirror.find_ids("Customer", _as_conditions(criteria), CUSTOMER_CONFIG)) == sorted(
+        live.find_ids("Customer", _as_conditions(criteria), CUSTOMER_CONFIG)
     )
 
 
@@ -92,17 +103,17 @@ def test_find_ids_with_several_criteria_matches_live(adapters):
     # backwards would silently return too many rows.
     live, mirror = adapters
     criteria = {"region": "us-west", "name": "Ada Okafor"}
-    result = mirror.find_ids("Customer", criteria, CUSTOMER_CONFIG)
+    result = mirror.find_ids("Customer", _as_conditions(criteria), CUSTOMER_CONFIG)
 
-    assert sorted(result) == sorted(live.find_ids("Customer", criteria, CUSTOMER_CONFIG))
+    assert sorted(result) == sorted(live.find_ids("Customer", _as_conditions(criteria), CUSTOMER_CONFIG))
     assert result == ["cust_001"]
 
 
 def test_find_ids_with_no_match_returns_empty_like_live(adapters):
     live, mirror = adapters
     criteria = {"region": "nowhere"}
-    assert mirror.find_ids("Customer", criteria, CUSTOMER_CONFIG) == live.find_ids(
-        "Customer", criteria, CUSTOMER_CONFIG
+    assert mirror.find_ids("Customer", _as_conditions(criteria), CUSTOMER_CONFIG) == live.find_ids(
+        "Customer", _as_conditions(criteria), CUSTOMER_CONFIG
     )
 
 
@@ -236,7 +247,7 @@ def test_an_unsynced_table_reads_as_empty_rather_than_erroring(tmp_path, source_
     mirror = MirrorReadAdapter(sync._catalog, "primary")
 
     never_synced = {"storage": {"table": "transactions", "id_column": "transaction_id"}}
-    assert mirror.find_ids("Transaction", {}, never_synced) == []
+    assert mirror.find_ids("Transaction", [], never_synced) == []
     assert mirror.get_raw_field("Transaction", "t1", "amount", never_synced) is None
 
 

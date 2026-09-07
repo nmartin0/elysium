@@ -112,6 +112,7 @@ from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.ontology.filters import FieldFilter, UnsupportedFilter, row_matches
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.schema import (
     get_column_for_field,
@@ -807,12 +808,17 @@ class DataMediator:
         # column name -- see get_column_for_field()'s own docstring for
         # why the id_field needs its own handling (it isn't a regular
         # entry in type_schema["fields"] at all).
-        translated_criteria = {
-            get_column_for_field(resolved_type_config, key): value
+        conditions = [
+            FieldFilter(
+                field=get_column_for_field(resolved_type_config, key),
+                operator="equals",
+                value=value,
+            )
             for key, value in criteria.items()
-        }
-
-        candidate_ids = adapter.find_ids(object_type, translated_criteria, resolved_type_config)
+        ]
+        candidate_ids = self._find_ids_with_fallback(
+            adapter, object_type, conditions, resolved_type_config
+        )
         candidate_ids = self._reconcile_search_with_pending_writes(
             object_type, criteria, candidate_ids, adapter, resolved_type_config
         )
@@ -915,7 +921,7 @@ class DataMediator:
         if query_text.strip():
             candidate_ids = adapter.find_ids_matching_text(object_type, columns, query_text, resolved_type_config)
         else:
-            candidate_ids = adapter.find_ids(object_type, {}, resolved_type_config)
+            candidate_ids = adapter.find_ids(object_type, [], resolved_type_config)
 
         action = f"read:{object_type}"
         candidate_ids = self._without_deleted(object_type, candidate_ids)
@@ -924,6 +930,48 @@ class DataMediator:
         return [
             candidate_id for candidate_id in candidate_ids
             if check_access(self, user_record, self.roles, object_type, candidate_id, action)
+        ]
+
+    def _find_ids_with_fallback(self, adapter, object_type: str, conditions: list,
+                                 resolved_type_config: dict) -> list:
+        """Pushes what the storage can express, applies the rest here.
+
+        An adapter declines an operator by raising UnsupportedFilter --
+        Iceberg has no substring predicate, so `contains` genuinely
+        cannot go down there. Declined conditions are applied in Python
+        afterwards.
+
+        ALL-OR-NOTHING PER QUERY, deliberately. Pushing some conditions
+        and applying others would need the adapter to report WHICH it
+        took, and a mismatch between what it says and what it did would
+        silently return the wrong rows. Retrying with none pushed is
+        slower and cannot be wrong.
+
+        This is the SQL/Python alignment rule's own exception, and it
+        is narrow: set membership and ranges go to the engine, and only
+        what the engine cannot express comes back here.
+        """
+        try:
+            return adapter.find_ids(object_type, conditions, resolved_type_config)
+        except UnsupportedFilter:
+            candidate_ids = adapter.find_ids(object_type, [], resolved_type_config)
+            return self._apply_conditions_in_python(
+                adapter, candidate_ids, conditions, resolved_type_config
+            )
+
+    def _apply_conditions_in_python(self, adapter, candidate_ids: list,
+                                     conditions: list, resolved_type_config: dict) -> list:
+        if not conditions or not candidate_ids:
+            return candidate_ids
+        id_column = resolved_type_config["storage"]["id_column"]
+        columns = sorted({condition.field for condition in conditions})
+        rows = adapter.read_fields_for_ids(
+            resolved_type_config["storage"]["table"], id_column,
+            candidate_ids, columns, resolved_type_config,
+        )
+        return [
+            row[id_column] for row in rows
+            if all(row_matches(row, condition) for condition in conditions)
         ]
 
     def _reconcile_search_with_pending_writes(self, object_type: str, criteria: dict, candidate_ids: list,
