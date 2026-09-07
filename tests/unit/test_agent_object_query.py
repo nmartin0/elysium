@@ -1,3 +1,4 @@
+
 """
 Point 17: aggregation and link traversal as agent steps.
 
@@ -25,7 +26,11 @@ architecture was sound, its vocabulary was just narrower than the
 mediator's.
 """
 
+import os
 import sqlite3
+import stat
+import tempfile
+from pathlib import Path
 
 import pytest
 import yaml
@@ -514,22 +519,40 @@ def test_an_unparseable_answer_still_finishes():
 
 
 def test_both_adapters_raise_the_same_type_for_an_unreachable_backend():
-    # The handler previously caught requests.RequestException -- one
-    # adapter's transport library. A second adapter raising anything
-    # else went entirely unhandled, so an Ollama failure was swallowed
-    # while a Claude failure propagated. Same event, opposite
-    # behaviour.
-    import inspect
+    """The handler previously caught requests.RequestException -- one
+    adapter's transport library. A second adapter raising anything else
+    went entirely unhandled, so an Ollama failure was swallowed while
+    an identical Claude failure propagated. Same event, opposite
+    behaviour, decided by which backend was configured.
 
+    Asserts the adapters actually RAISE it. A first version checked
+    that "LLMUnavailable" appeared in each module's source, which a
+    comment satisfies -- proven by replacing the raise with a
+    RuntimeError and leaving the word behind, after which it still
+    passed.
+    """
     import adapters.claude_agent_sdk_adapter as claude_module
-    import adapters.ollama_adapter as ollama_module
+    from adapters.ollama_adapter import OllamaAdapter
     from core.llm.interface import LLMUnavailable
 
-    for module in (ollama_module, claude_module):
-        assert "LLMUnavailable" in inspect.getsource(module), (
-            f"{module.__name__} does not raise the shared unavailable type"
-        )
-    assert issubclass(LLMUnavailable, Exception)
+    # Ollama: a base_url nothing is listening on.
+    ollama = OllamaAdapter("m", {"base_url": "http://127.0.0.1:9/api/chat",
+                                 "request_timeout_seconds": 1})
+    with pytest.raises(LLMUnavailable):
+        ollama.chat("sys", "hi")
+
+    # Claude: a CLI that exits non-zero.
+    script = Path(tempfile.mkdtemp()) / "claude"
+    script.write_text("#!/bin/sh\necho 'not signed in' >&2\nexit 1\n")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    original_path = os.environ["PATH"]
+    os.environ["PATH"] = f"{script.parent}{os.pathsep}{original_path}"
+    try:
+        with pytest.raises(LLMUnavailable, match="not signed in"):
+            claude_module.ClaudeAgentSDKAdapter("m", {}).chat("sys", "hi")
+    finally:
+        os.environ["PATH"] = original_path
+
 
 
 def test_a_wider_get_object_is_not_treated_as_a_duplicate():

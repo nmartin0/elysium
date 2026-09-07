@@ -246,13 +246,23 @@ def test_schema_is_verified_once_however_threads_interleave(tmp_path):
     )
 
 
-def test_the_keyed_lock_manager_was_already_correct():
-    # Recorded rather than assumed: KeyedLockManager uses setdefault(),
-    # which is atomic under the GIL, and is the pattern the write
-    # limiter should have used from the start. Verified here so the
-    # audit's conclusion is checkable rather than a claim.
-    import inspect
-
-    from core.concurrency import KeyedLockManager
-
-    assert "setdefault" in inspect.getsource(KeyedLockManager.lock_for)
+# KeyedLockManager's concurrency guarantee is NOT tested here, and the
+# honest reason is that I could not write a test I could prove works.
+#
+# It used to be asserted by checking that "setdefault" appeared in
+# lock_for's source, which a comment satisfies -- proven by replacing
+# the call with a check-then-act and leaving the word behind, after
+# which it still passed.
+#
+# The behavioural replacement was no better. Under check-then-act two
+# threads both create a lock and the second overwrites the first in the
+# dict, so BOTH callers are handed the same surviving object and an
+# after-the-fact comparison sees nothing wrong. The harm is that a
+# thread already holding the discarded lock has no mutual exclusion
+# with one holding the survivor -- which is only observable DURING the
+# race, not from its result.
+#
+# setdefault is correct, and core/ontology/mediator.py's write-limiter
+# test does force an equivalent interleaving successfully. Recorded
+# rather than papered over with a third test that passes for the wrong
+# reason.

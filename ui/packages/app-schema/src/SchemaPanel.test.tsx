@@ -299,3 +299,43 @@ describe('SchemaPanel -- retracing steps', () => {
     expect(screen.getByPlaceholderText(/Filter object types/)).toBeInTheDocument()
   })
 })
+
+describe('SchemaPanel -- icons', () => {
+  // `icon` is a free string in the ontology, because the ontology
+  // should not know which widget library renders it. That makes this
+  // layer responsible for its own vocabulary. Previously the value was
+  // cast `as never`, which is not validation -- a typo rendered
+  // nothing, with no error in either layer.
+
+  function renderWithIcon(icon: string | null) {
+    renderPanel(
+      <SchemaPanel
+        visibleSchema={{ Customer: { ...CUSTOMER, icon } }}
+        username="alice"
+        onSessionExpired={noop}
+      />,
+    )
+    openObjectTypes()
+  }
+
+  it('renders a real icon', () => {
+    renderWithIcon('person')
+
+    expect(document.querySelector('[data-icon="person"]')).toBeTruthy()
+  })
+
+  it('renders no icon, and no error, for a name the library does not know', () => {
+    // Degrades to "no icon" rather than throwing: a typo in an
+    // ontology must not take a page down.
+    renderWithIcon('definitely-not-an-icon')
+
+    expect(screen.getByText('Customer')).toBeInTheDocument()
+    expect(document.querySelector('[data-icon="definitely-not-an-icon"]')).toBeNull()
+  })
+
+  it('renders nothing when no icon is declared', () => {
+    renderWithIcon(null)
+
+    expect(screen.getByText('Customer')).toBeInTheDocument()
+  })
+})

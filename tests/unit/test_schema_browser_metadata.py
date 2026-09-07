@@ -11,7 +11,6 @@ whatever consumed the earlier shape.
 from pathlib import Path
 
 import pytest
-import yaml
 
 from core.ontology.object_type_validation import validate_object_types
 
@@ -65,61 +64,16 @@ def test_the_group_reaches_visible_schema():
     assert mediator.visible_schema(user)["Widget"]["group"] == "Finance"
 
 
-# --- per-object-type freshness -------------------------------------------
-
-
-def test_freshness_is_reported_per_object_type(tmp_path):
-    # The deployment-wide figure is the OLDEST of these, which answers
-    # "how stale might anything be" and not "which type is stale". A
-    # schema browser needs the second.
-    import sqlite3
-
-    from core.deployment_loader import load_deployment, mirror_synced_at_by_object_type
-
-    data_dir = tmp_path / "data"
-    (data_dir / "dev_fixtures").mkdir(parents=True)
-    for db, script in (("mediator.db", "schema.sql"), ("support.db", "support_schema.sql"),
-                       ("risk.db", "risk_schema.sql")):
-        conn = sqlite3.connect(data_dir / "dev_fixtures" / db)
-        conn.executescript((FIXTURES / script).read_text())
-        conn.commit()
-        conn.close()
-
-    # run_sync takes runtime paths, not a config -- it loads its own,
-    # which is the same path an operator's cron entry uses.
-    from core.deployment_loader import RuntimePaths
-    from scripts.run_sync import run_sync
-
-    log_dir = tmp_path / "log"
-    log_dir.mkdir()
-    run_sync(RuntimePaths(config_dir=FIXTURES, data_dir=data_dir, log_dir=log_dir))
-    config = load_deployment(FIXTURES)
-
-    synced = mirror_synced_at_by_object_type(config, data_dir)
-
-    assert set(synced) == set(config.schema)
-    assert all(value is not None for value in synced.values())
-
-
-def test_a_type_that_never_synced_reports_none(tmp_path):
-    # An operational state, not an error: a fresh deployment has not
-    # run a sync yet, and a browser should say so rather than raise.
-    from core.deployment_loader import load_deployment, mirror_synced_at_by_object_type
-
-    config = load_deployment(FIXTURES)
-    synced = mirror_synced_at_by_object_type(config, tmp_path / "empty")
-
-    assert set(synced) == set(config.schema)
-    assert all(value is None for value in synced.values())
-
-
-def test_a_multi_table_type_reports_its_stalest_table(tmp_path):
-    # Customer spans two silos in the fixture. It is only as fresh as
-    # the later-synced of them, so the EARLIER timestamp is the honest
-    # answer -- reporting the newer one would claim data is current
-    # when half of it is not.
-    schema = yaml.safe_load((FIXTURES / "ontology_schema.yaml").read_text())
-
-    assert schema["object_types"]["Customer"].get("additional_storage"), (
-        "this test is meaningless unless Customer really spans two tables"
-    )
+# Per-object-type mirror freshness was built here and REMOVED. It was
+# reachable from no route and read by no screen -- I justified it as
+# something the schema browser needed, then built the schema browser
+# without it.
+#
+# Worse than merely unused: no shipped deployment sets
+# read_from_mirror, so every type would have reported "never synced"
+# for data that is in fact current. Wiring it would have been
+# misleading rather than incomplete.
+#
+# Reinstate when a deployment actually reads from the mirror. The
+# deployment-wide figure on /data-freshness already covers the case
+# that exists today.

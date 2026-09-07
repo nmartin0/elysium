@@ -19,7 +19,9 @@
 import { Button, HTMLTable, Tag } from '@blueprintjs/core'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
-export interface LinkSide {
+// Not exported: used only within this file. Exporting a type nothing
+// imports is a second, unused public surface to keep correct.
+interface LinkSide {
   objectType: string
   apiName: string
   target: string

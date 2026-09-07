@@ -17,6 +17,7 @@
 import { useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Callout, HTMLTable, Icon, Spinner, Tab, Tabs, Tag } from '@blueprintjs/core'
+import { IconNames, type IconName } from '@blueprintjs/icons'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/types'
 import ActionTypes from './ActionTypes'
@@ -43,6 +44,24 @@ type Schema = VisibleSchema
  * backend, before a value exists -- a hidden field is still in the
  * response precisely so nobody mistakes this for an access control.
  */
+/**
+ * An icon name the widget library actually knows, or nothing.
+ *
+ * `icon` is a free string in the ontology, because the ontology should
+ * not know which widget library renders it -- the backend validates
+ * that it is a non-empty string and stops there. That leaves this
+ * layer responsible for its own vocabulary.
+ *
+ * Previously the value was cast with `as never` to satisfy the type
+ * checker, which is not validation: a typo rendered nothing, with no
+ * error in either layer and no way to find out why.
+ */
+const KNOWN_ICONS = new Set<string>(Object.values(IconNames))
+
+function iconOrNone(name: string | null | undefined): IconName | undefined {
+  return name != null && KNOWN_ICONS.has(name) ? (name as IconName) : undefined
+}
+
 const PROMINENT = 'prominent'
 const HIDDEN = 'hidden'
 
@@ -141,7 +160,8 @@ function ObjectTypeCard({
   return (
     <section className="schema-panel__type" data-testid={`object-type-${apiName}`}>
       <h3>
-        {type.icon && <Icon icon={type.icon as never} />} {type.display_name ?? apiName}
+        {iconOrNone(type.icon) && <Icon icon={iconOrNone(type.icon)} />}{' '}
+        {type.display_name ?? apiName}
         {type.status && type.status !== 'active' && (
           <>
             {' '}
