@@ -82,6 +82,13 @@ class MirrorReadAdapter(ExternalReadAdapter):
         self._catalog = catalog
         self.silo_name = silo_name
 
+    # Iceberg has In, NotIn and range comparisons natively. It has NO
+    # substring predicate -- StartsWith is the closest and is not the
+    # same thing -- so `contains` is absent and the mediator applies it
+    # here in Python. Translating it to StartsWith would return a
+    # SUBSET of the right rows and look like it worked.
+    pushable_operators = frozenset({"equals", "in", "not_in", "range", "date_range"})
+
     def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
         table_name = type_config["storage"]["table"]
         id_column = type_config["storage"]["id_column"]

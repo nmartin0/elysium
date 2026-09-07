@@ -47,7 +47,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from core.ontology.filters import UnsupportedFilter
+from core.ontology.filters import FilterError, UnsupportedFilter
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.sqlite_connection import open_connection as _connect
 
@@ -79,6 +79,13 @@ def _clause_for(condition) -> tuple[str, list]:
     if operator == "equals":
         return f"{field} = ?", [value]
     if operator in ("in", "not_in"):
+        # An empty set would emit `IN ()`, which is not valid SQL.
+        # validate_filter() rejects it upstream; this raises rather
+        # than trusting that, because an adapter that produces broken
+        # SQL when a caller forgets to validate is a worse failure than
+        # one that says so.
+        if not value:
+            raise FilterError(f"{field!r}: {operator} needs at least one value.")
         placeholders = ", ".join("?" for _ in value)
         keyword = "IN" if operator == "in" else "NOT IN"
         return f"{field} {keyword} ({placeholders})", list(value)
@@ -99,6 +106,11 @@ def _clause_for(condition) -> tuple[str, list]:
 
 
 def _bounded_clause(field: str, low, high) -> tuple[str, list]:
+    # Both absent would emit `field <= ?` bound to None, which matches
+    # NOTHING and reports no error -- the hardest kind of wrong answer
+    # to debug. Rejected here as well as in validation.
+    if low is None and high is None:
+        raise FilterError(f"{field!r}: a range needs at least one bound.")
     if low is not None and high is not None:
         return f"{field} BETWEEN ? AND ?", [low, high]
     if low is not None:
@@ -159,6 +171,11 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             yield conn
         finally:
             conn.close()
+
+    # SQL expresses every operator in the vocabulary.
+    pushable_operators = frozenset(
+        {"equals", "in", "not_in", "range", "date_range", "contains"}
+    )
 
     def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
         table = type_config["storage"]["table"]

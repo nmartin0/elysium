@@ -112,7 +112,7 @@ from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
-from core.ontology.filters import FieldFilter, UnsupportedFilter, row_matches
+from core.ontology.filters import FieldFilter, row_matches, validate_filter
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.schema import (
     get_column_for_field,
@@ -808,14 +808,20 @@ class DataMediator:
         # column name -- see get_column_for_field()'s own docstring for
         # why the id_field needs its own handling (it isn't a regular
         # entry in type_schema["fields"] at all).
-        conditions = [
-            FieldFilter(
+        # VALIDATED before anything sees them. validate_filter() and
+        # the adapters' own guards were both written and neither was
+        # reached -- so a malformed condition could have produced SQL
+        # that silently matched nothing. Wired here, at the one place
+        # conditions are built from caller input.
+        conditions = []
+        for key, value in criteria.items():
+            condition = FieldFilter(
                 field=get_column_for_field(resolved_type_config, key),
                 operator="equals",
                 value=value,
             )
-            for key, value in criteria.items()
-        ]
+            validate_filter(condition, self._declared_type(object_type, key))
+            conditions.append(condition)
         candidate_ids = self._find_ids_with_fallback(
             adapter, object_type, conditions, resolved_type_config
         )
@@ -932,35 +938,69 @@ class DataMediator:
             if check_access(self, user_record, self.roles, object_type, candidate_id, action)
         ]
 
+    def _validate_conditions_for_test(self, object_type: str, conditions: list) -> None:
+        """Runs the same validation search_object() runs.
+
+        Exists because that validation lives inside a loop that also
+        resolves columns and queries, and a test reaching into it would
+        be testing the loop rather than the check.
+        """
+        for condition in conditions:
+            validate_filter(condition, self._declared_type(object_type, condition.field))
+
+    def _declared_type(self, object_type: str, field_name: str) -> str | None:
+        """A field's declared data_type, or None when it declares none.
+
+        None means "no expectation to violate" -- declaring a type is
+        how an author opts into operator checking, the same bargain the
+        mutation-value check makes.
+        """
+        fields = (self.schema.get(object_type) or {}).get("fields") or {}
+        return (fields.get(field_name) or {}).get("data_type")
+
     def _find_ids_with_fallback(self, adapter, object_type: str, conditions: list,
                                  resolved_type_config: dict) -> list:
-        """Pushes what the storage can express, applies the rest here.
+        """Pushes what the storage declared it can express; applies the
+        rest here.
 
-        An adapter declines an operator by raising UnsupportedFilter --
-        Iceberg has no substring predicate, so `contains` genuinely
-        cannot go down there. Declined conditions are applied in Python
-        afterwards.
+        THE MEDIATOR SPLITS, using `pushable_operators` the adapter
+        declared, rather than asking and retrying on refusal. An
+        earlier version had adapters raise UnsupportedFilter and this
+        retry with NOTHING pushed, which made one unsupported operator
+        cost the whole query: a `contains` alongside three ranges
+        scanned everything, measured at 40x the pushed-down time for
+        the same answer.
 
-        ALL-OR-NOTHING PER QUERY, deliberately. Pushing some conditions
-        and applying others would need the adapter to report WHICH it
-        took, and a mismatch between what it says and what it did would
-        silently return the wrong rows. Retrying with none pushed is
-        slower and cannot be wrong.
+        Partial pushdown was rejected then because an adapter reporting
+        which conditions it took could disagree with what it did, and
+        that disagreement returns wrong rows silently. Declaring up
+        front removes the report and with it the mismatch -- only the
+        mediator decides, and it asks for nothing else.
 
         This is the SQL/Python alignment rule's own exception, and it
-        is narrow: set membership and ranges go to the engine, and only
-        what the engine cannot express comes back here.
+        is now as narrow as it can be: exactly the operators a storage
+        cannot express come back here, and nothing else.
         """
-        try:
-            return adapter.find_ids(object_type, conditions, resolved_type_config)
-        except UnsupportedFilter:
-            candidate_ids = adapter.find_ids(object_type, [], resolved_type_config)
-            return self._apply_conditions_in_python(
-                adapter, candidate_ids, conditions, resolved_type_config
-            )
+        pushable: frozenset[str] = getattr(adapter, "pushable_operators", frozenset())
+        pushed = [c for c in conditions if c.operator in pushable]
+        remaining = [c for c in conditions if c.operator not in pushable]
+
+        candidate_ids = adapter.find_ids(object_type, pushed, resolved_type_config)
+        if not remaining:
+            return candidate_ids
+        return self._apply_conditions_in_python(
+            adapter, candidate_ids, remaining, resolved_type_config
+        )
 
     def _apply_conditions_in_python(self, adapter, candidate_ids: list,
                                      conditions: list, resolved_type_config: dict) -> list:
+        """Evaluates conditions a storage could not express.
+
+        Reads only the columns the remaining conditions name, for only
+        the ids the pushed-down half returned -- so the cost is
+        proportional to what the engine could NOT narrow, not to the
+        table.
+        """
         if not conditions or not candidate_ids:
             return candidate_ids
         id_column = resolved_type_config["storage"]["id_column"]

@@ -77,6 +77,22 @@ from core.adapter_roles import ReadAdapter, WriteAdapter
 class ExternalReadAdapter(ReadAdapter):
     max_concurrent_reads: int | None
 
+    #: Operators this storage can express in its own query language.
+    #:
+    #: DECLARED, not discovered. An earlier version had adapters raise
+    #: UnsupportedFilter and the mediator retry with nothing pushed,
+    #: which made ONE unsupported operator cost the whole query -- a
+    #: `contains` alongside three ranges scanned everything, measured
+    #: at 40x the pushed-down time for the same answer.
+    #:
+    #: The mediator could not push the rest, because an adapter that
+    #: reported which conditions it took could disagree with what it
+    #: actually did, and that disagreement returns wrong rows silently.
+    #: Declaring up front removes the report, and with it the
+    #: possibility of a mismatch: the mediator splits, so only it
+    #: decides, and it asks for nothing else.
+    pushable_operators: frozenset[str]
+
     @abstractmethod
     def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
         """Matching IDs. NOT security-filtered -- DataMediator filters
@@ -91,12 +107,10 @@ class ExternalReadAdapter(ReadAdapter):
         Selecting two values on a chart means "in these two", and that
         had no representation at all.
 
-        AN ADAPTER MAY DECLINE AN OPERATOR by raising
-        UnsupportedFilter, and the mediator will apply it in Python
-        instead. That is a real escape hatch, not a loophole: Iceberg
-        has In, NotIn and range comparisons natively but no substring
-        predicate, so `contains` genuinely cannot be pushed down there.
-        Declining is honest; silently returning wrong rows is not.
+        Every condition passed here IS pushable -- the mediator
+        splits them against `pushable_operators` below and keeps the
+        rest. An adapter is never asked for something it did not say
+        it supports.
         """
 
     @abstractmethod

@@ -295,3 +295,170 @@ def test_python_evaluation_matches_the_sql_semantics(condition, row, expected):
     from core.ontology.filters import row_matches
 
     assert row_matches(row, condition) is expected
+
+
+# --- Splitting pushable from not ----------------------------------------
+
+
+def _mediator_with(rows: int, tmp_path):
+    import sqlite3
+
+    import yaml
+
+    from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+    from core.ontology.link_types import expand_link_types
+    from core.ontology.mediator import DataMediator
+
+    fixtures = "tests/integration/fixtures/"
+    schema = yaml.safe_load(open(fixtures + "ontology_schema.yaml"))
+    policy = yaml.safe_load(open(fixtures + "policy.yaml"))
+    schema["object_types"] = expand_link_types(
+        schema.get("link_types", {}), schema["object_types"]
+    )
+    db = tmp_path / "m.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(open(fixtures + "schema.sql").read())
+    conn.executemany(
+        "INSERT INTO transactions (customer_id, amount, currency, category, "
+        "transaction_date) VALUES (?, ?, ?, ?, ?)",
+        [("cust_001", float(i % 100), "USD", f"cat{i % 7}", "2024-01-01")
+         for i in range(rows)],
+    )
+    conn.commit()
+    conn.close()
+    adapters = _build_adapters(
+        {"primary_sql": {"adapter": "sqlite", "connection": {"path": db}}},
+        _WRITE_ADAPTER_REGISTRY,
+    )
+    types = {
+        name: t for name, t in schema["object_types"].items()
+        if name in ("Customer", "Transaction")
+    }
+    return DataMediator(types, adapters, dict.fromkeys(types, "primary_sql"),
+                        policy["roles"])
+
+
+def test_only_unpushable_conditions_come_back_to_python(tmp_path):
+    """One operator a storage cannot express must not cost the whole
+    query.
+
+    An earlier version had adapters raise on refusal and the mediator
+    retry with NOTHING pushed: a `contains` alongside a range scanned
+    everything, measured at 40x the pushed-down time for the same
+    answer. Now the mediator splits against what the adapter DECLARED,
+    so the range is pushed and only the substring is evaluated here.
+    """
+    mediator = _mediator_with(20_000, tmp_path)
+    config = mediator.schema["Transaction"]
+    real = mediator._adapter_for("Transaction")
+
+    class NoSubstring:
+        """A storage like the mirror: everything but contains."""
+
+        pushable_operators = frozenset(
+            {"equals", "in", "not_in", "range", "date_range"}
+        )
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+    conditions = [
+        FieldFilter("amount", "range", {"min": 10, "max": 20}),
+        FieldFilter("category", "contains", "cat3"),
+    ]
+
+    storage = NoSubstring()
+    received: list[list] = []
+    real_find = real.find_ids
+    storage.find_ids = lambda t, conds, cfg: (
+        received.append(conds), real_find(t, conds, cfg)
+    )[1]
+
+    split = mediator._find_ids_with_fallback(
+        storage, "Transaction", conditions, config
+    )
+    everything = mediator._apply_conditions_in_python(
+        real, real_find("Transaction", [], config), conditions, config
+    )
+
+    # Same answer -- the split must not change it.
+    assert sorted(split) == sorted(everything)
+    assert split, "the fixture should match something, or this proves nothing"
+
+    # And the RANGE reached the storage. This is what distinguishes
+    # partial pushdown from the all-or-nothing version: both return the
+    # same rows, so only what the adapter was ASKED for tells them
+    # apart. A first version asserted the answer alone and passed
+    # against the version it existed to replace.
+    assert [c.operator for c in received[0]] == ["range"]
+
+
+def test_a_storage_that_pushes_everything_reads_nothing_back(tmp_path):
+    mediator = _mediator_with(500, tmp_path)
+    config = mediator.schema["Transaction"]
+    adapter = mediator._adapter_for("Transaction")
+
+    reads = []
+    real_read = adapter.read_fields_for_ids
+    adapter.read_fields_for_ids = lambda *a, **k: (reads.append(1), real_read(*a, **k))[1]
+    try:
+        mediator._find_ids_with_fallback(
+            adapter, "Transaction",
+            [FieldFilter("amount", "range", {"min": 10, "max": 20})], config,
+        )
+    finally:
+        adapter.read_fields_for_ids = real_read
+
+    assert reads == [], "SQL expressed the whole filter, so nothing should be re-read"
+
+
+# --- The adapters defend themselves --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "condition,label",
+    [
+        (FieldFilter("n", "range", {}), "a range with no bounds"),
+        (FieldFilter("n", "in", []), "an empty set"),
+    ],
+)
+def test_the_sql_mapping_rejects_what_validation_would_have(condition, label):
+    """validate_filter() rejects both, and the adapter rejects them
+    too.
+
+    Not redundant: `IN ()` is invalid SQL and a bound-less range emits
+    `field <= ?` bound to None, which matches NOTHING and reports no
+    error. An adapter that produces broken SQL when a caller forgets to
+    validate is a worse failure than one that says so -- and both were
+    reachable, because validate_filter() was written and called by
+    nothing.
+    """
+    from adapters.sqlite_adapter import _clause_for
+
+    with pytest.raises(FilterError):
+        _clause_for(condition)
+
+
+def test_search_validates_its_conditions_before_querying(tmp_path):
+    """validate_filter() and the adapter guards were both written and
+    NEITHER was reached -- so a malformed condition could have reached
+    SQL and produced a query that silently matched nothing.
+
+    Found by a control: unwiring validation in the mediator broke no
+    test at all. This is that coverage.
+    """
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _mediator_with(50, tmp_path)
+    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    # An operator that cannot apply to this field's declared type.
+    # amount declares data_type number; contains is for strings.
+    with pytest.raises(FilterError):
+        mediator._validate_conditions_for_test(
+            "Transaction", [FieldFilter("amount", "contains", "x")]
+        )
+
+    # And the ordinary path still works, so the check is not simply
+    # rejecting everything.
+    assert mediator.search_object(user, "Transaction", {}) is not None
