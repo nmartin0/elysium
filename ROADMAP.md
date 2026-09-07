@@ -136,17 +136,6 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
-- **No full propose-and-apply of a DELETE through the agent loop.**
-  The two halves are each covered -- a delete action type reaches the
-  agent's prompt (tests/unit/test_agent_object_query.py) and a delete
-  applies through confirm_and_execute()
-  (tests/unit/test_delete_operation.py) -- but not the whole path in
-  one test. An attempt was made and abandoned rather than half-built:
-  the write-path fixture's parameter resolution and MAC chain are set
-  up for TransferFunds, and a delete through it was denied at the MAC
-  check for a reason not run down. Worth doing with a fixture built
-  for it rather than by bending one that exists.
-
 - **Large search-arounds are bounded by AUTHORIZATION, not by the
   query engine -- so Foundry's own escape hatch would not help.** Their
   OSv2 "supports on-demand Spark cluster searches when running
@@ -365,12 +354,23 @@ after.
   scanner that cannot see the case it exists to catch is worse than
   having none, because it reads as coverage.
 
-- **Full field-VALUE validation** (real constraints -- ranges,
-  patterns, enum membership -- not just the structural "was this
-  field addressed" check the original required-field idea explored).
-  Genuinely valuable, but doesn't block any of the four near-term
-  sub-apps, so it's deferred rather than competing with them for
-  priority right now.
+- **Full field-VALUE validation** -- real constraints (ranges,
+  patterns, enum membership), not the structural "was this field
+  addressed" check. The old note deferred it as "doesn't block any of
+  the four near-term sub-apps", which is true and not the useful
+  framing.
+
+  THE TRIGGER IS AN ACTION FORM. A UI rendering `TransferFunds` needs
+  to know that `new_from_balance` is a number and what range is
+  acceptable, or every action form is free text validated only by the
+  server rejecting it afterwards. Parameters already carry a `type`
+  and, since display metadata landed, a description; constraints are
+  the missing third piece and belong in the same place.
+
+  Deferred until an action form exists, because the shape of the
+  constraint vocabulary should follow what a form actually needs to
+  render rather than being guessed at first.
+
 - **Interfaces / shared properties: still open, and the design
   question is the whole of it.** An interface both `Customer` and
   `Account` could `implement`, instead of declaring the same fields
@@ -405,24 +405,31 @@ after.
   Worth real design attention when a deployment has genuinely shared
   structure. Not before, and not merged-fields-only when it happens.
 
-- **A persistent, reviewer-based `PendingWriteStore` rebuild on
-  PostgreSQL, and the real `AuditLog` query methods that would back
-  its own history view.** Deferred together, deliberately -- "let's
-  defer this for now, and continue using SQLite internally but
-  migrate to PostgreSQL eventually." This is still the one, real,
-  confirmed BLOCKING gap for a real Approvals inbox (today's store
-  requires the CONFIRMING user to be the exact same person who
-  proposed the write, is in-memory only, and has a 15-minute TTL --
-  see this file's own git history for the fuller, original finding),
-  so the Approvals sub-app itself (still item 3 in "Near-term" below)
-  is correspondingly on hold until this is taken up, not truly
-  buildable in parallel with the rest of the near-term list above.
-  When it IS taken up, the real design already worked out (reviewer
-  eligibility from the SAME RBAC check `propose_action` already uses,
-  real listing by eligibility not owner, real persistence, a real,
-  much longer lifetime) and the PostgreSQL scoping (see "PostgreSQL
-  scope" above -- just this one new store, not a full-system
-  migration) both still stand.
+- **A persistent, reviewer-based `PendingWriteStore`.** Still the one
+  confirmed blocker for an Approvals inbox, and the framing needed
+  correcting: today's store is in-memory, has a 15-minute TTL, and
+  only the PROPOSING user can confirm their own pending write
+  (`owner_user_id != requesting_user_id` returns None).
+
+  THAT LAST ONE IS A SECURITY PROPERTY, NOT A LIMITATION TO REMOVE.
+  In the current model a pending write is the continuation of one
+  person's session, so refusing to let anyone else confirm it is
+  correct -- it stops a second user completing a write a first user
+  proposed and abandoned. An Approvals inbox deliberately INVERTS
+  that: it wants a different person to confirm.
+
+  So this is not "make the store persistent". It is designing a
+  second model alongside the first, and the questions are:
+  who may approve what (a reviewer grant, distinct from execute:),
+  whether a proposer may approve their own write (segregation of
+  duties), what expiry means when a human is expected to be slow, and
+  what the audit trail records about both parties.
+
+  The storage change is the small half. SQLite would serve it as it
+  already serves the write log and credential store -- the earlier
+  "on PostgreSQL" framing conflated this with the separate database
+  question and is not a real dependency.
+
 - **PostgreSQL row-level security for MAC.** Explicitly held off --
   MAC and RBAC both stay in Python, in `check_access()`, as the one,
   single point of enforcement. Real reasons this was set aside, not
