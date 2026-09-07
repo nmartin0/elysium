@@ -366,3 +366,62 @@ def test_the_cached_value_does_not_depend_on_who_populated_it(tmp_path):
     west_warmed = mediator._get_security_value("Customer", "cust_001")
 
     assert east_warmed == west_warmed
+
+
+def test_get_object_resolves_security_once_not_per_field(tmp_path):
+    # get_field() calls check_access() per field, and each resolved MAC
+    # independently -- so reading four fields of ONE object cost eight
+    # queries, two per field, for data living in a single row. A search
+    # results page of 50 objects at 5 fields each was 500 queries where
+    # a little over 50 would do.
+    #
+    # Warming the cache once before the loop makes every check after
+    # the first a dictionary lookup.
+    import adapters.sqlite_adapter as sqlite_adapter_module
+
+    mediator = _mediator(tmp_path)
+    real_run_query = sqlite_adapter_module._run_query
+    real_run_query_one = sqlite_adapter_module._run_query_one
+    counted = {"n": 0}
+
+    def counting(fn):
+        def wrapper(*args, **kwargs):
+            counted["n"] += 1
+            return fn(*args, **kwargs)
+        return wrapper
+
+    sqlite_adapter_module._run_query = counting(real_run_query)
+    sqlite_adapter_module._run_query_one = counting(real_run_query_one)
+    try:
+        counted["n"] = 0
+        one = mediator.get_object(WEST, "Customer", "cust_001", ["name"])
+        one_field = counted["n"]
+
+        counted["n"] = 0
+        three = mediator.get_object(WEST, "Customer", "cust_001", ["name", "email", "region"])
+        three_fields = counted["n"]
+    finally:
+        sqlite_adapter_module._run_query = real_run_query
+        sqlite_adapter_module._run_query_one = real_run_query_one
+
+    assert all(value is not None for value in one.values())
+    assert all(value is not None for value in three.values())
+    # Each extra field costs ONE query, not two: the second is the
+    # security resolution, and it now happens once for the object.
+    assert three_fields == one_field + 2, (
+        f"one field cost {one_field} queries and three cost {three_fields} -- "
+        f"security is still being resolved per field"
+    )
+
+
+def test_get_object_still_denies_across_the_mac_boundary(tmp_path):
+    # Warming a cache must not warm past the boundary. The prefetch
+    # resolves the object's security VALUE; whether the caller may see
+    # it is still decided per request.
+    mediator = _mediator(tmp_path)
+
+    visible = mediator.get_object(WEST, "Customer", "cust_001", ["name", "email"])
+    denied = mediator.get_object(EAST, "Customer", "cust_001", ["name", "email"])
+
+    assert all(value is not None for value in visible.values())
+    assert all(value is None for value in denied.values())

@@ -1349,6 +1349,22 @@ class DataMediator:
         # partially-authorized request (some fields granted, some not)
         # returns a dict mixing real values and Nones, never raises or
         # silently drops the denied ones.
+        # Resolves this object's security value ONCE before the loop.
+        #
+        # get_field() calls check_access() per field, and each call
+        # resolves MAC independently -- so reading four fields of one
+        # object cost eight queries, two per field, for data living in
+        # a single row. Warming the cache first makes every check after
+        # the first a dictionary lookup: 2N becomes N+1.
+        #
+        # Deliberately warms rather than restructuring the loop into a
+        # bulk read. get_field() also applies per-field RBAC, logs
+        # unknown fields, follows reverse links to a different adapter
+        # entirely, and masks values against pending writes. Replacing
+        # it would mean reimplementing all of that; this changes only
+        # what the existing path costs.
+        self._prefetch_security_values(object_type, [object_id])
+
         return {
             field_name: self.get_field(user_record, object_type, object_id, field_name)
             for field_name in field_names

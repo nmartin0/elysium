@@ -246,8 +246,6 @@ def test_an_aggregate_reads_a_constant_number_of_times(tmp_path):
     # What matters now is the stronger property: BOTH halves are
     # constant. Neither authorization nor data access scales with the
     # size of the object set.
-    import adapters.sqlite_adapter as sqlite_adapter_module
-
     db_path = tmp_path / "many.db"
     conn = sqlite3.connect(db_path)
     conn.executescript(open(FIXTURES + "schema.sql").read())
@@ -283,6 +281,8 @@ def test_an_aggregate_reads_a_constant_number_of_times(tmp_path):
     mediator = DataMediator(
         object_types, adapters, dict.fromkeys(object_types, "primary_sql"), policy["roles"]
     )
+
+    import adapters.sqlite_adapter as sqlite_adapter_module
 
     real_run_query = sqlite_adapter_module._run_query
     real_run_query_one = sqlite_adapter_module._run_query_one
@@ -335,8 +335,6 @@ def test_reading_a_few_ids_does_not_read_the_whole_table(tmp_path):
     # Asserted by counting rows the adapter RETURNS rather than by
     # timing, which would be flaky. If the filter moves back into
     # Python this returns the whole table again.
-    import adapters.sqlite_adapter as sqlite_adapter_module
-
     mediator = _mediator_with_rows(tmp_path, 5000)
     adapter = mediator.adapters["primary_sql"]
 
@@ -355,7 +353,6 @@ def test_reading_a_few_ids_does_not_read_the_whole_table(tmp_path):
         )
     finally:
         adapter.read_fields_for_ids = real_read
-        del sqlite_adapter_module  # imported only to pin the module under test
 
     assert len(result) == 3
     assert returned == [3], (
