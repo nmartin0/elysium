@@ -96,6 +96,21 @@ by deleting the behaviour and leaving the word in a comment. Scanning
 source is fine for drift checks that COUNT or compare sets; it is not
 a substitute for calling the code.
 
+**Verify the CLAIM, not just the change.** Tests check behaviour;
+commit messages assert PURPOSE, and no test disproves those. For each
+claim, have a way you checked it or cut it. "X is wired" -> trace a
+call from the entry point to X; wiring validation into a function that
+builds its own input validates nothing and passes every test. "N
+places have this" -> list the N; counting files that merely CONTAIN a
+symbol found five duplicates where there were two. "Y needs this" ->
+point at the line in Y using it.
+
+**If a control shows a path is untested, ask whether it is
+REACHABLE.** Answering "nothing covers this validation" with a
+`_for_test` seam in production exercises the seam, not the path — and
+the control was reporting the path could not be reached at all. Make
+it real or delete it; never build something for a test to grip.
+
 Prefer real servers over mocks for anything user-visible. `jsdom`
 cannot see CSS.
 
