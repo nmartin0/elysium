@@ -214,6 +214,18 @@ not fail your scheduler. This matters because the mirror's storage
 format rejects two simultaneous writers to the same table by design,
 so without this guard an overlapping run would fail partway through.
 
+**Seeing what the agent actually did.** When a query returns something
+unexpected, run it on its own and read the steps:
+
+```
+python -m scripts.agent_trace --user alice "who is Ada Okafor?"
+```
+
+It prints each step the agent chose, its arguments, and its result,
+against the real deployment and whatever model is configured. Add
+`--synthesize` to also see the final written answer. It asserts
+nothing and changes nothing — it is for finding out what happened.
+
 **Using Claude instead of a local model.** Elysium ships two LLM
 backends. `ollama` talks to a local model over HTTP.
 `claude_agent_sdk` runs the `claude` CLI, which means calls draw on
