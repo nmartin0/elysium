@@ -176,6 +176,21 @@ class MirrorReadAdapter(ExternalReadAdapter):
         # been synced yet, which is an operational state, not a fault.
         self._catalog.list_namespaces()
 
+    def read_fields_for_ids(self, table_name: str, id_column: str, object_ids: list,
+                             columns: list[str], type_config: dict) -> list[dict]:
+        # Iceberg's expression language has no IN predicate over an
+        # arbitrary list, so the filter is applied after a PROJECTED
+        # scan -- the same compromise resolve_reverse_links_batch()
+        # makes. Still narrower than read_all_rows(), which projects
+        # nothing.
+        if not object_ids:
+            return []
+        arrow = self._scan(table_name, selected_fields=tuple(dict.fromkeys([id_column, *columns])))
+        if arrow is None:
+            return []
+        wanted = {str(object_id) for object_id in object_ids}
+        return [row for row in arrow.to_pylist() if str(row[id_column]) in wanted]
+
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
         # Implemented for contract completeness rather than for a real
         # caller: the sync reads from the customer's own source, never

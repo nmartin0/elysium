@@ -575,15 +575,14 @@ class DataMediator:
         id_column = resolved_type_config["storage"]["id_column"]
         column = get_column_for_field(resolved_type_config, field_name)
 
-        rows = adapter.read_all_rows(
-            resolved_type_config["storage"]["table"], [id_column, column], resolved_type_config
+        # Filtered IN THE ENGINE. This read every row of the table and
+        # discarded the rest in Python; fetching three objects out of
+        # 200,004 read all of them.
+        rows = adapter.read_fields_for_ids(
+            resolved_type_config["storage"]["table"], id_column,
+            list(object_ids), [column], resolved_type_config,
         )
-        wanted = set(object_ids)
-        return {
-            row[id_column]: row[column]
-            for row in rows
-            if str(row[id_column]) in wanted
-        }
+        return {row[id_column]: row[column] for row in rows}
 
     def _security_allowed(self, object_type: str, object_id: Any, requesting_user_security_value: str) -> bool:
         security_value = self._get_security_value(object_type, object_id)
@@ -1244,16 +1243,17 @@ class DataMediator:
         id_column = resolved_type_config["storage"]["id_column"]
         columns = [get_column_for_field(resolved_type_config, name) for name in readable]
 
-        raw = adapter.read_all_rows(
-            resolved_type_config["storage"]["table"], [id_column, *columns], resolved_type_config
+        # Filtered IN THE ENGINE -- see read_fields_for_ids(). Set
+        # membership is exactly the work a database is for, and doing
+        # it in Python meant reading a whole table to return a page.
+        raw = adapter.read_fields_for_ids(
+            resolved_type_config["storage"]["table"], id_column,
+            list(object_ids), columns, resolved_type_config,
         )
 
-        wanted = {str(object_id) for object_id in object_ids}
         by_id = {}
         for row in raw:
             object_id = row[id_column]
-            if str(object_id) not in wanted:
-                continue
             by_id[object_id] = {
                 name: self._read_field_with_log_check(
                     object_type, object_id, name, adapter, resolved_type_config

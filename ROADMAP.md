@@ -391,19 +391,26 @@ it went stale unnoticed.*
 
 ### A separate, later, dedicated pass -- not part of the phases above
 
-- **A full audit of the existing Python codebase for idiomatic
-  SQL/Python alignment** -- confirmed, current (2026) industry
-  guidance converges cleanly: push set-based work (aggregation,
-  filtering, joins, sorting) to SQL, keep business/security logic
-  (like `check_access()`) in Python, and never push business logic
-  into stored procedures/triggers. The reverse-link-fetch-then-count
-  gap (phase 2 above) is one already-known example of Python doing
-  work SQL should; the audit would look for others, AND confirm the
-  new aggregation work itself doesn't accidentally cross the same
-  line the other way (business logic leaking into raw SQL). Scoped as
-  its own, dedicated review pass, not folded into the phases above,
-  since it's a different kind of activity -- reviewing and refactoring
-  EXISTING code, not building new capability.
+- **SQL/Python alignment: one pass done, worth repeating.** The
+  principle is settled -- push set-based work (filtering, aggregation,
+  joins, sorting) into the engine, keep business and security logic in
+  Python, never push business logic into stored procedures. A pass
+  over the read paths found one real violation:
+  `_read_fields_for_ids()` read a whole table and discarded the rest
+  in Python, so fetching three objects out of 200,004 read every one
+  of them.
+
+  What REMAINS in Python is there because it has to be, and each case
+  is documented where it lives: MAC is applied per object after the
+  engine returns, because a security value can chain across silos;
+  aggregation groups in Python for the same reason; substring search
+  and link resolution on the mirror filter after a projected scan
+  because Iceberg's expression language has no IN predicate over an
+  arbitrary list.
+
+  Worth re-running when a new read path is added, since the failure
+  mode is always the same shape: a bulk read plus a Python filter that
+  looks harmless at fixture scale.
 
 ---
 

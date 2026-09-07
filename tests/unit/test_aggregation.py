@@ -317,3 +317,111 @@ def test_an_aggregate_reads_a_constant_number_of_times(tmp_path):
         f"MAC cost {mac_queries} queries for {len(visible)} objects -- "
         f"security resolution should scale with chain depth, not set size"
     )
+
+
+# --- Set membership belongs in the engine --------------------------------
+#
+# Found by the SQL/Python alignment audit: push set-based work
+# (filtering, aggregation, joins, sorting) into the engine, keep
+# business and security logic in Python.
+#
+# _read_fields_for_ids() was reading a WHOLE table and discarding the
+# rest in Python. Fetching three objects out of 200,004 read every one
+# of them and threw away 200,001 -- 360 ms for three rows, against
+# 0.4 ms once the filter moved into the query.
+
+
+def test_reading_a_few_ids_does_not_read_the_whole_table(tmp_path):
+    # Asserted by counting rows the adapter RETURNS rather than by
+    # timing, which would be flaky. If the filter moves back into
+    # Python this returns the whole table again.
+    import adapters.sqlite_adapter as sqlite_adapter_module
+
+    mediator = _mediator_with_rows(tmp_path, 5000)
+    adapter = mediator.adapters["primary_sql"]
+
+    returned = []
+    real_read = adapter.read_fields_for_ids
+
+    def counting(*args, **kwargs):
+        rows = real_read(*args, **kwargs)
+        returned.append(len(rows))
+        return rows
+
+    adapter.read_fields_for_ids = counting
+    try:
+        result = mediator._read_fields_for_ids(
+            CUSTOMER_SERVICE, "Transaction", {"1", "2", "3"}, ["amount"]
+        )
+    finally:
+        adapter.read_fields_for_ids = real_read
+        del sqlite_adapter_module  # imported only to pin the module under test
+
+    assert len(result) == 3
+    assert returned == [3], (
+        f"the adapter returned {returned} rows for a 3-id request -- set "
+        f"membership is being filtered in Python, not in the engine"
+    )
+
+
+def test_an_empty_id_set_reads_nothing(tmp_path):
+    mediator = _mediator_with_rows(tmp_path, 100)
+    adapter = mediator.adapters["primary_sql"]
+
+    assert adapter.read_fields_for_ids("transactions", "transaction_id", [], ["amount"], {}) == []
+
+
+def test_the_id_column_is_returned_even_if_not_requested(tmp_path):
+    # Callers key the result by id, so it has to come back whether or
+    # not they listed it among the columns.
+    mediator = _mediator_with_rows(tmp_path, 50)
+    adapter = mediator.adapters["primary_sql"]
+
+    rows = adapter.read_fields_for_ids(
+        "transactions", "transaction_id", [1, 2], ["amount"], {}
+    )
+
+    assert rows and all("transaction_id" in row for row in rows)
+
+
+def test_aggregating_a_whole_type_still_works(tmp_path):
+    # The narrow read must not have broken the wide one: an aggregate
+    # over every object still passes every id and gets every row.
+    mediator = _mediator_with_rows(tmp_path, 500)
+
+    result = mediator.aggregate_by_field(
+        CUSTOMER_SERVICE, "Transaction", {}, group_by="category", aggregate="count"
+    )
+
+    assert result["bulk"] == 500
+
+
+def _mediator_with_rows(tmp_path, count):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    schema = yaml.safe_load(open(FIXTURES + "ontology_schema.yaml"))
+    policy = yaml.safe_load(open(FIXTURES + "policy.yaml"))
+    schema["object_types"] = expand_link_types(
+        schema.get("link_types", {}), schema["object_types"]
+    )
+    db_path = tmp_path / "business.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(open(FIXTURES + "schema.sql").read())
+    conn.executemany(
+        "INSERT INTO transactions (customer_id, amount, currency, category, "
+        "transaction_date) VALUES (?, ?, ?, ?, ?)",
+        [("cust_001", 1.0, "USD", "bulk", "2024-01-01") for _ in range(count)],
+    )
+    conn.commit()
+    conn.close()
+    adapters = _build_adapters(
+        {"primary_sql": {"adapter": "sqlite", "connection": {"path": db_path}}},
+        _WRITE_ADAPTER_REGISTRY,
+    )
+    object_types = {
+        name: type_def
+        for name, type_def in schema["object_types"].items()
+        if name in ("Customer", "Transaction")
+    }
+    return DataMediator(
+        object_types, adapters, dict.fromkeys(object_types, "primary_sql"), policy["roles"]
+    )

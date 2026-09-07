@@ -126,6 +126,22 @@ class ExternalReadAdapter(ReadAdapter):
         """
 
     @abstractmethod
+    def read_fields_for_ids(self, table_name: str, id_column: str, object_ids: list,
+                             columns: list[str], type_config: dict) -> list[dict]:
+        """Chosen columns for a known set of ids, filtered IN THE
+        ENGINE.
+
+        Distinct from read_all_rows() below, which reads a whole table.
+        Callers that wanted a handful of rows were using that and
+        discarding the rest in Python: fetching three objects out of
+        200,004 read every one of them and threw away 200,001. Set
+        membership is exactly the work a database is for.
+
+        NOT security-filtered, like every other method here --
+        DataMediator applies MAC after calling this.
+        """
+
+    @abstractmethod
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
         """Every row of one table, as a list of dicts keyed by column.
 

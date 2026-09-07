@@ -216,6 +216,24 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         with self._connection() as conn:
             conn.execute("SELECT 1").fetchone()
 
+    def read_fields_for_ids(self, table_name: str, id_column: str, object_ids: list,
+                             columns: list[str], type_config: dict) -> list[dict]:
+        if not object_ids:
+            return []
+        # Table and column names come from the ontology; only the id
+        # VALUES are parameterised, and they are placeholder-bound
+        # rather than interpolated -- the same split every other query
+        # in this adapter uses.
+        placeholders = ", ".join("?" for _ in object_ids)
+        selected = ", ".join(dict.fromkeys([id_column, *columns]))
+        with self._connection() as conn:
+            rows = _run_query(
+                conn,
+                f"SELECT {selected} FROM {table_name} WHERE {id_column} IN ({placeholders})",
+                tuple(object_ids),
+            )
+        return [dict(row) for row in rows]
+
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
         # ONE query for the whole table, versus one per field per row
         # through get_raw_field(). Column NAMES come from the ontology
