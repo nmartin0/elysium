@@ -86,20 +86,32 @@ def test_read_field_level_grant_for_unknown_type_is_rejected():
         validate_roles(_role("read:Wigdet.name"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 
-def test_write_field_level_grant_for_a_real_field_is_valid():
-    validate_roles(_role("write:Widget.name"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)  # does not raise
+def test_a_write_grant_is_rejected_outright():
+    """`write:<Type>.<field>` was accepted here and checked by no
+    authorize() call anywhere -- writes are authorized per action type,
+    so a policy granting it validated cleanly and permitted nothing.
+
+    Rejected now rather than accepted as a no-op: a grant that reads as
+    a permission and grants nothing is worse than one that fails.
+    """
+    with pytest.raises(ValueError, match="not enforced anywhere"):
+        validate_roles(_role("write:Widget.name"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 
-def test_write_field_level_grant_for_unknown_field_is_rejected():
-    with pytest.raises(ValueError, match="unknown field 'nmae'"):
-        validate_roles(_role("write:Widget.nmae"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
+def test_the_write_rejection_names_the_real_alternative():
+    # Someone reaching for write: wants to permit a write. The message
+    # has to say how that is actually done, or they will simply try
+    # another spelling of the same wrong thing.
+    with pytest.raises(ValueError, match="execute:<ActionType>"):
+        validate_roles(_role("write:Widget.name"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 
-def test_write_type_level_grant_with_no_field_is_rejected():
-    # write: is only ever constructed as write:<Type>.<field> -- a
-    # bare write:<Type> can never match a real authorize() call.
-    with pytest.raises(ValueError, match="missing '.field'"):
-        validate_roles(_role("write:Widget"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
+def test_a_write_grant_is_rejected_whatever_it_names():
+    # Including one whose type and field are perfectly real -- the
+    # prefix is the problem, not what follows it.
+    for grant in ("write:Widget", "write:Widget.name", "write:Nonexistent.field"):
+        with pytest.raises(ValueError, match="not enforced anywhere"):
+            validate_roles(_role(grant), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
 
 
 def test_completely_unrecognized_grant_pattern_is_rejected():

@@ -412,6 +412,12 @@ is a different kind of blocked from this.
   scanner that cannot see the case it exists to catch is worse than
   having none, because it reads as coverage.
 
+  ONE HALF OF THIS IS NOW MOOT. The drift the abandoned check found --
+  `write:` accepted by the validator and used by no authorize() call --
+  has been removed rather than tolerated. That prefix is now rejected
+  outright, with a message naming `execute:<ActionType>` as the real
+  way to permit a write.
+
 - **Full field-VALUE validation** -- real constraints (ranges,
   patterns, enum membership), not the structural "was this field
   addressed" check. The old note deferred it as "doesn't block any of

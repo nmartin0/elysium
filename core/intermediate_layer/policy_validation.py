@@ -42,14 +42,18 @@ assumed or invented:
     action_type (core/ontology/write_mediator.py).
   - "tool:<ToolName>" -- ToolName must be in this deployment's own
     enabled_tools (core/agent/agentic_loop.py).
-  - "write:<Type>.<field>" -- Type must be a real object_type, field
+  - "read:<Type>.<field>" -- Type must be a real object_type, field
     must be one of its real, declared fields (or its own id_field --
     see this module's own _valid_field_names() for why that's
-    separately valid). Only ever constructed for the cross-type RBAC
-    check (Option B) once a sub_writes action spans more than one
-    object type (core/ontology/write_mediator.py).
-  - "read:<Type>.<field>" -- same shape as write:, TYPE-level read
-    counterpart (core/ontology/mediator.py, core/memory/guard.py).
+    separately valid). "read:<Type>" with no field is the type-level
+    grant (core/ontology/mediator.py, core/memory/guard.py).
+
+"write:<Type>.<field>" is NOT a grant and is rejected outright. It was
+accepted here and checked by no authorize() call anywhere: writes are
+authorized per action type, so a policy granting write:Order.total
+validated cleanly and permitted nothing. write:<Type>.<field> still
+exists as an AUDIT identifier in write_mediator.py, which is a
+different thing from a permission and is why the two were confused.
   - "read:<Type>" (no dot) -- Type must be real; the TYPE-level read
     grant gating schema visibility itself (core/ontology/mediator.py).
 
@@ -95,7 +99,20 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
             )
         return
 
-    if grant.startswith("write:") or grant.startswith("read:"):
+    if grant.startswith("write:"):
+        # REMOVED as a valid grant, not merely unenforced. No
+        # authorize() call anywhere checked it -- writes are authorized
+        # by "execute:<ActionType>" -- so a policy granting
+        # write:Order.total validated cleanly and authorized nothing.
+        # Rejecting it with the real alternative is better than
+        # accepting a no-op that reads as a permission.
+        raise ValueError(
+            f"Role {role_name!r}: grant {grant!r} uses the 'write:' prefix, which is not "
+            f"enforced anywhere. Writes are authorized per action type -- use "
+            f"'execute:<ActionType>' instead."
+        )
+
+    if grant.startswith("read:"):
         _validate_type_or_field_grant(role_name, grant, object_types)
         return
 
@@ -104,8 +121,9 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
 
 
 def _validate_type_or_field_grant(role_name: str, grant: str, object_types: dict) -> None:
-    prefix, _, rest = grant.partition(":")
-    prefix += ":"
+    # Only "read:" reaches here now that "write:" is rejected upstream,
+    # so the prefix itself carries no information worth keeping.
+    _, _, rest = grant.partition(":")
     # rest is EITHER "<Type>" (read: only -- the type-level grant) or
     # "<Type>.<field>" -- split on the FIRST "." specifically, since a
     # field name itself is never expected to contain one.
@@ -116,14 +134,6 @@ def _validate_type_or_field_grant(role_name: str, grant: str, object_types: dict
 
     if not sep:
         # "read:<Type>" with no field -- fine, the type-level grant.
-        # "write:<Type>" with no field would be meaningless (write: is
-        # only ever constructed as write:<Type>.<field>) -- reject it
-        # explicitly rather than silently accepting a grant that could
-        # never match anything real.
-        if prefix == "write:":
-            raise ValueError(
-                f"Role {role_name!r}: grant {grant!r} is missing '.field' -- write: needs write:<Type>.<field>."
-            )
         return
 
     valid_field_names = _valid_field_names(object_types[object_type])
