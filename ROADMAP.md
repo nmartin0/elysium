@@ -594,9 +594,11 @@ makes "external writeback: off by default" safe -- see below.
 
 ### Phases, in real dependency order
 
-**Phase 0 -- prerequisite refactor, discovered during scoping, not
-originally planned.** `WriteMediator` does not have its own adapter
-set today -- confirmed directly: it reaches into `self.mediator`'s own
+**Phase 0 -- prerequisite refactor. DONE.** `WriteMediator` now
+builds its own `_adapter_mediator`, a separate `DataMediator` over
+the WRITE adapters, rather than reaching into the caller's read-side
+one. The original finding, kept because it is why the refactor
+existed: `WriteMediator` did not have its own adapter set -- confirmed directly: it reaches into `self.mediator`'s own
 adapters (`_resolve_shared_storage`, `_write_limiter_for_silo`,
 `_locks_for_objects`, `_type_schema`, `_read_field_with_log_check`,
 `_security_allowed`) to perform its own writes. `DataMediator` cannot
