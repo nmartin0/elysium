@@ -658,8 +658,14 @@ enforcement layers, resolved directly, not left as a tradeoff:
   late; becomes directly implementable the moment a real server-backed
   adapter (PostgreSQL or similar) exists.
 
-**Phase 2 -- raw ingest sync module (depends on Phase 1's read-only
-credential existing).** PyIceberg (confirmed directly: Apache License
+**Phase 2 -- raw ingest sync module. DONE.** The stated dependency on
+"Phase 1's read-only credential existing" did not hold and was never
+satisfied: that credential is impossible with the SQLite adapter (no
+database user, no GRANT) and is closed on those grounds, yet the sync
+module shipped and works. The real dependency was Phase 1's CODE-level
+read-only guarantee, which does exist -- the engine-level authorizer
+on the reader's own connection. The credential is a second,
+independent layer, not a prerequisite for reading. PyIceberg (confirmed directly: Apache License
 2.0, from `apache/iceberg-python`'s own `pyproject.toml`) manages the
 mirror's own versioned storage; a new `core/mirror/` package
 (`interface.py` then a concrete `iceberg_sync.py`, matching the
@@ -774,9 +780,11 @@ concept is about column-level access control and provenance, not about
 crossing database boundaries. Our mirror already preserves that (one
 Iceberg namespace per silo), so there is nothing to rename or unwind.
 
-**Phase 4 -- repointing `DataMediator`'s actual reads (highest risk,
-done last, depends on 1-2 independently verified; Phase 3 deferred --
-see above).** **Phase 4 -- repointing `DataMediator`'s actual reads. THE ADAPTER AND
+**Phase 4 -- repointing `DataMediator`'s actual reads. DONE.** A
+`MirrorReadAdapter` is a registered adapter satisfying the same
+`ExternalReadAdapter` contract, selected per silo in deployment
+config, so a deployment reads from the mirror by configuration rather
+than by a code path. Read-your-writes is layered over it. **Phase 4 -- repointing `DataMediator`'s actual reads. THE ADAPTER AND
 CONFIG FLAG ARE DONE; a real blocker found before it can be the
 default.** Implemented as `core/mirror/mirror_adapter.py` -- a real
 `MirrorReadAdapter` satisfying the same four-method
