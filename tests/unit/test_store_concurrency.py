@@ -26,6 +26,7 @@ bug appear, and which random timing would only hit occasionally.
 
 import sqlite3
 import threading
+import time
 
 import pytest
 
@@ -246,23 +247,96 @@ def test_schema_is_verified_once_however_threads_interleave(tmp_path):
     )
 
 
-# KeyedLockManager's concurrency guarantee is NOT tested here, and the
-# honest reason is that I could not write a test I could prove works.
-#
-# It used to be asserted by checking that "setdefault" appeared in
-# lock_for's source, which a comment satisfies -- proven by replacing
-# the call with a check-then-act and leaving the word behind, after
-# which it still passed.
-#
-# The behavioural replacement was no better. Under check-then-act two
-# threads both create a lock and the second overwrites the first in the
-# dict, so BOTH callers are handed the same surviving object and an
-# after-the-fact comparison sees nothing wrong. The harm is that a
-# thread already holding the discarded lock has no mutual exclusion
-# with one holding the survivor -- which is only observable DURING the
-# race, not from its result.
-#
-# setdefault is correct, and core/ontology/mediator.py's write-limiter
-# test does force an equivalent interleaving successfully. Recorded
-# rather than papered over with a third test that passes for the wrong
-# reason.
+def test_two_callers_racing_for_one_key_cannot_both_hold_it():
+    """The guarantee KeyedLockManager exists to provide: two callers
+    asking for the same key get a lock that actually excludes them.
+
+    ASSERTS MUTUAL EXCLUSION, NOT IDENTITY, and that distinction is
+    the whole reason two earlier attempts failed. Under check-then-act
+    both threads create a lock and the second overwrites the first in
+    the dict, so both callers end up holding the SAME surviving object
+    and an identity comparison sees nothing wrong. The harm is that a
+    thread which already acquired the discarded lock has no exclusion
+    with one holding the survivor -- visible only while both are held.
+
+    So each thread acquires the lock it was handed and then checks
+    whether the other can acquire too. Two successful acquisitions at
+    once IS the bug, whatever the objects compare as.
+
+    The interleaving is FORCED. A first attempt raced eight threads at
+    a barrier and passed against a deliberately broken manager, which
+    is the probabilistic mistake this file already documents for the
+    write limiters -- rare is not safe, and a test that hopes to hit a
+    race is not a test.
+    """
+    from core.concurrency import KeyedLockManager
+
+    manager = KeyedLockManager()
+    both_inside = threading.Barrier(2, timeout=2)
+
+    class RacingLocks(dict):
+        """Holds both callers inside lock_for() at once.
+
+        Intercepts the membership test AND setdefault, because the
+        correct implementation uses one and the broken one uses the
+        other -- hooking only setdefault would never fire against the
+        version this test exists to catch.
+        """
+
+        def _hold(self):
+            try:
+                both_inside.wait()
+            except threading.BrokenBarrierError:
+                pass  # only one caller arrived: nothing to race
+
+        def __contains__(self, key):
+            present = super().__contains__(key)
+            self._hold()
+            return present
+
+        def setdefault(self, key, default=None):
+            self._hold()
+            return super().setdefault(key, default)
+
+    manager._locks = RacingLocks()
+    acquired: list[bool] = []
+    guard = threading.Lock()
+    holding = threading.Event()
+
+    def first():
+        lock = manager.lock_for("same-key")
+        lock.acquire()
+        holding.set()
+        # Held while the second caller tries. Released only after.
+        time.sleep(0.2)
+        lock.release()
+
+    def second():
+        lock = manager.lock_for("same-key")
+        holding.wait(2)
+        got = lock.acquire(blocking=False)
+        with guard:
+            acquired.append(got)
+        if got:
+            lock.release()
+
+    threads = [threading.Thread(target=first), threading.Thread(target=second)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert acquired == [False], (
+        "a second caller acquired the key while the first held it -- the "
+        "two were given different locks, so the lock excludes nobody"
+    )
+
+
+def test_different_keys_get_different_locks():
+    # The other half: one lock for everything would be correct and
+    # useless.
+    from core.concurrency import KeyedLockManager
+
+    manager = KeyedLockManager()
+
+    assert manager.lock_for("a") is not manager.lock_for("b")
