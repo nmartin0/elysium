@@ -398,6 +398,48 @@ describe('getVisibleActionTypesCached', () => {
     expect(second).toBe(first)
   })
 
+  it('serves two CONCURRENT callers from one request', async () => {
+    // THE bug the first version had, and the one a sequential test
+    // cannot see. Caching the RESULT is a check-then-act: two callers
+    // both see null, both await, and the value only exists after the
+    // second has already started. A real log showed two requests for
+    // one object-detail page plus one schema tab.
+    //
+    // StrictMode double-invoking effects means even a single component
+    // can race itself, so this is not an exotic case.
+    let resolveFetch: (value: unknown) => void = () => {}
+    const inFlight = new Promise((resolve) => {
+      resolveFetch = resolve
+    })
+    const fetchMock = vi.fn().mockReturnValue(
+      inFlight.then(() => ({ ok: true, status: 200, json: async () => ({}) })),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    // Both start BEFORE either finishes -- no await between them.
+    const first = getVisibleActionTypesCached()
+    const second = getVisibleActionTypesCached()
+    resolveFetch(null)
+    await Promise.all([first, second])
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not cache a failure', async () => {
+    // A cached rejection would make action types permanently
+    // unavailable for the session after one network blip.
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getVisibleActionTypesCached()).rejects.toThrow()
+    await expect(getVisibleActionTypesCached()).resolves.toBeDefined()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('fetches again after a reset', async () => {
     // The reset exists for tests, which would otherwise share the
     // cache -- the real hazard of module-level state, and worth an

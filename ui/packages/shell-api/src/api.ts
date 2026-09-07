@@ -362,16 +362,34 @@ export async function getObjectDetail(objectType: string, objectId: string): Pro
 // contents change only when the deployment's YAML does, so a reload
 // picking up a change is the same freshness every other schema read
 // in this app has.
-let cachedActionTypes: unknown = null
+// The PROMISE is cached, not the result.
+//
+// Caching the result was a check-then-act: two callers both see null,
+// both await, and the value only exists after the second has already
+// started its own request. A real log showed two requests for one
+// object-detail page plus one schema tab, which is exactly that race
+// -- and StrictMode double-invoking effects means even ONE component
+// can hit it alone.
+//
+// Storing the in-flight promise means the second caller awaits the
+// first's request instead of starting another. The same fix as the
+// backend's security cache, in a different language: the failure is
+// not "the cache is wrong", it is "two callers raced to fill it".
+let cachedActionTypes: Promise<unknown> | null = null
 
 /** Clears the cache. For tests, which would otherwise share it. */
 export function resetVisibleActionTypesCache(): void {
   cachedActionTypes = null
 }
 
-export async function getVisibleActionTypesCached(): Promise<unknown> {
+export function getVisibleActionTypesCached(): Promise<unknown> {
   if (cachedActionTypes === null) {
-    cachedActionTypes = await getVisibleActionTypes()
+    // A FAILED request must not be cached, or one network blip makes
+    // action types permanently unavailable for the session.
+    cachedActionTypes = getVisibleActionTypes().catch((error: unknown) => {
+      cachedActionTypes = null
+      throw error
+    })
   }
   return cachedActionTypes
 }
