@@ -228,17 +228,30 @@ after.
   job -- and with that question answered first, not during
   implementation. It is a semantics decision, not a plumbing one.
 
-- **Object-backed link types are not adopted.** Foundry's third link
-  backing lets a join carry its own properties -- their example is a
-  FlightManifest linking Aircraft and Flight while holding Pilot and
-  First Mate. Elysium supports the other two (foreign key, join
-  table). This one is already expressible as two ordinary one-to-many
-  links through a real object type, which is arguably clearer, and
-  Foundry's own guidance agrees on the modelling point: a join table
-  carrying extra information "is no longer a many-to-many relation but
-  two separate many-to-one relations". Revisit only if a real
-  deployment wants link properties WITHOUT the middle object being a
-  first-class thing in its own right.
+- **Object-backed link types: CLOSED, verified rather than asserted.**
+  Foundry's third link backing lets a join carry its own properties --
+  their example is a FlightManifest linking Aircraft and Flight while
+  holding Pilot and First Mate. Elysium supports the other two,
+  foreign key and join table.
+
+  The claim that this is already expressible was previously an
+  assertion. It has now been built: their exact example declares
+  cleanly as FlightManifest as a real object type with `pilot` and
+  `first_mate` as ordinary fields, plus two one_to_many link types
+  (Aircraft -> FlightManifest, Flight -> FlightManifest). It
+  validates, expands both directions, and the manifest's own
+  properties are reachable by search_around from either side.
+
+  Foundry's own modelling guidance agrees this is the right shape,
+  not a workaround: a join table carrying extra information "is no
+  longer a many-to-many relation but two separate many-to-one
+  relations". Their object-backed option exists to let the Ontology
+  Manager present that pair as one link in a UI, which is a
+  presentation concern rather than a modelling capability.
+
+  REOPEN IF a UI genuinely needs the pair presented as a single link
+  -- at which point the work is display metadata over two existing
+  links, not a third backing mechanism.
 
 - **Function versioning is deliberately absent, with a real trigger for
   revisiting.** Foundry publishes functions with SemVer and lets

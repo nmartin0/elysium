@@ -367,3 +367,68 @@ def test_a_valid_deployment_is_unaffected_by_the_narrowing(tmp_path):
     valid, output = _lint(tmp_path)
 
     assert valid, output
+
+
+def test_a_join_carrying_its_own_properties_is_expressible():
+    """The object-backed link case, built rather than asserted.
+
+    Foundry's third link backing lets a join carry properties -- their
+    example is a FlightManifest linking Aircraft and Flight while
+    holding Pilot and First Mate. Elysium has foreign-key and
+    join-table backings only, and the roadmap claimed this was already
+    expressible as two ordinary links through a real object type.
+
+    It was a claim with nothing behind it. This is the claim, executed:
+    if it ever stops holding, the roadmap entry resting on it is wrong.
+    """
+    object_types = {
+        "Aircraft": {
+            "storage": {"silo": "p", "table": "aircraft", "id_column": "tail_number"},
+            "id_field": "tail_number",
+            "security": {"field": "region"},
+            "fields": {"model": {"type": "data"}, "region": {"type": "data"}},
+        },
+        "Flight": {
+            "storage": {"silo": "p", "table": "flights", "id_column": "flight_id"},
+            "id_field": "flight_id",
+            "security": {"field": "region"},
+            "fields": {"departs": {"type": "data"}, "region": {"type": "data"}},
+        },
+        # The join, as a first-class object carrying its own properties.
+        "FlightManifest": {
+            "storage": {"silo": "p", "table": "manifests", "id_column": "manifest_id"},
+            "id_field": "manifest_id",
+            "security": {"field": "region"},
+            "fields": {
+                "pilot": {"type": "data"},
+                "first_mate": {"type": "data"},
+                "region": {"type": "data"},
+                "tail_number": {"type": "data"},
+                "flight_id": {"type": "data"},
+            },
+        },
+    }
+    link_types = {
+        "AircraftManifests": {
+            "source": {"object_type": "Aircraft", "api_name": "manifests"},
+            "target": {"object_type": "FlightManifest", "api_name": "aircraft"},
+            "cardinality": "one_to_many",
+            "foreign_key_column": "tail_number",
+        },
+        "FlightManifests": {
+            "source": {"object_type": "Flight", "api_name": "manifests"},
+            "target": {"object_type": "FlightManifest", "api_name": "flight"},
+            "cardinality": "one_to_many",
+            "foreign_key_column": "flight_id",
+        },
+    }
+
+    validate_link_types(link_types, object_types)
+    expanded = expand_link_types(link_types, object_types)
+
+    # Reachable from both sides...
+    assert expanded["Aircraft"]["fields"]["manifests"]["target"] == "FlightManifest"
+    assert expanded["Flight"]["fields"]["manifests"]["target"] == "FlightManifest"
+    # ...and the link's own properties are ordinary fields on it.
+    assert "pilot" in expanded["FlightManifest"]["fields"]
+    assert "first_mate" in expanded["FlightManifest"]["fields"]
