@@ -81,7 +81,23 @@ this is where it shows, before four other screens depend on them.
 **Verifiable:** a role with fewer grants sees strictly fewer fields,
 and the same schema rendered for two roles differs.
 
-### 2. Object Explorer parity for Browse
+### 2. Object Explorer — see OBJECT_EXPLORER_PLAN.md
+
+Expanded into its own file: it is the largest piece of this phase, it
+needs backend work that does not exist yet, and nine design questions
+were settled before starting rather than during.
+
+THE BLOCKER, stated here so nobody starts the UI first: our filter is
+equality only -- one value per field. Clicking two bars on a chart
+means "these two values", which needs IN. The central interaction is
+blocked on the query model, not on the UI.
+
+Summary of what changed from the sketch below: charts are the FILTER
+mechanism rather than a report; saved artifacts are re-authorized on
+every open and say what was disabled; ownership is by ROLE rather than
+by user; and the vocabulary is ours rather than the reference
+implementation's -- Charts/Table, value counts, saved search, saved
+selection.
 
 Three separable pieces, in this order:
 
