@@ -535,3 +535,79 @@ def test_the_real_transfer_funds_shape_is_valid_once_exactly_one_side_is_marked(
         }
     }
     validate_action_types(action_types, account_types)  # does not raise
+
+
+# --- Declared but unused parameters --------------------------------------
+
+
+def _action_with(object_id, parameters=None):
+    return {
+        "Remove": {
+            "affected_object_types": ["Widget"],
+            "parameters": parameters
+            if parameters is not None
+            else {"widget_id": {"type": "object_reference", "object_type": "Widget"}},
+            "sub_writes": [
+                {"object_type": "Widget", "object_id": object_id, "operation": "delete"}
+            ],
+        }
+    }
+
+
+def test_a_referenced_parameter_validates():
+    validate_action_types(_action_with("parameter.widget_id"), OBJECT_TYPES)
+
+
+def test_a_declared_but_unreferenced_parameter_is_rejected():
+    # A DIFFERENT check from "does this reference something real",
+    # which already existed. That one catches a reference to a
+    # parameter never declared; this catches the opposite, and the two
+    # fail in opposite directions.
+    with pytest.raises(ValueError, match="declared but never referenced"):
+        validate_action_types(_action_with("some_literal_id"), OBJECT_TYPES)
+
+
+def test_the_malformed_reference_form_is_caught():
+    # THE failure this exists for, and not a hypothetical one: writing
+    # `$widget_id` instead of `parameter.widget_id` leaves the string a
+    # LITERAL, so the action targets an object whose id is the
+    # characters "$widget_id" while the declared parameter goes unused.
+    # Structurally valid, silently wrong at run time.
+    with pytest.raises(ValueError, match=r"declared but never referenced"):
+        validate_action_types(_action_with("$widget_id"), OBJECT_TYPES)
+
+
+def test_the_error_names_the_correct_reference_form():
+    # An author hitting this has almost certainly used the wrong
+    # syntax, so the message says what the right one is rather than
+    # only that something is wrong.
+    with pytest.raises(ValueError, match=r"parameter\.<name>"):
+        validate_action_types(_action_with("$widget_id"), OBJECT_TYPES)
+
+
+def test_a_parameter_referenced_only_in_a_mutation_counts():
+    action = {
+        "Rename": {
+            "affected_object_types": ["Widget"],
+            "parameters": {
+                "widget_id": {"type": "object_reference", "object_type": "Widget"},
+                "new_name": {"type": "string"},
+            },
+            "sub_writes": [
+                {
+                    "object_type": "Widget",
+                    "object_id": "parameter.widget_id",
+                    "operation": "update",
+                    "mutations": [
+                        {"set": {"property": "name", "value": "parameter.new_name"}}
+                    ],
+                }
+            ],
+        }
+    }
+
+    validate_action_types(action, OBJECT_TYPES)
+
+
+def test_an_action_with_no_parameters_validates():
+    validate_action_types(_action_with("literal", parameters={}), OBJECT_TYPES)

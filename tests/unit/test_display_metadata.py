@@ -120,7 +120,7 @@ def _action(**param_extras):
             },
             "sub_writes": [
                 {
-                    "object_type": "Widget", "object_id": "$widget_id",
+                    "object_type": "Widget", "object_id": "parameter.widget_id",
                     "operation": "update",
                     "mutations": [{"set": {"property": "region", "value": "x"}}],
                 }

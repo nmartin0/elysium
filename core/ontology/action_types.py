@@ -131,6 +131,7 @@ def validate_action_types(action_types: dict, object_types: dict) -> None:
             raise ValueError(f"Action type {action_type_name!r}: missing required key 'sub_writes'.")
         _validate_sub_writes_action(action_type_name, action_def, object_types)
         _validate_auto_execute(action_type_name, action_def)
+        _validate_parameters_are_used(action_type_name, action_def)
 
 
 def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_types: dict) -> None:
@@ -319,6 +320,65 @@ def _validate_parameter_display_metadata(action_type_name: str, declared_params:
                     f"Action type {action_type_name!r}: parameter {param_name!r} {key} "
                     f"must be a non-empty string, got {value!r}"
                 )
+
+
+PARAMETER_PREFIX = "parameter."
+
+
+def _collect_parameter_references(action_def: dict) -> set[str]:
+    """Every parameter an action actually USES.
+
+    A reference is a string beginning "parameter." -- the only form
+    WriteMediator._resolve_mutation_value() expands. Anything else is a
+    literal, which is exactly the failure this collection exists to
+    expose.
+    """
+    referenced: set[str] = set()
+
+    def note(value) -> None:
+        if isinstance(value, str) and value.startswith(PARAMETER_PREFIX):
+            referenced.add(value[len(PARAMETER_PREFIX):])
+
+    for sub_write in action_def.get("sub_writes") or []:
+        note(sub_write.get("object_id"))
+        for mutation in sub_write.get("mutations") or []:
+            note((mutation.get("set") or {}).get("value"))
+    for criterion in action_def.get("submission_criteria") or []:
+        for value in (criterion or {}).values():
+            note(value)
+    return referenced
+
+
+def _validate_parameters_are_used(action_type_name: str, action_def: dict) -> None:
+    """Every declared parameter must be referenced somewhere.
+
+    A DIFFERENT check from "does this reference something real", which
+    already existed. That one catches a reference to a parameter that
+    was never declared; this catches a parameter that was declared and
+    never referenced -- and the two fail in opposite directions.
+
+    The failure it exists for is a malformed reference. Writing
+    `object_id: $report_id` instead of `parameter.report_id` leaves the
+    string as a LITERAL, so the action targets an object whose id is
+    the characters "$report_id" and the declared parameter goes
+    unused. Nothing else notices: the schema is structurally valid,
+    the parameter resolves against nothing, and the action is simply
+    wrong at run time.
+
+    That is not hypothetical -- it was written into templates/ by hand
+    in an earlier commit here and shipped, and this check is what found
+    it.
+    """
+    declared = set((action_def.get("parameters") or {}).keys())
+    referenced = _collect_parameter_references(action_def)
+
+    unused = declared - referenced
+    if unused:
+        raise ValueError(
+            f"Action type {action_type_name!r}: parameter(s) {sorted(unused)} are declared "
+            f"but never referenced. A reference must be written 'parameter.<name>'; any "
+            f"other form is treated as a literal value."
+        )
 
 
 def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:

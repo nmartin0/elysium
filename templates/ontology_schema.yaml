@@ -233,5 +233,5 @@ action_types:
         description: The report to remove from the ontology.
     sub_writes:
       - object_type: ExpenseReport
-        object_id: $report_id
+        object_id: parameter.report_id
         operation: delete
