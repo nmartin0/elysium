@@ -473,7 +473,7 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 "type", "target", "cardinality", "display_name", "description",
                 # UI rendering hints, deliberately exposed. Cosmetic --
                 # "hidden" does not withhold anything, RBAC does.
-                "visibility", "status",
+                "visibility", "status", "link_type",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 

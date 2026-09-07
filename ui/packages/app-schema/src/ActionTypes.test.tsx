@@ -8,7 +8,8 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return { ...actual, getVisibleActionTypes: () => getVisibleActionTypes() }
 })
 
-const ActionTypes = (await import('./ActionTypes')).default
+const actionTypesModule = await import('./ActionTypes')
+const ActionTypes = actionTypesModule.default
 
 const TRANSFER = {
   affected_object_types: ['Account'],
@@ -24,6 +25,10 @@ const TRANSFER = {
 
 beforeEach(() => {
   getVisibleActionTypes.mockReset()
+  // The cache is module-level so it survives between tests, which is
+  // exactly what it is for in the browser and exactly what would make
+  // these interfere.
+  actionTypesModule.resetActionTypeCache()
 })
 
 describe('ActionTypes', () => {
@@ -77,6 +82,22 @@ describe('ActionTypes', () => {
     render(<ActionTypes onSessionExpired={() => {}} />)
 
     expect(await screen.findByText(/action types unavailable/)).toBeInTheDocument()
+  })
+
+  it('does not refetch when the tab is reopened', async () => {
+    // renderActiveTabPanelOnly UNMOUNTS this panel on a tab switch, so
+    // component state dies with it. A real log showed six requests for
+    // three visits before the cache existed.
+    getVisibleActionTypes.mockResolvedValue({ TransferFunds: TRANSFER })
+
+    const first = render(<ActionTypes onSessionExpired={() => {}} />)
+    await screen.findByText('TransferFunds')
+    first.unmount()
+
+    render(<ActionTypes onSessionExpired={() => {}} />)
+    await screen.findByText('TransferFunds')
+
+    expect(getVisibleActionTypes).toHaveBeenCalledTimes(1)
   })
 
   it('fetches once, not on every render', async () => {

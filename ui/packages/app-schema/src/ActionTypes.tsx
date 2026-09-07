@@ -35,15 +35,38 @@ interface ActionType {
   parameters?: Record<string, ActionParameter>
 }
 
+// Cached at MODULE level, not in component state.
+//
+// renderActiveTabPanelOnly unmounts this panel when you switch tabs,
+// so component state dies with it and every return to the tab
+// refetched. A real log showed six requests for three visits. Trading
+// a fetch-on-page-load for a fetch-per-visit is not an improvement --
+// it just moves when the waste happens.
+//
+// Module level rather than a context or a query library: this is one
+// endpoint, read by one panel, whose contents change only when the
+// deployment's YAML does. A reload picks up a change, which is the
+// same freshness every other schema read in this app has.
+let cached: Record<string, ActionType> | null = null
+
+/** Clears the module cache. For tests, which would otherwise share it
+ *  across cases -- the real hazard of module-level state, and worth
+ *  making explicit rather than leaving each test to discover. */
+export function resetActionTypeCache(): void {
+  cached = null
+}
+
 export default function ActionTypes({ onSessionExpired }: { onSessionExpired: () => void }) {
-  const [actionTypes, setActionTypes] = useState<Record<string, ActionType> | null>(null)
+  const [actionTypes, setActionTypes] = useState<Record<string, ActionType> | null>(cached)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (cached !== null) return
     let cancelled = false
     getVisibleActionTypes()
       .then((body) => {
-        if (!cancelled) setActionTypes(body as Record<string, ActionType>)
+        cached = body as Record<string, ActionType>
+        if (!cancelled) setActionTypes(cached)
       })
       .catch((err: unknown) => {
         if (cancelled) return
