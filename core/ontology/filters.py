@@ -84,22 +84,26 @@ class FilterError(ValueError):
 
 
 def parse_filters(raw: Any) -> list[FieldFilter]:
-    """Turns the wire form into validated FieldFilters.
+    """Turns the wire form -- a list of conditions -- into validated
+    FieldFilters.
 
-    Accepts the legacy shape too: a plain {field: value} dict is read
-    as equality on each key. Every existing caller passes that, and
-    rewriting them all in the same change that introduces the
-    vocabulary would make one commit do two things.
+    ONE shape, not two. An earlier version also accepted a plain
+    {field: value} dict as equality-on-each-key, to spare migrating
+    existing callers. Nothing had called it yet, so that was a bridge
+    built for traffic that did not exist -- and two accepted shapes is
+    two things to keep correct, in the module that decides which rows a
+    caller sees.
+
+    Callers migrate to conditions when the adapter contract changes;
+    until then they pass their dicts to the old path, untouched.
     """
     if raw is None:
         return []
-    if not isinstance(raw, (dict, list)):
-        raise FilterError("A filter must be an object or a list of conditions.")
-
-    if isinstance(raw, dict):
-        # Legacy: {"region": "us-west"} means equals.
-        return [FieldFilter(field=key, operator="equals", value=value)
-                for key, value in raw.items()]
+    if not isinstance(raw, list):
+        raise FilterError(
+            "A filter must be a list of conditions, each with a field and an "
+            "operator."
+        )
 
     parsed = []
     for index, condition in enumerate(raw):

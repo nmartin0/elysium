@@ -28,13 +28,17 @@ from core.ontology.filters import (
 # --- Parsing -------------------------------------------------------------
 
 
-def test_the_legacy_dict_shape_still_means_equality():
-    # Every existing caller passes {field: value}. Rewriting them all in
-    # the change that introduces the vocabulary would make one commit do
-    # two things.
-    assert parse_filters({"region": "us-west"}) == [
-        FieldFilter(field="region", operator="equals", value="us-west")
-    ]
+def test_only_a_list_of_conditions_is_accepted():
+    """One shape, not two.
+
+    An earlier version also read a plain {field: value} dict as
+    equality-on-each-key, to spare migrating callers. Nothing had
+    called it yet, so it was a bridge built for traffic that did not
+    exist -- and two accepted shapes is two things to keep correct, in
+    the module that decides which rows a caller sees.
+    """
+    with pytest.raises(FilterError, match="list of conditions"):
+        parse_filters({"region": "us-west"})
 
 
 def test_an_absent_filter_is_no_filter():
