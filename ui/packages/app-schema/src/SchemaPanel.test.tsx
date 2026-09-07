@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, RouterProvider, createMemoryRouter } from 'react-router-dom'
 
 import SchemaPanel from './SchemaPanel'
 
@@ -258,18 +258,36 @@ describe('SchemaPanel -- retracing steps', () => {
     // THE trap. Typing "Cust" would otherwise push four entries, and
     // pressing Back four times to undo one search is worse than having
     // no history at all. Typing REPLACES; only navigation pushes.
-    renderAt(['/schema?tab=object-types'])
-    const box = screen.getByPlaceholderText(/Filter object types/)
+    //
+    // Needs TWO entries and a real router. A first version rendered one
+    // MemoryRouter entry and asserted queryByDisplayValue('Cu') was
+    // absent -- which passes whether or not replace works, since a box
+    // containing "Cus" does not match "Cu" either. It also could not
+    // have detected a failure: with one entry Back cannot move at all.
+    const router = createMemoryRouter(
+      [{
+        path: '/schema',
+        element: (
+          <SchemaPanel
+            visibleSchema={{ Customer: CUSTOMER }}
+            username="alice"
+            onSessionExpired={noop}
+          />
+        ),
+      }],
+      { initialEntries: ['/schema?tab=discover', '/schema?tab=object-types'], initialIndex: 1 },
+    )
+    render(<RouterProvider router={router} />)
 
+    const box = screen.getByPlaceholderText(/Filter object types/)
     fireEvent.change(box, { target: { value: 'C' } })
     fireEvent.change(box, { target: { value: 'Cu' } })
     fireEvent.change(box, { target: { value: 'Cus' } })
 
-    // One Back leaves the tab entirely rather than stepping through
-    // each letter.
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
-    expect(screen.queryByDisplayValue('Cu')).not.toBeInTheDocument()
+    // One Back leaves the tab entirely rather than peeling off a letter.
+    expect(screen.queryByPlaceholderText(/Filter object types/)).toBeNull()
   })
 
   it('treats a tab click as a step worth retracing', () => {
