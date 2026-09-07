@@ -174,24 +174,19 @@ after.
   Revisit only alongside a real rotation story -- reopening on SIGHUP,
   or writing through a logging handler that already handles it.
 
-- **No lockfile, and no container.** Runtime dependencies carry upper
-  bounds rather than pins. Bounds catch the case that actually bites --
-  three of them are pre-1.0 (fastapi 0.141, uvicorn 0.52, pyiceberg
-  0.12) and their own policy is that a minor bump may break -- but they
-  do NOT give reproducible builds: two installs a month apart still
-  differ within the allowed range.
+- **No container.** Dependencies are locked with hashes and the lint
+  fails on drift, so builds are reproducible from a checkout. What is
+  still missing is a reproducible RUNTIME: the OS layer and the Python
+  interpreter come from whatever the host provides.
 
-  Worth being precise about what a container would and would not fix,
-  since it is the obvious next thought. Docker freezes the OS layer and
-  the Python interpreter; a Dockerfile running an unpinned `pip
-  install` still produces a different image each build. Reproducibility
-  needs a lockfile either way, and the two are complementary rather
-  than alternatives.
+  Worth being precise, since a container is the obvious next thought:
+  it freezes those two and nothing else. A Dockerfile running an
+  unpinned install still produces a different image each build --
+  which is why the lockfile came first and is the larger half.
 
-  Deferred because both need a release process to be worth their
-  maintenance, and because install.sh plus the systemd unit already
-  work. Revisit when there are real releases to reproduce. One genuine
-  side benefit if a container does arrive: the entrypoint becomes a
+  Deferred because install.sh plus the service unit already work, and
+  because this needs a release process to be worth its maintenance.
+  One real side benefit if it does arrive: the entrypoint becomes a
   reviewable file in this repository rather than whatever an operator
   writes, which is exactly the path require_assertions_enabled() was
   added to defend.
@@ -300,9 +295,6 @@ it went stale unnoticed.*
 - **Grant-pattern drift.** If an eighth grant prefix is ever added at
   an `authorize()` call site, `_validate_one_grant()` needs a matching
   branch. Nothing structurally guarantees the two stay in sync.
-- **Referential validation for link targets.** A link field's `target`
-  is not validated against the declared object types, except where it
-  is also a `security.via_field`.
 - **"Declared but unused" lint for action types.** An
   `object_reference` parameter that nothing references (no sub_write
   object_id, no mutation value, no submission criterion) is not
