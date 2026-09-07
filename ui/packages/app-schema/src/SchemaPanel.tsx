@@ -14,7 +14,8 @@
  * withheld.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Callout, HTMLTable, Icon, Spinner, Tab, Tabs, Tag } from '@blueprintjs/core'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
@@ -209,25 +210,54 @@ interface SchemaPanelProps extends SubAppProps {
  * log showed, and the log was pointing at something larger.
  */
 export default function SchemaPanel({ visibleSchema, username, onSessionExpired }: SchemaPanelProps) {
-  const [filter, setFilter] = useState('')
-  const [linkFilter, setLinkFilter] = useState('')
-  const [actionFilter, setActionFilter] = useState('')
-  const [selectedTab, setSelectedTab] = useState<string>('discover')
+  // NAVIGATION STATE LIVES IN THE URL, not in component state.
+  //
+  // Following a reference is one click -- a link's target, a link tag,
+  // an affected type -- and retracing a step was nothing at all.
+  // Worse, the browser's own back button LEFT the app entirely,
+  // because it had no idea a tab had changed.
+  //
+  // In the URL, back retraces exactly the steps taken, a reload keeps
+  // your place, and a view is a shareable link. A custom back control
+  // behaving differently from the browser's would be two backs that
+  // disagree, which is worse than one that is missing.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+
+  const selectedTab = searchParams.get('tab') ?? 'discover'
+  const query = searchParams.get('q') ?? ''
+  // One `q`, read by whichever tab is showing. A per-tab parameter
+  // would leave a stale term in the URL for tabs you are not on.
+  const filter = selectedTab === 'object-types' ? query : ''
+  const linkFilter = selectedTab === 'link-types' ? query : ''
+  const actionFilter = selectedTab === 'action-types' ? query : ''
+
+  /**
+   * PUSH for navigation, REPLACE for typing.
+   *
+   * This distinction is the whole design. Typing "Customer" would
+   * otherwise push eight history entries, and pressing back eight
+   * times to undo one search is worse than having no history at all.
+   */
+  function go(tab: string, text: string, mode: 'push' | 'replace') {
+    const next: Record<string, string> = { tab }
+    if (text !== '') next.q = text
+    if (favouriteVersion !== 0) next.fav = String(favouriteVersion)
+    setSearchParams(next, { replace: mode === 'replace' })
+  }
   // Every cross-reference goes through here: Discover, a link's other
   // end, an action's affected types. One path means one behaviour.
   function openObjectType(objectType: string) {
     recordVisit(username, objectType)
-    setFilter(objectType)
-    setSelectedTab('object-types')
+    go('object-types', objectType, 'push')
   }
 
   function openLinkType(linkType: string) {
-    setLinkFilter(linkType)
-    setSelectedTab('link-types')
+    go('link-types', linkType, 'push')
   }
 
   // Storage is not reactive, so a toggle has to say it happened.
-  const [favouriteVersion, setFavouriteVersion] = useState(0)
+  const favouriteVersion = Number(searchParams.get('fav') ?? 0)
   const schema = visibleSchema
 
   const matches = useMemo(() => {
@@ -249,6 +279,21 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
 
   return (
     <div className="schema-panel">
+      {/* navigate(-1), so this does EXACTLY what the browser's own back
+          button does rather than approximating it. Two backs that
+          disagree would be worse than one that is missing -- this
+          exists because following a reference is one click and
+          retracing it should be too, not because the browser's is
+          inadequate. */}
+      <Button
+        minimal
+        small
+        icon="arrow-left"
+        aria-label="Back"
+        onClick={() => navigate(-1)}
+      >
+        Back
+      </Button>
       {/* Three resource kinds, matching how the reference
           implementation splits its own ontology browser: object types,
           link types and action types are separately navigable rather
@@ -269,11 +314,9 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           // Blueprint's onChange takes a MouseEvent, so it fires only
           // on a real click -- a programmatic selectedTabId change
           // never reaches this.
-          const next = String(tabId)
-          if (next === 'object-types') setFilter('')
-          if (next === 'link-types') setLinkFilter('')
-          if (next === 'action-types') setActionFilter('')
-          setSelectedTab(next)
+          // A clicked tab starts fresh and PUSHES -- switching tabs is
+          // a step worth retracing.
+          go(String(tabId), '', 'push')
         }}
         renderActiveTabPanelOnly
       >
@@ -285,7 +328,13 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               schema={schema}
               username={username}
               version={favouriteVersion}
-              onFavouriteChange={() => setFavouriteVersion((n) => n + 1)}
+              onFavouriteChange={() => {
+                // Replaces: starring something is not a step to retrace.
+                setSearchParams(
+                  { tab: 'discover', fav: String(favouriteVersion + 1) },
+                  { replace: true },
+                )
+              }}
               onOpen={openObjectType}
             />
           }
@@ -297,7 +346,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
             <>
               <FilterBox
                 value={filter}
-                onChange={setFilter}
+                onChange={(text) => go('object-types', text, 'replace')}
                 placeholder="Filter object types..."
               />
               {Object.keys(schema).length === 0 ? (
@@ -327,7 +376,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
             <>
               <FilterBox
                 value={linkFilter}
-                onChange={setLinkFilter}
+                onChange={(text) => go('link-types', text, 'replace')}
                 placeholder="Filter link types..."
               />
               <LinkTypes
@@ -345,7 +394,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
             <>
               <FilterBox
                 value={actionFilter}
-                onChange={setActionFilter}
+                onChange={(text) => go('action-types', text, 'replace')}
                 placeholder="Filter action types..."
               />
               <ActionTypes

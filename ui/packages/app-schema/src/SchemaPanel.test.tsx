@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 
 import SchemaPanel from './SchemaPanel'
+
+/** The panel keeps its tab and filter in the URL, so it needs a
+ *  router. MemoryRouter rather than a mock, so the push/replace
+ *  distinction these tests care about is the real one. */
+function renderPanel(ui: React.ReactElement) {
+  return render(<MemoryRouter initialEntries={['/schema']}>{ui}</MemoryRouter>)
+}
 
 /** Opens the Object types tab. The panel now lands on Discover, which
  *  is the useful default for a real user and means these tests have to
@@ -35,7 +43,7 @@ const noop = () => {}
 
 describe('SchemaPanel', () => {
   it('renders an object type with its display name and description', () => {
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
 
     expect(screen.getByText('Customer')).toBeInTheDocument()
@@ -47,7 +55,7 @@ describe('SchemaPanel', () => {
     // prominent properties get their own table, normal ones a regular
     // one. The separation is what carries the ontology author's intent
     // about which fields matter.
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
 
     expect(screen.getByText('Prominent')).toBeInTheDocument()
@@ -59,14 +67,14 @@ describe('SchemaPanel', () => {
     // Cosmetic, not security -- the value is still in the response.
     // This view honours the author's intent not to show it; it is not
     // withholding anything, and nothing here should suggest it is.
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
 
     expect(screen.queryByText('Internal')).not.toBeInTheDocument()
   })
 
   it('shows a link field with its target and cardinality', () => {
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
 
     expect(screen.getByText('Transactions')).toBeInTheDocument()
@@ -77,7 +85,7 @@ describe('SchemaPanel', () => {
   })
 
   it('marks a deprecated object type', () => {
-    render(
+    renderPanel(
       <SchemaPanel
         visibleSchema={{ Customer: { ...CUSTOMER, status: 'deprecated' } }}
         username="alice"
@@ -93,7 +101,7 @@ describe('SchemaPanel', () => {
     // A user with no read: grants gets an empty ontology rather than a
     // forbidden page -- the same uniform denial every read path uses.
     // Rendering nothing at all would look like a loading failure.
-    render(<SchemaPanel visibleSchema={{}} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{}} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
 
     expect(screen.getByText(/do not have read access/)).toBeInTheDocument()
@@ -104,13 +112,13 @@ describe('SchemaPanel', () => {
     // and you can see nothing". Conflating them would show a
     // permissions message during a normal page load.
     // No tab to open: nothing is rendered until the schema arrives.
-    render(<SchemaPanel visibleSchema={null} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={null} username="alice" onSessionExpired={noop} />)
 
     expect(screen.queryByText(/do not have read access/)).not.toBeInTheDocument()
   })
 
   it('filters object types by name and by group', async () => {
-    render(
+    renderPanel(
       <SchemaPanel
         visibleSchema={{
           Customer: CUSTOMER,
@@ -142,7 +150,7 @@ describe('SchemaPanel', () => {
     // The log was pointing at something larger than the symptom it
     // showed. Rendering with no network available at all is the
     // property that matters.
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
 
     expect(screen.getByText('Customer')).toBeInTheDocument()
@@ -154,7 +162,7 @@ describe('SchemaPanel -- navigating between tabs', () => {
     // Arriving from Discover sets the filter on purpose; clicking the
     // tab afterwards should start fresh rather than show whatever was
     // last looked at.
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
 
     fireEvent.click(screen.getAllByText('Customer')[0] as HTMLElement)
     openObjectTypes()
@@ -163,7 +171,7 @@ describe('SchemaPanel -- navigating between tabs', () => {
   })
 
   it('offers a clear button only when there is something to clear', () => {
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
 
     expect(screen.queryByLabelText('Clear filter')).not.toBeInTheDocument()
@@ -176,7 +184,7 @@ describe('SchemaPanel -- navigating between tabs', () => {
   })
 
   it('clears the field when the clear button is pressed', () => {
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
     const box = screen.getByPlaceholderText(/Filter object types/)
     fireEvent.change(box, { target: { value: 'Cust' } })
@@ -187,11 +195,89 @@ describe('SchemaPanel -- navigating between tabs', () => {
   })
 
   it('opens the link types tab when a link tag is clicked', () => {
-    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
     openObjectTypes()
 
     fireEvent.click(screen.getByText('link'))
 
     expect(screen.getByPlaceholderText(/Filter link types/)).toHaveValue('CustomerTransactions')
+  })
+})
+
+describe('SchemaPanel -- retracing steps', () => {
+  // Following a reference is one click; retracing it should be too.
+  // The state lives in the URL so the browser's own back button works,
+  // which is why these assert on history rather than on a custom
+  // stack.
+
+  function renderAt(entries: string[]) {
+    return render(
+      <MemoryRouter initialEntries={entries}>
+        <SchemaPanel
+          visibleSchema={{ Customer: CUSTOMER }}
+          username="alice"
+          onSessionExpired={noop}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('opens the tab named in the URL', () => {
+    // A reload keeps your place, and a view is a shareable link.
+    renderAt(['/schema?tab=link-types'])
+
+    expect(screen.getByPlaceholderText(/Filter link types/)).toBeInTheDocument()
+  })
+
+  it('applies the filter named in the URL', () => {
+    renderAt(['/schema?tab=object-types&q=Customer'])
+
+    expect(screen.getByPlaceholderText(/Filter object types/)).toHaveValue('Customer')
+  })
+
+  it('defaults to Discover when the URL says nothing', () => {
+    renderAt(['/schema'])
+
+    expect(screen.getByText('Favourites')).toBeInTheDocument()
+  })
+
+  it('goes back to where a cross-reference was followed from', () => {
+    // The whole point: click a link tag, press Back, and be where you
+    // were rather than somewhere approximate.
+    renderAt(['/schema?tab=object-types'])
+
+    fireEvent.click(screen.getByText('link'))
+    expect(screen.getByPlaceholderText(/Filter link types/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+
+    expect(screen.getByPlaceholderText(/Filter object types/)).toBeInTheDocument()
+  })
+
+  it('does not make a history entry per keystroke', () => {
+    // THE trap. Typing "Cust" would otherwise push four entries, and
+    // pressing Back four times to undo one search is worse than having
+    // no history at all. Typing REPLACES; only navigation pushes.
+    renderAt(['/schema?tab=object-types'])
+    const box = screen.getByPlaceholderText(/Filter object types/)
+
+    fireEvent.change(box, { target: { value: 'C' } })
+    fireEvent.change(box, { target: { value: 'Cu' } })
+    fireEvent.change(box, { target: { value: 'Cus' } })
+
+    // One Back leaves the tab entirely rather than stepping through
+    // each letter.
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+
+    expect(screen.queryByDisplayValue('Cu')).not.toBeInTheDocument()
+  })
+
+  it('treats a tab click as a step worth retracing', () => {
+    renderAt(['/schema?tab=object-types'])
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Link types' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+
+    expect(screen.getByPlaceholderText(/Filter object types/)).toBeInTheDocument()
   })
 })
