@@ -503,7 +503,20 @@ enforcement layers, resolved directly, not left as a tradeoff:
   write-capable, since it inherits the reader's four real read
   implementations for WriteMediator's own optimistic-concurrency
   check.
-- **Credential-level: DOCUMENTED, not yet implementable.** A
+- **Credential-level: CLOSED as far as it can go, not pending.** A
+  separate SELECT-only credential is not deferred work -- it is
+  IMPOSSIBLE with the adapter that ships. SQLite has no database user
+  and no GRANT; a connection is a file path. There is nothing to
+  implement until a server-backed adapter exists, and the requirement
+  is already recorded as deployment guidance in INSTALL.md section 9
+  so it is not discovered late.
+
+  Kept as an entry rather than removed because it becomes real the
+  moment a PostgreSQL or MySQL adapter lands, and it is the enforcement
+  point that matters -- the code-level authorizer below is the second
+  layer, not the first.
+
+- **Credential-level: original note.** A
   genuinely separate, `SELECT`-only database credential for
   `DataMediator`'s own adapters -- matching Palantir's own real,
   confirmed practice (their own docs: "syncs can change the source
@@ -1076,19 +1089,26 @@ limit additions -- not repeated here). These are real, considered,
 but deliberately DEFERRED items, not gaps that slipped through
 unnoticed:
 
-- **`TrustedHostMiddleware` / `Host` header validation.** Not
-  configured today. Investigated directly before deferring, not
-  assumed low-risk by default: confirmed the `Host` header is never
-  used anywhere in this codebase to construct any real output at all
-  (no password-reset links, no redirects, nothing built from it) --
-  the classic Host-header-injection attack it guards against
-  specifically exploits apps that reflect or build output from that
-  header, which this app simply doesn't do. Real, genuine reasons
-  this stayed deferred rather than fixed outright, not just
-  laziness: it would need a new, deployment-specific `allowed_hosts`
-  config option that doesn't exist today (this project's own code
-  doesn't know its own deployment's real domain name at build time),
-  and Elysium is typically deployed behind a reverse proxy that
-  already handles this concern at that layer. Revisit if a real,
-  concrete reason emerges (e.g. a deployment that runs Elysium
-  directly, with no reverse proxy in front of it at all).
+- **`TrustedHostMiddleware` / `Host` header validation. CLOSED, not
+  deferred.** Re-examined rather than left open, and both original
+  premises still hold, one more strongly than recorded.
+
+  The `Host` header is still never used to construct any output --
+  no redirects, no links, nothing built from it. The only use of
+  `request.url` anywhere is the CSRF middleware reading a PATH.
+  Host-header injection exploits apps that reflect that header;
+  this one does not have such a path to exploit.
+
+  And the deployment does not merely *tend* to sit behind a proxy:
+  install/elysium.service binds uvicorn to `127.0.0.1`, so it cannot
+  be reached without one. The original note said "typically deployed
+  behind a reverse proxy"; the shipped unit makes that structural.
+
+  Implementing it anyway would mean a new `allowed_hosts` option that
+  no deployment sets, defaulting to permit everything -- middleware
+  that looks like a control and enforces nothing. That is worse than
+  its absence, because it invites the belief that the concern is
+  handled.
+
+  REOPEN IF the service unit is changed to bind a public interface,
+  since that is the single change that makes the header reachable.
