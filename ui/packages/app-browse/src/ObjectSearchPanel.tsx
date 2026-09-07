@@ -5,7 +5,7 @@ import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
-import type { VisibleSchema } from './ObjectDetailPanel'
+import type { VisibleSchema } from '@elysium/shell-api/types'
 
 // The human-facing browse/search screen -- Palantir's own Object
 // Explorer is the closest real-world analog (a real research +

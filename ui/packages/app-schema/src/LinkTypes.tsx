@@ -17,7 +17,7 @@
  */
 
 import { Button, HTMLTable, Tag } from '@blueprintjs/core'
-import type { VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
+import type { VisibleSchema } from '@elysium/shell-api/types'
 
 export interface LinkSide {
   objectType: string

@@ -1,6 +1,7 @@
 import { Button, Callout } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import type { VisibleSchema } from '@elysium/shell-api/types'
 import { getObjectDetail, getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
@@ -17,36 +18,6 @@ import ActionForm, { type ActionDef } from './ActionForm'
 // speculative, future consumer, since it receives the exact same
 // visibleSchema prop and reads it the same way -- will need this
 // full shape too once converted.
-export interface FieldSchema {
-  type: string
-  target?: string
-  // Added by SchemaPanel, the next consumer to need more of this
-  // shape -- optional, so nothing that already reads it changes.
-  display_name?: string
-  description?: string | null
-  cardinality?: string | null
-  link_type?: string | null
-  visibility?: string
-  status?: string
-}
-
-export interface TypeSchema {
-  title_field?: string | null
-  fields?: Record<string, FieldSchema>
-  // Display metadata. Every one is optional at the API too -- an
-  // ontology declaring none of it is valid, and renders from derived
-  // labels.
-  display_name?: string
-  plural_display_name?: string
-  description?: string | null
-  icon?: string | null
-  color?: string | null
-  status?: string
-  group?: string | null
-  id_field?: string | null
-}
-
-export type VisibleSchema = Record<string, TypeSchema>
 
 // visibleSchema is real, additional data this route needs beyond the
 // shell's own base contract -- extends SubAppProps rather than

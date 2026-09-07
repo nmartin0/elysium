@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import Shell, { type VisibleApp } from './Shell'
-import type { VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
+import type { VisibleSchema } from '@elysium/shell-api/types'
 import {
   logout,
   getCurrentUser,

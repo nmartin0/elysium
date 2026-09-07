@@ -17,8 +17,8 @@
  * browser should.
  */
 
-import { useEffect, useState } from 'react'
 import { Button, Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
+import { useEffect, useState } from 'react'
 import { getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 
 interface ActionParameter {
@@ -52,11 +52,7 @@ export default function ActionTypes({
   // No stale-response guard, matching AdminPanel. This effect runs
   // ONCE on mount, so there is no second request whose result could
   // arrive out of order -- which is the only thing
-  // useLatestRequestGuard exists to prevent, and why the two Browse
-  // panels use it and this does not.
-  //
-  // An earlier version carried a `cancelled` flag, which was a third
-  // way of doing what two others already covered between them.
+  // useLatestRequestGuard exists to prevent.
   useEffect(() => {
     getVisibleActionTypesCached()
       .then((body) => setActionTypes(body as Record<string, ActionType>))

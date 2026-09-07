@@ -5,13 +5,14 @@
   "type": "module",
   "exports": {
     "./api": "./src/api.ts",
-    "./format": "./src/format.ts",
-    "./types": "./src/types.ts",
-    "./useLatestRequestGuard": "./src/useLatestRequestGuard.ts",
-    "./index.css": "./src/index.css",
+    "./components/FilterBox": "./src/components/FilterBox.tsx",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",
-    "./components/UserMenu": "./src/components/UserMenu.tsx"
+    "./components/UserMenu": "./src/components/UserMenu.tsx",
+    "./format": "./src/format.ts",
+    "./index.css": "./src/index.css",
+    "./types": "./src/types.ts",
+    "./useLatestRequestGuard": "./src/useLatestRequestGuard.ts"
   },
   "peerDependencies": {
     "react": "^19.2.8"

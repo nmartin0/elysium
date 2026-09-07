@@ -8,7 +8,7 @@
 // rule enforces at the import-statement level -- this file checks it
 // one layer up, at the package-dependency-declaration level.
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, readdirSync } from 'fs'
 import { fileURLToPath } from 'url'
 import path from 'path'
 
@@ -75,5 +75,68 @@ describe('the root package.json correctly declares the workspace', () => {
     expect(Object.keys(pkg.dependencies || {})).toEqual(
       expect.arrayContaining(['@elysium/shell-api', '@elysium/app-query', '@elysium/app-browse', '@elysium/app-admin']),
     )
+  })
+})
+
+describe('package layering', () => {
+  // "Structure your packages in layers: shared utilities at the
+  // bottom, applications at the top." A sub-app importing from
+  // another sub-app inverts that, and it is not hypothetical here:
+  // app-schema imported its core ontology types from app-browse
+  // because that is where they happened to be written first.
+  //
+  // Nothing caught it. The backend has import contracts enforcing the
+  // same rule; this is the frontend's.
+
+  const packagesDir = path.join(UI_ROOT, 'packages')
+  const subAppDirs = readdirSync(packagesDir).filter(
+    (name) => name.startsWith('app-'),
+  )
+
+  it('has more than one sub-app, or this check proves nothing', () => {
+    expect(subAppDirs.length).toBeGreaterThan(1)
+  })
+
+  it('no sub-app imports from another sub-app', () => {
+    const offenders: string[] = []
+
+    for (const dir of subAppDirs) {
+      const srcDir = path.join(packagesDir, dir, 'src')
+      for (const file of readdirSync(srcDir)) {
+        if (!file.endsWith('.ts') && !file.endsWith('.tsx')) continue
+        const source = readFileSync(path.join(srcDir, file), 'utf8')
+        for (const other of subAppDirs) {
+          if (other === dir) continue
+          if (source.includes(`@elysium/${other}`)) {
+            offenders.push(`${dir}/${file} imports @elysium/${other}`)
+          }
+        }
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  it('shell-api imports no sub-app', () => {
+    // The other direction, and the worse one: the shared layer
+    // depending upward would make the layering circular rather than
+    // merely inverted.
+    const srcDir = path.join(packagesDir, 'shell-api', 'src')
+
+    function walk(dir: string): string[] {
+      return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory()
+          ? walk(path.join(dir, entry.name))
+          : [path.join(dir, entry.name)],
+      )
+    }
+
+    const offenders = walk(srcDir).filter(
+      (path) =>
+        (path.endsWith('.ts') || path.endsWith('.tsx'))
+        && readFileSync(path, 'utf8').includes('@elysium/app-'),
+    )
+
+    expect(offenders).toEqual([])
   })
 })

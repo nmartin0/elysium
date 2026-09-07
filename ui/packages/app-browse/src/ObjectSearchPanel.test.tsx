@@ -14,7 +14,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
 
 import { searchObjects, ApiError } from '@elysium/shell-api/api'
 import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
-import type { VisibleSchema } from './ObjectDetailPanel'
+import type { VisibleSchema } from '@elysium/shell-api/types'
 
 const mockedSearchObjects = vi.mocked(searchObjects)
 

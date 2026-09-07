@@ -35,7 +35,8 @@ vi.mock('./ActionForm', () => ({
 }))
 
 import { getObjectDetail, getVisibleActionTypesCached, ApiError } from '@elysium/shell-api/api'
-import ObjectDetailPanel, { type VisibleSchema } from './ObjectDetailPanel'
+import ObjectDetailPanel from './ObjectDetailPanel'
+import type { VisibleSchema } from '@elysium/shell-api/types'
 
 const mockedGetObjectDetail = vi.mocked(getObjectDetail)
 const mockedGetVisibleActionTypes = vi.mocked(getVisibleActionTypesCached)

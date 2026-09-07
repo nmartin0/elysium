@@ -32,3 +32,51 @@ export interface SubAppProps {
   // the login screen) as this prop on every real route.
   onSessionExpired: () => void
 }
+
+
+// --- The ontology, as GET /me/visible-schema returns it -------------
+//
+// Here rather than in a module of its own: this file is already "the
+// cross-sub-app contract types", and that is exactly what these are.
+// Browse renders objects with them, Schema browses them, the shell
+// holds and passes them down. A second types module for the same
+// purpose is the duplication this file exists to prevent.
+//
+// These lived in app-browse/ObjectDetailPanel, because that is the
+// file that happened to need them first -- which made app-schema
+// import from app-browse and inverted the package layering.
+//
+// Every field is optional except `type`, matching the API: an
+// ontology declaring no display metadata is valid and renders from
+// derived labels.
+
+export interface FieldSchema {
+  type: string
+  target?: string
+  // Added by SchemaPanel, the next consumer to need more of this
+  // shape -- optional, so nothing that already reads it changes.
+  display_name?: string
+  description?: string | null
+  cardinality?: string | null
+  link_type?: string | null
+  visibility?: string
+  status?: string
+}
+
+export interface TypeSchema {
+  title_field?: string | null
+  fields?: Record<string, FieldSchema>
+  // Display metadata. Every one is optional at the API too -- an
+  // ontology declaring none of it is valid, and renders from derived
+  // labels.
+  display_name?: string
+  plural_display_name?: string
+  description?: string | null
+  icon?: string | null
+  color?: string | null
+  status?: string
+  group?: string | null
+  id_field?: string | null
+}
+
+export type VisibleSchema = Record<string, TypeSchema>
