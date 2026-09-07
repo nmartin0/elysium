@@ -301,6 +301,44 @@ def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
     return ConcurrencyLimitedLLMAdapter(adapter_class(model, config.llm_connection))
 
 
+def mirror_synced_at_by_object_type(config: DeploymentConfig, data_dir: Path) -> dict[str, str | None]:
+    """When each object type's mirrored data was last written.
+
+    The deployment-wide figure that _mirror_last_synced_at() returns is
+    the OLDEST of these, which answers "how stale might anything be"
+    and not "which type is stale". A schema browser needs the second:
+    the reference implementation surfaces per-type indexing problems
+    for the same reason, so a type whose data never arrived is visible
+    as such rather than dragging one global number down.
+
+    A type maps to None when its table has never synced. That is an
+    operational state, not an error -- a fresh deployment has not run
+    a sync yet -- so it is reported rather than raised.
+    """
+    from core.mirror.iceberg_sync import IcebergMirrorSync
+
+    sync = IcebergMirrorSync(data_dir / "mirror", {})
+    synced: dict[str, str | None] = {}
+    for object_type, type_def in config.schema.items():
+        # Walks the SCHEMA rather than the sync targets, because a
+        # target carries a silo and a table and no way back to the type
+        # that produced it. An MDO spans several tables, and the type is
+        # only as fresh as its stalest one.
+        # additional_storage is keyed by a name, not a list -- an MDO
+        # declares each extra table under its own label.
+        blocks = [type_def["storage"], *(type_def.get("additional_storage") or {}).values()]
+        stamps = [
+            sync.last_synced_at(block["silo"], block["table"])
+            for block in blocks
+        ]
+        synced[object_type] = (
+            min(stamp for stamp in stamps if stamp is not None).isoformat()
+            if all(stamp is not None for stamp in stamps) and stamps
+            else None
+        )
+    return synced
+
+
 def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | None:
     # The OLDEST last-sync time across every mirrored table, not the
     # newest -- deliberately conservative: a write applied after ANY

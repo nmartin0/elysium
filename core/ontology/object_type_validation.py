@@ -173,7 +173,10 @@ def _validate_display_metadata(object_type_name: str, type_def: dict) -> None:
     check(
         f"Object type {object_type_name!r}",
         type_def,
-        ("display_name", "plural_display_name", "description"),
+        # `group` labels a type for filtering and browsing, the way
+        # the reference implementation does -- purely a display
+        # concern, validated the same way the rest are.
+        ("display_name", "plural_display_name", "description", "group"),
     )
     for field_name, field_info in (type_def.get("fields") or {}).items():
         check(

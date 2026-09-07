@@ -254,6 +254,9 @@ class VisibleObjectTypeResponse(BaseModel):
     icon: str | None = None
     color: str | None = None
     status: str = "active"
+    # A label for filtering and browsing a large ontology. Purely
+    # organisational -- it groups nothing structurally.
+    group: str | None = None
 
 
 class ActionParameterResponse(BaseModel):

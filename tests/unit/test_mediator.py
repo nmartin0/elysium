@@ -323,7 +323,7 @@ def test_visible_schema_never_leaks_internal_storage_or_security_config(mediator
         # Display metadata, deliberately exposed for UI rendering.
         "display_name", "plural_display_name", "description",
         # UI rendering hints for the ontology browser.
-        "icon", "color", "status",
+        "icon", "color", "status", "group",
     }
     assert "storage" not in visible["Author"]
     assert "additional_storage" not in visible["Author"]

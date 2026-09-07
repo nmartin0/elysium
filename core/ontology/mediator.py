@@ -671,6 +671,7 @@ class DataMediator:
                 # UI rendering hints. Cosmetic, never security: see
                 # _validate_ui_metadata() for why `hidden` fields are
                 # still returned here.
+                "group": type_def.get("group"),
                 "icon": type_def.get("icon"),
                 "color": type_def.get("color"),
                 "status": type_def.get("status", "active"),
