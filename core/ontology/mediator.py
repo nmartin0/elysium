@@ -808,11 +808,20 @@ class DataMediator:
         # column name -- see get_column_for_field()'s own docstring for
         # why the id_field needs its own handling (it isn't a regular
         # entry in type_schema["fields"] at all).
-        # VALIDATED before anything sees them. validate_filter() and
-        # the adapters' own guards were both written and neither was
-        # reached -- so a malformed condition could have produced SQL
-        # that silently matched nothing. Wired here, at the one place
-        # conditions are built from caller input.
+        # Validated, though today this can never REJECT: search_object
+        # takes a {field: value} dict and builds equals conditions from
+        # it, so every condition is correct by construction.
+        #
+        # Kept because it is the seam where a caller-supplied condition
+        # list will arrive -- search_object's signature is the next
+        # thing to change, across 114 call sites -- and because the
+        # cost is a dictionary lookup per field.
+        #
+        # Recorded honestly: an earlier commit message claimed this was
+        # "wired where conditions are built from caller input", which
+        # it is not. The caller supplies a dict; we build the
+        # conditions. The adapters' own guards are the checks that
+        # actually fire today.
         conditions = []
         for key, value in criteria.items():
             condition = FieldFilter(
@@ -937,16 +946,6 @@ class DataMediator:
             candidate_id for candidate_id in candidate_ids
             if check_access(self, user_record, self.roles, object_type, candidate_id, action)
         ]
-
-    def _validate_conditions_for_test(self, object_type: str, conditions: list) -> None:
-        """Runs the same validation search_object() runs.
-
-        Exists because that validation lives inside a loop that also
-        resolves columns and queries, and a test reaching into it would
-        be testing the loop rather than the check.
-        """
-        for condition in conditions:
-            validate_filter(condition, self._declared_type(object_type, condition.field))
 
     def _declared_type(self, object_type: str, field_name: str) -> str | None:
         """A field's declared data_type, or None when it declares none.

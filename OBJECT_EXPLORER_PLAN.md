@@ -143,7 +143,18 @@ translates what Iceberg can express and falls back to a projected scan
 for what it cannot — the same compromise `resolve_reverse_links_batch`
 already makes, documented where it happens.
 
-**4. The unreadable-field rejection**, with a test that its message is
+**4. search_object takes a condition list.** Today it takes a
+{field: value} dict and builds equals conditions itself, so
+`validate_filter()` cannot reject anything through it -- every
+condition is correct by construction. The vocabulary is unreachable
+from any real caller until this changes.
+
+A 114-call-site signature change across nine files, which is why it is
+its own item rather than folded into the one that built the
+vocabulary. The adapters' own guards are what protect a query in the
+meantime.
+
+**5. The unreadable-field rejection**, with a test that its message is
 identical to the unknown-field case.
 
 ### Phase 2 — the artifact store (backend)

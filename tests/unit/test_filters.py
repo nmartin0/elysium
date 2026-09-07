@@ -439,26 +439,27 @@ def test_the_sql_mapping_rejects_what_validation_would_have(condition, label):
         _clause_for(condition)
 
 
-def test_search_validates_its_conditions_before_querying(tmp_path):
-    """validate_filter() and the adapter guards were both written and
-    NEITHER was reached -- so a malformed condition could have reached
-    SQL and produced a query that silently matched nothing.
+def test_the_adapter_guards_are_what_actually_fire_today():
+    """What protects a real query right now.
 
-    Found by a control: unwiring validation in the mediator broke no
-    test at all. This is that coverage.
+    search_object() takes a {field: value} dict and builds equals
+    conditions from it, so validate_filter() cannot reject anything
+    through that path -- every condition is correct by construction.
+    An earlier version of this test called a _validate_conditions_for_test
+    seam added to the mediator for the purpose, which is test-only code
+    in production and does not exercise the real path either.
+
+    The adapters' own guards DO fire, on any condition however
+    constructed, and they are what stops a malformed filter becoming
+    SQL that silently matches nothing.
+
+    validate_filter() becomes reachable when search_object accepts a
+    caller-supplied condition list. That is a 114-call-site signature
+    change and is the next piece of work, not this one.
     """
-    from core.intermediate_layer.auth import UserRecord
+    from adapters.sqlite_adapter import _clause_for
 
-    mediator = _mediator_with(50, tmp_path)
-    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
-
-    # An operator that cannot apply to this field's declared type.
-    # amount declares data_type number; contains is for strings.
     with pytest.raises(FilterError):
-        mediator._validate_conditions_for_test(
-            "Transaction", [FieldFilter("amount", "contains", "x")]
-        )
-
-    # And the ordinary path still works, so the check is not simply
-    # rejecting everything.
-    assert mediator.search_object(user, "Transaction", {}) is not None
+        _clause_for(FieldFilter("n", "range", {}))
+    with pytest.raises(FilterError):
+        _clause_for(FieldFilter("n", "in", []))
