@@ -14,6 +14,8 @@ from typing import Any
 
 import requests
 
+from core.llm.interface import LLMUnavailable
+
 
 class OllamaAdapter:
     def __init__(self, model: str, connection: dict):
@@ -55,6 +57,11 @@ class OllamaAdapter:
         if temperature is not None:
             payload["options"] = {"temperature": temperature}
 
-        response = requests.post(self.base_url, json=payload, timeout=self.timeout_seconds)
+        try:
+            response = requests.post(self.base_url, json=payload, timeout=self.timeout_seconds)
+        except requests.RequestException as e:
+            # Translated at the boundary so callers never need to know
+            # this adapter uses `requests` -- see LLMUnavailable.
+            raise LLMUnavailable(f"Could not reach the model at {self.base_url}: {e}") from e
         response.raise_for_status()
         return response.json()["message"]["content"]

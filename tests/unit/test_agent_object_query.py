@@ -390,3 +390,71 @@ def test_a_value_error_is_still_treated_as_an_ordinary_bad_step(caplog):
         )
 
     assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+# --- Unreachable backend vs unparseable answer ---------------------------
+#
+# Found by a real integration run, not by reasoning. An 8-minute read
+# timeout against a local model produced `gathered: []` and a normal
+# finish -- so the trace read as "the model chose to do nothing" when
+# the truth was "the model never answered". The handler caught
+# requests.RequestException, json.JSONDecodeError and KeyError
+# together and finished on all three.
+#
+# Those are different events. An unparseable answer means the model
+# spoke and there is real gathered context to work with; an
+# unreachable backend means there is nothing, and saying "here is your
+# answer" is a fabrication.
+
+
+def test_an_unreachable_backend_raises_rather_than_finishing():
+    # THE bug. Finishing here hands the user a confident-looking answer
+    # assembled from zero data, with nothing to indicate the model was
+    # never reached.
+    from core.llm.agent_step_prompt import next_step
+    from core.llm.interface import LLMUnavailable
+
+    class UnreachableClient:
+        max_concurrent_requests = 1
+
+        def chat(self, *args, **kwargs):
+            raise LLMUnavailable("read timed out after 480s")
+
+    with pytest.raises(LLMUnavailable, match="read timed out"):
+        next_step(UnreachableClient(), "q", {}, [], [], True, {})
+
+
+def test_an_unparseable_answer_still_finishes():
+    # The other half, and it must keep working: the model DID answer,
+    # there is gathered context, and the best available answer beats an
+    # error.
+    from core.llm.agent_step_prompt import next_step
+
+    class GarbageClient:
+        max_concurrent_requests = 1
+
+        def chat(self, *args, **kwargs):
+            return "this is not json at all"
+
+    step = next_step(GarbageClient(), "q", {}, [], [], True, {})
+
+    assert step["step"] == "finish"
+
+
+def test_both_adapters_raise_the_same_type_for_an_unreachable_backend():
+    # The handler previously caught requests.RequestException -- one
+    # adapter's transport library. A second adapter raising anything
+    # else went entirely unhandled, so an Ollama failure was swallowed
+    # while a Claude failure propagated. Same event, opposite
+    # behaviour.
+    import inspect
+
+    import adapters.claude_agent_sdk_adapter as claude_module
+    import adapters.ollama_adapter as ollama_module
+    from core.llm.interface import LLMUnavailable
+
+    for module in (ollama_module, claude_module):
+        assert "LLMUnavailable" in inspect.getsource(module), (
+            f"{module.__name__} does not raise the shared unavailable type"
+        )
+    assert issubclass(LLMUnavailable, Exception)

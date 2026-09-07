@@ -34,10 +34,8 @@ Called by: core/agent/agentic_loop.py
 import json
 import logging
 
-import requests
-
 from core.functions.interface import Function
-from core.llm.interface import LLMAdapter
+from core.llm.interface import LLMAdapter, LLMUnavailable
 from core.ontology.schema import is_searchable_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation, evaluate_submission_criteria
 
@@ -434,8 +432,30 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # gathered[] alone. Enable with pytest's --log-cli-level=DEBUG.
         logger.debug(f"raw model response: {raw_content!r}")
         parsed = json.loads(raw_content)
-    except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"request/parse failed, finishing: {e}")
+    except LLMUnavailable:
+        # THE BACKEND WAS NEVER REACHED, which is a completely
+        # different event from the model answering badly -- and this
+        # handler used to treat them identically.
+        #
+        # Finishing here tells the caller "the agent is done, here is
+        # your answer", assembled from whatever was gathered. On a
+        # timeout that is NOTHING: the user asks a question, the model
+        # is unreachable, and they receive a confident-looking answer
+        # built from zero data with no indication anything went wrong.
+        #
+        # Observed in a real run: an 8-minute read timeout against a
+        # local model produced `gathered: []` and a finish, which read
+        # as "the model chose to do nothing" rather than "the model
+        # never answered".
+        #
+        # Raised instead. A request that cannot be served should fail
+        # visibly; the caller decides what the user sees.
+        raise
+    except (json.JSONDecodeError, KeyError) as e:
+        # The model DID answer, with something unparseable. Finishing
+        # is right here: there is real gathered context, and the best
+        # available answer is better than an error.
+        logger.warning(f"unparseable model response, finishing: {e}")
         return _finish_step()
 
     step = parsed.get("step")

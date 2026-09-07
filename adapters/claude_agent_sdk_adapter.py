@@ -51,6 +51,8 @@ import os
 import shutil
 import subprocess
 
+from core.llm.interface import LLMUnavailable
+
 logger = logging.getLogger(__name__)
 
 DISALLOWED_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
@@ -158,7 +160,7 @@ class ClaudeAgentSDKAdapter:
                 check=False,
             )
         except subprocess.TimeoutExpired as e:
-            raise RuntimeError(
+            raise LLMUnavailable(
                 f"The {self.executable!r} command did not respond within "
                 f"{self.timeout_seconds}s."
             ) from e
@@ -167,7 +169,7 @@ class ClaudeAgentSDKAdapter:
             # stderr carries the CLI's own message, which names the real
             # cause -- not signed in, credit exhausted, unknown model --
             # far better than anything this adapter could infer.
-            raise RuntimeError(
+            raise LLMUnavailable(
                 f"The {self.executable!r} command failed (exit {completed.returncode}): "
                 f"{completed.stderr.strip() or 'no error output'}"
             )

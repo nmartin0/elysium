@@ -30,6 +30,7 @@ import stat
 import pytest
 
 from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+from core.llm.interface import LLMUnavailable
 
 
 @pytest.fixture
@@ -196,7 +197,10 @@ def test_a_failing_cli_surfaces_its_own_error(tmp_path, monkeypatch):
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
 
-    with pytest.raises(RuntimeError, match="Credit balance exhausted"):
+    # LLMUnavailable, not a bare RuntimeError: the agent loop
+    # distinguishes "the backend was never reached" from "the model
+    # answered badly", and only the second is recoverable.
+    with pytest.raises(LLMUnavailable, match="Credit balance exhausted"):
         ClaudeAgentSDKAdapter("claude-sonnet-4-6", {}).chat("sys", "hi")
 
 
@@ -208,7 +212,7 @@ def test_a_hanging_cli_times_out(tmp_path, monkeypatch):
 
     adapter = ClaudeAgentSDKAdapter("claude-sonnet-4-6", {"request_timeout_seconds": 1})
 
-    with pytest.raises(RuntimeError, match="did not respond within"):
+    with pytest.raises(LLMUnavailable, match="did not respond within"):
         adapter.chat("sys", "hi")
 
 
