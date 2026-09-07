@@ -38,7 +38,7 @@ describe('ActionTypes', () => {
     // the amount to move. The ontology can now say, and this shows it.
     getVisibleActionTypesCached.mockResolvedValue({ TransferFunds: TRANSFER })
 
-    render(<ActionTypes onSessionExpired={() => {}} />)
+    render(<ActionTypes onSessionExpired={() => {}} filter="" onOpenObjectType={() => {}} />)
 
     expect(await screen.findByText('TransferFunds')).toBeInTheDocument()
     expect(screen.getByText('New source balance')).toBeInTheDocument()
@@ -49,7 +49,7 @@ describe('ActionTypes', () => {
   it('shows the API name only when it differs from the label', async () => {
     getVisibleActionTypesCached.mockResolvedValue({ TransferFunds: TRANSFER })
 
-    render(<ActionTypes onSessionExpired={() => {}} />)
+    render(<ActionTypes onSessionExpired={() => {}} filter="" onOpenObjectType={() => {}} />)
 
     await screen.findByText('TransferFunds')
     // Labelled parameter: both shown, since they differ.
@@ -61,9 +61,12 @@ describe('ActionTypes', () => {
   it('names which object types an action affects', async () => {
     getVisibleActionTypesCached.mockResolvedValue({ TransferFunds: TRANSFER })
 
-    render(<ActionTypes onSessionExpired={() => {}} />)
+    render(<ActionTypes onSessionExpired={() => {}} filter="" onOpenObjectType={() => {}} />)
 
-    expect(await screen.findByText(/affects Account/)).toBeInTheDocument()
+    // "affects" and the type are separate elements now: the type is a
+    // button that opens it.
+    expect(await screen.findByText(/affects/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument()
   })
 
   it('says so plainly when the caller can execute nothing', async () => {
@@ -71,7 +74,7 @@ describe('ActionTypes', () => {
     // ABSENT, not disabled. Same uniform denial as everywhere else.
     getVisibleActionTypesCached.mockResolvedValue({})
 
-    render(<ActionTypes onSessionExpired={() => {}} />)
+    render(<ActionTypes onSessionExpired={() => {}} filter="" onOpenObjectType={() => {}} />)
 
     expect(await screen.findByText(/cannot execute any action/)).toBeInTheDocument()
   })
@@ -79,7 +82,7 @@ describe('ActionTypes', () => {
   it('surfaces the API error rather than replacing it', async () => {
     getVisibleActionTypesCached.mockRejectedValue(new Error('action types unavailable'))
 
-    render(<ActionTypes onSessionExpired={() => {}} />)
+    render(<ActionTypes onSessionExpired={() => {}} filter="" onOpenObjectType={() => {}} />)
 
     expect(await screen.findByText(/action types unavailable/)).toBeInTheDocument()
   })
@@ -89,10 +92,10 @@ describe('ActionTypes', () => {
     // onSessionExpired, which the shell recreates each render.
     getVisibleActionTypesCached.mockResolvedValue({ TransferFunds: TRANSFER })
 
-    const { rerender } = render(<ActionTypes onSessionExpired={() => {}} />)
+    const { rerender } = render(<ActionTypes onSessionExpired={() => {}} filter="" onOpenObjectType={() => {}} />)
     await screen.findByText('TransferFunds')
-    rerender(<ActionTypes onSessionExpired={() => {}} />)
-    rerender(<ActionTypes onSessionExpired={() => {}} />)
+    rerender(<ActionTypes onSessionExpired={() => {}} filter="" onOpenObjectType={() => {}} />)
+    rerender(<ActionTypes onSessionExpired={() => {}} filter="" onOpenObjectType={() => {}} />)
 
     expect(getVisibleActionTypesCached).toHaveBeenCalledTimes(1)
   })

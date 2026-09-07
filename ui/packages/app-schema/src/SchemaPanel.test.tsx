@@ -70,7 +70,10 @@ describe('SchemaPanel', () => {
     openObjectTypes()
 
     expect(screen.getByText('Transactions')).toBeInTheDocument()
-    expect(screen.getByText(/many Transaction/)).toBeInTheDocument()
+    // Target and cardinality are now separate elements, because the
+    // target is a button that navigates to that object type.
+    expect(screen.getByText('many')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Transaction' })).toBeInTheDocument()
   })
 
   it('marks a deprecated object type', () => {
@@ -143,5 +146,52 @@ describe('SchemaPanel', () => {
     openObjectTypes()
 
     expect(screen.getByText('Customer')).toBeInTheDocument()
+  })
+})
+
+describe('SchemaPanel -- navigating between tabs', () => {
+  it('clears the filter when the tab is clicked directly', () => {
+    // Arriving from Discover sets the filter on purpose; clicking the
+    // tab afterwards should start fresh rather than show whatever was
+    // last looked at.
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+
+    fireEvent.click(screen.getAllByText('Customer')[0] as HTMLElement)
+    openObjectTypes()
+
+    expect(screen.getByPlaceholderText(/Filter object types/)).toHaveValue('')
+  })
+
+  it('offers a clear button only when there is something to clear', () => {
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    expect(screen.queryByLabelText('Clear filter')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText(/Filter object types/), {
+      target: { value: 'Cust' },
+    })
+
+    expect(screen.getByLabelText('Clear filter')).toBeInTheDocument()
+  })
+
+  it('clears the field when the clear button is pressed', () => {
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+    const box = screen.getByPlaceholderText(/Filter object types/)
+    fireEvent.change(box, { target: { value: 'Cust' } })
+
+    fireEvent.click(screen.getByLabelText('Clear filter'))
+
+    expect(box).toHaveValue('')
+  })
+
+  it('opens the link types tab when a link tag is clicked', () => {
+    render(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    fireEvent.click(screen.getByText('link'))
+
+    expect(screen.getByPlaceholderText(/Filter link types/)).toHaveValue('CustomerTransactions')
   })
 })

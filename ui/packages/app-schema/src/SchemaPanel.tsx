@@ -15,10 +15,11 @@
  */
 
 import { useMemo, useState } from 'react'
-import { Callout, HTMLTable, Icon, InputGroup, Spinner, Tab, Tabs, Tag } from '@blueprintjs/core'
+import { Button, Callout, HTMLTable, Icon, Spinner, Tab, Tabs, Tag } from '@blueprintjs/core'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
 import ActionTypes from './ActionTypes'
+import FilterBox from './FilterBox'
 import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
@@ -50,7 +51,13 @@ function statusIntent(status: string | undefined) {
   return 'none' as const
 }
 
-function FieldTable({ fields }: { fields: [string, SchemaField][] }) {
+function FieldTable({
+  fields, onOpenObjectType, onOpenLinkType,
+}: {
+  fields: [string, SchemaField][]
+  onOpenObjectType: (objectType: string) => void
+  onOpenLinkType: (linkType: string) => void
+}) {
   if (fields.length === 0) return null
   return (
     <HTMLTable compact striped className="schema-panel__fields">
@@ -76,10 +83,26 @@ function FieldTable({ fields }: { fields: [string, SchemaField][] }) {
             <td>
               {field.type === 'link' ? (
                 <>
-                  <Tag minimal>link</Tag>{' '}
-                  <span>
-                    {field.cardinality === 'many' ? 'many' : 'one'} {field.target}
-                  </span>
+                  {/* Both halves navigate: the TARGET goes to that
+                      object type, the link type goes to the
+                      relationship. Reading a schema is mostly
+                      following references, and typing each name into a
+                      filter by hand is the tedious version of that. */}
+                  {field.link_type ? (
+                    <Button minimal small onClick={() => onOpenLinkType(field.link_type as string)}>
+                      <Tag minimal>link</Tag>
+                    </Button>
+                  ) : (
+                    <Tag minimal>link</Tag>
+                  )}{' '}
+                  <span>{field.cardinality === 'many' ? 'many' : 'one'}</span>{' '}
+                  {field.target ? (
+                    <Button minimal small onClick={() => onOpenObjectType(field.target as string)}>
+                      {field.target}
+                    </Button>
+                  ) : (
+                    <span>?</span>
+                  )}
                 </>
               ) : (
                 <Tag minimal>{field.type}</Tag>
@@ -101,7 +124,14 @@ function FieldTable({ fields }: { fields: [string, SchemaField][] }) {
   )
 }
 
-function ObjectTypeCard({ apiName, type }: { apiName: string; type: SchemaObjectType }) {
+function ObjectTypeCard({
+  apiName, type, onOpenObjectType, onOpenLinkType,
+}: {
+  apiName: string
+  type: SchemaObjectType
+  onOpenObjectType: (objectType: string) => void
+  onOpenLinkType: (linkType: string) => void
+}) {
   const entries = Object.entries(type.fields ?? {})
   const prominent = entries.filter(([, f]) => f.visibility === PROMINENT)
   const normal = entries.filter(([, f]) => (f.visibility ?? 'normal') !== PROMINENT
@@ -134,11 +164,19 @@ function ObjectTypeCard({ apiName, type }: { apiName: string; type: SchemaObject
       {prominent.length > 0 && (
         <>
           <h4>Prominent</h4>
-          <FieldTable fields={prominent} />
+          <FieldTable
+            fields={prominent}
+            onOpenObjectType={onOpenObjectType}
+            onOpenLinkType={onOpenLinkType}
+          />
         </>
       )}
       <h4>Properties</h4>
-      <FieldTable fields={normal} />
+      <FieldTable
+        fields={normal}
+        onOpenObjectType={onOpenObjectType}
+        onOpenLinkType={onOpenLinkType}
+      />
       {entries.length === 0 && (
         <Callout intent="none">
           No fields are visible to you on this object type.
@@ -172,7 +210,22 @@ interface SchemaPanelProps extends SubAppProps {
  */
 export default function SchemaPanel({ visibleSchema, username, onSessionExpired }: SchemaPanelProps) {
   const [filter, setFilter] = useState('')
+  const [linkFilter, setLinkFilter] = useState('')
+  const [actionFilter, setActionFilter] = useState('')
   const [selectedTab, setSelectedTab] = useState<string>('discover')
+  // Every cross-reference goes through here: Discover, a link's other
+  // end, an action's affected types. One path means one behaviour.
+  function openObjectType(objectType: string) {
+    recordVisit(username, objectType)
+    setFilter(objectType)
+    setSelectedTab('object-types')
+  }
+
+  function openLinkType(linkType: string) {
+    setLinkFilter(linkType)
+    setSelectedTab('link-types')
+  }
+
   // Storage is not reactive, so a toggle has to say it happened.
   const [favouriteVersion, setFavouriteVersion] = useState(0)
   const schema = visibleSchema
@@ -208,7 +261,20 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       <Tabs
         id="schema-tabs"
         selectedTabId={selectedTab}
-        onChange={(tabId) => setSelectedTab(String(tabId))}
+        onChange={(tabId) => {
+          // Clicking a tab directly clears its filter. Arriving here
+          // from Discover or a cross-reference does NOT, because that
+          // navigation sets the filter on purpose.
+          //
+          // Blueprint's onChange takes a MouseEvent, so it fires only
+          // on a real click -- a programmatic selectedTabId change
+          // never reaches this.
+          const next = String(tabId)
+          if (next === 'object-types') setFilter('')
+          if (next === 'link-types') setLinkFilter('')
+          if (next === 'action-types') setActionFilter('')
+          setSelectedTab(next)
+        }}
         renderActiveTabPanelOnly
       >
         <Tab
@@ -220,11 +286,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               username={username}
               version={favouriteVersion}
               onFavouriteChange={() => setFavouriteVersion((n) => n + 1)}
-              onOpen={(objectType) => {
-                recordVisit(username, objectType)
-                setFilter(objectType)
-                setSelectedTab('object-types')
-              }}
+              onOpen={openObjectType}
             />
           }
         />
@@ -233,11 +295,10 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           title="Object types"
           panel={
             <>
-              <InputGroup
-                leftIcon="search"
-                placeholder="Filter object types..."
+              <FilterBox
                 value={filter}
-                onChange={(e) => setFilter(e.currentTarget.value)}
+                onChange={setFilter}
+                placeholder="Filter object types..."
               />
               {Object.keys(schema).length === 0 ? (
                 <Callout intent="none">
@@ -247,17 +308,53 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 <Callout intent="none">No object type matches {filter}.</Callout>
               ) : (
                 matches.map(([apiName, type]) => (
-                  <ObjectTypeCard key={apiName} apiName={apiName} type={type} />
+                  <ObjectTypeCard
+                    key={apiName}
+                    apiName={apiName}
+                    type={type}
+                    onOpenObjectType={openObjectType}
+                    onOpenLinkType={openLinkType}
+                  />
                 ))
               )}
             </>
           }
         />
-        <Tab id="link-types" title="Link types" panel={<LinkTypes schema={schema} />} />
+        <Tab
+          id="link-types"
+          title="Link types"
+          panel={
+            <>
+              <FilterBox
+                value={linkFilter}
+                onChange={setLinkFilter}
+                placeholder="Filter link types..."
+              />
+              <LinkTypes
+                schema={schema}
+                filter={linkFilter}
+                onOpenObjectType={openObjectType}
+              />
+            </>
+          }
+        />
         <Tab
           id="action-types"
           title="Action types"
-          panel={<ActionTypes onSessionExpired={onSessionExpired} />}
+          panel={
+            <>
+              <FilterBox
+                value={actionFilter}
+                onChange={setActionFilter}
+                placeholder="Filter action types..."
+              />
+              <ActionTypes
+                onSessionExpired={onSessionExpired}
+                filter={actionFilter}
+                onOpenObjectType={openObjectType}
+              />
+            </>
+          }
         />
       </Tabs>
     </div>

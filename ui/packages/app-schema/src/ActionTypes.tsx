@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
+import { Button, Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
 import { getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 
 interface ActionParameter {
@@ -35,7 +35,17 @@ interface ActionType {
   parameters?: Record<string, ActionParameter>
 }
 
-export default function ActionTypes({ onSessionExpired }: { onSessionExpired: () => void }) {
+interface ActionTypesProps {
+  onSessionExpired: () => void
+  filter: string
+  /** Opens an object type -- the ones an action affects are usually
+   *  the next thing you want to see. */
+  onOpenObjectType: (objectType: string) => void
+}
+
+export default function ActionTypes({
+  onSessionExpired, filter, onOpenObjectType,
+}: ActionTypesProps) {
   const [actionTypes, setActionTypes] = useState<Record<string, ActionType> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,16 +73,32 @@ export default function ActionTypes({ onSessionExpired }: { onSessionExpired: ()
     return <p>You cannot execute any action in this ontology.</p>
   }
 
+  const needle = filter.trim().toLowerCase()
+  const matches = Object.entries(actionTypes)
+    .filter(([name, action]) =>
+      needle === ''
+      || name.toLowerCase().includes(needle)
+      || (action.affected_object_types ?? []).some((type) => type.toLowerCase().includes(needle))
+      || Object.keys(action.parameters ?? {}).some((param) => param.toLowerCase().includes(needle)))
+    .sort(([a], [b]) => a.localeCompare(b))
+
+  if (matches.length === 0) {
+    return <p>No action type matches {filter}.</p>
+  }
+
   return (
     <>
-      {Object.entries(actionTypes)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, action]) => (
+      {matches.map(([name, action]) => (
           <section key={name} className="schema-panel__type">
             <h3>{name}</h3>
             {(action.affected_object_types ?? []).length > 0 && (
               <div className="schema-panel__api-name">
-                affects {(action.affected_object_types ?? []).join(', ')}
+                affects{' '}
+                {(action.affected_object_types ?? []).map((type) => (
+                  <Button key={type} minimal small onClick={() => onOpenObjectType(type)}>
+                    {type}
+                  </Button>
+                ))}
               </div>
             )}
             <HTMLTable compact striped className="schema-panel__fields">
@@ -110,7 +136,7 @@ export default function ActionTypes({ onSessionExpired }: { onSessionExpired: ()
               </tbody>
             </HTMLTable>
           </section>
-        ))}
+      ))}
     </>
   )
 }

@@ -16,7 +16,7 @@
  * relationship with one known end rather than hidden entirely.
  */
 
-import { HTMLTable, Tag } from '@blueprintjs/core'
+import { Button, HTMLTable, Tag } from '@blueprintjs/core'
 import type { VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
 
 export interface LinkSide {
@@ -44,10 +44,31 @@ export function groupLinkTypes(schema: VisibleSchema): Map<string, LinkSide[]> {
   return grouped
 }
 
-export default function LinkTypes({ schema }: { schema: VisibleSchema }) {
+interface LinkTypesProps {
+  schema: VisibleSchema
+  filter: string
+  /** Opens an object type -- one end of a relationship is a thing you
+   *  usually want to look at next. */
+  onOpenObjectType: (objectType: string) => void
+}
+
+export default function LinkTypes({ schema, filter, onOpenObjectType }: LinkTypesProps) {
   const grouped = groupLinkTypes(schema)
   if (grouped.size === 0) {
     return <p>No link types are visible to you.</p>
+  }
+
+  const needle = filter.trim().toLowerCase()
+  const matches = [...grouped.entries()]
+    .filter(([linkType, sides]) =>
+      needle === ''
+      || linkType.toLowerCase().includes(needle)
+      || sides.some((side) => side.objectType.toLowerCase().includes(needle)
+        || side.target.toLowerCase().includes(needle)))
+    .sort(([a], [b]) => a.localeCompare(b))
+
+  if (matches.length === 0) {
+    return <p>No link type matches {filter}.</p>
   }
 
   return (
@@ -60,9 +81,7 @@ export default function LinkTypes({ schema }: { schema: VisibleSchema }) {
         </tr>
       </thead>
       <tbody>
-        {[...grouped.entries()]
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([linkType, sides]) => (
+        {matches.map(([linkType, sides]) => (
             <tr key={linkType}>
               <td>
                 <strong>{linkType}</strong>
@@ -72,7 +91,9 @@ export default function LinkTypes({ schema }: { schema: VisibleSchema }) {
               </td>
               {sides.slice(0, 2).map((side) => (
                 <td key={`${side.objectType}.${side.apiName}`}>
-                  {side.objectType}
+                  <Button minimal small onClick={() => onOpenObjectType(side.objectType)}>
+                    {side.objectType}
+                  </Button>
                   <div className="schema-panel__api-name">
                     {side.apiName} &rarr; <Tag minimal>{side.cardinality}</Tag> {side.target}
                   </div>
@@ -80,7 +101,7 @@ export default function LinkTypes({ schema }: { schema: VisibleSchema }) {
               ))}
               {sides.length === 1 && <td />}
             </tr>
-          ))}
+        ))}
       </tbody>
     </HTMLTable>
   )
