@@ -136,32 +136,41 @@ after.
 
 ### Deferred, not blocking the near-term list -- noted so they aren't lost
 
-- **Large search-arounds are bounded by AUTHORIZATION, not by the
-  query engine -- so Foundry's own escape hatch would not help.** Their
-  OSv2 "supports on-demand Spark cluster searches when running
-  search-arounds on over 100,000 objects", and this was recorded as a
-  ceiling Elysium lacks. Profiling a 200,000-object search-around shows
-  the framing was wrong: the traversal is 0.37s (one query), the
-  security prefetch 0.65s, and per-target check_access 4.54s -- 82% of
-  the cost, in a layer Spark would not touch. The same conclusion the
-  DuckDB question reached, in a different guise.
+- **Large reads are bounded by AUDIT VOLUME, not by authorization or
+  the engine.** This entry has now been wrong twice, each time because
+  a fix moved the bottleneck somewhere the previous profile could not
+  see.
 
-  Within check_access, audit logging dominated, and the free half of
-  that is now fixed. What remains is the per-object authorization cost
-  itself, which is inherent to applying MAC in Python and is the real
-  ceiling. Batching check_access the way security-value resolution was
-  batched is the genuine next step, and it changes the security path,
-  so it deserves its own design rather than being folded into a
-  performance fix.
+  It began as "Elysium lacks the Spark fallback Foundry uses for
+  search-arounds over 100,000 objects". Profiling showed the engine
+  was never the problem: 82% was per-object `check_access`. Batching
+  security resolution then fixed that, and the entry was rewritten to
+  say the remaining ceiling was per-object authorization.
 
-- **The audit log opens and closes the file per record.** Measured at
-  13.3 us; a persistent handle with an explicit flush measured 4.5 us,
-  a 3x saving on every audited operation. NOT taken: the systemd unit
-  logs to /var/log/elysium, exactly where logrotate operates, and a
-  held handle would keep writing to a rotated-away inode. Silently
-  losing audit records is not a trade worth making for speed.
-  Revisit only alongside a real rotation story -- reopening on SIGHUP,
-  or writing through a logging handler that already handles it.
+  Re-profiled after that fix, a 200,000-object search-around now
+  spends its time here:
+
+      _io.open      1.21s   (200,006 calls -- audit logging)
+      file close    0.71s
+      SQL query     0.66s
+      json encode   0.56s
+
+  Authorization no longer appears at all. Roughly 2.5s of it is
+  writing 200,006 audit records, one file open apiece, against 0.66s
+  of actual query.
+
+  THE QUESTION IS NO LONGER PERFORMANCE. One user ran one
+  search-around; the log now holds 200,006 near-identical records of
+  it. Whether that is the right granularity is an audit DESIGN
+  question -- Foundry logs actions, not every row a query touched --
+  and answering it wrongly in either direction is worse than the
+  current cost: too coarse and a real access becomes invisible, too
+  fine and the log is unreadable exactly when someone needs to read
+  it.
+
+  The persistent-handle optimisation stays rejected for the reason
+  already recorded: it breaks log rotation. That was measured at 3x
+  and would not change the granularity question at all.
 
 - **No container.** Dependencies are locked with hashes and the lint
   fails on drift, so builds are reproducible from a checkout. What is
