@@ -76,6 +76,72 @@ def _render(step: dict, index: int) -> str:
     return f"{line}\n      -> {preview}"
 
 
+def _tools_used(result) -> tuple[str, ...]:
+    """The kinds of step the agent chose, in order.
+
+    The comparable part of a run. Two runs that reach the same answer
+    by different routes are a different thing from two that disagree,
+    and the route is what a tool check is about.
+    """
+    return tuple(
+        step["step"] for step in result.gathered
+        if step.get("step") not in _LOOP_NOTES
+    )
+
+
+def _repeat(loop, user_record, query: str, times: int) -> int:
+    """Runs the same query several times and reports what varied.
+
+    Foundry's own guidance for evaluating LLM-backed functions is to
+    run each case "at least three times", because a single run of a
+    non-deterministic system tells you almost nothing -- and, more
+    usefully, that "a high variance in numeric evaluators can indicate
+    that the test case and evaluator are not meaningful and require
+    further refinement".
+
+    That second point is why this reports variance rather than a
+    verdict. Runs that disagree do not mean the agent is broken; they
+    often mean the QUESTION is ambiguous, and a test built on it would
+    be flaky for a reason no amount of retrying fixes.
+    """
+    routes: dict[tuple[str, ...], int] = {}
+    durations = []
+    failures = 0
+
+    for attempt in range(1, times + 1):
+        started = time.time()
+        try:
+            result = loop.run(user_record, query)
+        except LLMUnavailable as e:
+            print(f"  run {attempt}: model unreachable -- {e}", file=sys.stderr)
+            failures += 1
+            continue
+        durations.append(time.time() - started)
+        route = _tools_used(result)
+        routes[route] = routes.get(route, 0) + 1
+        print(f"  run {attempt}: {len(result.gathered)} step(s), "
+              f"{durations[-1]:.1f}s, route: {' -> '.join(route) or '(none)'}")
+
+    print()
+    if failures:
+        print(f"unreachable    : {failures}/{times}")
+    if not routes:
+        return 1
+
+    print(f"distinct routes: {len(routes)} across {sum(routes.values())} run(s)")
+    for route, count in sorted(routes.items(), key=lambda item: -item[1]):
+        print(f"  {count:>2}x  {' -> '.join(route) or '(none)'}")
+    print(f"elapsed        : min {min(durations):.1f}s, max {max(durations):.1f}s")
+
+    if len(routes) > 1:
+        print()
+        print("The agent took different routes to the same question. That is not")
+        print("necessarily a fault -- it often means the question admits more than")
+        print("one reasonable answer, and a test asserting one exact route would")
+        print("be flaky for a reason retrying cannot fix.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[2].strip())
     parser.add_argument("query", help="the question to ask, as one argument")
@@ -85,6 +151,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--synthesize", action="store_true",
         help="also run the synthesis step and print the final answer",
+    )
+    parser.add_argument(
+        "--repeat", type=int, default=1, metavar="N",
+        help="run the query N times and report what varied between runs",
     )
     args = parser.parse_args(argv)
 
@@ -113,6 +183,9 @@ def main(argv: list[str] | None = None) -> int:
           f"role={user_record.role_name})")
     print(f"model : {deployment.llm_provider} / step={deployment.step_model}")
     print()
+
+    if args.repeat > 1:
+        return _repeat(loop, user_record, args.query, args.repeat)
 
     started = time.time()
     try:

@@ -107,3 +107,67 @@ def test_arguments_survive_a_json_unfriendly_value():
 
     assert "2024-01-01" in line
     assert json.dumps  # the renderer uses default=str rather than failing
+
+
+# --- Repeat mode ---------------------------------------------------------
+#
+# Foundry's guidance for evaluating LLM-backed functions is to run each
+# case "at least three times", and that "a high variance in numeric
+# evaluators can indicate that the test case and evaluator are not
+# meaningful and require further refinement".
+#
+# The second half is the reason this reports variance rather than a
+# verdict: runs that disagree often mean the QUESTION is ambiguous, and
+# a test built on it is flaky for a reason retrying cannot fix.
+
+
+class _Result:
+    def __init__(self, gathered):
+        self.gathered = gathered
+        self.pending_write = None
+        self.cancelled = False
+        self.hit_max_hops = False
+
+
+def test_the_route_is_the_kinds_of_step_in_order():
+    from scripts.agent_trace import _tools_used
+
+    route = _tools_used(_Result([
+        {"step": "search_object", "object_type": "Customer"},
+        {"step": "get_field", "object_type": "Customer"},
+    ]))
+
+    assert route == ("search_object", "get_field")
+
+
+def test_loop_notes_are_not_part_of_the_route():
+    # A rejected step is the loop talking about itself, not a tool the
+    # agent chose. Counting it would make two runs look like different
+    # routes because one of them stuttered.
+    from scripts.agent_trace import _tools_used
+
+    route = _tools_used(_Result([
+        {"step": "search_object"},
+        {"step": "rejected_duplicate", "note": "asked twice"},
+        {"step": "search_object"},
+    ]))
+
+    assert route == ("search_object", "search_object")
+
+
+def test_identical_runs_collapse_to_one_route():
+    from scripts.agent_trace import _tools_used
+
+    same = [{"step": "search_object"}, {"step": "finish"}]
+    routes = {_tools_used(_Result(list(same))) for _ in range(3)}
+
+    assert len(routes) == 1
+
+
+def test_different_routes_stay_distinct():
+    from scripts.agent_trace import _tools_used
+
+    narrow = _tools_used(_Result([{"step": "search_object"}]))
+    wider = _tools_used(_Result([{"step": "search_object"}, {"step": "get_object"}]))
+
+    assert narrow != wider

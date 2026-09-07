@@ -226,6 +226,18 @@ against the real deployment and whatever model is configured. Add
 `--synthesize` to also see the final written answer. It asserts
 nothing and changes nothing — it is for finding out what happened.
 
+To check whether the agent answers a question *consistently*, run it
+several times:
+
+```
+python -m scripts.agent_trace --user alice --repeat 3 "who is Ada Okafor?"
+```
+
+It reports how many distinct routes the agent took. Different routes
+are not necessarily a fault — they often mean the question admits more
+than one reasonable answer, which is worth knowing before writing a
+test that asserts one exact route.
+
 **Using Claude instead of a local model.** Elysium ships two LLM
 backends. `ollama` talks to a local model over HTTP.
 `claude_agent_sdk` runs the `claude` CLI, which means calls draw on
