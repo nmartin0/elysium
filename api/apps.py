@@ -29,6 +29,12 @@ from core.intermediate_layer.auth import UserRecord, authorize
 VISIBLE_APPS: list[dict[str, str | None]] = [
     {"name": "Query", "path": "/query", "gating_permission": None},
     {"name": "Browse", "path": "/browse", "gating_permission": None},
+    # Schema is read-only and shows only what visible-schema already
+    # returns, which is filtered per caller -- so it needs no grant of
+    # its own beyond being logged in. A user with no read: grants sees
+    # an empty ontology rather than a forbidden page, which is the same
+    # uniform denial every other read path uses.
+    {"name": "Schema", "path": "/schema", "gating_permission": None},
     {"name": "Admin", "path": "/admin", "gating_permission": "manage:users"},
 ]
 

@@ -48,6 +48,7 @@ import '@elysium/shell-api/index.css'
 // this to be unambiguous), so this adds no second network request
 // and creates no eager reference to the module's own real code.
 const QueryPanel = lazy(() => import('@elysium/app-query/QueryPanel'))
+const SchemaPanel = lazy(() => import('@elysium/app-schema/SchemaPanel'))
 const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
@@ -341,6 +342,7 @@ export default function App() {
       <Routes>
         <Route element={<Shell visibleApps={visibleApps} currentUser={currentUser} onLogout={handleLogout} />}>
           <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/schema" element={<SchemaPanel onSessionExpired={handleSessionExpired} />} />
           <Route
             path="/browse"
             element={<ObjectSearchPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}

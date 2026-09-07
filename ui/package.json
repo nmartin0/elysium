@@ -22,6 +22,7 @@
     "@elysium/app-admin": "*",
     "@elysium/app-browse": "*",
     "@elysium/app-query": "*",
+    "@elysium/app-schema": "*",
     "@elysium/shell-api": "*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
