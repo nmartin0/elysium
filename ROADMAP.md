@@ -285,12 +285,25 @@ after.
 
 - **Functions cannot call external systems.** Foundry supports this
   explicitly ("querying external systems to enrich objects in the
-  Ontology through external functions"). Ours cannot, and that is the
-  same zero-ambient-authority property that makes an LLM-invoked
-  function safe here -- a function reaches only what its declared
-  object types allow, under the calling user's own authorization.
-  Adding network access deserves its own decision, not a quiet
-  extension of this one.
+  Ontology through external functions"). Ours cannot, and that is what
+  keeps an LLM-invoked function safe: it reaches only what its
+  declared object types allow, under the calling user's own
+  permissions, and the model cannot widen that by choosing arguments.
+
+  STATED PRECISELY, because "zero ambient authority" overstates it.
+  The capability object holds a mediator privately -- it must, to do
+  anything -- and Python privacy is a convention, so a function COULD
+  reach past it. That is not the threat this defends against. A
+  function is code the deployment ships, so a hostile author already
+  has full execution; the property that matters is that a function
+  using the capability it was given cannot exceed its caller, and that
+  the LLM choosing arguments cannot widen it.
+
+  The surface all of this rests on is now pinned by tests
+  (tests/unit/test_ontology_access.py): the capability exposes exactly
+  five scoped reads, never returns the mediator, and the agent loop
+  passes nothing besides it. Three entries in this list depend on
+  that; if it changes, they become wrong silently.
 
 - **Incremental (APPEND) syncs: CLOSED, with the cost measured and
   the trigger named.** Elysium is SNAPSHOT-only: every sync re-copies

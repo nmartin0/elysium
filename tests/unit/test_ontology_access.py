@@ -244,3 +244,48 @@ def test_a_purely_computational_function_declares_nothing_and_validates():
 
     validate_function_declarations(["linear_regression"], {})
     assert get_enabled_functions(["linear_regression"])[0].reads_object_types == []
+
+
+# --- The capability surface, pinned ---------------------------------------
+#
+# Three roadmap entries rest on one property: a function reaches only
+# what its declared object types allow, under the caller's own
+# permissions. If OntologyAccess grows a method that hands back
+# something wider, or the agent loop starts passing more than the
+# capability, those entries become wrong and nothing else would say
+# so.
+
+
+def test_the_capability_exposes_only_scoped_reads():
+    public = sorted(name for name in dir(OntologyAccess) if not name.startswith("_"))
+
+    assert public == ["aggregate", "count", "get_object", "search", "search_around"]
+
+
+def test_the_capability_does_not_hand_back_the_mediator():
+    # It holds one privately -- it has to, to do anything at all -- but
+    # exposing it would let a function reach every object type, every
+    # adapter, and the write log.
+    mediator = object()
+    access = OntologyAccess(mediator, WEST, ["Customer"])
+
+    exposed = [
+        name for name in dir(access)
+        if not name.startswith("_") and getattr(access, name, None) is mediator
+    ]
+    assert exposed == []
+
+
+def test_the_agent_loop_passes_nothing_but_the_capability():
+    # A function receives its own declared arguments plus `ontology`.
+    # Adding a UserRecord, an adapter or the mediator here would
+    # silently undo the scoping, since a function author would simply
+    # use whatever arrived.
+    import inspect
+
+    from core.agent import agentic_loop
+
+    source = inspect.getsource(agentic_loop)
+
+    assert source.count('call_args["') == 1
+    assert 'call_args["ontology"]' in source
