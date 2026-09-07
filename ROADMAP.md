@@ -294,26 +294,37 @@ after.
   Adding network access deserves its own decision, not a quiet
   extension of this one.
 
-- **Incremental (APPEND) syncs.** Elysium is SNAPSHOT-only: every sync
-  re-copies each table in full. Foundry offers incremental APPEND
-  precisely because, in their words, "if the dataset grows over time,
-  the time to sync the data as a SNAPSHOT increases," and with APPEND
-  "a sync failure will result in a minimal amount of duplicated work
-  rather than requiring a complete re-run." SNAPSHOT is the right
-  default -- it is simple, it propagates deletes correctly, and it
-  cannot drift -- but it is a genuine scaling limit for large tables,
-  recorded here rather than discovered under load. Verified sound
-  otherwise: a failed sync leaves the last-good mirror intact, a crash
-  mid-write leaves the previous snapshot readable, and the bulk read
-  gives a consistent point-in-time view even under concurrent source
-  writes (see tests/unit/test_sync_snapshot_semantics.py).
+- **Incremental (APPEND) syncs: CLOSED, with the cost measured and
+  the trigger named.** Elysium is SNAPSHOT-only: every sync re-copies
+  each table in full. Foundry offers APPEND because "if the dataset
+  grows over time, the time to sync the data as a SNAPSHOT increases",
+  and a failed APPEND sync "will result in a minimal amount of
+  duplicated work rather than requiring a complete re-run".
 
-*The items below were extracted from per-file "AI-ONLY NOTES" blocks
-when those were removed. They are genuine known gaps; the rest of those
-blocks was settled history (23 RESOLVED entries against 1 OPEN) and
-went with them. Deferred work belongs here, in one place that is
-actually maintained, rather than scattered across 23 source files where
-it went stale unnoticed.*
+  The limit is real but distant. Measured directly:
+
+      10,000 rows   0.24 s
+      100,000 rows  0.57 s
+      500,000 rows  2.46 s
+
+  Linear, and cheap. Extrapolating, ten million rows is roughly a
+  minute -- unremarkable for a cron-driven sync. It starts to matter
+  somewhere around a hundred million.
+
+  THE COST IS CORRECTNESS, NOT COMPLEXITY, which is why this is closed
+  rather than queued. SNAPSHOT propagates deletes: a row removed at the
+  source disappears from the mirror, asserted by
+  tests/unit/test_sync_snapshot_semantics.py. APPEND cannot see a
+  deleted row at all. It is correct only for append-only sources, so
+  adopting it means a per-table declaration that a table never deletes
+  -- and if an operator gets that declaration wrong, deletes silently
+  stop propagating and the mirror drifts from the source with nothing
+  detecting it.
+
+  Trading a guarantee that holds today for speed not needed today, with
+  a silent failure mode, is the wrong trade. REOPEN IF a real
+  deployment has a table large enough for sync duration to matter AND
+  can state truthfully that it is append-only.
 
 - **YAML value coercion.** `core/config.py` rejects duplicate keys and
   `validate_identifier_types()` checks identifiers, but a mutation's
