@@ -49,6 +49,21 @@ Then verify it applies to a **fresh clone** of the real remote HEAD and
 passes lint and tests there, before presenting it. A patch that only
 works in your working copy is not done.
 
+**Confirm the previous patch landed before starting the next one.**
+Compare the remote against the commit you handed over:
+
+```bash
+git ls-remote origin dev
+```
+
+A patch can fail to apply on the other side quietly enough to be
+missed, and `git push` with nothing to push says "Everything
+up-to-date" rather than complaining. If you then `git fetch` and
+`git reset --hard origin/dev`, you silently move BACK past your own
+work and start the next task on a tree missing it. That happened here;
+the commit was recoverable from the reflog only because it was
+noticed within a few minutes.
+
 ## Verification that actually verifies
 
 When you write a test for a bug you fixed, **break the fix and confirm
