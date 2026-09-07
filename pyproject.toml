@@ -120,6 +120,7 @@ type = "layers"
 layers = ["api", "adapters", "core"]
 ignore_imports = [
     "core.deployment_loader -> adapters.ollama_adapter",
+    "core.deployment_loader -> adapters.claude_agent_sdk_adapter",
     "core.deployment_loader -> adapters.sqlite_adapter",
 ]
 

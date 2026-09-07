@@ -214,6 +214,40 @@ not fail your scheduler. This matters because the mirror's storage
 format rejects two simultaneous writers to the same table by design,
 so without this guard an overlapping run would fail partway through.
 
+**Using Claude instead of a local model.** Elysium ships two LLM
+backends. `ollama` talks to a local model over HTTP.
+`claude_agent_sdk` runs the `claude` CLI, which means calls draw on
+your Claude subscription's monthly Agent SDK credit rather than on
+separately billed API credits — Anthropic's own documentation for that
+credit says it covers "the claude -p command, and third-party apps
+built on the Agent SDK", and excludes API-key accounts from it.
+
+To use it:
+
+1. `npm install -g @anthropic-ai/claude-code`
+2. `claude login`, and claim the Agent SDK credit on your plan
+3. In `config.yaml`:
+
+```yaml
+llm:
+  provider: claude_agent_sdk
+  model: claude-sonnet-4-6
+  connection:
+    request_timeout_seconds: 300
+```
+
+Two things to know. **Unset `ANTHROPIC_API_KEY` if you have one** —
+Elysium strips it from the subprocess, but if the CLI picks it up from
+elsewhere your calls bill API credits rather than your subscription,
+silently. And **responses will vary more between identical requests**
+than a local model's: the CLI exposes no temperature control, so
+Elysium cannot ask for deterministic output. The agent recovers from a
+malformed step, so this costs quality rather than correctness.
+
+Expect it to be slower per call than an API would be — each request
+spawns a process — but faster overall than a local model on modest
+hardware.
+
 **Installing dependencies.** For a real deployment, install from the
 lock file rather than from `requirements.txt`:
 

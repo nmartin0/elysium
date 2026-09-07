@@ -6,6 +6,10 @@
 # header for why.
 
 llm:
+  # Two backends ship: "ollama" (a local model over HTTP) and
+  # "claude_agent_sdk" (runs the local claude CLI, so calls draw on
+  # your Claude subscription's Agent SDK credit rather than separately
+  # billed API credits -- see INSTALL.md for setup).
   provider: ollama                 # key into core/deployment_loader.py's LLM
                                     # adapter registry -- see that file's
                                     # _LLM_ADAPTER_REGISTRY for what's built in

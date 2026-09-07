@@ -32,6 +32,7 @@ from typing import cast
 
 from pyiceberg.catalog.sql import SqlCatalog
 
+from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
@@ -67,6 +68,10 @@ _WRITE_ADAPTER_REGISTRY: dict[str, type] = {
 
 _LLM_ADAPTER_REGISTRY: dict[str, type] = {
     "ollama": OllamaAdapter,
+    # Runs the local `claude` CLI, so calls draw on the operator's
+    # Claude subscription Agent SDK credit rather than separately
+    # billed API credits. See the adapter's own module docstring.
+    "claude_agent_sdk": ClaudeAgentSDKAdapter,
 }
 
 
