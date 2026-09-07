@@ -15,9 +15,11 @@
  */
 
 import { useMemo, useState } from 'react'
-import { Callout, HTMLTable, Icon, InputGroup, Spinner, Tag } from '@blueprintjs/core'
+import { Callout, HTMLTable, Icon, InputGroup, Spinner, Tab, Tabs, Tag } from '@blueprintjs/core'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/app-browse/ObjectDetailPanel'
+import ActionTypes from './ActionTypes'
+import LinkTypes from './LinkTypes'
 import './SchemaPanel.css'
 
 // The shared shape, widened where this panel needed more of it. Not
@@ -162,7 +164,7 @@ interface SchemaPanelProps extends SubAppProps {
  * Worth recording because the first fix was aimed at the symptom the
  * log showed, and the log was pointing at something larger.
  */
-export default function SchemaPanel({ visibleSchema }: SchemaPanelProps) {
+export default function SchemaPanel({ visibleSchema, onSessionExpired }: SchemaPanelProps) {
   const [filter, setFilter] = useState('')
   const schema = visibleSchema
 
@@ -185,23 +187,48 @@ export default function SchemaPanel({ visibleSchema }: SchemaPanelProps) {
 
   return (
     <div className="schema-panel">
-      <InputGroup
-        leftIcon="search"
-        placeholder="Filter object types..."
-        value={filter}
-        onChange={(e) => setFilter(e.currentTarget.value)}
-      />
-      {Object.keys(schema).length === 0 ? (
-        <Callout intent="none">
-          You do not have read access to any object type in this ontology.
-        </Callout>
-      ) : matches.length === 0 ? (
-        <Callout intent="none">No object type matches {filter}.</Callout>
-      ) : (
-        matches.map(([apiName, type]) => (
-          <ObjectTypeCard key={apiName} apiName={apiName} type={type} />
-        ))
-      )}
+      {/* Three resource kinds, matching how the reference
+          implementation splits its own ontology browser: object types,
+          link types and action types are separately navigable rather
+          than one long page. */}
+      {/* renderActiveTabPanelOnly, and not only to keep the DOM small:
+          without it ActionTypes mounts on page load and fetches
+          /me/visible-action-types whether or not anyone opens that
+          tab. A hidden panel doing network work is the same class of
+          waste this panel was just fixed for. */}
+      <Tabs id="schema-tabs" defaultSelectedTabId="object-types" renderActiveTabPanelOnly>
+        <Tab
+          id="object-types"
+          title="Object types"
+          panel={
+            <>
+              <InputGroup
+                leftIcon="search"
+                placeholder="Filter object types..."
+                value={filter}
+                onChange={(e) => setFilter(e.currentTarget.value)}
+              />
+              {Object.keys(schema).length === 0 ? (
+                <Callout intent="none">
+                  You do not have read access to any object type in this ontology.
+                </Callout>
+              ) : matches.length === 0 ? (
+                <Callout intent="none">No object type matches {filter}.</Callout>
+              ) : (
+                matches.map(([apiName, type]) => (
+                  <ObjectTypeCard key={apiName} apiName={apiName} type={type} />
+                ))
+              )}
+            </>
+          }
+        />
+        <Tab id="link-types" title="Link types" panel={<LinkTypes schema={schema} />} />
+        <Tab
+          id="action-types"
+          title="Action types"
+          panel={<ActionTypes onSessionExpired={onSessionExpired} />}
+        />
+      </Tabs>
     </div>
   )
 }

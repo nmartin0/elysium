@@ -185,6 +185,30 @@ that and is the reference for the shape.
 
 ---
 
+## Known inefficiencies in the shell
+
+**The session probe fetches the whole ontology to ask a yes/no
+question.** On mount, `App.tsx` calls `/me/visible-schema` purely to
+see whether it gets a 401, DISCARDS the response, and a separate hook
+then fetches the same endpoint again for real. That is the entire
+ontology -- every object type, every field, with per-field RBAC
+applied -- to answer "am I logged in?", which `GET /me` answers
+directly.
+
+Found in a real server log while testing the schema browser: three
+requests for one page load. Two are the probe and the real fetch; the
+third is React StrictMode double-invoking effects in development, so
+production sees two rather than three.
+
+NOT changed on the spot, deliberately. The comment above that effect
+is unusually careful -- it explains why this one has a different shape
+from the others -- which suggests someone hit a real bug arriving at
+it. Swapping the endpoint without reading that reasoning properly is
+how the bug comes back.
+
+The fix is likely one line. The reading is not, and this belongs in
+shell work rather than tacked onto a sub-app.
+
 ## Not in scope, recorded so they are not rediscovered
 
 A full Ontology Manager (self-service schema editing), point-and-click
