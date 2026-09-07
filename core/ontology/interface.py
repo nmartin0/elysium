@@ -113,6 +113,19 @@ class ExternalReadAdapter(ReadAdapter):
         """
 
     @abstractmethod
+    def health_check(self) -> None:
+        """Raises if this storage cannot be reached.
+
+        Deliberately returns nothing. A health check that reported row
+        counts or table names would leak the shape of a customer's data
+        to /health, which is unauthenticated by design -- the thing
+        that most needs it is a load balancer, not a logged-in user.
+
+        Should be CHEAP. It runs on every probe, which for an
+        orchestrator is every few seconds.
+        """
+
+    @abstractmethod
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
         """Every row of one table, as a list of dicts keyed by column.
 

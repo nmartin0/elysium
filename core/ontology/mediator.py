@@ -605,6 +605,8 @@ class DataMediator:
                 field_name: {
                     **field_info,
                     "display_name": get_display_name(field_info, field_name),
+                    "visibility": field_info.get("visibility", "normal"),
+                    "status": field_info.get("status", "active"),
                 }
                 for field_name, field_info in type_def["fields"].items()
                 if authorize(user_record, self.roles, f"read:{object_type}.{field_name}")
@@ -667,6 +669,12 @@ class DataMediator:
                 "display_name": get_display_name(type_def, object_type),
                 "plural_display_name": get_plural_display_name(type_def, object_type),
                 "description": type_def.get("description"),
+                # UI rendering hints. Cosmetic, never security: see
+                # _validate_ui_metadata() for why `hidden` fields are
+                # still returned here.
+                "icon": type_def.get("icon"),
+                "color": type_def.get("color"),
+                "status": type_def.get("status", "active"),
             }
         return visible
 

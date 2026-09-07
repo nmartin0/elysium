@@ -235,6 +235,11 @@ class SchemaFieldResponse(BaseModel):
     # decide what to render for an unlabelled field.
     display_name: str
     description: str | None = None
+    # UI hints, always present with a default. "hidden" tells an
+    # application not to SHOW this field; it does not stop anyone
+    # reading it -- field-level RBAC is the only thing that does.
+    visibility: str = "normal"
+    status: str = "active"
 
 
 class VisibleObjectTypeResponse(BaseModel):
@@ -246,6 +251,9 @@ class VisibleObjectTypeResponse(BaseModel):
     display_name: str
     plural_display_name: str
     description: str | None = None
+    icon: str | None = None
+    color: str | None = None
+    status: str = "active"
 
 
 class ActionParameterResponse(BaseModel):
@@ -366,6 +374,11 @@ class EditHistoryResponse(BaseModel):
     entries: list[EditHistoryEntryResponse]
     total: int
     next_page_token: str | None = None
+
+
+class HealthResponse(BaseModel):
+    status: str
+    checks: dict[str, str]
 
 
 class ConfirmWriteRequest(BaseModel):
@@ -1257,4 +1270,39 @@ def object_history_route(object_type: str, object_id: str, request: Request,
         "next_page_token": (_encode_page_token(next_start)
                             if next_start < total else None),
     }
+
+@router.get("/health", response_model=HealthResponse)
+def health_route(request: Request) -> dict:
+    """Whether this service is up and its dependencies are reachable.
+
+    UNAUTHENTICATED, deliberately. A health check that requires a
+    session cannot be used by the thing that most needs it -- a load
+    balancer, a container orchestrator, or an engineer establishing
+    whether the process is even running. It therefore reports only
+    whether subsystems ANSWER, never what they contain: no counts, no
+    names, no configuration. "reachable" or "unreachable", nothing
+    more.
+
+    Returns 200 even when degraded, with the detail in the body. A
+    caller distinguishing "the service is down" from "the service is up
+    but its database is not" needs both answers to arrive, and a
+    non-200 collapses them into one.
+    """
+    checks: dict[str, str] = {}
+
+    mediator = getattr(request.app.state, "mediator", None)
+    checks["ontology"] = "ready" if mediator is not None else "unconfigured"
+
+    for silo_name, adapter in (getattr(mediator, "adapters", {}) or {}).items():
+        try:
+            adapter.health_check()
+            checks[f"silo:{silo_name}"] = "reachable"
+        except Exception:
+            # The reason is deliberately NOT reported. This endpoint is
+            # unauthenticated, and a connection error routinely carries
+            # a host, a path, or a username.
+            checks[f"silo:{silo_name}"] = "unreachable"
+
+    degraded = any(value == "unreachable" for value in checks.values())
+    return {"status": "degraded" if degraded else "ok", "checks": checks}
 

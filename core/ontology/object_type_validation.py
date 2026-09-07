@@ -100,6 +100,57 @@ def validate_object_types(object_types: dict, only: str | None = None) -> None:
         _validate_field_data_types(object_type_name, type_def)
         _validate_id_types(object_type_name, type_def)
         _validate_display_metadata(object_type_name, type_def)
+        _validate_ui_metadata(object_type_name, type_def)
+
+
+VISIBILITIES = ("prominent", "normal", "hidden")
+STATUSES = ("active", "experimental", "deprecated")
+
+
+def _validate_ui_metadata(object_type_name: str, type_def: dict) -> None:
+    """Checks the optional hints a UI renders an ontology with.
+
+    All optional, all cosmetic, and that second word is the important
+    one. `visibility: hidden` tells an application not to SHOW a field;
+    it does not stop anyone reading it. Field-level RBAC grants are the
+    only thing that does, and they are enforced in the mediator before
+    a value is ever produced. Anyone reaching for `hidden` to keep data
+    from a user has reached for the wrong tool, and the value still
+    appears in visible_schema() for exactly that reason -- a UI hint
+    that silently doubled as an access control would be far more
+    dangerous than one that obviously does not.
+
+    `status` mirrors the three states an ontology entry can be in while
+    a deployment evolves: active, experimental, deprecated. A UI can
+    warn on the last of these rather than letting someone build against
+    something on its way out.
+    """
+    icon = type_def.get("icon")
+    if icon is not None and (not isinstance(icon, str) or not icon.strip()):
+        raise ValueError(
+            f"Object type {object_type_name!r}: icon must be a non-empty string, got {icon!r}"
+        )
+    colour = type_def.get("color")
+    if colour is not None and (not isinstance(colour, str) or not colour.strip()):
+        raise ValueError(
+            f"Object type {object_type_name!r}: color must be a non-empty string, got {colour!r}"
+        )
+    _validate_status(f"Object type {object_type_name!r}", type_def)
+
+    for field_name, field_info in (type_def.get("fields") or {}).items():
+        owner = f"Object type {object_type_name!r}, field {field_name!r}"
+        visibility = field_info.get("visibility")
+        if visibility is not None and visibility not in VISIBILITIES:
+            raise ValueError(
+                f"{owner}: visibility must be one of {list(VISIBILITIES)}, got {visibility!r}"
+            )
+        _validate_status(owner, field_info)
+
+
+def _validate_status(owner: str, definition: dict) -> None:
+    status = definition.get("status")
+    if status is not None and status not in STATUSES:
+        raise ValueError(f"{owner}: status must be one of {list(STATUSES)}, got {status!r}")
 
 
 def _validate_display_metadata(object_type_name: str, type_def: dict) -> None:

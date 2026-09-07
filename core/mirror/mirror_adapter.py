@@ -170,6 +170,12 @@ class MirrorReadAdapter(ExternalReadAdapter):
             grouped.setdefault(source, []).append(row[result_column])
         return grouped
 
+    def health_check(self) -> None:
+        # Listing namespaces proves the catalog is reachable without
+        # reading any table. An empty mirror is HEALTHY -- it has not
+        # been synced yet, which is an operational state, not a fault.
+        self._catalog.list_namespaces()
+
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
         # Implemented for contract completeness rather than for a real
         # caller: the sync reads from the customer's own source, never

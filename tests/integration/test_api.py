@@ -471,6 +471,9 @@ def test_visible_schema_never_leaks_per_field_internals(client):
             # else a field definition carries is internal.
             leaked = set(field_info) - {
                 "type", "target", "cardinality", "display_name", "description",
+                # UI rendering hints, deliberately exposed. Cosmetic --
+                # "hidden" does not withhold anything, RBAC does.
+                "visibility", "status",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 
@@ -2165,3 +2168,76 @@ def test_history_tokens_are_opaque_too(client):
     body = client.get("/api/objects/Customer/cust_001/history?page_size=5").json()
 
     assert body["next_page_token"].startswith("v1.")
+
+
+# --- /health -------------------------------------------------------------
+
+
+def test_health_is_reachable_without_authentication(client):
+    # A health check requiring a session cannot be used by the thing
+    # that most needs it -- a load balancer or an orchestrator, neither
+    # of which can log in.
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_health_reports_each_silo(client):
+    body = client.get("/api/health").json()
+
+    assert body["checks"]["ontology"] == "ready"
+    assert any(key.startswith("silo:") for key in body["checks"])
+
+
+def test_health_leaks_nothing_about_the_data(client):
+    # Unauthenticated, so it reports only whether subsystems ANSWER --
+    # never counts, names, paths or configuration. A connection error
+    # routinely carries a host or a username, which is exactly why the
+    # reason is not reported.
+    body = client.get("/api/health").json()
+
+    serialized = json.dumps(body)
+    for leaked in ("cust_", "password", "/home/", "sqlite", ".db"):
+        assert leaked not in serialized, f"/health exposed {leaked!r}"
+    assert set(body["checks"].values()) <= {"ready", "reachable", "unreachable", "unconfigured"}
+
+
+def test_health_reports_degraded_rather_than_failing(client, monkeypatch):
+    # 200 even when degraded, with the detail in the body. A caller
+    # distinguishing "the service is down" from "the service is up but
+    # its database is not" needs both answers to arrive, and a non-200
+    # collapses them into one.
+    adapter = next(iter(client.app.state.mediator.adapters.values()))
+
+    def unreachable():
+        raise OSError("database is gone")
+
+    monkeypatch.setattr(adapter, "health_check", unreachable)
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert "unreachable" in response.json()["checks"].values()
+
+
+def test_a_missing_sqlite_file_is_not_reported_healthy(tmp_path):
+    # THE bug found by testing this against a real server: sqlite3
+    # .connect() CREATES a missing database rather than failing, so a
+    # connection plus SELECT 1 succeeded against a brand-new empty file
+    # and reported "reachable" after the real one had been moved away.
+    # A health check that goes green when the data has vanished is the
+    # alert that will not fire on the incident it exists for.
+    import sqlite3 as sqlite_module
+
+    from adapters.sqlite_adapter import SQLiteReadAdapter
+
+    db_path = tmp_path / "silo.db"
+    sqlite_module.connect(db_path).close()
+    adapter = SQLiteReadAdapter({"path": db_path})
+    adapter.health_check()
+
+    db_path.unlink()
+
+    with pytest.raises(FileNotFoundError):
+        adapter.health_check()

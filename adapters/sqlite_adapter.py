@@ -202,6 +202,20 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             grouped.setdefault(row[via_column], []).append(row[result_column])
         return grouped
 
+    def health_check(self) -> None:
+        # THE FILE'S EXISTENCE IS CHECKED FIRST, and that is not
+        # belt-and-braces. sqlite3.connect() CREATES a missing database
+        # rather than failing, so a connection and a SELECT 1 succeed
+        # against a brand-new empty file -- verified directly by moving
+        # a silo's database away and watching this report "reachable".
+        # A health check that goes green when the customer's data has
+        # vanished is worse than none: it is the alert that will not
+        # fire on the incident it exists for.
+        if not Path(self.db_path).exists():
+            raise FileNotFoundError(f"No database at {self.db_path}")
+        with self._connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+
     def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
         # ONE query for the whole table, versus one per field per row
         # through get_raw_field(). Column NAMES come from the ontology
