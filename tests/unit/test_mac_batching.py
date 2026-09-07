@@ -393,10 +393,19 @@ def test_get_object_resolves_security_once_not_per_field(tmp_path):
     sqlite_adapter_module._run_query = counting(real_run_query)
     sqlite_adapter_module._run_query_one = counting(real_run_query_one)
     try:
+        # Each measurement from a COLD cache. Without the clear the
+        # second call finds the first's security value already there
+        # and skips the prefetch, so the two are not comparable -- a
+        # first version of this test asserted arithmetic that only held
+        # because of that shared state.
+        mediator._security_value_cache.clear()
+        mediator._security_link_cache.clear()
         counted["n"] = 0
         one = mediator.get_object(WEST, "Customer", "cust_001", ["name"])
         one_field = counted["n"]
 
+        mediator._security_value_cache.clear()
+        mediator._security_link_cache.clear()
         counted["n"] = 0
         three = mediator.get_object(WEST, "Customer", "cust_001", ["name", "email", "region"])
         three_fields = counted["n"]
@@ -425,3 +434,55 @@ def test_get_object_still_denies_across_the_mac_boundary(tmp_path):
 
     assert all(value is not None for value in visible.values())
     assert all(value is None for value in denied.values())
+
+
+def test_reading_a_page_of_objects_shares_one_security_resolution(tmp_path):
+    # THE bug the previous commit introduced while fixing a smaller
+    # one. _prefetch_security_values() CLEARS the cache before filling
+    # it, so warming unconditionally inside get_object() made a caller
+    # reading a page defeat itself: search_object() resolved security
+    # for every row, then the first get_object() threw that away and
+    # each remaining row re-resolved its own.
+    #
+    # Measured at exactly 4 queries per row with no sharing at all --
+    # the same cost as before the optimization, plus a wasted clear.
+    import adapters.sqlite_adapter as sqlite_adapter_module
+
+    mediator = _mediator(tmp_path)
+    conn = sqlite3.connect(mediator.adapters["primary_sql"].db_path)
+    conn.executemany(
+        "INSERT INTO customers VALUES (?, ?, ?, ?)",
+        [(f"c{i}", f"Name {i}", "us-west", f"e{i}@x.com") for i in range(60)],
+    )
+    conn.commit()
+    conn.close()
+
+    real_run_query = sqlite_adapter_module._run_query
+    real_run_query_one = sqlite_adapter_module._run_query_one
+    counted = {"n": 0}
+
+    def counting(fn):
+        def wrapper(*args, **kwargs):
+            counted["n"] += 1
+            return fn(*args, **kwargs)
+        return wrapper
+
+    sqlite_adapter_module._run_query = counting(real_run_query)
+    sqlite_adapter_module._run_query_one = counting(real_run_query_one)
+    try:
+        page = mediator.search_object(WEST, "Customer", {})[:50]
+        counted["n"] = 0
+        for object_id in page:
+            mediator.get_object(WEST, "Customer", object_id, ["name", "email", "region"])
+        page_queries = counted["n"]
+    finally:
+        sqlite_adapter_module._run_query = real_run_query
+        sqlite_adapter_module._run_query_one = real_run_query_one
+
+    # Three fields per row and NO per-row security resolution, because
+    # search_object() already warmed the whole page.
+    assert page_queries <= len(page) * 3, (
+        f"a {len(page)}-row page cost {page_queries} queries "
+        f"({page_queries / len(page):.1f} per row) -- the page's security "
+        f"resolution is being discarded and redone per row"
+    )

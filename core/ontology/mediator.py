@@ -1363,7 +1363,20 @@ class DataMediator:
         # entirely, and masks values against pending writes. Replacing
         # it would mean reimplementing all of that; this changes only
         # what the existing path costs.
-        self._prefetch_security_values(object_type, [object_id])
+        #
+        # ONLY IF NOT ALREADY CACHED, which matters more than it looks.
+        # _prefetch_security_values() CLEARS the cache before filling
+        # it, so warming unconditionally here would make a caller
+        # reading a page of results defeat itself: search_object()
+        # resolves security for all fifty rows, then the first
+        # get_object() throws that away and the remaining forty-nine
+        # each re-resolve their own. The unconditional version was
+        # committed and measured at exactly 4 queries per row, with no
+        # sharing across the page at all.
+        if (object_type, str(object_id)) not in self._security_value_cache and (
+            object_type, str(object_id)
+        ) not in self._security_link_cache:
+            self._prefetch_security_values(object_type, [object_id])
 
         return {
             field_name: self.get_field(user_record, object_type, object_id, field_name)
