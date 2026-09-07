@@ -178,6 +178,32 @@ is a different kind of blocked from this.
   already recorded: it breaks log rotation. That was measured at 3x
   and would not change the granularity question at all.
 
+- **No password reset, and no way to set a known password.** The user
+  directory has create, disable, enable and delete, but nothing to
+  change an existing password, and `scripts/bootstrap_root` generates
+  a random one it prints once. An operator whose user forgets theirs
+  must delete and recreate the account.
+
+  That loses nothing today, since an account carries no history of its
+  own -- the audit log keys on user_id, which survives recreation. It
+  stops being acceptable the moment anything is owned BY an account
+  rather than merely recorded against it.
+
+  Found while setting up local testing, where the same gap makes a
+  known-password account impossible without deleting one first. A
+  `--password` flag on bootstrap_root would fix the development half;
+  the operational half wants a real reset path with its own audit
+  entry.
+
+- **No password policy at all.** Any string is accepted, including one
+  character. Deliberate for a beta where the operator creates every
+  account by hand, and wrong for a deployment that ever lets someone
+  choose their own. Not fixed now because where the policy lives is a
+  product decision -- a hardcoded minimum, a config option, or
+  delegated entirely to an external identity provider are three
+  different answers, and picking one silently would be the worst of
+  them.
+
 - **No container.** Dependencies are locked with hashes and the lint
   fails on drift, so builds are reproducible from a checkout. What is
   still missing is a reproducible RUNTIME: the OS layer and the Python

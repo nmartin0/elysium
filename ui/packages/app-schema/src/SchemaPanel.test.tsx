@@ -144,3 +144,26 @@ describe('SchemaPanel', () => {
     await waitFor(() => expect(onSessionExpired).toHaveBeenCalled())
   })
 })
+
+describe('SchemaPanel -- fetching', () => {
+  it('fetches the schema once, not on every render', async () => {
+    // Found in a real server log, not by any test: one page load
+    // produced THREE GET /me/visible-schema calls. The effect depended
+    // on onSessionExpired, which the shell declares as a plain
+    // function -- a new object every render, so the effect re-ran.
+    //
+    // Invisible in the browser: the page looked correct and simply did
+    // three times the work. On a large ontology that is three full
+    // schema serialisations per render.
+    getMyVisibleSchema.mockResolvedValue({ Customer: CUSTOMER })
+
+    const { rerender } = render(<SchemaPanel onSessionExpired={() => {}} />)
+    await screen.findByText('Customer')
+
+    // A NEW handler each time, exactly as the shell provides.
+    rerender(<SchemaPanel onSessionExpired={() => {}} />)
+    rerender(<SchemaPanel onSessionExpired={() => {}} />)
+
+    expect(getMyVisibleSchema).toHaveBeenCalledTimes(1)
+  })
+})

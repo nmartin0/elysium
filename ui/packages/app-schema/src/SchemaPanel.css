@@ -1,0 +1,28 @@
+/*
+ * Spacing only. No colours, no fonts, no borders -- Blueprint already
+ * supplies those, and duplicating them here would mean two places to
+ * change when a theme does.
+ *
+ * What was actually missing when this rendered untouched: object types
+ * ran together with nothing between them, and the API name sat at the
+ * same weight as the label it belonged to.
+ */
+
+.schema-panel__type {
+  margin-block-end: 2.5rem;
+}
+
+.schema-panel__type h4 {
+  margin-block: 1rem 0.35rem;
+}
+
+.schema-panel__fields {
+  inline-size: 100%;
+}
+
+/* Secondary to the display name it sits under, not a peer of it. */
+.schema-panel__api-name {
+  font-size: 0.8em;
+  opacity: 0.6;
+  font-family: var(--pt-font-family-monospace, monospace);
+}

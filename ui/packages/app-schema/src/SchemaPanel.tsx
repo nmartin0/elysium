@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Callout, HTMLTable, Icon, InputGroup, Spinner, Tag } from '@blueprintjs/core'
 import { getMyVisibleSchema, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
+import './SchemaPanel.css'
 
 interface SchemaField {
   type: string
@@ -168,6 +169,18 @@ export default function SchemaPanel({ onSessionExpired }: SubAppProps) {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
 
+  // Fetches ONCE on mount. Depending on `onSessionExpired` re-runs the
+  // effect whenever the shell re-renders, because the shell declares
+  // that handler as a plain function -- a new object every time. Your
+  // logs showed the schema fetched three times for one page load,
+  // which is how this was found: the browser gave no sign of it.
+  //
+  // `onSessionExpired` is still called from inside, which is safe: the
+  // effect closes over the handler current at mount, and the shell's
+  // handler only resets auth state.
+  //
+  // Matches AdminPanel's own pattern rather than changing the shell.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let cancelled = false
     getMyVisibleSchema()
@@ -182,7 +195,7 @@ export default function SchemaPanel({ onSessionExpired }: SubAppProps) {
     return () => {
       cancelled = true
     }
-  }, [onSessionExpired])
+  }, [])
 
   const matches = useMemo(() => {
     if (!schema) return []
