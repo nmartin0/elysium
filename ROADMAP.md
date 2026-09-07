@@ -191,20 +191,42 @@ after.
   writes, which is exactly the path require_assertions_enabled() was
   added to defend.
 
-- **Snapshot pagination is not implemented.** Foundry offers two
-  consistency behaviours: their DEFAULT "returns the latest results"
-  and, in their own words, "may lead to duplicate entries or missing
-  items as data changes between page requests"; their opt-in SNAPSHOT
-  mode "captures data at a specific point in time before pagination
-  begins". Elysium implements the default only, which is the same
-  behaviour Foundry ships and documents -- not a deviation from it.
+- **Snapshot pagination: CLOSED, and harder than the storage layer
+  makes it look.** Foundry offers two consistency behaviours: their
+  DEFAULT "returns the latest results" and "may lead to duplicate
+  entries or missing items as data changes between page requests";
+  their opt-in SNAPSHOT mode "captures data at a specific point in
+  time before pagination begins". Elysium implements the default,
+  which is what they ship -- not a deviation.
 
-  Building snapshot mode means holding a result set across requests
-  with an expiry policy, which is real state and real cleanup. Worth
-  doing when a caller genuinely needs it (an export, a reconciliation
-  job) rather than by default, exactly as Foundry treats it. The
-  behaviour we DO have is now documented in _page_bounds() so a caller
-  can know what they are getting.
+  The earlier note said building it means "holding a result set across
+  requests with an expiry policy". That was wrong in both directions.
+
+  It is EASIER than that on the storage side: PyIceberg's `scan()`
+  already takes a `snapshot_id`, so a mirror-backed read could pin a
+  point in time by passing a parameter. No session state, no expiry,
+  no cleanup -- Iceberg already holds the snapshot.
+
+  It is HARDER than that on the consistency side, which is the real
+  blocker. Elysium's reads merge the write log over adapter data so a
+  caller sees their own uncommitted-to-mirror writes
+  (`_read_field_with_log_check`). Pinning the mirror while that
+  overlay stays live produces a half-pinned view: historical for
+  everything the mirror holds, current for everything the write log
+  does. That is not a snapshot; it is a mixture, and one whose
+  inconsistency would be invisible to the caller who asked for
+  consistency.
+
+  Resolving it means deciding what "as of T" should mean for a write
+  applied after T -- excluded, which breaks read-your-writes, or
+  included, which breaks the snapshot. Foundry does not face this
+  because their edits are indexed INTO the same store they read from,
+  so one snapshot covers both. Elysium's write log is deliberately
+  separate.
+
+  REOPEN IF a caller genuinely needs it -- an export or reconciliation
+  job -- and with that question answered first, not during
+  implementation. It is a semantics decision, not a plumbing one.
 
 - **Object-backed link types are not adopted.** Foundry's third link
   backing lets a join carry its own properties -- their example is a
