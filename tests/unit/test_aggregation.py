@@ -67,7 +67,7 @@ def mediator(tmp_path):
 
 
 def test_count_objects_counts_what_the_caller_can_see(mediator):
-    assert mediator.count_objects(CUSTOMER_SERVICE, "Customer", {}) == 2
+    assert mediator.count_objects(CUSTOMER_SERVICE, "Customer", as_equality_conditions({})) == 2
 
 
 def test_count_objects_respects_mac_rather_than_counting_raw_rows(mediator):
@@ -75,8 +75,8 @@ def test_count_objects_respects_mac_rather_than_counting_raw_rows(mediator):
     # COUNT(*). Two users legitimately get different answers for the
     # same count, and a count that ignored MAC would leak the existence
     # of rows outside the caller's boundary.
-    us_west = mediator.count_objects(CUSTOMER_SERVICE, "Customer", {})
-    us_east = mediator.count_objects(OTHER_REGION, "Customer", {})
+    us_west = mediator.count_objects(CUSTOMER_SERVICE, "Customer", as_equality_conditions({}))
+    us_east = mediator.count_objects(OTHER_REGION, "Customer", as_equality_conditions({}))
 
     # Different answers to the same question, which is the whole point.
     assert us_west != us_east
@@ -90,13 +90,13 @@ def test_count_objects_respects_mac_rather_than_counting_raw_rows(mediator):
 
 
 def test_count_objects_applies_criteria(mediator):
-    assert mediator.count_objects(CUSTOMER_SERVICE, "Customer", {"region": "us-west"}) == 2
-    assert mediator.count_objects(CUSTOMER_SERVICE, "Customer", {"region": "nowhere"}) == 0
+    assert mediator.count_objects(CUSTOMER_SERVICE, "Customer", as_equality_conditions({"region": "us-west"})) == 2
+    assert mediator.count_objects(CUSTOMER_SERVICE, "Customer", as_equality_conditions({"region": "nowhere"})) == 0
 
 
 def test_aggregate_sums_grouped_by_a_field(mediator):
     result = mediator.aggregate_by_field(
-        CUSTOMER_SERVICE, "Transaction", {}, group_by="category",
+        CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by="category",
         aggregate="sum", field_name="amount",
     )
 
@@ -108,7 +108,7 @@ def test_aggregate_sums_grouped_by_a_field(mediator):
 def test_every_aggregate_function_works(mediator):
     def aggregate(name):
         return mediator.aggregate_by_field(
-            CUSTOMER_SERVICE, "Transaction", {}, group_by="category",
+            CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by="category",
             aggregate=name, field_name="amount",
         )
 
@@ -122,7 +122,7 @@ def test_count_needs_no_field_name(mediator):
     # Matches Foundry, where count aggregates the set itself rather
     # than a property.
     result = mediator.aggregate_by_field(
-        CUSTOMER_SERVICE, "Transaction", {}, group_by="category", aggregate="count"
+        CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by="category", aggregate="count"
     )
 
     assert result["subscription"] == 2
@@ -130,7 +130,7 @@ def test_count_needs_no_field_name(mediator):
 
 def test_no_group_by_aggregates_the_whole_set(mediator):
     result = mediator.aggregate_by_field(
-        CUSTOMER_SERVICE, "Transaction", {}, group_by=None,
+        CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by=None,
         aggregate="max", field_name="amount",
     )
 
@@ -140,7 +140,7 @@ def test_no_group_by_aggregates_the_whole_set(mediator):
 def test_an_unknown_aggregate_is_rejected(mediator):
     with pytest.raises(ValueError, match="Unknown aggregate"):
         mediator.aggregate_by_field(
-            CUSTOMER_SERVICE, "Transaction", {}, group_by="category",
+            CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by="category",
             aggregate="median", field_name="amount",
         )
 
@@ -148,7 +148,7 @@ def test_an_unknown_aggregate_is_rejected(mediator):
 def test_an_aggregate_needing_a_field_rejects_a_missing_one(mediator):
     with pytest.raises(ValueError, match="requires a field_name"):
         mediator.aggregate_by_field(
-            CUSTOMER_SERVICE, "Transaction", {}, group_by="category", aggregate="sum"
+            CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by="category", aggregate="sum"
         )
 
 
@@ -158,11 +158,11 @@ def test_aggregation_excludes_objects_the_caller_cannot_see(mediator):
     # values they are not permitted to see -- the exact reason this
     # cannot be a pushed-down GROUP BY.
     visible = mediator.aggregate_by_field(
-        CUSTOMER_SERVICE, "Transaction", {}, group_by=None,
+        CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by=None,
         aggregate="count", field_name=None,
     )
     hidden = mediator.aggregate_by_field(
-        OTHER_REGION, "Transaction", {}, group_by=None,
+        OTHER_REGION, "Transaction", as_equality_conditions({}), group_by=None,
         aggregate="count", field_name=None,
     )
 
@@ -176,7 +176,7 @@ def test_aggregation_excludes_objects_the_caller_cannot_see(mediator):
 
 def test_an_empty_result_set_aggregates_to_nothing(mediator):
     result = mediator.aggregate_by_field(
-        CUSTOMER_SERVICE, "Transaction", {"category": "nonexistent"},
+        CUSTOMER_SERVICE, "Transaction", as_equality_conditions({"category": "nonexistent"}),
         group_by="category", aggregate="sum", field_name="amount",
     )
 
@@ -214,7 +214,7 @@ def test_aggregation_reads_data_in_bulk_not_per_object(mediator):
 
         counted["n"] = 0
         mediator.aggregate_by_field(
-            CUSTOMER_SERVICE, "Transaction", {}, group_by="category",
+            CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by="category",
             aggregate="sum", field_name="amount",
         )
         with_aggregation = counted["n"]
@@ -388,7 +388,7 @@ def test_aggregating_a_whole_type_still_works(tmp_path):
     mediator = _mediator_with_rows(tmp_path, 500)
 
     result = mediator.aggregate_by_field(
-        CUSTOMER_SERVICE, "Transaction", {}, group_by="category", aggregate="count"
+        CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by="category", aggregate="count"
     )
 
     assert result["bulk"] == 500

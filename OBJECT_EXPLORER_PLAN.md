@@ -173,13 +173,12 @@ guess.
 
 ### Phase 3 — the table (frontend)
 
-**PREREQUISITE, not yet an item anywhere: the HTTP surface still takes
-a dict.** /objects/{type}/search accepts {field: value} and converts
-with as_equality_conditions(). The vocabulary is reachable from
-Python, not from a browser, so no UI can select two values on a chart
-until this changes. It is small -- one request model and one route --
-but it must come first.
-
+**[done] The HTTP surface takes conditions.** /objects/{type}/count,
+/aggregate and /search-around accept a `conditions` list alongside the
+old `criteria` dict, and reject a request sending both -- merging
+would need a rule for what happens when they disagree about one field,
+and inventing one silently is how a filter ends up meaning something
+nobody asked for.
 
 **8. Paged, sorted results.** `search` already returns
 `next_page_token` and `total_matches` and accepts `order_by`, and no

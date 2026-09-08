@@ -130,6 +130,7 @@ from core.auth.auth_cookies import (
     set_csrf_cookie,
     set_session_cookie,
 )
+from core.filters import as_equality_conditions, parse_filters
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.schema import sort_key
@@ -340,6 +341,35 @@ class ObjectSetQueryRequest(BaseModel):
     """
 
     criteria: dict[str, Any] = {}
+
+    # The full vocabulary, as a list of conditions. Present alongside
+    # `criteria` rather than replacing it because they are not the same
+    # request: `criteria` is equality on each key and cannot express
+    # "region is us-west OR us-east", which is what selecting two
+    # values on a chart means.
+    #
+    # A caller sends ONE of them. Sending both is rejected rather than
+    # merged -- merging would need a rule for what happens when they
+    # disagree about the same field, and inventing one silently is how
+    # a filter ends up meaning something nobody asked for.
+    conditions: list[dict[str, Any]] | None = None
+
+    def as_conditions(self) -> list:
+        """The filter this request asks for, however it was expressed.
+
+        Field names are NOT validated here -- the mediator checks them
+        against the caller's own visible schema, so a field they cannot
+        read stays indistinguishable from one that does not exist. This
+        only turns the wire form into the internal one.
+        """
+        if self.conditions is not None and self.criteria:
+            raise ValueError(
+                "Send either criteria or conditions, not both -- they are "
+                "different requests and merging them would have to guess."
+            )
+        if self.conditions is not None:
+            return parse_filters(self.conditions)
+        return as_equality_conditions(self.criteria)
 
 
 class AggregateRequest(ObjectSetQueryRequest):
@@ -1214,7 +1244,7 @@ def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: 
     # caller's boundary.
     mediator = request.app.state.mediator
     try:
-        return {"count": mediator.count_objects(current_user, object_type, body.criteria)}
+        return {"count": mediator.count_objects(current_user, object_type, body.as_conditions())}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -1225,7 +1255,7 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
     mediator = request.app.state.mediator
     try:
         results = mediator.aggregate_by_field(
-            current_user, object_type, body.criteria,
+            current_user, object_type, body.as_conditions(),
             group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
         )
     except ValueError as e:
@@ -1248,7 +1278,7 @@ def search_around_route(object_type: str, body: SearchAroundRequest, request: Re
     # an error -- the same uniform denial every other read path uses,
     # so a caller learns nothing about whether the field exists.
     mediator = request.app.state.mediator
-    ids = mediator.search_around(current_user, object_type, body.criteria, body.link_field)
+    ids = mediator.search_around(current_user, object_type, body.as_conditions(), body.link_field)
     return {"ids": ids, "total": len(ids)}
 
 @router.get("/objects/{object_type}/{object_id}/history", response_model=EditHistoryResponse)

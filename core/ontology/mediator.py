@@ -110,7 +110,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
-from core.filters import FieldFilter, as_equality_conditions, row_matches, validate_filter
+from core.filters import FieldFilter, row_matches, validate_filter
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
@@ -1194,7 +1194,7 @@ class DataMediator:
                 result_by_str.pop(object_id, None)
         return list(result_by_str.values())
 
-    def search_around(self, user_record: UserRecord, object_type: str, criteria: dict,
+    def search_around(self, user_record: UserRecord, object_type: str, conditions: list,
                        link_field: str) -> list:
         """Follows a link from every object matching criteria, returning
         the ids on the far side that the caller can also see.
@@ -1216,7 +1216,7 @@ class DataMediator:
         Returns a deduplicated list -- two source objects legitimately
         linking to the same target should yield it once.
         """
-        source_ids = self.search_object(user_record, object_type, as_equality_conditions(criteria))
+        source_ids = self.search_object(user_record, object_type, conditions)
         if not source_ids:
             return []
 
@@ -1312,7 +1312,7 @@ class DataMediator:
         ]
         return entries, self.write_log.edit_history_count(object_type, object_id)
 
-    def count_objects(self, user_record: UserRecord, object_type: str, criteria: dict) -> int:
+    def count_objects(self, user_record: UserRecord, object_type: str, conditions: list) -> int:
         """How many objects of this type the CALLER can see, matching
         criteria.
 
@@ -1330,9 +1330,9 @@ class DataMediator:
         is the same constraint Foundry's own Object Set Service works
         under, and the reason it is a service rather than exposed SQL.
         """
-        return len(self.search_object(user_record, object_type, as_equality_conditions(criteria)))
+        return len(self.search_object(user_record, object_type, conditions))
 
-    def aggregate_by_field(self, user_record: UserRecord, object_type: str, criteria: dict,
+    def aggregate_by_field(self, user_record: UserRecord, object_type: str, conditions: list,
                             group_by: str | None, aggregate: str, field_name: str | None = None) -> dict:
         """Aggregates a field over the objects the caller can see.
 
@@ -1356,7 +1356,7 @@ class DataMediator:
         if aggregate != "count" and field_name is None:
             raise ValueError(f"aggregate {aggregate!r} requires a field_name")
 
-        visible_ids = set(self.search_object(user_record, object_type, as_equality_conditions(criteria)))
+        visible_ids = set(self.search_object(user_record, object_type, conditions))
         if not visible_ids:
             return {}
 

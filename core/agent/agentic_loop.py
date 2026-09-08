@@ -326,7 +326,7 @@ class AgentLoop:
     def _step_aggregate_object(self, step: dict, user_record: UserRecord,
                                visible_schema: dict, gathered: list[dict]) -> Any:
         return self.mediator.aggregate_by_field(
-            user_record, step["object_type"], step.get("filter") or {},
+            user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             group_by=step.get("group_by"),
             aggregate=step["aggregate"],
             field_name=step.get("field_name"),
@@ -335,7 +335,7 @@ class AgentLoop:
     def _step_search_around(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict]) -> Any:
         return self.mediator.search_around(
-            user_record, step["object_type"], step.get("filter") or {},
+            user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             step["link_field"],
         )
 

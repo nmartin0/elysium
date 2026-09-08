@@ -20,6 +20,7 @@ import pytest
 from core.filters import (
     FieldFilter,
     FilterError,
+    as_equality_conditions,
     parse_filters,
     resolve_relative_date,
     validate_filter,
@@ -588,12 +589,12 @@ def test_every_read_path_rejects_an_unreadable_field_like_an_unknown_one(
         "search": lambda: mediator.search_object(
             user, "Customer", [FieldFilter(field, "equals", "x")]
         ),
-        "count": lambda: mediator.count_objects(user, "Customer", {field: "x"}),
+        "count": lambda: mediator.count_objects(user, "Customer", as_equality_conditions({field: "x"})),
         "aggregate": lambda: mediator.aggregate_by_field(
-            user, "Customer", {field: "x"}, "region", "count"
+            user, "Customer", as_equality_conditions({field: "x"}), "region", "count"
         ),
         "search_around": lambda: mediator.search_around(
-            user, "Customer", {field: "x"}, "transactions"
+            user, "Customer", as_equality_conditions({field: "x"}), "transactions"
         ),
     }
 

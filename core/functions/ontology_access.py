@@ -70,13 +70,13 @@ class OntologyAccess:
 
     def count(self, object_type: str, criteria: dict | None = None) -> int:
         self._check(object_type)
-        return self._mediator.count_objects(self._user_record, object_type, criteria or {})
+        return self._mediator.count_objects(self._user_record, object_type, as_equality_conditions(criteria))
 
     def aggregate(self, object_type: str, aggregate: str, field: str | None = None,
                    group_by: str | None = None, criteria: dict | None = None) -> dict:
         self._check(object_type)
         return self._mediator.aggregate_by_field(
-            self._user_record, object_type, criteria or {},
+            self._user_record, object_type, as_equality_conditions(criteria),
             group_by=group_by, aggregate=aggregate, field_name=field,
         )
 
@@ -93,5 +93,5 @@ class OntologyAccess:
         if target_type is not None:
             self._check(target_type)
         return self._mediator.search_around(
-            self._user_record, object_type, criteria or {}, link_field
+            self._user_record, object_type, as_equality_conditions(criteria), link_field
         )

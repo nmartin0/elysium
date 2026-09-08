@@ -70,7 +70,7 @@ def mediator(tmp_path):
 
 def test_search_around_follows_a_reverse_link_across_a_whole_set(mediator):
     result = mediator.search_around(
-        CUSTOMER_SERVICE, "Customer", {"region": "us-west"}, "transactions"
+        CUSTOMER_SERVICE, "Customer", as_equality_conditions({"region": "us-west"}), "transactions"
     )
 
     assert sorted(result) == [1, 2, 3, 4]
@@ -87,7 +87,7 @@ def test_search_around_matches_what_per_object_traversal_would_return(mediator):
         one_at_a_time.extend(linked or [])
 
     batched = mediator.search_around(
-        CUSTOMER_SERVICE, "Customer", {"region": "us-west"}, "transactions"
+        CUSTOMER_SERVICE, "Customer", as_equality_conditions({"region": "us-west"}), "transactions"
     )
 
     assert sorted(batched) == sorted(set(one_at_a_time))
@@ -97,7 +97,7 @@ def test_results_are_deduplicated(mediator):
     # Two source objects legitimately linking to the same target should
     # yield it once, not twice.
     result = mediator.search_around(
-        CUSTOMER_SERVICE, "Customer", {"region": "us-west"}, "transactions"
+        CUSTOMER_SERVICE, "Customer", as_equality_conditions({"region": "us-west"}), "transactions"
     )
 
     assert len(result) == len(set(result))
@@ -108,10 +108,10 @@ def test_traversal_respects_mac_on_the_SOURCE_side(mediator):
     # customers are not in this caller's set, so their transactions are
     # not reachable through them.
     west = mediator.search_around(
-        CUSTOMER_SERVICE, "Customer", {}, "transactions"
+        CUSTOMER_SERVICE, "Customer", as_equality_conditions({}), "transactions"
     )
     east = mediator.search_around(
-        OTHER_REGION, "Customer", {}, "transactions"
+        OTHER_REGION, "Customer", as_equality_conditions({}), "transactions"
     )
 
     assert west
@@ -124,7 +124,7 @@ def test_traversal_respects_mac_on_the_TARGET_side(mediator):
     # following a reference must never reveal what a direct read would
     # deny.
     result = mediator.search_around(
-        CUSTOMER_SERVICE, "Customer", {"region": "us-west"}, "transactions"
+        CUSTOMER_SERVICE, "Customer", as_equality_conditions({"region": "us-west"}), "transactions"
     )
 
     for target_id in result:
@@ -137,17 +137,17 @@ def test_an_ungranted_link_field_returns_nothing(mediator):
     # Uniform denial: the caller learns nothing about whether the field
     # exists, is a link, or is merely ungranted.
     assert mediator.search_around(
-        CUSTOMER_SERVICE, "Customer", {}, "not_a_real_field"
+        CUSTOMER_SERVICE, "Customer", as_equality_conditions({}), "not_a_real_field"
     ) == []
 
 
 def test_a_non_link_field_returns_nothing(mediator):
-    assert mediator.search_around(CUSTOMER_SERVICE, "Customer", {}, "name") == []
+    assert mediator.search_around(CUSTOMER_SERVICE, "Customer", as_equality_conditions({}), "name") == []
 
 
 def test_an_empty_source_set_traverses_nothing(mediator):
     assert mediator.search_around(
-        CUSTOMER_SERVICE, "Customer", {"region": "nowhere"}, "transactions"
+        CUSTOMER_SERVICE, "Customer", as_equality_conditions({"region": "nowhere"}), "transactions"
     ) == []
 
 
@@ -214,7 +214,7 @@ def test_traversal_is_batched_not_one_query_per_source_object(tmp_path):
         search_only = counted["n"]
 
         counted["n"] = 0
-        targets = mediator.search_around(CUSTOMER_SERVICE, "Customer", {}, "transactions")
+        targets = mediator.search_around(CUSTOMER_SERVICE, "Customer", as_equality_conditions({}), "transactions")
         with_traversal = counted["n"]
     finally:
         sqlite_adapter_module._run_query = real_run_query

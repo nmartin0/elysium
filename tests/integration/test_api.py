@@ -2280,3 +2280,122 @@ def test_both_ends_of_a_relationship_report_the_same_link_type(client):
         body["Customer"]["fields"]["transactions"]["link_type"]
         == body["Transaction"]["fields"]["customer_id"]["link_type"]
     )
+
+
+def _filter_user(client, username):
+    """A logged-in caller for the filter-vocabulary tests.
+
+    Named apart from this file's own _login(), which takes a password
+    and does not create the user -- an earlier version of these tests
+    shadowed it and every request came back 403.
+
+    These POST through _post() for the same reason: it carries the CSRF
+    header, and a raw client.post is refused before the route is
+    reached.
+    """
+    client.app.state.user_directory.create_user(username, "pw", "us-west", "customer_service")
+    _login(client, username, "pw")
+
+
+def test_count_accepts_the_full_condition_vocabulary(client):
+    """The prerequisite this commit exists for: until now the HTTP
+    surface took {field: value} only, so no browser could express "id
+    is one of these two" -- which is what selecting two values on a
+    chart means.
+
+    Filters on NAME rather than region. A first version used region and
+    asserted that adding "us-east" widened the result; it did not, and
+    the code was right: MAC scopes this caller to us-west, so a second
+    region can never add rows. The test premise was wrong, and asserting
+    against the wrong field would have hidden that the `in` operator
+    works at all.
+    """
+    _filter_user(client, "filteruser")
+
+    everything = _post(
+        client, "/api/objects/Customer/count", {"criteria": {}}
+    ).json()["count"]
+
+    # Two ids this caller can see. MAC scopes them to us-west, and the
+    # fixture puts exactly cust_001 and cust_002 there -- asserted
+    # below rather than assumed, so a fixture change fails loudly
+    # instead of making the operator look broken.
+    first_two = ["cust_001", "cust_002"]
+    assert everything >= 2, "need two visible customers, or this proves nothing"
+
+    one = _post(
+        client, "/api/objects/Customer/count",
+        {"conditions": [{"field": "customer_id", "operator": "in",
+                         "value": first_two[:1]}]},
+    ).json()["count"]
+    both = _post(
+        client, "/api/objects/Customer/count",
+        {"conditions": [{"field": "customer_id", "operator": "in",
+                         "value": first_two}]},
+    ).json()["count"]
+
+    assert one >= 1, "the fixture should match something, or this proves nothing"
+    assert both > one
+    assert both <= everything
+
+
+def test_the_dict_form_still_works(client):
+    # Every existing caller sends it, and both forms mean equality on
+    # each key -- they are not in conflict, they are different
+    # expressiveness.
+    _filter_user(client, "filteruser2")
+
+    from_dict = _post(
+        client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"}}
+    ).json()["count"]
+    from_conditions = _post(
+        client, "/api/objects/Customer/count",
+        {"conditions": [{"field": "region", "operator": "equals",
+                         "value": "us-west"}]},
+    ).json()["count"]
+
+    assert from_dict == from_conditions
+
+
+def test_sending_both_forms_is_rejected_rather_than_merged(client):
+    """Merging would need a rule for what happens when they disagree
+    about the same field, and inventing one silently is how a filter
+    ends up meaning something nobody asked for.
+    """
+    _filter_user(client, "filteruser3")
+
+    response = _post(
+        client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"},
+              "conditions": [{"field": "region", "operator": "equals",
+                              "value": "us-east"}]}
+    )
+
+    assert response.status_code == 400
+
+
+def test_a_malformed_condition_is_a_400_not_a_500(client):
+    _filter_user(client, "filteruser4")
+
+    response = _post(
+        client, "/api/objects/Customer/count", {"conditions": [{"field": "region", "operator": "nonsense",
+                              "value": "x"}]}
+    )
+
+    assert response.status_code == 400
+
+
+def test_a_condition_on_an_unreadable_field_is_a_400(client):
+    # Uniform denial reaches the HTTP surface: the same status and
+    # message shape as a field that does not exist.
+    _filter_user(client, "filteruser5")
+
+    unknown = _post(
+        client, "/api/objects/Customer/count", {"conditions": [{"field": "no_such_field", "operator": "equals",
+                              "value": "x"}]}
+    )
+    unreadable = _post(
+        client, "/api/objects/Customer/count", {"conditions": [{"field": "internal_notes", "operator": "equals",
+                              "value": "x"}]}
+    )
+
+    assert unknown.status_code == unreadable.status_code == 400
