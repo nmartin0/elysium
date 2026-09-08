@@ -632,3 +632,49 @@ describe('the collapsed rail lays its items out as a list', () => {
     expect(link).toHaveAttribute('title', 'Browse')
   })
 })
+
+describe('the global header', () => {
+  const APPS = [{ name: 'Query', path: '/query' }]
+
+  it('carries the global actions, not the rail', () => {
+    /**
+     * The documented division: a global header is "a mandatory element
+     * in every application", carrying the product name and global
+     * actions -- help, notifications, settings, user profile -- while
+     * the rail carries only the top-level sections.
+     *
+     * It also fixes the ragged heights: with the header above
+     * everything, the rail and both sub-app panes start at the same y.
+     */
+    renderShell(APPS)
+    const header = document.querySelector('.app__header')
+
+    expect(header).not.toBeNull()
+    expect(header?.textContent).toContain('Elysium')
+    expect(header?.querySelector('[aria-label*="theme"]')).not.toBeNull()
+  })
+
+  it('leaves the rail holding nothing but navigation', () => {
+    // A rail that also held the theme toggle and user menu is a rail
+    // doing two jobs, and it is why the columns started at different
+    // heights.
+    renderShell(APPS)
+    const sidebar = document.querySelector('.app__sidebar')
+
+    expect(sidebar?.querySelector('[aria-label*="theme"]')).toBeNull()
+    expect(sidebar?.querySelector('.app__nav')).not.toBeNull()
+  })
+
+  it('sits above the columns, not inside them', () => {
+    // Above rather than beside is what makes the three columns below
+    // align. Beside would leave the rail starting higher than the
+    // panes again.
+    renderShell(APPS)
+
+    const header = document.querySelector('.app__header')
+    const columns = document.querySelector('.app')
+
+    expect(header?.parentElement).toBe(columns?.parentElement)
+    expect(header?.nextElementSibling).toBe(columns)
+  })
+})

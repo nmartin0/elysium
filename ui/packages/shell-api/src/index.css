@@ -55,13 +55,68 @@ body {
  * than the screen. The vh line above is the fallback for anything that
  * does not know dvh.
  */
-.app {
-  display: flex;
+/* --- The frame: header on top, everything else below ---------------
+ *
+ * The header spans the FULL WIDTH above the rail, not beside it. That
+ * is what the cloud consoles do, and it is what makes the three
+ * columns underneath start at the same y and run to the bottom
+ * together -- the ragged heights were the rail beginning above panes
+ * that began below it.
+ *
+ * The viewport lock lives here now, on the outermost element. dvh
+ * with a vh fallback: on mobile the toolbars slide away, and vh
+ * measures the LARGEST viewport, leaving a fixed shell taller than the
+ * screen.
+ */
+.app-frame {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
   background: var(--surface-sunken);
   color: var(--text-primary);
+}
+
+/* --- The global header --------------------------------------------
+ *
+ * Documented as "a mandatory element in every application", carrying
+ * the product name and the GLOBAL actions -- the things that belong to
+ * no sub-app. Sub-app navigation stays in the rail.
+ *
+ * Chrome-styled like the rail, because it is furniture rather than
+ * content, and marked Classes.DARK for the same reason: a Blueprint
+ * widget styles itself for whatever surface it is told it sits on.
+ */
+.app__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-normal);
+  padding: 0 var(--space-normal);
+  height: 48px;
+  background: var(--surface-chrome);
+  color: var(--text-on-chrome);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.app__header-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.app__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tight);
+}
+
+.app {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Sidebar background reuses the existing dark primary-button token
@@ -102,10 +157,6 @@ body {
     padding-right 0.15s ease;
 }
 
-.app__sidebar-header h1 {
-  font-size: 1.2rem;
-  margin: 0;
-}
 
 .app__nav {
   flex: 1;
@@ -367,7 +418,7 @@ body {
    collapse to zero rather than just visually hiding it, so the
    content pane genuinely reclaims the full width, not just an empty
    dark strip. */
-.app--sidebar-collapsed .app__sidebar {
+.app-frame--sidebar-collapsed .app__sidebar {
   width: 0;
   padding-left: 0;
   padding-right: 0;
@@ -869,16 +920,7 @@ button.danger {
   letter-spacing: 0.04em;
 }
 
-/* The theme toggle sits in the dark sidebar, so it needs the chrome
- * text colour rather than Blueprint's default dark-on-light. */
-.app__theme-toggle {
-  color: var(--text-on-chrome-dim);
-  align-self: flex-start;
-}
 
-.app__theme-toggle:hover {
-  color: var(--text-on-chrome);
-}
 
 /* --- The rail -----------------------------------------------------
  *
@@ -890,15 +932,14 @@ button.danger {
  * The label is hidden VISUALLY, never removed. Screen readers still
  * announce it, and the tooltip covers sighted users.
  */
-.app--sidebar-collapsed .app__sidebar {
+.app-frame--sidebar-collapsed .app__sidebar {
   width: var(--sidebar-rail);
   padding-left: var(--space-tight);
   padding-right: var(--space-tight);
   overflow: hidden;
 }
 
-.app--sidebar-collapsed .app__nav-label,
-.app--sidebar-collapsed .app__sidebar-header h1 {
+.app-frame--sidebar-collapsed .app__nav-label {
   /* Not display:none -- that would take it out of the accessibility
    * tree along with the pixels. */
   position: absolute;
@@ -914,7 +955,7 @@ button.danger {
  * This is the "Auto" mode a mainstream enterprise component library
  * ships as its default: push at desktop widths, overlay below. */
 @media (max-width: 1099px) {
-  .app:not(.app--sidebar-collapsed) .app__sidebar {
+  .app-frame:not(.app-frame--sidebar-collapsed) .app__sidebar {
     position: fixed;
     top: 0;
     bottom: 0;

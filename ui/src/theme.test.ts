@@ -81,13 +81,15 @@ describe('the shell is viewport-locked', () => {
   })
 
   it('gives the shell a DEFINITE height, not a minimum', () => {
+    // On .app-frame now: the header sits above the columns, so the
+    // outermost element is what the viewport lock belongs to.
     /**
      * THE bug. A min-height lets a track be pushed open by its
      * content, so the children's overflow:auto never engages -- the
      * content grows the layout past the viewport and the whole page
      * scrolls, chrome and all.
      */
-    const app = /\.app \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+    const app = /\.app-frame \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
 
     expect(app).toMatch(/height:\s*100dvh/)
     expect(app).not.toMatch(/min-height/)

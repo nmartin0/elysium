@@ -494,25 +494,48 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     />
   ))
 
-  const sidebarContent = (
-    <>
-      <div className="app__sidebar-header">
-        <h1>Elysium</h1>
+  /**
+   * The rail holds SUB-APP NAVIGATION and nothing else.
+   *
+   * Product name, theme and the user menu moved up into the global
+   * header. That is the documented division: a global header is
+   * "a mandatory element in every application", carrying "product
+   * name/logo, search bar, and global actions -- help, notifications,
+   * settings, user profile", while the rail carries only the
+   * top-level sections.
+   *
+   * It also fixes the ragged heights: with the header above
+   * everything, the rail and both sub-app panes start at the same y
+   * and run to the bottom together.
+   */
+  const sidebarContent = <Menu className="app__nav">{navItems}</Menu>
+
+  /**
+   * The global header, spanning the full width above the rail.
+   *
+   * Above rather than beside, which is what the cloud consoles do and
+   * what makes the three columns below it align. Styled as chrome,
+   * like the rail, because it is furniture rather than content.
+   */
+  const header = (
+    <header className={`app__header ${Classes.DARK}`}>
+      <h1 className="app__header-title">Elysium</h1>
+      <div className="app__header-actions">
+        <Button
+          minimal
+          icon={dark ? 'flash' : 'moon'}
+          aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+          onClick={() => setDark(!dark)}
+        />
+        <UserMenu currentUser={currentUser} onLogout={onLogout} />
       </div>
-      <Menu className="app__nav">{navItems}</Menu>
-      <Button
-        minimal
-        icon={dark ? 'flash' : 'moon'}
-        aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-        onClick={() => setDark(!dark)}
-        className="app__theme-toggle"
-      />
-      <UserMenu currentUser={currentUser} onLogout={onLogout} />
-    </>
+    </header>
   )
 
   return (
-    <div className={collapsed ? 'app app--sidebar-collapsed' : 'app'}>
+    <div className={collapsed ? 'app-frame app-frame--sidebar-collapsed' : 'app-frame'}>
+      {header}
+      <div className="app">
       {/* NO Drawer branch any more, and the rail is why.
           
           A Drawer existed because a 240px sidebar eats a narrow
@@ -566,6 +589,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
             <Outlet />
           </Suspense>
         </main>
+      </div>
       </div>
     </div>
   )
