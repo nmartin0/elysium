@@ -33,6 +33,7 @@ import pytest
 import yaml
 
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from core.filters import as_equality_conditions
 from core.intermediate_layer.auth import UserRecord
 from core.ontology.link_types import expand_link_types
 from core.ontology.mediator import DataMediator
@@ -112,10 +113,10 @@ def test_a_deleted_object_is_not_visible(deployment):
 
 def test_a_deleted_object_disappears_from_search(deployment):
     mediator, write_mediator, _log, _db = deployment
-    before = mediator.search_object(WEST, "Customer", {})
+    before = mediator.search_object(WEST, "Customer", as_equality_conditions({}))
 
     _write(write_mediator, "delete")
-    after = mediator.search_object(WEST, "Customer", {})
+    after = mediator.search_object(WEST, "Customer", as_equality_conditions({}))
 
     assert "cust_001" in before
     assert "cust_001" not in after
@@ -148,7 +149,7 @@ def test_a_delete_is_reversible_by_a_later_write(deployment):
     )
 
     assert mediator.get_field(WEST, "Customer", "cust_001", "name") == "Ada Restored"
-    assert "cust_001" in mediator.search_object(WEST, "Customer", {})
+    assert "cust_001" in mediator.search_object(WEST, "Customer", as_equality_conditions({}))
 
 
 def test_deleting_after_an_update_still_hides_the_object(deployment):
@@ -229,7 +230,7 @@ def test_deleted_objects_are_filtered_in_bulk_not_per_object(deployment):
 
     sqlite_adapter_module._run_query = counting
     try:
-        visible = mediator.search_object(WEST, "Customer", {})
+        visible = mediator.search_object(WEST, "Customer", as_equality_conditions({}))
     finally:
         sqlite_adapter_module._run_query = real_run_query
 

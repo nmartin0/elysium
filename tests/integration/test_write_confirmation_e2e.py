@@ -23,6 +23,7 @@ isolated test deployment, a fresh database per test. user_eve has the
 
 import pytest
 
+from core.filters import as_equality_conditions
 from tests.integration.conftest import propose_named_action
 
 QUERY_TEXT = (
@@ -69,7 +70,9 @@ def test_real_model_create_action_rejected_creates_nothing(deployment, mediator,
     # NO row behind at all -- not a partial one, not one with only
     # SOME fields set. search_object() finding nothing is the correct,
     # genuine proof no object with this id exists.
-    found = mediator.search_object(user_record, "Customer", {"customer_id": proposed_customer_id})
+    found = mediator.search_object(
+        user_record, "Customer",
+        as_equality_conditions({"customer_id": proposed_customer_id}))
     assert found == [], (
         f"Expected a rejected create to leave NO customer behind, "
         f"but search_object found: {found}"

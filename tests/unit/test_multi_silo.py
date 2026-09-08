@@ -27,6 +27,7 @@ import pytest
 
 from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from core.filters import as_equality_conditions
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 from core.ontology.write_log import WriteLogWriter
@@ -106,8 +107,8 @@ def test_two_silos_get_genuinely_separate_adapter_instances(mediator):
 
 def test_authorized_user_reads_correctly_from_both_silos(mediator):
     alice = _record("alice")
-    assert mediator.search_object(alice, "Widget", {"widget_id": "w1"}) == ["w1"]
-    assert mediator.search_object(alice, "Gadget", {"gadget_id": "g1"}) == ["g1"]
+    assert mediator.search_object(alice, "Widget", as_equality_conditions({"widget_id": "w1"})) == ["w1"]
+    assert mediator.search_object(alice, "Gadget", as_equality_conditions({"gadget_id": "g1"})) == ["g1"]
     assert mediator.get_field(alice, "Widget", "w1", "name") == "Left Widget"
     assert mediator.get_field(alice, "Gadget", "g1", "label") == "Right Gadget"
 
@@ -117,7 +118,7 @@ def test_mac_boundary_enforced_independently_within_the_second_silo(mediator):
     # MAC enforcement isn't skipped or weakened just because this is
     # the SECOND silo of the same adapter type.
     alice = _record("alice")
-    assert mediator.search_object(alice, "Gadget", {"gadget_id": "g2"}) == []
+    assert mediator.search_object(alice, "Gadget", as_equality_conditions({"gadget_id": "g2"})) == []
 
 
 def test_rbac_blocks_one_silo_entirely_while_the_other_still_works(mediator):
@@ -126,8 +127,8 @@ def test_rbac_blocks_one_silo_entirely_while_the_other_still_works(mediator):
     # not accidentally shared or bypassed because both silos are the
     # same adapter class.
     bob = _record("bob")
-    assert mediator.search_object(bob, "Gadget", {"gadget_id": "g1"}) == []
-    assert mediator.search_object(bob, "Widget", {"widget_id": "w1"}) == ["w1"]
+    assert mediator.search_object(bob, "Gadget", as_equality_conditions({"gadget_id": "g1"})) == []
+    assert mediator.search_object(bob, "Widget", as_equality_conditions({"widget_id": "w1"})) == ["w1"]
 
 
 def test_an_action_to_one_silo_never_touches_the_other(mediator):

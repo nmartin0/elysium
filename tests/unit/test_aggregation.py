@@ -26,6 +26,7 @@ import pytest
 import yaml
 
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from core.filters import as_equality_conditions
 from core.intermediate_layer.auth import UserRecord
 from core.ontology.link_types import expand_link_types
 from core.ontology.mediator import DataMediator
@@ -82,8 +83,8 @@ def test_count_objects_respects_mac_rather_than_counting_raw_rows(mediator):
     # Each user sees only their own region's customers -- the counts
     # are equal here by coincidence of the fixture, so the real
     # assertion is that they see DIFFERENT objects, not the same set.
-    west_ids = set(mediator.search_object(CUSTOMER_SERVICE, "Customer", {}))
-    east_ids = set(mediator.search_object(OTHER_REGION, "Customer", {}))
+    west_ids = set(mediator.search_object(CUSTOMER_SERVICE, "Customer", as_equality_conditions({})))
+    east_ids = set(mediator.search_object(OTHER_REGION, "Customer", as_equality_conditions({})))
     assert west_ids and east_ids
     assert west_ids != east_ids, "MAC must partition what each caller counts"
 
@@ -208,7 +209,7 @@ def test_aggregation_reads_data_in_bulk_not_per_object(mediator):
     sqlite_adapter_module._run_query_one = counting(real_run_query_one)
     try:
         counted["n"] = 0
-        mediator.search_object(CUSTOMER_SERVICE, "Transaction", {})
+        mediator.search_object(CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}))
         search_only = counted["n"]
 
         counted["n"] = 0
@@ -298,7 +299,7 @@ def test_an_aggregate_reads_a_constant_number_of_times(tmp_path):
     sqlite_adapter_module._run_query_one = counting(real_run_query_one)
     try:
         counted["n"] = 0
-        visible = mediator.search_object(CUSTOMER_SERVICE, "Transaction", {})
+        visible = mediator.search_object(CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}))
         mac_queries = counted["n"]
 
         counted["n"] = 0

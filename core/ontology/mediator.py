@@ -109,10 +109,10 @@ from contextlib import contextmanager
 from typing import Any, cast
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
+from core.filters import FieldFilter, as_equality_conditions, row_matches, validate_filter
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
-from core.ontology.filters import FieldFilter, row_matches, validate_filter
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.schema import (
     get_column_for_field,
@@ -759,8 +759,23 @@ class DataMediator:
                 columns.add(field_name)
         return columns
 
-    def search_object(self, user_record: UserRecord, object_type: str, criteria: dict,
+    def search_object(self, user_record: UserRecord, object_type: str,
+                       conditions: "list[FieldFilter] | None" = None,
                        visible_schema: dict | None = None) -> list:
+        """IDs the caller may see, matching every condition.
+
+        TAKES CONDITIONS, not a {field: value} dict. The dict could
+        express only equality -- one value per field -- so selecting
+        two values on a chart had no representation at all, and
+        validate_filter() could never reject anything because every
+        condition was built here and correct by construction.
+
+        Field names are checked against the caller's OWN visible
+        schema, so a field they cannot read is indistinguishable from
+        one that does not exist. That check needs a caller, which is
+        why it lives here and not in the vocabulary.
+        """
+        conditions = conditions or []
         # visible_schema is OPTIONAL -- pass the already-computed one
         # (AgentLoop.run() does, once per request) to avoid recomputing
         # it on every search_object call within one traversal. A direct
@@ -795,47 +810,38 @@ class DataMediator:
             return []
 
         valid_columns = self._filterable_columns(object_type, visible_type_def)
-        for key in criteria:
-            if key not in valid_columns:
+        for condition in conditions:
+            if condition.field not in valid_columns:
                 # Generic, no field list -- revealing "valid: [...]"
                 # here would hand back exactly the schema visible_schema()
                 # just deliberately hid.
                 raise ValueError("Invalid search criteria")
+            # Now reachable, and able to REJECT: the operator comes
+            # from the caller rather than being constructed here.
+            validate_filter(condition, self._declared_type(object_type, condition.field))
 
-        adapter, resolved_type_config = self._resolve_shared_storage(object_type, list(criteria.keys()))
+        adapter, resolved_type_config = self._resolve_shared_storage(
+            object_type, [condition.field for condition in conditions]
+        )
 
         # Translates each criteria KEY (a field name) to its real SQL
         # column name -- see get_column_for_field()'s own docstring for
         # why the id_field needs its own handling (it isn't a regular
         # entry in type_schema["fields"] at all).
-        # Validated, though today this can never REJECT: search_object
-        # takes a {field: value} dict and builds equals conditions from
-        # it, so every condition is correct by construction.
-        #
-        # Kept because it is the seam where a caller-supplied condition
-        # list will arrive -- search_object's signature is the next
-        # thing to change, across 114 call sites -- and because the
-        # cost is a dictionary lookup per field.
-        #
-        # Recorded honestly: an earlier commit message claimed this was
-        # "wired where conditions are built from caller input", which
-        # it is not. The caller supplies a dict; we build the
-        # conditions. The adapters' own guards are the checks that
-        # actually fire today.
-        conditions = []
-        for key, value in criteria.items():
-            condition = FieldFilter(
-                field=get_column_for_field(resolved_type_config, key),
-                operator="equals",
-                value=value,
+        # Field names become column names; operator and value survive.
+        translated = [
+            FieldFilter(
+                field=get_column_for_field(resolved_type_config, condition.field),
+                operator=condition.operator,
+                value=condition.value,
             )
-            validate_filter(condition, self._declared_type(object_type, key))
-            conditions.append(condition)
+            for condition in conditions
+        ]
         candidate_ids = self._find_ids_with_fallback(
-            adapter, object_type, conditions, resolved_type_config
+            adapter, object_type, translated, resolved_type_config
         )
         candidate_ids = self._reconcile_search_with_pending_writes(
-            object_type, criteria, candidate_ids, adapter, resolved_type_config
+            object_type, conditions, candidate_ids, adapter, resolved_type_config
         )
         action = f"read:{object_type}"
         candidate_ids = self._without_deleted(object_type, candidate_ids)
@@ -1013,7 +1019,7 @@ class DataMediator:
             if all(row_matches(row, condition) for condition in conditions)
         ]
 
-    def _reconcile_search_with_pending_writes(self, object_type: str, criteria: dict, candidate_ids: list,
+    def _reconcile_search_with_pending_writes(self, object_type: str, conditions: list, candidate_ids: list,
                                                adapter: ExternalReadAdapter, resolved_type_config: dict) -> list:
         # Closes the gap write_log.py's own module docstring used to
         # name explicitly: search_object() queries the REAL backend
@@ -1050,7 +1056,13 @@ class DataMediator:
         # reconciliation mechanism exists to prevent.
         relevant_entries = [
             entry for entry in self.write_log.get_all_pending_writes()
-            if entry["object_type"] == object_type and set(entry["changes"]) & set(criteria)
+            # Only the FIELD NAMES matter here -- whether a pending
+            # write touched anything the search filtered on. The
+            # operator and value are irrelevant to that question, which
+            # is why this survived the change from a dict unchanged
+            # apart from how the names are read out.
+            if entry["object_type"] == object_type
+            and set(entry["changes"]) & {condition.field for condition in conditions}
         ]
         if not relevant_entries:
             return candidate_ids
@@ -1081,9 +1093,17 @@ class DataMediator:
             # match.
             matches = all(
                 self._read_field_with_log_check(
-                    object_type, object_id, field_name, adapter, resolved_type_config
-                ) == expected_value
-                for field_name, expected_value in criteria.items()
+                    object_type, object_id, condition.field, adapter,
+                    resolved_type_config,
+                ) is not None
+                and row_matches(
+                    {condition.field: self._read_field_with_log_check(
+                        object_type, object_id, condition.field, adapter,
+                        resolved_type_config,
+                    )},
+                    condition,
+                )
+                for condition in conditions
             )
             if matches:
                 # setdefault, not a plain assignment -- if this id was
@@ -1145,7 +1165,7 @@ class DataMediator:
         Returns a deduplicated list -- two source objects legitimately
         linking to the same target should yield it once.
         """
-        source_ids = self.search_object(user_record, object_type, criteria)
+        source_ids = self.search_object(user_record, object_type, as_equality_conditions(criteria))
         if not source_ids:
             return []
 
@@ -1259,7 +1279,7 @@ class DataMediator:
         is the same constraint Foundry's own Object Set Service works
         under, and the reason it is a service rather than exposed SQL.
         """
-        return len(self.search_object(user_record, object_type, criteria))
+        return len(self.search_object(user_record, object_type, as_equality_conditions(criteria)))
 
     def aggregate_by_field(self, user_record: UserRecord, object_type: str, criteria: dict,
                             group_by: str | None, aggregate: str, field_name: str | None = None) -> dict:
@@ -1285,7 +1305,7 @@ class DataMediator:
         if aggregate != "count" and field_name is None:
             raise ValueError(f"aggregate {aggregate!r} requires a field_name")
 
-        visible_ids = set(self.search_object(user_record, object_type, criteria))
+        visible_ids = set(self.search_object(user_record, object_type, as_equality_conditions(criteria)))
         if not visible_ids:
             return {}
 

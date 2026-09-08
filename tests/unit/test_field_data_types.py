@@ -14,11 +14,11 @@ import sqlite3
 import pytest
 
 from adapters.sqlite_adapter import SQLiteReadAdapter
+from core.filters import FieldFilter
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.mirror.sync_targets import resolve_sync_targets
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for, coerce
-from core.ontology.filters import FieldFilter
 from core.ontology.object_type_validation import validate_object_types
 
 

@@ -25,6 +25,7 @@ import sqlite3
 import pytest
 
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from core.filters import as_equality_conditions
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -447,7 +448,7 @@ def test_search_finds_object_by_its_pending_create(fixture, isolated_audit_log):
         "alice", "test",
     )
 
-    result = mediator.search_object(alice, "Customer", {"risk_score": 0.55})
+    result = mediator.search_object(alice, "Customer", as_equality_conditions({"risk_score": 0.55}))
     assert result == ["cust_001"]
     # Never a None or a bare, unresolved string standing in for the id.
     assert result[0] is not None
@@ -466,4 +467,4 @@ def test_search_finds_object_by_its_pending_create_on_primary_field_too(fixture)
         "alice", "test",
     )
 
-    assert mediator.search_object(alice, "Customer", {"name": "New Customer"}) == ["cust_001"]
+    assert mediator.search_object(alice, "Customer", as_equality_conditions({"name": "New Customer"})) == ["cust_001"]

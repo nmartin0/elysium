@@ -33,6 +33,8 @@ nothing a UI cannot.
 
 from typing import Any
 
+from core.filters import as_equality_conditions
+
 
 class OntologyAccess:
     """Read-only ontology access, scoped to one caller and one
@@ -58,7 +60,7 @@ class OntologyAccess:
     def search(self, object_type: str, criteria: dict | None = None) -> list:
         """Ids of matching objects the CALLER can see."""
         self._check(object_type)
-        return self._mediator.search_object(self._user_record, object_type, criteria or {})
+        return self._mediator.search_object(self._user_record, object_type, as_equality_conditions(criteria))
 
     def get_object(self, object_type: str, object_id: Any, field_names: list[str]) -> dict:
         """Field values for one object. Ungranted fields come back None,

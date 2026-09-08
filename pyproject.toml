@@ -141,7 +141,20 @@ ignore_imports = [
 [[tool.importlinter.contracts]]
 name = "core/ internal layering (agent orchestrates llm/memory/ontology/functions)"
 type = "layers"
-layers = ["agent", "mirror", "llm", "memory", "ontology", "auth", "intermediate_layer", "functions"]
+layers = [
+    "agent", "mirror", "llm", "memory", "ontology", "auth",
+    "intermediate_layer", "functions",
+    # The filter vocabulary, below everything. It started inside
+    # core/ontology and moved out because core.functions sits BELOW
+    # ontology here and needs it too -- OntologyAccess builds
+    # conditions for a search. A vocabulary that the bottom layer
+    # cannot reach is in the wrong place, and the contract said so.
+    #
+    # It imports nothing from core: it validates the SHAPE of an
+    # expression and the TYPES of its values, and knows nothing about
+    # schemas, callers or storage.
+    "filters",
+]
 containers = ["core"]
 exhaustive = true
 exhaustive_ignores = ["adapter_roles", "concurrency", "config", "deployment_loader", "internal_storage", "logging_config", "pending_write_store", "sqlite_connection", "user_directory"]
@@ -191,13 +204,11 @@ layers = [
     # time), and mediator imports filters; neither imports anything in
     # this package back.
     #
-    # filters knows nothing about who is asking, deliberately: it
-    # validates the SHAPE of an expression and the TYPES of its values,
-    # while the mediator checks field names against the caller's own
-    # visible schema. A field someone cannot read must be
-    # indistinguishable from one that does not exist, and that check
-    # needs a caller -- which a leaf does not have.
-    "field_types | link_types | filters",
+    # The filter vocabulary moved OUT of this package, to core/filters.py:
+    # core.functions sits below core.ontology in the layering above and
+    # needs it too, so a vocabulary living inside ontology could not be
+    # reached from there.
+    "field_types | link_types",
 ]
 containers = ["core.ontology"]
 exhaustive = true

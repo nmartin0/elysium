@@ -47,7 +47,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from core.ontology.filters import FilterError, UnsupportedFilter
+from core.filters import FilterError, UnsupportedFilter
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.sqlite_connection import open_connection as _connect
 

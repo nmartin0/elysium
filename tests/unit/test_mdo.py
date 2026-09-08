@@ -26,6 +26,7 @@ import sqlite3
 import pytest
 
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from core.filters import as_equality_conditions
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -204,11 +205,15 @@ def test_field_level_rbac_still_applies_independently_per_mdo_field(mediator):
 
 
 def test_search_by_a_primary_field_still_works(mediator):
-    assert mediator.search_object(_record("alice"), "Customer", {"name": "Ada Okafor"}) == ["cust_001"]
+    assert mediator.search_object(
+        _record("alice"), "Customer",
+        as_equality_conditions({"name": "Ada Okafor"})) == ["cust_001"]
 
 
 def test_search_by_an_mdo_field_resolves_to_the_right_silo(mediator):
-    assert mediator.search_object(_record("alice"), "Customer", {"risk_score": 0.42}) == ["cust_001"]
+    assert mediator.search_object(
+        _record("alice"), "Customer",
+        as_equality_conditions({"risk_score": 0.42})) == ["cust_001"]
 
 
 def test_search_mixing_fields_from_different_storages_is_rejected(mediator):
@@ -216,7 +221,9 @@ def test_search_mixing_fields_from_different_storages_is_rejected(mediator):
     # only touch ONE storage at a time. Federated intersection across
     # storages is real, unsolved territory, deliberately out of scope.
     with pytest.raises(ValueError, match="cannot combine fields from multiple storages"):
-        mediator.search_object(_record("alice"), "Customer", {"name": "Ada Okafor", "risk_score": 0.42})
+        mediator.search_object(
+            _record("alice"), "Customer",
+            as_equality_conditions({"name": "Ada Okafor", "risk_score": 0.42}))
 
 
 def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
@@ -264,7 +271,7 @@ def test_search_with_empty_criteria_defaults_to_primary_storage(mediator):
     # (cust_002 added specifically so the missing-row-on-the-MDO-side
     # test below can exercise a REAL existing primary customer, not a
     # completely nonexistent one).
-    result = mediator.search_object(_record("alice"), "Customer", {})
+    result = mediator.search_object(_record("alice"), "Customer", as_equality_conditions({}))
     assert set(result) == {"cust_001", "cust_002"}
 
 
@@ -285,7 +292,9 @@ def test_search_mixing_id_field_with_an_mdo_field_is_rejected(mediator):
     # path than two regular fields being mixed, so it earns its own
     # dedicated test rather than assuming the general case covers it.
     with pytest.raises(ValueError, match="cannot combine fields from multiple storages"):
-        mediator.search_object(_record("alice"), "Customer", {"customer_id": "cust_001", "risk_score": 0.42})
+        mediator.search_object(
+            _record("alice"), "Customer",
+            as_equality_conditions({"customer_id": "cust_001", "risk_score": 0.42}))
 
 
 def test_missing_row_on_the_mdo_side_returns_none_not_a_crash(mediator, isolated_audit_log):
@@ -379,8 +388,10 @@ def test_security_field_that_is_itself_mdo_backed(tmp_path, isolated_audit_log):
     # Must resolve correctly, in BOTH directions -- allow when the
     # region genuinely matches, deny when it genuinely doesn't. Before
     # the fix, EITHER of these would have raised OperationalError.
-    assert mediator.search_object(matching_region, "Customer", {"customer_id": "cust_001"}) == ["cust_001"]
-    assert mediator.search_object(wrong_region, "Customer", {"customer_id": "cust_001"}) == []
+    assert mediator.search_object(
+        matching_region, "Customer",
+        as_equality_conditions({"customer_id": "cust_001"})) == ["cust_001"]
+    assert mediator.search_object(wrong_region, "Customer", as_equality_conditions({"customer_id": "cust_001"})) == []
 
 
 def test_create_without_setting_security_field_produces_an_unreadable_row(mediator, isolated_audit_log):

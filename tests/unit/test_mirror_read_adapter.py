@@ -23,9 +23,9 @@ import sqlite3
 import pytest
 
 from adapters.sqlite_adapter import SQLiteReadAdapter
+from core.filters import FieldFilter
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.mirror_adapter import MirrorReadAdapter
-from core.ontology.filters import FieldFilter
 
 
 def _as_conditions(criteria: dict) -> list[FieldFilter]:

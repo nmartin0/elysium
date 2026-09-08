@@ -70,6 +70,7 @@ from typing import Any
 
 from core.concurrency import ConcurrencyLimiter
 from core.deployment_loader import build_llm_adapter
+from core.filters import as_equality_conditions
 from core.functions.interface import Function
 from core.functions.ontology_access import OntologyAccess
 from core.functions.registry import get_enabled_functions
@@ -301,7 +302,9 @@ class AgentLoop:
                 # computed ONCE for this whole request by run(), not
                 # recomputed on every search_object call.
                 result = self.mediator.search_object(
-                    user_record, step["object_type"], step["filter"], visible_schema=visible_schema
+                    user_record, step["object_type"],
+                    as_equality_conditions(step["filter"]),
+                    visible_schema=visible_schema,
                 )
             elif step["step"] == "get_field":
                 result = self.mediator.get_field(

@@ -23,6 +23,7 @@ import sqlite3
 import pytest
 
 from adapters.sqlite_adapter import SQLiteWriteAdapter
+from core.filters import as_equality_conditions
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 
@@ -62,39 +63,39 @@ def mediator(test_db_path, test_schema) -> DataMediator:
 
 
 def test_search_object_finds_matching_org(mediator):
-    result = mediator.search_object(_record("alice"), "Author", {"author_id": "auth_001"})
+    result = mediator.search_object(_record("alice"), "Author", as_equality_conditions({"author_id": "auth_001"}))
     assert result == ["auth_001"]
 
 
 def test_search_object_blocks_cross_org_mac(mediator):
-    result = mediator.search_object(_record("bob"), "Author", {"author_id": "auth_001"})
+    result = mediator.search_object(_record("bob"), "Author", as_equality_conditions({"author_id": "auth_001"}))
     assert result == []
 
 
 def test_search_object_blocks_missing_role_rbac(mediator):
-    result = mediator.search_object(_record("carol"), "Author", {"author_id": "auth_001"})
+    result = mediator.search_object(_record("carol"), "Author", as_equality_conditions({"author_id": "auth_001"}))
     assert result == []
 
 
 def test_search_object_by_non_id_field(mediator):
-    result = mediator.search_object(_record("alice"), "Author", {"name": "Ada Lovelace"})
+    result = mediator.search_object(_record("alice"), "Author", as_equality_conditions({"name": "Ada Lovelace"}))
     assert result == ["auth_001"]
 
 
 def test_search_object_rejects_unfilterable_field(mediator):
     with pytest.raises(ValueError):
-        mediator.search_object(_record("alice"), "Author", {"books": "anything"})
+        mediator.search_object(_record("alice"), "Author", as_equality_conditions({"books": "anything"}))
 
 
 def test_search_object_error_does_not_leak_valid_field_list(mediator):
     with pytest.raises(ValueError) as exc_info:
-        mediator.search_object(_record("alice"), "Author", {"totally_fake_field": "x"})
+        mediator.search_object(_record("alice"), "Author", as_equality_conditions({"totally_fake_field": "x"}))
     message = str(exc_info.value)
     assert "name" not in message and "org_id" not in message and "books" not in message
 
 
 def test_search_object_unknown_type_returns_empty_not_error(mediator):
-    assert mediator.search_object(_record("alice"), "TotallyFakeType", {}) == []
+    assert mediator.search_object(_record("alice"), "TotallyFakeType", as_equality_conditions({})) == []
 
 
 def test_get_field_plain_data(mediator):
@@ -102,7 +103,9 @@ def test_get_field_plain_data(mediator):
 
 
 def test_get_field_object_type_rbac_alone_is_not_enough(mediator):
-    assert mediator.search_object(_record("dave"), "Author", {"author_id": "auth_001"}) == ["auth_001"]
+    assert mediator.search_object(
+        _record("dave"), "Author",
+        as_equality_conditions({"author_id": "auth_001"})) == ["auth_001"]
     assert mediator.get_field(_record("dave"), "Author", "auth_001", "name") is None
 
 
@@ -336,7 +339,7 @@ def test_search_object_reuses_precomputed_visible_schema_if_given(mediator):
     # (claiming nothing is visible) proves it's genuinely being used,
     # not silently ignored in favor of a fresh computation.
     fake_empty_schema = {}
-    result = mediator.search_object(_record("alice"), "Author", {"author_id": "auth_001"},
+    result = mediator.search_object(_record("alice"), "Author", as_equality_conditions({"author_id": "auth_001"}),
                                      visible_schema=fake_empty_schema)
     assert result == []  # would be ["auth_001"] if the real schema were computed instead
 
@@ -383,8 +386,8 @@ def test_id_field_itself_requires_its_own_explicit_grant(mediator):
     eve_record = resolve_user_record(eve_users, "eve", "org_id")
 
     with pytest.raises(ValueError):
-        m2.search_object(eve_record, "Author", {"author_id": "auth_001"})
-    assert m2.search_object(eve_record, "Author", {"name": "Ada Lovelace"}) == ["auth_001"]
+        m2.search_object(eve_record, "Author", as_equality_conditions({"author_id": "auth_001"}))
+    assert m2.search_object(eve_record, "Author", as_equality_conditions({"name": "Ada Lovelace"})) == ["auth_001"]
 
 
 def test_two_mediators_are_independent():

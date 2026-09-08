@@ -33,6 +33,7 @@ import pytest
 import yaml
 
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from core.filters import as_equality_conditions
 from core.intermediate_layer.auth import UserRecord
 from core.ontology.link_types import expand_link_types
 from core.ontology.mediator import DataMediator
@@ -93,12 +94,12 @@ def test_batching_returns_the_same_objects_as_the_unbatched_path(tmp_path):
     # equivalence rather than restating today's answer.
     mediator = _mediator(tmp_path, extra_transactions=50)
 
-    batched = mediator.search_object(WEST, "Transaction", {})
+    batched = mediator.search_object(WEST, "Transaction", as_equality_conditions({}))
 
     mediator._prefetch_security_values = lambda object_type, object_ids: None
     mediator._security_value_cache.clear()
     mediator._security_link_cache.clear()
-    unbatched = mediator.search_object(WEST, "Transaction", {})
+    unbatched = mediator.search_object(WEST, "Transaction", as_equality_conditions({}))
 
     assert sorted(map(str, batched)) == sorted(map(str, unbatched))
     assert batched, "fixture should return something for this to be meaningful"
@@ -110,8 +111,8 @@ def test_batching_still_denies_what_mac_denies(tmp_path):
     # values must still see genuinely different sets.
     mediator = _mediator(tmp_path, extra_transactions=20)
 
-    west = set(map(str, mediator.search_object(WEST, "Transaction", {})))
-    east = set(map(str, mediator.search_object(EAST, "Transaction", {})))
+    west = set(map(str, mediator.search_object(WEST, "Transaction", as_equality_conditions({}))))
+    east = set(map(str, mediator.search_object(EAST, "Transaction", as_equality_conditions({}))))
 
     assert west
     assert west != east
@@ -142,7 +143,7 @@ def test_the_cache_is_cleared_between_operations(tmp_path):
     # without it, that stale value would survive indefinitely and be
     # served to a later direct read.
     mediator = _mediator(tmp_path)
-    mediator.search_object(WEST, "Customer", {})
+    mediator.search_object(WEST, "Customer", as_equality_conditions({}))
     assert mediator._security_value_cache, "prefetch should have populated something"
 
     conn = sqlite3.connect(mediator.adapters["primary_sql"].db_path)
@@ -152,7 +153,7 @@ def test_the_cache_is_cleared_between_operations(tmp_path):
 
     # An operation that prefetches NOTHING -- cust_001 is not in its
     # result set, so nothing overwrites the stale entry.
-    mediator.search_object(WEST, "Customer", {"region": "nowhere"})
+    mediator.search_object(WEST, "Customer", as_equality_conditions({"region": "nowhere"}))
 
     # The now-us-east customer must be denied to this us-west caller.
     assert mediator.get_field(WEST, "Customer", "cust_001", "name") is None, (
@@ -169,7 +170,7 @@ def test_a_failing_prefetch_does_not_break_the_read(mediator, monkeypatch):
 
     monkeypatch.setattr(mediator, "_read_field_for_ids", exploding)
 
-    assert mediator.search_object(WEST, "Customer", {})
+    assert mediator.search_object(WEST, "Customer", as_equality_conditions({}))
 
 
 def test_an_object_with_an_unresolvable_security_value_stays_denied(tmp_path):
@@ -185,7 +186,7 @@ def test_an_object_with_an_unresolvable_security_value_stays_denied(tmp_path):
     orphan_id = conn.execute("SELECT max(transaction_id) FROM transactions").fetchone()[0]
     conn.close()
 
-    visible = set(map(str, mediator.search_object(WEST, "Transaction", {})))
+    visible = set(map(str, mediator.search_object(WEST, "Transaction", as_equality_conditions({}))))
 
     assert str(orphan_id) not in visible
 
@@ -219,12 +220,12 @@ def test_security_resolution_scales_with_chain_depth_not_set_size(tmp_path):
     try:
         small = _mediator(tmp_path / "small", extra_transactions=10)
         counted["n"] = 0
-        small_ids = small.search_object(WEST, "Transaction", {})
+        small_ids = small.search_object(WEST, "Transaction", as_equality_conditions({}))
         small_queries = counted["n"]
 
         large = _mediator(tmp_path / "large", extra_transactions=500)
         counted["n"] = 0
-        large_ids = large.search_object(WEST, "Transaction", {})
+        large_ids = large.search_object(WEST, "Transaction", as_equality_conditions({}))
         large_queries = counted["n"]
     finally:
         sqlite_adapter_module._run_query = real_run_query
@@ -266,7 +267,9 @@ def test_concurrent_requests_from_different_users_get_their_own_answers(tmp_path
         try:
             stop.wait()
             for _ in range(25):
-                results[key].append(tuple(sorted(map(str, mediator.search_object(user, "Transaction", {})))))
+                results[key].append(tuple(sorted(map(str, mediator.search_object(
+                    user, "Transaction",
+                    as_equality_conditions({}))))))
         except Exception as exc:
             results["errors"].append(f"{type(exc).__name__}: {exc}")
 
@@ -357,12 +360,12 @@ def test_the_cached_value_does_not_depend_on_who_populated_it(tmp_path):
     # the same.
     mediator = _mediator(tmp_path)
 
-    mediator.search_object(EAST, "Customer", {})
+    mediator.search_object(EAST, "Customer", as_equality_conditions({}))
     east_warmed = mediator._get_security_value("Customer", "cust_001")
 
     mediator._security_value_cache.clear()
     mediator._security_link_cache.clear()
-    mediator.search_object(WEST, "Customer", {})
+    mediator.search_object(WEST, "Customer", as_equality_conditions({}))
     west_warmed = mediator._get_security_value("Customer", "cust_001")
 
     assert east_warmed == west_warmed
@@ -470,7 +473,7 @@ def test_reading_a_page_of_objects_shares_one_security_resolution(tmp_path):
     sqlite_adapter_module._run_query = counting(real_run_query)
     sqlite_adapter_module._run_query_one = counting(real_run_query_one)
     try:
-        page = mediator.search_object(WEST, "Customer", {})[:50]
+        page = mediator.search_object(WEST, "Customer", as_equality_conditions({}))[:50]
         counted["n"] = 0
         for object_id in page:
             mediator.get_object(WEST, "Customer", object_id, ["name", "email", "region"])

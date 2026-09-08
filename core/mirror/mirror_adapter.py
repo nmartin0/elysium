@@ -64,7 +64,7 @@ from pyiceberg.expressions import (
     NotIn,
 )
 
-from core.ontology.filters import UnsupportedFilter
+from core.filters import UnsupportedFilter
 from core.ontology.interface import ExternalReadAdapter
 
 

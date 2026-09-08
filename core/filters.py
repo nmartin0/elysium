@@ -94,6 +94,27 @@ class FilterError(ValueError):
     """
 
 
+def as_equality_conditions(criteria: dict | None) -> list[FieldFilter]:
+    """A {field: value} dict as equality conditions.
+
+    For callers whose OWN public surface still takes a dict --
+    OntologyAccess.search(), count_objects(), search_around(), the
+    agent's emitted filter, the HTTP body. search_object() speaks
+    conditions now; those APIs adopt the vocabulary in their own
+    changes, and this is the boundary until they do.
+
+    NOT the dict shape returning by the back door. parse_filters()
+    rejects a dict deliberately, because two accepted wire shapes is
+    two things to keep correct. This is an explicit conversion a caller
+    asks for, named so it is visible at every call site that still
+    needs it.
+    """
+    return [
+        FieldFilter(field=field, operator="equals", value=value)
+        for field, value in (criteria or {}).items()
+    ]
+
+
 def parse_filters(raw: Any) -> list[FieldFilter]:
     """Turns the wire form -- a list of conditions -- into validated
     FieldFilters.

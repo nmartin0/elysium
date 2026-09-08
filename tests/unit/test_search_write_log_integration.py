@@ -29,6 +29,7 @@ import sqlite3
 import pytest
 
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from core.filters import as_equality_conditions
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -112,8 +113,8 @@ def fixture(tmp_path, isolated_audit_log):
 def test_search_with_no_pending_writes_is_unaffected(fixture):
     mediator, _, _ = fixture
     alice = _record("alice")
-    assert mediator.search_object(alice, "Ticket", {"status": "open"}) == [1]
-    assert mediator.search_object(alice, "Ticket", {"status": "closed"}) == [2]
+    assert mediator.search_object(alice, "Ticket", as_equality_conditions({"status": "open"})) == [1]
+    assert mediator.search_object(alice, "Ticket", as_equality_conditions({"status": "closed"})) == [2]
 
 
 def test_search_finds_object_by_its_new_pending_value(fixture):
@@ -132,7 +133,7 @@ def test_search_finds_object_by_its_new_pending_value(fixture):
     raw = real_adapter.get_raw_field("Ticket", 1, "status", {"storage": {"table": "tickets", "id_column": "ticket_id"}})
     assert raw == "open", "the real backend should not have changed yet"
 
-    result = mediator.search_object(alice, "Ticket", {"status": "closed"})
+    result = mediator.search_object(alice, "Ticket", as_equality_conditions({"status": "closed"}))
     # Ticket 2 already, genuinely matches "closed" in the real backend
     # (unrelated to this test) -- ticket 1 must ALSO be present, via
     # its pending write, alongside it.
@@ -158,7 +159,7 @@ def test_search_no_longer_finds_object_by_its_old_pending_value(fixture):
         "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
-    result = mediator.search_object(alice, "Ticket", {"status": "open"})
+    result = mediator.search_object(alice, "Ticket", as_equality_conditions({"status": "open"}))
     assert result == [], "ticket 1 must be excluded despite the real backend still matching 'open'"
 
 
@@ -177,11 +178,15 @@ def test_search_reconciliation_considers_full_criteria_not_just_changed_fields(f
     # Matches on BOTH the pending status AND the real, unaffected
     # priority -- ticket 2 ALSO, genuinely matches this (real
     # status='closed', real priority='low'), unrelated to this test.
-    assert set(mediator.search_object(alice, "Ticket", {"status": "closed", "priority": "low"})) == {1, 2}
+    assert set(mediator.search_object(
+        alice, "Ticket",
+        as_equality_conditions({"status": "closed", "priority": "low"}))) == {1, 2}
     # Does NOT match if the REAL, unaffected field is wrong, even
     # though the pending field matches -- neither ticket has priority
     # "high" for real.
-    assert mediator.search_object(alice, "Ticket", {"status": "closed", "priority": "high"}) == []
+    assert mediator.search_object(
+        alice, "Ticket",
+        as_equality_conditions({"status": "closed", "priority": "high"})) == []
 
 
 def test_search_reconciliation_respects_rbac(fixture):
@@ -196,7 +201,7 @@ def test_search_reconciliation_respects_rbac(fixture):
         "Ticket", 1, {"status": "closed"}, {"status": "open"}, "alice", "test",
     )
 
-    assert mediator.search_object(bob, "Ticket", {"status": "closed"}) == []
+    assert mediator.search_object(bob, "Ticket", as_equality_conditions({"status": "closed"})) == []
 
 
 def test_search_ignores_pending_entries_for_a_different_object_type(fixture):
@@ -209,10 +214,10 @@ def test_search_ignores_pending_entries_for_a_different_object_type(fixture):
 
     # Ticket 1's real status is genuinely "open" -- the OTHER type's
     # pending entry (same numeric id, different type) must not leak in.
-    assert mediator.search_object(alice, "Ticket", {"status": "open"}) == [1]
+    assert mediator.search_object(alice, "Ticket", as_equality_conditions({"status": "open"})) == [1]
     # Ticket 2 is already, genuinely "closed" for real -- unaffected by
     # the unrelated SomeOtherType entry either way.
-    assert mediator.search_object(alice, "Ticket", {"status": "closed"}) == [2]
+    assert mediator.search_object(alice, "Ticket", as_equality_conditions({"status": "closed"})) == [2]
 
 
 def test_search_ignores_pending_entries_that_dont_touch_criteria_fields(fixture):
@@ -225,7 +230,7 @@ def test_search_ignores_pending_entries_that_dont_touch_criteria_fields(fixture)
         "Ticket", 1, {"priority": "high"}, {"priority": "low"}, "alice", "test",
     )
 
-    assert mediator.search_object(alice, "Ticket", {"status": "open"}) == [1]
+    assert mediator.search_object(alice, "Ticket", as_equality_conditions({"status": "open"})) == [1]
 
 
 def test_submission_criteria_sees_pending_value_not_stale_backend_state(fixture, isolated_audit_log):

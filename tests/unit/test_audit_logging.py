@@ -21,6 +21,7 @@ import sqlite3
 import pytest
 
 from adapters.sqlite_adapter import SQLiteWriteAdapter
+from core.filters import as_equality_conditions
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -88,7 +89,7 @@ def test_unknown_object_type_on_get_field_logs_unknown_reference(mediator, isola
 
 
 def test_unknown_object_type_on_search_object_logs_unknown_reference(mediator, isolated_audit_log):
-    result = mediator.search_object(_record("alice"), "AlsoFakeType", {})
+    result = mediator.search_object(_record("alice"), "AlsoFakeType", as_equality_conditions({}))
 
     assert result == []
     entries = read_audit_log(isolated_audit_log)
@@ -105,7 +106,7 @@ def test_real_type_denied_at_object_type_level_is_now_logged(mediator, isolated_
     # shape directly (object_id=None, mac_allowed=None -- MAC
     # genuinely doesn't apply without a specific object).
     no_role_user = resolve_user_record({"carol": {"org_id": "org-a"}}, "carol", "org_id")
-    result = mediator.search_object(no_role_user, "Author", {})
+    result = mediator.search_object(no_role_user, "Author", as_equality_conditions({}))
 
     assert result == []
     entries = read_audit_log(isolated_audit_log)

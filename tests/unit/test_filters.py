@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from core.ontology.filters import (
+from core.filters import (
     FieldFilter,
     FilterError,
     parse_filters,
@@ -260,8 +260,8 @@ def test_the_mirror_declines_contains_rather_than_approximating_it():
     wrong answer reporting success, which is the failure this project
     keeps finding.
     """
+    from core.filters import UnsupportedFilter
     from core.mirror.mirror_adapter import MirrorReadAdapter
-    from core.ontology.filters import UnsupportedFilter
 
     adapter = MirrorReadAdapter.__new__(MirrorReadAdapter)
 
@@ -292,7 +292,7 @@ def test_python_evaluation_matches_the_sql_semantics(condition, row, expected):
     # The fallback path uses these when a storage cannot push an
     # operator down. Two definitions of "what does `in` mean" drifting
     # apart would make results depend on which storage answered.
-    from core.ontology.filters import row_matches
+    from core.filters import row_matches
 
     assert row_matches(row, condition) is expected
 
@@ -463,3 +463,97 @@ def test_the_adapter_guards_are_what_actually_fire_today():
         _clause_for(FieldFilter("n", "range", {}))
     with pytest.raises(FilterError):
         _clause_for(FieldFilter("n", "in", []))
+
+
+# --- Reachable from a real caller ---------------------------------------
+#
+# Until now validate_filter() could not reject anything through
+# search_object: it took a {field: value} dict and built the equals
+# conditions itself, so every condition was correct by construction.
+# The vocabulary existed and no caller could use it.
+
+
+def test_search_rejects_an_operator_the_field_type_forbids(tmp_path):
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _mediator_with(20, tmp_path)
+    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    # amount declares data_type number; contains is for strings.
+    with pytest.raises(FilterError):
+        mediator.search_object(
+            user, "Transaction", [FieldFilter("amount", "contains", "x")]
+        )
+
+
+def test_search_rejects_a_malformed_range(tmp_path):
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _mediator_with(20, tmp_path)
+    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    with pytest.raises(FilterError, match="greater than max"):
+        mediator.search_object(
+            user, "Transaction", [FieldFilter("amount", "range", {"min": 9, "max": 1})]
+        )
+
+
+def test_search_applies_a_set_filter_end_to_end(tmp_path):
+    """The interaction the whole vocabulary exists for: two values
+    selected on a chart, which the old dict could not express at all.
+    """
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _mediator_with(60, tmp_path)
+    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    two = mediator.search_object(
+        user, "Transaction", [FieldFilter("category", "in", ["cat1", "cat2"])]
+    )
+    one = mediator.search_object(
+        user, "Transaction", [FieldFilter("category", "in", ["cat1"])]
+    )
+    everything = mediator.search_object(user, "Transaction", [])
+
+    assert one, "the fixture should match something, or this proves nothing"
+    assert len(one) < len(two) < len(everything)
+
+
+def test_search_applies_a_range_end_to_end(tmp_path):
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _mediator_with(60, tmp_path)
+    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    narrow = mediator.search_object(
+        user, "Transaction", [FieldFilter("amount", "range", {"min": 0, "max": 10})]
+    )
+    wide = mediator.search_object(
+        user, "Transaction", [FieldFilter("amount", "range", {"min": 0, "max": 50})]
+    )
+
+    assert narrow
+    assert len(narrow) < len(wide)
+
+
+def test_a_filter_on_an_unreadable_field_looks_like_an_unknown_one(tmp_path):
+    """Uniform denial. A caller must not learn that a field EXISTS by
+    filtering on one they cannot read -- the message is the same as for
+    a field that does not exist at all.
+    """
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _mediator_with(20, tmp_path)
+    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    unknown = pytest.raises(ValueError, match="Invalid search criteria")
+    with unknown:
+        mediator.search_object(
+            user, "Transaction", [FieldFilter("no_such_field", "equals", "x")]
+        )
+
+    # A REAL column the fixture role has no read grant for.
+    with pytest.raises(ValueError, match="Invalid search criteria"):
+        mediator.search_object(
+            user, "Transaction", [FieldFilter("internal_notes", "equals", "x")]
+        )

@@ -28,6 +28,7 @@ import pytest
 import yaml
 
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from core.filters import as_equality_conditions
 from core.intermediate_layer.auth import UserRecord
 from core.ontology.link_types import expand_link_types
 from core.ontology.mediator import DataMediator
@@ -79,7 +80,7 @@ def test_search_around_matches_what_per_object_traversal_would_return(mediator):
     # The batch form must be a pure optimization -- same answer, fewer
     # queries. Compared against the per-object path rather than a
     # hardcoded list.
-    source_ids = mediator.search_object(CUSTOMER_SERVICE, "Customer", {"region": "us-west"})
+    source_ids = mediator.search_object(CUSTOMER_SERVICE, "Customer", as_equality_conditions({"region": "us-west"}))
     one_at_a_time = []
     for source_id in source_ids:
         linked = mediator.get_field(CUSTOMER_SERVICE, "Customer", source_id, "transactions")
@@ -209,7 +210,7 @@ def test_traversal_is_batched_not_one_query_per_source_object(tmp_path):
     sqlite_adapter_module._run_query_one = counting(real_run_query_one)
     try:
         counted["n"] = 0
-        source_ids = mediator.search_object(CUSTOMER_SERVICE, "Customer", {})
+        source_ids = mediator.search_object(CUSTOMER_SERVICE, "Customer", as_equality_conditions({}))
         search_only = counted["n"]
 
         counted["n"] = 0
