@@ -354,7 +354,13 @@ export default function App() {
           />
           <Route
             path="/browse"
-            element={<ObjectSearchPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
+            element={
+              <ObjectSearchPanel
+                visibleSchema={visibleSchema}
+                username={currentUser?.username ?? ''}
+                onSessionExpired={handleSessionExpired}
+              />
+            }
           />
           <Route
             path="/objects/:objectType/:objectId"

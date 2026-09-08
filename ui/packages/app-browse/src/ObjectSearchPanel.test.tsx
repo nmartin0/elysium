@@ -37,7 +37,11 @@ const CUSTOMER_SCHEMA: VisibleSchema = {
 function renderPanel(visibleSchema: VisibleSchema | null, onSessionExpired: () => void = vi.fn()) {
   return render(
     <MemoryRouter>
-      <ObjectSearchPanel visibleSchema={visibleSchema} onSessionExpired={onSessionExpired} />
+      <ObjectSearchPanel
+        visibleSchema={visibleSchema}
+        username="alice"
+        onSessionExpired={onSessionExpired}
+      />
     </MemoryRouter>,
   )
 }
@@ -47,6 +51,9 @@ function searchResult(results: SearchResult[], totalMatches?: number) {
 }
 
 beforeEach(() => {
+  // Column choices persist in localStorage now, which is what they are
+  // FOR in a browser and exactly what makes tests interfere.
+  window.localStorage.clear()
   vi.clearAllMocks()
 })
 
@@ -502,5 +509,77 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
 
     expect(screen.getByLabelText('Region')).toBeInTheDocument()
     expect(screen.queryByLabelText('Internal')).not.toBeInTheDocument()
+  })
+})
+
+describe('ObjectSearchPanel -- column choices survive navigation', () => {
+  const SCHEMA: VisibleSchema = {
+    Customer: {
+      title_field: 'name',
+      fields: { name: { type: 'data' }, region: { type: 'data' } },
+    },
+    Account: { fields: { balance: { type: 'data' } } },
+  }
+
+  const RESULT = searchResult([
+    { id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } },
+  ])
+
+  it('remembers a column choice across an unmount', async () => {
+    // THE bug this file's tests missed. Browse and the object detail
+    // view are separate routes, so opening a result unmounts this
+    // panel and React state dies with it. The existing tests checked
+    // per-type isolation within ONE mount and never navigated away, so
+    // a choice that silently reset survived every one of them.
+    mockedSearchObjects.mockResolvedValue(RESULT)
+    const first = renderPanel(SCHEMA)
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText('Region'))
+    expect(screen.queryByText('us-west')).not.toBeInTheDocument()
+
+    // Leaving and coming back, as clicking a result does.
+    first.unmount()
+    renderPanel(SCHEMA)
+
+    // The Region checkbox is what proves the choice was restored --
+    // 'Ada' is also the title and renders twice.
+    await waitFor(() => expect(screen.getByLabelText('Region')).not.toBeChecked())
+    expect(screen.queryByText('us-west')).not.toBeInTheDocument()
+  })
+
+  it('keeps one user\u2019s choices away from another\u2019s', async () => {
+    // localStorage is per-BROWSER. Without keying by username, logging
+    // out and back in as someone else inherits their columns.
+    mockedSearchObjects.mockResolvedValue(RESULT)
+    const alice = render(
+      <MemoryRouter>
+        <ObjectSearchPanel visibleSchema={SCHEMA} username="alice" onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText('Region'))
+    alice.unmount()
+
+    render(
+      <MemoryRouter>
+        <ObjectSearchPanel visibleSchema={SCHEMA} username="bob" onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+  })
+
+  it('degrades to defaults when storage is unavailable', async () => {
+    // Private mode, quota, disabled cookies. Losing a column choice is
+    // acceptable; a thrown render is not.
+    const broken = vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => {
+      throw new Error('storage disabled')
+    })
+    mockedSearchObjects.mockResolvedValue(RESULT)
+
+    renderPanel(SCHEMA)
+
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    broken.mockRestore()
   })
 })

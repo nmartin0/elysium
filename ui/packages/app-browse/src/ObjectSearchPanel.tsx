@@ -6,6 +6,7 @@ import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-ap
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import type { VisibleSchema } from '@elysium/shell-api/types'
+import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 
 // The human-facing browse/search screen -- Palantir's own Object
 // Explorer is the closest real-world analog (a real research +
@@ -35,9 +36,12 @@ export interface SearchResult {
 // header comment for the full reasoning.
 interface ObjectSearchPanelProps extends SubAppProps {
   visibleSchema: VisibleSchema | null
+  /** Whose column choices to read. Browser storage is per-machine, so
+   *  without this a second user inherits the first's. */
+  username: string
 }
 
-export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: ObjectSearchPanelProps) {
+export default function ObjectSearchPanel({ visibleSchema, username, onSessionExpired }: ObjectSearchPanelProps) {
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [queryText, setQueryText] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
@@ -50,7 +54,19 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   const [orderBy, setOrderBy] = useState<string>("")
   // Per type, so switching types does not carry one type's chosen
   // columns onto another where those field names mean nothing.
-  const [chosenColumns, setChosenColumns] = useState<Record<string, string[]>>({})
+  //
+  // PERSISTED, because this route unmounts: opening a result and
+  // coming back reset the choice silently. Found by using it, not by a
+  // test -- the tests checked per-type isolation and never navigated
+  // away.
+  const [chosenColumns, setChosenColumnsState] = useState<Record<string, string[]>>(
+    () => readPreference("browseColumns", username, {}),
+  )
+
+  function setChosenColumns(next: Record<string, string[]>) {
+    setChosenColumnsState(next)
+    writePreference("browseColumns", username, next)
+  }
   const [totalMatches, setTotalMatches] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
