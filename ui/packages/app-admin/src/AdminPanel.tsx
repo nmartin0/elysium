@@ -12,6 +12,7 @@ import {
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
+import Workspace from '@elysium/shell-api/components/Workspace'
 
 export interface User {
   username: string
@@ -120,9 +121,19 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
   }
 
   return (
-    <div className="admin-panel">
-      <CreateUserForm onCreated={loadUsers} onError={setError} onSessionExpired={onSessionExpired} />
-
+    /* Two-paned, and the only one of the three that is. Creating a
+       user CHANGES what the table shows, which is what a configuration
+       pane is for -- and a form stacked above a table pushed the table
+       down the page for a control most visits never touch. */
+    <Workspace
+      config={
+        <CreateUserForm
+          onCreated={loadUsers}
+          onError={setError}
+          onSessionExpired={onSessionExpired}
+        />
+      }
+    >
       {error && <Callout intent="danger">{error}</Callout>}
 
       {users === null ? (
@@ -219,7 +230,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
           Delete <strong>{pendingDeleteUsername}</strong>? This cannot be undone.
         </p>
       </Alert>
-    </div>
+    </Workspace>
   )
 }
 

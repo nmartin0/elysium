@@ -239,16 +239,20 @@ sub-app the two-pane shape -- configuration left, content right, both
 filling the shell and scrolling independently -- or a single pane when
 there is nothing to configure. Browse uses it.
 
-**Not yet migrated: Query, Schema and Admin.** Each renders its own
-top-level div and has NO stylesheet rules at all, so they inherit only
-the canvas padding. That is not automatically wrong -- Query is a
-prompt and an answer, and a configuration column would be an empty box
--- but Schema's tab filters and Admin's user controls are exactly what
-a config pane is for.
+**All four sub-apps now use it**, and not all with two panes:
 
-Deliberately not forced. Migrating all three to two panes would be
-shaping the apps to the layout rather than the reverse, and the layout
-is new enough that Browse is the only evidence it is right.
+- Query and Schema are SINGLE-paned. Query is a prompt and an answer;
+  a configuration column would hold one textarea badly. Schema's own
+  navigation is a tab strip that reads across the top, and moving it
+  into a column would turn perspectives into a list.
+- Browse and Admin have two. Admin's create-user form CHANGES what the
+  table shows, which is what a configuration pane is for -- and
+  stacked above the table it pushed the data down the page for a
+  control most visits never touch.
+
+The point of the shared component is the CANVAS CONTRACT -- fill the
+shell, scroll independently, consistent padding -- not a layout every
+sub-app must adopt.
 
 **The error and loading pattern is NOT one pattern.** Seven places use
 Callout and Spinner, in two genuinely different shapes: an early

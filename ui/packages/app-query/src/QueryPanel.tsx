@@ -3,6 +3,7 @@ import { Button, Callout } from '@blueprintjs/core'
 import { query } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
+import Workspace from '@elysium/shell-api/components/Workspace'
 
 interface QueryResponseBody {
   pending_write?: PendingWrite
@@ -74,7 +75,11 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
   }
 
   return (
-    <div className="query-panel">
+    /* Single-paned deliberately. Query is a prompt and an answer;
+       a configuration column would hold one textarea badly, or be
+       empty. The Workspace is here for the canvas contract -- fill the
+       shell, scroll itself, consistent padding -- not for two panes. */
+    <Workspace>
       <form onSubmit={handleSubmit}>
         <textarea
           value={queryText}
@@ -107,7 +112,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
         // an explicit no-op, not an unset default.
         <PendingWriteCard pendingWrite={pendingWrite} onSessionExpired={onSessionExpired} onResolved={() => {}} />
       )}
-    </div>
+    </Workspace>
   )
 }
 

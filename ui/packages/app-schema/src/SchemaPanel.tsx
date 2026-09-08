@@ -22,6 +22,7 @@ import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/types'
 import ActionTypes from './ActionTypes'
 import FilterBox from '@elysium/shell-api/components/FilterBox'
+import Workspace from '@elysium/shell-api/components/Workspace'
 import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
@@ -298,7 +299,12 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   if (!schema) return <Spinner />
 
   return (
-    <div className="schema-panel">
+    /* Single-paned. Schema's own navigation is the tab strip -- Object
+       types, Link types, Action types -- which reads across the top,
+       not down a column. Moving it into a config pane would turn
+       perspectives into a list and lose the shape the tabs give it.
+       The Workspace is here for the canvas contract. */
+    <Workspace>
       {/* navigate(-1), so this does EXACTLY what the browser's own back
           button does rather than approximating it. Two backs that
           disagree would be worse than one that is missing -- this
@@ -426,6 +432,6 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           }
         />
       </Tabs>
-    </div>
+    </Workspace>
   )
 }

@@ -542,7 +542,7 @@ button {
   border: none;
   border-radius: 6px;
   background: var(--surface-chrome);
-  color: white;
+  color: #ffffff; /* on the danger red below, not a theme surface */
   font-size: 0.95rem;
   cursor: pointer;
   text-decoration: none;
@@ -569,8 +569,8 @@ button.secondary {
   margin-top: 1.25rem;
   padding: 1rem;
   border-radius: 8px;
-  background: white;
-  border: 1px solid #e0e0e0;
+  background: var(--surface-content);
+  border: 1px solid var(--border-subtle);
 }
 
 .pending-write h3 {
@@ -594,7 +594,7 @@ button.secondary {
   margin-bottom: 0.6rem;
   padding: 0.7rem 0.8rem;
   background: var(--surface-sunken);
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
 }
 
@@ -651,12 +651,13 @@ button.secondary {
   color: var(--text-primary);
 }
 
+/* No card of its own. It sits in the configuration pane now, which
+ * already supplies a surface and a border -- a second box inside one
+ * draws the same seam the header border did. */
 .create-user-form {
-  margin-bottom: 1.5rem;
-  padding: 1rem;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-snug);
 }
 
 .create-user-form h3 {
@@ -667,7 +668,7 @@ button.secondary {
 .user-table {
   width: 100%;
   border-collapse: collapse;
-  background: white;
+  background: var(--surface-content);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -714,7 +715,7 @@ button.danger {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   font-size: 1rem;
-  background: white;
+  background: var(--surface-content);
   min-width: 10rem;
 }
 
@@ -813,8 +814,8 @@ button.danger {
   margin: 0;
   padding: 1rem;
   border-radius: 8px;
-  background: white;
-  border: 1px solid #e0e0e0;
+  background: var(--surface-content);
+  border: 1px solid var(--border-subtle);
 }
 
 .object-detail__field {
@@ -856,8 +857,8 @@ button.danger {
   margin-top: 1rem;
   padding: 1rem;
   border-radius: 8px;
-  background: white;
-  border: 1px solid #e0e0e0;
+  background: var(--surface-content);
+  border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;

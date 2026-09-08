@@ -24,7 +24,11 @@ function colourLiterals(css: string): string[] {
   return css
     .split('\n')
     .filter((line) => !line.trim().startsWith('/*') && !line.trim().startsWith('*'))
-    .filter((line) => /(background|^\s*color|border[^-]*):\s*#[0-9a-fA-F]/.test(line))
+    // NAMED colours too, not just hex. An earlier version matched
+    // only `#`, so seven `background: white` declarations passed
+    // straight through and never inverted in dark mode.
+    .filter((line) =>
+      /(background|^\s*color|border[^-]*):\s*(#[0-9a-fA-F]|white|black|rgb)/.test(line))
     .map((line) => line.trim())
 }
 
@@ -33,7 +37,21 @@ describe('theming', () => {
     // One exception: the danger red is SEMANTIC. It means "destructive"
     // in both themes, and inverting it would make a delete button
     // stop looking dangerous.
-    const offenders = colourLiterals(CSS).filter((line) => !line.includes('#b3261e'))
+    /**
+     * Two kinds of exception, both deliberate:
+     *
+     * - The danger red is SEMANTIC. It means "destructive" in both
+     *   themes, and inverting it would make a delete button stop
+     *   looking dangerous. The white on top of it goes with it.
+     * - Translucent white overlays. rgba(255,255,255,alpha) on chrome
+     *   is a LIGHTENING, not a colour: it works on any dark surface,
+     *   in either theme, and a token would fix it to one.
+     */
+    const offenders = colourLiterals(CSS).filter(
+      (line) => !line.includes('#b3261e')
+        && !line.includes('#ffffff')
+        && !/rgba\(255,\s*255,\s*255/.test(line),
+    )
 
     expect(offenders).toEqual([])
   })
