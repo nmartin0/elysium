@@ -591,3 +591,54 @@ def test_an_identical_get_object_is_still_caught():
             "object_id": "cust_001", "field_names": ["name", "email"]}
 
     assert _step_signature(step) == _step_signature(dict(step))
+
+
+# --- Step dispatch -------------------------------------------------------
+
+
+def test_an_unknown_step_kind_stops_without_counting_a_mistake(loop_and_mediator):
+    """A step outside the schema entirely is not a recoverable mistake.
+
+    The invalid-step counter exists for a model that produced a
+    well-formed step with bad arguments -- a nudge and a retry. A step
+    kind that does not exist means the output was not the shape asked
+    for at all, so the loop stops rather than nudging.
+
+    Uncovered before the dispatch table, and still uncovered after,
+    which is how it was found: the coverage rule counts a moved line as
+    a touched one.
+    """
+    loop, mediator = loop_and_mediator
+    gathered: list[dict] = []
+
+    invalid, business, stop, pending = loop._execute_step(
+        {"step": "teleport_object", "object_type": "Customer"},
+        WEST, mediator.visible_schema(WEST), gathered, 3, 2,
+    )
+
+    assert stop is True
+    assert pending is None
+    # Counters pass through unchanged -- nothing was attempted, so
+    # nothing succeeded or failed.
+    assert (invalid, business) == (3, 2)
+    assert gathered == []
+
+
+def test_every_declared_step_kind_has_a_handler(loop_and_mediator):
+    """The table and the prompt must agree.
+
+    A step kind the prompt offers but the table lacks would fall into
+    the unknown-step branch and stop the loop -- the model doing
+    exactly as instructed and being refused for it. Cheap to check
+    here, expensive to notice in a trace.
+    """
+    import re
+    from pathlib import Path
+
+    loop, _ = loop_and_mediator
+    prompt = Path("core/llm/agent_step_prompt.py").read_text()
+    offered = set(re.findall(r'"step": "([a-z_]+)"', prompt))
+
+    # `finish` ends the loop rather than executing, so it is handled by
+    # run() and not by the dispatch table.
+    assert offered - {"finish"} == set(loop._step_handlers())

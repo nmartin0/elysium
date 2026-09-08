@@ -173,6 +173,28 @@ def _handle_recoverable_mistake(gathered: list[dict], count: int, cap: int, deta
     return count, False
 
 
+class _StepHandled:
+    """A handler that has already recorded whatever it needed to.
+
+    A sentinel rather than None, because None is a legitimate RESULT --
+    get_field on a field that is null returns it, and `gathered` should
+    record that rather than silently drop the step.
+    """
+
+    def __repr__(self) -> str:
+        return "STEP_HANDLED"
+
+
+STEP_HANDLED = _StepHandled()
+
+
+@dataclass(frozen=True)
+class _ProposalPending:
+    """A write awaiting a human. The one thing that stops the loop."""
+
+    pending: PendingWrite
+
+
 class AgentLoop:
     # Step types that are process bookkeeping, not real gathered data --
     # filter_real_data() strips these before handing results to synthesis.
@@ -270,172 +292,142 @@ class AgentLoop:
         })
         return False, True
 
+    # --- Step handlers --------------------------------------------------
+    #
+    # One method per step kind, and a table mapping names to them.
+    #
+    # This was a seven-branch if/elif chain with cyclomatic complexity
+    # 21. The branches were never the problem individually -- most are
+    # a single mediator call -- but they sat inside shared try/except
+    # handling, so reading any one of them meant reading all of them,
+    # and adding a step kind meant editing a function that already did
+    # seven things.
+    #
+    # A handler returns either a RESULT to append to `gathered`, or the
+    # STEP_HANDLED sentinel when it has already appended (or has
+    # nothing to append). Three kinds need that: get_object fans one
+    # step out into several gathered entries, an auto-executed action
+    # records its own, and a proposed action stops the loop instead.
+
+    def _step_search_object(self, step: dict, user_record: UserRecord,
+                            visible_schema: dict, gathered: list[dict]) -> Any:
+        return self.mediator.search_object(
+            user_record, step["object_type"],
+            as_equality_conditions(step["filter"]),
+            visible_schema=visible_schema,
+        )
+
+    def _step_get_field(self, step: dict, user_record: UserRecord,
+                        visible_schema: dict, gathered: list[dict]) -> Any:
+        return self.mediator.get_field(
+            user_record, step["object_type"], step["object_id"], step["field_name"]
+        )
+
+    def _step_aggregate_object(self, step: dict, user_record: UserRecord,
+                               visible_schema: dict, gathered: list[dict]) -> Any:
+        return self.mediator.aggregate_by_field(
+            user_record, step["object_type"], step.get("filter") or {},
+            group_by=step.get("group_by"),
+            aggregate=step["aggregate"],
+            field_name=step.get("field_name"),
+        )
+
+    def _step_search_around(self, step: dict, user_record: UserRecord,
+                            visible_schema: dict, gathered: list[dict]) -> Any:
+        return self.mediator.search_around(
+            user_record, step["object_type"], step.get("filter") or {},
+            step["link_field"],
+        )
+
+    def _step_get_object(self, step: dict, user_record: UserRecord,
+                         visible_schema: dict, gathered: list[dict]) -> Any:
+        """Fans ONE step out into one gathered entry per field.
+
+        Recorded as get_field entries so everything downstream --
+        synthesis, the trace, the prompt's own history -- sees the same
+        shape whether a field was fetched singly or in a batch.
+        """
+        field_values = self.mediator.get_object(
+            user_record, step["object_type"], step["object_id"], step["field_names"]
+        )
+        for field_name, value in field_values.items():
+            gathered.append({
+                "step": "get_field", "object_type": step["object_type"],
+                "object_id": step["object_id"], "field_name": field_name, "result": value,
+            })
+        return STEP_HANDLED
+
+    def _step_use_tool(self, step: dict, user_record: UserRecord,
+                       visible_schema: dict, gathered: list[dict]) -> Any:
+        tool = self._tools_by_name.get(step["tool_name"])
+        tool_name = step["tool_name"]
+        if tool is None:
+            raise ValueError(f"Unknown tool: {tool_name!r}")
+        action = f"tool:{tool_name}"
+        rbac_allowed = authorize(user_record, self.mediator.roles, action)
+        self.mediator.audit_log.log_access(
+            user_record.user_id, "tool", tool_name, action, mac_allowed=True,
+            rbac_allowed=rbac_allowed,
+        )
+        # SAME message as an unknown tool, deliberately: a caller must
+        # not learn that a tool EXISTS by being refused it.
+        if not rbac_allowed:
+            raise ValueError(f"Unknown tool: {tool_name!r}")
+        call_args = dict(step["args"])
+        declared = getattr(tool, "reads_object_types", []) or []
+        if declared:
+            call_args["ontology"] = OntologyAccess(self.mediator, user_record, declared)
+        with self._tool_limiters[tool.name].limit():
+            return tool.run(**call_args)
+
+    def _step_propose_action(self, step: dict, user_record: UserRecord,
+                             visible_schema: dict, gathered: list[dict]) -> Any:
+        if self.write_mediator is None:
+            raise ValueError("Writes are not enabled for this deployment")
+        pending = self.write_mediator.propose_action(
+            user_record, step["action_type"], step["parameters"]
+        )
+        action_def = self.write_mediator.action_types.get(step["action_type"]) or {}
+        if action_def.get("auto_execute") is True:
+            self.write_mediator.confirm_and_execute(pending, approved=True)
+            result = {"status": "auto_executed", "action_type": step["action_type"]}
+            gathered.append({"step": step, "result": result})
+            return STEP_HANDLED
+        # The only handler that stops the loop: a proposal needs a
+        # human before anything else happens.
+        return _ProposalPending(pending)
+
+    def _step_handlers(self) -> dict:
+        return {
+            "search_object": self._step_search_object,
+            "get_field": self._step_get_field,
+            "aggregate_object": self._step_aggregate_object,
+            "search_around": self._step_search_around,
+            "get_object": self._step_get_object,
+            "use_tool": self._step_use_tool,
+            "propose_action": self._step_propose_action,
+        }
+
     def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
                        gathered: list[dict], consecutive_invalid: int, consecutive_business_rule: int
                        ) -> tuple[int, int, bool, PendingWrite | None]:
-        # Runs one search_object/get_field/use_tool/propose_action
-        # step. Returns (new_consecutive_invalid,
-        # new_consecutive_business_rule, should_stop_loop,
-        # pending_write_or_None). A non-None pending_write ALWAYS means
-        # should_stop_loop is also True -- proposing a write is a
-        # terminal action for this run(), same as finishing.
-        #
-        # TWO independent "consecutive mistake" counters, deliberately
-        # -- a business-rule rejection (SubmissionCriteriaViolation) is
-        # a genuinely different KIND of event than a plain invalid step
-        # (a hallucinated field name, a malformed step): the model was
-        # fully authorized and structurally correct, just blocked by
-        # the object's own current state. A real success resets BOTH
-        # counters; either failure kind leaves the OTHER counter
-        # untouched -- neither resets nor increments it. This is what
-        # actually delivers on the decision that a business-rule
-        # rejection shouldn't count against the same strike cap as
-        # genuine confusion.
+        """Runs one step, counting mistakes and deciding whether to stop.
+
+        The dispatch is a table; what remains here is what is genuinely
+        SHARED -- the two recoverable-mistake handlers, and the
+        bookkeeping every step kind reports back through.
+        """
+        handler = self._step_handlers().get(step["step"])
+        if handler is None:
+            # An unknown step kind is not a mistake to count -- the
+            # model produced something outside the schema entirely.
+            return consecutive_invalid, consecutive_business_rule, True, None
         try:
-            # Genuinely heterogeneous across steps: a list of ids, a
-            # single field value, a dict of fields, or a dict of
-            # aggregates. Annotated rather than inferred from
-            # whichever branch happens to come first.
-            result: Any
-            if step["step"] == "search_object":
-                # visible_schema passed through explicitly -- already
-                # computed ONCE for this whole request by run(), not
-                # recomputed on every search_object call.
-                result = self.mediator.search_object(
-                    user_record, step["object_type"],
-                    as_equality_conditions(step["filter"]),
-                    visible_schema=visible_schema,
-                )
-            elif step["step"] == "get_field":
-                result = self.mediator.get_field(
-                    user_record, step["object_type"], step["object_id"], step["field_name"]
-                )
-            elif step["step"] == "aggregate_object":
-                # Foundry's own object query tool supports "filtering,
-                # aggregation, inspection, and traversal of links".
-                # Elysium had the first and third; these two steps add
-                # the others.
-                #
-                # This is what stops the model HOPPING. Asked for a
-                # total, it previously had to get_field its way through
-                # every matching object one at a time -- correct, but
-                # slow, token-hungry, and capped by the step budget on
-                # any real dataset. One aggregate answers it.
-                result = self.mediator.aggregate_by_field(
-                    user_record, step["object_type"], step.get("filter") or {},
-                    group_by=step.get("group_by"),
-                    aggregate=step["aggregate"],
-                    field_name=step.get("field_name"),
-                )
-            elif step["step"] == "search_around":
-                result = self.mediator.search_around(
-                    user_record, step["object_type"], step.get("filter") or {},
-                    step["link_field"],
-                )
-            elif step["step"] == "get_object":
-                # Expands into ONE get_field-shaped gathered[] entry
-                # per field, NOT a single get_object-shaped entry --
-                # see this method's own docstring/AI-notes for why:
-                # every downstream consumer of `gathered` (this
-                # module's own _detect_asymmetry(); core/llm/agent_
-                # step_prompt.py's _known_state_for_object() and
-                # _object_reference_hints()) was built around, and
-                # only ever filters for, step == "get_field" entries.
-                # Making get_object's own RESULT indistinguishable
-                # from N separate get_field calls means every one of
-                # those keeps working completely unchanged -- the
-                # only genuinely NEW thing is the MODEL can issue one
-                # REQUEST covering several fields, saving hops; the
-                # resulting STATE looks exactly as if it had issued
-                # them separately. Returns early, bypassing the
-                # generic gathered.append() below entirely.
-                field_values = self.mediator.get_object(
-                    user_record, step["object_type"], step["object_id"], step["field_names"]
-                )
-                for field_name, value in field_values.items():
-                    gathered.append({
-                        "step": "get_field", "object_type": step["object_type"],
-                        "object_id": step["object_id"], "field_name": field_name, "result": value,
-                    })
-                return 0, 0, False, None
-            elif step["step"] == "use_tool":
-                tool = self._tools_by_name.get(step["tool_name"])
-                tool_name = step["tool_name"]
-                if tool is None:
-                    # Same message whether the tool genuinely doesn't
-                    # exist in this deployment's enabled set, or exists
-                    # but this user lacks tool:<name> -- checked next.
-                    raise ValueError(f"Unknown tool: {tool_name!r}")
-                action = f"tool:{tool_name}"
-                rbac_allowed = authorize(user_record, self.mediator.roles, action)
-                self.mediator.audit_log.log_access(
-                    user_record.user_id, "tool", tool_name, action, mac_allowed=True, rbac_allowed=rbac_allowed
-                )
-                if not rbac_allowed:
-                    # DELIBERATELY the exact same message as "tool
-                    # doesn't exist" above -- distinguishing the two
-                    # would let a user probe which tools exist.
-                    raise ValueError(f"Unknown tool: {tool_name!r}")
-                # A function that declared object types receives a
-                # capability bound to THIS caller and restricted to
-                # those types -- never a mediator, and never a
-                # UserRecord. One that declared none receives nothing
-                # extra and provably cannot reach the ontology.
-                #
-                # Passed as a reserved keyword rather than a
-                # constructor argument so a function instance stays
-                # stateless and shareable: the caller changes per
-                # request, the instance does not.
-                call_args = dict(step["args"])
-                declared = getattr(tool, "reads_object_types", []) or []
-                if declared:
-                    call_args["ontology"] = OntologyAccess(
-                        self.mediator, user_record, declared
-                    )
-                with self._tool_limiters[tool.name].limit():
-                    result = tool.run(**call_args)
-            elif step["step"] == "propose_action":
-                # The NAMED-action-type proposal path -- see
-                # core/ontology/write_mediator.py's propose_action() for
-                # the full mechanism. Stops the loop immediately;
-                # confirmation/execution is always the caller's job.
-                if self.write_mediator is None:
-                    raise ValueError("Writes are not enabled for this deployment")
-                pending = self.write_mediator.propose_action(
-                    user_record, step["action_type"], step["parameters"]
-                )
-
-                # AUTO-EXECUTE, decided HERE in Python rather than by
-                # the model. Foundry's Action tool "can be configured
-                # to run automatically or to run after confirmation
-                # from the user", and their governance model puts that
-                # decision in the ACTION config, per action type.
-                #
-                # Read from the DEPLOYMENT's own declaration, never
-                # from the step the model emitted: a model that could
-                # ask to skip confirmation would make the setting
-                # advisory, and the whole point is that it is not.
-                # Absent means confirm, so a deployment that says
-                # nothing gets the safe behaviour.
-                #
-                # Everything else still applies: the caller needed the
-                # execute: grant to propose at all, submission criteria
-                # were already checked, and the write goes through the
-                # same confirm_and_execute() path with the same audit
-                # logging -- this only removes the human pause.
-                action_def = self.write_mediator.action_types.get(step["action_type"]) or {}
-                if action_def.get("auto_execute") is True:
-                    self.write_mediator.confirm_and_execute(pending, approved=True)
-                    result = {"status": "auto_executed", "action_type": step["action_type"]}
-                    gathered.append({"step": step, "result": result})
-                    return 0, 0, False, None
-
-                return 0, 0, True, pending
-            else:
-                # shouldn't happen -- agent_step_prompt already validates this
-                return consecutive_invalid, consecutive_business_rule, True, None
-
-            gathered.append({**step, "result": result})
+            result = handler(step, user_record, visible_schema, gathered)
+            if isinstance(result, _ProposalPending):
+                return 0, 0, True, result.pending
+            if result is not STEP_HANDLED:
+                gathered.append({**step, "result": result})
             return 0, 0, False, None
         except SubmissionCriteriaViolation as e:
             # MUST be caught before the generic ValueError branch below

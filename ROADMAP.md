@@ -255,14 +255,6 @@ is a different kind of blocked from this.
   reading the top of the list. The backend is at 96% overall, which
   hides a 63% file entirely.
 
-- **AgentLoop._execute_step has cyclomatic complexity 21.** The other
-  hotspot a full-codebase audit found -- propose_action was 26 and was
-  refactored to 18 in the same pass. Left alone because it is a
-  different subsystem and a step-dispatch loop is the shape that
-  function has to be; the honest fix is a dispatch table, which is
-  worth doing when the next step kind is added rather than in a
-  refactor-only commit.
-
 - **Comment density.** core/ontology/write_mediator.py is 60% comment
   by line, and the codebase carries about a thousand emphasis words --
   "genuinely", "deliberately", "actually" -- that argue for code rather
