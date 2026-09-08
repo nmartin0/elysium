@@ -289,17 +289,37 @@ body {
  */
 .workspace {
   display: grid;
+  /* minmax(0, 1fr) rather than 1fr: a grid track defaults to
+   * min-content, which refuses to shrink below its contents and
+   * reintroduces the overflow the shell height exists to prevent. */
   grid-template-columns: var(--config-width) minmax(0, 1fr);
-  gap: var(--space-loose);
-  align-items: start;
+  /* No gap. Panel EDGES meet; internal padding does the breathing. */
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+  /* NOT align-items: start. That sizes each pane to its content, so
+   * neither fills the shell and neither can scroll -- their
+   * overflow-y: auto never engages because nothing constrains them.
+   * An appended rule had claimed to fix this layout while leaving
+   * `align-items: start` in force above it. */
+  align-items: stretch;
 }
 
 .workspace__config {
-  position: sticky;
-  top: var(--space-loose);
+  /* NOT sticky. Sticky belongs to a scrolling page, which this layout
+   * does away with -- the pane is fixed within the shell and scrolls
+   * ITSELF when its controls need more room than the window has.
+   *
+   * An earlier version left `position: sticky` here while a second
+   * rule further down claimed to have removed it. It had not: the
+   * later block never set `position`, so the comment described
+   * something the CSS did not do. */
+  overflow-y: auto;
+  min-height: 0;
   background: var(--surface-config);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
+  /* Right border only -- the separator between configuration and
+   * content. The others would draw a box inside a flush layout. */
+  border-right: 1px solid var(--border-subtle);
   padding: var(--space-normal);
   display: flex;
   flex-direction: column;
@@ -308,11 +328,11 @@ body {
 
 .workspace__content {
   background: var(--surface-content);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  box-shadow: var(--elevate-raised);
-  padding: var(--space-normal);
+  padding: var(--space-loose);
   min-width: 0;
+  min-height: 0;
+  /* The canvas: the one region that scrolls in ordinary use. */
+  overflow-y: auto;
 }
 
 /* One filter group: a label and its control, never side by side --
@@ -599,10 +619,6 @@ button.danger {
 
 .object-search__status,
 .object-search__empty,
-.object-search__more {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-}
 
 /* CardList/Card, not a bare <ul>/<li> -- see ObjectSearchPanel.tsx's
    own comment on why Card must be CardList's own DIRECT child
@@ -660,44 +676,15 @@ button.danger {
   inset: 0;
 }
 
-.object-search__result-title {
-  margin: 0 0 0.15rem;
-  font-weight: 600;
-}
 
-.object-search__result-subtitle {
-  margin: 0 0 0.5rem;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-}
 
-.object-search__result-fields {
-  margin: 0;
-}
 
-.object-search__result-field {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  padding: 0.3rem 0;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 0.9rem;
-}
 
 .object-search__result-field:last-child {
   border-bottom: none;
 }
 
-.object-search__result-field dt {
-  color: var(--text-secondary);
-}
 
-.object-search__result-field dd {
-  margin: 0;
-  text-align: right;
-  word-break: break-word;
-}
 
 .object-detail__type {
   margin: 0;
@@ -947,35 +934,6 @@ button.danger {
 .app__content:has(.workspace) main {
   padding: 0;
   overflow: hidden;
-}
-
-.workspace {
-  gap: 0;
-  height: 100%;
-  min-height: 0;
-}
-
-.workspace__config {
-  /* Not sticky -- FIXED within the shell, and scrolling itself when
-   * its own controls need more room than the window has. Sticky still
-   * belongs to a scrolling page, which is the thing this layout does
-   * away with. */
-  overflow-y: auto;
-  min-height: 0;
-  border-top: none;
-  border-bottom: none;
-  border-left: none;
-  border-radius: 0;
-}
-
-.workspace__content {
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  padding: var(--space-loose);
-  /* The canvas: the one region that scrolls in ordinary use. */
-  overflow-y: auto;
-  min-height: 0;
 }
 
 /* --- Focus, which had no styling at all ---------------------------

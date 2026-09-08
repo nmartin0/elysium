@@ -109,3 +109,40 @@ describe('the shell is viewport-locked', () => {
     expect(main).toMatch(/padding:\s*var\(--space-loose\)/)
   })
 })
+
+describe('the stylesheet has one rule per selector', () => {
+  it('defines no selector twice', () => {
+    /**
+     * Appending a second block instead of editing the first is how
+     * two real bugs got in: a rule commented "not sticky" that never
+     * removed `position: sticky`, and one claiming to fix the
+     * workspace layout while `align-items: start` stayed in force
+     * above it -- which sized each pane to its content, so neither
+     * could scroll.
+     *
+     * The later block wins on the properties it names and silently
+     * leaves the rest, which makes a comment describe something the
+     * CSS does not do.
+     */
+    const selectors = [...CSS.matchAll(/^(\.[a-z_-][a-z_ -]*)\{/gm)]
+      .map((match) => match[1]?.trim())
+    const seen = new Set<string>()
+    const duplicated = selectors.filter((selector) => {
+      if (selector === undefined) return false
+      if (seen.has(selector)) return true
+      seen.add(selector)
+      return false
+    })
+
+    expect(duplicated).toEqual([])
+  })
+
+  it('lets the workspace panes fill the shell so they can scroll', () => {
+    // align-items: start sizes each pane to its content. Nothing
+    // constrains them, so overflow-y: auto never engages.
+    const workspace = /\.workspace \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(workspace).toMatch(/align-items:\s*stretch/)
+    expect(workspace).toMatch(/height:\s*100%/)
+  })
+})
