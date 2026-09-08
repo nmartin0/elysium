@@ -154,6 +154,16 @@ layers = [
     # expression and the TYPES of its values, and knows nothing about
     # schemas, callers or storage.
     "filters",
+    # The artifact store, also a leaf. It persists and scopes saved
+    # things -- searches, selections, pending writes -- and knows
+    # nothing about what is inside one: `body` is opaque JSON.
+    #
+    # Below everything on purpose. Whether a saved search's filters are
+    # still readable by whoever opens it is RE-authorization, needs the
+    # ontology and a caller, and belongs to the reader. A store that
+    # returned "safe" content would be a second place deciding what a
+    # caller may see.
+    "artifact_store",
 ]
 containers = ["core"]
 exhaustive = true
