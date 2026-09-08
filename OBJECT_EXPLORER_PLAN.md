@@ -118,12 +118,12 @@ add it, and we will know what it is for.
 
 ## Build order
 
-### Phase 1 — the filter model (backend)
+### Phase 1 — the filter model (backend) — DONE
 
 Nothing in the UI can start until a filter can express more than
 equality.
 
-**1. A filter vocabulary.** `equals`, `in`, `not_in`, numeric
+**1. [done] A filter vocabulary.** `equals`, `in`, `not_in`, numeric
 `range` (min/max, either optional), `date_range`, `relative_date`
 (sinceDaysAgo/untilDaysAgo, resolved UTC server-side), and
 `contains` for text.
@@ -133,78 +133,88 @@ string field is rejected at load, not at query time. This is the same
 machinery the deferred "field-value constraints" item needs, and
 should be built once for both.
 
-**2. Pushed into the engine, not applied in Python.** The SQL/Python
+**2. [done] Pushed into the engine, not applied in Python.** The SQL/Python
 alignment rule: set membership and ranges are what a database is for,
 and the audit already found one place doing this wrong.
 
-**3. Adapter contract extension.** `find_ids` takes a filter
+**3. [done] Adapter contract extension.** `find_ids` takes a filter
 expression rather than a `dict` of equalities. The mirror adapter
 translates what Iceberg can express and falls back to a projected scan
 for what it cannot — the same compromise `resolve_reverse_links_batch`
 already makes, documented where it happens.
 
-**4. search_object takes a condition list.** Today it takes a
-{field: value} dict and builds equals conditions itself, so
-`validate_filter()` cannot reject anything through it -- every
-condition is correct by construction. The vocabulary is unreachable
-from any real caller until this changes.
+**4. [done] search_object takes a condition list**, rather than a
+{field: value} dict it converted itself -- which meant validate_filter
+could never reject anything, because every condition was correct by
+construction.
 
-A 114-call-site signature change across nine files, which is why it is
-its own item rather than folded into the one that built the
-vocabulary. The adapters' own guards are what protect a query in the
-meantime.
+Estimated at "114 call sites across nine files" from grep hits
+including comments. An AST walk found 67 real calls, five in
+production. One session, not several.
 
-**5. The unreadable-field rejection**, with a test that its message is
+The vocabulary also moved to core/filters.py: core.functions sits
+below core.ontology in the layering and needs it too, and
+lint-imports said so.
+
+**5. [done] The unreadable-field rejection**, with a test that its message is
 identical to the unknown-field case.
 
-### Phase 2 — the artifact store (backend)
+### Phase 2 — the artifact store (backend) — DONE
 
-**5. A persistent, role-scoped artifact store.** SQLite, alongside the
+**6. [done] A persistent, role-scoped artifact store.** SQLite, alongside the
 write log and credential store. Serves saved searches AND the pending
 writes the Approvals inbox needs — solved once, as agreed.
 
 Expiry declared per artifact type. Ownership private-or-role.
 
-**6. Re-authorization on open**, returning both the artifact and a
+**7. [done] Re-authorization on open**, returning both the artifact and a
 list of what was disabled and why, so the UI can say so rather than
 guess.
 
 ### Phase 3 — the table (frontend)
 
-**7. Paged, sorted results.** `search` already returns
+**PREREQUISITE, not yet an item anywhere: the HTTP surface still takes
+a dict.** /objects/{type}/search accepts {field: value} and converts
+with as_equality_conditions(). The vocabulary is reachable from
+Python, not from a browser, so no UI can select two values on a chart
+until this changes. It is small -- one request model and one route --
+but it must come first.
+
+
+**8. Paged, sorted results.** `search` already returns
 `next_page_token` and `total_matches` and accepts `order_by`, and no
 screen uses any of them. Page tokens stay opaque.
 
-**8. Column configuration**, defaulting to prominent properties, with
+**9. Column configuration**, defaulting to prominent properties, with
 hidden fields absent — the rendering rule the schema browser already
 follows.
 
-**9. Do not present the row count as authoritative while paging a live
+**10. Do not present the row count as authoritative while paging a live
 set.** Default paging is documented as possibly duplicating or missing
 rows.
 
 ### Phase 4 — the charts (frontend)
 
-**10. ECharts, wrapped once** in a shared component so no sub-app
+**11. ECharts, wrapped once** in a shared component so no sub-app
 touches the config API directly.
 
-**11. Value counts, histogram, pie, single statistic**, from
+**12. Value counts, histogram, pie, single statistic**, from
 `/aggregate`. One chart per prominent property by default.
 
-**12. Click-to-filter, with keep/exclude**, cross-filtering every
+**13. Click-to-filter, with keep/exclude**, cross-filtering every
 chart and the table from one filter set.
 
-**13. Measure it.** Charts make the aggregate path hot for the first
+**14. Measure it.** Charts make the aggregate path hot for the first
 time. The shape is known — 2.5s of 3.4s at 200,000 objects is audit
 logging, not queries — so this is a measurement against a real
 workload, not a redesign in advance.
 
 ### Phase 5 — saving and acting
 
-**14. Saved searches and saved selections**, distinct in the UI and
+**15. Saved searches and saved selections**, distinct in the UI and
 never silently converted.
 
-**15. Bulk actions** through the existing propose/confirm flow, with a
+**16. Bulk actions** through the existing propose/confirm flow, with a
 real batch cap. An action over an unbounded result set is how someone
 edits ten thousand objects by accident.
 
