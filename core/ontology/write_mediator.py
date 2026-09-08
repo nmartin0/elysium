@@ -708,6 +708,75 @@ class WriteMediator:
             return user_record.security_value
         return value_spec
 
+    def _authorize_sub_write(self, user_record: UserRecord, object_type: str, object_id: Any,
+                             operation: str, execute_action_id: str, rbac_allowed: bool) -> None:
+        """MAC for one sub_write, audited, raising on refusal.
+
+        A CREATE has no existing row for MAC to consult, so it passes
+        on MAC grounds and is gated by RBAC alone -- the execute: grant
+        is the whole check. Update and delete consult the object's
+        security value the same way a read would.
+
+        Extracted from propose_action() so its loop reads as its four
+        concerns -- resolve, authorize, check criteria, build -- rather
+        than as one 65-line body with cyclomatic complexity 26.
+        """
+        if operation == "create":
+            mac_allowed = True
+        else:
+            mac_allowed = (
+                user_record.security_value is not None
+                and self._adapter_mediator._security_allowed(
+                    object_type, object_id, user_record.security_value
+                )
+            )
+        self.audit_log.log_access(
+            user_record.user_id, object_type, object_id, execute_action_id,
+            mac_allowed, rbac_allowed,
+        )
+        if not mac_allowed:
+            raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
+
+    def _expected_current_values_for(self, operation: str, object_type: str, object_id: Any,
+                                     changes: dict, action_type_name: str) -> dict:
+        """What the row must still look like for this write to apply.
+
+        Three operations, three answers. A DELETE expects nothing -- it
+        goes through regardless of current values. An UPDATE reads
+        every field it will change, so the lost-update check can
+        confirm nobody moved it in between. A CREATE expects nothing
+        either, but validates that its mutations set the id field and
+        that the id agrees with the sub_write's own resolved object_id.
+        """
+        if operation == "delete":
+            return {}
+        if operation == "update":
+            expected: dict = {}
+            for adapter, resolved_type_config, group_changes in self._group_changes_by_storage(
+                object_type, changes
+            ):
+                expected.update(
+                    self._read_group_fields(object_type, object_id, adapter, resolved_type_config,
+                                            group_changes)
+                )
+            return expected
+
+        # create
+        self._group_changes_by_storage(object_type, changes)
+        id_field = self._adapter_mediator._type_schema(object_type)["id_field"]
+        if id_field not in changes:
+            raise ValueError(
+                f"Create for {object_type!r} requires an explicit {id_field!r} value "
+                f"in its own mutations -- auto-generated ids aren't supported"
+            )
+        if changes[id_field] != object_id:
+            raise ValueError(
+                f"Action {action_type_name!r}: sub_write's object_id resolved to "
+                f"{object_id!r}, but its own mutations set {id_field!r} to "
+                f"{changes[id_field]!r} -- these must match."
+            )
+        return {}
+
     def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict) -> PendingWrite:
         # Matches Palantir Foundry's own action-type model directly
         # (verified against their docs, not assumed): a NAMED,
@@ -833,17 +902,9 @@ class WriteMediator:
                 )
             seen_object_refs.add(object_ref)
 
-            if operation == "create":
-                mac_allowed = True
-            else:
-                mac_allowed = (
-                    user_record.security_value is not None
-                    and self._adapter_mediator._security_allowed(object_type, object_id, user_record.security_value)
-                )
-            self.audit_log.log_access(user_record.user_id, object_type, object_id, execute_action_id,
-                                       mac_allowed, rbac_allowed)
-            if not mac_allowed:
-                raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
+            self._authorize_sub_write(
+                user_record, object_type, object_id, operation, execute_action_id, rbac_allowed
+            )
 
             # Submission criteria -- now PER SUB_WRITE, not per action;
             # see core/ontology/submission_criteria.py's own docstring
@@ -881,71 +942,9 @@ class WriteMediator:
             # confirm_and_execute() itself uses) -- this is what makes
             # a multi-storage update possible at all; see write_log.py's
             # own module docstring for the full mechanism.
-            if operation == "delete":
-                # A DELETE HAS NOTHING TO RESOLVE. It names an object,
-                # not a change to it: no mutations to group, no current
-                # values to read, and none of the create path's
-                # explicit-id requirement.
-                #
-                # It previously fell into the `else` branch below --
-                # the CREATE path -- because this dispatch only knew
-                # two operations. A delete action therefore validated
-                # cleanly at load and then failed at proposal with
-                # "Create for 'Account' requires an explicit
-                # 'account_id' value in its own mutations", which names
-                # an operation the author never asked for.
-                expected_current_values: dict = {}
-            elif operation == "update":
-                expected_current_values = {}
-                for adapter, resolved_type_config, group_changes in self._group_changes_by_storage(
-                    object_type, changes
-                ):
-                    expected_current_values.update(
-                        self._read_group_fields(object_type, object_id, adapter, resolved_type_config, group_changes)
-                    )
-            else:
-                # _group_changes_by_storage() also validates every
-                # field name is real -- an unknown field in a create's
-                # mutations should fail HERE, at proposal time, not
-                # later at confirm_and_execute() time after a human may
-                # have already approved it. An explicit id is ALWAYS
-                # required, matching update's own precedent of a
-                # SINGLE, unified path regardless of storage count --
-                # auto-generated ids aren't supported at all: the
-                # log-first-then-apply ordering this whole mechanism
-                # depends on needs the id known BEFORE any storage is
-                # touched, and an auto-generated id, by definition,
-                # isn't known until AFTER an INSERT already ran.
-                # Matches Palantir Foundry's own MDO requirement that a
-                # primary key already exist, matching, in every backing
-                # datasource.
-                self._group_changes_by_storage(object_type, changes)
-                id_field = self._adapter_mediator._type_schema(object_type)["id_field"]
-                if id_field not in changes:
-                    raise ValueError(
-                        f"Create for {object_type!r} requires an explicit {id_field!r} value "
-                        f"in its own mutations -- auto-generated ids aren't supported"
-                    )
-                if changes[id_field] != object_id:
-                    # A real, previously-impossible-to-catch authoring
-                    # mistake -- this sub_write's own object_id
-                    # expression disagrees with what its OWN mutations
-                    # separately set for the type's id_field. Both
-                    # exist for a reason (object_id: resolved
-                    # uniformly, up front, for MAC/locking/duplicate-
-                    # checking, matching every other sub_write
-                    # regardless of operation; changes[id_field]: the
-                    # real value that actually gets inserted) -- if
-                    # they ever disagree, something in the schema is
-                    # wrong, and this is the one place both are known
-                    # at once to catch it.
-                    raise ValueError(
-                        f"Action {action_type_name!r}: sub_write's object_id resolved to "
-                        f"{object_id!r}, but its own mutations set {id_field!r} to "
-                        f"{changes[id_field]!r} -- these must match."
-                    )
-                expected_current_values = {}
-
+            expected_current_values = self._expected_current_values_for(
+                operation, object_type, object_id, changes, action_type_name
+            )
             resolved_sub_writes.append(SubWrite(object_type, object_id, operation, changes, expected_current_values))
 
         description = f"{action_type_name}(parameters={parameters})"

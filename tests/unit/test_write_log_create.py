@@ -52,6 +52,7 @@ TEST_ROLES = {
     "full": {"allowed_actions": [
         "read:Customer", "read:Customer.customer_id", "read:Customer.name", "read:Customer.risk_score",
         "execute:CreateCustomerFull", "execute:CreateCustomerNameOnly", "execute:CreateCustomerNameOnlyNoId",
+        "execute:CreateCustomerWithMismatchedId",
     ]},
 }
 
@@ -110,6 +111,24 @@ TEST_ACTION_TYPES = {
     # docstring), but it is deliberately never referenced by any
     # mutation below -- exactly the gap this test exists to prove is
     # still caught.
+    "CreateCustomerWithMismatchedId": {
+        "affected_object_types": ["Customer"],
+        "parameters": {
+            "new_id": {"type": "object_reference", "object_type": "Customer", "required": True},
+            "other_id": {"type": "object_reference", "object_type": "Customer", "required": True},
+            "new_name": {"type": "string", "required": True},
+        },
+        "sub_writes": [{
+            "object_type": "Customer",
+            "object_id": "parameter.new_id",
+            "operation": "create",
+            "mutations": [
+                {"set": {"property": "customer_id", "value": "parameter.other_id"}},
+                {"set": {"property": "region", "value": "user.security_value"}},
+                {"set": {"property": "name", "value": "parameter.new_name"}},
+            ],
+        }],
+    },
     "CreateCustomerNameOnlyNoId": {
         "affected_object_types": ["Customer"],
         "parameters": {
@@ -468,3 +487,22 @@ def test_search_finds_object_by_its_pending_create_on_primary_field_too(fixture)
     )
 
     assert mediator.search_object(alice, "Customer", as_equality_conditions({"name": "New Customer"})) == ["cust_001"]
+
+
+def test_a_create_whose_id_mutation_disagrees_with_its_object_id_is_rejected(fixture):
+    """The sub_write resolves object_id from one parameter and its own
+    mutations set the id field from another. Two ids for one row is a
+    contradiction, and it is rejected rather than picking one.
+
+    This raise was UNCOVERED before -- found when extracting
+    _expected_current_values_for() moved it, and the coverage rule
+    says a moved line is a touched line.
+    """
+    _, write_mediator, _ = fixture
+    alice = _record("alice")
+
+    with pytest.raises(ValueError, match="these must match"):
+        write_mediator.propose_action(
+            alice, "CreateCustomerWithMismatchedId",
+            {"new_id": "cust_a", "other_id": "cust_b", "new_name": "Split"},
+        )
