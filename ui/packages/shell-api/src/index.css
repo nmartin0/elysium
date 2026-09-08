@@ -457,7 +457,18 @@ body {
 }
 
 /* Below this, a two-column workspace leaves neither column usable. */
-@media (max-width: 900px) {
+/* THE breakpoint, and there is only one.
+ *
+ * Three widths were in play: the workspace collapsed to one column at
+ * 900, the sidebar overlaid at 1100, and it auto-collapsed at 640.
+ * Between them a sidebar could float over a two-column workspace with
+ * nothing collapsing it, which is what hid the Back button and the
+ * left edge of every screen.
+ *
+ * One number now, matched in Shell.tsx, so the three behaviours that
+ * depend on it change together. Derived: below this a config pane
+ * plus content plus a rail leaves the content unusable. */
+@media (max-width: 1099px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1010,9 +1021,18 @@ button.danger {
  * This is the "Auto" mode a mainstream enterprise component library
  * ships as its default: push at desktop widths, overlay below. */
 @media (max-width: 1099px) {
+  /* BELOW the header, not over it. An earlier `top` of zero covered
+     the global header entirely -- the product name, theme toggle and
+     user menu all disappeared behind the expanded rail, and its own
+     contents shifted up into the space the header should occupy. The
+     header is 48px.
+     
+     The explanation sits OUTSIDE the braces deliberately: a test that
+     reads CSS by regex reads a comment inside them as declarations,
+     which has already made one assertion pass against broken CSS. */
   .app-frame:not(.app-frame--sidebar-collapsed) .app__sidebar {
     position: fixed;
-    top: 0;
+    top: 48px;
     bottom: 0;
     left: 0;
     z-index: 20;
@@ -1065,4 +1085,12 @@ select,
 input[type="checkbox"],
 [role="button"] {
   min-height: var(--target-min);
+}
+
+/* A single filter above the content it filters. Not a sidebar: that
+ * pattern is for more than five filters, and one input in a 288px
+ * column is mostly empty grey. */
+.schema-panel__toolbar {
+  max-width: 420px;
+  margin-bottom: var(--space-normal);
 }

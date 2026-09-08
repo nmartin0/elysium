@@ -216,3 +216,45 @@ describe('chrome is continuous', () => {
     expect(toggle).toMatch(/border:\s*none/)
   })
 })
+
+describe('the breakpoint is one number', () => {
+  it('the CSS overlay and the JS auto-collapse agree', () => {
+    /**
+     * They used to disagree: the sidebar auto-collapsed below 640px
+     * while the CSS made it overlay below 1100. Between those widths
+     * an expanded sidebar floated over the content and nothing
+     * collapsed it, so the Back button and the left edge of every
+     * screen sat underneath it.
+     *
+     * Read from both files, because a constant duplicated across a
+     * stylesheet and a module is exactly the kind that drifts.
+     */
+    const shell = readFileSync(
+      path.resolve(__dirname, './Shell.tsx'), 'utf8',
+    )
+
+    // EVERY media query, not the first: there were three different
+    // widths in this file, which is how they drifted apart.
+    const cssWidths = [...CSS.matchAll(/^@media \(max-width: (\d+)px\)/gm)]
+      .map((m) => m[1])
+    // Two media queries, one width -- distinct VALUES is the property.
+    expect([...new Set(cssWidths)]).toHaveLength(1)
+    const cssWidth = cssWidths[0]
+    const jsWidth = /max-width: (\d+)px/.exec(shell)?.[1]
+
+    expect(cssWidth).toBeDefined()
+    expect(jsWidth).toBe(cssWidth)
+  })
+
+  it('an overlaid sidebar sits below the header, not over it', () => {
+    // top: 0 covered the global header entirely -- product name, theme
+    // toggle and user menu all vanished behind the expanded rail.
+    const overlay =
+      // Anchored on the SIDEBAR selector specifically -- an unanchored
+      // match found the header rule that shares the same prefix.
+      /--sidebar-collapsed\) \.app__sidebar \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(overlay).toMatch(/top:\s*48px/)
+    expect(overlay).not.toMatch(/top:\s*0/)
+  })
+})

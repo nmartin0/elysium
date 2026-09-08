@@ -108,7 +108,20 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 // matchMedia listener, which is what decides whether Drawer or the
 // plain <aside> actually renders, kept current for the whole session,
 // not just at mount.
-const MOBILE_BREAKPOINT_QUERY = '(max-width: 640px)'
+/**
+ * The width below which three columns stop fitting, and the sidebar
+ * auto-collapses to its rail.
+ *
+ * 1099px, MATCHING the CSS that makes an expanded sidebar overlay
+ * rather than push. They used to disagree -- this was 640px while the
+ * overlay began at 1100 -- so between those widths an expanded sidebar
+ * floated over the content and nothing collapsed it. The Back button
+ * and the left edge of every screen sat underneath it.
+ *
+ * One number, and the two behaviours that depend on it now change
+ * together.
+ */
+const MOBILE_BREAKPOINT_QUERY = '(max-width: 1099px)'
 
 // Read once, synchronously, as the real initial value -- not two
 // renders (one wrong, then corrected) -- React's own lazy useState

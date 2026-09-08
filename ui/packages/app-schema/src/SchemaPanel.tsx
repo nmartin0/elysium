@@ -22,7 +22,7 @@ import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/types'
 import ActionTypes from './ActionTypes'
 import FilterBox from '@elysium/shell-api/components/FilterBox'
-import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
+import Workspace from '@elysium/shell-api/components/Workspace'
 import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
@@ -309,21 +309,24 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
        not down a column. Moving it into a config pane would turn
        perspectives into a list and lose the shape the tabs give it.
        The Workspace is here for the canvas contract. */
-    <Workspace
-      config={
-        <WorkspaceFilter label="Filter" htmlFor="schema-filter">
-          {/* ONE filter, in the pane. There was only ever one -- a
-              single `q` in the URL -- rendered once inside each tab
-              panel, so three boxes were three views of the same state
-              that had to be kept in step. */}
-          <FilterBox
-            value={query}
-            onChange={(text) => go(selectedTab, text, 'replace')}
-            placeholder={`Filter ${filterNoun}...`}
-          />
-        </WorkspaceFilter>
-      }
-    >
+    <Workspace>
+      {/* The filter sits ABOVE the tabs, not in a configuration pane.
+          A sidebar is for MORE THAN FIVE filters -- published guidance
+          puts the threshold there consistently -- and Schema has one.
+          A 288px column holding a single input is mostly empty grey,
+          and sidebar filters also cause a layout shift on every
+          change that a toolbar does not.
+
+          Browse keeps its pane because it has four controls plus a
+          column picker, which is the other side of the same
+          threshold. */}
+      <div className="schema-panel__toolbar">
+        <FilterBox
+          value={query}
+          onChange={(text) => go(selectedTab, text, 'replace')}
+          placeholder={`Filter ${filterNoun}...`}
+        />
+      </div>
       {/* navigate(-1), so this does EXACTLY what the browser's own back
           button does rather than approximating it. Two backs that
           disagree would be worse than one that is missing -- this
