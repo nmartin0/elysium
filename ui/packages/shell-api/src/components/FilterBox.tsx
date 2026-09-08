@@ -13,23 +13,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, InputGroup } from '@blueprintjs/core'
 
-/** How many recently-sent values to remember. An echo arrives at most
- *  a render or two late, so sixteen is generous. */
-export const RECENT_SENT = 16
-
-/**
- * The echo record, bounded, newest last.
- *
- * A separate exported function because the BOUND is the property worth
- * testing and it cannot be observed from rendered output -- a test
- * that only types into the box and asserts the box looks right passes
- * whether or not the record grows. That test was written first and
- * proved hollow against a deliberately unbounded version.
- */
-export function rememberSent(previous: readonly string[], next: string): string[] {
-  return [...previous, next].slice(-RECENT_SENT)
-}
-
 interface FilterBoxProps {
   value: string
   onChange: (value: string) => void
@@ -51,39 +34,60 @@ export default function FilterBox({ value, onChange, placeholder }: FilterBoxPro
   // shows.
   const [text, setText] = useState(value)
 
-  // The recent values this box has sent upward, newest last.
-  //
-  // Distinguishes our own echo from real navigation. A lagging parent
-  // echoes back an OLDER value: "Cus" arriving after "Cust" was typed
-  // must be ignored, or adopting it swallows the "t". Comparing
-  // against only the LAST value sent was not enough for exactly that
-  // reason.
-  //
-  // BOUNDED, because an unbounded record grows one entry per keystroke
-  // for as long as someone types without navigating. A dropped echo
-  // is safe here in a way a dropped recent one is not: the parent is
-  // at most a render or two behind, so anything older than the last
-  // few values cannot still be in flight.
-  //
-  // Not a prefix test instead -- "is the incoming value a prefix of
-  // what I have?" looks equivalent and breaks on deletion: backspace
-  // from "Cust" to "Cus" while the parent echoes "Cust", and the
-  // deleted character comes back.
-  const sent = useRef<string[]>([value])
+  /**
+   * The value we last sent that has not been echoed back yet, or null
+   * when nothing is outstanding.
+   *
+   * ONE PENDING VALUE, not a history of everything sent. The previous
+   * design remembered the last sixteen and ignored any incoming value
+   * among them, which worked for typing and broke for navigation:
+   * pressing Back sets the value to "" -- which this box had also
+   * sent, at mount -- so it was taken for an echo and the box kept
+   * showing the old search against an empty URL.
+   *
+   * The distinction that actually matters is not "have I sent this
+   * before" but "am I still waiting for my own last send". While
+   * waiting, anything that is not that value is a LAGGING echo of an
+   * older keystroke and must be ignored, or fast typing loses
+   * characters. Once it arrives, nothing is outstanding and any
+   * incoming value is the parent's -- a navigation, a reset, a tab
+   * change -- and is adopted.
+   */
+  const pending = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!sent.current.includes(value)) {
-      // A genuinely external value. Start the record over, so a later
-      // echo of something typed before this navigation cannot suppress
-      // it.
-      sent.current = [value]
+    if (pending.current === null) {
+      // Nothing outstanding: this came from the parent.
       setText(value)
+      return
     }
+    if (value === pending.current) {
+      // Our own send, echoed. Caught up.
+      pending.current = null
+      return
+    }
+    /**
+     * Otherwise: a lagging echo of an older keystroke. Ignored.
+     *
+     * A probe settled this. An echo does CHANGE the value -- typing
+     * "C", "Cu", "Cus" makes the parent render "", "C", "Cu" -- so
+     * "did the value change" cannot tell an echo from a navigation.
+     * Only "is it the value I am waiting for" can.
+     *
+     * KNOWN LIMIT, recorded rather than guarded against: a parent that
+     * never echoes a send leaves this waiting forever and ignoring
+     * later navigations. Every real parent echoes through the URL, and
+     * an escape hatch for the hypothetical case could not be
+     * distinguished from a lagging echo -- it broke fast typing when
+     * tried.
+     */
+    // Otherwise: a lagging echo of an older keystroke. Ignore it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
   function update(next: string) {
     setText(next)
-    sent.current = rememberSent(sent.current, next)
+    pending.current = next
     onChange(next)
   }
 

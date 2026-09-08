@@ -22,7 +22,7 @@ import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/types'
 import ActionTypes from './ActionTypes'
 import FilterBox from '@elysium/shell-api/components/FilterBox'
-import Workspace from '@elysium/shell-api/components/Workspace'
+import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
@@ -252,6 +252,11 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const filter = selectedTab === 'object-types' ? query : ''
   const linkFilter = selectedTab === 'link-types' ? query : ''
   const actionFilter = selectedTab === 'action-types' ? query : ''
+  const filterNoun = selectedTab === 'link-types'
+    ? 'link types'
+    : selectedTab === 'action-types'
+      ? 'action types'
+      : 'object types'
 
   /**
    * PUSH for navigation, REPLACE for typing.
@@ -304,7 +309,21 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
        not down a column. Moving it into a config pane would turn
        perspectives into a list and lose the shape the tabs give it.
        The Workspace is here for the canvas contract. */
-    <Workspace>
+    <Workspace
+      config={
+        <WorkspaceFilter label="Filter" htmlFor="schema-filter">
+          {/* ONE filter, in the pane. There was only ever one -- a
+              single `q` in the URL -- rendered once inside each tab
+              panel, so three boxes were three views of the same state
+              that had to be kept in step. */}
+          <FilterBox
+            value={query}
+            onChange={(text) => go(selectedTab, text, 'replace')}
+            placeholder={`Filter ${filterNoun}...`}
+          />
+        </WorkspaceFilter>
+      }
+    >
       {/* navigate(-1), so this does EXACTLY what the browser's own back
           button does rather than approximating it. Two backs that
           disagree would be worse than one that is missing -- this
@@ -370,11 +389,6 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           title="Object types"
           panel={
             <>
-              <FilterBox
-                value={filter}
-                onChange={(text) => go('object-types', text, 'replace')}
-                placeholder="Filter object types..."
-              />
               {Object.keys(schema).length === 0 ? (
                 <Callout intent="none">
                   You do not have read access to any object type in this ontology.
@@ -400,11 +414,6 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           title="Link types"
           panel={
             <>
-              <FilterBox
-                value={linkFilter}
-                onChange={(text) => go('link-types', text, 'replace')}
-                placeholder="Filter link types..."
-              />
               <LinkTypes
                 schema={schema}
                 filter={linkFilter}
@@ -418,11 +427,6 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           title="Action types"
           panel={
             <>
-              <FilterBox
-                value={actionFilter}
-                onChange={(text) => go('action-types', text, 'replace')}
-                placeholder="Filter action types..."
-              />
               <ActionTypes
                 onSessionExpired={onSessionExpired}
                 filter={actionFilter}

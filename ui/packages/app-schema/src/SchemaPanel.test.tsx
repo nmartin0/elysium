@@ -286,8 +286,11 @@ describe('SchemaPanel -- retracing steps', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
-    // One Back leaves the tab entirely rather than peeling off a letter.
-    expect(screen.queryByPlaceholderText(/Filter object types/)).toBeNull()
+    // One Back undoes the whole search rather than peeling off a
+    // letter. Asserts the VALUE, not the box's existence: the filter
+    // lives in the configuration pane now and is always on screen,
+    // where it used to sit inside the tab panel and vanish with it.
+    expect(screen.getByPlaceholderText(/Filter/)).toHaveValue('')
   })
 
   it('treats a tab click as a step worth retracing', () => {

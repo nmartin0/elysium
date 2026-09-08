@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { useState } from 'react'
 
-import FilterBox, { RECENT_SENT, rememberSent } from './FilterBox'
+import FilterBox from './FilterBox'
 
 /**
  * Stands in for the URL: a parent whose value updates one render
@@ -90,34 +90,12 @@ describe('FilterBox', () => {
   })
 })
 
-describe('rememberSent', () => {
-  it('never grows past the bound', () => {
-    // Found in a memory-leak audit: the echo record was an unbounded
-    // Set, so a long session of typing without navigating accumulated
-    // every prefix ever entered.
-    //
-    // Tested on the FUNCTION, not through the component. A first
-    // version typed 500 characters into the box and asserted the box
-    // looked right, which passed against a deliberately unbounded
-    // version -- the bound is invisible from rendered output.
-    let record: string[] = []
-    for (let index = 0; index < 500; index += 1) {
-      record = rememberSent(record, `query-${index}`)
-    }
+/* The `rememberSent` bound and its tests are gone with the design they
+ * belonged to. It kept the last sixteen values sent so any of them
+ * could be recognised as an echo -- which is exactly what made
+ * navigating BACK to a previously-typed value indistinguishable from
+ * one. Waiting for a single outstanding send needs no bound at all. */
 
-    expect(record).toHaveLength(RECENT_SENT)
-  })
-
-  it('keeps the NEWEST values, since an echo is always recent', () => {
-    // Dropping the oldest is only safe because a lagging parent is at
-    // most a render or two behind. Dropping the newest would break the
-    // thing the record exists for.
-    let record: string[] = []
-    for (const value of ['a', 'b', 'c']) record = rememberSent(record, value)
-
-    expect(record[record.length - 1]).toBe('c')
-  })
-})
 
 describe('FilterBox -- bounded memory', () => {
   it('still keeps every character when the parent lags', () => {
@@ -134,5 +112,71 @@ describe('FilterBox -- bounded memory', () => {
 
     expect(box).toHaveValue('Customer')
     expect(seen[seen.length - 1]).toBe('Customer')
+  })
+})
+
+describe('FilterBox -- navigating back to a value it once sent', () => {
+  /**
+   * THE bug that blocked Schema's configuration pane, and the reason
+   * the old design could not be patched.
+   *
+   * It remembered every recent value and ignored any incoming one
+   * among them. Pressing Back sets the value to "" -- which the box
+   * also sent, at mount -- so it was taken for its own echo and the
+   * box kept showing the old search against an empty URL.
+   *
+   * Three patches failed before a probe showed the real sequence:
+   * a location key (changes on `replace` too, so it reset on every
+   * keystroke), a navigation-type guard, and a missing effect
+   * dependency. The distinction needed was not "have I sent this
+   * before" but "am I still waiting for my own last send".
+   */
+  function Parent({ initial }: { initial: string }) {
+    const [value, setValue] = useState(initial)
+    return (
+      <>
+        <FilterBox value={value} onChange={setValue} placeholder="Filter..." />
+        <button onClick={() => setValue('')}>back</button>
+      </>
+    )
+  }
+
+  it('adopts a value the parent sets, even one it typed before', () => {
+    render(<Parent initial="" />)
+    const box = screen.getByPlaceholderText('Filter...')
+    fireEvent.change(box, { target: { value: 'Cus' } })
+    expect(box).toHaveValue('Cus')
+
+    // The parent navigates back to "", which this box sent at mount.
+    fireEvent.click(screen.getByText('back'))
+
+    expect(box).toHaveValue('')
+  })
+
+  it('waits for its own echo before adopting anything else', () => {
+    /**
+     * The property the whole design rests on, and the KNOWN LIMIT that
+     * comes with it: while a send is outstanding, everything else is
+     * treated as a lagging echo.
+     *
+     * A probe proved no cheaper rule works. An echo CHANGES the value
+     * -- typing "C", "Cu", "Cus" makes the parent render "", "C", "Cu"
+     * -- so "did the value change" cannot tell an echo from a
+     * navigation. Only "is this the value I am waiting for" can.
+     *
+     * So a parent that never echoes a send leaves the box waiting.
+     * Every real parent here echoes through the URL, and the escape
+     * hatch tried for the hypothetical case broke fast typing, which
+     * is a real one.
+     */
+    const seen: string[] = []
+    render(<LaggingParent onValue={(value) => seen.push(value)} />)
+    const box = screen.getByPlaceholderText('Filter...')
+
+    fireEvent.change(box, { target: { value: 'Cust' } })
+
+    // Still showing what was typed, not the parent's lagging value.
+    expect(box).toHaveValue('Cust')
+    expect(seen).toEqual(['Cust'])
   })
 })
