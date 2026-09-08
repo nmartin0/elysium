@@ -497,12 +497,17 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
           position="left"
           size="15rem"
           onClose={() => setCollapsedPersisted(true)}
-          className="app__sidebar"
+          className={`app__sidebar ${Classes.DARK}`}
         >
           {sidebarContent}
         </Drawer>
       ) : (
-        <aside className="app__sidebar" aria-hidden={collapsed}>
+        // Classes.DARK on the sidebar ALWAYS, not only in dark mode:
+        // it is dark chrome in both themes, and a Blueprint widget
+        // styles itself for whatever surface it is told it sits on.
+        // Without this the theme toggle and user menu rendered
+        // dark-on-dark and were effectively invisible.
+        <aside className={`app__sidebar ${Classes.DARK}`} aria-hidden={collapsed}>
           {sidebarContent}
         </aside>
       )}

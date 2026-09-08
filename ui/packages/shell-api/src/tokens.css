@@ -26,7 +26,9 @@
    * Lightness IS the hierarchy. Chrome and configuration sit dark,
    * content sits light, and a raised surface sits lightest.
    */
-  --surface-chrome: #1c2127;      /* sidebar, header: app furniture */
+  --surface-chrome: #1c2127;      /* sidebar, header: app furniture --
+                                     dark in BOTH themes, because it is
+                                     furniture rather than content */
   --surface-config: #f6f7f9;      /* filter panels, toolbars */
   --surface-content: #ffffff;     /* results, the thing being read */
   --surface-sunken: #edeff2;      /* wells, empty states */
@@ -77,6 +79,11 @@
  * bp6 only: that is what the installed Blueprint emits. A bp5
  * selector alongside it was dead CSS that read like insurance. */
 .bp6-dark {
+  /* Chrome must stay DARKER than the page behind it, or the sidebar
+     dissolves. In the first dark palette both were #1c2127, so the
+     sidebar vanished into the background and took its buttons with
+     it -- which is what "the logout button is not present" was. */
+  --surface-chrome: #111418;
   --surface-config: #252a31;
   --surface-content: #2f343c;
   --surface-sunken: #1c2127;

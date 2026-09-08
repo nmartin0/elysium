@@ -22,8 +22,8 @@ body {
     -apple-system,
     'Segoe UI',
     sans-serif;
-  background: #f7f7f8;
-  color: #1a1a1a;
+  background: var(--surface-sunken);
+  color: var(--text-primary);
 }
 
 .app {
@@ -102,11 +102,11 @@ body {
    items, never some other, future Menu elsewhere in the app that
    SHOULD keep Blueprint's own default light-theme treatment. */
 .app__nav .bp6-menu-item {
-  color: #f2f2f3;
+  color: var(--text-on-chrome);
 }
 
 .app__nav .bp6-menu-item.bp6-active {
-  background: #4a4a54;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* user-menu -- rebuilt on real Blueprint primitives (PopoverNext +
@@ -151,7 +151,7 @@ body {
    own two-class-level rule -- not just tied with it and hoping source
    order still favors this file. */
 .user-menu__trigger.bp6-button.bp6-minimal {
-  color: #f2f2f3;
+  color: var(--text-on-chrome);
 }
 
 .user-menu__avatar {
@@ -162,14 +162,14 @@ body {
   width: 1.5rem;
   height: 1.5rem;
   border-radius: 50%;
-  background: #4a4a54;
+  background: rgba(255, 255, 255, 0.1);
   font-size: 0.75rem;
   font-weight: 600;
 }
 
 .user-menu__profile {
   padding: 0.7rem 0.85rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .user-menu__username {
@@ -180,7 +180,7 @@ body {
 
 .user-menu__role {
   margin: 0.15rem 0 0;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.8rem;
 }
 
@@ -196,12 +196,12 @@ body {
   margin: 1rem 1rem 0;
   padding: 0.4rem;
   background: transparent;
-  color: #555;
-  border: 1px solid #ccc;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
 }
 
 .app__sidebar-toggle:hover {
-  background: #eee;
+  background: var(--surface-sunken);
 }
 
 /* No max-width. This was 640px -- a reading measure, right for prose
@@ -351,7 +351,7 @@ label {
 input,
 textarea {
   padding: 0.5rem 0.6rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   font-size: 1rem;
   font-family: inherit;
@@ -361,7 +361,7 @@ button {
   padding: 0.55rem 1rem;
   border: none;
   border-radius: 6px;
-  background: #2d2d34;
+  background: var(--surface-chrome);
   color: white;
   font-size: 0.95rem;
   cursor: pointer;
@@ -377,7 +377,7 @@ button:disabled {
 button.secondary {
   background: transparent;
   border: 1px solid #999;
-  color: #333;
+  color: var(--text-primary);
 }
 
 /* .error class removed -- confirmed dead via a real, whole-frontend
@@ -405,7 +405,7 @@ button.secondary {
 
 .pending-write__description {
   margin: 0 0 0.85rem;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.8rem;
   word-break: break-word;
 }
@@ -413,7 +413,7 @@ button.secondary {
 .pending-write__object {
   margin-bottom: 0.6rem;
   padding: 0.7rem 0.8rem;
-  background: #f7f7f8;
+  background: var(--surface-sunken);
   border: 1px solid #e0e0e0;
   border-radius: 6px;
 }
@@ -437,7 +437,7 @@ button.secondary {
   justify-content: space-between;
   gap: 0.5rem 0.75rem;
   padding: 0.3rem 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 0.9rem;
 }
 
@@ -446,7 +446,7 @@ button.secondary {
 }
 
 .pending-write__field dt {
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .pending-write__field dd {
@@ -457,7 +457,7 @@ button.secondary {
 }
 
 .pending-write__old-value {
-  color: #999;
+  color: var(--text-secondary);
   font-weight: 400;
 }
 
@@ -468,7 +468,7 @@ button.secondary {
 }
 
 .pending-write--resolved {
-  color: #1a1a1a;
+  color: var(--text-primary);
 }
 
 .create-user-form {
@@ -496,7 +496,7 @@ button.secondary {
 .user-table td {
   text-align: left;
   padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 0.9rem;
 }
 
@@ -512,7 +512,7 @@ button.secondary {
 }
 
 .user-table pre {
-  background: #f2f2f2;
+  background: var(--surface-sunken);
   padding: 0.6rem;
   border-radius: 6px;
   font-size: 0.8rem;
@@ -531,7 +531,7 @@ button.danger {
 
 .object-search__controls select {
   padding: 0.5rem 0.6rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   font-size: 1rem;
   background: white;
@@ -545,7 +545,7 @@ button.danger {
 .object-search__status,
 .object-search__empty,
 .object-search__more {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -612,7 +612,7 @@ button.danger {
 
 .object-search__result-subtitle {
   margin: 0 0 0.5rem;
-  color: #888;
+  color: var(--text-secondary);
   font-size: 0.8rem;
 }
 
@@ -626,7 +626,7 @@ button.danger {
   justify-content: space-between;
   gap: 0.5rem 0.75rem;
   padding: 0.3rem 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 0.9rem;
 }
 
@@ -635,7 +635,7 @@ button.danger {
 }
 
 .object-search__result-field dt {
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .object-search__result-field dd {
@@ -646,7 +646,7 @@ button.danger {
 
 .object-detail__type {
   margin: 0;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -658,7 +658,7 @@ button.danger {
 
 .object-detail__subtitle {
   margin: 0 0 1rem;
-  color: #888;
+  color: var(--text-secondary);
   font-size: 0.85rem;
 }
 
@@ -676,7 +676,7 @@ button.danger {
   justify-content: space-between;
   gap: 0.5rem 0.75rem;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .object-detail__field:last-child {
@@ -684,7 +684,7 @@ button.danger {
 }
 
 .object-detail__field dt {
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .object-detail__field dd {
@@ -694,7 +694,7 @@ button.danger {
 }
 
 .object-detail__links a {
-  color: #2d2d34;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -721,8 +721,8 @@ button.danger {
 }
 
 .action-form__field input:disabled {
-  background: #f2f2f2;
-  color: #666;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
 }
 
 .action-form__actions {
