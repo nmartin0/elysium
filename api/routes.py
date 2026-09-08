@@ -111,6 +111,7 @@ loop for meaningfully longer than intended.
 
 import asyncio
 import base64
+import json
 import logging
 import threading
 from typing import Any
@@ -852,6 +853,12 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
 def search_objects_route(object_type: str, request: Request, q: str = "",
                           page_size: int | None = None, page_token: str | None = None,
                           order_by: str | None = None,
+                          # JSON-encoded conditions, because this is a
+                          # GET: the URL is what makes a result set
+                          # shareable and bookmarkable, and moving it to
+                          # a POST body to avoid encoding would cost
+                          # that.
+                          conditions: str | None = None,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
     # The human-facing browse/search endpoint -- DataMediator.search_
     # object_free_text() underneath, a forgiving CONTAINS match across
@@ -871,7 +878,19 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     # with what was actually searched), not just a bare id the UI would
     # otherwise need a SEPARATE call per result to make sense of.
     mediator = request.app.state.mediator
-    matching_ids = mediator.search_object_free_text(current_user, object_type, q)
+    try:
+        parsed = parse_filters(json.loads(conditions)) if conditions else None
+    except (json.JSONDecodeError, TypeError) as e:
+        raise HTTPException(status_code=400, detail="conditions must be a JSON list") from e
+    try:
+        matching_ids = mediator.search_object_free_text(
+            current_user, object_type, q, conditions=parsed
+        )
+    except ValueError as e:
+        # A bad filter is the caller's mistake, not a server fault. The
+        # message is already uniform -- an unreadable field reads the
+        # same as an absent one -- so it is safe to pass through.
+        raise HTTPException(status_code=400, detail=str(e)) from e
     summary_fields = mediator.free_text_searchable_fields(current_user, object_type)
 
     # SORTED BEFORE PAGING, always. Pagination is only correct if the

@@ -200,7 +200,7 @@ touches the config API directly.
 **12. [done] Value counts, histogram, pie, single statistic**, from
 `/aggregate`. One chart per prominent property by default.
 
-**13. Click-to-filter, with keep/exclude**, cross-filtering every
+**13. [done] Click-to-filter, with keep/exclude**, cross-filtering every
 chart and the table from one filter set.
 
 **14. Measure it.** Charts make the aggregate path hot for the first

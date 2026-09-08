@@ -2399,3 +2399,65 @@ def test_a_condition_on_an_unreadable_field_is_a_400(client):
     )
 
     assert unknown.status_code == unreadable.status_code == 400
+
+
+def test_text_and_conditions_narrow_together(client):
+    """Two contexts, combined -- the shape every search engine that
+    does both uses.
+
+    The text query decides what MATCHES; the conditions decide what is
+    ELIGIBLE; a result satisfies both. Without this, a table filtered
+    by text and charts filtered by conditions describe different object
+    sets, and cross-filtering between them is impossible.
+    """
+    _filter_user(client, "textcond")
+
+    text_only = client.get("/api/objects/Customer/search?q=a").json()["total_matches"]
+    conditions = json.dumps(
+        [{"field": "customer_id", "operator": "in", "value": ["cust_001"]}]
+    )
+    both = client.get(
+        f"/api/objects/Customer/search?q=a&conditions={conditions}"
+    ).json()["total_matches"]
+
+    assert text_only > 1, "the text alone should match several, or this proves nothing"
+    assert both == 1
+
+
+def test_conditions_alone_work_without_any_text(client):
+    # The chart-click case: no search term, just a filter.
+    _filter_user(client, "condonly")
+    conditions = json.dumps(
+        [{"field": "customer_id", "operator": "in", "value": ["cust_001", "cust_002"]}]
+    )
+
+    body = client.get(
+        f"/api/objects/Customer/search?conditions={conditions}"
+    ).json()
+
+    assert body["total_matches"] == 2
+
+
+def test_a_condition_on_an_unreadable_field_is_rejected_by_search_too(client):
+    # Uniform denial reaches this path as well: an unreadable field
+    # fails exactly as an absent one does.
+    _filter_user(client, "conddenied")
+
+    unknown = client.get(
+        "/api/objects/Customer/search?conditions="
+        + json.dumps([{"field": "no_such_field", "operator": "equals", "value": "x"}])
+    )
+    unreadable = client.get(
+        "/api/objects/Customer/search?conditions="
+        + json.dumps([{"field": "internal_notes", "operator": "equals", "value": "x"}])
+    )
+
+    assert unknown.status_code == unreadable.status_code == 400
+
+
+def test_malformed_conditions_are_a_400(client):
+    _filter_user(client, "condbad")
+
+    assert client.get(
+        "/api/objects/Customer/search?conditions=not-json"
+    ).status_code == 400

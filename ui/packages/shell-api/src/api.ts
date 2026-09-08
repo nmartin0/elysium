@@ -342,6 +342,11 @@ export interface SearchOptions {
   /** "field" or "field:desc". The server validates the field against
    *  what this caller may read. */
   orderBy?: string
+  /** Structured filters, ANDed with the text query. Two contexts
+   *  combined: the text decides what MATCHES, these decide what is
+   *  ELIGIBLE. It is what lets a chart click and a search box narrow
+   *  the same object set. */
+  conditions?: unknown[]
 }
 
 export async function searchObjects(
@@ -356,6 +361,9 @@ export async function searchObjects(
   if (options.pageToken) params.set("page_token", options.pageToken)
   if (options.pageSize) params.set("page_size", String(options.pageSize))
   if (options.orderBy) params.set("order_by", options.orderBy)
+  if (options.conditions?.length) {
+    params.set("conditions", JSON.stringify(options.conditions))
+  }
   const response = await apiFetchOrThrow(`/objects/${objectType}/search?${params}`)
   return response.json()
 }

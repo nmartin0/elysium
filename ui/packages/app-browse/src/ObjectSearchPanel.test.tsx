@@ -9,14 +9,30 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     searchObjects: vi.fn(),
+    // The panel now renders ChartsPanel, which aggregates. Unmocked,
+    // every test here would hit a real fetch and the charts would show
+    // an error instead of bars.
+    aggregateObjects: vi.fn(),
   }
 })
 
-import { searchObjects, ApiError } from '@elysium/shell-api/api'
+import { aggregateObjects, searchObjects, ApiError } from '@elysium/shell-api/api'
 import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
+vi.mock('@elysium/shell-api/components/Chart', () => ({
+  default: ({ ariaLabel, onSelect }: { ariaLabel: string; onSelect?: (v: string) => void }) => (
+    <div>
+      <span>{ariaLabel}</span>
+      {onSelect && (
+        <button onClick={() => onSelect('us-west')}>select:region:us-west</button>
+      )}
+    </div>
+  ),
+}))
+
 const mockedSearchObjects = vi.mocked(searchObjects)
+const mockedAggregate = vi.mocked(aggregateObjects)
 
 const CUSTOMER_SCHEMA: VisibleSchema = {
   Customer: { title_field: 'name', fields: { name: { type: 'data' }, region: { type: 'data' } } },
@@ -54,6 +70,7 @@ beforeEach(() => {
   // Column choices persist in localStorage now, which is what they are
   // FOR in a browser and exactly what makes tests interfere.
   window.localStorage.clear()
+  mockedAggregate.mockResolvedValue({ results: { 'us-west': 3, 'us-east': 1 } })
   vi.clearAllMocks()
 })
 
@@ -581,5 +598,105 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
 
     await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
     broken.mockRestore()
+  })
+})
+
+describe('ObjectSearchPanel -- cross-filtering', () => {
+  const SCHEMA: VisibleSchema = {
+    Customer: {
+      title_field: 'name',
+      fields: {
+        name: { type: 'data' },
+        region: { type: 'data', visibility: 'prominent', display_name: 'Region' },
+      },
+    },
+  }
+
+  it('a chart click narrows the table', async () => {
+    // THE point of item 13. Without it, charts and the table describe
+    // different object sets and sit beside each other saying
+    // different things about the same data.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } }]),
+    )
+    renderPanel(SCHEMA)
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalled())
+    mockedSearchObjects.mockClear()
+
+    // The Chart mock exposes its onSelect as a button.
+    fireEvent.click(await screen.findByText('select:region:us-west'))
+
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', '',
+      expect.objectContaining({
+        conditions: [{ field: 'region', operator: 'in', value: ['us-west'] }],
+      }),
+    ))
+  })
+
+  it('a chart click ANDs with the text query rather than replacing it', async () => {
+    // Narrowing by a chart click should narrow WITHIN a search, not
+    // discard it -- which is the whole reason the two are separate
+    // contexts rather than one language.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } }]),
+    )
+    renderPanel(SCHEMA)
+    fireEvent.change(screen.getByPlaceholderText(/Search Customer/), {
+      target: { value: 'ada' },
+    })
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', 'ada', expect.anything(),
+    ))
+    mockedSearchObjects.mockClear()
+
+    fireEvent.click(await screen.findByText('select:region:us-west'))
+
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', 'ada',
+      expect.objectContaining({ conditions: expect.arrayContaining([expect.anything()]) }),
+    ))
+  })
+
+  it('clicking the same value again undoes it', async () => {
+    // A click is always reversible by repeating it, which is what
+    // makes exploring by clicking safe rather than a trap.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } }]),
+    )
+    renderPanel(SCHEMA)
+    fireEvent.click(await screen.findByText('select:region:us-west'))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', '', expect.objectContaining({ conditions: expect.any(Array) }),
+    ))
+    mockedSearchObjects.mockClear()
+
+    fireEvent.click(await screen.findByText('select:region:us-west'))
+
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', '', expect.objectContaining({ conditions: [] }),
+    ))
+  })
+
+  it('returns to the first page when a chart filter changes', async () => {
+    // A page token from the unfiltered set means nothing against the
+    // filtered one.
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } }], 40),
+      next_page_token: 'v1.page2',
+    })
+    renderPanel(SCHEMA)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
+    ))
+    mockedSearchObjects.mockClear()
+
+    fireEvent.click(await screen.findByText('select:region:us-west'))
+
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', '', expect.objectContaining({ pageToken: undefined }),
+    ))
   })
 })

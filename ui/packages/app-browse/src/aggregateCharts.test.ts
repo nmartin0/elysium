@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 
 import {
   MAX_BARS,
+  type ChartFilter,
+  asConditions,
+  selectionFor,
   PIE_MAX_SLICES,
   histogramOption,
   pieOption,
@@ -128,5 +131,54 @@ describe('pie', () => {
     }
 
     expect((option.series[0]?.data ?? [])).toHaveLength(PIE_MAX_SLICES + 1)
+  })
+})
+
+describe('chart selections as conditions', () => {
+  it('a kept selection becomes an `in`', () => {
+    // No widening was needed for click-to-filter: selecting several
+    // values on one chart IS set membership, which the vocabulary
+    // already had.
+    expect(asConditions([{ field: 'region', values: ['west', 'east'], mode: 'keep' }]))
+      .toEqual([{ field: 'region', operator: 'in', value: ['west', 'east'] }])
+  })
+
+  it('an excluded selection becomes a `not_in`', () => {
+    // "Everything except these three" is a question people actually
+    // ask and a picker cannot express. It is what makes chart
+    // filtering more than a fancy dropdown.
+    expect(asConditions([{ field: 'region', values: ['east'], mode: 'exclude' }]))
+      .toEqual([{ field: 'region', operator: 'not_in', value: ['east'] }])
+  })
+
+  it('fields AND together rather than unioning', () => {
+    // Matching how the conditions themselves combine. Two selections
+    // on two charts NARROW; a union would widen on every click, which
+    // is the opposite of what clicking a bar means.
+    const conditions = asConditions([
+      { field: 'region', values: ['west'], mode: 'keep' },
+      { field: 'status', values: ['open'], mode: 'keep' },
+    ])
+
+    expect(conditions).toHaveLength(2)
+  })
+
+  it('drops a selection with nothing left in it', () => {
+    // `in []` would mean "match nothing" -- an empty filter is no
+    // filter, not an impossible one.
+    expect(asConditions([{ field: 'region', values: [], mode: 'keep' }])).toEqual([])
+  })
+
+  it('reports a field\u2019s own selection for dimming', () => {
+    const filters: ChartFilter[] = [{ field: 'region', values: ['west'], mode: 'keep' }]
+
+    expect(selectionFor(filters, 'region')).toEqual({ selected: ['west'], excluded: [] })
+    expect(selectionFor(filters, 'status')).toEqual({ selected: [], excluded: [] })
+  })
+
+  it('reports an exclusion as excluded, not selected', () => {
+    const filters: ChartFilter[] = [{ field: 'region', values: ['east'], mode: 'exclude' }]
+
+    expect(selectionFor(filters, 'region')).toEqual({ selected: [], excluded: ['east'] })
   })
 })

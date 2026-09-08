@@ -27,7 +27,14 @@ import Chart from '@elysium/shell-api/components/Chart'
 import { aggregateObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
-import { type AggregateResults, pieOption, suitsAPie, valueCountsOption } from './aggregateCharts'
+import {
+  type AggregateResults,
+  type ChartFilter,
+  pieOption,
+  selectionFor,
+  suitsAPie,
+  valueCountsOption,
+} from './aggregateCharts'
 
 interface ChartsPanelProps {
   objectType: string
@@ -36,6 +43,10 @@ interface ChartsPanelProps {
    *  object set. Charts over a different set than the table beside them
    *  would be actively misleading. */
   conditions: unknown[]
+  /** The current chart selection, so each chart can dim what is
+   *  filtered out rather than hiding it. */
+  filters: ChartFilter[]
+  onSelect: (field: string, value: string) => void
   onSessionExpired: () => void
 }
 
@@ -59,7 +70,7 @@ export function chartableFields(
 }
 
 export default function ChartsPanel({
-  objectType, visibleSchema, conditions, onSessionExpired,
+  objectType, visibleSchema, conditions, filters, onSelect, onSessionExpired,
 }: ChartsPanelProps) {
   const [charts, setCharts] = useState<FieldChart[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -122,10 +133,11 @@ export default function ChartsPanel({
           <h4>{chart.label}</h4>
           <Chart
             ariaLabel={`${chart.label} distribution`}
+            onSelect={(value) => onSelect(chart.field, value)}
             option={
               suitsAPie(chart.results)
                 ? pieOption(chart.results)
-                : valueCountsOption(chart.results)
+                : valueCountsOption(chart.results, selectionFor(filters, chart.field))
             }
           />
         </section>

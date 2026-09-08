@@ -937,7 +937,28 @@ class DataMediator:
         ]
 
     def search_object_free_text(self, user_record: UserRecord, object_type: str, query_text: str,
-                                 visible_schema: dict | None = None) -> list:
+                                 visible_schema: dict | None = None,
+                                 conditions: list | None = None) -> list:
+        """Free-text search, optionally narrowed by structured filters.
+
+        TWO CONTEXTS, COMBINED, which is how every search engine that
+        does both handles it: the text query decides what MATCHES, the
+        conditions decide what is ELIGIBLE, and a result must satisfy
+        both. Elasticsearch calls these query context and filter
+        context and ANDs them in one bool; this is the same shape with
+        one text clause.
+
+        That split is why the filter vocabulary stays AND-only. Free
+        text already ORs across every searchable column -- inside
+        find_ids_matching_text, where it belongs -- so the OR a user
+        needs exists without the vocabulary having to grow one. A
+        `should` clause in the filter language would have been a much
+        larger change for the same result.
+
+        It is what makes charts and a table describe ONE object set:
+        the table's text query and a chart click both narrow the same
+        thing, rather than being two queries nobody can combine.
+        """
         # The human-facing, browse/search counterpart to search_object()
         # above -- a forgiving, CONTAINS match across every visible,
         # plain-data, primary-storage field at once, not an exact match
@@ -992,8 +1013,31 @@ class DataMediator:
 
         if query_text.strip():
             candidate_ids = adapter.find_ids_matching_text(object_type, columns, query_text, resolved_type_config)
+            if conditions:
+                # Filter context: intersect, rather than re-running the
+                # text search with conditions folded in. The adapter's
+                # text search takes columns and a string, and widening
+                # its contract to also take conditions would give two
+                # ways to express the same filter.
+                eligible = set(
+                    self._find_ids_with_fallback(
+                        adapter, object_type,
+                        self._translate_conditions(
+                            object_type, conditions, resolved_type_config, visible_type_def
+                        ),
+                        resolved_type_config,
+                    )
+                )
+                candidate_ids = [oid for oid in candidate_ids if oid in eligible]
         else:
-            candidate_ids = adapter.find_ids(object_type, [], resolved_type_config)
+            # No text: the conditions ARE the query.
+            candidate_ids = self._find_ids_with_fallback(
+                adapter, object_type,
+                self._translate_conditions(
+                    object_type, conditions or [], resolved_type_config, visible_type_def
+                ),
+                resolved_type_config,
+            )
 
         action = f"read:{object_type}"
         candidate_ids = self._without_deleted(object_type, candidate_ids)
@@ -1013,6 +1057,32 @@ class DataMediator:
         """
         fields = (self.schema.get(object_type) or {}).get("fields") or {}
         return (fields.get(field_name) or {}).get("data_type")
+
+    def _translate_conditions(self, object_type: str, conditions: list,
+                               resolved_type_config: dict, visible_type_def: dict) -> list:
+        """Field names to column names, validated on the way.
+
+        Shared by search_object() and search_object_free_text() so
+        there is one definition of "may this caller filter on this
+        field", not two that could drift.
+        """
+        translated = []
+        valid_columns = self._filterable_columns(object_type, visible_type_def)
+        for condition in conditions:
+            if condition.field not in valid_columns:
+                # Same message whether the field is UNREADABLE or
+                # absent -- uniform denial, exactly as search_object()
+                # does it.
+                raise ValueError("Invalid search criteria")
+            validate_filter(condition, self._declared_type(object_type, condition.field))
+            translated.append(
+                FieldFilter(
+                    field=get_column_for_field(resolved_type_config, condition.field),
+                    operator=condition.operator,
+                    value=condition.value,
+                )
+            )
+        return translated
 
     def _find_ids_with_fallback(self, adapter, object_type: str, conditions: list,
                                  resolved_type_config: dict) -> list:

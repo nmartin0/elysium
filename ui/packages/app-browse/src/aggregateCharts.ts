@@ -123,3 +123,49 @@ export function suitsAPie(results: AggregateResults): boolean {
   const groups = Object.keys(results).length
   return groups > 1 && groups <= PIE_MAX_SLICES
 }
+
+
+/**
+ * One field's chart selection.
+ *
+ * `mode` is keep or exclude, which is what makes chart-filtering more
+ * than a fancy dropdown: "everything except these three" is a question
+ * people actually ask, and a picker cannot express it.
+ */
+export interface ChartFilter {
+  field: string
+  values: string[]
+  mode: "keep" | "exclude"
+}
+
+/**
+ * Chart selections as filter conditions.
+ *
+ * `in` and `not_in`, which the vocabulary already has -- no widening
+ * was needed for click-to-filter, because selecting several values on
+ * one chart is exactly set membership.
+ *
+ * Fields AND together, matching how the conditions themselves combine.
+ * Two selections on two charts narrow; they do not union.
+ */
+export function asConditions(filters: ChartFilter[]): unknown[] {
+  return filters
+    .filter((filter) => filter.values.length > 0)
+    .map((filter) => ({
+      field: filter.field,
+      operator: filter.mode === "exclude" ? "not_in" : "in",
+      value: filter.values,
+    }))
+}
+
+/** The values selected on one field's chart, for dimming the rest. */
+export function selectionFor(filters: ChartFilter[], field: string): {
+  selected: string[]
+  excluded: string[]
+} {
+  const filter = filters.find((entry) => entry.field === field)
+  if (filter === undefined) return { selected: [], excluded: [] }
+  return filter.mode === "exclude"
+    ? { selected: [], excluded: filter.values }
+    : { selected: filter.values, excluded: [] }
+}

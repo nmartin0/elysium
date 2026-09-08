@@ -8,6 +8,9 @@ import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 
+import { asConditions, type ChartFilter } from './aggregateCharts'
+import ChartsPanel from './ChartsPanel'
+
 // The human-facing browse/search screen -- Palantir's own Object
 // Explorer is the closest real-world analog (a real research +
 // architecture conversation with the user), scaled down to a fixed,
@@ -63,11 +66,46 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     () => readPreference("browseColumns", username, {}),
   )
 
+  /**
+   * A clicked chart value, toggled into the filter.
+   *
+   * KEEP on first click, and clicking the same value again removes it
+   * -- so a click is always undoable by repeating it, which is what
+   * makes exploring by clicking safe.
+   */
+  function toggleChartValue(field: string, value: string) {
+    setCrossFilter((current) => {
+      const existing = current.find((entry) => entry.field === field)
+      if (existing === undefined) {
+        return [...current, { field, values: [value], mode: "keep" }]
+      }
+      const values = existing.values.includes(value)
+        ? existing.values.filter((existingValue: string) => existingValue !== value)
+        : [...existing.values, value]
+      // A filter with nothing left in it is no filter, not an empty
+      // one -- `in []` would mean "match nothing".
+      const rest = current.filter((entry) => entry.field !== field)
+      return values.length === 0 ? rest : [...rest, { ...existing, values }]
+    })
+    setPageToken(null)
+  }
+
   function setChosenColumns(next: Record<string, string[]>) {
     setChosenColumnsState(next)
     writePreference("browseColumns", username, next)
   }
   const [totalMatches, setTotalMatches] = useState(0)
+  /**
+   * The cross-filter: one set of conditions driving the table AND
+   * every chart.
+   *
+   * Kept here rather than in either half because both describe the
+   * SAME object set -- charts over a different set than the table
+   * beside them would be actively misleading. It ANDs with the text
+   * query rather than replacing it, so narrowing by a chart click
+   * narrows within a search rather than discarding it.
+   */
+  const [crossFilter, setCrossFilter] = useState<ChartFilter[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -145,6 +183,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         const response = (await searchObjects(selectedType, queryText, {
           pageToken: pageToken ?? undefined,
           orderBy: orderBy || undefined,
+          conditions: asConditions(crossFilter),
         })) as {
           results: SearchResult[]
           total_matches: number
@@ -166,7 +205,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, queryText, pageToken, orderBy])
+  }, [selectedType, queryText, pageToken, orderBy, JSON.stringify(crossFilter)])
 
   // Changing WHAT is searched resets WHERE you are in it. A token from
   // the old result set means nothing against the new one -- the server
@@ -175,7 +214,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     setPageToken(null)
     setPreviousTokens([])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, queryText, orderBy])
+  }, [selectedType, queryText, orderBy, JSON.stringify(crossFilter)])
 
   if (objectTypes === null) {
     return (
@@ -280,6 +319,17 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
             )
           })}
         </details>
+      )}
+
+      {selectedType && (
+        <ChartsPanel
+          objectType={selectedType}
+          visibleSchema={visibleSchema}
+          conditions={asConditions(crossFilter)}
+          filters={crossFilter}
+          onSelect={toggleChartValue}
+          onSessionExpired={onSessionExpired}
+        />
       )}
 
       {error && <Callout intent="danger">{error}</Callout>}

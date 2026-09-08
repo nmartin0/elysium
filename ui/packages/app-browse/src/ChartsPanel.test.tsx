@@ -31,6 +31,7 @@ const SCHEMA: VisibleSchema = {
 }
 
 const noop = () => {}
+const noop2 = () => {}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -75,7 +76,7 @@ describe('ChartsPanel', () => {
   it('asks for a count grouped by each chartable field', async () => {
     render(
       <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
-                   onSessionExpired={noop} />,
+                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
@@ -90,7 +91,7 @@ describe('ChartsPanel', () => {
     const conditions = [{ field: 'region', operator: 'in', value: ['us-west'] }]
     render(
       <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={conditions}
-                   onSessionExpired={noop} />,
+                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
@@ -101,7 +102,7 @@ describe('ChartsPanel', () => {
   it('draws a chart per field that has something to show', async () => {
     render(
       <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
-                   onSessionExpired={noop} />,
+                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
     expect(await screen.findByText('Region distribution')).toBeInTheDocument()
@@ -114,7 +115,7 @@ describe('ChartsPanel', () => {
 
     render(
       <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
-                   onSessionExpired={noop} />,
+                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
     expect(await screen.findByText(/nothing to chart/)).toBeInTheDocument()
@@ -125,7 +126,7 @@ describe('ChartsPanel', () => {
 
     render(
       <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
-                   onSessionExpired={noop} />,
+                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
     expect(await screen.findByText(/aggregate unavailable/)).toBeInTheDocument()
@@ -137,13 +138,13 @@ describe('ChartsPanel', () => {
     // keystroke in the search box beside it.
     const { rerender } = render(
       <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
-                   onSessionExpired={noop} />,
+                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledTimes(1))
 
     rerender(
       <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
-                   onSessionExpired={noop} />,
+                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
     expect(aggregateObjects).toHaveBeenCalledTimes(1)
