@@ -510,35 +510,30 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
 
   return (
     <div className={collapsed ? 'app app--sidebar-collapsed' : 'app'}>
-      {isMobile ? (
-        // Real Drawer here, not the old CSS-only position: fixed
-        // overlay -- genuinely, architecturally the right fit
-        // (confirmed directly against this project's own earlier
-        // planning: the prior mobile behavior -- position: fixed,
-        // overlaying content, a real box-shadow -- already matched
-        // Drawer's own real design intent, unlike the permanent
-        // desktop sidebar, which does not). onClose fires on every
-        // real Blueprint-provided dismissal (backdrop click, Escape)
-        // -- all routed through the same setCollapsedPersisted() the
-        // toggle button and nav-triggered auto-close above also use,
-        // so "the sidebar's own remembered state" means one consistent
-        // thing regardless of which of those actually changed it.
-        <Drawer
-          isOpen={!collapsed}
-          position="left"
-          size="15rem"
-          onClose={() => setCollapsedPersisted(true)}
-          className={`app__sidebar ${Classes.DARK}`}
-        >
-          {sidebarContent}
-        </Drawer>
-      ) : (
+      {/* NO Drawer branch any more, and the rail is why.
+          
+          A Drawer existed because a 240px sidebar eats a narrow
+          screen, so below 640px it hid entirely and closing it left
+          no way back to the app switcher. A 56px rail does not eat
+          anything -- it fits a phone -- so the sidebar is now always
+          present at every width, and "expanded" is the only state
+          that needs to overlay. That overlay is a media query, not a
+          component.
+          
+          This is the point of a rail over a hideable sidebar: moving
+          between sub-apps never costs a step, at any size. */}
+      {(
         // Classes.DARK on the sidebar ALWAYS, not only in dark mode:
         // it is dark chrome in both themes, and a Blueprint widget
         // styles itself for whatever surface it is told it sits on.
         // Without this the theme toggle and user menu rendered
         // dark-on-dark and were effectively invisible.
-        <aside className={`app__sidebar ${Classes.DARK}`} aria-hidden={collapsed}>
+                // NO aria-hidden. It made sense when collapsing meant width
+        // 0 -- content off screen should not be announced. A rail IS
+        // on screen, so hiding it from assistive technology makes the
+        // navigation invisible to exactly the users the visible-label
+        // work was for.
+        <aside className={`app__sidebar ${Classes.DARK}`}>
           {sidebarContent}
         </aside>
       )}

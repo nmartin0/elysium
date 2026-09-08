@@ -149,16 +149,19 @@ describe('Shell -- the collapsible sidebar', () => {
     expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
   })
 
-  it('clicking the toggle collapses the sidebar and hides it from assistive tech', () => {
-    renderShell(VISIBLE_APPS)
-    fireEvent.click(screen.getByRole('button', { name: 'Hide sidebar' }))
+  it('collapsing leaves the rail reachable by assistive technology', () => {
+    /**
+     * This used to assert the OPPOSITE -- that collapsing set
+     * aria-hidden -- and that was right when collapsing meant width
+     * 0. A rail is on screen, so hiding it from assistive technology
+     * makes the navigation invisible to exactly the users the
+     * visible-label work was for.
+     */
+    renderShell([{ name: 'Query', path: '/query' }])
 
-    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
-    // The sidebar's own nav is still technically in the DOM (aria-
-    // hidden, not unmounted) -- querying via role correctly reflects
-    // aria-hidden by excluding it, the real, accessible signal that
-    // it's no longer reachable, not just visually smaller.
-    expect(screen.queryByRole('menuitem', { name: 'Query' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText(/sidebar/i))
+
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
   })
 
   it('clicking the toggle again re-expands the sidebar', () => {
@@ -319,187 +322,56 @@ describe('Shell -- the mobile Drawer', () => {
     expect(document.querySelector('.bp6-drawer')).toBeNull()
   })
 
-  it('renders a real Drawer, not the plain <aside>, on a narrow viewport', () => {
+  it('keeps the sidebar present on a narrow viewport', () => {
+    /**
+     * A Drawer used to take over below 640px, and closing it left no
+     * way back to the app switcher -- the sidebar was simply gone.
+     *
+     * The rail removed the reason for it. 56px fits a phone, so the
+     * sidebar is present at every width and only the EXPANDED state
+     * needs to overlay, which is a media query rather than a
+     * component. Moving between sub-apps never costs a step.
+     */
     vi.spyOn(window, 'matchMedia').mockReturnValue(mockLiveMediaQueryList(true).mql)
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'false')
-    renderShell(VISIBLE_APPS)
-    expect(document.querySelector('.bp6-drawer')).not.toBeNull()
-    expect(document.querySelector('aside.app__sidebar')).toBeNull()
-  })
 
-  it('a real, live matchMedia change switches from the desktop <aside> to the mobile Drawer, with no remount', async () => {
-    const { mql, simulateChange } = mockLiveMediaQueryList(false)
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
-    renderShell(VISIBLE_APPS)
+    renderShell([{ name: 'Query', path: '/query' }])
+
     expect(document.querySelector('aside.app__sidebar')).not.toBeNull()
 
-    // act(), not a bare call -- entering mobile now also triggers the
-    // force-close branch of the same effect (a real, existing state
-    // update, present before this test file's own restore-on-exit
-    // additions too) -- confirmed directly, not assumed: this exact
-    // test produced a real "not wrapped in act(...)" warning.
-    act(() => {
-      simulateChange(true)
-    })
-
-    // changeHandler is invoked directly here, not through a real DOM
-    // event/fireEvent -- React does not know to flush the resulting
-    // re-render synchronously the way it does for testing-library's
-    // own dispatched events, confirmed directly (a synchronous
-    // assertion right after simulateChange() failed with "expected
-    // null not to be null" before this was wrapped in waitFor).
-    //
-    // Entering mobile now force-closes the sidebar (see this file's
-    // own real, live-tested fix) -- Drawer renders no content into the
-    // DOM at all while isOpen={false} (confirmed directly: querying
-    // .bp6-drawer right after simulateChange(true) returned null,
-    // even inside this same waitFor, before the toggle below was
-    // added), so <aside>'s own absence is what actually confirms the
-    // container swapped, checked first on its own; the toggle is then
-    // used to open the now-mobile Drawer and confirm it is real and
-    // functional in this new state, not just "not <aside>."
-    await waitFor(() => expect(document.querySelector('aside.app__sidebar')).toBeNull())
-    fireEvent.click(screen.getByRole('button', { name: 'Show sidebar' }))
-    await waitFor(() => expect(document.querySelector('.bp6-drawer')).not.toBeNull())
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
   })
 
-  it("a live resize into mobile force-closes an OPEN desktop sidebar -- fixing a real gap this feature's own live testing surfaced directly: resizing an open desktop session into mobile used to carry that open state straight into Drawer, popping its real backdrop over the whole screen from nothing more than a resize, no deliberate tap at all", async () => {
-    const { mql, simulateChange } = mockLiveMediaQueryList(false)
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
-    renderShell(VISIBLE_APPS)
-    // Confirms the real starting condition this bug needed: genuinely
-    // OPEN on desktop, not already collapsed for some other reason.
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
-
-    act(() => {
-      simulateChange(true)
-    })
-
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument())
-  })
-
-  it('the force-close from entering mobile does NOT persist to localStorage -- a real, viewport-driven default, not a deliberate choice, so it must not silently overwrite a real desktop preference for the next visit', async () => {
-    const { mql, simulateChange } = mockLiveMediaQueryList(false)
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
-    renderShell(VISIBLE_APPS)
-    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBeNull()
-
-    act(() => {
-      simulateChange(true)
-    })
-
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument())
-    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBeNull()
-  })
-
-  it('a resize down into mobile (auto-closing) and immediately back up to desktop restores the sidebar to OPEN, not stuck closed -- a real, reported gap, not a hypothetical: reported directly after live testing that resizing back up left the sidebar hidden until a manual tap, even though nothing was ever deliberately closed', async () => {
-    const { mql, simulateChange } = mockLiveMediaQueryList(false)
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
-    renderShell(VISIBLE_APPS)
-    // Genuinely open on desktop first -- no stored preference at all,
-    // so this is the real, default-open starting point the report
-    // itself started from, not a contrived setup.
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
-
-    act(() => {
-      simulateChange(true)
-    })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument())
-
-    act(() => {
-      simulateChange(false)
-    })
-
-    // The real, reported expectation: back to OPEN, automatically --
-    // not left closed until a separate, manual tap on the toggle.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument())
-  })
-
-  it('the SAME resize round-trip, but starting from a genuinely, deliberately CLOSED desktop preference, stays closed -- confirms this restores the real, persisted choice, not just "always reopens"', async () => {
-    const { mql, simulateChange } = mockLiveMediaQueryList(false)
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'true')
-    renderShell(VISIBLE_APPS)
-    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
-
-    act(() => {
-      simulateChange(true)
-    })
-    await waitFor(() => expect(document.querySelector('.bp6-drawer')).toBeNull())
-
-    act(() => {
-      simulateChange(false)
-    })
-
-    await waitFor(() => expect(document.querySelector('aside.app__sidebar')).not.toBeNull())
-    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
-  })
-
-  it('a real, live matchMedia change switches back from the mobile Drawer to the desktop <aside>', async () => {
-    const { mql, simulateChange } = mockLiveMediaQueryList(true)
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql)
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'false')
-    renderShell(VISIBLE_APPS)
-    expect(document.querySelector('.bp6-drawer')).not.toBeNull()
-
-    // act(), not a bare call -- new here specifically, not carried
-    // forward unexamined: exiting mobile now ALSO triggers a second,
-    // real state update inside the same effect (restoring the
-    // persisted desktop preference, see Shell.tsx's own comment on
-    // this exact transition), and that second update is genuinely
-    // what a bare, un-act()-wrapped simulateChange() call left
-    // dangling -- confirmed directly, not assumed: a real "not wrapped
-    // in act(...)" warning appeared on this exact test, and only this
-    // one, the moment this second update was added.
-    act(() => {
-      simulateChange(false)
-    })
-
-    // Same real, confirmed reason as the test above -- changeHandler
-    // is a direct call, not a dispatched DOM event.
-    await waitFor(() => expect(document.querySelector('aside.app__sidebar')).not.toBeNull())
-    expect(document.querySelector('.bp6-drawer')).toBeNull()
-  })
-
-  it('dismissing the Drawer via its own real backdrop click persists collapsed, the same as the toggle button does', async () => {
+  it('shows every app in the rail, not just the first', () => {
+    // The sidebar scrolls itself. Without that, the shell's own
+    // overflow:hidden clipped the nav and only the first item showed
+    // -- reported exactly that way.
     vi.spyOn(window, 'matchMedia').mockReturnValue(mockLiveMediaQueryList(true).mql)
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'false')
-    renderShell(VISIBLE_APPS)
-    expect(document.querySelector('.bp6-drawer')).not.toBeNull()
 
-    const backdrop = document.querySelector('.bp6-overlay-backdrop')
-    expect(backdrop).not.toBeNull()
-    // mousedown, not click -- confirmed directly, not assumed: a real
-    // fireEvent.click() on the backdrop never triggered onClose at
-    // all, even after a full waitFor timeout (aria-pressed stayed
-    // "true" throughout). The same real lesson UserMenu's own click-
-    // outside detection already established (see UserMenu.tsx's own
-    // header comment) -- Blueprint's overlay-based components listen
-    // for mousedown for outside-dismissal, not click, confirmed here
-    // with a small, isolated reproduction before trusting the fix.
-    fireEvent.mouseDown(backdrop!)
+    renderShell([
+      { name: 'Query', path: '/query' },
+      { name: 'Browse', path: '/browse' },
+      { name: 'Schema', path: '/schema' },
+    ])
 
-    // PopoverNext's own close was confirmed asynchronous in the prior
-    // UserMenu step; Drawer is built on the same Overlay2 foundation,
-    // so the same real waitFor is used here rather than assumed
-    // synchronous just because it wasn't re-verified.
-    await waitFor(() => expect(document.querySelector('.bp6-drawer')).toBeNull())
-    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBe('true')
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Browse' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Schema' })).toBeInTheDocument()
   })
 
-  it('a real, subsequent navigation auto-closes the mobile Drawer -- fixing the real, pre-existing gap confirmed against the prior CSS-only overlay', async () => {
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mockLiveMediaQueryList(true).mql)
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'false')
-    renderShell(VISIBLE_APPS)
-    // Confirms the mount-time fix from this same step -- a stored
-    // "false" preference must still be genuinely open right after
-    // mount, not immediately re-closed by this exact effect.
-    expect(document.querySelector('.bp6-drawer')).not.toBeNull()
+
+  it('navigating does not dismiss the rail', () => {
+    // The Drawer auto-closed on navigation because it covered the
+    // content. A rail does not cover anything, so there is nothing to
+    // dismiss -- and dismissing it would take away the app switcher
+    // the rail exists to keep.
+    renderShell([
+      { name: 'Query', path: '/query' },
+      { name: 'Admin', path: '/admin' },
+    ])
 
     fireEvent.click(screen.getByRole('menuitem', { name: 'Admin' }))
 
-    await waitFor(() => expect(document.querySelector('.bp6-drawer')).toBeNull())
-    expect(screen.getByText('admin screen')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
   })
 
   it('does NOT auto-close the desktop sidebar on navigation -- the effect above is mobile-only, confirmed directly, not just assumed from the isMobile check reading correctly', () => {
