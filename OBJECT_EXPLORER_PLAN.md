@@ -194,7 +194,7 @@ rows.
 
 ### Phase 4 — the charts (frontend)
 
-**11. ECharts, wrapped once** in a shared component so no sub-app
+**11. [done] ECharts, wrapped once** in a shared component so no sub-app
 touches the config API directly.
 
 **12. Value counts, histogram, pie, single statistic**, from
