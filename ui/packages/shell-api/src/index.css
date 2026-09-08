@@ -40,6 +40,7 @@ body {
 .app__sidebar {
   flex: none;
   width: var(--sidebar-width);
+  transition: width 0.15s ease;
   display: flex;
   flex-direction: column;
   background: var(--surface-chrome);
@@ -836,4 +837,109 @@ button.danger {
 
 .app__theme-toggle:hover {
   color: var(--text-on-chrome);
+}
+
+/* --- The rail -----------------------------------------------------
+ *
+ * Collapsed, the sidebar becomes an icon rail rather than disappearing
+ * -- so the app switcher is always reachable and moving between
+ * sub-apps never costs a step. That is the Slack/Discord shape: a
+ * narrow product rail beside a wider context panel.
+ *
+ * The label is hidden VISUALLY, never removed. Screen readers still
+ * announce it, and the tooltip covers sighted users.
+ */
+.app--sidebar-collapsed .app__sidebar {
+  width: var(--sidebar-rail);
+  padding-left: var(--space-tight);
+  padding-right: var(--space-tight);
+  overflow: hidden;
+}
+
+.app--sidebar-collapsed .app__nav-label,
+.app--sidebar-collapsed .app__sidebar-header h1 {
+  /* Not display:none -- that would take it out of the accessibility
+   * tree along with the pixels. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Below the three-column minimum an expanded sidebar OVERLAYS rather
+ * than pushing, because pushing would leave the content unusable.
+ * This is the "Auto" mode a mainstream enterprise component library
+ * ships as its default: push at desktop widths, overlay below. */
+@media (max-width: 1099px) {
+  .app:not(.app--sidebar-collapsed) .app__sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    box-shadow: var(--elevate-raised);
+  }
+}
+
+/* --- Flush panels -------------------------------------------------
+ *
+ * Panel EDGES meet; internal padding stays. Borders separate, padding
+ * breathes -- which is how the double-sidebar products actually do it,
+ * and it keeps the 30-40% whitespace their own guidance asks for
+ * without the gutters that made this app read as a scroll.
+ */
+.app__content main {
+  padding: 0;
+}
+
+.workspace {
+  gap: 0;
+  min-height: 100%;
+}
+
+.workspace__config {
+  position: sticky;
+  top: 0;
+  align-self: stretch;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+  border-radius: 0;
+}
+
+.workspace__content {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: var(--space-loose);
+}
+
+/* --- Focus, which had no styling at all ---------------------------
+ *
+ * Blueprint styles its own controls; every element we wrote by hand
+ * had none, so keyboard navigation worked and was invisible. For an
+ * audience the research describes as keyboard-first, that is close to
+ * unusable.
+ *
+ * :focus-visible rather than :focus, so a mouse click does not leave a
+ * ring behind.
+ */
+:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 1px;
+}
+
+/* --- Target size --------------------------------------------------
+ *
+ * WCAG 2.2 SC 2.5.8 (AA) sets 24x24 CSS px as the floor for anything
+ * you can point at. Applied to the controls we wrote; Blueprint's own
+ * already clear it.
+ */
+button,
+select,
+input[type="checkbox"],
+[role="button"] {
+  min-height: var(--target-min);
 }

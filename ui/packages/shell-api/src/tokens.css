@@ -40,6 +40,9 @@
   --text-on-chrome: #f6f7f9;
   --text-on-chrome-dim: #abb3bf;
 
+  /* Blueprint's own focus blue, so our controls ring the same as its. */
+  --accent-focus: #2d72d2;
+
   /* --- Elevation --------------------------------------------------
    * ONE level. An earlier version defined raised, overlay and inset;
    * only raised was ever used, and three unused shadows look more
@@ -68,8 +71,26 @@
    * collapsed sidebar has no token because it collapses to 0 -- it
    * hides rather than shrinking, and a token for a width nothing uses
    * is a decision nobody made. */
-  --sidebar-width: 232px;
+  /* 240px, the bottom of the 240-280 range sources converge on:
+   * narrower truncates longer labels, wider spends window the content
+   * needs more. This was 232 -- carried over from a 15rem literal and
+   * a hair under the range. */
+  --sidebar-width: 240px;
+  /* 56px: sources converge on 48-64 for an icon rail. Wide enough for
+   * a 16px icon inside a 40px hit area with breathing room, and above
+   * the 24px WCAG 2.2 target-size floor by a comfortable margin. */
+  --sidebar-rail: 56px;
   --config-width: 288px;
+
+  /* Below this, three columns leave the content unusable -- 532px
+   * cannot hold a results table. DERIVED from that arithmetic rather
+   * than cited: two-column layouts commonly break at 992, and a third
+   * column needs more room. */
+  --three-column-min: 1100px;
+
+  /* WCAG 2.2 SC 2.5.8 (AA) floor. 44px is the AAA figure and the
+   * recommended aim for primary controls. */
+  --target-min: 24px;
 }
 
 /* Dark mode is Blueprint's own, applied at the root rather than
@@ -90,5 +111,6 @@
   --border-subtle: #404854;
   --text-primary: #f6f7f9;
   --text-secondary: #abb3bf;
+  --accent-focus: #8abbff;
   --elevate-raised: 0 1px 3px rgba(17, 20, 24, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
 }

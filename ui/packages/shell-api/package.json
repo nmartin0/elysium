@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./api": "./src/api.ts",
+    "./appIcons": "./src/appIcons.ts",
     "./browserPreferences": "./src/browserPreferences.ts",
     "./components/Chart": "./src/components/Chart.tsx",
     "./components/FilterBox": "./src/components/FilterBox.tsx",

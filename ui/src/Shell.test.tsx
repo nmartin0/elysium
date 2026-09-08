@@ -645,3 +645,73 @@ describe('theme', () => {
     expect(screen.getByLabelText('Switch to light theme')).toBeInTheDocument()
   })
 })
+
+describe('the app rail', () => {
+  const APPS = [
+    { name: 'Query', path: '/query' },
+    { name: 'Browse', path: '/browse' },
+  ]
+
+  it('gives every app an icon', () => {
+    // A rail item with no icon collapses to an empty box.
+    renderShell(APPS)
+
+    expect(document.querySelector('[data-icon="chat"]')).toBeTruthy()
+    expect(document.querySelector('[data-icon="search"]')).toBeTruthy()
+  })
+
+  it('names the app even when the label is hidden', () => {
+    /**
+     * Icon-only navigation is documented as the highest-failure
+     * sidebar pattern, precisely because teams drop the accessible
+     * name along with the visible one -- "a link whose only content is
+     * an SVG announces as nothing useful".
+     *
+     * The name comes from the label TEXT, which clip-path hides
+     * visually while leaving it in the accessibility tree. Worth
+     * saying what this cannot check: jsdom applies no stylesheet, so
+     * the hiding itself is unverified here -- theme.test.ts asserts on
+     * the CSS instead.
+     */
+    renderShell(APPS)
+
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
+  })
+
+  it('marks the current app for assistive technology', () => {
+    // `active` alone is a visual state; aria-current is what a screen
+    // reader announces.
+    // /query, because the test harness only routes paths it declares
+    // -- an undeclared one renders nothing and the assertion would
+    // fail for the wrong reason.
+    renderShell(APPS, vi.fn(), '/query')
+
+    expect(screen.getByRole('menuitem', { name: 'Query' }))
+      .toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('menuitem', { name: 'Browse' }))
+      .not.toHaveAttribute('aria-current')
+  })
+})
+
+describe('app icons', () => {
+  it('gives Query the conversational icon and Browse the search one', async () => {
+    /**
+     * Chosen for what each app DOES, not what it is called. Query is
+     * the natural-language surface; Browse is the one with a search
+     * box. The intuitive reading of the words alone puts them the
+     * other way round, which would leave a magnifying glass on the app
+     * with no search in it.
+     */
+    const { iconForApp } = await import('@elysium/shell-api/appIcons')
+
+    expect(iconForApp('/query')).toBe('chat')
+    expect(iconForApp('/browse')).toBe('search')
+  })
+
+  it('falls back rather than rendering nothing', async () => {
+    // A new sub-app should look unfamiliar, not broken.
+    const { iconForApp } = await import('@elysium/shell-api/appIcons')
+
+    expect(iconForApp('/something-new')).toBe('application')
+  })
+})

@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Button, Classes, Drawer, Menu, MenuItem } from '@blueprintjs/core'
+import { Button, Classes, Drawer, Menu, MenuItem, Tooltip } from '@blueprintjs/core'
+import { iconForApp } from '@elysium/shell-api/appIcons'
 import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 
@@ -442,18 +443,48 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // page reload, and react-router-dom's own navigate() does the real,
   // client-side transition instead. active is computed by hand from
   // useLocation(), since MenuItem has no idea routing exists at all.
-  const navItems = visibleApps.map((app) => (
-    <MenuItem
-      key={app.path}
-      text={app.name}
-      href={app.path}
-      active={location.pathname === app.path}
-      onClick={(event) => {
-        event.preventDefault()
-        navigate(app.path)
-      }}
-    />
-  ))
+  /**
+   * Nav items carry an icon ALWAYS and a label that the rail hides
+   * visually rather than removing.
+   *
+   * NO aria-label, deliberately. The label is hidden with clip-path
+   * rather than display:none, so it stays in the accessibility tree
+   * and IS the accessible name -- a redundant aria-label would
+   * override real text and could drift from it. A control confirmed
+   * this: removing the attribute changed nothing, because it was
+   * never what provided the name.
+   *
+   * That is the whole reason for clip-path over display:none.
+   * Icon-only navigation is documented as the highest-failure sidebar
+   * pattern precisely because teams remove the accessible name along
+   * with the visible one -- "a link whose only content is an SVG
+   * announces as nothing useful". A tooltip covers the sighted user;
+   * the surviving text covers everyone else.
+   */
+  const navItems = visibleApps.map((app) => {
+    const item = (
+      <MenuItem
+        key={app.path}
+        icon={iconForApp(app.path)}
+        text={<span className="app__nav-label">{app.name}</span>}
+        href={app.path}
+        active={location.pathname === app.path}
+        aria-current={location.pathname === app.path ? 'page' : undefined}
+        onClick={(event) => {
+          event.preventDefault()
+          navigate(app.path)
+        }}
+      />
+    )
+    // The tooltip only earns its place when the label is hidden.
+    return collapsed ? (
+      <Tooltip key={app.path} content={app.name} placement="right" minimal>
+        {item}
+      </Tooltip>
+    ) : (
+      item
+    )
+  })
 
   // The same real content, either way -- only the CONTAINER differs
   // between mobile and desktop (see this file's own AI-notes for why:
