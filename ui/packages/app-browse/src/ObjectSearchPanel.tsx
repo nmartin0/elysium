@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, Tab, Tabs } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
@@ -245,14 +246,13 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const currentType = selectedType ?? objectTypes[0]!
 
   return (
-    <div className="object-search workspace">
-      {/* CONFIGURATION, left. Their guidance asks a layout to "clearly
-          distinguish between configuration and content sections" and
-          follow an F-shaped hierarchy -- scan the top, then down the
-          left. These controls were stacked above the results in one
-          640px column, so the page read as a scroll rather than a
-          workspace. */}
-      <aside className="workspace__config">
+    // Workspace supplies the two-pane shape; this passes what goes in
+    // each. The structure used to be three CSS class names nested by
+    // hand, which meant getting it right was remembered rather than
+    // enforced.
+    <Workspace
+      config={
+        <>
         <div className="workspace__filter">
           <label htmlFor="object-type">Object type</label>
           <select
@@ -340,9 +340,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
             })}
           </div>
         )}
-      </aside>
-
-      <section className="workspace__content">
+        </>
+      }
+    >
       {error && <Callout intent="danger">{error}</Callout>}
       {/* Two views of ONE object set. The filter is shared, so
           switching does not change what is being described -- only
@@ -447,8 +447,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           </Button>
         </div>
       )}
-      </section>
-    </div>
+    </Workspace>
   )
 }
 

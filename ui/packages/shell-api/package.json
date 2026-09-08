@@ -12,6 +12,7 @@
     "./components/LoginForm": "./src/components/LoginForm.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",
     "./components/UserMenu": "./src/components/UserMenu.tsx",
+    "./components/Workspace": "./src/components/Workspace.tsx",
     "./format": "./src/format.ts",
     "./index.css": "./src/index.css",
     "./tokens.css": "./src/tokens.css",

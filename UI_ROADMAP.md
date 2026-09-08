@@ -232,6 +232,32 @@ and show the API's own message rather than a generic one -- the
 backend writes real ones, and an unknown aggregate names the valid
 ones.
 
+## Sub-app layout: what is shared, and what is not yet
+
+**Shared.** `Workspace` and `WorkspaceFilter` in shell-api give a
+sub-app the two-pane shape -- configuration left, content right, both
+filling the shell and scrolling independently -- or a single pane when
+there is nothing to configure. Browse uses it.
+
+**Not yet migrated: Query, Schema and Admin.** Each renders its own
+top-level div and has NO stylesheet rules at all, so they inherit only
+the canvas padding. That is not automatically wrong -- Query is a
+prompt and an answer, and a configuration column would be an empty box
+-- but Schema's tab filters and Admin's user controls are exactly what
+a config pane is for.
+
+Deliberately not forced. Migrating all three to two panes would be
+shaping the apps to the layout rather than the reverse, and the layout
+is new enough that Browse is the only evidence it is right.
+
+**The error and loading pattern is NOT one pattern.** Seven places use
+Callout and Spinner, in two genuinely different shapes: an early
+return that replaces the whole screen when there is nothing to show,
+and an inline banner above content that still renders. Extracting one
+component for both would conflate "this failed" with "this failed and
+there is nothing else". Counted before concluding: two of each, plus
+three that only spin.
+
 ## Known inefficiencies in the shell
 
 **The session probe fetches the whole ontology to ask a yes/no

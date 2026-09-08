@@ -388,6 +388,12 @@ body {
 
 /* One filter group: a label and its control, never side by side --
  * a narrow column reads down, not across. */
+/* A sub-app with no configuration pane still fills the shell and
+ * scrolls itself -- the same contract, one column instead of two. */
+.workspace--single {
+  height: 100%;
+}
+
 .workspace__filter {
   display: flex;
   flex-direction: column;
@@ -972,7 +978,14 @@ button.danger {
  * and it keeps the 30-40% whitespace their own guidance asks for
  * without the gutters that made this app read as a scroll.
  */
-.app__content:has(.workspace) main {
+/* A workspace fills the canvas edge to edge and provides its own
+ * padding inside each pane; a sub-app without one keeps the padding
+ * and scroll `main` gives it above.
+ *
+ * :has() on the CONTAINER, because the Workspace component is what
+ * declares which of the two a sub-app is -- the stylesheet no longer
+ * has to infer the structure from class names nested by hand. */
+.app__content:has(.workspace, .workspace--single) main {
   padding: 0;
   overflow: hidden;
 }
