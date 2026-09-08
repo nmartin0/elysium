@@ -89,6 +89,7 @@ body {
  * widget styles itself for whatever surface it is told it sits on.
  */
 .app__header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -97,7 +98,30 @@ body {
   height: 48px;
   background: var(--surface-chrome);
   color: var(--text-on-chrome);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* NO border under the header.
+ *
+ * A rule drew one across the full width, which cut a grey line
+ * through the chrome exactly where the header meets the rail -- two
+ * surfaces of the same colour with a seam between them. The header
+ * and the rail are one continuous piece of furniture wrapping the
+ * content; the separation that matters is chrome against CONTENT, and
+ * that is what the border below draws.
+ *
+ * Only where the header meets the canvas, not where it meets the
+ * rail. */
+.app__header::after {
+  content: "";
+  position: absolute;
+  left: var(--sidebar-rail);
+  right: 0;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.app-frame:not(.app-frame--sidebar-collapsed) .app__header::after {
+  left: var(--sidebar-width);
 }
 
 .app__header-title {
@@ -284,17 +308,34 @@ body {
   overflow: hidden;
 }
 
+/* Inside the rail, above the icons -- not a bordered box floating in
+ * the content area beside it.
+ *
+ * A control that changes the rail belongs to the rail. Sitting it in
+ * the canvas gave it a rectangle of its own, which wasted the width
+ * and read as unrelated to the thing it operates.
+ *
+ * No border and no background: it is chrome on chrome, and a box
+ * around it would draw the same seam the header border did. */
 .app__sidebar-toggle {
-  align-self: flex-start;
-  margin: 1rem 1rem 0;
-  padding: 0.4rem;
+  align-self: stretch;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  margin: 0 0 var(--space-tight);
+  padding: 0;
   background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
+  color: var(--text-on-chrome-dim);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
 }
 
 .app__sidebar-toggle:hover {
-  background: var(--surface-sunken);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-on-chrome);
 }
 
 /* No max-width. This was 640px -- a reading measure, right for prose

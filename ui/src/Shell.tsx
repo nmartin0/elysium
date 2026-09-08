@@ -508,7 +508,41 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
    * everything, the rail and both sub-app panes start at the same y
    * and run to the bottom together.
    */
-  const sidebarContent = <Menu className="app__nav">{navItems}</Menu>
+  /**
+   * The collapse toggle lives INSIDE the rail, above the icons.
+   *
+   * It used to sit in the content area beside the sidebar, because a
+   * collapsed sidebar had width 0 and nothing inside it was reachable
+   * -- so the one control that could bring it back had to live
+   * somewhere always present.
+   *
+   * The rail removed that constraint. It is always present, so the
+   * control that operates it belongs to it. Outside, it occupied a
+   * bordered rectangle of its own in the canvas, which wasted the
+   * width and read as unrelated to the thing it changes.
+   */
+  const collapseToggle = (
+    <button
+      type="button"
+      className="app__sidebar-toggle"
+      onClick={toggleCollapsed}
+      aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      aria-pressed={!collapsed}
+      title={`${collapsed ? 'Expand' : 'Collapse'} sidebar (Ctrl+B or \u2318B)`}
+    >
+      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" aria-hidden="true">
+        <rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
+        <line x1="7.5" y1="3.5" x2="7.5" y2="16.5" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    </button>
+  )
+
+  const sidebarContent = (
+    <>
+      {collapseToggle}
+      <Menu className="app__nav">{navItems}</Menu>
+    </>
+  )
 
   /**
    * The global header, spanning the full width above the rail.
@@ -565,24 +599,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
       )}
 
       <div className="app__content">
-        {/* Lives in the content pane, not inside <aside>, deliberately
-            -- when collapsed, the sidebar itself has zero width and
-            nothing inside it is reachable at all, so the ONE control
-            that can bring it back has to live somewhere that's always
-            present regardless of collapsed state. */}
-        <button
-          type="button"
-          className="app__sidebar-toggle"
-          onClick={toggleCollapsed}
-          aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
-          aria-pressed={!collapsed}
-          title={`${collapsed ? 'Show' : 'Hide'} sidebar (Ctrl+B or ⌘B)`}
-        >
-          <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
-            <rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
-            <line x1="7.5" y1="3.5" x2="7.5" y2="16.5" stroke="currentColor" strokeWidth="1.4" />
-          </svg>
-        </button>
+        
 
         <main>
           <Suspense fallback={<p>Loading…</p>}>

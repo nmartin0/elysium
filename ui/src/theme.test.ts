@@ -148,3 +148,41 @@ describe('the stylesheet has one rule per selector', () => {
     expect(workspace).toMatch(/height:\s*100%/)
   })
 })
+
+describe('chrome is continuous', () => {
+  it('draws no border straight under the header', () => {
+    /**
+     * A full-width border under the header cut a grey line through the
+     * chrome exactly where the header meets the rail -- two surfaces
+     * of the same colour with a seam between them.
+     *
+     * The header and rail are one piece of furniture wrapping the
+     * content. The separation that matters is chrome against CONTENT,
+     * so the rule starts where the rail ends.
+     */
+    const header = /\.app__header \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(header).not.toMatch(/border-bottom/)
+  })
+
+  it('separates the header from the canvas only', () => {
+    const seam = /\.app__header::after \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(seam).toMatch(/left:\s*var\(--sidebar-rail\)/)
+  })
+
+  it('draws no box around the collapse toggle', () => {
+    /**
+     * It is chrome ON chrome. A border around it draws the same kind
+     * of seam the header border did -- a line through a continuous
+     * surface.
+     *
+     * This test exists because the fix "landed" while the border was
+     * still there: the replacement matched no text, and I reported it
+     * as done. Checking the claim is what caught it.
+     */
+    const toggle = /\.app__sidebar-toggle \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(toggle).toMatch(/border:\s*none/)
+  })
+})

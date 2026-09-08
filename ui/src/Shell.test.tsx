@@ -126,27 +126,27 @@ describe('Shell -- the collapsible sidebar', () => {
   it('defaults to OPEN when matchMedia reports a normal-width viewport and no stored preference exists', () => {
     vi.spyOn(window, 'matchMedia').mockReturnValue(mockMediaQueryList(false))
     renderShell(VISIBLE_APPS)
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
   })
 
   it('defaults to COLLAPSED when matchMedia reports a narrow viewport and no stored preference exists', () => {
     vi.spyOn(window, 'matchMedia').mockReturnValue(mockMediaQueryList(true))
     renderShell(VISIBLE_APPS)
-    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
   })
 
   it('a stored "true" preference overrides matchMedia entirely -- starts collapsed even on a normal-width viewport', () => {
     vi.spyOn(window, 'matchMedia').mockReturnValue(mockMediaQueryList(false))
     window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'true')
     renderShell(VISIBLE_APPS)
-    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
   })
 
   it('a stored "false" preference overrides matchMedia entirely -- starts open even on a narrow viewport', () => {
     vi.spyOn(window, 'matchMedia').mockReturnValue(mockMediaQueryList(true))
     window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'false')
     renderShell(VISIBLE_APPS)
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
   })
 
   it('collapsing leaves the rail reachable by assistive technology', () => {
@@ -166,10 +166,10 @@ describe('Shell -- the collapsible sidebar', () => {
 
   it('clicking the toggle again re-expands the sidebar', () => {
     renderShell(VISIBLE_APPS)
-    fireEvent.click(screen.getByRole('button', { name: 'Hide sidebar' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Show sidebar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
 
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
   })
 
@@ -190,27 +190,27 @@ describe('Shell -- the collapsible sidebar', () => {
 
   it('persists the collapsed choice to localStorage when toggled', () => {
     renderShell(VISIBLE_APPS)
-    fireEvent.click(screen.getByRole('button', { name: 'Hide sidebar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBe('true')
   })
 
   it('persists the expanded choice to localStorage when toggled back', () => {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'true')
     renderShell(VISIBLE_APPS)
-    fireEvent.click(screen.getByRole('button', { name: 'Show sidebar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
     expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)).toBe('false')
   })
 
   it('a real Ctrl+B keydown toggles the sidebar from anywhere, with no element focused', () => {
     renderShell(VISIBLE_APPS)
     fireEvent.keyDown(window, { key: 'b', ctrlKey: true })
-    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
   })
 
   it('a real Cmd (meta)+B keydown toggles the sidebar too', () => {
     renderShell(VISIBLE_APPS)
     fireEvent.keyDown(window, { key: 'b', metaKey: true })
-    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
   })
 
   it('REPEATED, separate Cmd+B presses correctly alternate every time, not just the first -- a real, severe, previously-shipped bug (a stale closure meant the shortcut only ever worked once, then got permanently stuck), confirmed fixed with a real, repeated reproduction, not a single press the way the two tests above only ever exercised', () => {
@@ -231,7 +231,7 @@ describe('Shell -- the collapsible sidebar', () => {
   it('an unmodified "b" keydown -- no Ctrl or Cmd -- does NOT toggle the sidebar', () => {
     renderShell(VISIBLE_APPS)
     fireEvent.keyDown(window, { key: 'b' })
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
   })
 
   it('still renders correctly, defaulting via matchMedia, when reading localStorage itself throws', () => {
@@ -240,7 +240,7 @@ describe('Shell -- the collapsible sidebar', () => {
       throw new Error('storage disabled')
     })
     renderShell(VISIBLE_APPS)
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
   })
 
   it('the toggle still updates the visible state even when WRITING to localStorage throws', () => {
@@ -248,8 +248,8 @@ describe('Shell -- the collapsible sidebar', () => {
       throw new Error('storage disabled')
     })
     renderShell(VISIBLE_APPS)
-    fireEvent.click(screen.getByRole('button', { name: 'Hide sidebar' }))
-    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
   })
 })
 
@@ -377,11 +377,11 @@ describe('Shell -- the mobile Drawer', () => {
   it('does NOT auto-close the desktop sidebar on navigation -- the effect above is mobile-only, confirmed directly, not just assumed from the isMobile check reading correctly', () => {
     vi.spyOn(window, 'matchMedia').mockReturnValue(mockLiveMediaQueryList(false).mql)
     renderShell(VISIBLE_APPS)
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('menuitem', { name: 'Admin' }))
 
-    expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
     expect(screen.getByText('admin screen')).toBeInTheDocument()
   })
 })
@@ -676,5 +676,45 @@ describe('the global header', () => {
 
     expect(header?.parentElement).toBe(columns?.parentElement)
     expect(header?.nextElementSibling).toBe(columns)
+  })
+})
+
+describe('the collapse toggle belongs to the rail', () => {
+  it('renders inside the sidebar, not beside it', () => {
+    /**
+     * It used to sit in the content area, because a collapsed sidebar
+     * had width 0 and nothing inside it was reachable -- so the one
+     * control that could bring it back had to live somewhere always
+     * present.
+     *
+     * The rail removed that constraint. Outside, the button occupied a
+     * bordered rectangle of its own in the canvas, which wasted width
+     * and read as unrelated to the thing it changes.
+     */
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    const sidebar = document.querySelector('.app__sidebar')
+
+    expect(sidebar?.querySelector('.app__sidebar-toggle')).not.toBeNull()
+  })
+
+  it('sits above the app icons', () => {
+    // A control that changes the rail reads as belonging to it when it
+    // heads the rail, not when it trails the list it resizes.
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    const sidebar = document.querySelector('.app__sidebar')
+    const [first] = [...(sidebar?.children ?? [])]
+
+    expect(first?.className).toContain('app__sidebar-toggle')
+  })
+
+  it('says collapse rather than hide, because that is what it does', () => {
+    // The old wording was accurate when collapsing meant width 0. It
+    // becomes a rail now, and a label that promises hiding describes
+    // something else.
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
   })
 })
