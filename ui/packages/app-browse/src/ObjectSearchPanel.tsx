@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Callout, Card, CardList } from '@blueprintjs/core'
+import { Fragment, useEffect, useState } from 'react'
+import { Button, Callout, Card, CardList, HTMLSelect } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
@@ -41,6 +41,13 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [queryText, setQueryText] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
+  // Page tokens are OPAQUE and kept as a stack, so Back returns to the
+  // exact page you came from. Reconstructing a previous token by
+  // arithmetic would assume an encoding the server does not promise.
+  const [pageToken, setPageToken] = useState<string | null>(null)
+  const [previousTokens, setPreviousTokens] = useState<string[]>([])
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null)
+  const [orderBy, setOrderBy] = useState<string>("")
   const [totalMatches, setTotalMatches] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +63,19 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   const { startRequest, isStale } = useLatestRequestGuard()
 
   const objectTypes = visibleSchema ? Object.keys(visibleSchema) : null
+
+  // Sortable fields come from the caller's OWN visible schema, so one
+  // they cannot read is never offered. That is not the security
+  // boundary -- the server rejects an unreadable order_by regardless --
+  // but offering a control that always fails is its own kind of wrong.
+  //
+  // Link fields are excluded: ordering by a relationship has no
+  // meaning, and there is no column for the server to sort on.
+  const sortableFields = selectedType && visibleSchema
+    ? Object.entries(visibleSchema[selectedType]?.fields ?? {})
+        .filter(([, field]) => field.type !== "link")
+        .map(([name, field]) => ({ name, label: field.display_name ?? name }))
+    : []
 
   useEffect(() => {
     if (selectedType === null && objectTypes && objectTypes.length > 0) {
@@ -77,13 +97,18 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
         // own header comment on why) -- asserted to the real, known
         // success shape here, matching api/routes.py's own documented
         // contract for the search route.
-        const response = (await searchObjects(selectedType, queryText)) as {
+        const response = (await searchObjects(selectedType, queryText, {
+          pageToken: pageToken ?? undefined,
+          orderBy: orderBy || undefined,
+        })) as {
           results: SearchResult[]
           total_matches: number
+          next_page_token?: string | null
         }
         if (isStale(thisRequestId)) return
         setResults(response.results)
         setTotalMatches(response.total_matches)
+        setNextPageToken(response.next_page_token ?? null)
       } catch (err) {
         if (isStale(thisRequestId)) return
         if (handleIfSessionExpired(err, onSessionExpired)) return
@@ -95,7 +120,17 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
 
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, queryText])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType, queryText, pageToken, orderBy])
+
+  // Changing WHAT is searched resets WHERE you are in it. A token from
+  // the old result set means nothing against the new one -- the server
+  // would reject it or, worse, page into unrelated rows.
+  useEffect(() => {
+    setPageToken(null)
+    setPreviousTokens([])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType, queryText, orderBy])
 
   if (objectTypes === null) {
     return (
@@ -127,7 +162,11 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   return (
     <div className="object-search">
       <div className="object-search__controls">
-        <select value={currentType} onChange={(event) => setSelectedType(event.target.value)}>
+        <select
+          aria-label="Object type"
+          value={currentType}
+          onChange={(event) => setSelectedType(event.target.value)}
+        >
           {/* selectedType itself still starts as null -- the effect
               below sets it to a real value once objectTypes is known,
               and the search effect further down correctly waits for
@@ -153,6 +192,21 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
           onChange={(event) => setQueryText(event.target.value)}
           placeholder={`Search ${currentType}…`}
         />
+        {sortableFields.length > 0 && (
+          <HTMLSelect
+            aria-label="Sort by"
+            value={orderBy}
+            onChange={(event) => setOrderBy(event.currentTarget.value)}
+          >
+            <option value="">Sort: default</option>
+            {sortableFields.map((field) => (
+              <Fragment key={field.name}>
+                <option value={field.name}>{field.label} (A-Z)</option>
+                <option value={`${field.name}:desc`}>{field.label} (Z-A)</option>
+              </Fragment>
+            ))}
+          </HTMLSelect>
+        )}
       </div>
 
       {error && <Callout intent="danger">{error}</Callout>}
@@ -188,10 +242,42 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
         })}
       </CardList>
 
-      {totalMatches > results.length && (
-        <p className="object-search__more">
-          Showing {results.length} of {totalMatches} matches -- narrow your search to see more.
-        </p>
+      {(nextPageToken || previousTokens.length > 0) && (
+        <div className="object-search__pager">
+          <Button
+            minimal
+            icon="chevron-left"
+            disabled={previousTokens.length === 0}
+            onClick={() => {
+              // Pops the stack rather than computing a token. They are
+              // opaque, so the only reliable previous page is the one
+              // we actually came from.
+              const stack = [...previousTokens]
+              setPageToken(stack.pop() ?? null)
+              setPreviousTokens(stack)
+            }}
+          >
+            Previous
+          </Button>
+          <span className="object-search__more">
+            {/* Deliberately NOT "page 3 of 12". The set is live, and
+                the API documents that default paging may duplicate or
+                miss rows as data changes underneath -- a page number
+                would promise a stability nothing provides. */}
+            Showing {results.length} of {totalMatches} matches
+          </span>
+          <Button
+            minimal
+            rightIcon="chevron-right"
+            disabled={!nextPageToken}
+            onClick={() => {
+              setPreviousTokens([...previousTokens, pageToken ?? ""])
+              setPageToken(nextPageToken)
+            }}
+          >
+            Next
+          </Button>
+        </div>
       )}
     </div>
   )

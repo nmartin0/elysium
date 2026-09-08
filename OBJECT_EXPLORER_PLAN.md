@@ -180,7 +180,7 @@ would need a rule for what happens when they disagree about one field,
 and inventing one silently is how a filter ends up meaning something
 nobody asked for.
 
-**8. Paged, sorted results.** `search` already returns
+**8. [done] Paged, sorted results.** `search` already returns
 `next_page_token` and `total_matches` and accepts `order_by`, and no
 screen uses any of them. Page tokens stay opaque.
 

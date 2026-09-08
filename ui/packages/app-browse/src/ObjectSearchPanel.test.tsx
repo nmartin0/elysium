@@ -72,7 +72,7 @@ describe('ObjectSearchPanel -- type selection', () => {
   it('renders every real object type as a select option, defaulting to the first', () => {
     mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
-    expect(screen.getByRole('combobox')).toHaveValue('Customer')
+    expect(screen.getByRole('combobox', { name: 'Object type' })).toHaveValue('Customer')
     expect(screen.getByRole('option', { name: 'Customer' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Account' })).toBeInTheDocument()
   })
@@ -80,12 +80,12 @@ describe('ObjectSearchPanel -- type selection', () => {
   it('changing the selected type triggers a new, real search for that type', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', ''))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', '', expect.any(Object)))
     mockedSearchObjects.mockClear()
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Account' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Object type' }), { target: { value: 'Account' } })
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Account', ''))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Account', '', expect.any(Object)))
   })
 })
 
@@ -93,19 +93,19 @@ describe('ObjectSearchPanel -- debouncing', () => {
   it('does not call searchObjects immediately on keystroke -- only after the debounce delay', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', ''))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', '', expect.any(Object)))
     mockedSearchObjects.mockClear()
 
     fireEvent.change(screen.getByPlaceholderText('Search Customer…'), { target: { value: 'a' } })
     expect(mockedSearchObjects).not.toHaveBeenCalled()
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', 'a'))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', 'a', expect.any(Object)))
   })
 
   it('rapid typing only ever fires ONE real search, for the final, settled value', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', ''))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', '', expect.any(Object)))
     mockedSearchObjects.mockClear()
 
     const input = screen.getByPlaceholderText('Search Customer…')
@@ -113,7 +113,7 @@ describe('ObjectSearchPanel -- debouncing', () => {
     fireEvent.change(input, { target: { value: 'ad' } })
     fireEvent.change(input, { target: { value: 'ada' } })
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', 'ada'))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', 'ada', expect.any(Object)))
     expect(mockedSearchObjects).toHaveBeenCalledTimes(1)
   })
 })
@@ -178,7 +178,7 @@ describe('ObjectSearchPanel -- results rendering', () => {
   it('falls back to the raw id as the title (with NO redundant subtitle) when the type has no title_field', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'acct_001', fields: { balance: 500 } }]))
     renderPanel(CUSTOMER_SCHEMA)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Account' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Object type' }), { target: { value: 'Account' } })
 
     await waitFor(() => expect(screen.getByText('acct_001')).toBeInTheDocument())
     // The id appears exactly once (as the title) -- not a second time
@@ -209,11 +209,96 @@ describe('ObjectSearchPanel -- results rendering', () => {
     await waitFor(() => expect(screen.getByText('No results.')).toBeInTheDocument())
   })
 
-  it('shows the "narrow your search" hint when total_matches exceeds the returned results', async () => {
-    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us' } }], 75))
+  it('offers paging instead of telling the user to narrow their search', async () => {
+    // The old hint said "narrow your search to see more", which was
+    // honest when there was no next page and is wrong now that there
+    // is. A result set larger than one page is a thing to page
+    // through, not a search to rewrite.
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'cust_001', fields: { name: 'Ada' } }], 40),
+      next_page_token: 'v1.abc',
+    })
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() => expect(screen.getByText(/Showing 1 of 75 matches/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Showing 1 of 40/)).toBeInTheDocument())
+
+    expect(screen.queryByText(/narrow your search/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled()
+  })
+
+  it('cannot go back from the first page', async () => {
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'cust_001', fields: { name: 'Ada' } }], 40),
+      next_page_token: 'v1.abc',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeInTheDocument())
+
+    expect(screen.getByRole('button', { name: /Previous/ })).toBeDisabled()
+  })
+
+  it('sends the page token it was given, and never one it made up', async () => {
+    // Tokens are OPAQUE. The panel echoes what the server sent; it
+    // does not decode, increment, or reconstruct one.
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'cust_001', fields: { name: 'Ada' } }], 40),
+      next_page_token: 'v1.opaque-token',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled())
+
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer', '', expect.objectContaining({ pageToken: 'v1.opaque-token' }),
+      ),
+    )
+  })
+
+  it('sends the chosen sort order', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA)
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort by' }), {
+      target: { value: 'name:desc' },
+    })
+
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer', '', expect.objectContaining({ orderBy: 'name:desc' }),
+      ),
+    )
+  })
+
+  it('returns to the first page when the search changes', async () => {
+    // A token from the old result set means nothing against a new one.
+    // The server would reject it or, worse, page into unrelated rows.
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'cust_001', fields: { name: 'Ada' } }], 40),
+      next_page_token: 'v1.page2',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
+      ),
+    )
+
+    mockedSearchObjects.mockClear()
+    fireEvent.change(screen.getByPlaceholderText(/Search Customer/), {
+      target: { value: 'ada' },
+    })
+
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer', 'ada', expect.objectContaining({ pageToken: undefined }),
+      ),
+    )
   })
 
   it('shows no "narrow your search" hint when every match was returned', async () => {

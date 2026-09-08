@@ -333,8 +333,29 @@ export async function getVisibleApps(): Promise<unknown> {
   return response.json()
 }
 
-export async function searchObjects(objectType: string, queryText: string): Promise<unknown> {
+export interface SearchOptions {
+  /** Opaque. Comes from a previous response's next_page_token and is
+   *  never constructed here -- the server encodes what it needs and
+   *  the shape is its business. */
+  pageToken?: string
+  pageSize?: number
+  /** "field" or "field:desc". The server validates the field against
+   *  what this caller may read. */
+  orderBy?: string
+}
+
+export async function searchObjects(
+  objectType: string,
+  queryText: string,
+  options: SearchOptions = {},
+): Promise<unknown> {
   const params = new URLSearchParams({ q: queryText })
+  // Omitted rather than sent empty: the server has defaults, and
+  // sending page_size="" would make it parse and reject a value the
+  // caller never chose.
+  if (options.pageToken) params.set("page_token", options.pageToken)
+  if (options.pageSize) params.set("page_size", String(options.pageSize))
+  if (options.orderBy) params.set("order_by", options.orderBy)
   const response = await apiFetchOrThrow(`/objects/${objectType}/search?${params}`)
   return response.json()
 }
