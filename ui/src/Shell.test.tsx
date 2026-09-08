@@ -587,3 +587,48 @@ describe('app icons', () => {
     expect(iconForApp('/something-new')).toBe('application')
   })
 })
+
+describe('the collapsed rail lays its items out as a list', () => {
+  it('renders one <li> per app, directly inside the menu', () => {
+    /**
+     * THE bug the tests could not see, and the reason they could not.
+     *
+     * Every existing test rendered the EXPANDED sidebar. Collapsed, an
+     * earlier version wrapped each MenuItem in a Blueprint <Tooltip>,
+     * which put a popover target between the <ul> and its <li>
+     * children and broke the list layout -- all three items painted at
+     * the same y, stacked, so the rail appeared to hold one app.
+     *
+     * Found from the live DOM (every item reported top: 44) after
+     * three rounds of guessing at CSS.
+     *
+     * Asserts STRUCTURE rather than position, because jsdom computes
+     * no layout: a <ul> whose direct children are <li> lays out as a
+     * list; one with anything else between them does not.
+     */
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'true')
+
+    renderShell([
+      { name: 'Query', path: '/query' },
+      { name: 'Browse', path: '/browse' },
+      { name: 'Schema', path: '/schema' },
+    ])
+
+    const menu = document.querySelector('.app__nav')
+    const children = [...(menu?.children ?? [])]
+
+    expect(children).toHaveLength(3)
+    expect(children.every((child) => child.tagName === 'LI')).toBe(true)
+  })
+
+  it('still names each app when only the icon is visible', () => {
+    // The label survives in the accessibility tree; title covers the
+    // sighted user hovering an icon.
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, 'true')
+
+    renderShell([{ name: 'Browse', path: '/browse' }])
+
+    const link = screen.getByRole('menuitem', { name: 'Browse' })
+    expect(link).toHaveAttribute('title', 'Browse')
+  })
+})

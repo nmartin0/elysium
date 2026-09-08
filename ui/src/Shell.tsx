@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Button, Classes, Drawer, Menu, MenuItem, Tooltip } from '@blueprintjs/core'
+import { Button, Classes, Drawer, Menu, MenuItem } from '@blueprintjs/core'
 import { iconForApp } from '@elysium/shell-api/appIcons'
 import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
@@ -461,36 +461,39 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
    * announces as nothing useful". A tooltip covers the sighted user;
    * the surviving text covers everyone else.
    */
-  const navItems = visibleApps.map((app) => {
-    const item = (
-      <MenuItem
-        key={app.path}
-        icon={iconForApp(app.path)}
-        text={<span className="app__nav-label">{app.name}</span>}
-        href={app.path}
-        active={location.pathname === app.path}
-        aria-current={location.pathname === app.path ? 'page' : undefined}
-        onClick={(event) => {
-          event.preventDefault()
-          navigate(app.path)
-        }}
-      />
-    )
-    // The tooltip only earns its place when the label is hidden.
-    return collapsed ? (
-      <Tooltip key={app.path} content={app.name} placement="right" minimal>
-        {item}
-      </Tooltip>
-    ) : (
-      item
-    )
-  })
+  const navItems = visibleApps.map((app) => (
+    <MenuItem
+      key={app.path}
+      icon={iconForApp(app.path)}
+      text={<span className="app__nav-label">{app.name}</span>}
+      href={app.path}
+      active={location.pathname === app.path}
+      aria-current={location.pathname === app.path ? 'page' : undefined}
+      /**
+       * A NATIVE title, not a Blueprint <Tooltip> wrapper.
+       *
+       * Wrapping each MenuItem in a Tooltip put a popover target
+       * between the <ul> and its <li> children, which broke the list
+       * layout: all three items rendered at the same y, stacked on top
+       * of each other, so the rail appeared to contain one app.
+       *
+       * Confirmed from the live DOM -- every item reported top: 44 --
+       * after three rounds of guessing at CSS. jsdom never showed it
+       * because the tests render the EXPANDED state, where the wrapper
+       * is absent.
+       *
+       * title works in every browser, needs no wrapper, and the
+       * accessible name still comes from the label text that
+       * clip-path keeps in the tree.
+       */
+      title={collapsed ? app.name : undefined}
+      onClick={(event) => {
+        event.preventDefault()
+        navigate(app.path)
+      }}
+    />
+  ))
 
-  // The same real content, either way -- only the CONTAINER differs
-  // between mobile and desktop (see this file's own AI-notes for why:
-  // Drawer is architecturally right for mobile's own transient,
-  // overlay-on-top-of-content behavior; it is NOT right for desktop's
-  // permanent, in-flow sidebar, which stays this file's own <aside>).
   const sidebarContent = (
     <>
       <div className="app__sidebar-header">
