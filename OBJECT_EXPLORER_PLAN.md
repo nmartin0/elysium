@@ -197,7 +197,7 @@ rows.
 **11. [done] ECharts, wrapped once** in a shared component so no sub-app
 touches the config API directly.
 
-**12. Value counts, histogram, pie, single statistic**, from
+**12. [done] Value counts, histogram, pie, single statistic**, from
 `/aggregate`. One chart per prominent property by default.
 
 **13. Click-to-filter, with keep/exclude**, cross-filtering every

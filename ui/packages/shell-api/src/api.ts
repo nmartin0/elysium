@@ -415,6 +415,30 @@ export function getVisibleActionTypesCached(): Promise<unknown> {
   return cachedActionTypes
 }
 
+export interface AggregateBody {
+  /** The object set to aggregate over, as filter conditions. */
+  conditions?: unknown[]
+  /** count, sum, avg, min or max. */
+  aggregate: string
+  /** The field to aggregate. Omitted for count, which needs none. */
+  field?: string
+  /** Bucket by this field. Omitted for a single statistic over the
+   *  whole set. */
+  group_by?: string
+}
+
+export async function aggregateObjects(
+  objectType: string,
+  body: AggregateBody,
+): Promise<unknown> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/aggregate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  return response.json()
+}
+
 export async function getVisibleActionTypes(): Promise<unknown> {
   const response = await apiFetchOrThrow('/me/visible-action-types')
   return response.json()
