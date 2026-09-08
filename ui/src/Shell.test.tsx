@@ -614,3 +614,30 @@ describe('Shell -- the Suspense boundary around lazy-loaded sub-app routes', () 
     expect(onLogout).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('theme', () => {
+  it('turns dark mode on and off', () => {
+    // Blueprint carries a dark variant on every widget and nothing
+    // turned it on. Applied as a body class so those variants and
+    // tokens.css's dark surfaces switch together.
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    fireEvent.click(screen.getByLabelText('Switch to dark theme'))
+    expect(document.body.classList.contains('bp5-dark')).toBe(true)
+
+    fireEvent.click(screen.getByLabelText('Switch to light theme'))
+    expect(document.body.classList.contains('bp5-dark')).toBe(false)
+  })
+
+  it('remembers the choice', () => {
+    // A theme is a preference. Re-choosing it every visit is the kind
+    // of small friction that makes an app feel unfinished.
+    const first = renderShell([{ name: 'Query', path: '/query' }])
+    fireEvent.click(screen.getByLabelText('Switch to dark theme'))
+    first.unmount()
+
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    expect(screen.getByLabelText('Switch to light theme')).toBeInTheDocument()
+  })
+})

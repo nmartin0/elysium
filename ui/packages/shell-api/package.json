@@ -13,6 +13,7 @@
     "./components/UserMenu": "./src/components/UserMenu.tsx",
     "./format": "./src/format.ts",
     "./index.css": "./src/index.css",
+    "./tokens.css": "./src/tokens.css",
     "./types": "./src/types.ts",
     "./useLatestRequestGuard": "./src/useLatestRequestGuard.ts"
   },

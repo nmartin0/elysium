@@ -19,6 +19,9 @@ import {
 // the reverse. The standard, conventional pattern -- library base
 // styles first, local overrides after.
 import '@blueprintjs/core/lib/css/blueprint.css'
+import '@elysium/shell-api/tokens.css'
+// tokens BEFORE index.css: index.css consumes the variables, and a
+// consumer loaded first would resolve them to nothing.
 import '@elysium/shell-api/index.css'
 
 // Lazy-loaded, deliberately -- each sub-app's own code is no longer

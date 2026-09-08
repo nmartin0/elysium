@@ -1,0 +1,84 @@
+/* tokens.css -- the design vocabulary, so importance is legible.
+ *
+ * Elysium's first CSS said "deliberately plain, no design system",
+ * which was right for a phase-one client of an API and wrong for
+ * something people use. Everything had equal visual weight, so nothing
+ * told you what was a control and what was a result.
+ *
+ * These follow the platform Elysium models itself on, whose own design
+ * guidance is unusually explicit:
+ *
+ *   - whitespace should be 30-40% of the screen
+ *   - no more than ten visible components in one view
+ *   - configuration and content must be visually distinguished
+ *   - background LIGHTNESS carries meaning: lighter is more important,
+ *     darker is less critical "such as filters or collapsible panels"
+ *   - elevation carries meaning: drop shadow for raised and important,
+ *     inner shadow for lesser
+ *
+ * Built on Blueprint's palette rather than a new one. Blueprint is the
+ * same toolkit, its colours are chosen for WCAG 2.0 contrast, and
+ * inventing a parallel palette would mean two that drift.
+ */
+
+:root {
+  /* --- Surfaces, darkest to lightest -----------------------------
+   * Lightness IS the hierarchy. Chrome and configuration sit dark,
+   * content sits light, and a raised surface sits lightest.
+   */
+  --surface-chrome: #1c2127;      /* sidebar, header: app furniture */
+  --surface-config: #f6f7f9;      /* filter panels, toolbars */
+  --surface-content: #ffffff;     /* results, the thing being read */
+  --surface-sunken: #edeff2;      /* wells, empty states */
+
+  --border-subtle: #d3d8de;
+  --border-strong: #abb3bf;
+
+  --text-primary: #1c2127;
+  --text-secondary: #5f6b7c;
+  --text-on-chrome: #f6f7f9;
+  --text-on-chrome-dim: #abb3bf;
+
+  --accent: #2d72d2;
+  --accent-subtle: #d7e4f6;
+
+  /* --- Elevation --------------------------------------------------
+   * Drop shadow raises; inset recedes. Two levels only: more than
+   * that and elevation stops meaning anything.
+   */
+  --elevate-raised: 0 1px 3px rgba(17, 20, 24, 0.12), 0 0 0 1px rgba(17, 20, 24, 0.06);
+  --elevate-overlay: 0 4px 12px rgba(17, 20, 24, 0.18);
+  --elevate-inset: inset 0 1px 2px rgba(17, 20, 24, 0.08);
+
+  /* --- Spacing ----------------------------------------------------
+   * A 4px scale. Named by role rather than size, so "tight" stays
+   * tight if the scale changes.
+   */
+  --space-hair: 4px;
+  --space-tight: 8px;
+  --space-snug: 12px;
+  --space-normal: 16px;
+  --space-loose: 24px;
+  --space-section: 32px;
+
+  --radius: 3px;
+  --sidebar-width: 232px;
+  --sidebar-collapsed: 48px;
+  --config-width: 288px;
+}
+
+/* Dark mode is Blueprint's own, applied at the root rather than
+ * reimplemented. Its widgets each carry a dark variant, so this
+ * inverts the app without a parallel stylesheet. */
+.bp5-dark,
+.bp6-dark {
+  --surface-config: #252a31;
+  --surface-content: #2f343c;
+  --surface-sunken: #1c2127;
+  --border-subtle: #404854;
+  --border-strong: #5f6b7c;
+  --text-primary: #f6f7f9;
+  --text-secondary: #abb3bf;
+  --accent-subtle: #184a90;
+  --elevate-raised: 0 1px 3px rgba(17, 20, 24, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}

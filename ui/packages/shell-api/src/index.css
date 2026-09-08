@@ -1,8 +1,15 @@
-/* index.css -- deliberately plain, functional styling for phase one.
-   No design system, no component library -- matches the scope this
-   first version was deliberately kept to (see the project README's
-   Elysium section on the API layer for what this UI is a client of).
-*/
+/* index.css -- layout and spacing, built on tokens.css.
+ *
+ * This once read "deliberately plain, no design system", which was
+ * right for a phase-one API client and wrong once people used it:
+ * every element had equal visual weight, so nothing distinguished a
+ * control from a result.
+ *
+ * Colours and spacing now come from tokens.css, so lightness and
+ * elevation carry meaning rather than being chosen per rule. Where a
+ * literal survives below it is because the rule predates the tokens
+ * and its own comment explains why the value is what it is.
+ */
 
 * {
   box-sizing: border-box;
@@ -22,6 +29,8 @@ body {
 .app {
   display: flex;
   min-height: 100vh;
+  background: var(--surface-sunken);
+  color: var(--text-primary);
 }
 
 /* Sidebar background reuses the existing dark primary-button token
@@ -30,13 +39,13 @@ body {
    (buttons, active-link background). */
 .app__sidebar {
   flex: none;
-  width: 15rem;
+  width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
-  background: #2d2d34;
-  color: #f2f2f3;
-  padding: 1.25rem 1rem;
-  gap: 1.5rem;
+  background: var(--surface-chrome);
+  color: var(--text-on-chrome);
+  padding: var(--space-normal) var(--space-snug);
+  gap: var(--space-loose);
   /* A real, pre-existing bug, found and fixed while reviewing this
      exact rule for the sidebar's own Blueprint migration, unrelated
      to Blueprint itself: this used to read `transition: margin-left
@@ -195,12 +204,87 @@ body {
   background: #eee;
 }
 
+/* No max-width. This was 640px -- a reading measure, right for prose
+ * and wrong for a data-dense application: a results table, a filter
+ * panel and a chart cannot share 640px, so everything stacked into one
+ * narrow column and the app read as a long scroll rather than a
+ * workspace.
+ *
+ * Blueprint exists for "complex data-dense interfaces for desktop
+ * applications", and its own guidance asks for an F-shaped layout with
+ * configuration to the left of content. Neither is possible inside a
+ * reading column. */
 .app__content main {
   flex: 1;
-  max-width: 640px;
   width: 100%;
-  margin: 0 auto;
-  padding: 1.5rem 1rem 2rem;
+  min-width: 0;
+  padding: var(--space-loose) var(--space-loose) var(--space-section);
+}
+
+/* --- The F-shape: configuration left, content centre --------------
+ *
+ * Their guidance is explicit that a layout should "clearly distinguish
+ * between configuration and content sections" and follow an F-shaped
+ * hierarchy -- scan across the top, then down the left.
+ *
+ * The config column is DARKER than the content beside it, which is
+ * also from their guidance: lighter backgrounds signify importance,
+ * darker ones "indicate less critical items, such as filters or
+ * collapsible panels". A filter matters, but the results matter more.
+ */
+.workspace {
+  display: grid;
+  grid-template-columns: var(--config-width) minmax(0, 1fr);
+  gap: var(--space-loose);
+  align-items: start;
+}
+
+.workspace__config {
+  position: sticky;
+  top: var(--space-loose);
+  background: var(--surface-config);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--space-normal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-normal);
+}
+
+.workspace__content {
+  background: var(--surface-content);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  box-shadow: var(--elevate-raised);
+  padding: var(--space-normal);
+  min-width: 0;
+}
+
+/* One filter group: a label and its control, never side by side --
+ * a narrow column reads down, not across. */
+.workspace__filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-hair);
+}
+
+.workspace__filter > label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Below this, a two-column workspace leaves neither column usable. */
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace__config {
+    position: static;
+  }
 }
 
 /* Collapsed: the sidebar itself is unmounted from layout flow (see
@@ -644,4 +728,113 @@ button.danger {
 .action-form__actions {
   display: flex;
   gap: 0.5rem;
+}
+
+/* --- Results ------------------------------------------------------
+ *
+ * A result is a row to scan, not a card to read. These were spaced
+ * like blog posts, so ten results filled a screen and comparing two
+ * meant scrolling between them.
+ */
+.object-search__results {
+  border: none;
+  box-shadow: none;
+}
+
+.object-search__results .bp5-card,
+.object-search__results .bp6-card {
+  padding: var(--space-tight) var(--space-snug);
+  box-shadow: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+
+.object-search__result-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.object-search__result-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Fields read ACROSS a row rather than down a list. A definition list
+ * per result, stacked, is why ten rows filled the viewport. */
+.object-search__result-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-hair) var(--space-normal);
+  margin: var(--space-hair) 0 0;
+}
+
+.object-search__result-field {
+  display: flex;
+  gap: var(--space-hair);
+  font-size: 12px;
+}
+
+.object-search__result-field dt {
+  color: var(--text-secondary);
+}
+
+.object-search__result-field dt::after {
+  content: ":";
+}
+
+.object-search__result-field dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.object-search__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-normal);
+  padding-top: var(--space-snug);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.object-search__more {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* --- Charts -------------------------------------------------------
+ * Two per row where there is room. One per row wasted the width the
+ * removed reading column just gave back.
+ */
+.charts-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-normal);
+}
+
+.charts-panel__chart {
+  background: var(--surface-content);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--space-snug);
+}
+
+.charts-panel__chart h4 {
+  margin: 0 0 var(--space-tight);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* The theme toggle sits in the dark sidebar, so it needs the chrome
+ * text colour rather than Blueprint's default dark-on-light. */
+.app__theme-toggle {
+  color: var(--text-on-chrome-dim);
+  align-self: flex-start;
+}
+
+.app__theme-toggle:hover {
+  color: var(--text-on-chrome);
 }

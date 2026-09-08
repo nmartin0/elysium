@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Drawer, Menu, MenuItem } from '@blueprintjs/core'
+import { Button, Drawer, Menu, MenuItem } from '@blueprintjs/core'
+import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 
 // Shell.tsx  (the actual chrome -- a collapsible left sidebar, and
@@ -207,6 +208,27 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   const isMobile = useSyncExternalStore(subscribeToMobileBreakpoint, getIsMobileSnapshot)
   const location = useLocation()
   const navigate = useNavigate()
+
+  /**
+   * Dark mode, which Blueprint provides per widget and nothing turned
+   * on. Applied as a class on <body> rather than a parallel
+   * stylesheet: every Blueprint component already carries its own dark
+   * variant, and tokens.css redefines its surface variables under the
+   * same selector.
+   *
+   * Kept in browser storage per user, since a theme is a preference
+   * and re-choosing it every visit is the kind of small friction that
+   * makes an app feel unfinished.
+   */
+  const [dark, setDark] = useState(() =>
+    readPreference<string>('theme', currentUser?.username ?? '', 'light') === 'dark',
+  )
+
+  useEffect(() => {
+    document.body.classList.toggle('bp5-dark', dark)
+    document.body.classList.toggle('bp6-dark', dark)
+    writePreference('theme', currentUser?.username ?? '', dark ? 'dark' : 'light')
+  }, [dark, currentUser?.username])
 
   // Persists to localStorage -- the one real, shared implementation
   // both the desktop toggle and the mobile Drawer's own dismissal
@@ -441,6 +463,13 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
         <h1>Elysium</h1>
       </div>
       <Menu className="app__nav">{navItems}</Menu>
+      <Button
+        minimal
+        icon={dark ? 'flash' : 'moon'}
+        aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+        onClick={() => setDark(!dark)}
+        className="app__theme-toggle"
+      />
       <UserMenu currentUser={currentUser} onLogout={onLogout} />
     </>
   )

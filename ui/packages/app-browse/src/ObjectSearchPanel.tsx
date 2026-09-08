@@ -245,13 +245,22 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const currentType = selectedType ?? objectTypes[0]!
 
   return (
-    <div className="object-search">
-      <div className="object-search__controls">
-        <select
-          aria-label="Object type"
-          value={currentType}
-          onChange={(event) => setSelectedType(event.target.value)}
-        >
+    <div className="object-search workspace">
+      {/* CONFIGURATION, left. Their guidance asks a layout to "clearly
+          distinguish between configuration and content sections" and
+          follow an F-shaped hierarchy -- scan the top, then down the
+          left. These controls were stacked above the results in one
+          640px column, so the page read as a scroll rather than a
+          workspace. */}
+      <aside className="workspace__config">
+        <div className="workspace__filter">
+          <label htmlFor="object-type">Object type</label>
+          <select
+            id="object-type"
+            aria-label="Object type"
+            value={currentType}
+            onChange={(event) => setSelectedType(event.target.value)}
+          >
           {/* selectedType itself still starts as null -- the effect
               below sets it to a real value once objectTypes is known,
               and the search effect further down correctly waits for
@@ -265,63 +274,75 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               all, objectTypes is already confirmed non-null and non-
               empty (see the two early returns above), so
               objectTypes[0] is always safe here. */}
-          {objectTypes.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
-        <input
-          type="text"
-          value={queryText}
-          onChange={(event) => setQueryText(event.target.value)}
-          placeholder={`Search ${currentType}…`}
-        />
-        {sortableFields.length > 0 && (
-          <HTMLSelect
-            aria-label="Sort by"
-            value={orderBy}
-            onChange={(event) => setOrderBy(event.currentTarget.value)}
-          >
-            <option value="">Sort: default</option>
-            {sortableFields.map((field) => (
-              <Fragment key={field.name}>
-                <option value={field.name}>{field.label} (A-Z)</option>
-                <option value={`${field.name}:desc`}>{field.label} (Z-A)</option>
-              </Fragment>
+            {objectTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
             ))}
-          </HTMLSelect>
+          </select>
+        </div>
+
+        <div className="workspace__filter">
+          <label htmlFor="object-search-text">Search</label>
+          <input
+            id="object-search-text"
+            type="text"
+            value={queryText}
+            onChange={(event) => setQueryText(event.target.value)}
+            placeholder={`Search ${currentType}…`}
+          />
+        </div>
+
+        {sortableFields.length > 0 && (
+          <div className="workspace__filter">
+            <label htmlFor="object-search-sort">Sort by</label>
+            <HTMLSelect
+              id="object-search-sort"
+              aria-label="Sort by"
+              value={orderBy}
+              onChange={(event) => setOrderBy(event.currentTarget.value)}
+            >
+              <option value="">Default</option>
+              {sortableFields.map((field) => (
+                <Fragment key={field.name}>
+                  <option value={field.name}>{field.label} (A-Z)</option>
+                  <option value={`${field.name}:desc`}>{field.label} (Z-A)</option>
+                </Fragment>
+              ))}
+            </HTMLSelect>
+          </div>
         )}
-      </div>
 
-      {selectedType && results.length > 0 && (
-        <details className="object-search__columns">
-          <summary>Columns</summary>
-          {/* Built from what the RESULTS actually contain, not from
-              the schema: the server decides which fields a search
-              summary includes, and offering one it never returns would
-              be a checkbox that does nothing. */}
-          {Object.keys(results[0]?.fields ?? {}).map((field) => {
-            const shown = visibleColumns(Object.keys(results[0]?.fields ?? {})).includes(field)
-            return (
-              <Checkbox
-                key={field}
-                checked={shown}
-                label={formatFieldName(field)}
-                onChange={() => {
-                  const all = Object.keys(results[0]?.fields ?? {})
-                  const current = chosenColumns[selectedType] ?? visibleColumns(all)
-                  const next = shown
-                    ? current.filter((name) => name !== field)
-                    : [...current, field]
-                  setChosenColumns({ ...chosenColumns, [selectedType]: next })
-                }}
-              />
-            )
-          })}
-        </details>
-      )}
+        {/* Columns live with the other controls now, not in a
+            disclosure above the results -- a configuration column is
+            where configuration belongs, and it no longer has to hide
+            to avoid pushing the results down the page. */}
+        {selectedType && results.length > 0 && (
+          <div className="workspace__filter">
+            <label>Columns</label>
+            {Object.keys(results[0]?.fields ?? {}).map((field) => {
+              const shown = visibleColumns(Object.keys(results[0]?.fields ?? {})).includes(field)
+              return (
+                <Checkbox
+                  key={field}
+                  checked={shown}
+                  label={formatFieldName(field)}
+                  onChange={() => {
+                    const all = Object.keys(results[0]?.fields ?? {})
+                    const current = chosenColumns[selectedType] ?? visibleColumns(all)
+                    const next = shown
+                      ? current.filter((name) => name !== field)
+                      : [...current, field]
+                    setChosenColumns({ ...chosenColumns, [selectedType]: next })
+                  }}
+                />
+              )
+            })}
+          </div>
+        )}
+      </aside>
 
+      <section className="workspace__content">
       {error && <Callout intent="danger">{error}</Callout>}
       {/* Two views of ONE object set. The filter is shared, so
           switching does not change what is being described -- only
@@ -426,6 +447,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           </Button>
         </div>
       )}
+      </section>
     </div>
   )
 }
