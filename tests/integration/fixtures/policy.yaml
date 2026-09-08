@@ -157,6 +157,55 @@ roles:
       - read:Account.balance
       - execute:TransferFunds
 
+
+  # A DEVELOPMENT role holding every grant any other role holds.
+  #
+  # For manual testing: one account that reaches every sub-app and
+  # reads every type, so checking a layout does not require three
+  # logins. It grants nothing some other role does not already grant,
+  # so it cannot be used to test a permission no deployment has.
+  #
+  # NOT a template for production. A real deployment gives each role
+  # what its work needs; this exists so a person looking at the UI
+  # sees all of it.
+  debug:
+    allowed_actions:
+      - discover:action_types
+      - execute:CreateCustomer
+      - execute:TransferFunds
+      - execute:UpdateCustomerName
+      - manage:users
+      - read:Account
+      - read:Account.account_id
+      - read:Account.balance
+      - read:Customer
+      - read:Customer.accounts
+      - read:Customer.customer_id
+      - read:Customer.email
+      - read:Customer.name
+      - read:Customer.region
+      - read:Customer.risk_score
+      - read:Customer.support_tickets
+      - read:Customer.tags
+      - read:Customer.transactions
+      - read:SupportTicket
+      - read:SupportTicket.customer_id
+      - read:SupportTicket.status
+      - read:SupportTicket.subject
+      - read:SupportTicket.ticket_id
+      - read:Tag
+      - read:Tag.customers
+      - read:Tag.label
+      - read:Tag.region
+      - read:Transaction
+      - read:Transaction.amount
+      - read:Transaction.category
+      - read:Transaction.currency
+      - read:Transaction.customer_id
+      - read:Transaction.transaction_date
+      - read:Transaction.transaction_id
+      - tool:linear_regression
+
 users:
   user_alice:
     region: us-west

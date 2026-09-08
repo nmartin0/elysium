@@ -262,6 +262,30 @@ component for both would conflate "this failed" with "this failed and
 there is nothing else". Counted before concluding: two of each, plus
 three that only spin.
 
+## Schema's filter cannot move into a config pane yet
+
+Attempted and reverted. Moving the three per-tab FilterBoxes into one
+configuration pane -- which is right, since they were always three
+views of a single `q` in the URL -- exposed a real bug in FilterBox
+that the current design cannot fix cleanly.
+
+FilterBox keeps local text and ignores any incoming value it has SENT
+before, which is how it stops a lagging parent swallowing keystrokes.
+Once the filter survives navigation, pressing Back sets the value to
+"" -- which the box also sent, at mount -- so it is taken for an echo
+and the box keeps showing the old search against an empty URL.
+
+Three attempts failed: a location key (changes on `replace` too, so it
+reset on every keystroke), a navigation-type guard, and adding the key
+to the effect's dependencies. Each was reasoned about rather than
+measured until a probe showed the real sequence, by which point the
+honest move was to stop.
+
+The fix is a FilterBox that tracks whether its LAST sent value has
+been echoed yet, rather than every value it has ever sent -- a
+redesign of the echo detection, not a patch. Worth doing on its own,
+with the probe kept, rather than at the end of a layout change.
+
 ## Known inefficiencies in the shell
 
 **The session probe fetches the whole ontology to ask a yes/no
