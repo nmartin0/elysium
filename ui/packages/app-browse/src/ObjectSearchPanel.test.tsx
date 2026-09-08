@@ -601,6 +601,13 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
   })
 })
 
+/** Charts live behind a tab now -- two VIEWS of one object set, not
+ *  one stacked above the other. A test that clicks a chart has to open
+ *  it first, the same as a user does. */
+function openCharts() {
+  fireEvent.click(screen.getByRole('tab', { name: 'Charts' }))
+}
+
 describe('ObjectSearchPanel -- cross-filtering', () => {
   const SCHEMA: VisibleSchema = {
     Customer: {
@@ -624,6 +631,7 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     mockedSearchObjects.mockClear()
 
     // The Chart mock exposes its onSelect as a button.
+    openCharts()
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
     await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
@@ -650,6 +658,8 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     ))
     mockedSearchObjects.mockClear()
 
+    openCharts()
+
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
     await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
@@ -665,11 +675,14 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
       searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } }]),
     )
     renderPanel(SCHEMA)
+    openCharts()
     fireEvent.click(await screen.findByText('select:region:us-west'))
     await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
       'Customer', '', expect.objectContaining({ conditions: expect.any(Array) }),
     ))
     mockedSearchObjects.mockClear()
+
+    openCharts()
 
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
@@ -692,6 +705,8 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
       'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
     ))
     mockedSearchObjects.mockClear()
+
+    openCharts()
 
     fireEvent.click(await screen.findByText('select:region:us-west'))
 

@@ -169,3 +169,24 @@ export function selectionFor(filters: ChartFilter[], field: string): {
     ? { selected: [], excluded: filter.values }
     : { selected: filter.values, excluded: [] }
 }
+
+
+/**
+ * The filter to aggregate ONE field's chart under -- everything
+ * except that field's own selection.
+ *
+ * A CHART DOES NOT FILTER ITSELF, which is the rule every
+ * cross-filtering tool follows and the one this originally got wrong.
+ * Clicking "us-west" on the region chart filtered the region chart to
+ * us-west, leaving it with a single value; the panel then dropped it
+ * as having nothing to show, and every chart vanished on the first
+ * click.
+ *
+ * Excluding a field's own selection keeps its other bars on screen,
+ * which is what makes the dimming meaningful: you can see what you
+ * chose, what you did not, and how much you filtered away -- and click
+ * a different bar without first undoing the last one.
+ */
+export function conditionsExcluding(filters: ChartFilter[], field: string): unknown[] {
+  return asConditions(filters.filter((filter) => filter.field !== field))
+}

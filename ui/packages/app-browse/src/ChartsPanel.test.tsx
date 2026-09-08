@@ -75,7 +75,7 @@ describe('which fields get a chart', () => {
 describe('ChartsPanel', () => {
   it('asks for a count grouped by each chartable field', async () => {
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
+      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
                    filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
@@ -85,23 +85,25 @@ describe('ChartsPanel', () => {
     ))
   })
 
-  it('aggregates over the SAME object set the table is showing', async () => {
-    // Charts describing a different set than the table beside them
-    // would be actively misleading.
-    const conditions = [{ field: 'region', operator: 'in', value: ['us-west'] }]
+  it('excludes a field\u2019s OWN selection from its own chart', async () => {
+    // A chart that filtered itself dropped to one bar the moment you
+    // clicked it -- and the panel then discarded it as having nothing
+    // to show, so every chart vanished on the first click. Found by
+    // using it.
+    const filters = [{ field: 'region', values: ['us-west'], mode: 'keep' as const }]
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={conditions}
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
+                   filters={filters} onSelect={noop2} onSessionExpired={noop} />,
     )
 
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
-      'Customer', expect.objectContaining({ conditions }),
+      'Customer', expect.objectContaining({ conditions: [] }),
     ))
   })
 
   it('draws a chart per field that has something to show', async () => {
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
+      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
                    filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
@@ -114,7 +116,7 @@ describe('ChartsPanel', () => {
     aggregateObjects.mockResolvedValue({ results: { 'us-west': 4 } })
 
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
+      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
                    filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
@@ -125,7 +127,7 @@ describe('ChartsPanel', () => {
     aggregateObjects.mockRejectedValue(new Error('aggregate unavailable'))
 
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
+      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
                    filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
@@ -137,16 +139,84 @@ describe('ChartsPanel', () => {
     // Depending on its identity would refetch every chart on every
     // keystroke in the search box beside it.
     const { rerender } = render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
+      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
                    filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledTimes(1))
 
     rerender(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} conditions={[]}
+      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
                    filters={[]} onSelect={noop2} onSessionExpired={noop} />,
     )
 
     expect(aggregateObjects).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a chart does not filter itself', () => {
+  it('keeps a chart on screen after its own bar is clicked', async () => {
+    /**
+     * THE bug this file's tests missed, found by using it.
+     *
+     * Clicking "us-west" on the region chart filtered the region chart
+     * to us-west, leaving it a single value. The panel then dropped it
+     * as having nothing to show, so every chart vanished on the first
+     * click and the tab read "nothing to chart".
+     *
+     * The existing tests passed an already-narrowed `conditions` prop
+     * and never exercised the loop where a selection becomes the
+     * filter for the chart that produced it.
+     */
+    aggregateObjects.mockImplementation((_type: string, body: { conditions?: unknown[] }) => {
+      // A stand-in for the server: applying a region filter really does
+      // leave one region.
+      const filtered = (body.conditions ?? []).length > 0
+      return Promise.resolve({
+        results: filtered ? { 'us-west': 3 } : { 'us-west': 3, 'us-east': 1 },
+      })
+    })
+
+    render(
+      <ChartsPanel
+        objectType="Customer" visibleSchema={SCHEMA} queryText=""
+        filters={[{ field: 'region', values: ['us-west'], mode: 'keep' }]}
+        onSelect={noop2} onSessionExpired={noop}
+      />,
+    )
+
+    expect(await screen.findByText('Region distribution')).toBeInTheDocument()
+  })
+
+  it('still applies OTHER charts\u2019 selections to a chart', async () => {
+    // Excluding a field's own selection must not mean excluding
+    // everything -- cross-filtering is the point.
+    const filters = [
+      { field: 'region', values: ['us-west'], mode: 'keep' as const },
+      { field: 'name', values: ['Ada'], mode: 'keep' as const },
+    ]
+
+    render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={{
+          Customer: {
+            fields: {
+              region: { type: 'data', visibility: 'prominent', display_name: 'Region' },
+              name: { type: 'data', visibility: 'prominent', display_name: 'Name' },
+            },
+          },
+        }}
+        queryText="" filters={filters} onSelect={noop2} onSessionExpired={noop}
+      />,
+    )
+
+    // The region chart sees the NAME filter but not its own.
+    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
+      'Customer',
+      expect.objectContaining({
+        group_by: 'region',
+        conditions: [{ field: 'name', operator: 'in', value: ['Ada'] }],
+      }),
+    ))
   })
 })

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Callout, Card, CardList, Checkbox, HTMLSelect } from '@blueprintjs/core'
+import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, Tab, Tabs } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
@@ -106,6 +106,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * narrows within a search rather than discarding it.
    */
   const [crossFilter, setCrossFilter] = useState<ChartFilter[]>([])
+  const [view, setView] = useState<string>("table")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -321,22 +322,44 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         </details>
       )}
 
-      {selectedType && (
-        <ChartsPanel
-          objectType={selectedType}
-          visibleSchema={visibleSchema}
-          conditions={asConditions(crossFilter)}
-          filters={crossFilter}
-          onSelect={toggleChartValue}
-          onSessionExpired={onSessionExpired}
-        />
-      )}
-
       {error && <Callout intent="danger">{error}</Callout>}
+      {/* Two views of ONE object set. The filter is shared, so
+          switching does not change what is being described -- only
+          how. Stacking them, which this first did, made the page a
+          scroll rather than a choice and gave the charts nowhere to
+          breathe. */}
+      <Tabs
+        id="browse-views"
+        selectedTabId={view}
+        onChange={(tabId) => setView(String(tabId))}
+        renderActiveTabPanelOnly
+      >
+        <Tab id="table" title="Table" panel={<div />} />
+        <Tab
+          id="charts"
+          title="Charts"
+          panel={
+            selectedType ? (
+              <ChartsPanel
+                objectType={selectedType}
+                visibleSchema={visibleSchema}
+                queryText={queryText}
+                filters={crossFilter}
+                onSelect={toggleChartValue}
+                onSessionExpired={onSessionExpired}
+              />
+            ) : undefined
+          }
+        />
+      </Tabs>
+
       {loading && <p className="object-search__status">Searching…</p>}
 
-      {!loading && results.length === 0 && !error && <p className="object-search__empty">No results.</p>}
+      {view === "table" && !loading && results.length === 0 && !error && (
+        <p className="object-search__empty">No results.</p>
+      )}
 
+      {view === "table" && (
       <CardList className="object-search__results">
         {results.map((result) => {
           const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
@@ -364,8 +387,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           )
         })}
       </CardList>
+      )}
 
-      {(nextPageToken || previousTokens.length > 0) && (
+      {view === "table" && (nextPageToken || previousTokens.length > 0) && (
         <div className="object-search__pager">
           <Button
             minimal

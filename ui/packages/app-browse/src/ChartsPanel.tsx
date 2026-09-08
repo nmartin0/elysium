@@ -31,6 +31,7 @@ import {
   type AggregateResults,
   type ChartFilter,
   pieOption,
+  conditionsExcluding,
   selectionFor,
   suitsAPie,
   valueCountsOption,
@@ -39,10 +40,9 @@ import {
 interface ChartsPanelProps {
   objectType: string
   visibleSchema: VisibleSchema | null
-  /** The filter the table is showing, so both halves describe the same
-   *  object set. Charts over a different set than the table beside them
-   *  would be actively misleading. */
-  conditions: unknown[]
+  /** Free-text query, so charts describe the same object set the table
+   *  does. */
+  queryText: string
   /** The current chart selection, so each chart can dim what is
    *  filtered out rather than hiding it. */
   filters: ChartFilter[]
@@ -70,7 +70,7 @@ export function chartableFields(
 }
 
 export default function ChartsPanel({
-  objectType, visibleSchema, conditions, filters, onSelect, onSessionExpired,
+  objectType, visibleSchema, queryText, filters, onSelect, onSessionExpired,
 }: ChartsPanelProps) {
   const [charts, setCharts] = useState<FieldChart[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -79,7 +79,7 @@ export default function ChartsPanel({
   // Serialised so the effect depends on the CONTENT of the filter
   // rather than the array's identity, which is new on every render of
   // the parent.
-  const filterKey = JSON.stringify(conditions)
+  const filterKey = JSON.stringify(filters)
 
   useEffect(() => {
     let cancelled = false
@@ -89,7 +89,10 @@ export default function ChartsPanel({
     Promise.all(
       fields.map(async ({ field, label }) => {
         const body = await aggregateObjects(objectType, {
-          conditions: JSON.parse(filterKey) as unknown[],
+          // Every OTHER chart's selection, not this one's -- a chart
+          // that filtered itself would drop to a single bar the moment
+          // you clicked it.
+          conditions: conditionsExcluding(JSON.parse(filterKey) as ChartFilter[], field),
           aggregate: 'count',
           group_by: field,
         }) as { results: AggregateResults }
@@ -113,7 +116,7 @@ export default function ChartsPanel({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [objectType, filterKey])
+  }, [objectType, filterKey, queryText])
 
   if (error) return <Callout intent="danger">{error}</Callout>
   if (charts === null) return <Spinner />
