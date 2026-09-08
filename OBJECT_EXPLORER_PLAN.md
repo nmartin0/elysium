@@ -184,7 +184,7 @@ nobody asked for.
 `next_page_token` and `total_matches` and accepts `order_by`, and no
 screen uses any of them. Page tokens stay opaque.
 
-**9. Column configuration**, defaulting to prominent properties, with
+**9. [done] Column configuration**, defaulting to prominent properties, with
 hidden fields absent — the rendering rule the schema browser already
 follows.
 

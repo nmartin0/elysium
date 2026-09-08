@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Callout, Card, CardList, HTMLSelect } from '@blueprintjs/core'
+import { Button, Callout, Card, CardList, Checkbox, HTMLSelect } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
@@ -48,6 +48,9 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   const [previousTokens, setPreviousTokens] = useState<string[]>([])
   const [nextPageToken, setNextPageToken] = useState<string | null>(null)
   const [orderBy, setOrderBy] = useState<string>("")
+  // Per type, so switching types does not carry one type's chosen
+  // columns onto another where those field names mean nothing.
+  const [chosenColumns, setChosenColumns] = useState<Record<string, string[]>>({})
   const [totalMatches, setTotalMatches] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,6 +74,32 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
   //
   // Link fields are excluded: ordering by a relationship has no
   // meaning, and there is no column for the server to sort on.
+  /**
+   * Which fields a result card shows.
+   *
+   * Defaults to the PROMINENT ones the ontology author declared --
+   * that metadata exists precisely so a screen does not have to guess
+   * what matters about a type. Falling back to everything when none
+   * are declared, because a card showing nothing is worse than one
+   * showing too much.
+   *
+   * `visibility: hidden` is COSMETIC and documented as such: the field
+   * is still in the response and a caller can still read it. Excluding
+   * it here is a default, not a denial, and the picker below can turn
+   * it back on.
+   */
+  const visibleColumns = (returned: string[]): string[] => {
+    if (!selectedType) return returned
+    const chosen = chosenColumns[selectedType]
+    if (chosen) return returned.filter((field) => chosen.includes(field))
+    const schemaFields = visibleSchema?.[selectedType]?.fields ?? {}
+    const prominent = returned.filter(
+      (field) => schemaFields[field]?.visibility === "prominent",
+    )
+    if (prominent.length > 0) return prominent
+    return returned.filter((field) => schemaFields[field]?.visibility !== "hidden")
+  }
+
   const sortableFields = selectedType && visibleSchema
     ? Object.entries(visibleSchema[selectedType]?.fields ?? {})
         .filter(([, field]) => field.type !== "link")
@@ -209,6 +238,34 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
         )}
       </div>
 
+      {selectedType && results.length > 0 && (
+        <details className="object-search__columns">
+          <summary>Columns</summary>
+          {/* Built from what the RESULTS actually contain, not from
+              the schema: the server decides which fields a search
+              summary includes, and offering one it never returns would
+              be a checkbox that does nothing. */}
+          {Object.keys(results[0]?.fields ?? {}).map((field) => {
+            const shown = visibleColumns(Object.keys(results[0]?.fields ?? {})).includes(field)
+            return (
+              <Checkbox
+                key={field}
+                checked={shown}
+                label={formatFieldName(field)}
+                onChange={() => {
+                  const all = Object.keys(results[0]?.fields ?? {})
+                  const current = chosenColumns[selectedType] ?? visibleColumns(all)
+                  const next = shown
+                    ? current.filter((name) => name !== field)
+                    : [...current, field]
+                  setChosenColumns({ ...chosenColumns, [selectedType]: next })
+                }}
+              />
+            )
+          })}
+        </details>
+      )}
+
       {error && <Callout intent="danger">{error}</Callout>}
       {loading && <p className="object-search__status">Searching…</p>}
 
@@ -230,7 +287,7 @@ export default function ObjectSearchPanel({ visibleSchema, onSessionExpired }: O
               </Link>
               {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
               <dl className="object-search__result-fields">
-                {Object.entries(result.fields).map(([field, value]) => (
+                {visibleColumns(Object.keys(result.fields)).map((field) => [field, result.fields[field]] as const).map(([field, value]) => (
                   <div key={field} className="object-search__result-field">
                     <dt>{formatFieldName(field)}</dt>
                     <dd>{formatValue(value)}</dd>

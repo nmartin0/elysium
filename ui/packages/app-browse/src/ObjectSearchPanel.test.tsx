@@ -404,3 +404,103 @@ describe('ObjectSearchPanel -- the real race-condition guard', () => {
     expect(screen.queryByText('Stale Result')).not.toBeInTheDocument()
   })
 })
+
+describe('ObjectSearchPanel -- which columns a result shows', () => {
+  // `name` is the title_field, so it renders in the heading too --
+  // asserting on it would find two elements and prove nothing about
+  // the field list. Prominence is put on `region` instead.
+  const WITH_VISIBILITY: VisibleSchema = {
+    Customer: {
+      title_field: 'name',
+      fields: {
+        name: { type: 'data', visibility: 'normal' },
+        region: { type: 'data', visibility: 'prominent' },
+        internal: { type: 'data', visibility: 'hidden' },
+      },
+    },
+  }
+
+  const RESULT = {
+    ...searchResult([
+      { id: 'cust_001', fields: { name: 'Ada', region: 'us-west', internal: 'note' } },
+    ]),
+  }
+
+  it('defaults to the fields the ontology declares prominent', async () => {
+    // That metadata exists precisely so a screen does not have to
+    // guess what matters about a type.
+    mockedSearchObjects.mockResolvedValue(RESULT)
+    renderPanel(WITH_VISIBILITY)
+
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+
+    // The NORMAL field must be absent, not merely the hidden one.
+    // A first version asserted only that `internal` was missing, which
+    // passes against a version that ignores prominence entirely and
+    // falls through to "everything but hidden" -- proven by a control.
+    expect(screen.queryByLabelText('Name')).not.toBeChecked()
+    expect(screen.queryByText('note')).not.toBeInTheDocument()
+  })
+
+  it('shows everything but hidden when nothing is declared prominent', async () => {
+    // A card showing NOTHING is worse than one showing too much, so
+    // the fallback is inclusive rather than empty.
+    mockedSearchObjects.mockResolvedValue(RESULT)
+    renderPanel({
+      Customer: {
+        title_field: 'name',
+        fields: {
+          name: { type: 'data' },
+          region: { type: 'data' },
+          internal: { type: 'data', visibility: 'hidden' },
+        },
+      },
+    })
+
+    // `name` is also the title, so it renders twice -- getAllByText,
+    // and the point of this test is the HIDDEN field being absent
+    // while a plain one is present.
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+
+    expect(screen.getAllByText('Ada').length).toBeGreaterThan(1)
+    expect(screen.queryByText('note')).not.toBeInTheDocument()
+  })
+
+  it('lets a hidden field be turned back on', async () => {
+    // `visibility: hidden` is COSMETIC and documented as such -- the
+    // field is in the response and the caller may read it. Excluding
+    // it is a default, not a denial.
+    mockedSearchObjects.mockResolvedValue(RESULT)
+    renderPanel(WITH_VISIBILITY)
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByLabelText('Internal'))
+
+    expect(screen.getByText('note')).toBeInTheDocument()
+  })
+
+  it('lets a shown field be turned off', async () => {
+    mockedSearchObjects.mockResolvedValue(RESULT)
+    renderPanel(WITH_VISIBILITY)
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByLabelText('Region'))
+
+    expect(screen.queryByText('us-west')).not.toBeInTheDocument()
+  })
+
+  it('offers only fields the results actually contain', async () => {
+    // The server decides which fields a search summary includes.
+    // Offering one it never returns would be a checkbox that does
+    // nothing.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { region: 'us-west' } }]),
+    )
+    renderPanel(WITH_VISIBILITY)
+
+    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+
+    expect(screen.getByLabelText('Region')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Internal')).not.toBeInTheDocument()
+  })
+})
