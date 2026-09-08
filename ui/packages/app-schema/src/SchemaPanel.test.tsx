@@ -254,7 +254,7 @@ describe('SchemaPanel -- retracing steps', () => {
     expect(screen.getByPlaceholderText(/Filter object types/)).toBeInTheDocument()
   })
 
-  it('does not make a history entry per keystroke', () => {
+  it('does not make a history entry per keystroke', async () => {
     // THE trap. Typing "Cust" would otherwise push four entries, and
     // pressing Back four times to undo one search is worse than having
     // no history at all. Typing REPLACES; only navigation pushes.
@@ -283,6 +283,14 @@ describe('SchemaPanel -- retracing steps', () => {
     fireEvent.change(box, { target: { value: 'C' } })
     fireEvent.change(box, { target: { value: 'Cu' } })
     fireEvent.change(box, { target: { value: 'Cus' } })
+
+    // Waits for the URL to catch up. The filter is DEFERRED now: the
+    // box updates per keystroke and the router write happens once
+    // typing settles, so asserting immediately would test the moment
+    // before the write rather than the write.
+    await waitFor(() =>
+      expect(router.state.location.search).toContain('q=Cus'),
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 

@@ -14,7 +14,7 @@
  * withheld.
  */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Callout, HTMLTable, Icon, Spinner, Tab, Tabs, Tag } from '@blueprintjs/core'
 import { IconNames, type IconName } from '@blueprintjs/icons'
@@ -23,6 +23,7 @@ import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/
 import ActionTypes from './ActionTypes'
 import FilterBox from '@elysium/shell-api/components/FilterBox'
 import Workspace from '@elysium/shell-api/components/Workspace'
+import { useDeferredWrite } from '@elysium/shell-api/useDeferredValue'
 import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
@@ -252,6 +253,20 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const filter = selectedTab === 'object-types' ? query : ''
   const linkFilter = selectedTab === 'link-types' ? query : ''
   const actionFilter = selectedTab === 'action-types' ? query : ''
+  const [typedFilter, setTypedFilter, adoptFilter] = useDeferredWrite(
+    query,
+    (text) => go(selectedTab, text, 'replace'),
+  )
+
+  // A navigation -- Back, a tab click, a cross-reference -- sets the
+  // query from outside, and the box must follow it. adopt() also
+  // cancels any keystroke still settling, so a half-typed filter
+  // cannot land afterwards and undo the navigation.
+  useEffect(() => {
+    if (query !== typedFilter) adoptFilter(query)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query])
+
   const filterNoun = selectedTab === 'link-types'
     ? 'link types'
     : selectedTab === 'action-types'
@@ -321,9 +336,15 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           column picker, which is the other side of the same
           threshold. */}
       <div className="schema-panel__toolbar">
+        {/* The box shows `typedFilter`, which updates on every
+            keystroke; the URL follows once typing settles. Writing per
+            character meant a router navigation per character, and the
+            whole panel re-rendered on each one -- the box kept up
+            because it holds local state, but everything around it
+            lurched. */}
         <FilterBox
-          value={query}
-          onChange={(text) => go(selectedTab, text, 'replace')}
+          value={typedFilter}
+          onChange={setTypedFilter}
           placeholder={`Filter ${filterNoun}...`}
         />
       </div>

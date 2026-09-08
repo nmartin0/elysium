@@ -17,6 +17,7 @@
     "./index.css": "./src/index.css",
     "./tokens.css": "./src/tokens.css",
     "./types": "./src/types.ts",
+    "./useDeferredValue": "./src/useDeferredValue.ts",
     "./useLatestRequestGuard": "./src/useLatestRequestGuard.ts"
   },
   "peerDependencies": {
