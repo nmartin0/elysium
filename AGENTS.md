@@ -96,6 +96,19 @@ by deleting the behaviour and leaving the word in a comment. Scanning
 source is fine for drift checks that COUNT or compare sets; it is not
 a substitute for calling the code.
 
+**Run coverage on the files you TOUCHED, not the total.** The backend
+sits at 96%, and that average hid a 63% file: an Iceberg filter
+translation written, shipped, and never once executed by the suite.
+The tests passed the whole time.
+
+```bash
+python -m coverage run -m pytest tests/ -q -m "not integration"
+python -m coverage report -m --include="<file you changed>"
+```
+
+If a line you added is in the miss list, you have not checked it —
+whether or not it happens to be correct.
+
 **Verify the CLAIM, not just the change.** Tests check behaviour;
 commit messages assert PURPOSE, and no test disproves those. For each
 claim, have a way you checked it or cut it. "X is wired" -> trace a

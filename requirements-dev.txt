@@ -14,6 +14,9 @@ ruff            # lint.sh -- style/correctness (see pyproject.toml's own [tool.r
 mypy            # lint.sh -- type checking (see pyproject.toml's own [tool.mypy] comment)
 vulture         # lint.sh -- whole-program dead-code detection (see lint.sh's own top comment for why)
 import-linter   # lint.sh -- architectural import-boundary enforcement (see pyproject.toml's own [tool.importlinter] section)
+coverage        # AGENTS.md requires a coverage run on files you touch;
+                # a documented command that needs an undeclared tool
+                # is a rule nobody can follow
 pytest          # test suite (tests/unit -- fast; tests/integration -- slow, needs Ollama)
 httpx2          # test-only -- Starlette's TestClient imports it (as httpx) for
                 # tests/integration/test_api.py. Not a typosquat despite the name:
