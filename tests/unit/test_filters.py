@@ -618,3 +618,133 @@ def test_the_rejection_names_no_valid_fields(tmp_path):
     assert "internal_notes" not in message
     assert "region" not in message
     assert "name" not in message
+
+
+# --- Re-authorizing a saved filter ---------------------------------------
+#
+# A saved artifact is a request, never an authority. Between saving
+# and reopening, the author may have lost access to a field -- or the
+# opener may be a colleague the search was shared with, who never had
+# it. Each condition is checked against the OPENER'S current schema.
+
+
+def _full_mediator(tmp_path):
+    import sqlite3
+
+    import yaml
+
+    from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+    from core.ontology.link_types import expand_link_types
+    from core.ontology.mediator import DataMediator
+
+    fixtures = "tests/integration/fixtures/"
+    schema = yaml.safe_load(open(fixtures + "ontology_schema.yaml"))
+    policy = yaml.safe_load(open(fixtures + "policy.yaml"))
+    types = expand_link_types(schema.get("link_types", {}), schema["object_types"])
+    db = tmp_path / "m.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(open(fixtures + "schema.sql").read())
+    conn.commit()
+    conn.close()
+    adapters = _build_adapters(
+        {"primary_sql": {"adapter": "sqlite", "connection": {"path": db}}},
+        _WRITE_ADAPTER_REGISTRY,
+    )
+    return DataMediator(types, adapters, dict.fromkeys(types, "primary_sql"),
+                        policy["roles"])
+
+
+SAVED = [
+    FieldFilter("region", "equals", "us-west"),
+    FieldFilter("email", "contains", "@"),
+    FieldFilter("internal_notes", "contains", "x"),
+]
+
+
+def test_conditions_the_opener_can_read_stay_runnable(tmp_path):
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _full_mediator(tmp_path)
+    opener = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    result = mediator.reauthorize_conditions(opener, "Customer", SAVED)
+
+    assert [c.field for c in result.runnable] == ["region", "email"]
+
+
+def test_conditions_on_unreadable_fields_are_disabled_and_NAMED(tmp_path):
+    """Disabled and reported -- not dropped silently, not failed hard.
+
+    Silently dropping is the worst option: the user sees more rows than
+    the search promised and concludes their data changed. There is no
+    disclosure risk in naming the field: the opener can already see the
+    condition written in the artifact. We are explaining their own
+    saved query, not revealing what they cannot see.
+    """
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _full_mediator(tmp_path)
+    opener = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    result = mediator.reauthorize_conditions(opener, "Customer", SAVED)
+
+    assert result.disabled == ["internal_notes"]
+
+
+def test_a_shared_search_is_checked_against_the_OPENER_not_the_author(tmp_path):
+    # The sharing case: alice (customer_service) saves a search on
+    # email and shares it with a role that cannot read email. The
+    # colleague opening it gets the email filter disabled, whatever
+    # alice could see.
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _full_mediator(tmp_path)
+    colleague = UserRecord(
+        user_id="v", security_value="us-west", role_name="customer_service_no_email"
+    )
+
+    result = mediator.reauthorize_conditions(colleague, "Customer", SAVED)
+
+    assert "email" in result.disabled
+    assert "email" not in [c.field for c in result.runnable]
+
+
+def test_losing_the_whole_type_disables_everything(tmp_path):
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _full_mediator(tmp_path)
+    accountant = UserRecord(user_id="w", security_value="us-west", role_name="accountant")
+
+    result = mediator.reauthorize_conditions(accountant, "Customer", SAVED)
+
+    assert result.runnable == []
+    assert result.disabled == ["region", "email", "internal_notes"]
+
+
+def test_a_filter_with_nothing_disabled_reports_an_empty_list(tmp_path):
+    # So the UI can test `if disabled:` rather than special-case None.
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _full_mediator(tmp_path)
+    opener = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    result = mediator.reauthorize_conditions(
+        opener, "Customer", [FieldFilter("region", "equals", "us-west")]
+    )
+
+    assert result.disabled == []
+    assert len(result.runnable) == 1
+
+
+def test_runnable_conditions_survive_unchanged(tmp_path):
+    # Operator and value must come through intact -- re-authorization
+    # filters the LIST, it does not rewrite what is in it.
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _full_mediator(tmp_path)
+    opener = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+    saved = [FieldFilter("region", "in", ["us-west", "us-east"])]
+
+    result = mediator.reauthorize_conditions(opener, "Customer", saved)
+
+    assert result.runnable == saved

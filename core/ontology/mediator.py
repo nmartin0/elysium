@@ -106,6 +106,7 @@ Used by: scripts/run_deployment.py (via core/deployment_loader.py),
 import threading
 from collections.abc import Callable
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, cast
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
@@ -137,6 +138,18 @@ _AGGREGATES: dict[str, Callable[[list], Any]] = {
 # Sentinel for "absent from the cache", distinct from a cached None --
 # which is a real security value meaning the object has none.
 _MISSING = object()
+
+
+@dataclass(frozen=True)
+class ReauthorizedConditions:
+    """What survived re-authorization, and what did not.
+
+    `disabled` holds FIELD NAMES, not conditions: the UI needs to say
+    "the region filter is inactive", and the name is what it says.
+    """
+
+    runnable: list
+    disabled: list[str]
 
 
 class DataMediator:
@@ -749,6 +762,44 @@ class DataMediator:
 
         column = get_column_for_field(resolved_type_config, field_name)
         return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
+
+    def reauthorize_conditions(self, user_record: UserRecord, object_type: str,
+                               conditions: list) -> "ReauthorizedConditions":
+        """Re-checks a SAVED filter against the caller's current
+        schema, and says what was dropped.
+
+        A saved artifact is a request, never an authority. Between
+        saving and reopening, the author may have lost read access to a
+        field they filtered on -- or the opener may be a colleague the
+        search was shared with, who never had it. Each condition is
+        checked against the opener's OWN visible schema, and any it
+        cannot read is disabled.
+
+        DISABLED AND REPORTED, not dropped silently and not failed
+        hard. Dropping silently is the worst option: the user sees more
+        rows than the search promised and concludes their data changed.
+        Failing hard is unhelpful when the rest of the search still
+        works. And there is no disclosure risk in naming the field --
+        the person opening the artifact can already see the condition
+        written in it. We are explaining their own saved query, not
+        revealing what they cannot see.
+
+        Returns the runnable conditions and the names of the disabled
+        ones, so the UI can say so rather than guess.
+        """
+        visible = self.visible_schema(user_record)
+        visible_type_def = visible.get(object_type)
+        if visible_type_def is None:
+            # Cannot read the type at all: nothing is runnable, and
+            # every condition is disabled for the same reason.
+            return ReauthorizedConditions(
+                runnable=[], disabled=[condition.field for condition in conditions]
+            )
+
+        readable = self._filterable_columns(object_type, visible_type_def)
+        runnable = [c for c in conditions if c.field in readable]
+        disabled = [c.field for c in conditions if c.field not in readable]
+        return ReauthorizedConditions(runnable=runnable, disabled=disabled)
 
     def _filterable_columns(self, object_type: str, visible_type_def: dict) -> set:
         columns = set()
