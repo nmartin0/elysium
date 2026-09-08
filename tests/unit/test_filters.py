@@ -557,3 +557,64 @@ def test_a_filter_on_an_unreadable_field_looks_like_an_unknown_one(tmp_path):
         mediator.search_object(
             user, "Transaction", [FieldFilter("internal_notes", "equals", "x")]
         )
+
+
+# --- Uniform denial across every read path -------------------------------
+
+
+@pytest.mark.parametrize("field", ["no_such_field", "internal_notes"])
+@pytest.mark.parametrize("path", ["search", "count", "aggregate", "search_around"])
+def test_every_read_path_rejects_an_unreadable_field_like_an_unknown_one(
+    path, field, tmp_path
+):
+    """A caller must not learn that a field EXISTS by filtering on one
+    they cannot read.
+
+    `no_such_field` is absent from the ontology; `internal_notes` is a
+    real column this role has no read grant for. Both must fail
+    identically, on every path -- a different message, or one path
+    succeeding where another fails, would be an oracle.
+
+    They already did, because count, aggregate and search_around all
+    delegate to search_object. Nothing tested it, which is how a later
+    change that stopped delegating would have gone unnoticed.
+    """
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _mediator_with(20, tmp_path)
+    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    calls = {
+        "search": lambda: mediator.search_object(
+            user, "Customer", [FieldFilter(field, "equals", "x")]
+        ),
+        "count": lambda: mediator.count_objects(user, "Customer", {field: "x"}),
+        "aggregate": lambda: mediator.aggregate_by_field(
+            user, "Customer", {field: "x"}, "region", "count"
+        ),
+        "search_around": lambda: mediator.search_around(
+            user, "Customer", {field: "x"}, "transactions"
+        ),
+    }
+
+    with pytest.raises(ValueError, match="^Invalid search criteria$"):
+        calls[path]()
+
+
+def test_the_rejection_names_no_valid_fields(tmp_path):
+    # Listing what WOULD have been valid is the same disclosure by
+    # another route.
+    from core.intermediate_layer.auth import UserRecord
+
+    mediator = _mediator_with(20, tmp_path)
+    user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
+
+    with pytest.raises(ValueError) as caught:
+        mediator.search_object(
+            user, "Customer", [FieldFilter("internal_notes", "equals", "x")]
+        )
+
+    message = str(caught.value)
+    assert "internal_notes" not in message
+    assert "region" not in message
+    assert "name" not in message
