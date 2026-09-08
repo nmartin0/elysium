@@ -110,10 +110,17 @@ body {
  * that is what the border below draws.
  *
  * Only where the header meets the canvas, not where it meets the
- * rail. */
+ * rail.
+ *
+ * The `bottom: 0` below is not optional. An absolutely positioned
+ * element with no vertical anchor sits at its STATIC position -- where
+ * it would have been in the flow -- and this header centres its
+ * children, so without it the line landed across the MIDDLE of the
+ * pane. */
 .app__header::after {
   content: "";
   position: absolute;
+  bottom: 0;
   left: var(--sidebar-rail);
   right: 0;
   height: 1px;

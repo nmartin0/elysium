@@ -169,6 +169,18 @@ describe('chrome is continuous', () => {
     const seam = /\.app__header::after \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
 
     expect(seam).toMatch(/left:\s*var\(--sidebar-rail\)/)
+    /**
+     * And ANCHORED to the bottom edge.
+     *
+     * This test asserted only the horizontal claim, so it passed while
+     * the line ran across the middle of the pane: an absolutely
+     * positioned element with no vertical anchor sits at its static
+     * position, and the header centres its children.
+     *
+     * Checking half a rule is how a test confirms the part you
+     * remembered and misses the part you forgot.
+     */
+    expect(seam).toMatch(/bottom:\s*0/)
   })
 
   it('draws no box around the collapse toggle', () => {
