@@ -256,12 +256,23 @@ body {
  * applications", and its own guidance asks for an F-shaped layout with
  * configuration to the left of content. Neither is possible inside a
  * reading column. */
+/* The canvas slot.
+ *
+ * A sub-app that uses .workspace fills this edge to edge and provides
+ * its own padding inside each pane. One that does NOT -- Query,
+ * Schema, Admin -- gets padding and a scroll here, because otherwise
+ * it renders flush against the shell chrome with nowhere to scroll.
+ *
+ * Setting `padding: 0` unconditionally for Browse's flush panels was a
+ * regression that stripped every other sub-app's breathing room.
+ */
 .app__content main {
   flex: 1;
   width: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  padding: var(--space-loose);
   padding: var(--space-loose) var(--space-loose) var(--space-section);
 }
 
@@ -933,8 +944,9 @@ button.danger {
  * and it keeps the 30-40% whitespace their own guidance asks for
  * without the gutters that made this app read as a scroll.
  */
-.app__content main {
+.app__content:has(.workspace) main {
   padding: 0;
+  overflow: hidden;
 }
 
 .workspace {

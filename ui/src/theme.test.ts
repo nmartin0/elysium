@@ -66,3 +66,46 @@ describe('theming', () => {
     }
   })
 })
+
+describe('the shell is viewport-locked', () => {
+  /**
+   * These read the stylesheet, which is the only way to check a
+   * layout jsdom does not compute. They exist because the fix for
+   * this was reported as landed while the rule was not in the file at
+   * all -- the commit had never reached the remote, and nothing
+   * noticed.
+   */
+
+  it('locks the document so only the regions inside scroll', () => {
+    expect(CSS).toMatch(/html,\s*\n\s*body,\s*\n\s*#root\s*\{[^}]*overflow:\s*hidden/)
+  })
+
+  it('gives the shell a DEFINITE height, not a minimum', () => {
+    /**
+     * THE bug. A min-height lets a track be pushed open by its
+     * content, so the children's overflow:auto never engages -- the
+     * content grows the layout past the viewport and the whole page
+     * scrolls, chrome and all.
+     */
+    const app = /\.app \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(app).toMatch(/height:\s*100dvh/)
+    expect(app).not.toMatch(/min-height/)
+  })
+
+  it('gives the sidebar its own scroll', () => {
+    // Without it the shell's overflow:hidden clips the nav, and only
+    // the first app shows.
+    const sidebar = /\.app__sidebar \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(sidebar).toMatch(/overflow-y:\s*auto/)
+  })
+
+  it('leaves a sub-app without a workspace some padding', () => {
+    // Zeroing it unconditionally for Browse's flush panels stripped
+    // every other sub-app's breathing room.
+    const main = /\.app__content main \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(main).toMatch(/padding:\s*var\(--space-loose\)/)
+  })
+})
