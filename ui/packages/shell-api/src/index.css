@@ -741,7 +741,6 @@ button.danger {
   box-shadow: none;
 }
 
-.object-search__results .bp5-card,
 .object-search__results .bp6-card {
   padding: var(--space-tight) var(--space-snug);
   box-shadow: none;

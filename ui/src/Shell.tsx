@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Button, Drawer, Menu, MenuItem } from '@blueprintjs/core'
+import { Button, Classes, Drawer, Menu, MenuItem } from '@blueprintjs/core'
 import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 
@@ -225,8 +225,11 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   )
 
   useEffect(() => {
-    document.body.classList.toggle('bp5-dark', dark)
-    document.body.classList.toggle('bp6-dark', dark)
+    // Classes.DARK, not a literal. Blueprint 6 emits `bp6-dark` and
+    // 5 emitted `bp5-dark`; a hardcoded string silently stops working
+    // on a major upgrade, and the test asserting the same literal
+    // would keep passing -- which is exactly what happened here.
+    document.body.classList.toggle(Classes.DARK, dark)
     writePreference('theme', currentUser?.username ?? '', dark ? 'dark' : 'light')
   }, [dark, currentUser?.username])
 

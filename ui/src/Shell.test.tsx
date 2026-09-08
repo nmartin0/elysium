@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { Classes } from '@blueprintjs/core'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { lazy, type ComponentType } from 'react'
@@ -616,6 +617,9 @@ describe('Shell -- the Suspense boundary around lazy-loaded sub-app routes', () 
 })
 
 describe('theme', () => {
+  // Asserts Blueprint's OWN class constant. A first version hardcoded
+  // 'bp5-dark' -- which our own toggle also set, so the test passed
+  // while Blueprint 6, which emits bp6-dark, saw nothing at all.
   it('turns dark mode on and off', () => {
     // Blueprint carries a dark variant on every widget and nothing
     // turned it on. Applied as a body class so those variants and
@@ -623,10 +627,10 @@ describe('theme', () => {
     renderShell([{ name: 'Query', path: '/query' }])
 
     fireEvent.click(screen.getByLabelText('Switch to dark theme'))
-    expect(document.body.classList.contains('bp5-dark')).toBe(true)
+    expect(document.body.classList.contains(Classes.DARK)).toBe(true)
 
     fireEvent.click(screen.getByLabelText('Switch to light theme'))
-    expect(document.body.classList.contains('bp5-dark')).toBe(false)
+    expect(document.body.classList.contains(Classes.DARK)).toBe(false)
   })
 
   it('remembers the choice', () => {

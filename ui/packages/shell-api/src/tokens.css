@@ -32,23 +32,20 @@
   --surface-sunken: #edeff2;      /* wells, empty states */
 
   --border-subtle: #d3d8de;
-  --border-strong: #abb3bf;
 
   --text-primary: #1c2127;
   --text-secondary: #5f6b7c;
   --text-on-chrome: #f6f7f9;
   --text-on-chrome-dim: #abb3bf;
 
-  --accent: #2d72d2;
-  --accent-subtle: #d7e4f6;
-
   /* --- Elevation --------------------------------------------------
-   * Drop shadow raises; inset recedes. Two levels only: more than
-   * that and elevation stops meaning anything.
+   * ONE level. An earlier version defined raised, overlay and inset;
+   * only raised was ever used, and three unused shadows look more
+   * considered than they are. Blueprint's own components bring their
+   * own elevation, so this exists only to lift content above the
+   * configuration beside it.
    */
   --elevate-raised: 0 1px 3px rgba(17, 20, 24, 0.12), 0 0 0 1px rgba(17, 20, 24, 0.06);
-  --elevate-overlay: 0 4px 12px rgba(17, 20, 24, 0.18);
-  --elevate-inset: inset 0 1px 2px rgba(17, 20, 24, 0.08);
 
   /* --- Spacing ----------------------------------------------------
    * A 4px scale. Named by role rather than size, so "tight" stays
@@ -61,24 +58,30 @@
   --space-loose: 24px;
   --space-section: 32px;
 
-  --radius: 3px;
+  /* 2px, which is Blueprint's own $pt-border-radius. A 3px radius
+   * sits a pixel off every Blueprint surface next to it -- close
+   * enough to look like a mistake rather than a choice. */
+  --radius: 2px;
+  /* Multiples of 8, which is what the whole layout snaps to. The
+   * collapsed sidebar has no token because it collapses to 0 -- it
+   * hides rather than shrinking, and a token for a width nothing uses
+   * is a decision nobody made. */
   --sidebar-width: 232px;
-  --sidebar-collapsed: 48px;
   --config-width: 288px;
 }
 
 /* Dark mode is Blueprint's own, applied at the root rather than
  * reimplemented. Its widgets each carry a dark variant, so this
- * inverts the app without a parallel stylesheet. */
-.bp5-dark,
+ * inverts the app without a parallel stylesheet.
+ *
+ * bp6 only: that is what the installed Blueprint emits. A bp5
+ * selector alongside it was dead CSS that read like insurance. */
 .bp6-dark {
   --surface-config: #252a31;
   --surface-content: #2f343c;
   --surface-sunken: #1c2127;
   --border-subtle: #404854;
-  --border-strong: #5f6b7c;
   --text-primary: #f6f7f9;
   --text-secondary: #abb3bf;
-  --accent-subtle: #184a90;
   --elevate-raised: 0 1px 3px rgba(17, 20, 24, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
