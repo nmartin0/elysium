@@ -1094,3 +1094,38 @@ input[type="checkbox"],
   max-width: 420px;
   margin-bottom: var(--space-normal);
 }
+
+/* --- Schema's parameter and field tables --------------------------
+ *
+ * Fixed column widths, because the browser sizes columns from CONTENT
+ * by default: a Description column with nothing in it collapses to the
+ * width of its own header, so the header sits hard right against the
+ * table edge -- and jumps left the moment one row has a description.
+ * The heading appeared to move because the COLUMN did.
+ *
+ * table-layout: fixed makes the widths a property of the table rather
+ * than of whatever data happens to be in it, so the header stays put
+ * whether every row has a description or none does.
+ */
+.schema-panel__fields {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.schema-panel__fields th:nth-child(1),
+.schema-panel__fields td:nth-child(1) {
+  width: 28%;
+}
+
+.schema-panel__fields th:nth-child(2),
+.schema-panel__fields td:nth-child(2) {
+  width: 22%;
+}
+
+/* Description takes the rest, and wraps rather than forcing the table
+ * wider than its pane. */
+.schema-panel__fields th:nth-child(3),
+.schema-panel__fields td:nth-child(3) {
+  width: 50%;
+  word-break: break-word;
+}

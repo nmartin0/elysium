@@ -258,3 +258,32 @@ describe('the breakpoint is one number', () => {
     expect(overlay).not.toMatch(/top:\s*0/)
   })
 })
+
+describe('schema tables have fixed columns', () => {
+  it('does not let an empty column collapse', () => {
+    /**
+     * A Description column with nothing in it collapsed to the width
+     * of its own header, so the header sat hard right against the
+     * table edge -- and jumped left the moment one row had a
+     * description. The heading appeared to move because the COLUMN
+     * did.
+     *
+     * table-layout: fixed makes the widths a property of the table
+     * rather than of whatever data happens to be in it.
+     */
+    const table = /\.schema-panel__fields \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+
+    expect(table).toMatch(/table-layout:\s*fixed/)
+  })
+
+  it('gives all three columns a width', () => {
+    // Three tables share this class -- parameters, link types and
+    // fields -- and all three have exactly the same shape: name, type,
+    // description. Checked rather than assumed before writing widths
+    // that apply to all of them.
+    const widths = [...CSS.matchAll(/\.schema-panel__fields td:nth-child\((\d)\)/g)]
+      .map((match) => match[1])
+
+    expect(new Set(widths)).toEqual(new Set(['1', '2', '3']))
+  })
+})
