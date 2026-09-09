@@ -24,7 +24,7 @@
 
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts/core'
-import { BarChart, PieChart } from 'echarts/charts'
+import { BarChart, GraphChart, PieChart } from 'echarts/charts'
 import {
   GridComponent,
   LegendComponent,
@@ -37,6 +37,11 @@ import { CanvasRenderer } from 'echarts/renderers'
 // re-register the same modules on every mount for no benefit.
 echarts.use([
   BarChart,
+  // GraphChart for the ontology graph. Registration is what makes a
+  // series type exist: an unregistered one renders NOTHING, with no
+  // error -- so a missing entry here looks like a broken option
+  // object rather than a missing import.
+  GraphChart,
   PieChart,
   GridComponent,
   LegendComponent,

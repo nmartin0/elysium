@@ -23,6 +23,8 @@ import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/
 import ActionTypes from './ActionTypes'
 import FilterBox from '@elysium/shell-api/components/FilterBox'
 import Workspace from '@elysium/shell-api/components/Workspace'
+
+import SchemaGraph from './SchemaGraph'
 import { useDeferredWrite } from '@elysium/shell-api/useDeferredValue'
 import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
@@ -432,6 +434,15 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               )}
             </>
           }
+        />
+        {/* The graph sits beside Link types, not replacing it. A table
+            answers "what is the cardinality of this one relationship";
+            a graph answers "what is the shape of all of them". Neither
+            substitutes for the other. */}
+        <Tab
+          id="graph"
+          title="Graph"
+          panel={<SchemaGraph schema={schema} onSelectType={openObjectType} />}
         />
         <Tab
           id="link-types"
