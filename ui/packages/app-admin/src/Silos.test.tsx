@@ -14,12 +14,18 @@ const HEALTHY = [
   {
     name: 'primary_sql', adapter: 'sqlite', object_types: ['Customer'],
     reachable: true, failure: null,
-    fields: [{ object_type: 'Customer', field: 'name', column: 'name', table: 'customers' }],
+    fields: [
+      { object_type: 'Customer', field: 'name', column: 'name', table: 'customers', is_identifier: false },
+      { object_type: 'Customer', field: 'customer_id', column: 'customer_id', table: 'customers', is_identifier: true },
+    ],
   },
   {
     name: 'support_crm', adapter: 'sqlite', object_types: ['Ticket'],
     reachable: true, failure: null,
-    fields: [{ object_type: 'Ticket', field: 'risk_score', column: 'score_val', table: 'customer_risk' }],
+    fields: [
+      { object_type: 'Ticket', field: 'risk_score', column: 'score_val', table: 'customer_risk', is_identifier: false },
+      { object_type: 'Ticket', field: 'customer_id', column: 'cust_ref', table: 'customer_risk', is_identifier: true },
+    ],
   },
 ]
 
@@ -82,7 +88,13 @@ describe('Silos -- the fields behind a silo', () => {
 
     fireEvent.click(screen.getByLabelText(/Show fields backed by primary_sql/))
 
-    expect(screen.getByText('customers')).toBeInTheDocument()
+    // getAllByText: the identifier row shares the table name, which is
+    // correct -- both live in `customers`.
+    // Both getAllByText: a field name can equal its column name (name
+    // -> name), and the identifier row shares the table, so single
+    // queries find several. The assertion is that the detail appeared.
+    expect(screen.getAllByText('customers').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('name').length).toBeGreaterThan(0)
   })
 
   it('marks a column whose name differs from its field', async () => {
@@ -98,7 +110,10 @@ describe('Silos -- the fields behind a silo', () => {
     fireEvent.click(screen.getByLabelText(/Show fields backed by support_crm/))
 
     expect(screen.getByText('score_val')).toBeInTheDocument()
-    expect(screen.getByText(/renamed/)).toBeInTheDocument()
+    // Two renamings in this silo now -- score_val and cust_ref -- so
+    // the assertion is that renaming is marked at all, not that it
+    // happens once.
+    expect(screen.getAllByText(/renamed/).length).toBeGreaterThan(0)
   })
 
   it('collapses again', async () => {
@@ -109,5 +124,22 @@ describe('Silos -- the fields behind a silo', () => {
     fireEvent.click(screen.getByLabelText(/Hide fields backed by primary_sql/))
 
     expect(screen.queryByText('customers')).not.toBeInTheDocument()
+  })
+})
+
+describe('Silos -- the join key', () => {
+  it('marks the identifier and shows its renaming', async () => {
+    /**
+     * The mismatch that matters more than a renamed data column: a
+     * wrong join key returns NOTHING, or another object's row, rather
+     * than a wrong value.
+     */
+    render(<Silos onSessionExpired={() => {}} />)
+    await screen.findByText('support_crm')
+
+    fireEvent.click(screen.getByLabelText(/Show fields backed by support_crm/))
+
+    expect(screen.getByText('identifier')).toBeInTheDocument()
+    expect(screen.getByText('cust_ref')).toBeInTheDocument()
   })
 })

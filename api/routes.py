@@ -591,6 +591,10 @@ class SiloBackedField(BaseModel):
     # reading YAML.
     column: str
     table: str
+    # The join key, which is not in `fields` at all -- id_field is
+    # declared beside `storage`. A wrong one does not return wrong
+    # values; it returns NOTHING, or another object's row.
+    is_identifier: bool = False
 
 
 class SiloStatusResponse(BaseModel):
@@ -678,7 +682,28 @@ def silos_route(request: Request,
                 "field": field_name,
                 "column": get_field_column(field_info, field_name),
                 "table": table,
+                "is_identifier": False,
             })
+
+        # The IDENTIFIER, once per storage that holds this type.
+        #
+        # It is not in `fields` -- id_field sits beside `storage` -- so
+        # the loop above never sees it, and the mismatch it can carry
+        # matters more than a renamed data column: Customer is keyed on
+        # customer_id in primary_sql and on cust_ref in risk_sql.
+        id_field = type_def.get("id_field")
+        if id_field:
+            for storage in [primary, *extra.values()]:
+                silo_name = storage.get("silo")
+                if not silo_name:
+                    continue
+                fields_by_silo.setdefault(silo_name, []).append({
+                    "object_type": object_type,
+                    "field": id_field,
+                    "column": storage.get("id_column", id_field),
+                    "table": storage.get("table", ""),
+                    "is_identifier": True,
+                })
 
     statuses = []
     for silo_name in sorted(config.silo_configs):

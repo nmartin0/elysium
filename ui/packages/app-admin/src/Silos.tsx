@@ -21,6 +21,7 @@ interface SiloBackedField {
   field: string
   column: string
   table: string
+  is_identifier: boolean
 }
 
 interface SiloStatus {
@@ -143,7 +144,17 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                         {silo.fields.map((field) => (
                           <tr key={`${field.object_type}.${field.field}`}>
                             <td>{field.object_type}</td>
-                            <td>{field.field}</td>
+                            <td>
+                              {field.field}
+                              {/* The join key, tagged in place. A wrong
+                                  one returns nothing or another
+                                  object's row rather than a wrong
+                                  value, so it belongs where someone is
+                                  already scanning for mismatches. */}
+                              {field.is_identifier && (
+                                <Tag minimal className="silos__id-tag">identifier</Tag>
+                              )}
+                            </td>
                             <td>{field.table}</td>
                             <td>
                               {/* Marked when it differs from the field

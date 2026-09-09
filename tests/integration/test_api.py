@@ -2625,14 +2625,17 @@ def test_silos_route_puts_a_field_with_the_silo_that_actually_backs_it(client):
 
     body = client.get("/api/silos").json()
 
-    primary_fields = {f["field"] for f in next(
-        s for s in body if s["name"] == "primary_sql")["fields"]}
-    risk_fields = {f["field"] for f in next(
-        s for s in body if s["name"] == "risk_sql")["fields"]}
+    # DATA fields only. risk_sql also carries Customer's identifier,
+    # because it has to join on something -- that is a separate
+    # assertion below, and folding it in here would blur what this test
+    # is about.
+    def data_fields(silo_name):
+        silo = next(s for s in body if s["name"] == silo_name)
+        return {f["field"] for f in silo["fields"] if not f["is_identifier"]}
 
-    assert "name" in primary_fields
-    assert "risk_score" not in primary_fields
-    assert risk_fields == {"risk_score"}
+    assert "name" in data_fields("primary_sql")
+    assert "risk_score" not in data_fields("primary_sql")
+    assert data_fields("risk_sql") == {"risk_score"}
 
 
 def test_silos_route_omits_link_fields(client):
@@ -2644,3 +2647,43 @@ def test_silos_route_omits_link_fields(client):
 
     all_fields = [f["field"] for silo in body for f in silo["fields"]]
     assert "transactions" not in all_fields
+
+
+def test_silos_route_shows_the_join_key_and_its_renaming(client):
+    """The mismatch that matters more than a renamed data column.
+
+    Customer is keyed on customer_id in primary_sql and on cust_ref in
+    risk_sql -- the fixture comments on this specifically. A wrong join
+    key does not return wrong VALUES; it returns nothing, or another
+    object's row, which is harder to notice and worse when it happens.
+
+    The identifier is not in `fields` at all -- id_field is declared
+    beside `storage` -- so nothing surfaced it until now.
+    """
+    _admin_user(client, "siloid")
+
+    body = client.get("/api/silos").json()
+
+    risk = next(silo for silo in body if silo["name"] == "risk_sql")
+    identifier = next(f for f in risk["fields"] if f["is_identifier"])
+    assert identifier["field"] == "customer_id"
+    assert identifier["column"] == "cust_ref"
+
+    primary = next(silo for silo in body if silo["name"] == "primary_sql")
+    same_type = next(f for f in primary["fields"]
+                     if f["is_identifier"] and f["object_type"] == "Customer")
+    assert same_type["column"] == "customer_id", "the two silos key differently"
+
+
+def test_silos_route_lists_an_identifier_once_per_storage(client):
+    # Once per place the type is stored, not once per field in it --
+    # a join key is per-storage, and repeating it per column would
+    # bury the data fields it sits among.
+    _admin_user(client, "siloidonce")
+
+    body = client.get("/api/silos").json()
+
+    primary = next(silo for silo in body if silo["name"] == "primary_sql")
+    customer_ids = [f for f in primary["fields"]
+                    if f["is_identifier"] and f["object_type"] == "Customer"]
+    assert len(customer_ids) == 1

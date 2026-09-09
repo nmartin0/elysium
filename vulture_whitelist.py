@@ -133,6 +133,7 @@ source
 # DeploymentConfigResponse (api/routes.py): read by FastAPI's
 # serialiser from the returned dict, never by our own code -- the same
 # reason every other response-model field below is here.
+is_identifier
 object_type
 column
 table

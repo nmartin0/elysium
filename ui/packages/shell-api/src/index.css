@@ -1203,3 +1203,9 @@ input[type="checkbox"],
   font-size: 11px;
   color: var(--text-secondary);
 }
+
+/* The identifier tag sits beside the field name, not in a column of
+ * its own -- a join key is a field with a role, not a fifth thing. */
+.silos__id-tag {
+  margin-left: var(--space-hair);
+}

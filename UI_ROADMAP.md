@@ -1141,34 +1141,6 @@ it silently discards the reasoning written beside it.
 None of this is urgent while Elysium is a development system. All of
 it is a prerequisite for the first deployment somebody else operates.
 
-## Silo field detail: the identifier column is still missing
-
-**44. Show the join key alongside the fields.** Small, and the fixture
-already contains the case it exists to catch.
-
-Expanding a silo lists every field it backs with its physical table
-and column, and marks a name mismatch -- Customer.risk_score reads a
-column called score_val. What it does NOT show is the IDENTIFIER
-column, because the identifier is declared as id_field beside
-`storage` rather than inside `fields`, so the loop that builds this
-never sees it.
-
-THAT MISMATCH IS ARGUABLY THE MORE IMPORTANT ONE. Customer is keyed on
-customer_id in primary_sql and on `cust_ref` in risk_sql -- the fixture
-comments on this specifically. A wrong join key does not return wrong
-values; it returns NOTHING, or another object's row, which is harder
-to notice and worse when it happens.
-
-Shape: a row in the same field table, tagged as the identifier, so
-risk_sql would read "Customer / customer_id / customer_risk /
-cust_ref (identifier, renamed)". Putting it where someone is already
-scanning for mismatches beats a separate place to look, and
-"identifier" is just another tag beside "renamed".
-
-The alternative -- showing it on the silo row, since a join key is
-per-STORAGE rather than per-field -- is defensible and I think worse:
-it separates the two mismatches that matter for the same reason.
-
 ## Recorded with reservations, not endorsed
 
 These were asked for and are written down; the objection is recorded
