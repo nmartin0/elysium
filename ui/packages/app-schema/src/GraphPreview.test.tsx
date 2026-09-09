@@ -21,6 +21,13 @@ const ACTIONS = {
     display_name: 'Update name',
     description: 'Corrects a misspelling.',
     affected_object_types: ['Customer'],
+    // Parameters are an action's equivalent of fields, and the preview
+    // showed none -- so selecting an action told you LESS than
+    // selecting anything else.
+    parameters: {
+      customer_id: { type: 'object_reference', object_type: 'Customer', required: true },
+      new_name: { type: 'string' },
+    },
   },
 }
 
@@ -77,7 +84,9 @@ describe('GraphPreview -- an action type', () => {
     )
 
     expect(screen.getByText('Update name')).toBeInTheDocument()
-    expect(screen.getByText(/Customer/)).toBeInTheDocument()
+    // getAllByText: the parameter list also names Customer now, so a
+    // single query finds several and proves nothing about either.
+    expect(screen.getAllByText(/Customer/).length).toBeGreaterThan(0)
   })
 
   it('opens Action types, not Object types', () => {
@@ -109,5 +118,74 @@ describe('GraphPreview -- a link type', () => {
 
     expect(screen.getByText('CustomerTransactions')).toBeInTheDocument()
     expect(screen.getByText('1:M')).toBeInTheDocument()
+  })
+})
+
+describe('GraphPreview -- what each kind actually shows', () => {
+  it('lists an action\'s parameters', () => {
+    render(
+      <GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
+    )
+
+    expect(screen.getByText('Parameters')).toBeInTheDocument()
+    expect(screen.getByText(/New name/)).toBeInTheDocument()
+  })
+
+  it('marks a required parameter', () => {
+    // Which arguments an action DEMANDS is the first thing you need
+    // before running one.
+    render(
+      <GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
+    )
+
+    expect(screen.getByText('required')).toBeInTheDocument()
+  })
+
+  it('names an object-reference parameter by the type it refers to', () => {
+    /**
+     * "Customer" is useful where "object_reference" is not.
+     *
+     * Asserts the PARAMETER ROW, not that "Customer" appears somewhere
+     * -- a first version did the latter and passed with the fix
+     * removed, because "Affects: Customer" is on the same panel.
+     * Proven by a control.
+     */
+    render(
+      <GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
+    )
+
+    const row = screen.getByText(/Customer id/).closest('li')
+    expect(row?.textContent).toContain('Customer')
+    expect(row?.textContent).not.toContain('object_reference')
+  })
+
+  it('shows BOTH SIDES of a link type', () => {
+    /**
+     * A link type is one relationship declared as two fields on two
+     * types. Naming only the endpoints leaves out the thing you would
+     * actually write in a query -- which field on which type gets you
+     * across.
+     */
+    render(
+      <GraphPreview {...props} selection={{
+        kind: 'link', name: 'CT', source: 'Customer', target: 'Transaction', label: '1:M',
+      }} />,
+    )
+
+    expect(screen.getByText(/Customer\.transactions/)).toBeInTheDocument()
+  })
+
+  it('offers a way out of a link, which it did not have at all', () => {
+    // A link was the one thing you could select and not open.
+    const onOpenFull = vi.fn()
+    render(
+      <GraphPreview {...props} onOpenFull={onOpenFull} selection={{
+        kind: 'link', name: 'CT', source: 'Customer', target: 'Transaction', label: '1:M',
+      }} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Open in Link types/ }))
+
+    expect(onOpenFull).toHaveBeenCalledWith('CT', 'link')
   })
 })

@@ -479,10 +479,14 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               schema={schema}
               actionTypes={graphActionTypes}
               onOpenFull={(name, kind) => {
-                // An action opens Action types, not Object types.
-                // Routing by name alone sent every click to the object
-                // catalogue, where an action is never found.
-                go(kind === 'action' ? 'action-types' : 'object-types', name, 'push')
+                // Each kind opens its OWN catalogue. Routing by name
+                // alone once sent every click to Object types, where
+                // an action is never found -- and a link had no way
+                // out at all.
+                const view = kind === 'action' ? 'action-types'
+                  : kind === 'link' ? 'link-types'
+                    : 'object-types'
+                go(view, name, 'push')
               }}
             />
           )}

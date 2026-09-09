@@ -17,6 +17,8 @@ import { Button, Tag } from '@blueprintjs/core'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import { formatFieldName } from '@elysium/shell-api/format'
 
+import { groupLinkTypes } from './LinkTypes'
+
 export type GraphSelection =
   | { kind: 'object'; name: string }
   | { kind: 'action'; name: string }
@@ -25,25 +27,53 @@ export type GraphSelection =
 interface GraphPreviewProps {
   selection: GraphSelection
   schema: VisibleSchema
-  actionTypes: Record<string, { display_name?: string | null; description?: string | null
-                                affected_object_types?: string[] }>
-  onOpenFull: (name: string, kind: 'object' | 'action') => void
+  actionTypes: Record<string, {
+    display_name?: string | null
+    description?: string | null
+    affected_object_types?: string[]
+    parameters?: Record<string, {
+      type?: string
+      object_type?: string
+      required?: boolean
+      display_name?: string | null
+    }>
+  }>
+  onOpenFull: (name: string, kind: 'object' | 'action' | 'link') => void
 }
 
 export default function GraphPreview({
   selection, schema, actionTypes, onOpenFull,
 }: GraphPreviewProps) {
   if (selection.kind === 'link') {
+    // BOTH SIDES. A link type is one relationship declared as two
+    // fields on two types, and naming only the endpoints leaves out
+    // the thing you would actually write in a query -- which field on
+    // which type gets you across.
+    const sides = groupLinkTypes(schema).get(selection.name) ?? []
+
     return (
       <div className="graph-preview">
         <p className="graph-preview__kind">Link type</p>
         <h3>{selection.name}</h3>
-        {/* What a link JOINS is the thing the edge could not say. The
-            edge carries a cardinality; which end is which needs
-            words. */}
         <p className="graph-preview__joins">
           {selection.source} <Tag minimal>{selection.label}</Tag> {selection.target}
         </p>
+
+        <h4>Fields</h4>
+        <ul className="graph-preview__fields">
+          {sides.map((side) => (
+            <li key={`${side.objectType}.${side.apiName}`}>
+              {side.objectType}.{side.apiName}
+              <span className="graph-preview__type"> {side.cardinality} {side.target}</span>
+            </li>
+          ))}
+        </ul>
+
+        {/* Missing entirely before: a link was the one thing you could
+            select and not open. */}
+        <Button minimal small onClick={() => onOpenFull(selection.name, 'link')}>
+          Open in Link types
+        </Button>
       </div>
     )
   }
@@ -58,6 +88,24 @@ export default function GraphPreview({
         <p className="graph-preview__affects">
           Affects: {(action?.affected_object_types ?? []).join(', ') || '—'}
         </p>
+
+        {/* PARAMETERS are an action's equivalent of fields, and the
+            preview showed none -- so selecting an action told you less
+            than selecting anything else. */}
+        <h4>Parameters</h4>
+        <ul className="graph-preview__fields">
+          {Object.entries(action?.parameters ?? {}).map(([name, parameter]) => (
+            <li key={name}>
+              {formatFieldName(parameter.display_name ?? name)}
+              <span className="graph-preview__type">
+                {' '}{parameter.object_type ?? parameter.type}
+              </span>
+              {parameter.required && (
+                <Tag minimal intent="primary" className="graph-preview__visibility">required</Tag>
+              )}
+            </li>
+          ))}
+        </ul>
         <Button minimal small onClick={() => onOpenFull(selection.name, 'action')}>
           Open in Action types
         </Button>
