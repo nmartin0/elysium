@@ -31,7 +31,7 @@ const ACTIONS = {
   },
 }
 
-const props = { schema: SCHEMA, actionTypes: ACTIONS, onOpenFull: vi.fn() }
+const props = { schema: SCHEMA, actionTypes: ACTIONS, onOpenFull: vi.fn(), onClose: vi.fn() }
 
 describe('GraphPreview -- an object type', () => {
   it('shows what the node IS without leaving the graph', () => {
@@ -187,5 +187,30 @@ describe('GraphPreview -- what each kind actually shows', () => {
     fireEvent.click(screen.getByRole('button', { name: /Open in Link types/ }))
 
     expect(onOpenFull).toHaveBeenCalledWith('CT', 'link')
+  })
+})
+
+describe('GraphPreview -- closing it', () => {
+  it('can be closed from every kind', () => {
+    // It could be opened and not closed, leaving part of the graph
+    // covered with no way to get it back.
+    for (const selection of [
+      { kind: 'object' as const, name: 'Customer' },
+      { kind: 'action' as const, name: 'UpdateCustomerName' },
+      {
+        kind: 'link' as const, name: 'CT',
+        source: 'Customer', target: 'Transaction', label: '1:M',
+      },
+    ]) {
+      const onClose = vi.fn()
+      const { unmount } = render(
+        <GraphPreview {...props} onClose={onClose} selection={selection} />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close preview' }))
+
+      expect(onClose, `${selection.kind} should be closable`).toHaveBeenCalled()
+      unmount()
+    }
   })
 })

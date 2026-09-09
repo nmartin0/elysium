@@ -1342,28 +1342,40 @@ input[type="checkbox"],
 }
 
 /* --- The Overview graph and its preview ---------------------------
- * Side by side: the preview exists so that reading a node does not
- * cost you the graph.
+ *
+ * The preview OVERLAYS the chart rather than taking a column beside
+ * it.
+ *
+ * A two-column grid reserved the second column whether or not anything
+ * was in it, so the chart was sized to what was left and an empty
+ * white band sat down the right -- and when the panel did appear, the
+ * chart had already given up the space. The whole canvas belongs to
+ * the graph; the preview is a thing that appears ON it.
  */
 .schema-overview {
-  display: grid;
-  grid-template-columns: 1fr minmax(240px, 320px);
-  gap: var(--space-normal);
-  align-items: start;
-}
-
-/* Below the graph on a narrow viewport, where 320px of preview would
- * leave the picture unreadable. */
-@media (max-width: 1099px) {
-  .schema-overview {
-    grid-template-columns: 1fr;
-  }
+  position: relative;
 }
 
 .graph-preview {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(320px, 45%);
+  max-height: 100%;
+  overflow-y: auto;
   padding: var(--space-normal);
+  /* Opaque, not translucent: text over a moving force layout is
+   * unreadable, and the panel exists to be read. */
   background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
+  /* Above the chart's canvas. */
+  z-index: 1;
+}
+
+.graph-preview__close {
+  float: right;
+  margin: calc(-1 * var(--space-hair)) calc(-1 * var(--space-hair)) 0 0;
 }
 
 .graph-preview h3 {

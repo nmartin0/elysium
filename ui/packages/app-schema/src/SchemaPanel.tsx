@@ -476,6 +476,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           {selection && (
             <GraphPreview
               selection={selection}
+              onClose={() => setSelection(null)}
               schema={schema}
               actionTypes={graphActionTypes}
               onOpenFull={(name, kind) => {

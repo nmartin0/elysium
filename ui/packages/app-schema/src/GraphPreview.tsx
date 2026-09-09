@@ -25,6 +25,9 @@ export type GraphSelection =
   | { kind: 'link'; name: string; source: string; target: string; label: string }
 
 interface GraphPreviewProps {
+  /** Closing it. It could be opened and not closed, which left the
+   *  panel covering part of the graph with no way to get it back. */
+  onClose: () => void
   selection: GraphSelection
   schema: VisibleSchema
   actionTypes: Record<string, {
@@ -42,8 +45,22 @@ interface GraphPreviewProps {
 }
 
 export default function GraphPreview({
-  selection, schema, actionTypes, onOpenFull,
+  selection, schema, actionTypes, onOpenFull, onClose,
 }: GraphPreviewProps) {
+  // One control, rendered by every branch. A panel that opens and
+  // cannot be closed leaves part of the graph covered with no way to
+  // get it back.
+  const closeButton = (
+    <Button
+      minimal
+      small
+      icon="cross"
+      aria-label="Close preview"
+      className="graph-preview__close"
+      onClick={onClose}
+    />
+  )
+
   if (selection.kind === 'link') {
     // BOTH SIDES. A link type is one relationship declared as two
     // fields on two types, and naming only the endpoints leaves out
@@ -53,6 +70,7 @@ export default function GraphPreview({
 
     return (
       <div className="graph-preview">
+        {closeButton}
         <p className="graph-preview__kind">Link type</p>
         <h3>{selection.name}</h3>
         <p className="graph-preview__joins">
@@ -82,6 +100,7 @@ export default function GraphPreview({
     const action = actionTypes[selection.name]
     return (
       <div className="graph-preview">
+        {closeButton}
         <p className="graph-preview__kind">Action type</p>
         <h3>{action?.display_name ?? selection.name}</h3>
         {action?.description && <p>{action.description}</p>}
@@ -123,6 +142,7 @@ export default function GraphPreview({
 
   return (
     <div className="graph-preview">
+      {closeButton}
       <p className="graph-preview__kind">Object type</p>
       <h3>{type?.display_name ?? selection.name}</h3>
       {type?.description && <p>{type.description}</p>}

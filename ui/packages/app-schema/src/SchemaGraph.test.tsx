@@ -12,8 +12,19 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   }
 })
 
+// The mock exposes onSelect so the graph's own click handling can be
+// exercised. Without it the handler was untestable, and a control
+// that removed its node/edge guard passed.
+let chartOnSelect: ((name: string, dataType?: string, data?: unknown) => void) | null = null
+
 vi.mock('@elysium/shell-api/components/Chart', () => ({
-  default: ({ ariaLabel }: { ariaLabel: string }) => <div>{ariaLabel}</div>,
+  default: ({ ariaLabel, onSelect }: {
+    ariaLabel: string
+    onSelect?: (name: string, dataType?: string, data?: unknown) => void
+  }) => {
+    chartOnSelect = onSelect ?? null
+    return <div>{ariaLabel}</div>
+  },
 }))
 
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -287,5 +298,55 @@ describe('clicking a node opens what it actually is', () => {
     for (const node of model.nodes) {
       expect(['object', 'action']).toContain(node.kind)
     }
+  })
+})
+
+// NO test that the tooltip is off.
+//
+// The version I wrote captured the option through a re-mocked Chart
+// and asserted `captured === null || captured.tooltip?.show === false`
+// -- which passes when the mock does not apply, so it could not fail.
+// The tooltip is drawn by ECharts onto a canvas jsdom cannot inspect,
+// and building a seam purely for the assertion would be testing the
+// harness.
+
+describe('a click resolves to what was actually clicked', () => {
+  it('ignores a click that is neither a node nor an edge', async () => {
+    /**
+     * Anything not reported as an edge used to fall through to a node
+     * lookup, so a click part way along an edge resolved to whichever
+     * node the name happened to match. Circles are circles and edges
+     * are edges.
+     */
+    const { default: SchemaGraphComponent } = await import('./SchemaGraph')
+    const { render } = await import('@testing-library/react')
+    const onSelect = vi.fn()
+
+    render(<SchemaGraphComponent schema={TWO_TYPES} onSelect={onSelect} />)
+    chartOnSelect?.('Customer', undefined)
+
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('selects a node when ECharts says it is one', async () => {
+    const { default: SchemaGraphComponent } = await import('./SchemaGraph')
+    const { render } = await import('@testing-library/react')
+    const onSelect = vi.fn()
+
+    render(<SchemaGraphComponent schema={TWO_TYPES} onSelect={onSelect} />)
+    chartOnSelect?.('Customer', 'node')
+
+    expect(onSelect).toHaveBeenCalledWith({ kind: 'object', name: 'Customer' })
+  })
+
+  it('selects a link when the click is on an edge', async () => {
+    const { default: SchemaGraphComponent } = await import('./SchemaGraph')
+    const { render } = await import('@testing-library/react')
+    const onSelect = vi.fn()
+
+    render(<SchemaGraphComponent schema={TWO_TYPES} onSelect={onSelect} />)
+    chartOnSelect?.('', 'edge', { source: 'Customer', target: 'Transaction' })
+
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ kind: 'link' }))
   })
 })

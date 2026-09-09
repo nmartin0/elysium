@@ -232,7 +232,11 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
   }
 
   const option = {
-    tooltip: {},
+    // NO TOOLTIP. Labels are always on, so a tooltip repeats what is
+    // already legible while covering the nodes and edges around
+    // whatever it is describing -- it obstructed the chart to tell you
+    // nothing new.
+    tooltip: { show: false },
     series: [{
       type: 'graph',
       layout: 'force',
@@ -308,6 +312,12 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
           }
           return
         }
+        // A NODE ONLY WHEN ECHARTS SAYS SO. Anything not reported as
+        // a node used to fall through to this lookup, so a click part
+        // way along an edge resolved to whichever node the name
+        // happened to match -- circles are circles and edges are
+        // edges.
+        if (dataType !== 'node') return
         // The node's own kind, looked up rather than guessed from the
         // name -- an action and an object type could share one.
         const node = model.nodes.find((candidate) => candidate.name === name)
