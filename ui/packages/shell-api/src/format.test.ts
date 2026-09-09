@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatFieldName, formatValue, getDisplayTitle } from './format'
+import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from './format'
 
 describe('formatFieldName', () => {
   it('capitalizes a single-word field name', () => {
@@ -81,5 +81,51 @@ describe('getDisplayTitle', () => {
     const typeSchema = { title_field: 'name' }
     const fields = { name: null }
     expect(getDisplayTitle(typeSchema, fields, 'cust_001')).toBe('cust_001')
+  })
+})
+
+describe('formatTimestamp', () => {
+  const now = new Date('2026-09-09T12:00:00Z')
+
+  it('reads relatively within the day', () => {
+    // "3 hours ago" is what you want for something that happened
+    // during your shift.
+    expect(formatTimestamp('2026-09-09T09:00:00Z', now)).toBe('3 hours ago')
+    expect(formatTimestamp('2026-09-09T11:30:00Z', now)).toBe('30 minutes ago')
+    expect(formatTimestamp('2026-09-09T11:59:30Z', now)).toBe('just now')
+  })
+
+  it('switches to an absolute date past 24 hours', () => {
+    /**
+     * The platform's own rule: relative "up to 24 hours ago", then a
+     * short form with the day of the week. "47 days ago" is a number
+     * nobody can place.
+     */
+    const older = formatTimestamp('2026-07-22T13:00:00Z', now)
+
+    expect(older).not.toMatch(/ago/)
+    expect(older).toMatch(/2026/)
+  })
+
+  it('singularises', () => {
+    expect(formatTimestamp('2026-09-09T11:00:00Z', now)).toBe('1 hour ago')
+    expect(formatTimestamp('2026-09-09T11:59:00Z', now)).toBe('1 minute ago')
+  })
+
+  it('shows a FUTURE timestamp absolutely', () => {
+    /**
+     * Clock skew between a server and a browser makes this real. "in
+     * 3 seconds" reads as a bug rather than as skew, so a future time
+     * falls through to the absolute form.
+     */
+    const ahead = formatTimestamp('2026-09-09T12:00:30Z', now)
+
+    expect(ahead).not.toMatch(/ago|just now/)
+  })
+
+  it('passes an unparseable value through unchanged', () => {
+    // Better to show something odd than to render "Invalid Date",
+    // which tells the user nothing and hides what arrived.
+    expect(formatTimestamp('not a date', now)).toBe('not a date')
   })
 })

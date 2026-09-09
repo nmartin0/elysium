@@ -78,3 +78,48 @@ export function getDisplayTitle(
   }
   return id
 }
+
+/**
+ * A timestamp as a person reads it.
+ *
+ * Relative within 24 hours, short absolute after -- which is the
+ * convention the platform we model uses: "applications will only
+ * format in relative terms up to 24 hours ago. After this, it will
+ * render in Date and time (short) form with the day of the week".
+ *
+ * The hybrid is better than either alone. "3 hours ago" is what you
+ * want for something that happened during your shift; "Wed, 22 Jul
+ * 2026, 13:00" is what you want for anything older, because "47 days
+ * ago" is a number nobody can place.
+ *
+ * NOT FOR AUDIT DATA. An audit trail is read to answer "was this
+ * before or after X", and the same source is explicit that audit logs
+ * carry "precise timestamps for temporal analysis". History keeps its
+ * raw ISO; this is for human content.
+ */
+export function formatTimestamp(iso: string, now: Date = new Date()): string {
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime())) return iso
+
+  const seconds = Math.floor((now.getTime() - then.getTime()) / 1000)
+
+  // Future timestamps fall through to absolute. Clock skew between a
+  // server and a browser makes "in 3 seconds" a real thing to render,
+  // and it reads as a bug rather than as skew.
+  if (seconds >= 0 && seconds < 86400) {
+    if (seconds < 60) return 'just now'
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+    const hours = Math.floor(minutes / 60)
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  }
+
+  return then.toLocaleString(undefined, {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}

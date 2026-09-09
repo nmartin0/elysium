@@ -15,6 +15,7 @@ import { Button, Callout, TextArea } from '@blueprintjs/core'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { createObjectNote, getErrorMessage, getObjectNotes } from '@elysium/shell-api/api'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
+import { formatTimestamp } from '@elysium/shell-api/format'
 
 interface Note {
   id: string
@@ -67,8 +68,12 @@ export default function ObjectNotes({ objectType, objectId, onSessionExpired }: 
           {[...notes, ...added].map((note) => (
             <div key={note.id} className="object-notes__note">
               <p className="object-notes__text">{note.text}</p>
-              <p className="object-notes__meta">
-                {note.author} · {note.created_at}
+              {/* The full ISO stays in the title, so the exact moment
+                  is one hover away without six digits of microseconds
+                  on screen. Formatting is a DISPLAY choice; the data
+                  keeps its precision. */}
+              <p className="object-notes__meta" title={note.created_at}>
+                {note.author} · {formatTimestamp(note.created_at)}
               </p>
             </div>
           ))}
