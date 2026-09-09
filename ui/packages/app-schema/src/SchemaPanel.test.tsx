@@ -15,7 +15,7 @@ function renderPanel(ui: React.ReactElement) {
  *  is the useful default for a real user and means these tests have to
  *  navigate the way one does. */
 function openObjectTypes() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Object types' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Object types' }))
 }
 
 const CUSTOMER = {
@@ -304,7 +304,7 @@ describe('SchemaPanel -- retracing steps', () => {
   it('treats a tab click as a step worth retracing', () => {
     renderAt(['/schema?tab=object-types'])
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Link types' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Link types' }))
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
     expect(screen.getByPlaceholderText(/Filter object types/)).toBeInTheDocument()

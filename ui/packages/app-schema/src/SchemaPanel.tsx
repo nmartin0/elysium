@@ -22,7 +22,9 @@ import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/types'
 import ActionTypes from './ActionTypes'
 import FilterBox from '@elysium/shell-api/components/FilterBox'
-import Workspace from '@elysium/shell-api/components/Workspace'
+import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
+
+import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 
 import SchemaGraph from './SchemaGraph'
 import { useDeferredWrite } from '@elysium/shell-api/useDeferredValue'
@@ -233,6 +235,23 @@ interface SchemaPanelProps extends SubAppProps {
  * Worth recording because the first fix was aimed at the symptom the
  * log showed, and the log was pointing at something larger.
  */
+/**
+ * General to specific, top to bottom.
+ *
+ * Discover is where you arrive; Overview is the whole ontology at
+ * once; the three catalogues are progressively narrower slices of it.
+ * The graph is a SIBLING of the catalogues rather than nested in one,
+ * because it shows object types, action types AND links -- it is a
+ * view of the whole schema, not of any single catalogue.
+ */
+const SCHEMA_VIEWS: readonly ViewOption[] = [
+  { id: 'discover', label: 'Discover', icon: 'compass' },
+  { id: 'overview', label: 'Overview', icon: 'graph' },
+  { id: 'object-types', label: 'Object types', icon: 'cube' },
+  { id: 'link-types', label: 'Link types', icon: 'link' },
+  { id: 'action-types', label: 'Action types', icon: 'play' },
+]
+
 export default function SchemaPanel({ visibleSchema, username, onSessionExpired }: SchemaPanelProps) {
   // NAVIGATION STATE LIVES IN THE URL, not in component state.
   //
@@ -326,30 +345,39 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
        not down a column. Moving it into a config pane would turn
        perspectives into a list and lose the shape the tabs give it.
        The Workspace is here for the canvas contract. */
-    <Workspace>
-      {/* The filter sits ABOVE the tabs, not in a configuration pane.
-          A sidebar is for MORE THAN FIVE filters -- published guidance
-          puts the threshold there consistently -- and Schema has one.
-          A 288px column holding a single input is mostly empty grey,
-          and sidebar filters also cause a layout shift on every
-          change that a toolbar does not.
+    <Workspace
+      config={
+        <>
+          {/* The view selector ABOVE the filter, because it decides
+              what the filter applies to. Left to right the shell reads
+              general to specific -- the rail picks an app, this picks
+              a view, the canvas holds the thing -- and the same order
+              runs top to bottom within the pane.
 
-          Browse keeps its pane because it has four controls plus a
-          column picker, which is the other side of the same
-          threshold. */}
-      <div className="schema-panel__toolbar">
-        {/* The box shows `typedFilter`, which updates on every
-            keystroke; the URL follows once typing settles. Writing per
-            character meant a router navigation per character, and the
-            whole panel re-rendered on each one -- the box kept up
-            because it holds local state, but everything around it
-            lurched. */}
-        <FilterBox
-          value={typedFilter}
-          onChange={setTypedFilter}
-          placeholder={`Filter ${filterNoun}...`}
-        />
-      </div>
+              Schema now has FIVE views, which is why it earns a pane
+              where a single filter did not: the earlier note about
+              sidebars being for more than five filters was about
+              FILTERS, and this is navigation. */}
+          <ViewSelector
+            views={SCHEMA_VIEWS}
+            selected={selectedTab}
+            onSelect={(id) => go(id, '', 'push')}
+          />
+
+          {/* No filter on Overview: a graph is not a list, and a box
+              that filters nothing is a control that lies. */}
+          {selectedTab !== 'overview' && (
+            <WorkspaceFilter label="Filter" htmlFor="schema-filter">
+              <FilterBox
+                value={typedFilter}
+                onChange={setTypedFilter}
+                placeholder={`Filter ${filterNoun}...`}
+              />
+            </WorkspaceFilter>
+          )}
+        </>
+      }
+    >
       {/* navigate(-1), so this does EXACTLY what the browser's own back
           button does rather than approximating it. Two backs that
           disagree would be worse than one that is missing -- this
@@ -374,28 +402,11 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           /me/visible-action-types whether or not anyone opens that
           tab. A hidden panel doing network work is the same class of
           waste this panel was just fixed for. */}
-      <Tabs
-        id="schema-tabs"
-        selectedTabId={selectedTab}
-        onChange={(tabId) => {
-          // Clicking a tab directly clears its filter. Arriving here
-          // from Discover or a cross-reference does NOT, because that
-          // navigation sets the filter on purpose.
-          //
-          // Blueprint's onChange takes a MouseEvent, so it fires only
-          // on a real click -- a programmatic selectedTabId change
-          // never reaches this.
-          // A clicked tab starts fresh and PUSHES -- switching tabs is
-          // a step worth retracing.
-          go(String(tabId), '', 'push')
-        }}
-        renderActiveTabPanelOnly
-      >
-        <Tab
-          id="discover"
-          title="Discover"
-          panel={
-            <Discover
+      {/* The canvas holds ONE view. Tabs put the selector above the
+          content while Admin put it beside -- two grammars in one app,
+          so the mental model had to be rebuilt on arrival. */}
+      {selectedTab === 'discover' && (
+        <Discover
               schema={schema}
               username={username}
               version={favouriteVersion}
@@ -408,13 +419,9 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               }}
               onOpen={openObjectType}
             />
-          }
-        />
-        <Tab
-          id="object-types"
-          title="Object types"
-          panel={
-            <>
+      )}
+      {selectedTab === 'object-types' && (
+        <>
               {Object.keys(schema).length === 0 ? (
                 <Callout intent="none">
                   You do not have read access to any object type in this ontology.
@@ -433,44 +440,28 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 ))
               )}
             </>
-          }
-        />
-        {/* The graph sits beside Link types, not replacing it. A table
-            answers "what is the cardinality of this one relationship";
-            a graph answers "what is the shape of all of them". Neither
-            substitutes for the other. */}
-        <Tab
-          id="graph"
-          title="Graph"
-          panel={<SchemaGraph schema={schema} onSelectType={openObjectType} />}
-        />
-        <Tab
-          id="link-types"
-          title="Link types"
-          panel={
-            <>
+      )}
+      {selectedTab === 'overview' && (
+        <SchemaGraph schema={schema} onSelectType={openObjectType} />
+      )}
+      {selectedTab === 'link-types' && (
+        <>
               <LinkTypes
                 schema={schema}
                 filter={linkFilter}
                 onOpenObjectType={openObjectType}
               />
             </>
-          }
-        />
-        <Tab
-          id="action-types"
-          title="Action types"
-          panel={
-            <>
+      )}
+      {selectedTab === 'action-types' && (
+        <>
               <ActionTypes
                 onSessionExpired={onSessionExpired}
                 filter={actionFilter}
                 onOpenObjectType={openObjectType}
               />
             </>
-          }
-        />
-      </Tabs>
+      )}
     </Workspace>
   )
 }

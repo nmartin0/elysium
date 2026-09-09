@@ -14,6 +14,8 @@ import {
 import type { SubAppProps } from '@elysium/shell-api/types'
 import Workspace from '@elysium/shell-api/components/Workspace'
 
+import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
+
 import DeploymentConfig from './DeploymentConfig'
 import Silos from './Silos'
 
@@ -36,6 +38,12 @@ type AdminPanelProps = SubAppProps
 // non-admin landing here simply sees the real 403 from GET /users,
 // same as any other error -- no separate "am I an admin" check exists
 // or is needed client-side.
+const ADMIN_VIEWS: readonly ViewOption[] = [
+  { id: 'users', label: 'Users', icon: 'people' },
+  { id: 'deployment', label: 'Deployment', icon: 'cog' },
+  { id: 'silos', label: 'Silos', icon: 'database' },
+]
+
 export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
   const [users, setUsers] = useState<User[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -140,32 +148,11 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
               showed a form for a screen you were not looking at. The
               pane's contents have to swap with the selection -- that
               is the whole point of a secondary pane beside a rail. */}
-          <div className="workspace__filter">
-            <label>View</label>
-            <ButtonGroup vertical alignText="left" fill>
-              <Button
-                active={view === 'users'}
-                icon="people"
-                onClick={() => setView('users')}
-              >
-                Users
-              </Button>
-              <Button
-                active={view === 'deployment'}
-                icon="cog"
-                onClick={() => setView('deployment')}
-              >
-                Deployment
-              </Button>
-              <Button
-                active={view === 'silos'}
-                icon="database"
-                onClick={() => setView('silos')}
-              >
-                Silos
-              </Button>
-            </ButtonGroup>
-          </div>
+          <ViewSelector
+            views={ADMIN_VIEWS}
+            selected={view}
+            onSelect={setView}
+          />
 
           {view === 'users' && (
             <CreateUserForm
