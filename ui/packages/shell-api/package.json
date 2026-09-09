@@ -19,6 +19,7 @@
     "./tokens.css": "./src/tokens.css",
     "./types": "./src/types.ts",
     "./useDeferredValue": "./src/useDeferredValue.ts",
+    "./useFetchOnce": "./src/useFetchOnce.ts",
     "./useLatestRequestGuard": "./src/useLatestRequestGuard.ts"
   },
   "peerDependencies": {

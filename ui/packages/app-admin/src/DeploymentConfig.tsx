@@ -14,9 +14,9 @@
  * request disagreeing with itself.
  */
 
-import { useEffect, useState } from 'react'
 import { Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
-import { getDeploymentConfig, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { getDeploymentConfig } from '@elysium/shell-api/api'
+import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
 interface DeploymentConfigBody {
   llm_provider: string
@@ -36,24 +36,10 @@ interface DeploymentConfigBody {
 }
 
 export default function DeploymentConfig({ onSessionExpired }: { onSessionExpired: () => void }) {
-  const [config, setConfig] = useState<DeploymentConfigBody | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    getDeploymentConfig()
-      .then((body) => {
-        if (!cancelled) setConfig(body as DeploymentConfigBody)
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        if (handleIfSessionExpired(err, onSessionExpired)) return
-        setError(getErrorMessage(err))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [onSessionExpired])
+  const { data: config, error } = useFetchOnce<DeploymentConfigBody>(
+    () => getDeploymentConfig(),
+    onSessionExpired,
+  )
 
   if (error) return <Callout intent="danger">{error}</Callout>
   if (config === null) return <Spinner />

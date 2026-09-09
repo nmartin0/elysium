@@ -253,8 +253,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     <Workspace
       config={
         <>
-        <div className="workspace__filter">
-          <label htmlFor="object-type">Object type</label>
+        <WorkspaceFilter label="Object type" htmlFor="object-type">
           <select
             id="object-type"
             aria-label="Object type"
@@ -280,10 +279,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               </option>
             ))}
           </select>
-        </div>
+        </WorkspaceFilter>
 
-        <div className="workspace__filter">
-          <label htmlFor="object-search-text">Search</label>
+        <WorkspaceFilter label="Search" htmlFor="object-search-text">
           <input
             id="object-search-text"
             type="text"
@@ -291,11 +289,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
             onChange={(event) => setQueryText(event.target.value)}
             placeholder={`Search ${currentType}…`}
           />
-        </div>
+        </WorkspaceFilter>
 
         {sortableFields.length > 0 && (
-          <div className="workspace__filter">
-            <label htmlFor="object-search-sort">Sort by</label>
+          <WorkspaceFilter label="Sort by" htmlFor="object-search-sort">
             <HTMLSelect
               id="object-search-sort"
               aria-label="Sort by"
@@ -310,7 +307,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                 </Fragment>
               ))}
             </HTMLSelect>
-          </div>
+          </WorkspaceFilter>
         )}
 
         {/* Columns live with the other controls now, not in a
@@ -318,8 +315,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
             where configuration belongs, and it no longer has to hide
             to avoid pushing the results down the page. */}
         {selectedType && results.length > 0 && (
-          <div className="workspace__filter">
-            <label>Columns</label>
+          <WorkspaceFilter label="Columns">
             {Object.keys(results[0]?.fields ?? {}).map((field) => {
               const shown = visibleColumns(Object.keys(results[0]?.fields ?? {})).includes(field)
               return (
@@ -338,7 +334,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                 />
               )
             })}
-          </div>
+          </WorkspaceFilter>
         )}
         </>
       }

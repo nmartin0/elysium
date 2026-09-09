@@ -12,9 +12,10 @@
  * report.
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Button, Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
-import { getErrorMessage, getSilos, handleIfSessionExpired } from '@elysium/shell-api/api'
+import { getSilos } from '@elysium/shell-api/api'
+import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
 interface SiloBackedField {
   object_type: string
@@ -34,8 +35,11 @@ interface SiloStatus {
 }
 
 export default function Silos({ onSessionExpired }: { onSessionExpired: () => void }) {
-  const [silos, setSilos] = useState<SiloStatus[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { data: silos, error } = useFetchOnce<SiloStatus[]>(
+    () => getSilos(),
+    onSessionExpired,
+  )
+
   /**
    * Which silos are expanded, by name.
    *
@@ -52,22 +56,6 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
     if (!next.delete(name)) next.add(name)
     setExpanded(next)
   }
-
-  useEffect(() => {
-    let cancelled = false
-    getSilos()
-      .then((body) => {
-        if (!cancelled) setSilos(body as SiloStatus[])
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        if (handleIfSessionExpired(err, onSessionExpired)) return
-        setError(getErrorMessage(err))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [onSessionExpired])
 
   if (error) return <Callout intent="danger">{error}</Callout>
   if (silos === null) return <Spinner />
