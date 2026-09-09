@@ -13,13 +13,21 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
+import { Button, Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
 import { getErrorMessage, getSilos, handleIfSessionExpired } from '@elysium/shell-api/api'
+
+interface SiloBackedField {
+  object_type: string
+  field: string
+  column: string
+  table: string
+}
 
 interface SiloStatus {
   name: string
   adapter: string
   object_types: string[]
+  fields: SiloBackedField[]
   reachable: boolean
   failure: string | null
 }
@@ -27,6 +35,22 @@ interface SiloStatus {
 export default function Silos({ onSessionExpired }: { onSessionExpired: () => void }) {
   const [silos, setSilos] = useState<SiloStatus[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * Which silos are expanded, by name.
+   *
+   * GROUPING rather than colour carries the silo-to-field mapping.
+   * Current research puts the limit for distinguishing categories by
+   * colour at SIX, so a palette cannot serve a deployment with many
+   * silos -- adjacency can, at any number, and scrolling is a
+   * navigation problem rather than a perception one.
+   */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  function toggle(name: string) {
+    const next = new Set(expanded)
+    if (!next.delete(name)) next.add(name)
+    setExpanded(next)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -72,9 +96,19 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
           </tr>
         </thead>
         <tbody>
-          {silos.map((silo) => (
+          {silos.flatMap((silo) => [
             <tr key={silo.name}>
-              <td>{silo.name}</td>
+              <td>
+                <Button
+                  minimal
+                  small
+                  icon={expanded.has(silo.name) ? 'chevron-down' : 'chevron-right'}
+                  onClick={() => toggle(silo.name)}
+                  aria-expanded={expanded.has(silo.name)}
+                  aria-label={`${expanded.has(silo.name) ? 'Hide' : 'Show'} fields backed by ${silo.name}`}
+                />
+                {silo.name}
+              </td>
               <td><Tag minimal>{silo.adapter}</Tag></td>
               <td>
                 {silo.reachable ? (
@@ -87,8 +121,49 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                 )}
               </td>
               <td>{silo.object_types.join(', ') || '—'}</td>
-            </tr>
-          ))}
+            </tr>,
+            ...(expanded.has(silo.name) ? [
+              <tr key={`${silo.name}-fields`} className="silos__fields-row">
+                <td colSpan={4}>
+                  {silo.fields.length === 0 ? (
+                    <span className="silos__failure">
+                      No fields are backed by this silo.
+                    </span>
+                  ) : (
+                    <HTMLTable compact className="silos__fields">
+                      <thead>
+                        <tr>
+                          <th>Object type</th>
+                          <th>Field</th>
+                          <th>Table</th>
+                          <th>Column</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {silo.fields.map((field) => (
+                          <tr key={`${field.object_type}.${field.field}`}>
+                            <td>{field.object_type}</td>
+                            <td>{field.field}</td>
+                            <td>{field.table}</td>
+                            <td>
+                              {/* Marked when it differs from the field
+                                  name, because that is the case worth
+                                  noticing: Customer.risk_score reads a
+                                  column called score_val. */}
+                              {field.column}
+                              {field.column !== field.field && (
+                                <span className="silos__renamed"> (renamed)</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </HTMLTable>
+                  )}
+                </td>
+              </tr>,
+            ] : []),
+          ])}
         </tbody>
       </HTMLTable>
     </div>

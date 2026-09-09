@@ -2593,3 +2593,54 @@ def test_silos_route_credits_a_silo_that_only_backs_a_FIELD(client):
 # where one silo does both is entirely legal. But a test that cannot
 # fail is not a test, and adding a fixture silo purely to exercise it
 # would be shaping the fixture to the assertion.
+
+
+def test_silos_route_reports_the_physical_column_behind_a_field(client):
+    """The question this detail exists to answer.
+
+    Customer.risk_score reads a column called score_val, in a different
+    silo from the rest of Customer. When a query returns something
+    unexpected, "which column is this actually reading" is what you
+    need, and today it is answerable only by reading YAML.
+
+    The fixture mismatches the names DELIBERATELY, so this cannot pass
+    by the field name happening to equal the column name.
+    """
+    _admin_user(client, "silofields")
+
+    body = client.get("/api/silos").json()
+
+    risk = next(silo for silo in body if silo["name"] == "risk_sql")
+    risk_score = next(f for f in risk["fields"] if f["field"] == "risk_score")
+    assert risk_score["column"] == "score_val"
+    assert risk_score["object_type"] == "Customer"
+    assert risk_score["table"] == "customer_risk"
+
+
+def test_silos_route_puts_a_field_with_the_silo_that_actually_backs_it(client):
+    # Customer's other fields live in primary_sql; only risk_score is
+    # elsewhere. A version that assigned every field to its type's
+    # PRIMARY silo would look right for three fields out of four.
+    _admin_user(client, "silosplit")
+
+    body = client.get("/api/silos").json()
+
+    primary_fields = {f["field"] for f in next(
+        s for s in body if s["name"] == "primary_sql")["fields"]}
+    risk_fields = {f["field"] for f in next(
+        s for s in body if s["name"] == "risk_sql")["fields"]}
+
+    assert "name" in primary_fields
+    assert "risk_score" not in primary_fields
+    assert risk_fields == {"risk_score"}
+
+
+def test_silos_route_omits_link_fields(client):
+    # A link is a relationship, not a stored column -- listing it under
+    # a silo would imply a physical thing to look at that is not there.
+    _admin_user(client, "sololinks")
+
+    body = client.get("/api/silos").json()
+
+    all_fields = [f["field"] for silo in body for f in silo["fields"]]
+    assert "transactions" not in all_fields

@@ -134,7 +134,7 @@ from core.auth.auth_cookies import (
 from core.filters import as_equality_conditions, parse_filters
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
-from core.ontology.schema import sort_key
+from core.ontology.schema import get_field_column, sort_key
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 
@@ -581,10 +581,23 @@ def deployment_config_route(request: Request,
     }
 
 
+class SiloBackedField(BaseModel):
+    object_type: str
+    field: str
+    # The PHYSICAL column, which need not share the field's name --
+    # Customer.risk_score reads a column called score_val. When a query
+    # returns something unexpected, "which column is this actually
+    # reading" is the question, and today it is answerable only by
+    # reading YAML.
+    column: str
+    table: str
+
+
 class SiloStatusResponse(BaseModel):
     name: str
     adapter: str
     object_types: list[str]
+    fields: list[SiloBackedField]
     reachable: bool
     # The KIND of failure, never the message. See the route.
     failure: str | None = None
@@ -639,6 +652,34 @@ def silos_route(request: Request,
             if silo_name and object_type not in types_by_silo.setdefault(silo_name, []):
                 types_by_silo[silo_name].append(object_type)
 
+    # Which FIELDS each silo backs, and the physical column behind
+    # each. Grouping fields under their silo is the encoding that
+    # scales: current research puts the limit for distinguishing
+    # categories by colour at SIX, so a palette cannot carry this for a
+    # deployment with many silos. Adjacency can, at any number.
+    fields_by_silo: dict[str, list[dict]] = {}
+    for object_type, type_def in config.schema.items():
+        primary = (type_def.get("storage") or {})
+        extra = (type_def.get("additional_storage") or {})
+        for field_name, field_info in (type_def.get("fields") or {}).items():
+            if field_info.get("type") == "link":
+                continue
+            storage_key = field_info.get("storage")
+            if storage_key and storage_key in extra:
+                silo_name = extra[storage_key].get("silo")
+                table = extra[storage_key].get("table", "")
+            else:
+                silo_name = primary.get("silo")
+                table = primary.get("table", "")
+            if not silo_name:
+                continue
+            fields_by_silo.setdefault(silo_name, []).append({
+                "object_type": object_type,
+                "field": field_name,
+                "column": get_field_column(field_info, field_name),
+                "table": table,
+            })
+
     statuses = []
     for silo_name in sorted(config.silo_configs):
         adapter = (getattr(mediator, "adapters", {}) or {}).get(silo_name)
@@ -654,6 +695,10 @@ def silos_route(request: Request,
             "name": silo_name,
             "adapter": config.silo_configs[silo_name].get("adapter", "unknown"),
             "object_types": sorted(types_by_silo.get(silo_name, [])),
+            "fields": sorted(
+                fields_by_silo.get(silo_name, []),
+                key=lambda f: (f["object_type"], f["field"]),
+            ),
             "reachable": failure is None,
             "failure": failure,
         })
