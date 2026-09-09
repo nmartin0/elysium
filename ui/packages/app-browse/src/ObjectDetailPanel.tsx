@@ -167,9 +167,17 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 
     return (
       <span className="object-detail__links">
+        {/* A REAL space after the tag, not a CSS margin.
+        
+            Margin separates it on screen and leaves the DOM text as
+            "2txn_001" -- what a screen reader announces and what a
+            copy-paste produces. This exact mistake was made and fixed
+            earlier on the silo identifier tag, and reintroduced here
+            hours later, which is why it is now a test rather than a
+            habit. */}
         <Tag minimal className="object-detail__link-count">
           {linkedIds.length}
-        </Tag>
+        </Tag>{' '}
         {shown.map((linkedId, index) => (
           <span key={String(linkedId)}>
             {index > 0 && ', '}

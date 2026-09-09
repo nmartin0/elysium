@@ -424,3 +424,42 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
       .toHaveAttribute('href', '/objects/Transaction/t1')
   })
 })
+
+describe('the link count reads as separate from the links', () => {
+  it('puts a real space between the count and the first id', async () => {
+    /**
+     * Found in a paste of the real screen: "2txn_001". A CSS margin
+     * separates them visually and leaves the DOM text run together --
+     * which is what a screen reader announces and what a copy-paste
+     * produces.
+     *
+     * The SAME mistake was made on the silo identifier tag earlier and
+     * fixed there; it came back here hours later. A convention that
+     * lives only in a fixed commit is one that gets unfixed.
+     */
+    mockedGetObjectDetail.mockResolvedValue({
+      id: 'cust_001',
+      fields: { name: 'Ada', transactions: ['t1', 't2'] },
+    })
+
+    renderPanel('Customer', 'cust_001', {
+      visibleSchema: {
+        Customer: {
+          title_field: 'name',
+          fields: {
+            name: { type: 'data' },
+            transactions: { type: 'link', target: 'Transaction', link_type: 'CT' },
+          },
+        },
+        Transaction: { fields: { amount: { type: 'data' } } },
+      },
+    })
+
+    // The CONTAINER, not the tag's own span -- closest('span') finds
+    // the tag itself, whose text is just the count.
+    await screen.findByText('2')
+    const cell = document.querySelector('.object-detail__links')
+    expect(cell?.textContent).not.toMatch(/2t1/)
+    expect(cell?.textContent).toMatch(/2 t1/)
+  })
+})
