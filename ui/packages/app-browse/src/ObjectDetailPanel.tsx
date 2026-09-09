@@ -1,4 +1,4 @@
-import { Button, Callout } from '@blueprintjs/core'
+import { Button, Callout, Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -36,6 +36,16 @@ interface ObjectDetailPanelProps extends SubAppProps {
 // specific screen is what justified adding real routing at all.
 // Stage 3 adds direct action invocation from this same page -- see
 // ActionForm.jsx's own docstring.
+/**
+ * How many linked ids to render in one cell.
+ *
+ * Ten, because the list is an ENTRY POINT rather than a substitute for
+ * Browse -- someone needing all 40,000 transactions searches that
+ * type, and someone glancing at a customer needs the count and a few
+ * examples. The count above is exact regardless.
+ */
+const MAX_LINKS_SHOWN = 10
+
 export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: ObjectDetailPanelProps) {
   // useParams() itself types every param as string | undefined
   // regardless of the generic passed -- react-router-dom's own type
@@ -140,14 +150,37 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
     const linkedIds = Array.isArray(value) ? value : [value]
     if (linkedIds.length === 0) return formatValue(null)
 
+    /**
+     * The COUNT first, then a bounded sample.
+     *
+     * "47 transactions" is the operational question -- someone
+     * handling a call needs the shape of the relationships before they
+     * need any single id. A bare list made you count them yourself,
+     * and only if there were few enough to count.
+     *
+     * And it has to be bounded: a customer with 40,000 transactions
+     * put 40,000 links in one cell, which is unreadable and slow to
+     * render. The rest are reachable by searching that type -- the
+     * link list is an entry point, not a substitute for Browse.
+     */
+    const shown = linkedIds.slice(0, MAX_LINKS_SHOWN)
+
     return (
       <span className="object-detail__links">
-        {linkedIds.map((linkedId, index) => (
+        <Tag minimal className="object-detail__link-count">
+          {linkedIds.length}
+        </Tag>
+        {shown.map((linkedId, index) => (
           <span key={String(linkedId)}>
             {index > 0 && ', '}
             <Link to={`/objects/${targetType}/${encodeURIComponent(String(linkedId))}`}>{String(linkedId)}</Link>
           </span>
         ))}
+        {linkedIds.length > shown.length && (
+          <span className="object-detail__link-more">
+            {' '}and {linkedIds.length - shown.length} more
+          </span>
+        )}
       </span>
     )
   }

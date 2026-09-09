@@ -348,3 +348,79 @@ describe('ObjectDetailPanel -- the real race-condition guard across navigation',
     expect(screen.queryByText('First Object (stale)')).not.toBeInTheDocument()
   })
 })
+
+describe('ObjectDetailPanel -- how many things are linked', () => {
+  function detailWith(ids: string[]) {
+    return {
+      id: 'cust_001',
+      fields: { name: 'Ada', transactions: ids },
+    }
+  }
+
+  const SCHEMA: VisibleSchema = {
+    Customer: {
+      title_field: 'name',
+      fields: {
+        name: { type: 'data' },
+        transactions: {
+          type: 'link', target: 'Transaction',
+          link_type: 'CustomerTransactions', cardinality: 'one_to_many',
+        },
+      },
+    },
+    Transaction: { fields: { amount: { type: 'data' } } },
+  }
+
+  it('leads with the count', async () => {
+    /**
+     * "47 transactions" is the operational question -- someone
+     * handling a call needs the shape of the relationships before any
+     * single id. A bare list made you count them yourself, and only if
+     * there were few enough to count.
+     */
+    mockedGetObjectDetail.mockResolvedValue(detailWith(['t1', 't2', 't3']))
+
+    renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
+
+    expect(await screen.findByText('3')).toBeInTheDocument()
+  })
+
+  it('bounds the list and says how many were left out', async () => {
+    /**
+     * A customer with 40,000 transactions put 40,000 links in one
+     * cell: unreadable, and slow to render. The rest are reachable by
+     * searching that type -- this list is an entry point, not a
+     * substitute for Browse.
+     */
+    mockedGetObjectDetail.mockResolvedValue(
+      detailWith(Array.from({ length: 25 }, (_, i) => `t${i}`)),
+    )
+
+    renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
+
+    expect(await screen.findByText('25')).toBeInTheDocument()
+    expect(screen.getByText(/and 15 more/)).toBeInTheDocument()
+    expect(screen.queryByText('t20')).not.toBeInTheDocument()
+  })
+
+  it('counts exactly even when it shows few', async () => {
+    // The cap is on RENDERING. A count that capped too would be a
+    // number that quietly lies once a customer gets busy.
+    mockedGetObjectDetail.mockResolvedValue(
+      detailWith(Array.from({ length: 40000 }, (_, i) => `t${i}`)),
+    )
+
+    renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
+
+    expect(await screen.findByText('40000')).toBeInTheDocument()
+  })
+
+  it('still links what it shows', async () => {
+    mockedGetObjectDetail.mockResolvedValue(detailWith(['t1']))
+
+    renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
+
+    expect((await screen.findByText('t1')).closest('a'))
+      .toHaveAttribute('href', '/objects/Transaction/t1')
+  })
+})

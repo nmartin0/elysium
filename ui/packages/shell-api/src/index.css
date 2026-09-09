@@ -1235,3 +1235,14 @@ input[type="checkbox"],
   flex-direction: column;
   gap: var(--space-hair);
 }
+
+/* The count leads the list, because "how many" is the question asked
+ * before "which ones". */
+.object-detail__link-count {
+  margin-right: var(--space-hair);
+}
+
+.object-detail__link-more {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
