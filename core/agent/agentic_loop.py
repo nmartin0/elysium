@@ -80,6 +80,7 @@ from core.llm.interface import LLMAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
+from core.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
@@ -310,21 +311,26 @@ class AgentLoop:
     # records its own, and a proposed action stops the loop instead.
 
     def _step_search_object(self, step: dict, user_record: UserRecord,
-                            visible_schema: dict, gathered: list[dict]) -> Any:
+                            visible_schema: dict, gathered: list[dict],
+                            context: RequestContext | None = None) -> Any:
         return self.mediator.search_object(
             user_record, step["object_type"],
             as_equality_conditions(step["filter"]),
             visible_schema=visible_schema,
+            context=context,
         )
 
     def _step_get_field(self, step: dict, user_record: UserRecord,
-                        visible_schema: dict, gathered: list[dict]) -> Any:
+                        visible_schema: dict, gathered: list[dict],
+                        context: RequestContext | None = None) -> Any:
         return self.mediator.get_field(
-            user_record, step["object_type"], step["object_id"], step["field_name"]
+            user_record, step["object_type"], step["object_id"], step["field_name"],
+            context=context,
         )
 
     def _step_aggregate_object(self, step: dict, user_record: UserRecord,
-                               visible_schema: dict, gathered: list[dict]) -> Any:
+                               visible_schema: dict, gathered: list[dict],
+                               context: RequestContext | None = None) -> Any:
         return self.mediator.aggregate_by_field(
             user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             group_by=step.get("group_by"),
@@ -333,14 +339,17 @@ class AgentLoop:
         )
 
     def _step_search_around(self, step: dict, user_record: UserRecord,
-                            visible_schema: dict, gathered: list[dict]) -> Any:
+                            visible_schema: dict, gathered: list[dict],
+                            context: RequestContext | None = None) -> Any:
         return self.mediator.search_around(
             user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             step["link_field"],
+            context=context,
         )
 
     def _step_get_object(self, step: dict, user_record: UserRecord,
-                         visible_schema: dict, gathered: list[dict]) -> Any:
+                         visible_schema: dict, gathered: list[dict],
+                         context: RequestContext | None = None) -> Any:
         """Fans ONE step out into one gathered entry per field.
 
         Recorded as get_field entries so everything downstream --
@@ -358,7 +367,8 @@ class AgentLoop:
         return STEP_HANDLED
 
     def _step_use_tool(self, step: dict, user_record: UserRecord,
-                       visible_schema: dict, gathered: list[dict]) -> Any:
+                       visible_schema: dict, gathered: list[dict],
+                       context: RequestContext | None = None) -> Any:
         tool = self._tools_by_name.get(step["tool_name"])
         tool_name = step["tool_name"]
         if tool is None:
@@ -381,7 +391,8 @@ class AgentLoop:
             return tool.run(**call_args)
 
     def _step_propose_action(self, step: dict, user_record: UserRecord,
-                             visible_schema: dict, gathered: list[dict]) -> Any:
+                             visible_schema: dict, gathered: list[dict],
+                             context: RequestContext | None = None) -> Any:
         if self.write_mediator is None:
             raise ValueError("Writes are not enabled for this deployment")
         pending = self.write_mediator.propose_action(
@@ -409,7 +420,8 @@ class AgentLoop:
         }
 
     def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
-                       gathered: list[dict], consecutive_invalid: int, consecutive_business_rule: int
+                       gathered: list[dict], consecutive_invalid: int, consecutive_business_rule: int,
+                       context: RequestContext | None = None
                        ) -> tuple[int, int, bool, PendingWrite | None]:
         """Runs one step, counting mistakes and deciding whether to stop.
 
@@ -423,7 +435,7 @@ class AgentLoop:
             # model produced something outside the schema entirely.
             return consecutive_invalid, consecutive_business_rule, True, None
         try:
-            result = handler(step, user_record, visible_schema, gathered)
+            result = handler(step, user_record, visible_schema, gathered, context)
             if isinstance(result, _ProposalPending):
                 return 0, 0, True, result.pending
             if result is not STEP_HANDLED:
@@ -475,7 +487,8 @@ class AgentLoop:
             return new_count, consecutive_business_rule, should_stop, None
 
     def run(self, user_record: UserRecord, query_text: str,
-            cancel_event: threading.Event | None = None) -> AgentLoopResult:
+            cancel_event: threading.Event | None = None,
+            context: RequestContext | None = None) -> AgentLoopResult:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # a proposed write/cancellation/max_hops -- whichever comes
@@ -555,7 +568,8 @@ class AgentLoop:
                         seen_signatures.add(("get_field", step["object_type"], step["object_id"], field_name))
 
             consecutive_invalid, consecutive_business_rule, should_stop, pending_write = self._execute_step(
-                step, user_record, visible_schema, gathered, consecutive_invalid, consecutive_business_rule
+                step, user_record, visible_schema, gathered, consecutive_invalid,
+                consecutive_business_rule, context
             )
             if pending_write is not None:
                 return AgentLoopResult(gathered=gathered, pending_write=pending_write)

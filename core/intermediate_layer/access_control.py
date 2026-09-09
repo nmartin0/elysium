@@ -36,10 +36,12 @@ Used by: core/ontology/mediator.py (every read), core/ontology/
 """
 
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.request_context import RequestContext
 
 
 def check_access(mediator, user_record: UserRecord, roles: dict,
-                  object_type: str, object_id, action: str) -> bool:
+                  object_type: str, object_id, action: str,
+                  context: RequestContext | None = None) -> bool:
     mac_allowed = (
         user_record.security_value is not None
         and mediator._security_allowed(object_type, object_id, user_record.security_value)
@@ -59,6 +61,12 @@ def check_access(mediator, user_record: UserRecord, roles: dict,
         if mediator._get_security_value(object_type, object_id) is None:
             mediator.audit_log.log_security_resolution_failed(user_record.user_id, object_type, object_id)
 
-    mediator.audit_log.log_access(user_record.user_id, object_type, object_id, action, mac_allowed, rbac_allowed)
+    # None is HONEST rather than a gap: a read outside a tracked
+    # request -- a login check, a startup validation -- belongs to no
+    # request, and inventing an id would tie the entry to one that
+    # never existed.
+    mediator.audit_log.log_access(user_record.user_id, object_type, object_id, action,
+                                   mac_allowed, rbac_allowed,
+                                   request_id=context.request_id if context else None)
 
     return mac_allowed and rbac_allowed

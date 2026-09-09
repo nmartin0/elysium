@@ -137,6 +137,7 @@ from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.schema import get_field_column, sort_key
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
+from core.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
@@ -1499,7 +1500,18 @@ async def query(body: QueryRequest, request: Request,
     cancel_event = threading.Event()
     watcher_task = asyncio.create_task(_watch_for_disconnect(request, cancel_event))
     try:
-        result = await event_loop.run_in_executor(executor, loop.run, current_user, body.query, cancel_event)
+        # ONE context per query, created here and threaded down. Every
+        # access decision the agent makes while serving this request
+        # carries the id, which is what lets a user be shown what was
+        # read on their behalf.
+        #
+        # Created at the ROUTE rather than inside the loop: the request
+        # is the unit of work, and the loop is one thing that happens
+        # during it.
+        request_context = RequestContext.new()
+        result = await event_loop.run_in_executor(
+            executor, loop.run, current_user, body.query, cancel_event, request_context,
+        )
     finally:
         cancel_event.set()
         watcher_task.cancel()

@@ -125,6 +125,7 @@ from core.ontology.schema import (
     is_searchable_field,
 )
 from core.ontology.write_log import WriteLogReader
+from core.request_context import RequestContext
 
 _AGGREGATES: dict[str, Callable[[list], Any]] = {
     "count": len,
@@ -812,7 +813,8 @@ class DataMediator:
 
     def search_object(self, user_record: UserRecord, object_type: str,
                        conditions: "list[FieldFilter] | None" = None,
-                       visible_schema: dict | None = None) -> list:
+                       visible_schema: dict | None = None,
+                      context: RequestContext | None = None) -> list:
         """IDs the caller may see, matching every condition.
 
         TAKES CONDITIONS, not a {field: value} dict. The dict could
@@ -905,7 +907,7 @@ class DataMediator:
 
         return [
             candidate_id for candidate_id in candidate_ids
-            if check_access(self, user_record, self.roles, object_type, candidate_id, action)
+            if check_access(self, user_record, self.roles, object_type, candidate_id, action, context)
         ]
 
     def free_text_searchable_fields(self, user_record: UserRecord, object_type: str,
@@ -938,7 +940,8 @@ class DataMediator:
 
     def search_object_free_text(self, user_record: UserRecord, object_type: str, query_text: str,
                                  visible_schema: dict | None = None,
-                                 conditions: list | None = None) -> list:
+                                 conditions: list | None = None,
+                                context: RequestContext | None = None) -> list:
         """Free-text search, optionally narrowed by structured filters.
 
         TWO CONTEXTS, COMBINED, which is how every search engine that
@@ -1045,7 +1048,7 @@ class DataMediator:
         self._prefetch_security_values(object_type, candidate_ids)
         return [
             candidate_id for candidate_id in candidate_ids
-            if check_access(self, user_record, self.roles, object_type, candidate_id, action)
+            if check_access(self, user_record, self.roles, object_type, candidate_id, action, context)
         ]
 
     def _declared_type(self, object_type: str, field_name: str) -> str | None:
@@ -1265,7 +1268,8 @@ class DataMediator:
         return list(result_by_str.values())
 
     def search_around(self, user_record: UserRecord, object_type: str, conditions: list,
-                       link_field: str) -> list:
+                       link_field: str,
+                      context: RequestContext | None = None) -> list:
         """Follows a link from every object matching criteria, returning
         the ids on the far side that the caller can also see.
 
@@ -1331,12 +1335,13 @@ class DataMediator:
             if target_id in seen:
                 continue
             seen.add(target_id)
-            if check_access(self, user_record, self.roles, target_type, target_id, action):
+            if check_access(self, user_record, self.roles, target_type, target_id, action, context):
                 allowed.append(target_id)
         return allowed
 
     def edit_history(self, user_record: UserRecord, object_type: str, object_id: Any,
-                      limit: int | None = None, offset: int = 0) -> tuple[list[dict], int]:
+                      limit: int | None = None, offset: int = 0,
+                     context: RequestContext | None = None) -> tuple[list[dict], int]:
         """Every applied write to one object, newest first, if the
         caller may read that object.
 
@@ -1364,7 +1369,7 @@ class DataMediator:
         if self.write_log is None:
             return [], 0
         if not check_access(self, user_record, self.roles, object_type, object_id,
-                            f"read:{object_type}"):
+                            f"read:{object_type}", context):
             return [], 0
 
         readable = {
@@ -1500,7 +1505,8 @@ class DataMediator:
             }
         return by_id
 
-    def get_field(self, user_record: UserRecord, object_type: str, object_id: Any, field_name: str):
+    def get_field(self, user_record: UserRecord, object_type: str, object_id: Any, field_name: str,
+                   context: RequestContext | None = None):
         # NEVER raises for "field/type doesn't exist" or "not authorized"
         # -- both return None.
         if object_type not in self.schema:
@@ -1511,7 +1517,7 @@ class DataMediator:
             return None
 
         action = f"read:{object_type}.{field_name}"
-        access_allowed = check_access(self, user_record, self.roles, object_type, object_id, action)
+        access_allowed = check_access(self, user_record, self.roles, object_type, object_id, action, context)
 
         type_schema = self._type_schema(object_type)
         field_exists = field_name in type_schema["fields"]

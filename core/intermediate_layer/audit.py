@@ -124,7 +124,8 @@ class AuditLog:
             f.write(json.dumps(entry) + "\n")
 
     def log_access(self, user_id: str, object_type: str, object_id, action: str,
-                    mac_allowed: bool | None, rbac_allowed: bool) -> None:
+                    mac_allowed: bool | None, rbac_allowed: bool,
+                    request_id: str | None = None) -> None:
         # mac_allowed is bool | None -- None means the MAC check never ran
         # (short-circuited by an earlier RBAC failure), NOT that it ran and
         # failed. Logging a fabricated False for a check that never
@@ -138,6 +139,10 @@ class AuditLog:
             "action": action,
             "mac_allowed": mac_allowed,
             "rbac_allowed": rbac_allowed,
+            # Absent when the read belongs to no tracked request. The
+            # key is written either way so a reader can distinguish
+            # "no request" from "an older log format".
+            "request_id": request_id,
             "allowed": bool(mac_allowed) and rbac_allowed,
         })
 

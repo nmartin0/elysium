@@ -154,6 +154,11 @@ layers = [
     # expression and the TYPES of its values, and knows nothing about
     # schemas, callers or storage.
     "filters",
+    # request_context sits at the BOTTOM: it imports nothing but the
+    # standard library, and everything from the mediator up threads it.
+    # A leaf with no dependencies can be depended on by any layer
+    # without creating a cycle.
+    "request_context",
     # The artifact store, also a leaf. It persists and scopes saved
     # things -- searches, selections, pending writes -- and knows
     # nothing about what is inside one: `body` is opaque JSON.
