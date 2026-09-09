@@ -1096,6 +1096,51 @@ the authorization path -- not because it would often be wrong, but
 because the security argument is "one deterministic point of
 enforcement", and that stops being true.
 
+## Network exposure, before this reaches a client's infrastructure
+
+**43. Elysium is behind 127.0.0.1 for CONVENIENCE, not by design.**
+
+The systemd unit binds localhost and says why -- no TLS of its own,
+session cookies assuming a trusted transport -- but that is a
+development posture written into a production artifact. It has to be
+resolved before anyone runs this on their own infrastructure, and the
+comment in the unit is not the resolution.
+
+**WHAT IS ALREADY RIGHT, checked rather than assumed.** The session
+cookie is httponly and SameSite=Strict, and there is a _cookie_secure()
+that DEFAULTS TO TRUE with only an explicit case-sensitive "false"
+opting out. Its reasoning is worth preserving: a Secure cookie that
+never gets stored locally is a loud, immediate failure the first time
+anyone logs in, where a forgotten variable in production would be
+silent and much worse. That is the right way round.
+
+**What is still open:**
+
+TLS TERMINATION -- reverse proxy or native. A proxy is the ordinary
+answer and it is what the unit assumes, but "assumes" is doing the
+work of a decision nobody has made. If it is a proxy, that becomes a
+deployment requirement rather than a suggestion, and the unit should
+say so where an operator will read it.
+
+TRUSTED PROXY HEADERS. Behind a proxy the application sees the
+proxy's address, not the client's, so anything logging or
+rate-limiting by IP is measuring the wrong thing. X-Forwarded-For must
+be read AND trusted only from known proxies -- an application that
+believes the header unconditionally lets any client claim any address,
+which is worse than not reading it at all.
+
+HSTS, and whether Elysium sets it or the proxy does. Two places
+setting it is one that can disagree.
+
+BINDING. The unit's 127.0.0.1 is right for a proxied deployment and
+wrong for a containerised one, where the container boundary IS the
+isolation and the process must bind 0.0.0.0. That should be a
+documented variable rather than a line someone edits, because editing
+it silently discards the reasoning written beside it.
+
+None of this is urgent while Elysium is a development system. All of
+it is a prerequisite for the first deployment somebody else operates.
+
 ## Recorded with reservations, not endorsed
 
 These were asked for and are written down; the objection is recorded
