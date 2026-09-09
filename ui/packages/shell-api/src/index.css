@@ -1284,3 +1284,39 @@ input[type="checkbox"],
   color: var(--text-secondary);
   font-style: italic;
 }
+
+/* --- Notes on an object -------------------------------------------
+ * Before history: what people SAID is more often what someone came
+ * for than what changed.
+ */
+.object-detail__notes {
+  margin-top: var(--space-section);
+}
+
+.object-detail__notes h3 {
+  margin: 0 0 var(--space-tight);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.object-notes__note {
+  padding: var(--space-tight) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.object-notes__text {
+  margin: 0;
+  /* Preserves the line breaks someone typed. A note is prose, and
+   * collapsing its paragraphs changes what it says. */
+  white-space: pre-wrap;
+}
+
+.object-notes__meta,
+.object-notes__empty {
+  margin: var(--space-hair) 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}

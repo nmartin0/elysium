@@ -88,6 +88,7 @@ from fastapi import FastAPI, Request
 from api.csrf_middleware import csrf_protect
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.agent.agentic_loop import AgentLoop
+from core.artifact_store import ArtifactStore
 from core.auth.credential_store import CredentialStore
 from core.auth.database import connection
 from core.auth.login_attempt_tracker import LoginAttemptTracker
@@ -207,6 +208,17 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # should use the shared store instances instead of re-deriving this
     # path and calling a free function on every single request.
     app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
+
+    # The artifact store, wired here for the first time -- it has
+    # existed since the Object Explorer work and only its own tests
+    # ever constructed one.
+    #
+    # A SEPARATE database from credentials, deliberately. Artifacts are
+    # user content with a retention story of their own; credentials are
+    # the thing that must survive when everything else is discarded,
+    # and mixing them means a restore or a purge cannot treat them
+    # differently.
+    app.state.artifact_store = ArtifactStore(runtime_paths.data_dir / "artifacts.db")
     # A real, explicit schema-creation step, run here, once, before ANY
     # internal store below is constructed -- a real, necessary addition,
     # not previously needed: every store here used to lazily create its

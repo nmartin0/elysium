@@ -447,6 +447,32 @@ export async function aggregateObjects(
   return response.json()
 }
 
+export async function getObjectNotes(
+  objectType: string,
+  objectId: string,
+): Promise<unknown> {
+  const response = await apiFetchOrThrow(
+    `/objects/${objectType}/${encodeURIComponent(objectId)}/notes`,
+  )
+  return response.json()
+}
+
+export async function createObjectNote(
+  objectType: string,
+  objectId: string,
+  text: string,
+): Promise<unknown> {
+  const response = await apiFetchOrThrow(
+    `/objects/${objectType}/${encodeURIComponent(objectId)}/notes`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    },
+  )
+  return response.json()
+}
+
 export async function getObjectHistory(
   objectType: string,
   objectId: string,

@@ -2712,3 +2712,70 @@ def test_silos_route_sorts_the_identifier_first_within_a_type(client):
     for object_type in {f["object_type"] for f in primary["fields"]}:
         rows = [f for f in primary["fields"] if f["object_type"] == object_type]
         assert rows[0]["is_identifier"], f"{object_type} does not lead with its key"
+
+
+def test_a_note_can_be_written_and_read_back(client):
+    _filter_user(client, "notewriter")
+
+    created = _post(client, "/api/objects/Customer/cust_001/notes",
+                    {"text": "Fee waived after the March flood."})
+    assert created.status_code == 201
+
+    listed = client.get("/api/objects/Customer/cust_001/notes").json()
+    assert [n["text"] for n in listed] == ["Fee waived after the March flood."]
+    assert listed[0]["author"] == "notewriter"
+
+
+def test_notes_are_scoped_to_one_object(client):
+    # The kind encodes the object, so "notes on this customer" is an
+    # indexed lookup rather than a scan of every note in the
+    # deployment.
+    _filter_user(client, "notescope")
+    _post(client, "/api/objects/Customer/cust_001/notes", {"text": "About one"})
+
+    other = client.get("/api/objects/Customer/cust_002/notes").json()
+
+    assert other == []
+
+
+def test_a_note_is_visible_to_the_authors_ROLE(client):
+    """Shared, not private, and that is the point of writing it down.
+
+    A note exists so the NEXT person handling this customer knows why
+    the fee was waived. A private one helps nobody.
+    """
+    _filter_user(client, "noteauthor")
+    _post(client, "/api/objects/Customer/cust_001/notes", {"text": "Shared knowledge"})
+
+    _filter_user(client, "notecolleague")
+    seen = client.get("/api/objects/Customer/cust_001/notes").json()
+
+    assert [n["text"] for n in seen] == ["Shared knowledge"]
+
+
+def test_an_empty_note_is_rejected(client):
+    # Whitespace is not a note, and storing one means a row nobody can
+    # read and nobody meant to write.
+    _filter_user(client, "noteempty")
+
+    assert _post(client, "/api/objects/Customer/cust_001/notes",
+                 {"text": "   "}).status_code == 400
+
+
+def test_writing_a_note_on_an_unreadable_object_is_a_404(client):
+    """Uniform denial. The same 404 whether the object is absent or
+    unreadable, so writing a note cannot be used to probe for objects
+    a caller may not see.
+    """
+    _filter_user(client, "noteprobe")
+
+    absent = _post(client, "/api/objects/Customer/no_such_id/notes", {"text": "x"})
+    assert absent.status_code == 404
+
+
+def test_reading_notes_on_an_unreadable_object_is_empty_not_an_error(client):
+    # The same rule the history path uses: an empty list never
+    # distinguishes "no notes" from "not allowed".
+    _filter_user(client, "notedenied")
+
+    assert client.get("/api/objects/Customer/no_such_id/notes").json() == []

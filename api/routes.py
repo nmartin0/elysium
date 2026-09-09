@@ -131,7 +131,7 @@ from core.auth.auth_cookies import (
     set_csrf_cookie,
     set_session_cookie,
 )
-from core.filters import as_equality_conditions, parse_filters
+from core.filters import FieldFilter, as_equality_conditions, parse_filters
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.schema import get_field_column, sort_key
@@ -612,6 +612,132 @@ class SiloStatusResponse(BaseModel):
     reachable: bool
     # The KIND of failure, never the message. See the route.
     failure: str | None = None
+
+
+class NoteResponse(BaseModel):
+    id: str
+    text: str
+    author: str
+    created_at: str
+
+
+class CreateNoteRequest(BaseModel):
+    text: str
+
+
+def _may_read_object(mediator, user_record, object_type: str, object_id: str) -> bool:
+    """Whether this caller can see this object at all.
+
+    COUNTING, not reading. get_object() never raises by contract -- an
+    unknown id returns a dict of Nones -- so a try/except around it
+    tests for something that cannot happen, and every note would be
+    accepted. Found by a test asserting a 404 and getting a 201.
+
+    count_objects applies the same RBAC and MAC the read path does, so
+    a zero means absent OR denied without distinguishing them, which is
+    exactly the answer both callers want.
+    """
+    try:
+        return mediator.count_objects(
+            user_record, object_type,
+            [FieldFilter(field=_id_field_for(mediator, object_type),
+                         operator="equals", value=object_id)],
+        ) > 0
+    except Exception:
+        # An unknown object type reaches here. Same answer as denial.
+        return False
+
+
+def _id_field_for(mediator, object_type: str) -> str:
+    return (mediator.schema.get(object_type, {}) or {}).get("id_field", "id")
+
+
+def _note_kind(object_type: str, object_id: str) -> str:
+    """One artifact kind per OBJECT, not one per note.
+
+    list_for() filters by kind, so encoding the object into the kind
+    makes "notes on this customer" a single indexed lookup rather than
+    a scan of every note in the deployment.
+    """
+    return f"note:{object_type}:{object_id}"
+
+
+@router.get("/objects/{object_type}/{object_id}/notes",
+            response_model=list[NoteResponse])
+def list_notes_route(object_type: str, object_id: str, request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """Notes attached to one object.
+
+    AUTHORIZED AS THE OBJECT IS, following the same rule edit_history
+    settled: a caller who may read the object may read what has been
+    written about it. A note referring to a field they cannot see is
+    still a note about an object they can, and inventing a second grant
+    would mean two places deciding one question.
+
+    A caller who cannot read the object gets an empty list rather than
+    an error -- uniform denial, so the response never distinguishes "no
+    notes" from "not allowed".
+    """
+    mediator = request.app.state.mediator
+    if not _may_read_object(mediator, current_user, object_type, object_id):
+        return []
+
+    notes = request.app.state.artifact_store.list_for(
+        current_user.user_id, current_user.role_name, kind=_note_kind(object_type, object_id),
+    )
+    return [
+        {
+            "id": note.artifact_id,
+            "text": note.body.get("text", ""),
+            "author": note.owner_user_id,
+            "created_at": note.created_at,
+        }
+        for note in notes
+    ]
+
+
+@router.post("/objects/{object_type}/{object_id}/notes", status_code=201,
+             response_model=NoteResponse)
+def create_note_route(object_type: str, object_id: str, body: CreateNoteRequest,
+                       request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Write a note about an object you can read.
+
+    SHARED WITH THE AUTHOR'S ROLE, not private. A note exists so the
+    next person handling this customer knows why the fee was waived --
+    a private one helps nobody, which is the whole point of writing it
+    down rather than remembering it.
+
+    NO EXPIRY. A judgement about why something was done does not stop
+    being true, and an operational note that vanished after ninety days
+    would be worse than not having written it.
+    """
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="A note cannot be empty")
+
+    mediator = request.app.state.mediator
+    if not _may_read_object(mediator, current_user, object_type, object_id):
+        # Uniform denial: the same 404 whether the object is absent or
+        # unreadable, so writing a note cannot be used to probe for
+        # objects a caller may not see.
+        raise HTTPException(status_code=404, detail="Not found")
+
+    artifact_id = request.app.state.artifact_store.save(
+        kind=_note_kind(object_type, object_id),
+        title=f"Note on {object_type} {object_id}",
+        owner_user_id=current_user.user_id,
+        body={"text": body.text},
+        shared_role=current_user.role_name,
+    )
+    saved = request.app.state.artifact_store.get(
+        artifact_id, current_user.user_id, current_user.role_name,
+    )
+    return {
+        "id": artifact_id,
+        "text": body.text,
+        "author": current_user.user_id,
+        "created_at": saved.created_at if saved else "",
+    }
 
 
 @router.get("/silos", response_model=list[SiloStatusResponse])

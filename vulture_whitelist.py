@@ -34,6 +34,8 @@ Run `vulture` (config: pyproject.toml's [tool.vulture]) to check.
 login
 logout
 logout_all
+list_notes_route
+create_note_route
 silos_route
 deployment_config_route
 list_users_route
@@ -139,6 +141,7 @@ object_type
 column
 table
 fields
+author
 object_types
 reachable
 failure

@@ -4,6 +4,7 @@ import { useParams, Link } from 'react-router-dom'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ObjectHistory from './ObjectHistory'
+import ObjectNotes from './ObjectNotes'
 import { getObjectDetail, getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
@@ -245,6 +246,18 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           </div>
         ))}
       </dl>
+
+      {/* Notes before history. What people SAID about this object is
+          more often what someone came for than what changed about it
+          -- history answers "what happened", notes answer "why". */}
+      <section className="object-detail__notes">
+        <h3>Notes</h3>
+        <ObjectNotes
+          objectType={objectType}
+          objectId={objectId}
+          onSessionExpired={onSessionExpired}
+        />
+      </section>
 
       {/* History under the fields, not beside them. What an object IS
           comes before what happened to it -- someone opening this page
