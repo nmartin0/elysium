@@ -32,7 +32,7 @@ interface SchemaGraphProps {
 }
 
 export interface GraphModel {
-  nodes: { name: string; value: number }[]
+  nodes: { name: string; value: number; x: number; y: number }[]
   links: { source: string; target: string; name: string }[]
 }
 
@@ -43,11 +43,26 @@ export interface GraphModel {
  * lives here -- the chart itself draws to a canvas jsdom cannot read.
  */
 export function buildGraph(schema: VisibleSchema): GraphModel {
-  const nodes = Object.keys(schema).map((name) => ({
+  // SORTED, so the starting positions below are derived from a stable
+  // order rather than whatever order the object arrived in.
+  const names = Object.keys(schema).sort()
+  const nodes = names.map((name, index) => ({
     // value sizes the node: a type with more fields is a bigger thing
     // in the ontology, and that is worth seeing at a glance.
     name,
     value: Object.keys(schema[name]?.fields ?? {}).length,
+    // A DETERMINISTIC starting position, on a circle by sorted name.
+    //
+    // ECharts seeds a force layout randomly, so the same ontology drew
+    // a different picture on every visit -- which makes it impossible
+    // to build any familiarity with the shape, and reads as the
+    // application being unsure of itself. Same input, same picture.
+    //
+    // The force simulation still runs from here, so the layout is
+    // settled by the relationships rather than by the circle; the
+    // circle only decides where it starts.
+    x: Math.cos((index / Math.max(names.length, 1)) * 2 * Math.PI) * 200,
+    y: Math.sin((index / Math.max(names.length, 1)) * 2 * Math.PI) * 200,
   }))
 
   const known = new Set(nodes.map((node) => node.name))
@@ -112,6 +127,8 @@ export default function SchemaGraph({ schema, onSelectType }: SchemaGraphProps) 
       data: model.nodes.map((node) => ({
         name: node.name,
         value: node.value,
+        x: node.x,
+        y: node.y,
         symbolSize: 22 + Math.min(node.value, 8) * 3,
       })),
       links: model.links.map((link) => ({

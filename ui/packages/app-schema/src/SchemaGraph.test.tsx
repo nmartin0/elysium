@@ -107,3 +107,32 @@ describe('buildGraph', () => {
     expect(buildGraph(twoLinks).links).toHaveLength(2)
   })
 })
+
+describe('the graph is the same picture every time', () => {
+  it('gives every node a deterministic starting position', () => {
+    /**
+     * ECharts seeds a force layout RANDOMLY, so the same ontology drew
+     * a different picture on every visit. That makes it impossible to
+     * build any familiarity with the shape, and reads as the
+     * application being unsure of itself.
+     */
+    const first = buildGraph(TWO_TYPES)
+    const second = buildGraph(TWO_TYPES)
+
+    expect(first.nodes.map((n) => [n.name, n.x, n.y]))
+      .toEqual(second.nodes.map((n) => [n.name, n.x, n.y]))
+  })
+
+  it('does not depend on the order the schema arrived in', () => {
+    // Object key order is not guaranteed across sources, so sorting is
+    // what makes "same ontology" mean "same picture" rather than "same
+    // object literal".
+    const reversed: VisibleSchema = {
+      Transaction: TWO_TYPES.Transaction!,
+      Customer: TWO_TYPES.Customer!,
+    }
+
+    expect(buildGraph(reversed).nodes.map((n) => [n.name, n.x]))
+      .toEqual(buildGraph(TWO_TYPES).nodes.map((n) => [n.name, n.x]))
+  })
+})
