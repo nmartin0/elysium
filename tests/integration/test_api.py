@@ -474,6 +474,16 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 # UI rendering hints, deliberately exposed. Cosmetic --
                 # "hidden" does not withhold anything, RBAC does.
                 "visibility", "status", "link_type",
+                # data_type, added deliberately and NOT physical layout
+                # despite having been grouped with it. "number" says
+                # nothing about where a column lives; it is what the
+                # FILTER VOCABULARY validates against, and without it a
+                # browser cannot tell which operators a field accepts.
+                #
+                # The filter bar offered `equals` for everything without
+                # it -- MORE restrictive than the server, which allows
+                # any operator on a field declaring no type.
+                "data_type",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 

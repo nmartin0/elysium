@@ -222,14 +222,21 @@ class SchemaFieldResponse(BaseModel):
     # silently changing what a null title_field means is not. The
     # existing test suite caught this when the exclusion was applied
     # too broadly.
-    # EXACTLY the three keys the frontend genuinely reads (confirmed by
-    # a real grep of ui/, not assumed): `type` to tell a link from a
-    # data field, `target` and `cardinality` to resolve a link. Every
-    # other key a field definition carries -- storage, column,
-    # via_table, via_column, data_type -- is internal physical layout
-    # or ontology bookkeeping with no legitimate reason to reach a
-    # browser, and was genuinely leaking before this model existed.
+    # `type` tells a link from a data field; `target` and `cardinality`
+    # resolve a link. storage, column, via_table and via_column stay
+    # OUT -- they are physical layout with no legitimate reason to
+    # reach a browser, and were genuinely leaking before this model
+    # existed.
+    #
+    # data_type WAS grouped with them and should not have been. It is
+    # SEMANTIC, not physical: "number" says nothing about where the
+    # column lives, and it is precisely what the filter vocabulary
+    # validates against. Without it a browser cannot tell which
+    # operators a field accepts, so the filter bar offered `equals`
+    # for everything -- more restrictive than the server, which allows
+    # any operator on a field with no declared type.
     type: str
+    data_type: str | None = None
     target: str | None = None
     cardinality: str | None = None
     # The relationship this link field belongs to. Both ends of one

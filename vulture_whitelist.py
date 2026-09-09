@@ -126,6 +126,7 @@ _ReadWriteAdapter
 # running server, and REMOVING any of them would silently strip that
 # field from what callers receive -- which is precisely the filtering
 # behavior these models exist to provide.
+data_type
 cardinality
 default_to_current_object
 disabled

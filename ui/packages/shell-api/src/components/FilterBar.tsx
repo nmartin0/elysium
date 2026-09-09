@@ -37,7 +37,22 @@ export interface FieldFilter {
  * dropdown may contain, and the server still validates -- this only
  * decides what to OFFER.
  */
+export const ALL_OPERATORS = [
+  'equals', 'range', 'contains', 'date_range', 'relative_date',
+]
+
 export function operatorsFor(type: string | undefined): string[] {
+  // NO declared type means NO restriction, which is the server's own
+  // rule: "a field with no declared data_type accepts anything --
+  // declaring the type is how an author opts into this check".
+  //
+  // A first version returned only `equals` here, which made the UI
+  // STRICTER than the server and left every field in the fixture
+  // ontology with one operator, because only risk_score declares a
+  // type. Being more restrictive than the thing you are a client of is
+  // not the safe direction: it hides capability the user has.
+  if (type === undefined || type === null) return [...ALL_OPERATORS]
+
   const numeric = type === 'integer' || type === 'number'
   return [
     'equals',
@@ -75,7 +90,9 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
   // and the server would reject a filter on one.
   const filterable = Object.entries(fields).filter(([, f]) => f.type !== 'link')
   const chosen = field ? fields[field] : undefined
-  const operators = operatorsFor(chosen?.type)
+  // data_type, not type. `type` says data-or-link; `data_type` is the
+  // semantic type the filter vocabulary validates against.
+  const operators = operatorsFor(chosen?.data_type)
   const needsTwo = operator === 'range' || operator === 'date_range'
 
   function add() {

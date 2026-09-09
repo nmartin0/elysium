@@ -1,13 +1,17 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 
-import FilterBar, { describeFilter, operatorsFor } from './FilterBar'
+import FilterBar, { ALL_OPERATORS, describeFilter, operatorsFor } from './FilterBar'
 import type { FieldSchema } from '../types'
 
+// `type` is data-or-link; `data_type` is the semantic type. A first
+// version of this fixture put 'string' in `type`, which is not a value
+// the ontology ever produces -- so every test here passed while the
+// real screen offered one operator for everything.
 const FIELDS: Record<string, FieldSchema> = {
-  name: { type: 'string' },
-  balance: { type: 'number' },
-  opened: { type: 'string' },
+  name: { type: 'data', data_type: 'string' },
+  balance: { type: 'data', data_type: 'number' },
+  untyped: { type: 'data' },
   owner: { type: 'link', target: 'Customer' },
 }
 
@@ -32,6 +36,21 @@ describe('which operators a field offers', () => {
     for (const type of ['string', 'number', 'boolean', undefined]) {
       expect(operatorsFor(type)).toContain('equals')
     }
+  })
+
+  it('restricts NOTHING when the author declared no type', () => {
+    /**
+     * The server's own rule: "a field with no declared data_type
+     * accepts anything -- declaring the type is how an author opts
+     * into this check".
+     *
+     * A first version returned only `equals` here, which made the UI
+     * stricter than the server and left every field in the fixture
+     * ontology with one operator, since only risk_score declares a
+     * type. Being more restrictive than the thing you are a client of
+     * hides capability the user actually has.
+     */
+    expect(operatorsFor(undefined)).toEqual(expect.arrayContaining(ALL_OPERATORS))
   })
 })
 

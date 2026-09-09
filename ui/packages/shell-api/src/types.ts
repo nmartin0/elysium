@@ -59,6 +59,10 @@ export interface FieldSchema {
   description?: string | null
   cardinality?: string | null
   link_type?: string | null
+  /** The SEMANTIC type -- number, string -- which is what the filter
+   *  vocabulary validates against. Absent means the author declared
+   *  none, and the server then accepts any operator. */
+  data_type?: string
   visibility?: string
   status?: string
 }
