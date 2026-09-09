@@ -15,6 +15,7 @@ import type { SubAppProps } from '@elysium/shell-api/types'
 import Workspace from '@elysium/shell-api/components/Workspace'
 
 import DeploymentConfig from './DeploymentConfig'
+import Silos from './Silos'
 
 export interface User {
   username: string
@@ -156,6 +157,13 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
               >
                 Deployment
               </Button>
+              <Button
+                active={view === 'silos'}
+                icon="database"
+                onClick={() => setView('silos')}
+              >
+                Silos
+              </Button>
             </ButtonGroup>
           </div>
 
@@ -172,6 +180,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       {error && <Callout intent="danger">{error}</Callout>}
 
       {view === 'deployment' && <DeploymentConfig onSessionExpired={onSessionExpired} />}
+      {view === 'silos' && <Silos onSessionExpired={onSessionExpired} />}
 
       {view === 'users' && (users === null ? (
         <p>Loading…</p>

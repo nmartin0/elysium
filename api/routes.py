@@ -581,6 +581,66 @@ def deployment_config_route(request: Request,
     }
 
 
+class SiloStatusResponse(BaseModel):
+    name: str
+    adapter: str
+    object_types: list[str]
+    reachable: bool
+    # The KIND of failure, never the message. See the route.
+    failure: str | None = None
+
+
+@router.get("/silos", response_model=list[SiloStatusResponse])
+def silos_route(request: Request,
+                 current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """Which silos are configured, what they back, and whether they answer.
+
+    /health already reports reachability, but it is UNAUTHENTICATED and
+    therefore deliberately says nothing about why -- a connection error
+    routinely carries a host, a path or a username. This is the
+    authenticated counterpart, gated on manage:users like the rest of
+    Admin, and it can say more.
+
+    MORE, BUT NOT THE MESSAGE. It reports the exception TYPE --
+    FileNotFoundError, OperationalError, PermissionError -- which
+    distinguishes "the file is gone" from "the disk is full" from "the
+    credentials are wrong" without echoing the path back. That is the
+    same line /config draws: names and shapes answer "what is
+    configured", contents answer "what could I attack".
+
+    An admin could read the YAML anyway. The point is not that the path
+    is secret; it is that a UI which never carries it cannot leak it
+    through a screenshot, a bug report, or a browser cache.
+    """
+    _require_manage_users(request, current_user)
+    config = request.app.state.config
+    mediator = request.app.state.mediator
+
+    types_by_silo: dict[str, list[str]] = {name: [] for name in config.silo_configs}
+    for object_type, silo_name in getattr(mediator, "silo_for_type", {}).items():
+        types_by_silo.setdefault(silo_name, []).append(object_type)
+
+    statuses = []
+    for silo_name in sorted(config.silo_configs):
+        adapter = (getattr(mediator, "adapters", {}) or {}).get(silo_name)
+        failure = None
+        if adapter is None:
+            failure = "NotConfigured"
+        else:
+            try:
+                adapter.health_check()
+            except Exception as e:
+                failure = type(e).__name__
+        statuses.append({
+            "name": silo_name,
+            "adapter": config.silo_configs[silo_name].get("adapter", "unknown"),
+            "object_types": sorted(types_by_silo.get(silo_name, [])),
+            "reachable": failure is None,
+            "failure": failure,
+        })
+    return statuses
+
+
 @router.post("/users", status_code=201, response_model=CreateUserResponse)
 def create_user_route(body: CreateUserRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:

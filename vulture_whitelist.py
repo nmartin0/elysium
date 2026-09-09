@@ -34,6 +34,7 @@ Run `vulture` (config: pyproject.toml's [tool.vulture]) to check.
 login
 logout
 logout_all
+silos_route
 deployment_config_route
 list_users_route
 create_user_route
@@ -132,6 +133,9 @@ source
 # DeploymentConfigResponse (api/routes.py): read by FastAPI's
 # serialiser from the returned dict, never by our own code -- the same
 # reason every other response-model field below is here.
+object_types
+reachable
+failure
 silo_names
 object_type_count
 action_type_count

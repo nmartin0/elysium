@@ -1156,3 +1156,30 @@ input[type="checkbox"],
   width: 40%;
   color: var(--text-secondary);
 }
+
+/* --- Silo status --------------------------------------------------
+ * The summary callout sits above the table, because "is anything
+ * wrong" is the question this screen is opened to answer -- a table of
+ * green rows makes you read every one to find that out. */
+.silos__table {
+  table-layout: fixed;
+  width: 100%;
+  margin-top: var(--space-normal);
+}
+
+.silos__table th:nth-child(2),
+.silos__table td:nth-child(2) {
+  width: 15%;
+}
+
+.silos__table th:nth-child(3),
+.silos__table td:nth-child(3) {
+  width: 25%;
+}
+
+/* The failure KIND, never a message -- an exception class name, shown
+ * quietly beside the status rather than as the headline. */
+.silos__failure {
+  font-size: 12px;
+  color: var(--text-secondary);
+}

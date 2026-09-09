@@ -2518,3 +2518,48 @@ def test_config_route_never_discloses_connection_details(client):
     assert "password" not in raw
     assert "dev_fixtures" not in raw, "a silo path reached the response"
     assert "allowed_actions" not in raw, "role grants reached the response"
+
+
+def test_silos_route_requires_manage_users(client):
+    _filter_user(client, "silodenied")
+
+    assert client.get("/api/silos").status_code == 403
+
+
+def test_silos_route_reports_configured_silos_and_their_types(client):
+    _admin_user(client, "siloadmin")
+
+    body = client.get("/api/silos").json()
+
+    by_name = {silo["name"]: silo for silo in body}
+    assert "primary_sql" in by_name
+    assert by_name["primary_sql"]["reachable"] is True
+    assert by_name["primary_sql"]["adapter"] == "sqlite"
+    assert "Customer" in by_name["primary_sql"]["object_types"]
+
+
+def test_silos_route_reports_the_failure_KIND_not_the_message(client, tmp_path):
+    """The line this endpoint draws.
+
+    /health is unauthenticated so it says nothing about why. This one
+    is admin-gated and can say more -- but the exception TYPE, never
+    the message, which routinely carries a host or a path.
+
+    An admin could read the YAML anyway; the point is that a UI which
+    never carries the path cannot leak it through a screenshot, a bug
+    report or a browser cache.
+    """
+    _admin_user(client, "silofail")
+    mediator = client.app.state.mediator
+    adapter = mediator.adapters["primary_sql"]
+    original = adapter.db_path
+    adapter.db_path = str(tmp_path / "gone.db")
+    try:
+        body = client.get("/api/silos").json()
+    finally:
+        adapter.db_path = original
+
+    unreachable = next(s for s in body if s["name"] == "primary_sql")
+    assert unreachable["reachable"] is False
+    assert unreachable["failure"] == "FileNotFoundError"
+    assert "gone.db" not in client.get("/api/silos").text, "a path reached the response"

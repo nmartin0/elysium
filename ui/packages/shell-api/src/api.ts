@@ -447,6 +447,11 @@ export async function aggregateObjects(
   return response.json()
 }
 
+export async function getSilos(): Promise<unknown> {
+  const response = await apiFetchOrThrow("/silos")
+  return response.json()
+}
+
 export async function getDeploymentConfig(): Promise<unknown> {
   const response = await apiFetchOrThrow("/config")
   return response.json()
