@@ -121,5 +121,14 @@ export function formatTimestamp(iso: string, now: Date = new Date()): string {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    // The ZONE, named. Without it "Wed, 22 Jul 2026, 13:00" does not
+    // say whose clock it is -- and it is the READER'S, because
+    // toLocaleString with no timezone uses the browser's. Two
+    // colleagues in different offices reading the same note see
+    // different numbers and no way to tell they mean the same moment.
+    //
+    // Only on the absolute form. "3 hours ago" means the same thing
+    // everywhere, so a zone on it would be noise.
+    timeZoneName: 'short',
   })
 }

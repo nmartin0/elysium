@@ -107,6 +107,40 @@ describe('formatTimestamp', () => {
     expect(older).toMatch(/2026/)
   })
 
+  it('names the timezone on the absolute form', () => {
+    /**
+     * "Wed, 22 Jul 2026, 13:00" does not say whose clock it is, and it
+     * is the READER'S -- toLocaleString with no timezone uses the
+     * browser's. Two colleagues in different offices reading one note
+     * would see different numbers with no way to tell they mean the
+     * same moment.
+     *
+     * Compares against the SAME date formatted without a zone, rather
+     * than matching a pattern. A first version used
+     * /[A-Z]{2,5}/ -- which matches "Wed" and "Jul", so it passed with
+     * the zone removed entirely. Proven by a control, which is the
+     * only reason it was caught.
+     *
+     * Which zone appears depends on where the test runs, so the
+     * assertion is that the output is LONGER than the zone-less form
+     * and starts with it.
+     */
+    const older = formatTimestamp('2026-07-22T13:00:00Z', now)
+    const withoutZone = new Date('2026-07-22T13:00:00Z').toLocaleString(undefined, {
+      weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    })
+
+    expect(older.startsWith(withoutZone)).toBe(true)
+    expect(older.length).toBeGreaterThan(withoutZone.length)
+  })
+
+  it('puts no timezone on the relative form', () => {
+    // "3 hours ago" means the same thing everywhere; a zone on it
+    // would be noise.
+    expect(formatTimestamp('2026-09-09T09:00:00Z', now)).toBe('3 hours ago')
+  })
+
   it('singularises', () => {
     expect(formatTimestamp('2026-09-09T11:00:00Z', now)).toBe('1 hour ago')
     expect(formatTimestamp('2026-09-09T11:59:00Z', now)).toBe('1 minute ago')
