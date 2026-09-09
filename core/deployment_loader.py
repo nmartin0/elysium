@@ -383,6 +383,22 @@ class RuntimePaths:
     data_dir: Path
     log_dir: Path
 
+    @property
+    def secrets_dir(self) -> Path:
+        """Where generated secrets live, under data rather than config.
+
+        DERIVED, not a fourth environment variable. A secret is state
+        the application produces, not configuration an operator
+        supplies -- so it belongs with the databases, and giving it its
+        own variable would invite pointing it somewhere world-readable.
+
+        Nothing writes here yet. It exists because the generated
+        first-run password needs a location with a documented mode
+        before it needs a password, and adding the location afterwards
+        means deciding permissions in a hurry.
+        """
+        return self.data_dir / "secrets"
+
 
 def resolve_runtime_paths() -> RuntimePaths:
     # THE one place any of Elysium's three runtime locations get
@@ -402,7 +418,14 @@ def resolve_runtime_paths() -> RuntimePaths:
         else Path("deployment/var/lib")
     log_dir = Path(os.environ["ELYSIUM_LOG_DIR"]) if "ELYSIUM_LOG_DIR" in os.environ \
         else Path("deployment/var/log")
-    return RuntimePaths(config_dir, data_dir, log_dir)
+    paths = RuntimePaths(config_dir, data_dir, log_dir)
+    # 0700 on the secrets directory, set on creation AND on every
+    # startup. Creating it correctly once is not enough: a restore from
+    # backup, an unpacked archive or a careless chmod leaves it
+    # readable, and the failure is silent.
+    paths.secrets_dir.mkdir(parents=True, exist_ok=True)
+    paths.secrets_dir.chmod(0o700)
+    return paths
 
 
 def load_deployment_bundle(

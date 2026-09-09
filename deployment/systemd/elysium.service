@@ -1,0 +1,56 @@
+# A systemd unit for a packaged Elysium install.
+#
+# THE APPLICATION DOES NOT GUESS WHERE IT IS INSTALLED. It reads three
+# environment variables and falls back to project-relative paths for a
+# development checkout; this unit is what makes a real install use FHS
+# locations. Packaging sets the paths -- the code does not sniff for
+# /etc/elysium and change behaviour, because a program that behaves
+# differently depending on where it happens to be run is a program
+# nobody can reason about.
+#
+# Install:
+#   sudo useradd --system --home /var/lib/elysium --shell /usr/sbin/nologin elysium
+#   sudo install -d -o elysium -g elysium -m 0755 /etc/elysium /var/log/elysium
+#   sudo install -d -o elysium -g elysium -m 0700 /var/lib/elysium
+#   sudo cp deployment/systemd/elysium.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now elysium
+
+[Unit]
+Description=Elysium ontology service
+After=network.target
+
+[Service]
+Type=exec
+User=elysium
+Group=elysium
+
+Environment=ELYSIUM_CONFIG_DIR=/etc/elysium
+Environment=ELYSIUM_DATA_DIR=/var/lib/elysium
+Environment=ELYSIUM_LOG_DIR=/var/log/elysium
+
+WorkingDirectory=/opt/elysium
+ExecStart=/opt/elysium/venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000
+
+# 127.0.0.1 deliberately. Elysium has no TLS of its own and its
+# session cookies assume a trusted transport, so it belongs behind a
+# reverse proxy rather than on a public interface. Binding 0.0.0.0
+# here would be a one-word change with no warning attached.
+
+Restart=on-failure
+RestartSec=5
+
+# Least privilege. The service reads config, writes data and logs, and
+# needs nothing else -- so everything else is taken away rather than
+# left available and unused.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/elysium /var/log/elysium
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
