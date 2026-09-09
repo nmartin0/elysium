@@ -2563,3 +2563,33 @@ def test_silos_route_reports_the_failure_KIND_not_the_message(client, tmp_path):
     assert unreachable["reachable"] is False
     assert unreachable["failure"] == "FileNotFoundError"
     assert "gone.db" not in client.get("/api/silos").text, "a path reached the response"
+
+
+def test_silos_route_credits_a_silo_that_only_backs_a_FIELD(client):
+    """A multi-datasource field lives in a silo that backs no object
+    type PRIMARILY.
+
+    risk_sql holds Customer.risk_score and nothing else, so listing
+    only silo_for_type showed it with no object types at all -- which
+    reads as "unused" and invites someone to remove a silo a field
+    depends on. Found by looking at the screen, not by a failing test.
+    """
+    _admin_user(client, "silomdo")
+
+    body = client.get("/api/silos").json()
+
+    risk = next(silo for silo in body if silo["name"] == "risk_sql")
+    assert risk["object_types"] == ["Customer"]
+
+
+# NO test for the de-duplication guard, deliberately.
+#
+# A first version asserted primary_sql lists Customer once. It passed
+# with the guard REMOVED, because no fixture silo holds both primary
+# and additional storage for the same type -- so the assertion was
+# true for a reason unrelated to what it claimed to check.
+#
+# The guard stays: it is correct, costs nothing, and a deployment
+# where one silo does both is entirely legal. But a test that cannot
+# fail is not a test, and adding a fixture silo purely to exercise it
+# would be shaping the fixture to the assertion.

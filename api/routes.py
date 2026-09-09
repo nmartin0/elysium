@@ -616,9 +616,28 @@ def silos_route(request: Request,
     config = request.app.state.config
     mediator = request.app.state.mediator
 
+    # PRIMARY storage, from silo_for_type.
     types_by_silo: dict[str, list[str]] = {name: [] for name in config.silo_configs}
     for object_type, silo_name in getattr(mediator, "silo_for_type", {}).items():
         types_by_silo.setdefault(silo_name, []).append(object_type)
+
+    # AND additional storage, which silo_for_type does not carry.
+    #
+    # A multi-datasource field lives in a silo that backs no object
+    # type primarily -- risk_sql holds Customer.risk_score and nothing
+    # else. Listing only primary storage showed it with no types at
+    # all, which reads as "unused" and invites someone to remove a silo
+    # a field depends on. Found by looking at the screen.
+    for object_type, type_def in config.schema.items():
+        for storage in (type_def.get("additional_storage") or {}).values():
+            silo_name = storage.get("silo")
+            # The membership check is DEFENSIVE and unexercised by the
+            # fixtures -- no fixture silo holds both primary and
+            # additional storage for one type. A deployment where one
+            # does is entirely legal, and it would otherwise list the
+            # type twice. See test_api.py for why there is no test.
+            if silo_name and object_type not in types_by_silo.setdefault(silo_name, []):
+                types_by_silo[silo_name].append(object_type)
 
     statuses = []
     for silo_name in sorted(config.silo_configs):
