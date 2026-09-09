@@ -20,6 +20,7 @@
 import { Button, Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 
 interface ActionParameter {
   type: string
@@ -62,77 +63,79 @@ export default function ActionTypes({
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  if (error) return <Callout intent="danger">{error}</Callout>
-  if (!actionTypes) return <Spinner />
-  if (Object.keys(actionTypes).length === 0) {
-    return <p>You cannot execute any action in this ontology.</p>
-  }
-
-  const needle = filter.trim().toLowerCase()
-  const matches = Object.entries(actionTypes)
-    .filter(([name, action]) =>
-      needle === ''
-      || name.toLowerCase().includes(needle)
-      || (action.affected_object_types ?? []).some((type) => type.toLowerCase().includes(needle))
-      || Object.keys(action.parameters ?? {}).some((param) => param.toLowerCase().includes(needle)))
-    .sort(([a], [b]) => a.localeCompare(b))
-
-  if (matches.length === 0) {
-    return <p>No action type matches {filter}.</p>
-  }
-
   return (
-    <>
-      {matches.map(([name, action]) => (
-          <section key={name} className="schema-panel__type">
-            <h3>{name}</h3>
-            {(action.affected_object_types ?? []).length > 0 && (
-              <div className="schema-panel__api-name">
-                affects{' '}
-                {(action.affected_object_types ?? []).map((type) => (
-                  <Button key={type} minimal small onClick={() => onOpenObjectType(type)}>
-                    {type}
-                  </Button>
-                ))}
-              </div>
-            )}
-            <HTMLTable compact striped className="schema-panel__fields">
-              <thead>
-                <tr>
-                  <th>Parameter</th>
-                  <th>Type</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(action.parameters ?? {}).map(([paramName, parameter]) => (
-                  <tr key={paramName}>
-                    <td>
-                      <strong>{parameter.display_name ?? paramName}</strong>
-                      {parameter.display_name && parameter.display_name !== paramName && (
-                        <div className="schema-panel__api-name">{paramName}</div>
-                      )}
-                    </td>
-                    <td>
-                      <Tag minimal>{parameter.type}</Tag>
-                      {parameter.object_type && <> {parameter.object_type}</>}
-                      {parameter.required && (
-                        <>
-                          {' '}
-                          <Tag minimal intent="primary">
-                            required
-                          </Tag>
-                        </>
-                      )}
-                    </td>
-                    <td>{parameter.description ?? ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </HTMLTable>
-          </section>
-      ))}
-    </>
+    <AsyncPanel error={error} data={actionTypes}>
+      {(actionTypes) => {
+      if (Object.keys(actionTypes).length === 0) {
+        return <p>You cannot execute any action in this ontology.</p>
+      }
+
+      const needle = filter.trim().toLowerCase()
+      const matches = Object.entries(actionTypes)
+        .filter(([name, action]) =>
+          needle === ''
+          || name.toLowerCase().includes(needle)
+          || (action.affected_object_types ?? []).some((type) => type.toLowerCase().includes(needle))
+          || Object.keys(action.parameters ?? {}).some((param) => param.toLowerCase().includes(needle)))
+        .sort(([a], [b]) => a.localeCompare(b))
+
+      if (matches.length === 0) {
+        return <p>No action type matches {filter}.</p>
+      }
+        return (
+        <>
+          {matches.map(([name, action]) => (
+              <section key={name} className="schema-panel__type">
+                <h3>{name}</h3>
+                {(action.affected_object_types ?? []).length > 0 && (
+                  <div className="schema-panel__api-name">
+                    affects{' '}
+                    {(action.affected_object_types ?? []).map((type) => (
+                      <Button key={type} minimal small onClick={() => onOpenObjectType(type)}>
+                        {type}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <HTMLTable compact striped className="schema-panel__fields">
+                  <thead>
+                    <tr>
+                      <th>Parameter</th>
+                      <th>Type</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(action.parameters ?? {}).map(([paramName, parameter]) => (
+                      <tr key={paramName}>
+                        <td>
+                          <strong>{parameter.display_name ?? paramName}</strong>
+                          {parameter.display_name && parameter.display_name !== paramName && (
+                            <div className="schema-panel__api-name">{paramName}</div>
+                          )}
+                        </td>
+                        <td>
+                          <Tag minimal>{parameter.type}</Tag>
+                          {parameter.object_type && <> {parameter.object_type}</>}
+                          {parameter.required && (
+                            <>
+                              {' '}
+                              <Tag minimal intent="primary">
+                                required
+                              </Tag>
+                            </>
+                          )}
+                        </td>
+                        <td>{parameter.description ?? ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </HTMLTable>
+              </section>
+          ))}
+        </>
+        )
+      }}
+    </AsyncPanel>
   )
 }

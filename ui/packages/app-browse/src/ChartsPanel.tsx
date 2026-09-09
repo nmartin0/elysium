@@ -24,6 +24,7 @@
 import { useEffect, useState } from 'react'
 import { Callout, Spinner } from '@blueprintjs/core'
 import Chart from '@elysium/shell-api/components/Chart'
+import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { aggregateObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
@@ -118,33 +119,36 @@ export default function ChartsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objectType, filterKey, queryText])
 
-  if (error) return <Callout intent="danger">{error}</Callout>
-  if (charts === null) return <Spinner />
-  if (charts.length === 0) {
-    return (
-      <Callout intent="none">
-        No field in this object type has more than one distinct value in the
-        current results, so there is nothing to chart.
-      </Callout>
-    )
-  }
-
   return (
-    <div className="charts-panel">
-      {charts.map((chart) => (
-        <section key={chart.field} className="charts-panel__chart">
-          <h4>{chart.label}</h4>
-          <Chart
-            ariaLabel={`${chart.label} distribution`}
-            onSelect={(value) => onSelect(chart.field, value)}
-            option={
-              suitsAPie(chart.results)
-                ? pieOption(chart.results)
-                : valueCountsOption(chart.results, selectionFor(filters, chart.field))
-            }
-          />
-        </section>
-      ))}
-    </div>
+    <AsyncPanel error={error} data={charts}>
+      {(charts) => (
+        // An EMPTY result is not a loading state and not a failure --
+        // every field has one distinct value, which is a true answer
+        // and needs saying rather than showing an empty box.
+        charts.length === 0 ? (
+          <Callout intent="none">
+            No field in this object type has more than one distinct value in the
+            current results, so there is nothing to chart.
+          </Callout>
+        ) : (
+        <div className="charts-panel">
+          {charts.map((chart) => (
+            <section key={chart.field} className="charts-panel__chart">
+              <h4>{chart.label}</h4>
+              <Chart
+                ariaLabel={`${chart.label} distribution`}
+                onSelect={(value) => onSelect(chart.field, value)}
+                option={
+                  suitsAPie(chart.results)
+                    ? pieOption(chart.results)
+                    : valueCountsOption(chart.results, selectionFor(filters, chart.field))
+                }
+              />
+            </section>
+          ))}
+        </div>
+        )
+      )}
+    </AsyncPanel>
   )
 }
