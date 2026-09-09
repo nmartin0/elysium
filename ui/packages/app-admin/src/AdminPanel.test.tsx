@@ -445,3 +445,36 @@ describe('AdminPanel -- CreateUserForm', () => {
     expect(screen.queryByText('session expired')).not.toBeInTheDocument()
   })
 })
+
+describe('the configuration pane swaps with the view', () => {
+  it('hides Create user when the canvas is showing Deployment', async () => {
+    /**
+     * THE flaw, found by looking at it: the tabs were in the canvas
+     * and Create user was pinned in the pane, so opening Deployment
+     * left a form for a screen you were not looking at.
+     *
+     * A secondary pane beside a rail exists to hold what belongs to
+     * the CURRENT selection. Contents that stay fixed while the canvas
+     * changes are describing something else.
+     */
+    renderPanel()
+    await screen.findByRole('button', { name: /Deployment/ })
+    // The HEADING, not the text: the form also has a submit button
+    // reading "Create user", so a plain text query finds two.
+    expect(screen.getByRole('heading', { name: 'Create user' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Deployment/ }))
+
+    expect(screen.queryByRole('heading', { name: 'Create user' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the view selector visible in both views', () => {
+    // The selector is navigation, not content -- it must survive the
+    // switch, or there is no way back.
+    renderPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: /Deployment/ }))
+
+    expect(screen.getByRole('button', { name: /Users/ })).toBeInTheDocument()
+  })
+})

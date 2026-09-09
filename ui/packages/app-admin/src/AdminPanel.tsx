@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Alert, Button, Callout, FormGroup, HTMLTable, InputGroup, Tab, Tabs } from '@blueprintjs/core'
+import { Alert, Button, ButtonGroup, Callout, FormGroup, HTMLTable, InputGroup } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -130,26 +130,48 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
        down the page for a control most visits never touch. */
     <Workspace
       config={
-        <CreateUserForm
-          onCreated={loadUsers}
-          onError={setError}
-          onSessionExpired={onSessionExpired}
-        />
+        <>
+          {/* The view selector lives in the CONFIGURATION pane, and
+              the form under it belongs to one view only.
+              
+              An earlier version put the tabs in the canvas and left
+              Create user pinned in the pane, so opening Deployment
+              showed a form for a screen you were not looking at. The
+              pane's contents have to swap with the selection -- that
+              is the whole point of a secondary pane beside a rail. */}
+          <div className="workspace__filter">
+            <label>View</label>
+            <ButtonGroup vertical alignText="left" fill>
+              <Button
+                active={view === 'users'}
+                icon="people"
+                onClick={() => setView('users')}
+              >
+                Users
+              </Button>
+              <Button
+                active={view === 'deployment'}
+                icon="cog"
+                onClick={() => setView('deployment')}
+              >
+                Deployment
+              </Button>
+            </ButtonGroup>
+          </div>
+
+          {view === 'users' && (
+            <CreateUserForm
+              onCreated={loadUsers}
+              onError={setError}
+              onSessionExpired={onSessionExpired}
+            />
+          )}
+        </>
       }
     >
       {error && <Callout intent="danger">{error}</Callout>}
 
-      {/* Two views. Users is what Admin was; Deployment answers "what
-          is this thing actually running", which had no answer short of
-          reading a YAML file on the server. */}
-      <Tabs id="admin-views" selectedTabId={view} onChange={(id) => setView(String(id))}>
-        <Tab id="users" title="Users" panel={<div />} />
-        <Tab
-          id="deployment"
-          title="Deployment"
-          panel={<DeploymentConfig onSessionExpired={onSessionExpired} />}
-        />
-      </Tabs>
+      {view === 'deployment' && <DeploymentConfig onSessionExpired={onSessionExpired} />}
 
       {view === 'users' && (users === null ? (
         <p>Loading…</p>
