@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Button, Callout } from '@blueprintjs/core'
 import { query } from '@elysium/shell-api/api'
+
+import AnswerTrace from './AnswerTrace'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 import Workspace from '@elysium/shell-api/components/Workspace'
@@ -8,6 +10,7 @@ import Workspace from '@elysium/shell-api/components/Workspace'
 interface QueryResponseBody {
   pending_write?: PendingWrite
   answer?: string
+  request_id?: string
   detail?: string
 }
 
@@ -27,6 +30,7 @@ type QueryPanelProps = SubAppProps
 export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
   const [queryText, setQueryText] = useState('')
   const [answer, setAnswer] = useState<string | null>(null)
+  const [requestId, setRequestId] = useState<string | null>(null)
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -60,6 +64,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
         setPendingWrite(body.pending_write ?? null)
       } else if (response.status === 200) {
         setAnswer(body.answer ?? null)
+        setRequestId(body.request_id ?? null)
       } else {
         // 403 (stale permissions were already fine at query time but
         // something else denied it), 409 (permissions changed mid-
@@ -106,6 +111,12 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
           for that real contrast). */}
       {error && <Callout intent="danger">{error}</Callout>}
       {answer && <Callout>{answer}</Callout>}
+      {/* Under the answer, and only when there IS one. A trace with
+          nothing to explain is a control that raises a question the
+          screen cannot answer. */}
+      {answer && requestId && (
+        <AnswerTrace requestId={requestId} onSessionExpired={onSessionExpired} />
+      )}
       {pendingWrite && (
         // No persistent view of an object here to refresh once
         // resolved (unlike ObjectDetailPanel.jsx's own ActionForm) --

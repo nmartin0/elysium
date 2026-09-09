@@ -447,6 +447,13 @@ export async function aggregateObjects(
   return response.json()
 }
 
+export async function getRequestTrace(requestId: string): Promise<unknown> {
+  const response = await apiFetchOrThrow(
+    `/requests/${encodeURIComponent(requestId)}/trace`,
+  )
+  return response.json()
+}
+
 export async function getObjectNotes(
   objectType: string,
   objectId: string,

@@ -162,6 +162,11 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
+    # The request this answer was built by, so the caller can ask what
+    # was read to produce it. Returning it is what makes the trace
+    # reachable -- an id the browser never sees is one nobody can look
+    # up, and the endpoint would be dead surface.
+    request_id: str
 
 
 # --- Response models -------------------------------------------------
@@ -1600,6 +1605,11 @@ async def query(body: QueryRequest, request: Request,
         return JSONResponse(
             status_code=202,
             content={
+                # Also on the pending-write path: a proposed write is
+                # the outcome of reads, and "what did it look at before
+                # proposing this" is exactly the question a reviewer
+                # has.
+                "request_id": request_context.request_id,
                 "pending_write": {
                     "id": write_id,
                     "action_type_name": result.pending_write.action_type_name,
@@ -1619,7 +1629,7 @@ async def query(body: QueryRequest, request: Request,
     insight = await event_loop.run_in_executor(
         executor, synthesize_insight, synthesis_client, body.query, real_data, result.hit_max_hops
     )
-    return QueryResponse(answer=insight)
+    return QueryResponse(answer=insight, request_id=request_context.request_id)
 
 
 @router.post("/writes/{write_id}/confirm", response_model=ConfirmWriteResponse)
