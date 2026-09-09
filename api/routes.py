@@ -615,6 +615,49 @@ class SiloStatusResponse(BaseModel):
     failure: str | None = None
 
 
+class AccessTraceEntry(BaseModel):
+    object_type: str
+    object_id: str | None = None
+    action: str
+    rbac_allowed: bool
+    mac_allowed: bool | None = None
+    timestamp: str
+
+
+@router.get("/requests/{request_id}/trace", response_model=list[AccessTraceEntry])
+def request_trace_route(request_id: str, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """What was read while serving one of YOUR requests.
+
+    The trust story for putting an agent over sensitive data: an
+    answer arrives and this says what it was built from.
+
+    OWNERSHIP IS ENFORCED IN THE READER, not here. A route-level check
+    would be a second place for the rule to live, and the reader is
+    what every other caller would go through -- so it is the right
+    place for the rule to be true.
+
+    An empty list for someone else's request, rather than a 403: the
+    same uniform denial every read path uses, so the response never
+    distinguishes "no such request" from "not yours".
+    """
+    entries = request.app.state.mediator.audit_log.entries_for_request(
+        request_id, current_user.user_id,
+    )
+    return [
+        {
+            "object_type": entry.get("object_type", ""),
+            "object_id": (None if entry.get("object_id") is None
+                          else str(entry.get("object_id"))),
+            "action": entry.get("action", ""),
+            "rbac_allowed": bool(entry.get("rbac_allowed")),
+            "mac_allowed": entry.get("mac_allowed"),
+            "timestamp": entry.get("timestamp", ""),
+        }
+        for entry in entries
+    ]
+
+
 class NoteResponse(BaseModel):
     id: str
     text: str

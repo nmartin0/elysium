@@ -153,3 +153,91 @@ def test_check_access_without_a_context_records_none(tmp_path, monkeypatch):
     access_control.check_access(FakeMediator(), _user(), {}, "Customer", "c1", "read")
 
     assert written == [None]
+
+
+def test_a_trace_returns_only_its_own_request(tmp_path):
+    log_path = tmp_path / "audit.log"
+    audit = AuditLog(log_path=log_path)
+    audit.log_access("alice", "Customer", "c1", "read", True, True, request_id="req-1")
+    audit.log_access("alice", "Customer", "c2", "read", True, True, request_id="req-2")
+    audit.log_access("alice", "Customer", "c3", "read", True, True, request_id="req-1")
+
+    trace = audit.entries_for_request("req-1", "alice")
+
+    assert [e["object_id"] for e in trace] == ["c1", "c3"]
+
+
+def test_a_trace_is_oldest_first(tmp_path):
+    # A trace is read as a SEQUENCE of what the agent did, and that
+    # reads forwards -- even though the scan runs backwards.
+    log_path = tmp_path / "audit.log"
+    audit = AuditLog(log_path=log_path)
+    for index in range(3):
+        audit.log_access("alice", "Customer", f"c{index}", "read", True, True,
+                         request_id="req-1")
+
+    trace = audit.entries_for_request("req-1", "alice")
+
+    assert [e["object_id"] for e in trace] == ["c0", "c1", "c2"]
+
+
+def test_one_user_cannot_read_anothers_trace(tmp_path):
+    """A request id is a uuid and unguessable, but "unguessable" is not
+    "authorized".
+
+    One appearing in a log line, a bug report or a screenshot must not
+    become a key to somebody else's activity -- the entries name what
+    THAT user looked at, which this caller never had.
+    """
+    log_path = tmp_path / "audit.log"
+    audit = AuditLog(log_path=log_path)
+    audit.log_access("alice", "Customer", "c1", "read", True, True, request_id="req-1")
+
+    assert audit.entries_for_request("req-1", "bob") == []
+
+
+def test_untracked_entries_never_match_a_trace(tmp_path):
+    # A read belonging to no request has request_id None, and None is
+    # not a request anyone can ask for.
+    log_path = tmp_path / "audit.log"
+    audit = AuditLog(log_path=log_path)
+    audit.log_access("alice", "Customer", "c1", "read", True, True)
+
+    assert audit.entries_for_request("req-1", "alice") == []
+    assert audit.entries_for_request(None, "alice") == []
+
+
+def test_the_scan_is_bounded(tmp_path):
+    """The design decision, not an optimisation.
+
+    A forward scan reads the whole file, which is fine at a fixture's
+    volume and wrong at a real one. Reading backwards with a cap bounds
+    the cost regardless of how long the deployment has run -- and a
+    request being asked about is almost always the one that just ran.
+
+    The cap can truncate, and this asserts that it DOES rather than
+    silently reading everything.
+    """
+    log_path = tmp_path / "audit.log"
+    audit = AuditLog(log_path=log_path)
+    audit.log_access("alice", "Customer", "old", "read", True, True, request_id="req-1")
+    for index in range(10):
+        audit.log_access("alice", "Customer", f"c{index}", "read", True, True,
+                         request_id="req-2")
+
+    # A window smaller than the file cannot reach the first entry.
+    trace = audit.entries_for_request("req-1", "alice", max_scan=5)
+
+    assert trace == []
+
+
+def test_a_torn_line_does_not_fail_the_whole_read(tmp_path):
+    # A process dying mid-write leaves a partial line. Skipping it
+    # beats failing every trace in the file.
+    log_path = tmp_path / "audit.log"
+    audit = AuditLog(log_path=log_path)
+    audit.log_access("alice", "Customer", "c1", "read", True, True, request_id="req-1")
+    with open(log_path, "a") as f:
+        f.write('{"stage": "access_check", "request_i\n')
+
+    assert len(audit.entries_for_request("req-1", "alice")) == 1

@@ -2779,3 +2779,21 @@ def test_reading_notes_on_an_unreadable_object_is_empty_not_an_error(client):
     _filter_user(client, "notedenied")
 
     assert client.get("/api/objects/Customer/no_such_id/notes").json() == []
+
+
+def test_a_request_trace_is_empty_for_a_request_you_did_not_make(client):
+    """Uniform denial rather than a 403.
+
+    A request id is a uuid and unguessable, but "unguessable" is not
+    "authorized" -- one appearing in a log line or a screenshot must
+    not become a key to somebody else's activity.
+    """
+    _filter_user(client, "tracestranger")
+
+    body = client.get("/api/requests/some-other-request/trace").json()
+
+    assert body == []
+
+
+def test_a_request_trace_needs_a_session(client):
+    assert client.get("/api/requests/x/trace").status_code == 401

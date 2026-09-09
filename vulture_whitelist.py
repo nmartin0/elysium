@@ -34,6 +34,7 @@ Run `vulture` (config: pyproject.toml's [tool.vulture]) to check.
 login
 logout
 logout_all
+request_trace_route
 list_notes_route
 create_note_route
 silos_route
@@ -141,6 +142,9 @@ object_type
 column
 table
 fields
+rbac_allowed
+mac_allowed
+timestamp
 author
 object_types
 reachable
