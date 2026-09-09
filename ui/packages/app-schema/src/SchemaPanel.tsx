@@ -14,7 +14,7 @@
  * withheld.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Callout, HTMLTable, Icon, Spinner, Tab, Tabs, Tag } from '@blueprintjs/core'
 import { IconNames, type IconName } from '@blueprintjs/icons'
@@ -26,6 +26,9 @@ import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Worksp
 
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 
+import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
+
+import GraphPreview, { type GraphSelection } from './GraphPreview'
 import SchemaGraph from './SchemaGraph'
 import { useDeferredWrite } from '@elysium/shell-api/useDeferredValue'
 import Discover from './Discover'
@@ -268,6 +271,29 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const navigate = useNavigate()
 
   const selectedTab = searchParams.get('tab') ?? 'discover'
+
+  /**
+   * What is selected in the Overview graph.
+   *
+   * LOCAL STATE, not the URL. A selection is a glance -- you click a
+   * node, read it, click another. Writing each one to the URL would
+   * put a history entry behind every glance, so Back would step
+   * through them one at a time instead of leaving the graph.
+   */
+  const [selection, setSelection] = useState<GraphSelection | null>(null)
+  const [graphActionTypes, setGraphActionTypes] = useState<Record<string, {
+    display_name?: string | null
+    description?: string | null
+    affected_object_types?: string[]
+  }>>({})
+
+  useEffect(() => {
+    // The same cache Action types and the graph itself use, so opening
+    // Overview does not fetch a third time.
+    getVisibleActionTypesCached()
+      .then((body) => setGraphActionTypes(body as Record<string, never>))
+      .catch(() => {})
+  }, [])
   const query = searchParams.get('q') ?? ''
   // One `q`, read by whichever tab is showing. A per-tab parameter
   // would leave a stale term in the URL for tabs you are not on.
@@ -442,16 +468,25 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
             </>
       )}
       {selectedTab === 'overview' && (
-        <SchemaGraph
-          schema={schema}
-          onSelect={(name, kind) => {
-            // An action opens Action types, not Object types. Routing
-            // by name alone sent every click to the object catalogue,
-            // where an action is never found -- a dead end that looked
-            // like a broken link rather than a wrong destination.
-            go(kind === 'action' ? 'action-types' : 'object-types', name, 'push')
-          }}
-        />
+        <div className="schema-overview">
+          <SchemaGraph schema={schema} onSelect={setSelection} />
+          {/* The preview BESIDE the graph, not instead of it. Clicking
+              used to navigate away, and returning re-laid the graph
+              out -- so exploring cost you your place every time. */}
+          {selection && (
+            <GraphPreview
+              selection={selection}
+              schema={schema}
+              actionTypes={graphActionTypes}
+              onOpenFull={(name, kind) => {
+                // An action opens Action types, not Object types.
+                // Routing by name alone sent every click to the object
+                // catalogue, where an action is never found.
+                go(kind === 'action' ? 'action-types' : 'object-types', name, 'push')
+              }}
+            />
+          )}
+        </div>
       )}
       {selectedTab === 'link-types' && (
         <>

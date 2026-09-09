@@ -22,6 +22,7 @@ import Chart from '@elysium/shell-api/components/Chart'
 import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
+import type { GraphSelection } from './GraphPreview'
 import { groupLinkTypes } from './LinkTypes'
 
 interface SchemaGraphProps {
@@ -38,7 +39,7 @@ interface SchemaGraphProps {
    * looked like a broken link. The graph already knows: buildGraph
    * tags every node.
    */
-  onSelect: (name: string, kind: 'object' | 'action') => void
+  onSelect: (selection: GraphSelection) => void
 }
 
 export interface GraphNode {
@@ -292,11 +293,25 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
         + `${model.nodes.filter((n) => n.kind === 'action').length} action types, `
         + `${model.links.length} relationships`
       }
-      onSelect={(name) => {
+      onSelect={(name, dataType, data) => {
+        if (dataType === 'edge') {
+          // An edge's endpoints come from ECharts' own data, which
+          // holds what buildGraph put there.
+          const edge = data as { source?: string; target?: string; value?: string }
+          const match = model.links.find((candidate) =>
+            candidate.source === edge?.source && candidate.target === edge?.target)
+          if (match) {
+            onSelect({
+              kind: 'link', name: match.name,
+              source: match.source, target: match.target, label: match.label,
+            })
+          }
+          return
+        }
         // The node's own kind, looked up rather than guessed from the
         // name -- an action and an object type could share one.
         const node = model.nodes.find((candidate) => candidate.name === name)
-        if (node) onSelect(name, node.kind)
+        if (node) onSelect({ kind: node.kind, name })
       }}
     />
   )

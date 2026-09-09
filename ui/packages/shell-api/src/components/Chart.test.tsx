@@ -17,7 +17,7 @@ const setOption = vi.fn()
 const on = vi.fn()
 const off = vi.fn()
 const resize = vi.fn()
-let clickHandler: ((params: { name?: string }) => void) | null = null
+let clickHandler: ((params: { name?: string; dataType?: string; data?: unknown }) => void) | null = null
 
 vi.mock('echarts/core', async () => {
   return {
@@ -37,7 +37,10 @@ vi.mock('echarts/core', async () => {
     },
   }
 })
-vi.mock('echarts/charts', () => ({ BarChart: {}, PieChart: {} }))
+// GraphChart included: registration is what makes a series type
+// exist, so a mock missing one turns every test in this file into an
+// import error rather than a failure about the thing under test.
+vi.mock('echarts/charts', () => ({ BarChart: {}, GraphChart: {}, PieChart: {} }))
 vi.mock('echarts/components', () => ({
   GridComponent: {}, LegendComponent: {}, TitleComponent: {}, TooltipComponent: {},
 }))
@@ -112,7 +115,10 @@ describe('Chart', () => {
 
     clickHandler?.({ name: 'us-west' })
 
-    expect(onSelect).toHaveBeenCalledWith('us-west')
+    // THREE arguments now, not one: dataType and data were added so a
+    // graph edge -- which carries no name -- could be reported at all.
+    // Existing callers read only the first and are unaffected.
+    expect(onSelect).toHaveBeenCalledWith('us-west', undefined, undefined)
   })
 
   it('ignores a click with no datum behind it', () => {
@@ -136,5 +142,33 @@ describe('Chart', () => {
     render(<Chart option={OPTION} ariaLabel="Customers by region" />)
 
     expect(screen.getByRole('img', { name: 'Customers by region' })).toBeInTheDocument()
+  })
+})
+
+describe('a click on an edge, not just a node', () => {
+  it('forwards an edge click, which has no name', () => {
+    /**
+     * ECharts sends dataType "node" or "edge", and an EDGE HAS NO
+     * `name` -- so a handler reading only the name silently ignored
+     * every edge click. That is why clicking a relationship did
+     * nothing at all.
+     */
+    const onSelect = vi.fn()
+    render(<Chart option={OPTION} onSelect={onSelect} ariaLabel="Chart" />)
+
+    clickHandler?.({ dataType: 'edge', data: { source: 'A', target: 'B' } })
+
+    expect(onSelect).toHaveBeenCalledWith('', 'edge', { source: 'A', target: 'B' })
+  })
+
+  it('still forwards a node click', () => {
+    // The existing behaviour, asserted alongside so a future change to
+    // the edge path cannot quietly break the node one.
+    const onSelect = vi.fn()
+    render(<Chart option={OPTION} onSelect={onSelect} ariaLabel="Chart" />)
+
+    clickHandler?.({ name: 'Customer', dataType: 'node' })
+
+    expect(onSelect).toHaveBeenCalledWith('Customer', 'node', undefined)
   })
 })

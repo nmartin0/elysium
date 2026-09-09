@@ -1141,6 +1141,39 @@ it silently discards the reasoning written beside it.
 None of this is urgent while Elysium is a development system. All of
 it is a prerequisite for the first deployment somebody else operates.
 
+## Overview graph: what Foundry has that we deliberately skipped
+
+Three of the five features Foundry's group graph offers are recorded
+here as SCALE-DEPENDENT rather than pending. Ours has seven nodes;
+each of these solves a problem that only exists at thirty or more.
+
+**A layout switcher** ("change the layout of the graph"). Force and
+circular look nearly identical at seven nodes, and we already start on
+a circle. Useful when force layouts begin producing clusters worth
+rearranging.
+
+**Removing nodes** -- recorded as SUPERSEDED, not pending. Removal is
+decluttering, and decluttering requires knowing what to hide before
+you have read the graph. The instance graph (item 8) needs
+count-before-expand anyway, and START FOCUSED AND EXPAND is the better
+answer to the same problem: it never shows the hairball in the first
+place. If the schema graph ever grows, it should borrow that rather
+than gain a delete button.
+
+**Search that highlights rather than filters** -- worth keeping. Their
+version "will highlight which field your search term matched on", and
+dimming non-matches suits a graph where removing them does not. Dead
+weight at seven nodes where every label is readable.
+
+**And one they have that we should want sooner: filtering by
+visibility.** Ontology Manager filters "based on their visibility,
+development status, and indexing issues". We HAVE visibility in the
+schema vocabulary -- prominent, normal, hidden -- and the graph
+ignored it entirely, so a hidden type read as equal to a prominent
+one. The preview panel now marks it per field; the graph itself still
+does not distinguish them, and should when an ontology has enough
+hidden types for that to matter.
+
 ## Recorded with reservations, not endorsed
 
 These were asked for and are written down; the objection is recorded

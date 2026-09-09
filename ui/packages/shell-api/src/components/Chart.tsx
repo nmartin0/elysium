@@ -59,7 +59,15 @@ export interface ChartProps {
   /** Called with the clicked datum's name. Click-to-filter is the
    *  point of these charts, so it is a first-class prop rather than
    *  something each caller wires through ECharts' event API. */
-  onSelect?: (name: string) => void
+  /**
+   * A click on something in the chart.
+   *
+   * `dataType` distinguishes a NODE from an EDGE in a graph series --
+   * ECharts sends "node" or "edge", and an edge has no `name`, so a
+   * handler reading only the name silently ignores every edge click.
+   * That is why clicking a relationship did nothing.
+   */
+  onSelect?: (name: string, dataType?: string, data?: unknown) => void
   height?: number
   /** For screen readers and for tests, which cannot see a canvas. */
   ariaLabel: string
@@ -95,8 +103,12 @@ export default function Chart({ option, onSelect, height = 240, ariaLabel }: Cha
     if (chart === null) return
     if (onSelect === undefined) return
 
-    function handleClick(params: { name?: string }) {
-      if (params.name !== undefined) onSelect?.(params.name)
+    function handleClick(params: { name?: string; dataType?: string; data?: unknown }) {
+      // An edge carries its endpoints on `data` rather than a name, so
+      // both are forwarded and the caller decides what it needs.
+      if (params.name !== undefined || params.dataType === 'edge') {
+        onSelect?.(params.name ?? '', params.dataType, params.data)
+      }
     }
     chart.on('click', handleClick)
     return () => {
