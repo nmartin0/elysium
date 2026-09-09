@@ -1209,3 +1209,29 @@ input[type="checkbox"],
 .silos__id-tag {
   margin-left: var(--space-hair);
 }
+
+/* --- The filter bar -----------------------------------------------
+ * Applied filters ABOVE the control that adds them, because what is
+ * currently filtering the results is the more important of the two --
+ * and it was invisible entirely until now.
+ */
+.filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+}
+
+.filter-bar__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-hair);
+  align-items: center;
+}
+
+/* Stacked, not inline: the pane is 288px and a field picker, an
+ * operator and two value boxes do not share a line at that width. */
+.filter-bar__add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-hair);
+}

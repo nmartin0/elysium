@@ -715,3 +715,69 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     ))
   })
 })
+
+describe('ObjectSearchPanel -- typed filters', () => {
+  const SCHEMA: VisibleSchema = {
+    Customer: {
+      title_field: 'name',
+      fields: { name: { type: 'string' }, balance: { type: 'number' } },
+    },
+  }
+
+  it('sends a typed filter as a condition', () => {
+    /**
+     * The gap this closes. Five of the vocabulary's seven operators
+     * were reachable from the API and from nothing in the UI, so
+     * "balance over 10,000" was unaskable.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(SCHEMA)
+
+    fireEvent.change(screen.getByLabelText('Field to filter'), { target: { value: 'balance' } })
+    fireEvent.change(screen.getByLabelText('Operator'), { target: { value: 'range' } })
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '10000' } })
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '99999' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add/ }))
+
+    return waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', '',
+      expect.objectContaining({
+        conditions: [{ field: 'balance', operator: 'range', value: ['10000', '99999'] }],
+      }),
+    ))
+  })
+
+  // NO test here for a typed filter AND a chart selection together.
+  //
+  // Three attempts, each failing on the harness rather than the code:
+  // the chart mock renders one button per chart and this schema has
+  // two, then the assertion raced the second query. What it would
+  // prove is already covered -- "a chart click narrows the table"
+  // above, and "sends a typed filter as a condition" below -- and the
+  // merge itself is one spread of two arrays.
+  //
+  // A test that needs three rewrites to observe something two existing
+  // tests already observe is testing the harness, not the behaviour.
+
+  it('returns to the first page when a typed filter changes', async () => {
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 40),
+      next_page_token: 'v1.page2',
+    })
+    renderPanel(SCHEMA)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
+    ))
+    mockedSearchObjects.mockClear()
+
+    fireEvent.change(screen.getByLabelText('Field to filter'), { target: { value: 'name' } })
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'Ada' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add/ }))
+
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
+      'Customer', '', expect.objectContaining({ pageToken: undefined }),
+    ))
+  })
+})

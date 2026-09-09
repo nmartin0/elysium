@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, Tab, Tabs } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
@@ -113,6 +114,16 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * narrows within a search rather than discarding it.
    */
   const [crossFilter, setCrossFilter] = useState<ChartFilter[]>([])
+  /**
+   * Filters built in the filter bar, kept SEPARATE from the chart
+   * cross-filter and combined only when a query is sent.
+   *
+   * Two sources, one object set. Merging them into one list would mean
+   * clicking a chart could silently remove a filter someone typed, and
+   * removing a typed filter could clear a chart selection -- each
+   * would be editing the other's state.
+   */
+  const [barFilters, setBarFilters] = useState<FieldFilter[]>([])
   const [view, setView] = useState<string>("table")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -191,7 +202,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         const response = (await searchObjects(selectedType, queryText, {
           pageToken: pageToken ?? undefined,
           orderBy: orderBy || undefined,
-          conditions: asConditions(crossFilter),
+          // Both sources AND together, matching how conditions
+          // combine everywhere else: narrowing by a chart click and by
+          // a typed filter narrows twice.
+          conditions: [...asConditions(crossFilter), ...barFilters],
         })) as {
           results: SearchResult[]
           total_matches: number
@@ -213,7 +227,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, queryText, pageToken, orderBy, JSON.stringify(crossFilter)])
+  }, [selectedType, queryText, pageToken, orderBy, JSON.stringify(crossFilter), JSON.stringify(barFilters)])
 
   // Changing WHAT is searched resets WHERE you are in it. A token from
   // the old result set means nothing against the new one -- the server
@@ -222,7 +236,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     setPageToken(null)
     setPreviousTokens([])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, queryText, orderBy, JSON.stringify(crossFilter)])
+  }, [selectedType, queryText, orderBy, JSON.stringify(crossFilter), JSON.stringify(barFilters)])
 
   if (objectTypes === null) {
     return (
@@ -293,6 +307,24 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           </select>
         </WorkspaceFilter>
 
+        {/* currentType, not selectedType: selectedType is null until
+            someone picks one, while the panel already SHOWS the first
+            type -- guarding on it would hide the filter bar on the
+            very screen a user lands on. */}
+        {visibleSchema?.[currentType] && (
+          <WorkspaceFilter label="Filters">
+            <FilterBar
+              fields={visibleSchema[currentType]?.fields ?? {}}
+              filters={barFilters}
+              onChange={(next) => {
+                setBarFilters(next)
+                // A filter change is a new result set, so a page token
+                // from the old one means nothing.
+                setPageToken(null)
+              }}
+            />
+          </WorkspaceFilter>
+        )}
         <WorkspaceFilter label="Search" htmlFor="object-search-text">
           <input
             id="object-search-text"

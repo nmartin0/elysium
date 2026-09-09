@@ -9,6 +9,7 @@
     "./browserPreferences": "./src/browserPreferences.ts",
     "./components/AsyncPanel": "./src/components/AsyncPanel.tsx",
     "./components/Chart": "./src/components/Chart.tsx",
+    "./components/FilterBar": "./src/components/FilterBar.tsx",
     "./components/FilterBox": "./src/components/FilterBox.tsx",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",
