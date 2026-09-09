@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import type { VisibleSchema } from '@elysium/shell-api/types'
-import { buildGraph } from './SchemaGraph'
+import { buildGraph, cardinalityLabel } from './SchemaGraph'
 
 /**
  * The model, tested directly. The chart draws to a canvas jsdom cannot
@@ -112,9 +112,9 @@ describe('the graph is the same picture every time', () => {
   it('gives every node a deterministic starting position', () => {
     /**
      * ECharts seeds a force layout RANDOMLY, so the same ontology drew
-     * a different picture on every visit. That makes it impossible to
-     * build any familiarity with the shape, and reads as the
-     * application being unsure of itself.
+     * a different picture on every visit -- impossible to build any
+     * familiarity with, and it reads as the application being unsure
+     * of itself.
      */
     const first = buildGraph(TWO_TYPES)
     const second = buildGraph(TWO_TYPES)
@@ -134,5 +134,64 @@ describe('the graph is the same picture every time', () => {
 
     expect(buildGraph(reversed).nodes.map((n) => [n.name, n.x]))
       .toEqual(buildGraph(TWO_TYPES).nodes.map((n) => [n.name, n.x]))
+  })
+})
+
+describe('cardinality on the edge', () => {
+  it('writes a relationship the way an ER diagram does', () => {
+    // Short form, because an edge label competes with the node labels
+    // around it and this is the notation people already read.
+    expect(cardinalityLabel('one_to_many')).toBe('1:M')
+    expect(cardinalityLabel('many_to_one')).toBe('M:1')
+    expect(cardinalityLabel('one_to_one')).toBe('1:1')
+  })
+
+  it('writes many-to-many as M:N, not M:M', () => {
+    // Two "many" sides are not the same many, and one letter twice
+    // implies they are.
+    expect(cardinalityLabel('many_to_many')).toBe('M:N')
+  })
+
+  it('passes an unrecognised cardinality through unchanged', () => {
+    // Better to show something odd than to guess and show something
+    // wrong -- a schema may declare a shape this does not know.
+    expect(cardinalityLabel('sometimes')).toBe('sometimes')
+  })
+
+  it('puts the cardinality on the edge', () => {
+    expect(buildGraph(TWO_TYPES).links[0]?.label).toBe('1:M')
+  })
+})
+
+describe('actions in the graph', () => {
+  const ACTIONS = [
+    { api_name: 'UpdateCustomerName', affected_object_types: ['Customer'] },
+    { api_name: 'ArchiveLedger', affected_object_types: ['Ledger'] },
+  ]
+
+  it('draws an action as a node joined to what it affects', () => {
+    const model = buildGraph(TWO_TYPES, ACTIONS)
+
+    const action = model.nodes.find((n) => n.name === 'UpdateCustomerName')
+    expect(action?.kind).toBe('action')
+    expect(model.links.some((l) =>
+      l.source === 'UpdateCustomerName' && l.target === 'Customer')).toBe(true)
+  })
+
+  it('omits an action that touches nothing the caller can see', () => {
+    /**
+     * ArchiveLedger affects only Ledger, which is not in this schema.
+     * Drawing it would put a node on screen connected to nothing --
+     * which says "there is something here you may not see", the
+     * disclosure uniform denial exists to prevent.
+     */
+    const model = buildGraph(TWO_TYPES, ACTIONS)
+
+    expect(model.nodes.some((n) => n.name === 'ArchiveLedger')).toBe(false)
+  })
+
+  it('draws no actions when none are given', () => {
+    // The graph must work before action types have loaded.
+    expect(buildGraph(TWO_TYPES).nodes.every((n) => n.kind === 'object')).toBe(true)
   })
 })
