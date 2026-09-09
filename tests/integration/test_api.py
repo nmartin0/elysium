@@ -2461,3 +2461,60 @@ def test_malformed_conditions_are_a_400(client):
     assert client.get(
         "/api/objects/Customer/search?conditions=not-json"
     ).status_code == 400
+
+
+def _admin_user(client, username):
+    """A logged-in caller holding manage:users, via the debug role.
+
+    Mirrors _filter_user, which uses customer_service -- that role has
+    no manage:users grant, which is what the denial test above relies
+    on.
+    """
+    client.app.state.user_directory.create_user(username, "pw", "us-west", "debug")
+    _login(client, username, "pw")
+
+
+def test_config_route_requires_manage_users(client):
+    """Configuration discloses deployment SHAPE -- which silos exist,
+    which models run, how many object types there are.
+
+    None of that is object data, but it is what an attacker maps a
+    system with, and an ordinary user has no reason to need it. Gated
+    on the same grant Admin uses.
+    """
+    _filter_user(client, "cfgdenied")
+
+    assert client.get("/api/config").status_code == 403
+
+
+def test_config_route_reports_the_running_settings(client):
+    _admin_user(client, "cfgadmin")
+
+    body = client.get("/api/config").json()
+
+    assert body["max_hops"] == 8
+    assert body["security_attribute"] == "region"
+    assert "primary_sql" in body["silo_names"]
+    assert body["object_type_count"] > 0
+
+
+def test_config_route_never_discloses_connection_details(client):
+    """THE point of the endpoint's shape.
+
+    Silos are NAMED but not described, and roles are named but their
+    grants are not listed. llm_connection and silo connection configs
+    carry hosts, paths and credential references -- exactly the
+    material a UI must never receive.
+
+    Asserts on the serialised body rather than the model's fields,
+    because a future field could reintroduce this and a field-name
+    check would not see a nested dict.
+    """
+    _admin_user(client, "cfgnoleak")
+
+    raw = client.get("/api/config").text
+
+    assert "connection" not in raw
+    assert "password" not in raw
+    assert "dev_fixtures" not in raw, "a silo path reached the response"
+    assert "allowed_actions" not in raw, "role grants reached the response"

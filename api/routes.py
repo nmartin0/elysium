@@ -516,6 +516,71 @@ def list_users_route(request: Request, current_user: UserRecord = Depends(get_cu
     return request.app.state.user_directory.list_users()
 
 
+class DeploymentConfigResponse(BaseModel):
+    """What this deployment is actually running.
+
+    READ-ONLY, and deliberately so. Editing config at runtime is a
+    separate question with its own preconditions; this is the half
+    that carries no risk and answers "why is it behaving like that".
+    """
+
+    llm_provider: str
+    step_model: str
+    synthesis_model: str
+    max_hops: int
+    max_consecutive_duplicates: int
+    max_consecutive_invalid_steps: int
+    max_concurrent_requests: int
+    security_attribute: str
+    read_from_mirror: bool
+    enabled_tools: list[str]
+    silo_names: list[str]
+    object_type_count: int
+    action_type_count: int
+    role_names: list[str]
+
+
+@router.get("/config", response_model=DeploymentConfigResponse)
+def deployment_config_route(request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The deployment's own settings, for someone diagnosing behaviour.
+
+    GATED ON manage:users, the same grant Admin uses. Configuration
+    discloses deployment shape -- which silos exist, which models run,
+    how many object types there are -- and while none of that is
+    object DATA, it is the kind of thing an attacker maps a system
+    with. An ordinary user has no reason to need it.
+
+    WHAT IS DELIBERATELY ABSENT: llm_connection, silo connection
+    details, and the users dict. The first two carry hosts, paths and
+    credential references -- exactly the material the Silo work says
+    must never reach a UI. The third is already served, properly
+    scoped, by /users.
+
+    Silos are named but not described, and roles are named but their
+    grants are not listed: the NAMES answer "what is configured", the
+    contents would answer "what could I attack".
+    """
+    _require_manage_users(request, current_user)
+    config = request.app.state.config
+    return {
+        "llm_provider": config.llm_provider,
+        "step_model": config.step_model,
+        "synthesis_model": config.synthesis_model,
+        "max_hops": config.max_hops,
+        "max_consecutive_duplicates": config.max_consecutive_duplicates,
+        "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
+        "max_concurrent_requests": config.max_concurrent_requests,
+        "security_attribute": config.security_attribute,
+        "read_from_mirror": config.read_from_mirror,
+        "enabled_tools": list(config.enabled_tools),
+        "silo_names": sorted(config.silo_configs),
+        "object_type_count": len(config.schema),
+        "action_type_count": len(config.action_types),
+        "role_names": sorted(config.roles),
+    }
+
+
 @router.post("/users", status_code=201, response_model=CreateUserResponse)
 def create_user_route(body: CreateUserRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:

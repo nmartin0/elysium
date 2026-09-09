@@ -34,6 +34,7 @@ Run `vulture` (config: pyproject.toml's [tool.vulture]) to check.
 login
 logout
 logout_all
+deployment_config_route
 list_users_route
 create_user_route
 visible_schema_route
@@ -128,6 +129,13 @@ cardinality
 default_to_current_object
 disabled
 source
+# DeploymentConfigResponse (api/routes.py): read by FastAPI's
+# serialiser from the returned dict, never by our own code -- the same
+# reason every other response-model field below is here.
+silo_names
+object_type_count
+action_type_count
+role_names
 total_matches
 display_name
 plural_display_name

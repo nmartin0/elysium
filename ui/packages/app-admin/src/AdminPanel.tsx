@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Alert, Button, Callout, FormGroup, HTMLTable, InputGroup } from '@blueprintjs/core'
+import { Alert, Button, Callout, FormGroup, HTMLTable, InputGroup, Tab, Tabs } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -13,6 +13,8 @@ import {
 } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import Workspace from '@elysium/shell-api/components/Workspace'
+
+import DeploymentConfig from './DeploymentConfig'
 
 export interface User {
   username: string
@@ -36,6 +38,7 @@ type AdminPanelProps = SubAppProps
 export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
   const [users, setUsers] = useState<User[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [view, setView] = useState('users')
   const [schemaByUsername, setSchemaByUsername] = useState<Record<string, unknown>>({})
 
   async function loadUsers() {
@@ -136,7 +139,19 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
     >
       {error && <Callout intent="danger">{error}</Callout>}
 
-      {users === null ? (
+      {/* Two views. Users is what Admin was; Deployment answers "what
+          is this thing actually running", which had no answer short of
+          reading a YAML file on the server. */}
+      <Tabs id="admin-views" selectedTabId={view} onChange={(id) => setView(String(id))}>
+        <Tab id="users" title="Users" panel={<div />} />
+        <Tab
+          id="deployment"
+          title="Deployment"
+          panel={<DeploymentConfig onSessionExpired={onSessionExpired} />}
+        />
+      </Tabs>
+
+      {view === 'users' && (users === null ? (
         <p>Loading…</p>
       ) : (
         // HTMLTable, not a bare <table> -- Blueprint's own styled
@@ -206,7 +221,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
             ))}
           </tbody>
         </HTMLTable>
-      )}
+      ))}
 
       {/* One, shared Alert, not one per row -- see pendingDeleteUsername's
           own comment above for why. isOpen is real, controlled state

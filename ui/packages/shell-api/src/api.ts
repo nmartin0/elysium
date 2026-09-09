@@ -447,6 +447,11 @@ export async function aggregateObjects(
   return response.json()
 }
 
+export async function getDeploymentConfig(): Promise<unknown> {
+  const response = await apiFetchOrThrow("/config")
+  return response.json()
+}
+
 export async function getVisibleActionTypes(): Promise<unknown> {
   const response = await apiFetchOrThrow('/me/visible-action-types')
   return response.json()

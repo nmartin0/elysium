@@ -1129,3 +1129,30 @@ input[type="checkbox"],
   width: 50%;
   word-break: break-word;
 }
+
+/* --- The deployment config view -----------------------------------
+ * Label and value, not a data table -- the left column is a caption
+ * and should not compete with what it names. */
+.deployment-config section {
+  margin-bottom: var(--space-loose);
+}
+
+.deployment-config h3 {
+  margin: 0 0 var(--space-tight);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.deployment-config__table {
+  table-layout: fixed;
+  width: 100%;
+  max-width: 640px;
+}
+
+.deployment-config__label {
+  width: 40%;
+  color: var(--text-secondary);
+}
