@@ -2,6 +2,8 @@ import { Button, Callout, Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import type { VisibleSchema } from '@elysium/shell-api/types'
+
+import ObjectHistory from './ObjectHistory'
 import { getObjectDetail, getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
@@ -243,6 +245,19 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           </div>
         ))}
       </dl>
+
+      {/* History under the fields, not beside them. What an object IS
+          comes before what happened to it -- someone opening this page
+          is usually answering the first question, and the second is a
+          follow-up. */}
+      <section className="object-detail__history">
+        <h3>History</h3>
+        <ObjectHistory
+          objectType={objectType}
+          objectId={objectId}
+          onSessionExpired={onSessionExpired}
+        />
+      </section>
 
       {availableActions.length > 0 && !activeAction && (
         <div className="object-detail__actions">

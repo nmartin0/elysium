@@ -447,6 +447,16 @@ export async function aggregateObjects(
   return response.json()
 }
 
+export async function getObjectHistory(
+  objectType: string,
+  objectId: string,
+): Promise<unknown> {
+  const response = await apiFetchOrThrow(
+    `/objects/${objectType}/${encodeURIComponent(objectId)}/history`,
+  )
+  return response.json()
+}
+
 export async function getSilos(): Promise<unknown> {
   const response = await apiFetchOrThrow("/silos")
   return response.json()

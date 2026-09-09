@@ -1246,3 +1246,41 @@ input[type="checkbox"],
   font-size: 12px;
   color: var(--text-secondary);
 }
+
+/* --- Object history -----------------------------------------------
+ * Under the fields, because what an object IS comes before what
+ * happened to it.
+ */
+.object-detail__history {
+  margin-top: var(--space-section);
+}
+
+.object-detail__history h3 {
+  margin: 0 0 var(--space-tight);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.object-history {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* The raw timestamp needs room and should not wrap mid-value. */
+.object-history__when {
+  width: 30%;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* An entry whose changed fields are all unreadable still appears --
+ * the fact of the edit is what an audit trail is for. Said plainly,
+ * because a blank cell reads as a rendering fault. */
+.object-history__withheld {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
