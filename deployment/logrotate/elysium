@@ -1,0 +1,58 @@
+# logrotate configuration for a packaged Elysium install.
+#
+# Install to /etc/logrotate.d/elysium.
+#
+# WHY THIS IS CONFIG AND NOT CODE. The audit log already opens and
+# closes per record, deliberately: a persistent handle measured 4.5us
+# against 18.3us and was rejected, because it would keep writing to a
+# rotated-away inode and silently lose records. Open-per-append
+# follows a rotation without needing to be told about it, so nothing
+# in the application has to change and no signal has to be delivered.
+#
+# THE FAILURE THIS PREVENTS. An audit entry is written per field
+# access, and profiling put audit I/O at 2.5 of 3.4 seconds on the
+# aggregate path -- so the volume is real. When the disk fills, WRITES
+# fail while READS keep working, which is the confusing kind of
+# outage: the application appears healthy and quietly stops recording
+# who read what.
+
+/var/log/elysium/*.log {
+    daily
+
+    # 90 days. An audit log's retention is a COMPLIANCE decision, not a
+    # disk-space one, and 90 is a common floor rather than a
+    # considered answer for any particular deployment. An operator
+    # subject to a real retention requirement must set this
+    # deliberately -- it is called out in the install notes for that
+    # reason.
+    rotate 90
+
+    compress
+
+    # Compress on the NEXT rotation, not this one. The most recent
+    # rotated file stays readable with grep and tail, which is what
+    # someone reaches for when investigating something that happened
+    # yesterday.
+    delaycompress
+
+    # Rotating an absent log is not an error -- a deployment that has
+    # not yet been used has no audit.log, and logrotate should not
+    # complain about it every day.
+    missingok
+    notifempty
+
+    # No size floor. `daily` alone means a quiet deployment rotates
+    # tiny files, which is harmless; a size condition instead would
+    # mean a BUSY day silently sharing a file with a quiet one, and
+    # "which file covers Tuesday" stops having an answer.
+
+    # 0600 and owned by the service user: an audit log records who read
+    # what, which is exactly the material that should not be
+    # world-readable on a shared host.
+    create 0600 elysium elysium
+
+    # NO copytruncate. It truncates the original in place, and any
+    # record written between the copy and the truncate is lost. That
+    # is precisely the trade the open-per-append design refused to
+    # make, and it would reintroduce it here.
+}

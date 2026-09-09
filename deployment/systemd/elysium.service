@@ -13,7 +13,17 @@
 #   sudo install -d -o elysium -g elysium -m 0755 /etc/elysium /var/log/elysium
 #   sudo install -d -o elysium -g elysium -m 0700 /var/lib/elysium
 #   sudo cp deployment/systemd/elysium.service /etc/systemd/system/
+#   sudo cp deployment/logrotate/elysium /etc/logrotate.d/elysium
 #   sudo systemctl daemon-reload && sudo systemctl enable --now elysium
+#
+# THE LOGROTATE CONFIG IS NOT OPTIONAL. An audit entry is written per
+# field access; without rotation the disk fills, and when it does
+# WRITES fail while READS keep working -- the application looks healthy
+# and quietly stops recording who read what.
+#
+# Its `rotate 90` is a placeholder, not an answer. Audit retention is a
+# compliance decision and an operator subject to a real requirement
+# must set it deliberately.
 
 [Unit]
 Description=Elysium ontology service
