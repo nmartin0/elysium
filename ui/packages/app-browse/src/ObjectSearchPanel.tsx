@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, Tab, Tabs } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
@@ -44,6 +45,11 @@ interface ObjectSearchPanelProps extends SubAppProps {
    *  without this a second user inherits the first's. */
   username: string
 }
+
+const BROWSE_VIEWS: readonly ViewOption[] = [
+  { id: 'table', label: 'Table', icon: 'th' },
+  { id: 'charts', label: 'Charts', icon: 'chart' },
+]
 
 export default function ObjectSearchPanel({ visibleSchema, username, onSessionExpired }: ObjectSearchPanelProps) {
   const [selectedType, setSelectedType] = useState<string | null>(null)
@@ -253,6 +259,12 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     <Workspace
       config={
         <>
+          {/* The view selector first, because it decides what the
+              controls below it apply to -- and in the same place
+              Schema and Admin put theirs, so the shell reads one way
+              throughout. */}
+          <ViewSelector views={BROWSE_VIEWS} selected={view} onSelect={setView} />
+
         <WorkspaceFilter label="Object type" htmlFor="object-type">
           <select
             id="object-type"
@@ -345,30 +357,20 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           how. Stacking them, which this first did, made the page a
           scroll rather than a choice and gave the charts nowhere to
           breathe. */}
-      <Tabs
-        id="browse-views"
-        selectedTabId={view}
-        onChange={(tabId) => setView(String(tabId))}
-        renderActiveTabPanelOnly
-      >
-        <Tab id="table" title="Table" panel={<div />} />
-        <Tab
-          id="charts"
-          title="Charts"
-          panel={
-            selectedType ? (
-              <ChartsPanel
-                objectType={selectedType}
-                visibleSchema={visibleSchema}
-                queryText={queryText}
-                filters={crossFilter}
-                onSelect={toggleChartValue}
-                onSessionExpired={onSessionExpired}
-              />
-            ) : undefined
-          }
-        />
-      </Tabs>
+      {/* The canvas holds ONE view; the selector lives in the pane
+          with Schema's and Admin's. A tab strip above the content
+          meant this sub-app read left, then up, then down, where the
+          other two read left to right. */}
+      {view === 'charts' && selectedType && (
+        <ChartsPanel
+                        objectType={selectedType}
+                        visibleSchema={visibleSchema}
+                        queryText={queryText}
+                        filters={crossFilter}
+                        onSelect={toggleChartValue}
+                        onSessionExpired={onSessionExpired}
+                      />
+      )}
 
       {loading && <p className="object-search__status">Searching…</p>}
 

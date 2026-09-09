@@ -605,7 +605,7 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
  *  one stacked above the other. A test that clicks a chart has to open
  *  it first, the same as a user does. */
 function openCharts() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Charts' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Charts' }))
 }
 
 describe('ObjectSearchPanel -- cross-filtering', () => {

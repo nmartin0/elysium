@@ -140,3 +140,30 @@ describe('package layering', () => {
     expect(offenders).toEqual([])
   })
 })
+
+describe('every sub-app reads the same way', () => {
+  it('puts its view selector in the pane, not a tab strip in the canvas', () => {
+    /**
+     * Consistency is the whole argument for the shared selector. A
+     * shell where one sub-app reads left-to-right and another reads
+     * left, then up, then down costs a decision on every arrival --
+     * the mental model has to be rebuilt rather than reused.
+     *
+     * Browse kept a Blueprint Tabs strip for two rounds after Schema
+     * and Admin moved, and nothing said so.
+     */
+    const panels = [
+      'packages/app-browse/src/ObjectSearchPanel.tsx',
+      'packages/app-schema/src/SchemaPanel.tsx',
+      'packages/app-admin/src/AdminPanel.tsx',
+    ]
+
+    for (const panel of panels) {
+      const source = readFileSync(path.resolve(__dirname, '..', panel), 'utf8')
+      expect(source, `${panel} should use the shared ViewSelector`)
+        .toMatch(/<ViewSelector/)
+      expect(source, `${panel} should not have its own tab strip`)
+        .not.toMatch(/<Tabs\b/)
+    }
+  })
+})
