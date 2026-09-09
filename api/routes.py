@@ -722,7 +722,11 @@ def silos_route(request: Request,
             "object_types": sorted(types_by_silo.get(silo_name, [])),
             "fields": sorted(
                 fields_by_silo.get(silo_name, []),
-                key=lambda f: (f["object_type"], f["field"]),
+                # Identifier FIRST within each object type. Sorting
+                # by name alone scattered it -- account_id before
+                # balance, tag_id after label -- so the key you need to
+                # check landed in a different place for every type.
+                key=lambda f: (f["object_type"], not f["is_identifier"], f["field"]),
             ),
             "reachable": failure is None,
             "failure": failure,

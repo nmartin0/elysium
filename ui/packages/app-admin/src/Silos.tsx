@@ -151,8 +151,14 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                                   object's row rather than a wrong
                                   value, so it belongs where someone is
                                   already scanning for mismatches. */}
+                              {/* A REAL space, not a CSS margin. Margin
+                                  separates it visually and leaves the
+                                  DOM text as "customer_ididentifier"
+                                  -- which is what a screen reader
+                                  announces and what a copy-paste
+                                  produces. */}
                               {field.is_identifier && (
-                                <Tag minimal className="silos__id-tag">identifier</Tag>
+                                <> <Tag minimal className="silos__id-tag">identifier</Tag></>
                               )}
                             </td>
                             <td>{field.table}</td>

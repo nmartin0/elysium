@@ -2687,3 +2687,18 @@ def test_silos_route_lists_an_identifier_once_per_storage(client):
     customer_ids = [f for f in primary["fields"]
                     if f["is_identifier"] and f["object_type"] == "Customer"]
     assert len(customer_ids) == 1
+
+
+def test_silos_route_sorts_the_identifier_first_within_a_type(client):
+    """Sorting by name alone scattered it -- account_id before balance,
+    tag_id AFTER label -- so the key you need to check landed somewhere
+    different for every object type.
+    """
+    _admin_user(client, "siloidsort")
+
+    body = client.get("/api/silos").json()
+
+    primary = next(silo for silo in body if silo["name"] == "primary_sql")
+    for object_type in {f["object_type"] for f in primary["fields"]}:
+        rows = [f for f in primary["fields"] if f["object_type"] == object_type]
+        assert rows[0]["is_identifier"], f"{object_type} does not lead with its key"

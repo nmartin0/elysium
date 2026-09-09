@@ -142,4 +142,21 @@ describe('Silos -- the join key', () => {
     expect(screen.getByText('identifier')).toBeInTheDocument()
     expect(screen.getByText('cust_ref')).toBeInTheDocument()
   })
+
+  it('separates the tag from the field name in the TEXT, not just visually', () => {
+    /**
+     * A CSS margin separates them on screen and leaves the DOM text as
+     * "customer_ididentifier" -- which is what a screen reader
+     * announces and what a copy-paste produces. Found in a paste of
+     * the real screen.
+     */
+    render(<Silos onSessionExpired={() => {}} />)
+
+    return screen.findByText('support_crm').then(() => {
+      fireEvent.click(screen.getByLabelText(/Show fields backed by support_crm/))
+      const cell = screen.getByText('identifier').closest('td')
+      expect(cell?.textContent).not.toMatch(/customer_ididentifier/)
+      expect(cell?.textContent).toMatch(/customer_id identifier/)
+    })
+  })
 })
