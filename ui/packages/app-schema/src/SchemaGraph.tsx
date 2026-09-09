@@ -86,8 +86,11 @@ export function cardinalityLabel(cardinality: string): string {
  */
 export function buildGraph(
   schema: VisibleSchema,
-  actionTypes: { api_name: string; display_name?: string | null;
-                 affected_object_types?: string[] }[] = [],
+  // Keyed by api_name, matching what the endpoint returns. Taking the
+  // record rather than an array means buildGraph cannot be handed a
+  // shape the API never produces.
+  actionTypes: Record<string, { display_name?: string | null;
+                                affected_object_types?: string[] }> = {},
 ): GraphModel {
   // SORTED, so the starting positions below come from a stable order
   // rather than whatever order the object arrived in.
@@ -97,9 +100,9 @@ export function buildGraph(
   // types this caller cannot read would be a node connected to
   // nothing, which says "there is something here you may not see" --
   // the disclosure uniform denial exists to prevent.
-  const visibleActions = actionTypes.filter((action) =>
+  const visibleActions = Object.entries(actionTypes).filter(([, action]) =>
     (action.affected_object_types ?? []).some((type) => type in schema))
-  const actionNames = visibleActions.map((action) => action.api_name).sort()
+  const actionNames = visibleActions.map(([apiName]) => apiName).sort()
 
   const total = Math.max(names.length + actionNames.length, 1)
 
@@ -160,13 +163,13 @@ export function buildGraph(
   }
 
   // Action -> the object types it affects.
-  for (const action of visibleActions) {
+  for (const [apiName, action] of visibleActions) {
     for (const objectType of action.affected_object_types ?? []) {
       if (!known.has(objectType)) continue
       links.push({
-        source: action.api_name,
+        source: apiName,
         target: objectType,
-        name: action.api_name,
+        name: apiName,
         label: 'affects',
         kind: 'affects',
       })
@@ -177,13 +180,16 @@ export function buildGraph(
 }
 
 interface ActionTypeSummary {
-  api_name: string
   display_name?: string | null
   affected_object_types?: string[]
 }
 
 export default function SchemaGraph({ schema, onSelectType }: SchemaGraphProps) {
-  const [actionTypes, setActionTypes] = useState<ActionTypeSummary[]>([])
+  // A RECORD keyed by api_name, which is what the endpoint returns --
+  // not an array. A first version called .filter() on it, which throws
+  // in render, and an uncaught throw in render is a WHITE SCREEN
+  // rather than an error message. Found by looking at it.
+  const [actionTypes, setActionTypes] = useState<Record<string, ActionTypeSummary>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -197,7 +203,7 @@ export default function SchemaGraph({ schema, onSelectType }: SchemaGraphProps) 
     // no action nodes, and Action types itself reports the failure.
     getVisibleActionTypesCached()
       .then((body) => {
-        if (!cancelled) setActionTypes((body as ActionTypeSummary[]) ?? [])
+        if (!cancelled) setActionTypes((body as Record<string, ActionTypeSummary>) ?? {})
       })
       .catch(() => {})
     return () => {

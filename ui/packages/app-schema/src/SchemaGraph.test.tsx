@@ -1,4 +1,20 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+// The graph fetches action types on mount. Unmocked, every render test
+// here would hit a real fetch.
+vi.mock('@elysium/shell-api/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
+  return {
+    ...actual,
+    // The REAL shape: a record keyed by api_name, not an array.
+    getVisibleActionTypesCached: () =>
+      Promise.resolve({ UpdateCustomerName: { affected_object_types: ['Customer'] } }),
+  }
+})
+
+vi.mock('@elysium/shell-api/components/Chart', () => ({
+  default: ({ ariaLabel }: { ariaLabel: string }) => <div>{ariaLabel}</div>,
+}))
 
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import { buildGraph, cardinalityLabel } from './SchemaGraph'
@@ -164,10 +180,19 @@ describe('cardinality on the edge', () => {
 })
 
 describe('actions in the graph', () => {
-  const ACTIONS = [
-    { api_name: 'UpdateCustomerName', affected_object_types: ['Customer'] },
-    { api_name: 'ArchiveLedger', affected_object_types: ['Ledger'] },
-  ]
+  /**
+   * A RECORD keyed by api_name, which is what /me/visible-action-types
+   * returns.
+   *
+   * A first version of this fixture was an ARRAY, so every test here
+   * passed while the real screen crashed to white: buildGraph called
+   * .filter() on an object. A fixture that does not match the API is a
+   * test that proves nothing about production.
+   */
+  const ACTIONS = {
+    UpdateCustomerName: { affected_object_types: ['Customer'] },
+    ArchiveLedger: { affected_object_types: ['Ledger'] },
+  }
 
   it('draws an action as a node joined to what it affects', () => {
     const model = buildGraph(TWO_TYPES, ACTIONS)
@@ -193,5 +218,38 @@ describe('actions in the graph', () => {
   it('draws no actions when none are given', () => {
     // The graph must work before action types have loaded.
     expect(buildGraph(TWO_TYPES).nodes.every((n) => n.kind === 'object')).toBe(true)
+  })
+})
+
+describe('SchemaGraph renders against the real API shape', () => {
+  /**
+   * THE test that was missing, and the reason a white screen shipped.
+   *
+   * Every test above exercised buildGraph directly with a fixture I
+   * wrote. None rendered the COMPONENT, so nothing ever fed it what
+   * the endpoint actually returns -- a record keyed by api_name. The
+   * component called .filter() on it, which throws, and an uncaught
+   * throw in render blanks the entire page rather than showing an
+   * error.
+   *
+   * Mocking the API rather than the model is what makes this catch a
+   * shape mismatch instead of confirming my own assumption.
+   */
+  it('does not throw when the endpoint returns a record', async () => {
+    const { default: SchemaGraphComponent } = await import('./SchemaGraph')
+    const { render } = await import('@testing-library/react')
+
+    expect(() => render(
+      <SchemaGraphComponent schema={TWO_TYPES} onSelectType={() => {}} />,
+    )).not.toThrow()
+  })
+
+  it('says so when the caller can read no object type', async () => {
+    const { default: SchemaGraphComponent } = await import('./SchemaGraph')
+    const { render, screen } = await import('@testing-library/react')
+
+    render(<SchemaGraphComponent schema={{}} onSelectType={() => {}} />)
+
+    expect(screen.getByText(/do not have read access/)).toBeInTheDocument()
   })
 })
