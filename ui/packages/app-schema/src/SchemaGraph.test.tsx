@@ -240,7 +240,7 @@ describe('SchemaGraph renders against the real API shape', () => {
     const { render } = await import('@testing-library/react')
 
     expect(() => render(
-      <SchemaGraphComponent schema={TWO_TYPES} onSelectType={() => {}} />,
+      <SchemaGraphComponent schema={TWO_TYPES} onSelect={() => {}} />,
     )).not.toThrow()
   })
 
@@ -248,8 +248,44 @@ describe('SchemaGraph renders against the real API shape', () => {
     const { default: SchemaGraphComponent } = await import('./SchemaGraph')
     const { render, screen } = await import('@testing-library/react')
 
-    render(<SchemaGraphComponent schema={{}} onSelectType={() => {}} />)
+    render(<SchemaGraphComponent schema={{}} onSelect={() => {}} />)
 
     expect(screen.getByText(/do not have read access/)).toBeInTheDocument()
+  })
+})
+
+describe('clicking a node opens what it actually is', () => {
+  it('reports the KIND alongside the name', async () => {
+    /**
+     * The bug, found by clicking one: the graph passed only a name, so
+     * an action node opened Object types and searched for an action
+     * there -- a dead end that looked like a broken link rather than a
+     * wrong destination.
+     *
+     * The graph already knew. buildGraph tags every node 'object' or
+     * 'action'; the click handler simply threw it away.
+     */
+    const model = buildGraph(TWO_TYPES, {
+      UpdateCustomerName: { affected_object_types: ['Customer'] },
+    })
+
+    const action = model.nodes.find((n) => n.name === 'UpdateCustomerName')
+    const object = model.nodes.find((n) => n.name === 'Customer')
+
+    expect(action?.kind).toBe('action')
+    expect(object?.kind).toBe('object')
+  })
+
+  it('gives every node exactly one kind', () => {
+    // The routing decision is binary, so a node with no kind would
+    // fall through to whichever branch is the default -- which is the
+    // bug this fixes, reintroduced by omission.
+    const model = buildGraph(TWO_TYPES, {
+      UpdateCustomerName: { affected_object_types: ['Customer'] },
+    })
+
+    for (const node of model.nodes) {
+      expect(['object', 'action']).toContain(node.kind)
+    }
   })
 })

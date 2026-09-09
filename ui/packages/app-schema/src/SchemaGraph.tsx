@@ -29,7 +29,16 @@ interface SchemaGraphProps {
   /** Clicking a node opens that type, the same as clicking it in a
    *  table. A graph you can only look at is a diagram; one you can
    *  navigate is part of the app. */
-  onSelectType: (objectType: string) => void
+  /**
+   * Clicking a node opens what it IS, which means the caller has to be
+   * told WHICH KIND was clicked.
+   *
+   * An earlier version passed only a name, so an action node opened
+   * Object types and searched for an action there -- a dead end that
+   * looked like a broken link. The graph already knows: buildGraph
+   * tags every node.
+   */
+  onSelect: (name: string, kind: 'object' | 'action') => void
 }
 
 export interface GraphNode {
@@ -184,7 +193,7 @@ interface ActionTypeSummary {
   affected_object_types?: string[]
 }
 
-export default function SchemaGraph({ schema, onSelectType }: SchemaGraphProps) {
+export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
   // A RECORD keyed by api_name, which is what the endpoint returns --
   // not an array. A first version called .filter() on it, which throws
   // in render, and an uncaught throw in render is a WHITE SCREEN
@@ -283,7 +292,12 @@ export default function SchemaGraph({ schema, onSelectType }: SchemaGraphProps) 
         + `${model.nodes.filter((n) => n.kind === 'action').length} action types, `
         + `${model.links.length} relationships`
       }
-      onSelect={onSelectType}
+      onSelect={(name) => {
+        // The node's own kind, looked up rather than guessed from the
+        // name -- an action and an object type could share one.
+        const node = model.nodes.find((candidate) => candidate.name === name)
+        if (node) onSelect(name, node.kind)
+      }}
     />
   )
 }

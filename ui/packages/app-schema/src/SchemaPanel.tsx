@@ -442,7 +442,16 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
             </>
       )}
       {selectedTab === 'overview' && (
-        <SchemaGraph schema={schema} onSelectType={openObjectType} />
+        <SchemaGraph
+          schema={schema}
+          onSelect={(name, kind) => {
+            // An action opens Action types, not Object types. Routing
+            // by name alone sent every click to the object catalogue,
+            // where an action is never found -- a dead end that looked
+            // like a broken link rather than a wrong destination.
+            go(kind === 'action' ? 'action-types' : 'object-types', name, 'push')
+          }}
+        />
       )}
       {selectedTab === 'link-types' && (
         <>

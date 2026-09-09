@@ -350,3 +350,15 @@ describe('SchemaPanel -- icons', () => {
     expect(screen.getByText('Customer')).toBeInTheDocument()
   })
 })
+
+// NO panel-level test for graph routing, deliberately.
+//
+// It would need the Chart mock to expose a specific node's onSelect,
+// then assert the URL changed -- and the version I wrote asserted the
+// tab was still "overview", which was true before the click and
+// proves nothing.
+//
+// What actually decides the destination is the node's KIND, and
+// SchemaGraph.test.tsx tests that directly: every node has exactly
+// one, and an action node reports 'action'. The routing itself is one
+// ternary reading that value.
