@@ -22,6 +22,7 @@ reasoning.
 """
 
 from core.llm.agent_step_prompt import (
+    _action_state_notes,
     _build_system_prompt,
     _describe_actions,
     _known_state_for_object,
@@ -91,7 +92,10 @@ def test_sub_write_validity_false_with_the_real_criterion_description_as_reason(
 
 
 def test_describe_actions_shows_no_verdict_with_no_known_state():
-    text = _describe_actions(ACTION_TYPES, [])
+    # The catalogue is now STATIC -- it never carried verdicts. Kept
+    # pointed at _describe_actions deliberately: this asserts the
+    # static block stays clean, which is what makes it cacheable.
+    text = _describe_actions(ACTION_TYPES)
     assert "ReopenTicket" in text
     assert "propose_action" in text
     assert "Currently valid" not in text
@@ -107,7 +111,7 @@ def test_describe_actions_annotates_a_known_valid_object():
     gathered = [
         {"step": "get_field", "object_type": "Ticket", "object_id": "t1", "field_name": "status", "result": "closed"}
     ]
-    text = _describe_actions(ACTION_TYPES, gathered)
+    text = _action_state_notes(ACTION_TYPES, gathered)
     assert "Currently valid for ticket_id: t1" in text
 
 
@@ -115,7 +119,7 @@ def test_describe_actions_annotates_a_known_blocked_object_with_reason():
     gathered = [
         {"step": "get_field", "object_type": "Ticket", "object_id": "t2", "field_name": "status", "result": "open"}
     ]
-    text = _describe_actions(ACTION_TYPES, gathered)
+    text = _action_state_notes(ACTION_TYPES, gathered)
     assert "Currently blocked for ticket_id: t2 (Ticket must currently be closed to reopen it)" in text
 
 
@@ -124,7 +128,7 @@ def test_describe_actions_handles_multiple_known_objects_independently():
         {"step": "get_field", "object_type": "Ticket", "object_id": "t1", "field_name": "status", "result": "closed"},
         {"step": "get_field", "object_type": "Ticket", "object_id": "t2", "field_name": "status", "result": "open"},
     ]
-    text = _describe_actions(ACTION_TYPES, gathered)
+    text = _action_state_notes(ACTION_TYPES, gathered)
     assert "Currently valid for ticket_id: t1" in text
     assert "Currently blocked for ticket_id: t2 (Ticket must currently be closed to reopen it)" in text
 
@@ -178,3 +182,71 @@ def test_next_step_fails_closed_on_malformed_propose_action_step():
     client = _FakeClient('{"step": "propose_action", "action_type": "ReopenTicket"}')
     step = next_step(client, "reopen it", {}, [], [], True, ACTION_TYPES)
     assert step == {"step": "finish"}
+
+
+# --- prompt stability across hops ---
+#
+# WHY THIS IS ASSERTED. The step prompt is re-sent every hop, and an
+# LLM server reuses the computed attention state of a shared PREFIX.
+# When the per-object action verdicts lived inside _describe_actions()
+# they changed the MIDDLE of the system prompt on the exact hop a
+# write became relevant, invalidating that prefix.
+#
+# Measured on the CPU-only deployment before this split, one query:
+#
+#   call 1: 298.0s   (cold)
+#   call 2:  30.7s   (prefix reused)
+#   call 3:  32.3s   (prefix reused)
+#   call 4: 192.8s   <- first Transaction entered gathered
+#   call 5: 192.5s   <- second Transaction entered gathered
+#
+# 322 seconds of a 746-second query, spent re-reading a prompt that
+# changed only because an annotation moved.
+
+_STABLE_PREFIX_END = "Current action availability"
+
+
+def _prompt(gathered):
+    return _build_system_prompt({}, [], True, ACTION_TYPES, gathered)
+
+
+def test_the_system_prompt_prefix_is_identical_regardless_of_gathered():
+    # THE PROPERTY THAT MATTERS. Everything up to the trailing notes
+    # must be byte-identical, or the cached prefix is thrown away.
+    empty = _prompt([])
+    with_state = _prompt([
+        {"step": "get_field", "object_type": "Ticket", "object_id": "t1",
+         "field_name": "status", "result": "closed"},
+    ])
+
+    assert with_state != empty, "the notes must actually appear, or this proves nothing"
+    prefix = empty.split(_STABLE_PREFIX_END)[0]
+    assert with_state.startswith(prefix)
+
+
+def test_the_verdicts_still_reach_the_prompt():
+    # The control for the test above: a prompt that never annotated
+    # anything would trivially have a stable prefix and be useless.
+    text = _prompt([
+        {"step": "get_field", "object_type": "Ticket", "object_id": "t1",
+         "field_name": "status", "result": "closed"},
+    ])
+
+    assert "Currently valid for ticket_id: t1" in text
+
+
+def test_the_notes_section_is_absent_entirely_when_nothing_is_known():
+    # An empty section is worse than no section -- the same gating
+    # discipline the tools and writes sections already use.
+    assert _STABLE_PREFIX_END not in _prompt([])
+
+
+def test_the_verdicts_come_after_every_instruction():
+    # Position, not just presence. Appended LAST, matching
+    # core/llm/synthesis_prompt.py's own SYSTEM_PROMPT + note pattern.
+    text = _prompt([
+        {"step": "get_field", "object_type": "Ticket", "object_id": "t1",
+         "field_name": "status", "result": "closed"},
+    ])
+
+    assert text.index(_STABLE_PREFIX_END) > text.index("IMPORTANT")

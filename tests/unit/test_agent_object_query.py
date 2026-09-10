@@ -336,7 +336,7 @@ def test_a_delete_goes_from_the_agents_prompt_through_to_applied(write_loop):
 
     # It reaches the prompt from the deployment's own declaration, with
     # no code change.
-    described = _describe_actions({"RemoveAccount": delete_action}, [])
+    described = _describe_actions({"RemoveAccount": delete_action})
     assert "RemoveAccount" in described
     assert "propose_action" in described
 
@@ -396,7 +396,7 @@ def test_a_delete_action_type_reaches_the_agents_prompt(write_loop):
         "executable": True,
     }
 
-    described = _describe_actions({"RemoveAccount": delete_action}, [])
+    described = _describe_actions({"RemoveAccount": delete_action})
 
     assert "RemoveAccount" in described
     assert "propose_action" in described

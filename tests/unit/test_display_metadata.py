@@ -184,7 +184,6 @@ def test_a_parameter_description_reaches_the_agents_prompt():
                 "executable": True,
             }
         },
-        [],
     )
 
     assert "the balance the source should END with" in described
@@ -206,7 +205,6 @@ def test_a_parameter_without_a_description_is_described_as_before():
                 "executable": True,
             }
         },
-        [],
     )
 
     assert "amount (number, required)" in described

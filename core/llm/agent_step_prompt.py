@@ -253,22 +253,18 @@ def _object_reference_hints(action_def: dict, gathered: list[dict]) -> list[str]
     return lines
 
 
-def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
+def _describe_actions(visible_action_types: dict) -> str:
     # Renders the model-facing named-action vocabulary -- one block per
     # action this user is authorized for (already filtered by
     # WriteMediator.visible_action_types() BEFORE this is ever called;
     # this function has no authorization logic of its own).
     #
-    # For any object the model has ALREADY read enough state for
-    # during this same run, annotates whether the action is currently
-    # valid or blocked (and why) for that specific object -- the
-    # hybrid design: cheap and precise when state is already known
-    # (mirroring how a real UI can disable/hide an action button for
-    # an object already loaded on screen), and silently absent
-    # otherwise (an action with no annotatable objects yet -- the
-    # common case, e.g. at the very start of a request, before any
-    # object's state has been read at all -- is shown with no verdict,
-    # exactly as a UI with nothing loaded yet would show it).
+    # STATIC. Depends only on visible_action_types, never on what has
+    # been gathered, so this text is byte-identical for every hop of a
+    # query. The per-object "currently valid / currently blocked"
+    # annotations that used to live inside each block moved to
+    # _action_state_notes() below -- see _build_system_prompt() for
+    # the measured reason.
     blocks = []
     for action_name, action_def in visible_action_types.items():
         params = action_def.get("parameters", {})
@@ -293,11 +289,31 @@ def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
             f'- {action_name} (on {object_types_touched}): requires {param_desc}\n'
             f'  {{"step": "propose_action", "action_type": "{action_name}", "parameters": {{{param_json}}}}}'
         )
-        hint_lines = _object_reference_hints(action_def, gathered)
-        if hint_lines:
-            block += "\n" + "\n".join(hint_lines)
         blocks.append(block)
     return "\n".join(blocks)
+
+
+def _action_state_notes(visible_action_types: dict, gathered: list[dict]) -> str:
+    # The half of the action vocabulary that DOES depend on gathered:
+    # whether each action is currently valid or blocked for objects
+    # whose state has already been read this run. Mirrors how a real UI
+    # disables an action button for an object already on screen.
+    #
+    # Rendered as its own trailing section rather than inline in each
+    # action's block, because inline it changed the middle of the
+    # system prompt on the exact hop a write became relevant. See
+    # _build_system_prompt().
+    blocks = []
+    for action_name, action_def in visible_action_types.items():
+        hint_lines = _object_reference_hints(action_def, gathered)
+        if hint_lines:
+            blocks.append(f"- {action_name}:\n" + "\n".join(hint_lines))
+    if not blocks:
+        return ""
+    return (
+        "\n\nCurrent action availability, based on what you have already read"
+        " this run:\n\n" + "\n".join(blocks)
+    )
 
 
 def _build_system_prompt(visible_schema: dict, tools: list[Function], writes_enabled: bool,
@@ -328,7 +344,7 @@ answer a question. If an action below is marked "Currently blocked"
 for a specific object, invoking it for that object will fail -- prefer
 a different action or a different object instead.
 
-{_describe_actions(visible_action_types, gathered)}
+{_describe_actions(visible_action_types)}
 """
     return f"""You gather information step by step to answer a question,
 using ONLY these object types and fields:
@@ -401,7 +417,7 @@ IMPORTANT: Before you finish, check EVERY ID from a list result (like
 ID 1 but not the same field for ID 2, that's incomplete -- go back and
 get it for ID 2 too before finishing. Do not answer about some items in
 a list and silently skip others.
-"""
+""" + _action_state_notes(visible_action_types, gathered)
 
 
 def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
