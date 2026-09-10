@@ -91,6 +91,7 @@ from core.intermediate_layer.policy_validation import validate_roles
 from core.ontology.action_types import validate_action_types
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.object_type_validation import validate_object_types
+from core.ontology.submission_criteria import validate_action_type_criteria
 
 
 def _report_invalid(config_dir: Path, errors: list[str]) -> bool:
@@ -226,6 +227,7 @@ def _collect_action_type_and_role_errors(schema_raw: dict, policy_raw: dict, ena
     for action_type_name, action_def in action_types.items():
         try:
             validate_action_types({action_type_name: action_def}, object_types)
+            validate_action_type_criteria({action_type_name: action_def})
         except ValueError as e:
             position = _describe_position(schema_text, "ontology_schema.yaml", ["action_types", action_type_name])
             errors.append(f"{e}{position}")

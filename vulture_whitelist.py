@@ -167,3 +167,8 @@ icon
 visibility
 checks
 link_type
+
+# pydantic reads model_config off the class itself -- a name the
+# library looks up, never one this project's own code calls. See
+# core/ontology/submission_criteria.py's Criterion.
+model_config

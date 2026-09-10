@@ -47,6 +47,7 @@ from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.mediator import DataMediator
 from core.ontology.object_type_validation import validate_object_types
+from core.ontology.submission_criteria import validate_action_type_criteria
 from core.ontology.write_log import WriteLogReader, WriteLogWriter
 
 # Two real, SEPARATE registries -- not one, mapping to a (read, write)
@@ -268,6 +269,11 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # load time, not deferred to propose_action() -- including why a
     # missing "sub_writes" is now REJECTED, not silently skipped).
     validate_action_types(deployment_config.action_types, deployment_config.schema)
+    # Separate call because core/ontology/action_types.py may not
+    # import core/ontology/submission_criteria.py -- they are siblings
+    # in pyproject.toml's core.ontology layering. See that function's
+    # own docstring.
+    validate_action_type_criteria(deployment_config.action_types)
 
     # title_field -- an OPTIONAL, per-object-type display-name
     # declaration (see core/ontology/object_type_validation.py's own

@@ -67,6 +67,27 @@ Used by: core/ontology/write_mediator.py's propose_action()
 """
 
 import operator as _operator
+from typing import Any, Literal, get_args
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+# THE VOCABULARY, AS TYPES. These two Literals are the single source of
+# truth for what a criterion may say, and they are types rather than
+# constants deliberately: mypy checks them, and the schema-load
+# validation below gets them for free instead of restating them.
+#
+# This replaced a hand-rolled set of frozensets. The problem that
+# produced was not the checking itself but WHERE THE VOCABULARY LIVED:
+# core/ontology/action_types.py needs it too and is a SIBLING of this
+# module in pyproject.toml's core.ontology layering, so it may not
+# import from here. Every arrangement of shared constants ran into
+# that. A type has no such problem, because nothing has to import it
+# -- validate_action_type_criteria() below walks a plain dict.
+CheckKind = Literal["current_state", "parameter"]
+OperatorName = Literal[
+    "equals", "not_equals", "greater_than", "less_than",
+    "greater_than_or_equal", "less_than_or_equal", "in",
+]
 
 _OPERATORS = {
     "equals": _operator.eq,
@@ -77,6 +98,98 @@ _OPERATORS = {
     "less_than_or_equal": _operator.le,
     "in": lambda actual, expected: actual in expected,
 }
+
+# The one place the Literal above and the dispatch table could still
+# drift: OperatorName says what a schema may DECLARE, _OPERATORS says
+# what this module can EXECUTE. Adding to one and forgetting the other
+# would mean either a criterion that validates at load and explodes at
+# proposal time, or an operator nobody can reach.
+#
+# Checked at import, so it fails when the module is first loaded rather
+# than when someone happens to use the mismatched operator. Raised
+# rather than asserted: `python -O` strips assert statements, and this
+# is a real invariant, not a debugging aid.
+if set(get_args(OperatorName)) != set(_OPERATORS):
+    raise RuntimeError(
+        "submission_criteria: OperatorName and _OPERATORS disagree -- "
+        f"declared-only {sorted(set(get_args(OperatorName)) - set(_OPERATORS))}, "
+        f"executable-only {sorted(set(_OPERATORS) - set(get_args(OperatorName)))}."
+    )
+
+
+class Criterion(BaseModel):
+    """One submission criterion, as a deployment declares it.
+
+    WHY A MODEL RATHER THAN HAND-WRITTEN CHECKS. evaluate_submission_
+    criteria() below rejects an unknown check kind and an unknown
+    operator -- but only when a criterion is actually REACHED, which is
+    at proposal time, on a real user's write, in a running deployment.
+    A deployment declaring `check: currentstate` used to start cleanly,
+    pass scripts/lint_deployment.py, and fail on the first person to
+    use that action.
+
+    Every one of these constraints depends on the criterion alone, so
+    all of them can be settled at load. Declaring them as a model gets
+    that without a second copy of the vocabulary: `check` and
+    `operator` are the same Literals the evaluator dispatches on.
+
+    extra="forbid" is deliberate. An unrecognised key is far more
+    likely a misspelling of a real one than a note the author wanted
+    kept, and silently dropping it is how a criterion ends up meaning
+    something other than it reads.
+
+    `value` is Any and REQUIRED. Any because a criterion legitimately
+    compares against strings, numbers, booleans and lists; required
+    because an absent value is far more likely an unfinished criterion
+    than a deliberate comparison against None.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str
+    check: CheckKind
+    field: str
+    operator: OperatorName
+    value: Any
+
+
+def validate_action_type_criteria(action_types: dict) -> None:
+    """Reject a malformed criterion at SCHEMA-LOAD time.
+
+    Walks the action_types mapping directly rather than being called
+    from core/ontology/action_types.py, which does the same traversal
+    for everything else about an action type. That module is a SIBLING
+    of this one in pyproject.toml's core.ontology layering and may not
+    import from here -- and walking a plain dict is not importing it.
+
+    The cost of that arrangement, stated plainly: this has to be CALLED
+    by whatever loads a deployment, so it can be forgotten in a way
+    action_types.py's own checks cannot. Both real callers -- core/
+    deployment_loader.py and scripts/lint_deployment.py -- have a test
+    that fails if the call is dropped.
+
+    Criteria are declared PER SUB_WRITE, which is where propose_action()
+    reads them from; one attached at action level is silently ignored
+    rather than applied.
+    """
+    for action_type_name, action_def in action_types.items():
+        for index, sub_write in enumerate(action_def.get("sub_writes") or []):
+            criteria = sub_write.get("submission_criteria")
+            if criteria is None:
+                continue
+            where = f"Action type {action_type_name!r}: sub_writes[{index}].submission_criteria"
+            if not isinstance(criteria, list):
+                raise ValueError(f"{where} must be a list, got {type(criteria).__name__}.")
+            for criterion_index, criterion in enumerate(criteria):
+                try:
+                    Criterion.model_validate(criterion)
+                except ValidationError as exc:
+                    # Re-raised as ValueError, matching every other
+                    # schema-load failure in this project: a deployment
+                    # author sees one kind of error for one kind of
+                    # mistake, and core/deployment_loader.py's callers
+                    # do not have to know pydantic exists.
+                    raise ValueError(f"{where}[{criterion_index}] is invalid: {exc}") from exc
 
 
 class SubmissionCriteriaViolation(ValueError):

@@ -422,3 +422,114 @@ def test_main_exits_with_the_right_code(tmp_path, cli_exit_expectation):
     )
 
     assert (result.returncode == 0) == cli_exit_expectation
+
+
+# --- submission_criteria are validated at load, not at proposal time ---
+#
+# These two exist because validate_action_type_criteria() is a SEPARATE
+# call from validate_action_types() -- core/ontology/action_types.py may
+# not import core/ontology/submission_criteria.py, they are siblings in
+# core.ontology's layering. A separate call can be forgotten, so this is
+# the test that fails if it ever is.
+
+_ONTOLOGY_WITH_CRITERION = """
+object_types:
+  Widget:
+    storage: {silo: primary_sql, table: widgets, id_column: widget_id}
+    id_field: widget_id
+    security: {field: region}
+    fields:
+      region: {type: data}
+      name: {type: data}
+      status: {type: data}
+action_types:
+  RenameWidget:
+    affected_object_types: [Widget]
+    parameters:
+      widget_id: {type: object_reference, object_type: Widget, required: true}
+      new_name: {type: string, required: true}
+    sub_writes:
+      - object_type: Widget
+        object_id: parameter.widget_id
+        operation: update
+        submission_criteria:
+          - description: Widget must be active to rename it
+            check: %s
+            field: status
+            operator: equals
+            value: active
+        mutations:
+          - set: {property: name, value: parameter.new_name}
+"""
+
+
+def test_lint_accepts_a_well_formed_submission_criterion(tmp_path, capsys):
+    # The control: without this, the rejection test below could pass
+    # because the ontology is malformed for some unrelated reason.
+    _write_deployment(tmp_path, ontology=_ONTOLOGY_WITH_CRITERION % "current_state")
+
+    assert lint_deployment(tmp_path) is True
+
+
+def test_lint_rejects_a_misspelled_check_kind(tmp_path, capsys):
+    # Before this validation existed, `currentstate` linted clean,
+    # started clean, and failed on the first real user's write.
+    _write_deployment(tmp_path, ontology=_ONTOLOGY_WITH_CRITERION % "currentstate")
+
+    result = lint_deployment(tmp_path)
+
+    assert result is False
+    assert "currentstate" in capsys.readouterr().out
+
+
+def test_a_bad_criterion_is_reported_with_its_position_in_the_file(tmp_path, capsys):
+    # THE CALL SITE THIS PROTECTS, and it is not the one it looks like.
+    # load_deployment() raises first, so the message alone appears
+    # whether or not _collect_action_type_and_role_errors() also
+    # validates criteria -- confirmed by dropping that call and
+    # watching every other test still pass.
+    #
+    # What only the collecting pass produces is the POSITION suffix.
+    # That pass exists to turn load_deployment()'s bare ValueError into
+    # an error naming a file and a line, and to report EVERY bad entry
+    # rather than the first. Asserting on the position is therefore the
+    # assertion that fails if the collecting pass stops validating
+    # criteria.
+    _write_deployment(tmp_path, ontology=_ONTOLOGY_WITH_CRITERION % "currentstate")
+
+    lint_deployment(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "ontology_schema.yaml" in out
+    assert "line" in out
+
+
+def test_every_bad_criterion_is_reported_not_just_the_first(tmp_path, capsys):
+    # The whole reason the collecting pass exists: load_deployment() is
+    # fail-fast, so relying on it alone would fix one criterion, re-run,
+    # and find the next -- one round trip per mistake.
+    two_bad = _ONTOLOGY_WITH_CRITERION % "currentstate" + """
+  RetireWidget:
+    affected_object_types: [Widget]
+    parameters:
+      widget_id: {type: object_reference, object_type: Widget, required: true}
+    sub_writes:
+      - object_type: Widget
+        object_id: parameter.widget_id
+        operation: update
+        submission_criteria:
+          - description: Widget must be active to retire it
+            check: current_state
+            field: status
+            operator: equalz
+            value: active
+        mutations:
+          - set: {property: status, value: retired}
+"""
+    _write_deployment(tmp_path, ontology=two_bad)
+
+    lint_deployment(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "currentstate" in out, "first bad criterion missing"
+    assert "equalz" in out, "second bad criterion missing -- only the first was reported"
