@@ -1221,6 +1221,67 @@ beside it because it is outside the ontology, and Query as a different
 mode of asking rather than a filter. That is closer to Foundry's
 actual answer, and for the same reason.
 
+## Vertex-lite: the design, before anyone starts building it
+
+Written up rather than started, because the expansion protocol IS the
+design and the renderer is nearly incidental -- and because a
+half-built sub-app is worse than an unstarted one.
+
+**THE ROADMAP SAID "ENTIRELY FRONTEND". IT IS NOT.** Checked before
+writing this down, and there is one backend gap that the whole
+protocol rests on:
+
+- search_around EXISTS over HTTP and returns {ids, total}, but `total`
+  is len(ids) -- the count of what it already fetched. Its request
+  model declares a `count` field and the route IGNORES it.
+- count_objects has NO HTTP route at all.
+
+So THERE IS NO WAY TO ASK "HOW MANY, WITHOUT FETCHING THEM ALL", which
+is exactly what count-before-expand needs. Build that first: an
+endpoint that counts links from an object by link field, applying the
+same RBAC and MAC the read path does, without materialising the ids.
+
+(get_object does return every linked id, which is how the link-count
+badge works -- but at 40,000 links it returns 40,000 ids, which is the
+unbounded fetch the protocol exists to prevent. It is not a
+substitute.)
+
+**THE PROTOCOL.** Start from one object. Expanding offers each link
+type WITH ITS COUNT. Small counts expand directly; large ones require
+a filter first; a hard ceiling stops one click adding ten thousand
+nodes. The counts are aggregate over what the caller can read, so this
+is consistent with uniform denial rather than a new disclosure.
+
+**THE WEBGL QUESTION IS CLOSED.** The constraint is COMPREHENSION, not
+rendering: a large node-link view becomes a hairball that overwhelms
+perception, so the graph must stay in the hundreds regardless of what
+could be drawn. ECharts suffices and no new dependency is needed.
+
+**WHAT TO REUSE.** The schema graph's deterministic seeding -- nodes
+placed on a circle by sorted name, force settling from there, with
+layoutAnimation off. That is what stops a layout reshuffling when a
+node arrives, which is the subtle part of an expandable graph. Its
+click handling too: a node is selected only when ECharts reports
+dataType 'node', or a click part way along an edge resolves to a node.
+
+**THE OPEN QUESTION, and it shapes the component.** Does expansion
+state live in the URL?
+
+The schema graph's selection is LOCAL state deliberately -- a
+selection is a glance, and a history entry per glance makes Back
+useless. But an EXPLORATION is different: it is something you would
+want to return to, or send to a colleague, and that argues for the
+URL.
+
+The middle answer is probably that the expansion PATH is URL state
+while the current selection is not. Decide this before writing the
+component; retrofitting it means rewriting the state handling.
+
+**One more thing to settle:** what a node shows. The schema graph
+labels a node with its type name, which is unique. Instances are not
+-- forty customers all labelled "Customer" is unreadable. title_field
+exists in the ontology for exactly this and should be used.
+
 ## Recorded with reservations, not endorsed
 
 These were asked for and are written down; the objection is recorded
