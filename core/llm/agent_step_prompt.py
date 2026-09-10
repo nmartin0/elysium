@@ -187,11 +187,21 @@ def _sub_write_validity_for_object(sub_write_def: dict, known_state: dict) -> tu
     # "not_equals" criterion would incorrectly read as satisfied
     # against a field that was simply never read at all).
     criteria = sub_write_def.get("submission_criteria", [])
+    if any(c["check"] == "user" for c in criteria):
+        # NO VERDICT, for the same reason a partial state read gets
+        # none. A "user" criterion is about the acting principal, and
+        # nothing here knows who that is -- prompt construction
+        # deliberately has no UserRecord, so that a user's identity
+        # cannot shape what the model is told. Enforcement happens at
+        # propose time either way; the only cost of staying silent is
+        # that the agent may propose something that is then refused,
+        # which is the safe direction.
+        return None
     needed_fields = {c["field"] for c in criteria if c["check"] == "current_state"}
     if not needed_fields.issubset(known_state.keys()):
         return None
     try:
-        evaluate_submission_criteria(criteria, known_state, {})
+        evaluate_submission_criteria(criteria, known_state, {}, None)
         return True, ""
     except SubmissionCriteriaViolation as e:
         return False, str(e)

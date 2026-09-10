@@ -172,3 +172,8 @@ link_type
 # library looks up, never one this project's own code calls. See
 # core/ontology/submission_criteria.py's Criterion.
 model_config
+
+# pydantic calls @model_validator methods itself; nothing in this
+# project references the name. See Criterion in core/ontology/
+# submission_criteria.py.
+_user_field_must_be_a_real_user_attribute

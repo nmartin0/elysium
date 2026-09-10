@@ -66,10 +66,13 @@ being changed about it.
 Used by: core/ontology/write_mediator.py's propose_action()
 """
 
+import dataclasses as _dataclasses
 import operator as _operator
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+
+from core.intermediate_layer.auth import UserRecord
 
 # THE VOCABULARY, AS TYPES. These two Literals are the single source of
 # truth for what a criterion may say, and they are types rather than
@@ -83,7 +86,24 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 # import from here. Every arrangement of shared constants ran into
 # that. A type has no such problem, because nothing has to import it
 # -- validate_action_type_criteria() below walks a plain dict.
-CheckKind = Literal["current_state", "parameter"]
+CheckKind = Literal["current_state", "parameter", "user"]
+
+# What a "user" criterion may read: the acting principal's own
+# attributes, and nothing else. All three of UserRecord's fields are
+# allowed, following Foundry's Current User template directly -- their
+# docs describe checking "a user's ID, group memberships via group
+# IDs, or any other multipass attribute available", so role (our
+# nearest thing to a group) and security_value (our nearest thing to
+# an Organization attribute) both belong here rather than only user_id.
+#
+# NOTE the deliberate overlap with RBAC that this accepts. A criterion
+# on role_name says something an execute: grant can also say, and the
+# two could disagree. Foundry lives with that because criteria are its
+# ONLY fine-grained "who" mechanism; we have grants as well. Kept
+# anyway, on precedent, because the alternative is a rule a deployment
+# author has to learn from an error message rather than from Foundry's
+# own documented model.
+UserField = Literal["user_id", "security_value", "role_name"]
 OperatorName = Literal[
     "equals", "not_equals", "greater_than", "less_than",
     "greater_than_or_equal", "less_than_or_equal", "in",
@@ -109,6 +129,18 @@ _OPERATORS = {
 # than when someone happens to use the mismatched operator. Raised
 # rather than asserted: `python -O` strips assert statements, and this
 # is a real invariant, not a debugging aid.
+_USER_RECORD_FIELDS = {f.name for f in _dataclasses.fields(UserRecord)}
+if not set(get_args(UserField)) <= _USER_RECORD_FIELDS:
+    # The same class of drift as the operator check below: UserField
+    # says what a schema may read, UserRecord says what actually
+    # exists. Renaming a field on UserRecord without updating this
+    # would give a criterion that validates at load and raises
+    # AttributeError at proposal time.
+    raise RuntimeError(
+        "submission_criteria: UserField names attributes UserRecord does not have -- "
+        f"{sorted(set(get_args(UserField)) - _USER_RECORD_FIELDS)}."
+    )
+
 if set(get_args(OperatorName)) != set(_OPERATORS):
     raise RuntimeError(
         "submission_criteria: OperatorName and _OPERATORS disagree -- "
@@ -151,6 +183,19 @@ class Criterion(BaseModel):
     field: str
     operator: OperatorName
     value: Any
+
+    @model_validator(mode="after")
+    def _user_field_must_be_a_real_user_attribute(self) -> "Criterion":
+        # `field` cannot be one Literal for every check kind: for
+        # current_state it is an object field, for parameter a
+        # parameter name -- both open sets known only to a deployment.
+        # For "user" it IS a closed set, so it is checked here rather
+        # than left to a getattr at proposal time.
+        if self.check == "user" and self.field not in get_args(UserField):
+            raise ValueError(
+                f"check 'user' reads {sorted(get_args(UserField))}, got {self.field!r}"
+            )
+        return self
 
 
 def validate_action_type_criteria(action_types: dict) -> None:
@@ -204,7 +249,7 @@ class SubmissionCriteriaViolation(ValueError):
 
 
 def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dict | None,
-                                  parameters: dict) -> None:
+                                  parameters: dict, user_record: UserRecord | None) -> None:
     # Raises SubmissionCriteriaViolation, with the FIRST failing
     # criterion's own "description," the moment one is found -- not a
     # combined report of every violation. Returns None (does nothing)
@@ -223,6 +268,30 @@ def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dic
                 # an evaluation against a fabricated empty state.
                 continue
             actual_value = current_state.get(field_name)
+        elif check_kind == "user":
+            # NEVER SKIPS, unlike the two above. A "current_state"
+            # criterion skips on create because no prior object exists,
+            # and a "parameter" criterion skips when this call does not
+            # supply that parameter -- in both cases there is genuinely
+            # nothing for the rule to say. There is always an acting
+            # user, so a rule about them always applies.
+            #
+            # security_value and role_name are Optional on UserRecord.
+            # A user with neither compares as None and fails the
+            # criterion, which denies -- the fail-safe direction, and
+            # the reason this reads the attribute rather than skipping
+            # when it is unset.
+            if user_record is None:
+                # Callers that cannot know the acting user must filter
+                # "user" criteria out BEFORE calling -- core/llm/
+                # agent_step_prompt.py does. Reaching here means one
+                # slipped through, and guessing (skip? deny?) would
+                # either weaken a rule or invent a violation, so
+                # neither: refuse to produce a verdict at all.
+                raise ValueError(
+                    "submission_criteria: a 'user' criterion was evaluated without an acting user"
+                )
+            actual_value = getattr(user_record, field_name)
         elif check_kind == "parameter":
             if field_name not in parameters:
                 # This call doesn't supply the parameter this rule is

@@ -968,7 +968,7 @@ class WriteMediator:
             if criteria:
                 current_state = self._read_current_state_for_criteria(object_type, object_id, criteria) \
                     if operation == "update" else None
-                evaluate_submission_criteria(criteria, current_state, parameters)
+                evaluate_submission_criteria(criteria, current_state, parameters, user_record)
 
             # Resolve this sub_write's own declared mutations into a
             # concrete field-value dict -- this, not free-form model
