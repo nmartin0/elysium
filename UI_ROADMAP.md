@@ -127,31 +127,35 @@ set is how someone edits ten thousand objects by accident.
 duplicate or miss rows -- the UI must not present its row count as
 authoritative during a live sort.
 
-### 3. Pending changes / approvals inbox — BLOCKED, and on a decision
+### 3. Pending changes / approvals inbox — designed, and it is four backend pieces first
 
 The two-phase propose/confirm mechanism exists. This gives it a queue
 view across the org rather than only inline.
 
-**Blocked on a backend design question, not a migration.** Today only
-the PROPOSING user may confirm their own pending write, the store is
-in-memory, and it expires in 15 minutes. The first of those is a
-security property in the current model -- it stops a second user
-completing a write the first abandoned -- so an approvals inbox is a
-SECOND model, not a repair of the first.
+**The design is settled -- see "Approvals: the design, and why the
+actor is not an object" below.** That section replaces the four open
+questions this entry used to list. Two of them were already answered
+in code (`core/artifact_store.py` was built for this and says so), one
+was answered by Palantir's own precedent, and one -- who may approve
+-- turned out to be the wrong question.
 
-The questions to answer before any UI work: who may approve what (a
-reviewer grant, distinct from `execute:`), whether a proposer may
-approve their own write, what expiry means when a human is expected to
-be slow, and what the audit trail records about both parties.
+**The old framing here was wrong in a specific way, kept because it is
+the mistake most likely to be made again.** It said the inbox was
+blocked on deciding "whether a proposer may approve their own write,"
+treating self-approval as the defect. Against Foundry's own precedent
+that is backwards: self-approval is correct when you already hold the
+permission, and the actual defect is that nobody ELSE can see a
+pending write at all. There is no list endpoint. The fix is
+visibility, not prohibition.
 
 **Not blocked on PostgreSQL.** SQLite already backs the write log and
 credential store under concurrent writers; that framing was wrong and
 has been corrected in `ROADMAP.md`.
 
-**When it is unblocked:** reviewer eligibility derives from the SAME
-RBAC and MAC check that gates the underlying action, never a separate
-ACL. The field-level before/after diff is itself filtered through MAC,
-so a reviewer never sees a field they could not otherwise read.
+**Build order, and none of it is UI:** provenance on `PendingWrite`,
+then `check: user` in submission criteria, then approve as a governed
+operation, then elevation. The inbox itself is mostly rendering once
+those exist.
 
 ### 4. Vertex-lite: a read-only link explorer
 
@@ -269,11 +273,17 @@ this makes it work.
 
 **2. The Approvals inbox.** propose_action and confirm_and_execute
 both exist, the artifact store exists, and there is no REVIEWER
-screen. ActionForm confirms a write for the person who proposed it --
-that is the author approving their own -- and there is nowhere for
-anyone else to see a pending write at all. That is a broken
-feature rather than a missing one. Needs the design question answered:
-who may approve, may an author approve their own, what expiry means.
+screen. There is nowhere for anyone else to see a pending write at
+all -- no list endpoint exists. That is a broken feature rather than a
+missing one.
+
+The design questions this entry used to list are now settled -- see
+"Approvals: the design, and why the actor is not an object". Note
+specifically that "ActionForm confirms a write for the person who
+proposed it, that is the author approving their own" was recorded here
+as evidence of the defect, and is wrong: self-approval is correct when
+you already hold the permission. The defect is the missing
+visibility, not the self-approval.
 
 **3. Object Views.** What an operational user looks at all day. The
 backend is entirely present -- get_object, search_around,
@@ -1281,6 +1291,255 @@ component; retrofitting it means rewriting the state handling.
 labels a node with its type name, which is unique. Instances are not
 -- forty customers all labelled "Customer" is unreadable. title_field
 exists in the ontology for exactly this and should be used.
+
+## Approvals: the design, and why the actor is not an object
+
+Written before anyone starts building, like Vertex-lite above, and for
+the same reason: the governance model IS the design here and the inbox
+is nearly incidental. Every claim below is either a line of code in
+this repository or a quote from Palantir's own documentation. Where it
+is neither, it says so.
+
+### There are TWO approval models and this project conflated them
+
+Foundry ships both, and they answer different questions.
+
+**Model A -- the Approvals application.** For a change you may not
+make: "A user may not have permission to make a particular change in
+Foundry and needs to make a request for that change. This request gets
+routed to administrators for approval." The requester LACKS the
+permission; the approver supplies it. "Requests can be edited or
+closed by the requesting user or by any eligible reviewers. Only
+eligible reviewers can `approve`, `reject` or `reject and close`."
+
+**Model B -- Branching and Foundry Rules proposals.** For a change you
+ARE trusted with, where the proposal is a protection ritual rather
+than a permission grant. Foundry is explicit that self-approval is
+fine: "You can approve your own proposal if you have edit access on
+the object."
+
+**Elysium is model B today.** `propose_action()` authorizes
+`execute:{action_type_name}` and RAISES before any `PendingWrite`
+exists, so the proposer always holds the permission and confirm is a
+pause, not a grant. Read the code before assuming otherwise; that one
+early `raise` is the whole reason model A does not exist here.
+
+### The actor is a PRINCIPAL, not an object, and this is load-bearing
+
+Asked directly -- if a person proposes and approves things, are they
+implicitly in the ontology? Foundry's answer is three separate things,
+and keeping them separate is what makes the rest work:
+
+1. **The actor is not an object.** Submission criteria read the acting
+   user through a Current User template that checks "a user's ID,
+   group memberships via group IDs, or any other multipass attribute
+   available." Those are identity-system attributes. Foundry never
+   converts the logged-in person into an object in order to authorize
+   them.
+2. **The actor's IDENTIFIER may be a value on an object.** User IDs
+   compare against a static list or a parameter holding one. The
+   string crosses into the ontology; the principal does not. This is
+   the mechanism four-eyes uses.
+3. **The actor's DECISIONS become objects.** Foundry's action log
+   "models all action submissions as object types," and Foundry Rules
+   makes proposals ordinary objects reviewed by ordinary Actions.
+
+For Elysium this is not merely analogous, it is already enforced.
+`UserRecord` is `(user_id, security_value, role_name)`, resolved once
+per request from `policy.yaml`, and `./lint.sh` checks on every run
+that authentication (`core.auth`) and authorization
+(`core.intermediate_layer`) stay independent. Making a user an
+ontology object would collapse a boundary this project verifies
+mechanically, and would make a user's own role MAC-filtered data --
+circular, since you would need permission to resolve permissions.
+
+### The LLM is not a principal either. It is an envelope.
+
+Also asked directly. A principal is authenticated and granted things.
+The LLM authenticates as nothing, holds no grants, and never sees a
+`UserRecord` -- `_step_propose_action()` passes the HUMAN's record
+into `propose_action()`, and every check runs against the person.
+
+The agent does have a permission surface, but not an identity-shaped
+one: `tools.enabled` in `config.yaml` and per-action `auto_execute`.
+Neither grants the LLM anything; both limit what may be reached
+THROUGH it. The accurate formulation:
+
+    effective authority = the human's grants INTERSECT the agent's envelope
+
+The human supplies authority, the agent only narrows it. That is why
+`auto_execute` belongs in the action config rather than `policy.yaml`
+-- it is a constraint on a channel, not a permission -- and it is what
+keeps "the LLM never makes a security decision" true.
+
+Where the agent DOES deserve first-class treatment is provenance,
+which is where Foundry puts it: their object timeline reports
+"agentic coverage," how much of an object's history was driven by
+agents versus humans, with rows for agents, humans and resources.
+
+### `users` is NOT renamed to `principals`
+
+Considered and declined. Every principal here is a human login in
+`credentials.db`; there is no second kind, so the general term would
+be a speculative generalization -- the same reasoning that keeps a
+Settings entry out of `UserMenu`. Foundry's own product vocabulary is
+users and groups even though it genuinely has service accounts. And
+the change would break `policy.yaml`'s `users:` key, `user_directory
+.py`, `/users`, `AdminPanel` and three deployments for no behavioural
+gain.
+
+What the impulse was RIGHT about is provenance, which genuinely has
+more than one kind. Keep `who` (always a user) separate from `through
+what` (a human form, or the agent). Two fields, no rename.
+
+### Platform-level and ontology-level: separate entities, ONE governance
+
+Foundry has both -- platform Approvals requests/tasks, and Foundry
+Rules proposals modelled as ordinary customer objects. Asked whether
+Elysium should fold them into one. No, and the reason is not
+philosophical: what separates them is WHO DECLARES THEM. A platform
+capability must work on day one in every deployment; an ontology
+entity is written by the deployer in YAML.
+
+Folding gives one of two bad outcomes. Either approvals stop working
+until each deployer models `Proposal` and `Approve` in
+`ontology_schema.yaml` -- a platform capability held hostage to data
+modelling -- or Elysium injects synthetic types into the ontology, in
+which case `visible_schema()` reports object types nobody wrote, and
+they surface in the schema viewer, the graph, and the agent's own
+prompt vocabulary.
+
+**The real unification is governance, and it is required.** Approve is
+not an action type, but it passes the identical three gates an action
+does -- RBAC grant, MAC on every touched object, submission criteria
+-- through the SAME code, never a parallel copy. Those three drifting
+apart is a security bug. Two entity kinds that never shared an
+implementation are not duplication.
+
+### Approve is a CLOSURE, not a nullary function
+
+Raised as `(lambda _: x)` with unit input -- worth correcting, because
+the corrected version is more useful. Approve has real inputs: the
+decision itself, the approving principal, and the state of the world
+at approve time, since criteria are re-evaluated then and objects may
+have drifted.
+
+    propose : (Action, Params, Principal)     -> PendingWrite
+    confirm : (PendingWrite, Principal, Bool) -> Effect
+
+A pending write is a closure: propose binds the parameters and returns
+a thunk, confirm supplies the remaining arguments and forces it. The
+shared abstraction is a GOVERNED OPERATION -- an authorization
+envelope plus an effect -- where an Action and an Approval differ only
+in which arguments are already bound.
+
+This framing retrodicts machinery that already exists, which is the
+main reason to trust it: a closure forced later may reference state
+that has since changed, which is exactly why the confirm response
+already carries `expected_current_values` per field.
+
+**Record the framing; do not build the hierarchy yet.** There would be
+two implementors, one of which does not exist. Extract at the second
+real caller.
+
+### Elevation: RBAC is elevatable, MAC NEVER is
+
+Proposed directly: someone without a privilege should be able to raise
+a proposal they cannot approve, so it routes to someone who can. That
+is model A, it is worth building, and it is what makes the inbox a
+workflow rather than a mirror of your own drafts.
+
+**The hard rule.** RBAC is a grant, so lending it is meaningful -- the
+approver genuinely holds `execute:`. MAC is the mandatory boundary: a
+user can never see data outside their own value for it, regardless of
+role. A proposer outside a region raising a proposal against that
+region's objects is not delegation, it is a MAC bypass with a human in
+the middle, via a UI that renders the object so they can fill the
+form. So: **MAC is enforced on the PROPOSER, always, at propose time,
+even when RBAC is deferred to the approver.**
+
+Two consequences. The proposer also needs `read:` on the fields
+involved or the form and diff cannot be rendered at all. And authority
+inverts on invocation -- Foundry applies the change once approvals are
+obtained, meaning Elysium would execute using permissions the proposer
+never held, so the audit record MUST state whose authority applied it
+or this is a privilege-escalation path with a friendly UI.
+
+**Uniform denial survives intact.** To request an action you must know
+it exists, and `discover:action_types` already exists as a separate
+axis from execution: a blanket grant to see the whole catalogue
+including actions the role holds no `execute:` for. A role without it
+still cannot distinguish an unknown action from a forbidden one. No
+new hole, and no new grant needed to open one.
+
+### The structural finding that makes this feasible
+
+`propose_action()`'s RBAC check is a SINGLE early guard -- authorize,
+then `raise PermissionError`, logging with `mac_allowed=None` because
+"MAC never ran, short-circuited before a real database query." MAC
+runs later, per sub_write. Deferring RBAC while keeping MAC is
+therefore a separation the code already makes, not one that has to be
+carved into it.
+
+### Build order
+
+1. **Provenance on `PendingWrite`.** Today it carries `sub_writes`,
+   `user_id`, `description`, `action_type_name` -- and BOTH routes
+   (`POST /actions/{name}` and the agent's own `propose_action` step)
+   produce an identical record, so an inbox cannot render "proposed by
+   Alice" versus "proposed by the agent on Alice's behalf" at all.
+   Actor, timestamp, origin. No policy change; needed by everything
+   below.
+2. **`check: user` in submission criteria.** A third check kind beside
+   `current_state` and `parameter`, whose docstring already says the
+   two exist "because they read from genuinely different places" --
+   the acting principal is a third such place. Needs `user.*` on the
+   `value:` side too, matching the vocabulary `sub_writes` already
+   accepts. This is what four-eyes composes from, and it is why NO
+   bespoke `approver_must_differ` flag is being added: Foundry has no
+   such flag, and expresses separation of duties through submission
+   criteria comparing the current user against a list or parameter.
+3. **Approve as a governed operation.** Move eligibility off
+   `PendingWriteStore.pop()`'s owner-equality check onto grant + MAC +
+   criteria evaluated at APPROVE time, with the decision audited as
+   its own event naming both parties.
+4. **Elevation (model A).** The authority-inversion piece above.
+   Largest, and its own design conversation.
+
+Storage is already answered: `core/artifact_store.py` exists, says in
+its own docstring that "the Approvals inbox needs it," and settles
+ownership (by role), expiry (owned by the artifact type, NULL means
+never) and persistence (SQLite, not Postgres). Today's 15-minute TTL
+exists because a pending write is "the continuation of one person's
+session" -- an inbox breaks that premise, and Foundry keeps requests
+after completion as a record of past decisions.
+
+### Open, honestly
+
+- **Is "may request" a new grant verb, or does it fall out of
+  `discover:action_types` plus the approver's own `execute:`?** Not
+  settled. Decide before building step 4, not during.
+- **Self-approval in the model-A sense is extrapolated.** Branching
+  says plainly you may approve your own proposal with edit access; the
+  Approvals app never says, because its requester lacks the permission
+  by construction. The conclusion is inferred from the first, not
+  documented for the second.
+- **Statuses are not designed.** Foundry has six (pending approval,
+  closed, rejected and closed, changes requested, action required,
+  completed). A reduced set is probably right -- "changes requested"
+  presumes editing a proposal, which does not exist here -- but this
+  has had no real pass.
+- **No notifications in v1**, deliberately. Foundry notifies
+  reviewers; we have no notification system and the scheduler is
+  unbuilt. Pull-only, stated as a scope cut rather than an omission.
+
+### Found stale while researching this
+
+`PendingWrite`'s own comment says `confirm_and_execute()` "still only
+ever applies sub_writes[0] as of this writing." That is no longer
+true -- it routes everything through `_apply_batch()`, one sub_write
+or many. Relevant here because a multi-object diff is exactly what an
+approvals view renders. Fix in its own commit.
 
 ## Recorded with reservations, not endorsed
 
