@@ -195,6 +195,48 @@ def validate_identifier_types(schema_raw: dict, policy_raw: dict) -> None:
         _require_str(user_id, "A user_id in policy.yaml's own users section")
 
 
+def _resolve_models(llm_config: dict) -> tuple[str, str]:
+    """Returns (step_model, synthesis_model) from either config form.
+
+    TWO FORMS, and exactly one per deployment:
+
+        model: "phi4-mini"          # one model serves every call
+        step_model / synthesis_model  # a different model for each
+
+    The single form exists because running two models means Ollama
+    loading and evicting between them -- measured at 12-47 seconds per
+    load on CPU-only hardware, paid at least once per query. One model
+    stays resident.
+
+    Naming BOTH forms is rejected rather than resolved by precedence.
+    A deployment that sets `model` and `step_model` has two plausible
+    intentions and no way to signal which, and silently preferring one
+    means the operator's next debugging session starts from a false
+    belief about which model ran. Fails at load, like every other
+    deployment-configuration error.
+    """
+    single = llm_config.get("model")
+    step = llm_config.get("step_model")
+    synthesis = llm_config.get("synthesis_model")
+
+    if single is not None:
+        if step is not None or synthesis is not None:
+            raise ValueError(
+                "config.yaml llm: set EITHER 'model' (one model for every call) "
+                "OR both 'step_model' and 'synthesis_model', never both forms."
+            )
+        return single, single
+
+    if step is None or synthesis is None:
+        missing = [name for name, value in (("step_model", step), ("synthesis_model", synthesis))
+                   if value is None]
+        raise ValueError(
+            f"config.yaml llm: missing {missing}. Set 'model' for one model serving "
+            f"every call, or both 'step_model' and 'synthesis_model' for two."
+        )
+    return step, synthesis
+
+
 def load_deployment(base_path: Path) -> DeploymentConfig:
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
@@ -227,13 +269,15 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
 
     validate_function_declarations(enabled_tools, schema_raw["object_types"])
 
+    step_model, synthesis_model = _resolve_models(config["llm"])
+
     try:
         deployment_config = DeploymentConfig(
             base_path=base_path,
             llm_provider=config["llm"]["provider"],
             llm_connection=config["llm"]["connection"],
-            step_model=config["llm"]["step_model"],
-            synthesis_model=config["llm"]["synthesis_model"],
+            step_model=step_model,
+            synthesis_model=synthesis_model,
             max_hops=config["agent"]["max_hops"],
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],

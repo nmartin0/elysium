@@ -130,7 +130,11 @@ def test_missing_required_key_returns_false(tmp_path, capsys):
     # load_deployment()'s own required-key try/except -- a genuinely
     # different failure mode from an action_type-specific or role-
     # specific validation error, and worth its own direct coverage.
-    broken_config = VALID_CONFIG_YAML.replace("step_model: llama3", "")
+    # `provider`, not `step_model`: the llm model keys now have their
+    # own dedicated validation with a more specific message (see
+    # _resolve_models()), so they no longer reach the generic
+    # required-key handler this test exists to cover.
+    broken_config = VALID_CONFIG_YAML.replace("provider: ollama", "")
     _write_deployment(tmp_path, config=broken_config)
 
     result = lint_deployment(tmp_path)
@@ -533,3 +537,42 @@ def test_every_bad_criterion_is_reported_not_just_the_first(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "currentstate" in out, "first bad criterion missing"
     assert "equalz" in out, "second bad criterion missing -- only the first was reported"
+
+
+# --- the two model forms ---
+#
+# A deployment names EITHER `model` (one model for every call) or both
+# `step_model` and `synthesis_model`. The single form exists because
+# two models mean Ollama loading and evicting between them, measured
+# at 12-47 seconds per load on CPU-only hardware.
+
+_ONE_MODEL_CONFIG = VALID_CONFIG_YAML.replace(
+    "  step_model: llama3\n  synthesis_model: llama3\n", "  model: llama3\n")
+
+
+def test_a_deployment_may_name_one_model_for_every_call(tmp_path, capsys):
+    _write_deployment(tmp_path, config=_ONE_MODEL_CONFIG)
+
+    assert lint_deployment(tmp_path) is True
+
+
+def test_naming_both_forms_is_rejected_rather_than_resolved(tmp_path, capsys):
+    # Not resolved by precedence: a deployment setting both has two
+    # plausible intentions and no way to signal which, and silently
+    # preferring one means the next debugging session starts from a
+    # false belief about which model actually ran.
+    both = VALID_CONFIG_YAML.replace("  step_model: llama3\n", "  model: mistral\n  step_model: llama3\n")
+    _write_deployment(tmp_path, config=both)
+
+    assert lint_deployment(tmp_path) is False
+    assert "never both forms" in capsys.readouterr().out
+
+
+def test_naming_only_half_the_split_form_is_rejected(tmp_path, capsys):
+    half = VALID_CONFIG_YAML.replace("  synthesis_model: llama3\n", "")
+    _write_deployment(tmp_path, config=half)
+
+    assert lint_deployment(tmp_path) is False
+    out = capsys.readouterr().out
+    assert "synthesis_model" in out
+    assert "step_model" not in out.split("missing")[1][:40], "should name only the absent key"
