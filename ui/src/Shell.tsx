@@ -105,9 +105,15 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 // not just the one-time initial default it originally only decided:
 // resolveCollapsedFromStorageOrViewport()'s own reads (both at mount
 // AND again on exiting mobile), AND isMobile's own real, live
-// matchMedia listener, which is what decides whether Drawer or the
-// plain <aside> actually renders, kept current for the whole session,
-// not just at mount.
+// matchMedia listener, kept current for the whole session rather than
+// only at mount, which drives the two effects below: forcing the
+// sidebar closed on a resize INTO mobile, and auto-closing it on
+// navigation while there.
+//
+// It decides no RENDERING at all, though it used to. A single <aside>
+// renders at every width now; the conditional this once chose between
+// went away with the Drawer -- see the render body's own comment for
+// why a 56px rail removed the need for one.
 /**
  * The width below which three columns stop fitting, and the sidebar
  * auto-collapses to its rail.
@@ -247,15 +253,21 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     writePreference('theme', currentUser?.username ?? '', dark ? 'dark' : 'light')
   }, [dark, currentUser?.username])
 
-  // Persists to localStorage -- the one real, shared implementation
-  // both the desktop toggle and the mobile Drawer's own dismissal
-  // (backdrop click, Escape, a real nav-triggered auto-close below)
-  // all go through, so "the sidebar's own remembered state" means the
-  // same thing regardless of which of those actually changed it.
+  // setCollapsed plus a localStorage write, for a change that should
+  // be REMEMBERED. The shared piece is persistCollapsedChoice() below
+  // it, which toggleCollapsed() also calls from inside its own
+  // updater -- so "the sidebar's own remembered state" means the same
+  // thing regardless of which path changed it.
   //
-  // Takes a plain boolean, not a computed toggle -- every real caller
-  // (onClose, the auto-close-on-navigate effect below) always wants
-  // ONE fixed, known target value, never "whatever it currently
+  // This wrapper itself has exactly ONE caller today, the
+  // auto-close-on-navigate effect below. It used to have more: the
+  // mobile Drawer's own dismissal paths (backdrop click, Escape) went
+  // through here too, and both went away with the Drawer. An expanded
+  // sidebar now overlays via a media query, which has no dismissal
+  // handler to route anywhere.
+  //
+  // Takes a plain boolean, not a computed toggle -- its caller always
+  // wants ONE fixed, known target value, never "whatever it currently
   // isn't." That distinction matters: toggleCollapsed() below is the
   // ONE caller that used to compute its own next value this way
   // (`setCollapsedPersisted(!collapsed)`), and that specific pattern
@@ -314,9 +326,13 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // own live testing surfaced directly, not something caught in
   // advance: without this, resizing a desktop session (open by
   // default) down into mobile width carried that same "open" state
-  // straight into the real Drawer, which meant its own real backdrop
-  // appeared and dimmed the whole screen from nothing more than a
-  // resize -- no deliberate tap from the person at all. That's a
+  // straight into what was then a real Drawer, which meant its own
+  // real backdrop appeared and dimmed the whole screen from nothing
+  // more than a resize -- no deliberate tap from the person at all.
+  // The Drawer is gone, but this effect is not obsolete with it: an
+  // expanded sidebar still OVERLAYS the content below the breakpoint,
+  // now by media query, so the same resize still covers the screen
+  // without anyone asking it to. That's a
   // genuinely different, lesser-consent action than actually choosing
   // to open the sidebar, and it broke the same "closed by default,
   // deliberately opened" pattern already governing both the initial
@@ -379,21 +395,25 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     }
   }, [isMobile])
 
-  // Auto-closes the mobile Drawer on navigation -- a real, genuine UX
-  // gap CONFIRMED to already exist even before this file touched
-  // Drawer at all (live-verified against the prior, CSS-only mobile
-  // overlay: tapping a nav link left the sidebar open, still covering
-  // the newly-navigated screen, requiring a separate, manual tap to
-  // dismiss) -- fixing this here, not just matching what was already
-  // there.
+  // Auto-closes the expanded mobile sidebar on navigation -- a real,
+  // genuine UX gap CONFIRMED to already exist even before this file
+  // touched the then-Drawer at all (live-verified against the CSS-only
+  // mobile overlay that predated it: tapping a nav link left the
+  // sidebar open, still covering the newly-navigated screen, requiring
+  // a separate, manual tap to dismiss) -- fixing this here, not just
+  // matching what was already there. The overlay is a media query
+  // again now rather than a Drawer, which changes nothing about why
+  // this effect exists: it is the covering, not the component, that
+  // made navigation feel stuck.
   //
   // Depends on [location.pathname] ONLY, deliberately -- reads the
   // latest isMobile/collapsed via a ref, not as effect dependencies.
   // Including collapsed itself as a dependency would be a genuine bug,
-  // not just unnecessary: OPENING the drawer changes collapsed, which
-  // would immediately re-run this exact effect and re-close it before
-  // it could ever be seen open at all. This must react ONLY to a real
-  // path change, reading whatever isMobile/collapsed happen to be at
+  // not just unnecessary: EXPANDING the sidebar changes collapsed,
+  // which would immediately re-run this exact effect and re-close it
+  // before it could ever be seen open at all. This must react ONLY to
+  // a real path change, reading whatever isMobile/collapsed happen to
+  // be at
   // that moment -- not re-run every time either of them changes for
   // some unrelated reason.
   //
