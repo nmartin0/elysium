@@ -12,15 +12,29 @@ llm:
                                     # registry -- adapters/ollama_adapter.py
   connection:
     base_url: "http://localhost:11434/api/chat"
-    request_timeout_seconds: 240   # bumped from 180 -- occasional slow calls
-                                    # on this CPU-only hardware need headroom,
-                                    # especially under integration test load
-  step_model: "phi4-mini"          # best correctness/speed tradeoff found so
-                                    # far; qwen2.5:3b tried and reverted after
-                                    # it got stuck repeating its first step in
-                                    # every test case, even with recovery
-                                    # mechanisms in place (see git history)
-  synthesis_model: "qwen2.5:3b"
+    request_timeout_seconds: 600   # a 1300-token prompt at the ~5.4 tokens/sec
+                                    # prompt-eval rate measured here is ~4
+                                    # minutes BEFORE the model writes anything.
+                                    # 240 timed out on the first hop.
+    keep_alive: -1                 # keep the model resident between calls. The
+                                    # default evicts after five minutes, and the
+                                    # agent loop can idle longer than that
+                                    # between hops on this hardware.
+    options:
+      num_thread: 2                # matches nproc on this VM
+      num_ctx: 4096                # llama-server's own default here; stated
+                                    # explicitly so a change is deliberate
+  # ONE model for every call, not a step/synthesis pair. Two models
+  # mean Ollama loading and evicting between them -- measured at 12-47
+  # seconds per load on this hardware, paid at least once per query.
+  #
+  # phi4-mini specifically because it is NOT a reasoning model. Measured
+  # on this deployment, asked to reply with a single word: phi4-mini
+  # emitted 2 tokens, gemma4:e2b 84, qwen3.5:2b 370 -- and at ~1.5
+  # tokens/sec the token COUNT dominates, not the model's benchmark
+  # scores. qwen2.5:3b was also tried as the step model earlier and
+  # reverted for repeating its first step (see git history).
+  model: "phi4-mini"
 
 agent:
   max_hops: 8
