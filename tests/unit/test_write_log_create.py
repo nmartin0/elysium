@@ -237,7 +237,7 @@ def test_single_storage_create_still_requires_an_explicit_id(fixture):
 
     with pytest.raises(ValueError, match="requires an explicit 'customer_id' value"):
         write_mediator.propose_action(alice, "CreateCustomerNameOnlyNoId",
-                                       {"new_id": "cust_ignored", "new_name": "Solo Customer"})
+                                       {"new_id": "cust_ignored", "new_name": "Solo Customer"}, origin="human")
 
 
 def test_single_storage_create_also_goes_through_the_log(fixture):
@@ -255,8 +255,7 @@ def test_single_storage_create_also_goes_through_the_log(fixture):
     alice = _record("alice")
 
     pending = write_mediator.propose_action(
-        alice, "CreateCustomerNameOnly", {"new_id": "cust_solo", "new_name": "Solo Customer"}
-    )
+        alice, "CreateCustomerNameOnly", {"new_id": "cust_solo", "new_name": "Solo Customer"}, origin="human")
     result = write_mediator.confirm_and_execute(pending, approved=True)
 
     new_id = result["object_ids"][0]
@@ -293,8 +292,7 @@ def test_apply_create_via_log_logs_under_the_real_id_not_none(fixture, monkeypat
 
     pending = write_mediator.propose_action(
         alice, "CreateCustomerFull",
-        {"new_id": "cust_mid_apply", "new_name": "Mid Apply", "new_score": 0.3},
-    )
+        {"new_id": "cust_mid_apply", "new_name": "Mid Apply", "new_score": 0.3}, origin="human")
 
     original_create_object = mediator.adapters["primary_sql"].create_object
     observed = {}
@@ -321,8 +319,7 @@ def test_multi_storage_create_applies_to_every_storage(fixture):
 
     pending = write_mediator.propose_action(
         alice, "CreateCustomerFull",
-        {"new_id": "cust_001", "new_name": "Ada Okafor", "new_score": 0.42},
-    )
+        {"new_id": "cust_001", "new_name": "Ada Okafor", "new_score": 0.42}, origin="human")
     result = write_mediator.confirm_and_execute(pending, approved=True)
     assert result == {"status": "written", "object_ids": ["cust_001"]}
 
@@ -504,5 +501,4 @@ def test_a_create_whose_id_mutation_disagrees_with_its_object_id_is_rejected(fix
     with pytest.raises(ValueError, match="these must match"):
         write_mediator.propose_action(
             alice, "CreateCustomerWithMismatchedId",
-            {"new_id": "cust_a", "other_id": "cust_b", "new_name": "Split"},
-        )
+            {"new_id": "cust_a", "other_id": "cust_b", "new_name": "Split"}, origin="human")

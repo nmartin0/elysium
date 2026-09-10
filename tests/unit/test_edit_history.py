@@ -24,6 +24,7 @@ given time is exactly what an audit trail is for.
 """
 
 import sqlite3
+from datetime import UTC, datetime
 
 import pytest
 import yaml
@@ -87,6 +88,8 @@ def _edit(write_mediator, changes, expected, user_id="alice", operation="update"
         user_id=user_id,
         description=f"{operation} by {user_id}",
         action_type_name="TestAction",
+        origin="human",
+        proposed_at=datetime.now(UTC),
     )
     return write_mediator.confirm_and_execute(pending, approved=True)
 

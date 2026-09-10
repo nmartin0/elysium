@@ -72,7 +72,7 @@ def test_confirm_and_execute_ends_with_no_pending_batches(wm_and_log):
     # implicitly already relies on.
     write_mediator, write_log = wm_and_log
     pending = write_mediator.propose_action(_record("alice"), "RenameAuthor",
-                                             {"author_id": "auth_001", "new_name": "Ada L."})
+                                             {"author_id": "auth_001", "new_name": "Ada L."}, origin="human")
 
     write_mediator.confirm_and_execute(pending, approved=True)
 
@@ -82,7 +82,7 @@ def test_confirm_and_execute_ends_with_no_pending_batches(wm_and_log):
 def test_confirm_and_execute_result_reflects_every_touched_object(wm_and_log):
     write_mediator, write_log = wm_and_log
     pending = write_mediator.propose_action(_record("alice"), "RenameAuthor",
-                                             {"author_id": "auth_001", "new_name": "Ada L."})
+                                             {"author_id": "auth_001", "new_name": "Ada L."}, origin="human")
 
     result = write_mediator.confirm_and_execute(pending, approved=True)
 
@@ -95,7 +95,7 @@ def test_rejected_action_creates_no_batch_at_all(wm_and_log):
     # row, nothing to find pending OR applied.
     write_mediator, write_log = wm_and_log
     pending = write_mediator.propose_action(_record("alice"), "RenameAuthor",
-                                             {"author_id": "auth_001", "new_name": "Should Not Apply"})
+                                             {"author_id": "auth_001", "new_name": "Should Not Apply"}, origin="human")
 
     result = write_mediator.confirm_and_execute(pending, approved=False)
 
@@ -116,7 +116,7 @@ def test_the_per_object_row_is_correctly_batch_owned_mid_apply(wm_and_log, monke
     # batch mechanism.
     write_mediator, write_log = wm_and_log
     pending = write_mediator.propose_action(_record("alice"), "RenameAuthor",
-                                             {"author_id": "auth_001", "new_name": "Ada L."})
+                                             {"author_id": "auth_001", "new_name": "Ada L."}, origin="human")
 
     observed = {}
     original_write_fields = write_mediator.mediator.adapters["test_silo"].write_fields

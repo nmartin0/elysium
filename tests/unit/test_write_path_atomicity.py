@@ -98,8 +98,7 @@ def _transfer(write_mediator, from_balance=900, to_balance=600):
             "to_account_id": "acc_savings",
             "new_from_balance": from_balance,
             "new_to_balance": to_balance,
-        },
-    )
+        }, origin="human")
 
 
 def _raw(db_path, account_id):

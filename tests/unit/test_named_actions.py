@@ -1,5 +1,5 @@
 """
-Tests for WriteMediator.propose_action() -- the named-action-types
+Tests for WriteMediator.propose_action(, origin="human") -- the named-action-types
 write path, matching Palantir Foundry's own action-type model
 directly: a NAMED, independently-governed operation with its own
 execute: grant, declared parameters, and declared mutations -- not a
@@ -113,7 +113,9 @@ def write_mediator(tmp_path, isolated_audit_log):
 
 def test_valid_action_call_succeeds_end_to_end(write_mediator):
     lead = _record("lead")
-    pending = write_mediator.propose_action(lead, "ReopenTicket", {"ticket_id": "t1", "reason": "customer followup"})
+    pending = write_mediator.propose_action(
+        lead, "ReopenTicket", {"ticket_id": "t1", "reason": "customer followup"}, origin="human",
+    )
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
     assert outcome == {"status": "written", "object_ids": ["t1"]}
@@ -125,7 +127,9 @@ def test_valid_action_call_succeeds_end_to_end(write_mediator):
 
 def test_mutations_resolve_both_literal_and_parameter_references(write_mediator):
     lead = _record("lead")
-    pending = write_mediator.propose_action(lead, "ReopenTicket", {"ticket_id": "t1", "reason": "a specific reason"})
+    pending = write_mediator.propose_action(
+        lead, "ReopenTicket", {"ticket_id": "t1", "reason": "a specific reason"}, origin="human",
+    )
     # "status" is a LITERAL in the action's own mutations ("open");
     # "reopen_reason" is a "parameter.reason" reference -- both must
     # resolve correctly into the SAME changes dict.
@@ -135,12 +139,14 @@ def test_mutations_resolve_both_literal_and_parameter_references(write_mediator)
 def test_submission_criteria_blocks_an_invalid_state_transition(write_mediator):
     # t2 is already open -- the current_state criterion must block this.
     with pytest.raises(SubmissionCriteriaViolation, match="must currently be closed"):
-        write_mediator.propose_action(_record("lead"), "ReopenTicket", {"ticket_id": "t2", "reason": "x"})
+        write_mediator.propose_action(
+            _record("lead"), "ReopenTicket", {"ticket_id": "t2", "reason": "x"}, origin="human",
+        )
 
 
 def test_missing_required_parameter_is_rejected(write_mediator):
     with pytest.raises(ValueError, match="Missing required parameter"):
-        write_mediator.propose_action(_record("lead"), "ReopenTicket", {})
+        write_mediator.propose_action(_record("lead"), "ReopenTicket", {}, origin="human")
 
 
 def test_undeclared_parameter_is_rejected(write_mediator):
@@ -148,25 +154,28 @@ def test_undeclared_parameter_is_rejected(write_mediator):
     # outright, never silently ignored.
     with pytest.raises(ValueError, match="Unknown parameter"):
         write_mediator.propose_action(
-            _record("lead"), "ReopenTicket", {"ticket_id": "t1", "reason": "x", "hacked": "y"}
-        )
+            _record("lead"), "ReopenTicket", {"ticket_id": "t1", "reason": "x", "hacked": "y"}, origin="human")
 
 
 def test_rbac_denial_without_an_execute_grant(write_mediator):
     with pytest.raises(PermissionError, match="execute:ReopenTicket"):
-        write_mediator.propose_action(_record("nobody"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"})
+        write_mediator.propose_action(
+            _record("nobody"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"}, origin="human",
+        )
 
 
 def test_mac_denial_even_with_execute_granted(write_mediator):
     # Action-level RBAC does NOT bypass MAC -- proves the two gates
     # are still genuinely independent under the new authorization model.
     with pytest.raises(PermissionError, match="cannot modify"):
-        write_mediator.propose_action(_record("wrong_region"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"})
+        write_mediator.propose_action(
+            _record("wrong_region"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"}, origin="human",
+        )
 
 
 def test_unknown_action_type_name_raises(write_mediator):
     with pytest.raises(ValueError, match="Unknown action_type"):
-        write_mediator.propose_action(_record("lead"), "TotallyFakeAction", {})
+        write_mediator.propose_action(_record("lead"), "TotallyFakeAction", {}, origin="human")
 
 
 def test_denied_action_does_not_double_log(write_mediator, isolated_audit_log):
@@ -177,7 +186,9 @@ def test_denied_action_does_not_double_log(write_mediator, isolated_audit_log):
     from tests.conftest import read_audit_log
 
     with pytest.raises(PermissionError):
-        write_mediator.propose_action(_record("wrong_region"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"})
+        write_mediator.propose_action(
+            _record("wrong_region"), "ReopenTicket", {"ticket_id": "t1", "reason": "x"}, origin="human",
+        )
 
     entries = read_audit_log(isolated_audit_log)
     execute_entries = [e for e in entries if e.get("action") == "execute:ReopenTicket"]

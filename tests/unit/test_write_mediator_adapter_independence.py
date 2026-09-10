@@ -85,7 +85,9 @@ def test_a_confirmed_write_lands_in_write_adapters_own_database_not_mediators(tm
     write_mediator = WriteMediator(mediator, {"primary": write_adapter}, TEST_ROLES, TEST_ACTION_TYPES)
 
     alice = resolve_user_record(TEST_USERS, "alice", "org_id")
-    pending = write_mediator.propose_action(alice, "RenameWidget", {"widget_id": "w1", "new_name": "renamed"})
+    pending = write_mediator.propose_action(
+        alice, "RenameWidget", {"widget_id": "w1", "new_name": "renamed"}, origin="human",
+    )
     write_mediator.confirm_and_execute(pending, approved=True)
 
     # The real, unambiguous proof: write_side.db has the real update;

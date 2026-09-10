@@ -17,7 +17,7 @@ acted on is just an ordinary, object_reference-typed parameter
 (ticket_id) now, matching Palantir Foundry's own action parameter
 model directly (verified against their docs, not assumed). There is
 no longer a separate, model-facing object_id field or step key at all
--- see WriteMediator.propose_action()'s own docstring for the full
+-- see WriteMediator.propose_action(, origin="human")'s own docstring for the full
 reasoning.
 """
 

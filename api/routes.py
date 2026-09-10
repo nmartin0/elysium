@@ -1490,7 +1490,12 @@ def propose_action_route(action_type_name: str, body: ProposeActionRequest, requ
     # response exactly as before.
     write_mediator: WriteMediator = request.app.state.write_mediator
     try:
-        pending_write = write_mediator.propose_action(current_user, action_type_name, body.parameters)
+        # origin="human": this route IS the person-filled form. The
+        # agent reaches propose_action() through AgentLoop instead,
+        # and passes "agent" there.
+        pending_write = write_mediator.propose_action(
+            current_user, action_type_name, body.parameters, origin="human",
+        )
     except (ValueError, TypeError, PermissionError) as e:
         logger.warning(f"propose_action_route: {action_type_name!r} rejected for {current_user.user_id!r}: {e}")
         roles = request.app.state.config.roles

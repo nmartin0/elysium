@@ -1301,7 +1301,7 @@ def _propose_action(client, session=None, new_name="Updated Name"):
     # own execute: grant covers -- see policy.yaml's own comment.
     # No separate "object_id" field -- customer_id is just another
     # entry in "parameters" now, matching Palantir Foundry's own action
-    # parameter model directly (see WriteMediator.propose_action()'s
+    # parameter model directly (see WriteMediator.propose_action(, origin="human")'s
     # own docstring).
     #
     # session=None (the common case): acts as the client's own,

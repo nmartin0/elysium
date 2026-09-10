@@ -34,6 +34,7 @@ Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from core.intermediate_layer.audit import AuditLog
@@ -71,6 +72,21 @@ def _fields_to_columns(resolved_type_config: dict, values_by_field: dict) -> dic
         get_column_for_field(resolved_type_config, field_name): value
         for field_name, value in values_by_field.items()
     }
+
+
+# What put a write forward. A closed set, as Literal rather than Enum
+# to match SubWrite.operation directly below -- this codebase has no
+# Enum anywhere, and a second convention for the same job would be one
+# to remember.
+#
+# "human": a person submitted it directly, through POST
+#          /actions/{action_type_name}.
+# "agent": the LLM chose it mid-query, through AgentLoop's own
+#          propose_action step. The person named in user_id still
+#          supplied every permission used -- see UI_ROADMAP.md's
+#          approvals record on why the agent is an envelope and never
+#          a principal -- but they did not pick this action.
+Origin = Literal["human", "agent"]
 
 
 @dataclass(frozen=True)
@@ -129,6 +145,39 @@ class PendingWrite:
     user_id: str
     description: str
     action_type_name: str
+    # PROVENANCE. Who proposed this, when, and through what.
+    #
+    # user_id alone is not provenance: both paths that reach
+    # propose_action() -- a person filling in ActionForm via POST
+    # /actions/{name}, and the agent choosing an action mid-query --
+    # set it to the same person, so the two were previously
+    # indistinguishable in the record. An approvals inbox has to be
+    # able to say "Alice submitted this" versus "the agent proposed
+    # this while answering Alice's question", and a reviewer weighs
+    # those differently.
+    #
+    # origin is REQUIRED, with no default, deliberately. A default
+    # would be a guess written into the audit trail, and the safe
+    # guess does not exist: defaulting to "human" understates agent
+    # involvement, and defaulting to "agent" libels a person. Omitting
+    # it raises TypeError instead -- the same reasoning
+    # core/request_context.py gives for threading its own context
+    # explicitly, that "will not start" beats quietly attributing work
+    # to the wrong actor.
+    #
+    # TWO VALUES, not three. Whether a human then CONFIRMED an agent
+    # proposal, or auto_execute skipped that step, is a fact about the
+    # DECISION rather than the proposal, and belongs to whatever
+    # records the decision -- see UI_ROADMAP.md's approvals design
+    # record, step 3. Origin answers only "what put this forward".
+    #
+    # proposed_at is here rather than read back from
+    # PendingWriteStore's own expires_at (which is proposed_at + TTL,
+    # recoverable only by knowing the TTL) because an auto_execute
+    # write never enters that store at all, and would otherwise carry
+    # no timestamp anywhere.
+    origin: Origin
+    proposed_at: datetime
 
 
 class WriteMediator:
@@ -778,7 +827,8 @@ class WriteMediator:
             )
         return {}
 
-    def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict) -> PendingWrite:
+    def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict,
+                       origin: Origin) -> PendingWrite:
         # Matches Palantir Foundry's own action-type model directly
         # (verified against their docs, not assumed): a NAMED,
         # independently-governed operation, not a generic CRUD verb.
@@ -949,7 +999,10 @@ class WriteMediator:
             resolved_sub_writes.append(SubWrite(object_type, object_id, operation, changes, expected_current_values))
 
         description = f"{action_type_name}(parameters={parameters})"
-        return PendingWrite(tuple(resolved_sub_writes), user_record.user_id, description, action_type_name)
+        return PendingWrite(
+            tuple(resolved_sub_writes), user_record.user_id, description, action_type_name,
+            origin, datetime.now(UTC),
+        )
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
         # ALWAYS goes through _apply_batch() below, one sub_write or
@@ -972,6 +1025,13 @@ class WriteMediator:
                 # mac_allowed/rbac_allowed independently rather than
                 # only a combined allow/deny bit.
                 "sub_write_count": len(pending.sub_writes),
+                # Provenance, recorded here because the audit log is
+                # the only place it survives the process. A reader
+                # asking "did a person choose this, or did the agent"
+                # otherwise has to infer it from which route happened
+                # to be hit, which the log does not record.
+                "origin": pending.origin,
+                "proposed_at": pending.proposed_at.isoformat(),
                 "sub_writes": [
                     {"object_type": sw.object_type, "object_id": sw.object_id, "changes": sw.changes}
                     for sw in pending.sub_writes

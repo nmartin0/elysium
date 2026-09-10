@@ -28,6 +28,7 @@ that is fixed the hard problem evaporates:
 """
 
 import sqlite3
+from datetime import UTC, datetime
 
 import pytest
 import yaml
@@ -88,6 +89,8 @@ def _write(write_mediator, operation, object_id="cust_001", changes=None, expect
         user_id="u1",
         description=operation,
         action_type_name="TestAction",
+        origin="human",
+        proposed_at=datetime.now(UTC),
     )
     return write_mediator.confirm_and_execute(pending, approved=True)
 

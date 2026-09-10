@@ -250,4 +250,4 @@ def test_submission_criteria_sees_pending_value_not_stale_backend_state(fixture,
 
     from core.ontology.submission_criteria import SubmissionCriteriaViolation
     with pytest.raises(SubmissionCriteriaViolation, match="must currently be closed"):
-        write_mediator.propose_action(alice, "Reopen", {"ticket_id": 2})
+        write_mediator.propose_action(alice, "Reopen", {"ticket_id": 2}, origin="human")

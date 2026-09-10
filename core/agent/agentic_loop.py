@@ -395,8 +395,12 @@ class AgentLoop:
                              context: RequestContext | None = None) -> Any:
         if self.write_mediator is None:
             raise ValueError("Writes are not enabled for this deployment")
+        # origin="agent": user_record is still the person whose
+        # permissions authorize this, but the LLM chose the action,
+        # not them. Recording only user_id would make this
+        # indistinguishable from a form they filled in themselves.
         pending = self.write_mediator.propose_action(
-            user_record, step["action_type"], step["parameters"]
+            user_record, step["action_type"], step["parameters"], origin="agent",
         )
         action_def = self.write_mediator.action_types.get(step["action_type"]) or {}
         if action_def.get("auto_execute") is True:

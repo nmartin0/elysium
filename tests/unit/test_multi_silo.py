@@ -157,7 +157,9 @@ def test_an_action_to_one_silo_never_touches_the_other(mediator):
         },
     }
     write_mediator = WriteMediator(mediator, mediator.adapters, roles, action_types)
-    pending = write_mediator.propose_action(carol, "RenameWidget", {"widget_id": "w1", "new_name": "Renamed Widget"})
+    pending = write_mediator.propose_action(
+        carol, "RenameWidget", {"widget_id": "w1", "new_name": "Renamed Widget"}, origin="human",
+    )
     write_mediator.confirm_and_execute(pending, approved=True)
 
     # The widget changed...

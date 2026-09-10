@@ -138,17 +138,23 @@ def test_discover_grant_alone_does_not_authorize_invoking_anything(wm):
     # her invoke it. Discovery and execution are genuinely separate;
     # this grant alone unlocks neither.
     with pytest.raises(PermissionError):
-        wm.propose_action(_record("erin"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Erin's Edit"})
+        wm.propose_action(
+            _record("erin"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Erin's Edit"}, origin="human",
+        )
 
 
 def test_propose_action_denied_without_role_rbac(wm):
     with pytest.raises(PermissionError):
-        wm.propose_action(_record("carol"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Someone Else"})
+        wm.propose_action(
+            _record("carol"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Someone Else"}, origin="human",
+        )
 
 
 def test_propose_action_denied_cross_org_even_with_role_granted_mac(wm):
     with pytest.raises(PermissionError):
-        wm.propose_action(_record("bob"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Hacked"})
+        wm.propose_action(
+            _record("bob"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Hacked"}, origin="human",
+        )
 
 
 def test_propose_action_denied_for_ungranted_action_even_with_a_different_action_granted(wm):
@@ -157,11 +163,13 @@ def test_propose_action_denied_for_ungranted_action_even_with_a_different_action
     # test: one grant on this object type does not unlock every
     # action that happens to touch it.
     with pytest.raises(PermissionError):
-        wm.propose_action(_record("dave"), "CreateAuthor", {"name": "New Author"})
+        wm.propose_action(_record("dave"), "CreateAuthor", {"name": "New Author"}, origin="human")
 
 
 def test_propose_action_succeeds_for_own_org_object(wm):
-    pending = wm.propose_action(_record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."})
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+    )
     assert pending.sub_writes[0].object_type == "Author"
     assert pending.user_id == "alice"
     assert pending.sub_writes[0].changes == {"name": "Ada L."}
@@ -171,7 +179,9 @@ def test_pending_write_is_immutable(wm):
     # Both levels, deliberately -- PendingWrite AND each of its own
     # SubWrite entries are separately frozen dataclasses now (see
     # PendingWrite's own docstring for why the shape split into two).
-    pending = wm.propose_action(_record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."})
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+    )
     with pytest.raises(FrozenInstanceError):
         pending.sub_writes = ()
     with pytest.raises(FrozenInstanceError):
@@ -180,7 +190,8 @@ def test_pending_write_is_immutable(wm):
 
 def test_rejected_action_does_not_touch_database(wm):
     pending = wm.propose_action(
-        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Should Not Apply"}
+        _record("alice"), "RenameAuthor",
+        {"author_id": "auth_001", "new_name": "Should Not Apply"}, origin="human",
     )
     result = wm.confirm_and_execute(pending, approved=False)
     assert result is None
@@ -191,7 +202,8 @@ def test_rejected_action_does_not_touch_database(wm):
 
 def test_approved_action_actually_updates_the_database(wm):
     pending = wm.propose_action(
-        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada, Countess of Lovelace"}
+        _record("alice"), "RenameAuthor",
+        {"author_id": "auth_001", "new_name": "Ada, Countess of Lovelace"}, origin="human",
     )
     result = wm.confirm_and_execute(pending, approved=True)
     assert result == {"status": "written", "object_ids": ["auth_001"]}
@@ -211,8 +223,7 @@ def test_approved_create_action_actually_creates_a_new_row(wm):
     # one explicitly -- not specific to named actions, just the first
     # time anything actually created an Author through to completion.
     pending = wm.propose_action(
-        _record("alice"), "CreateAuthor", {"author_id": "auth_003", "name": "Grace Hopper"}
-    )
+        _record("alice"), "CreateAuthor", {"author_id": "auth_003", "name": "Grace Hopper"}, origin="human")
     assert pending.sub_writes[0].operation == "create"
 
     result = wm.confirm_and_execute(pending, approved=True)

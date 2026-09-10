@@ -124,7 +124,7 @@ def _propose_transfer(write_mediator, user_id="henry", from_id="acc_checking", t
     return write_mediator.propose_action(_record(user_id), "TransferFunds", {
         "from_account_id": from_id, "to_account_id": to_id,
         "new_from_balance": new_from, "new_to_balance": new_to,
-    })
+    }, origin="human")
 
 
 def test_valid_transfer_succeeds_end_to_end(wm_and_log):
@@ -177,7 +177,7 @@ def test_mac_denial_for_wrong_region(wm_and_log):
 
 
 def test_transfer_to_the_same_account_twice_is_rejected(wm_and_log):
-    # THE resolved-id duplicate check (WriteMediator.propose_action()'s
+    # THE resolved-id duplicate check (WriteMediator.propose_action(, origin="human")'s
     # own "seen_object_refs" logic) -- found, while building this file,
     # to have NO existing test coverage anywhere in this project, only
     # the WEAKER, load-time structural check (core/ontology/action_
