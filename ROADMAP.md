@@ -1399,6 +1399,97 @@ limit additions -- not repeated here). These are real, considered,
 but deliberately DEFERRED items, not gaps that slipped through
 unnoticed:
 
+- **KV-cache timing side channel, and why the prompt is ordered as it
+  is.** Prefix caching in an LLM server reuses the computed attention
+  state of a shared prompt prefix, which makes a cache hit measurably
+  faster than a miss. That difference is a side channel: published
+  attacks (PROMPTPEEK, EarlyBird, InputSnatch) reconstruct another
+  tenant's prompt token by token from response latency alone, and
+  report up to 100% success against unprotected vLLM and SGLang
+  deployments. NVIDIA publishes deployment guidance on it.
+
+  The attack needs STRICT PREFIX ALIGNMENT -- a probe must match from
+  the very first token. core/llm/agent_step_prompt.py's own
+  `_build_system_prompt()` opens with `_describe_schema(visible_
+  schema)`, the MAC/RBAC-filtered schema, so two users with different
+  access diverge within roughly the first hundred tokens and neither
+  can align against the other. The per-user schema is acting as a
+  cache partition key.
+
+  THAT IS ACCIDENTAL AND MUST NOT BE OPTIMISED AWAY. Moving the
+  generic instructions and examples above the schema -- to lengthen
+  the prefix that users share and improve cache hit rates -- would be
+  a security regression, not a performance win. It is exactly the
+  change that creates the alignable cross-privilege prefix these
+  attacks need. Per-query material may be appended at the END (which
+  is what core/llm/synthesis_prompt.py already does with
+  `_INCOMPLETE_SEARCH_NOTE`); the head of the prompt stays
+  user-specific.
+
+  RESIDUAL, recorded rather than fixed: two users in the SAME role
+  have byte-identical system prompts, so a same-role attacker could
+  align and probe forward into the user message, which carries the
+  question and gathered ontology data. Bounded -- same role means the
+  same RBAC grants -- but MAC values still differ, so it is not
+  nothing. Currently narrowed further by the server running one slot
+  (`-np 1`), which makes the exposure sequential rather than
+  concurrent.
+
+- **`auto_execute` plus indirect prompt injection.** Ontology data
+  flows into `gathered`, and `gathered` flows into the prompt, so a
+  field value containing instructions reaches the model as text.
+  Today the blast radius is small because three independent gates sit
+  between a model's decision and a write: propose_action() checks
+  `execute:<Action>`, MAC is checked per sub_write per object, and
+  confirm_and_execute() requires a human.
+
+  `auto_execute: true` removes the third. Injected text could then
+  cause a write with NO human in the loop. Still bounded by the
+  acting user's own grants, so not privilege escalation -- but it is
+  action without consent, which is a different property and one this
+  project otherwise takes seriously.
+
+  NOT LIVE: no deployment currently sets `auto_execute`. Verified,
+  not assumed. This is a note for whoever first does, and the obvious
+  mitigations are worth considering together -- restricting it to
+  actions whose sub_writes touch no field the model has read, or
+  requiring it to be paired with a submission criterion, or simply
+  documenting that it must not be enabled on an action reachable from
+  attacker-influenced data.
+
+- **Authorization is snapshotted per query, not per hop.** Raised
+  directly, and worth recording because slow hardware turns a
+  theoretical window into a real one. `AgentLoop.run()` computes
+  `visible_schema` ONCE and passes the same dict to every hop, and
+  api/auth_dependency.py resolves the `UserRecord` -- including the
+  `is_user_disabled` check -- once per HTTP request.
+
+  Every access decision is still enforced per call, so no check is
+  skipped. What is stale is the SUBJECT of those checks. If an
+  administrator disables a user or changes their role while a query
+  is running, the query continues under the record it started with.
+
+  On fast hardware that window is milliseconds. On a CPU-only
+  deployment where a single query can run for many minutes, it is
+  long enough to matter. Role-to-grant mappings are safe from this
+  today because policy.yaml is read once at startup by
+  load_deployment_bundle() and never reloaded -- but a user's ROLE
+  ASSIGNMENT lives in credentials.db and IS runtime-mutable.
+
+  Also unaddressed, and part of the same question: an object type or
+  field removed from the ontology, or a silo removed from
+  data_silos.yaml, requires a restart to take effect, so a running
+  deployment can be describing a schema that no longer matches its
+  storage. The failure mode there is an adapter error rather than a
+  leak, but it has never been tested deliberately.
+
+  The cheap partial fix is re-resolving the UserRecord per hop rather
+  than per request, which closes the disable/role-change case at the
+  cost of one credentials.db read per step. Recomputing
+  `visible_schema` per hop is more expensive and would also change
+  the prompt mid-query, which interacts with the caching note above
+  -- so it is a real decision, not an obvious improvement.
+
 - **`TrustedHostMiddleware` / `Host` header validation. CLOSED, not
   deferred.** Re-examined rather than left open, and both original
   premises still hold, one more strongly than recorded.
