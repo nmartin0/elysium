@@ -50,7 +50,8 @@ VITE_API_PROXY_TARGET=http://localhost:9000 npm run dev
 
 ```bash
 npm test              # vitest -- the full suite, once
-npm run lint          # oxlint, then tsc --noEmit (npm run typecheck alone)
+npm run lint          # THE GATE: oxlint, tsc --noEmit, oxfmt, knip
+npm run typecheck     # tsc --noEmit alone
 npm run format:check  # oxfmt -- verify formatting without changing anything
 npm run format        # oxfmt -- fix formatting in place
 npm run knip          # unused files, exports, and dependencies
@@ -63,6 +64,17 @@ formatting (`oxfmt`), on top of the real, behavioral test suite
 (`vitest`, exercising real user flows through React Testing Library,
 not shallow rendering). `tsconfig.json`'s own comments explain the
 specific compiler options chosen and why.
+
+**`npm run lint` runs all four**, in that order, and stops at the
+first failure. It used to run only the first two, which is how 14
+unused imports, an undeclared runtime dependency and 57 unformatted
+files accumulated with the command reporting success the whole time.
+The individual scripts above stay, for running one in isolation.
+
+Note the `--deny-warnings` on oxlint inside that script: **a bare
+`npx oxlint` exits 0 on warnings** and reports them anyway, so its
+exit code alone is not a signal. Read the count, or go through
+`npm run lint`.
 
 ## Production
 

@@ -175,15 +175,19 @@ is how the mistakes below happen.
    ./lint.sh
    python -m pytest tests/ -q -m "not integration"
    python -m pytest tests/integration/test_api.py -q    # if api/ changed
-   cd ui && npx vitest run && npx tsc --noEmit && npm run lint
-   cd ui && npm run format:check && npm run knip
+   cd ui && npx vitest run && npm run lint
    ```
 
-   That last line is not optional and is the one that gets dropped.
-   `npm run lint` is oxlint plus tsc only; oxfmt and knip are their own
-   commands, and omitting them from this list is exactly how 57 files
-   drifted out of format. oxlint also exits 0 on warnings, so read its
-   count rather than its exit code.
+   `npm run lint` is now all four frontend tools -- oxlint (with
+   `--deny-warnings`), tsc, oxfmt, knip -- stopping at the first
+   failure, so it no longer needs a second line beside it. If you run
+   `npx oxlint` directly it still exits 0 on warnings; read the count.
+
+   One limit worth knowing rather than rediscovering: knip does not
+   report unused exports in a file that is a declared entry point in
+   its package's `exports` map, because those are public API to it. A
+   new unused export in `shell-api/src/format.ts` passes; the same
+   export in `app-schema/src/SchemaGraph.tsx` fails.
 
 7. **Verify each factual claim** the commit message makes, with a
    command, before writing it. This has caught wrong claims about

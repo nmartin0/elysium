@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "oxlint && npm run typecheck",
+    "lint": "oxlint --deny-warnings && npm run typecheck && npm run format:check && npm run knip",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "knip": "KNIP_DISABLE_RAW_TRANSFER=1 knip",

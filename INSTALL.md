@@ -115,10 +115,11 @@ detection for files/exports/dependencies (`knip`), and formatting
 
 ```bash
 cd ui
-npm run lint          # oxlint, then tsc --noEmit
-npm run knip
-npm run format:check  # verify without changing anything
+npm run lint          # all four: oxlint, tsc --noEmit, oxfmt, knip
 ```
+
+`npm run typecheck`, `npm run format:check` and `npm run knip` run the
+individual pieces if you want one on its own.
 
 See `ui/README.md`'s own "Testing, linting, and type checking" section
 for the full breakdown, and `ui/tsconfig.json`'s own comments for the

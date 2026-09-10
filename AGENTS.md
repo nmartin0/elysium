@@ -30,21 +30,25 @@ uv pip compile requirements.txt requirements-dev.txt --generate-hashes \
 ```bash
 ./lint.sh                                    # ruff, mypy, vulture, import-linter
 python -m pytest tests/ -q -m "not integration"   # the suite that must pass
-cd ui && npx vitest run && npm run lint      # oxlint + tsc
-cd ui && npm run format:check && npm run knip     # oxfmt + dead code
+cd ui && npx vitest run && npm run lint      # oxlint, tsc, oxfmt, knip
 ```
 
-**The frontend gate is FOUR tools, not two**, matching the backend's
+**`npm run lint` is the whole frontend gate**, matching the backend's
 own four-way split: oxlint asks whether a file is well-formed, `tsc
---noEmit` whether the types agree, knip whether anything still uses a
-file or export or dependency at all, and oxfmt whether it is
-formatted. `npm run lint` runs only the first two. The other two are a
-separate line above deliberately -- leaving them out of this list once
-already let 57 files and three findings drift in unnoticed.
+--noEmit` whether the types agree, oxfmt whether it is formatted, and
+knip whether anything still uses a file or export or dependency at
+all. It stops at the first failure.
 
-Note that **oxlint exits 0 on warnings.** `npm run lint` passing does
-not mean oxlint found nothing; read the count. Fourteen unused imports
-accumulated that way.
+It ran only the first two until recently, and oxfmt and knip were
+named in this list as a separate line, which quietly stopped being
+run: 14 unused imports, an undeclared runtime dependency and 57
+unformatted files accumulated while this command reported success.
+Documenting them was not enough, so they are inside the script now.
+Each of the four has been confirmed to fail the gate on purpose.
+
+oxlint runs with `--deny-warnings` there for the same reason. **A bare
+`npx oxlint` exits 0 on warnings**, so if you run it directly rather
+than through `npm run lint`, read the count, not the exit code.
 
 Integration tests marked `test_real_model_*` need a live Ollama. They
 fail in sandboxes without one. That is environmental, not a regression.
