@@ -84,6 +84,20 @@ from core.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
+# The most objects one get_object step may name. A cap exists because
+# max_hops bounds how much a single query can read, and an uncapped
+# list of ids would let one hop read arbitrarily much -- the same
+# reasoning as MAX_SUB_WRITES in core/ontology/action_types.py, which
+# cites Palantir capping their own batched action calls.
+#
+# 20, matching MAX_SUB_WRITES rather than being picked independently:
+# both answer "how much may one step do", and two different answers to
+# one question is a thing to remember rather than derive. Exceeding it
+# is a NAMED error the model can recover from, never a silent short
+# read -- Palantir errors with ObjectsExceededLimit for the same
+# reason.
+MAX_OBJECT_IDS = 20
+
 
 @dataclass
 class AgentLoopResult:
@@ -350,21 +364,90 @@ class AgentLoop:
     def _step_get_object(self, step: dict, user_record: UserRecord,
                          visible_schema: dict, gathered: list[dict],
                          context: RequestContext | None = None) -> Any:
-        """Fans ONE step out into one gathered entry per field.
+        """Fans ONE step out into one gathered entry per object per field.
+
+        SET-SHAPED ON BOTH AXES. `field_names` was always a list;
+        `object_ids` now is too. This is the N+1 problem in an agentic
+        loop: a search returns a list of ids, and reading one field
+        from each of them used to cost one HOP per id. On the CPU-only
+        deployment this was written for a hop was measured at ~193
+        seconds, so two transactions cost 6.4 minutes to read one field
+        each.
+
+        The usual fix -- DataLoader, collecting individual loads and
+        issuing one bulk query underneath -- does not apply here. It
+        works because the caller's loads happen within one tick and can
+        be batched invisibly. Our caller is a model that must emit each
+        read as a separate, expensive round trip; there is no tick to
+        batch within. So the vocabulary has to change, which is what
+        REST does when transparent batching is impossible.
+
+        Shaped after Palantir's ObjectSet rather than as a batch
+        variant of a singular verb: their read primitive takes a SET
+        plus a `select` of which properties to return, and a
+        single-object fetch is the special case. `object_id` (singular)
+        still works and is normalised to a one-element list, so nothing
+        that already worked stops working.
 
         Recorded as get_field entries so everything downstream --
         synthesis, the trace, the prompt's own history -- sees the same
         shape whether a field was fetched singly or in a batch.
+
+        NOTHING ABOUT AUTHORIZATION IS BATCHED, and that is worth
+        stating because "batch read" invites the opposite assumption.
+        mediator.get_object() remains a per-field loop around
+        get_field(), and this adds a per-object loop around that: every
+        RBAC grant, every MAC check and every audit entry still happens
+        once per field per object, exactly as if the model had asked
+        one at a time. The saving is round trips to the MODEL, not work
+        in the mediator.
+
+        Relatedly, and deliberately not done: DataLoader's other half
+        is a per-request cache keyed by id. Adding one here would be a
+        second place authorization state could go stale, and the
+        pattern's own guidance is that such caches must be per-request
+        precisely to prevent leakage between users. Not worth it for a
+        loop that reads a handful of objects.
         """
-        field_values = self.mediator.get_object(
-            user_record, step["object_type"], step["object_id"], step["field_names"]
-        )
-        for field_name, value in field_values.items():
-            gathered.append({
-                "step": "get_field", "object_type": step["object_type"],
-                "object_id": step["object_id"], "field_name": field_name, "result": value,
-            })
+        object_ids = self._object_ids_for(step)
+        for object_id in object_ids:
+            field_values = self.mediator.get_object(
+                user_record, step["object_type"], object_id, step["field_names"]
+            )
+            for field_name, value in field_values.items():
+                gathered.append({
+                    "step": "get_field", "object_type": step["object_type"],
+                    "object_id": object_id, "field_name": field_name, "result": value,
+                })
         return STEP_HANDLED
+
+    @staticmethod
+    def _object_ids_for(step: dict) -> list:
+        # Accepts either key. A step naming one `object_id` is the
+        # common case and keeps working unchanged.
+        if "object_ids" in step:
+            object_ids = step["object_ids"]
+            if not isinstance(object_ids, list) or not object_ids:
+                raise ValueError("get_object: 'object_ids' must be a non-empty list")
+        else:
+            object_ids = [step["object_id"]]
+
+        if len(object_ids) > MAX_OBJECT_IDS:
+            # A NAMED refusal, never a silent truncation -- answering
+            # about some of a list and quietly skipping the rest is the
+            # exact failure the prompt already warns the model against.
+            # Palantir does the same at their own scale, erroring with
+            # ObjectsExceededLimit rather than returning a short page.
+            #
+            # A cap exists at all because max_hops bounds how much a
+            # query can read, and an uncapped list would let one hop
+            # read arbitrarily much. Same reasoning as MAX_SUB_WRITES
+            # in core/ontology/action_types.py.
+            raise ValueError(
+                f"get_object: {len(object_ids)} object_ids exceeds the "
+                f"limit of {MAX_OBJECT_IDS}. Ask for fewer at a time."
+            )
+        return object_ids
 
     def _step_use_tool(self, step: dict, user_record: UserRecord,
                        visible_schema: dict, gathered: list[dict],

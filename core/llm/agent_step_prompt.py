@@ -361,10 +361,13 @@ field's value is another object's ID -- you can search_object or
 get_field on it next):
   {{"step": "get_field", "object_type": "<type>", "object_id": "<id>", "field_name": "<field>"}}
 
-To read SEVERAL fields of the SAME object in one step -- prefer this
-over several separate get_field calls whenever you already know you
-need more than one field from the same object:
-  {{"step": "get_object", "object_type": "<type>", "object_id": "<id>", "field_names": ["<field1>", "<field2>"]}}
+To read fields from ONE OR MORE objects of the same type in a single
+step. Prefer this over several separate get_field calls ALWAYS -- both
+when you need several fields from one object, and when you need the
+same field from several objects. Every id you can name here saves a
+whole step:
+  {{"step": "get_object", "object_type": "<type>", "object_ids": ["<id1>", "<id2>"],
+     "field_names": ["<field1>", "<field2>"]}}
 
 To COUNT or TOTAL across many objects -- always prefer this over
 reading each object one at a time, which is slower and may run out of
@@ -402,15 +405,15 @@ Example: to answer "What is cust_001's email", the correct sequence is:
 Example: to answer "What is cust_001's name and email", after the same
 search_object step, use ONE get_object call instead of two separate
 get_field calls:
-  {{"step": "get_object", "object_type": "Customer", "object_id": "cust_001", "field_names": ["name", "email"]}}
+  {{"step": "get_object", "object_type": "Customer", "object_ids": ["cust_001"], "field_names": ["name", "email"]}}
   then {{"step": "finish"}}.
 
 Example: to answer "What are cust_001's transaction amounts", after you
-get_field "transactions" on Customer cust_001 and receive [1, 2], the
-correct next steps are:
-  {{"step": "get_field", "object_type": "Transaction", "object_id": 1, "field_name": "amount"}}
-  {{"step": "get_field", "object_type": "Transaction", "object_id": 2, "field_name": "amount"}}
-  then {{"step": "finish"}} -- NOT another get_field on "transactions".
+get_field "transactions" on Customer cust_001 and receive [1, 2], name
+BOTH ids in ONE step:
+  {{"step": "get_object", "object_type": "Transaction", "object_ids": [1, 2], "field_names": ["amount"]}}
+  then {{"step": "finish"}} -- NOT one get_field per id, and NOT another
+  get_field on "transactions".
 
 IMPORTANT: Before you finish, check EVERY ID from a list result (like
 [1, 2] above) has been asked about EQUALLY. If you fetched a field for
@@ -506,9 +509,20 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         }
 
     if step == "get_object":
-        required = {"object_type", "object_id", "field_names"}
+        # EITHER key names the objects. object_ids is the set form,
+        # object_id the one-object special case -- see AgentLoop._step_
+        # get_object() for why the read is set-shaped on both axes.
+        id_key = "object_ids" if "object_ids" in parsed else "object_id"
+        required = {"object_type", id_key, "field_names"}
         if not _has_required_keys(parsed, required, "get_object"):
             return _finish_step()
+        if id_key == "object_ids":
+            object_ids = parsed["object_ids"]
+            # Same reasoning as field_names below: a non-list or an
+            # empty one is structurally malformed, not "read nothing".
+            if not isinstance(object_ids, list) or not object_ids:
+                logger.warning("malformed get_object step (object_ids must be a non-empty list), finishing")
+                return _finish_step()
         field_names = parsed["field_names"]
         # A non-list, or an empty one, is structurally malformed --
         # NOT "read every field" or "read nothing," and never treated
@@ -525,7 +539,7 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         return {
             "step": "get_object",
             "object_type": parsed["object_type"],
-            "object_id": parsed["object_id"],
+            id_key: parsed[id_key],
             "field_names": field_names,
         }
 
