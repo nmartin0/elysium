@@ -99,8 +99,7 @@ export function buildGraph(
   // Keyed by api_name, matching what the endpoint returns. Taking the
   // record rather than an array means buildGraph cannot be handed a
   // shape the API never produces.
-  actionTypes: Record<string, { display_name?: string | null;
-                                affected_object_types?: string[] }> = {},
+  actionTypes: Record<string, { display_name?: string | null; affected_object_types?: string[] }> = {},
 ): GraphModel {
   // SORTED, so the starting positions below come from a stable order
   // rather than whatever order the object arrived in.
@@ -111,7 +110,8 @@ export function buildGraph(
   // nothing, which says "there is something here you may not see" --
   // the disclosure uniform denial exists to prevent.
   const visibleActions = Object.entries(actionTypes).filter(([, action]) =>
-    (action.affected_object_types ?? []).some((type) => type in schema))
+    (action.affected_object_types ?? []).some((type) => type in schema),
+  )
   const actionNames = visibleActions.map(([apiName]) => apiName).sort()
 
   const total = Math.max(names.length + actionNames.length, 1)
@@ -224,11 +224,7 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
   const model = useMemo(() => buildGraph(schema, actionTypes), [schema, actionTypes])
 
   if (model.nodes.length === 0) {
-    return (
-      <Callout intent="none">
-        You do not have read access to any object type in this ontology.
-      </Callout>
-    )
+    return <Callout intent="none">You do not have read access to any object type in this ontology.</Callout>
   }
 
   const option = {
@@ -237,62 +233,65 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
     // whatever it is describing -- it obstructed the chart to tell you
     // nothing new.
     tooltip: { show: false },
-    series: [{
-      type: 'graph',
-      layout: 'force',
-      // roam keeps zoom and pan; draggable keeps clicking a node and
-      // moving it. Both are worth having and neither requires the
-      // simulation to keep running.
-      roam: true,
-      draggable: true,
-      // NO layout animation, which is what made it "squiggly and
-      // bouncy". The force simulation still decides the arrangement --
-      // it simply settles before the first paint instead of visibly
-      // wobbling into place. Combined with deterministic starting
-      // positions, the same ontology arrives at the same picture, and
-      // arrives at it still.
-      force: { repulsion: 420, edgeLength: 170, layoutAnimation: false },
-      label: { show: true, position: 'right' },
-      // Labels that would sit on top of each other are hidden rather
-      // than stacked. It does not stop a label overlapping a NODE --
-      // ECharts draws a graph node's label as part of the node, so it
-      // shares the node's hit area and cannot be made unclickable
-      // without turning labels off entirely. Recorded rather than left
-      // looking solved: clicking a label still selects its node.
-      labelLayout: { hideOverlap: true },
-      emphasis: { focus: 'adjacency' },
-      // An arrow at the target end. A relationship has a direction and
-      // an undirected line loses it -- "1:M" alone does not say which
-      // side is the many.
-      edgeSymbol: ['none', 'arrow'],
-      edgeSymbolSize: 8,
-      edgeLabel: { show: true, formatter: '{c}', fontSize: 10 },
-      data: model.nodes.map((node) => ({
-        name: node.name,
-        value: node.value,
-        x: node.x,
-        y: node.y,
-        // Actions are DIAMONDS, object types circles. Shape rather
-        // than colour carries the distinction, because shape survives
-        // a colour-blind reader and a greyscale print, and because
-        // colour is already spoken for if this ever gains more
-        // meaning.
-        symbol: node.kind === 'action' ? 'diamond' : 'circle',
-        symbolSize: node.kind === 'action' ? 18 : 22 + Math.min(node.value, 8) * 3,
-        itemStyle: node.kind === 'action' ? { opacity: 0.75 } : {},
-      })),
-      links: model.links.map((link) => ({
-        source: link.source,
-        target: link.target,
-        value: link.label,
-        // An action's edge is dashed: it is not a relationship BETWEEN
-        // data, it is something that operates on it. Same reason the
-        // node shape differs.
-        lineStyle: link.kind === 'affects'
-          ? { type: 'dashed', opacity: 0.45, curveness: 0.1 }
-          : { opacity: 0.7, curveness: 0.1 },
-      })),
-    }],
+    series: [
+      {
+        type: 'graph',
+        layout: 'force',
+        // roam keeps zoom and pan; draggable keeps clicking a node and
+        // moving it. Both are worth having and neither requires the
+        // simulation to keep running.
+        roam: true,
+        draggable: true,
+        // NO layout animation, which is what made it "squiggly and
+        // bouncy". The force simulation still decides the arrangement --
+        // it simply settles before the first paint instead of visibly
+        // wobbling into place. Combined with deterministic starting
+        // positions, the same ontology arrives at the same picture, and
+        // arrives at it still.
+        force: { repulsion: 420, edgeLength: 170, layoutAnimation: false },
+        label: { show: true, position: 'right' },
+        // Labels that would sit on top of each other are hidden rather
+        // than stacked. It does not stop a label overlapping a NODE --
+        // ECharts draws a graph node's label as part of the node, so it
+        // shares the node's hit area and cannot be made unclickable
+        // without turning labels off entirely. Recorded rather than left
+        // looking solved: clicking a label still selects its node.
+        labelLayout: { hideOverlap: true },
+        emphasis: { focus: 'adjacency' },
+        // An arrow at the target end. A relationship has a direction and
+        // an undirected line loses it -- "1:M" alone does not say which
+        // side is the many.
+        edgeSymbol: ['none', 'arrow'],
+        edgeSymbolSize: 8,
+        edgeLabel: { show: true, formatter: '{c}', fontSize: 10 },
+        data: model.nodes.map((node) => ({
+          name: node.name,
+          value: node.value,
+          x: node.x,
+          y: node.y,
+          // Actions are DIAMONDS, object types circles. Shape rather
+          // than colour carries the distinction, because shape survives
+          // a colour-blind reader and a greyscale print, and because
+          // colour is already spoken for if this ever gains more
+          // meaning.
+          symbol: node.kind === 'action' ? 'diamond' : 'circle',
+          symbolSize: node.kind === 'action' ? 18 : 22 + Math.min(node.value, 8) * 3,
+          itemStyle: node.kind === 'action' ? { opacity: 0.75 } : {},
+        })),
+        links: model.links.map((link) => ({
+          source: link.source,
+          target: link.target,
+          value: link.label,
+          // An action's edge is dashed: it is not a relationship BETWEEN
+          // data, it is something that operates on it. Same reason the
+          // node shape differs.
+          lineStyle:
+            link.kind === 'affects'
+              ? { type: 'dashed', opacity: 0.45, curveness: 0.1 }
+              : { opacity: 0.7, curveness: 0.1 },
+        })),
+      },
+    ],
   }
 
   return (
@@ -300,21 +299,25 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
       option={option}
       height={480}
       ariaLabel={
-        `Ontology graph: ${model.nodes.filter((n) => n.kind === 'object').length} object types, `
-        + `${model.nodes.filter((n) => n.kind === 'action').length} action types, `
-        + `${model.links.length} relationships`
+        `Ontology graph: ${model.nodes.filter((n) => n.kind === 'object').length} object types, ` +
+        `${model.nodes.filter((n) => n.kind === 'action').length} action types, ` +
+        `${model.links.length} relationships`
       }
       onSelect={(name, dataType, data) => {
         if (dataType === 'edge') {
           // An edge's endpoints come from ECharts' own data, which
           // holds what buildGraph put there.
           const edge = data as { source?: string; target?: string; value?: string }
-          const match = model.links.find((candidate) =>
-            candidate.source === edge?.source && candidate.target === edge?.target)
+          const match = model.links.find(
+            (candidate) => candidate.source === edge?.source && candidate.target === edge?.target,
+          )
           if (match) {
             onSelect({
-              kind: 'link', name: match.name,
-              source: match.source, target: match.target, label: match.label,
+              kind: 'link',
+              name: match.name,
+              source: match.source,
+              target: match.target,
+              label: match.label,
             })
           }
           return

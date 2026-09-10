@@ -387,7 +387,9 @@ describe('getVisibleActionTypesCached', () => {
 
   it('fetches once and serves the same answer afterwards', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 200, json: async () => ({ TransferFunds: {} }),
+      ok: true,
+      status: 200,
+      json: async () => ({ TransferFunds: {} }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -411,9 +413,7 @@ describe('getVisibleActionTypesCached', () => {
     const inFlight = new Promise((resolve) => {
       resolveFetch = resolve
     })
-    const fetchMock = vi.fn().mockReturnValue(
-      inFlight.then(() => ({ ok: true, status: 200, json: async () => ({}) })),
-    )
+    const fetchMock = vi.fn().mockReturnValue(inFlight.then(() => ({ ok: true, status: 200, json: async () => ({}) })))
     vi.stubGlobal('fetch', fetchMock)
 
     // Both start BEFORE either finishes -- no await between them.
@@ -445,7 +445,9 @@ describe('getVisibleActionTypesCached', () => {
     // cache -- the real hazard of module-level state, and worth an
     // explicit door rather than leaving each test to find its own.
     const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 200, json: async () => ({}),
+      ok: true,
+      status: 200,
+      json: async () => ({}),
     })
     vi.stubGlobal('fetch', fetchMock)
 

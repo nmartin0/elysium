@@ -58,25 +58,29 @@ export function valueCountsOption(
   const entries = withOther(sortedEntries(results), MAX_BARS)
   return {
     grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
-    xAxis: { type: "value" },
+    xAxis: { type: 'value' },
     // Reversed because ECharts draws a category axis bottom-up, and a
     // ranked list reads top-down.
-    yAxis: { type: "category", data: entries.map(([name]) => name).reverse() },
-    tooltip: { trigger: "item" },
-    series: [{
-      type: "bar",
-      data: entries.map(([name, value]) => ({
-        name,
-        value,
-        // Selection is shown by DIMMING the rest rather than hiding
-        // it: a filtered-out bar still tells you how much you filtered
-        // away, and a chart whose bars vanish on click loses the
-        // context that made the click sensible.
-        itemStyle: {
-          opacity: dimmed(name, selected, excluded) ? 0.3 : 1,
-        },
-      })).reverse(),
-    }],
+    yAxis: { type: 'category', data: entries.map(([name]) => name).reverse() },
+    tooltip: { trigger: 'item' },
+    series: [
+      {
+        type: 'bar',
+        data: entries
+          .map(([name, value]) => ({
+            name,
+            value,
+            // Selection is shown by DIMMING the rest rather than hiding
+            // it: a filtered-out bar still tells you how much you filtered
+            // away, and a chart whose bars vanish on click loses the
+            // context that made the click sensible.
+            itemStyle: {
+              opacity: dimmed(name, selected, excluded) ? 0.3 : 1,
+            },
+          }))
+          .reverse(),
+      },
+    ],
   }
 }
 
@@ -87,23 +91,25 @@ export function histogramOption(results: AggregateResults): Record<string, unkno
   const entries = Object.entries(results).sort(([a], [b]) => a.localeCompare(b))
   return {
     grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
-    xAxis: { type: "category", data: entries.map(([name]) => name) },
-    yAxis: { type: "value" },
-    tooltip: { trigger: "item" },
-    series: [{ type: "bar", data: entries.map(([name, value]) => ({ name, value })) }],
+    xAxis: { type: 'category', data: entries.map(([name]) => name) },
+    yAxis: { type: 'value' },
+    tooltip: { trigger: 'item' },
+    series: [{ type: 'bar', data: entries.map(([name, value]) => ({ name, value })) }],
   }
 }
 
 export function pieOption(results: AggregateResults): Record<string, unknown> {
   const entries = withOther(sortedEntries(results), PIE_MAX_SLICES)
   return {
-    tooltip: { trigger: "item" },
-    legend: { type: "scroll", bottom: 0 },
-    series: [{
-      type: "pie",
-      radius: ["40%", "70%"],
-      data: entries.map(([name, value]) => ({ name, value })),
-    }],
+    tooltip: { trigger: 'item' },
+    legend: { type: 'scroll', bottom: 0 },
+    series: [
+      {
+        type: 'pie',
+        radius: ['40%', '70%'],
+        data: entries.map(([name, value]) => ({ name, value })),
+      },
+    ],
   }
 }
 
@@ -124,7 +130,6 @@ export function suitsAPie(results: AggregateResults): boolean {
   return groups > 1 && groups <= PIE_MAX_SLICES
 }
 
-
 /**
  * One field's chart selection.
  *
@@ -135,7 +140,7 @@ export function suitsAPie(results: AggregateResults): boolean {
 export interface ChartFilter {
   field: string
   values: string[]
-  mode: "keep" | "exclude"
+  mode: 'keep' | 'exclude'
 }
 
 /**
@@ -153,23 +158,25 @@ export function asConditions(filters: ChartFilter[]): unknown[] {
     .filter((filter) => filter.values.length > 0)
     .map((filter) => ({
       field: filter.field,
-      operator: filter.mode === "exclude" ? "not_in" : "in",
+      operator: filter.mode === 'exclude' ? 'not_in' : 'in',
       value: filter.values,
     }))
 }
 
 /** The values selected on one field's chart, for dimming the rest. */
-export function selectionFor(filters: ChartFilter[], field: string): {
+export function selectionFor(
+  filters: ChartFilter[],
+  field: string,
+): {
   selected: string[]
   excluded: string[]
 } {
   const filter = filters.find((entry) => entry.field === field)
   if (filter === undefined) return { selected: [], excluded: [] }
-  return filter.mode === "exclude"
+  return filter.mode === 'exclude'
     ? { selected: [], excluded: filter.values }
     : { selected: filter.values, excluded: [] }
 }
-
 
 /**
  * The filter to aggregate ONE field's chart under -- everything

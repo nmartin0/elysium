@@ -72,25 +72,21 @@ describe('value counts', () => {
     // A filtered-out bar still tells you how much you filtered away.
     // Bars that vanish on click lose the context that made the click
     // sensible.
-    const option = valueCountsOption(
-      { west: 10, east: 5 }, { selected: ['west'] },
-    ) as unknown as { series: { data: { name: string; itemStyle: { opacity: number } }[] }[] }
+    const option = valueCountsOption({ west: 10, east: 5 }, { selected: ['west'] }) as unknown as {
+      series: { data: { name: string; itemStyle: { opacity: number } }[] }[]
+    }
 
-    const byName = Object.fromEntries(
-      (option.series[0]?.data ?? []).map((d) => [d.name, d.itemStyle.opacity]),
-    )
+    const byName = Object.fromEntries((option.series[0]?.data ?? []).map((d) => [d.name, d.itemStyle.opacity]))
     expect(byName.west).toBe(1)
     expect(byName.east).toBeLessThan(1)
   })
 
   it('dims an excluded value even when nothing is selected', () => {
-    const option = valueCountsOption(
-      { west: 10, east: 5 }, { excluded: ['east'] },
-    ) as unknown as { series: { data: { name: string; itemStyle: { opacity: number } }[] }[] }
+    const option = valueCountsOption({ west: 10, east: 5 }, { excluded: ['east'] }) as unknown as {
+      series: { data: { name: string; itemStyle: { opacity: number } }[] }[]
+    }
 
-    const byName = Object.fromEntries(
-      (option.series[0]?.data ?? []).map((d) => [d.name, d.itemStyle.opacity]),
-    )
+    const byName = Object.fromEntries((option.series[0]?.data ?? []).map((d) => [d.name, d.itemStyle.opacity]))
     expect(byName.west).toBe(1)
     expect(byName.east).toBeLessThan(1)
   })
@@ -130,7 +126,7 @@ describe('pie', () => {
       series: { data: { name: string }[] }[]
     }
 
-    expect((option.series[0]?.data ?? [])).toHaveLength(PIE_MAX_SLICES + 1)
+    expect(option.series[0]?.data ?? []).toHaveLength(PIE_MAX_SLICES + 1)
   })
 })
 
@@ -139,16 +135,18 @@ describe('chart selections as conditions', () => {
     // No widening was needed for click-to-filter: selecting several
     // values on one chart IS set membership, which the vocabulary
     // already had.
-    expect(asConditions([{ field: 'region', values: ['west', 'east'], mode: 'keep' }]))
-      .toEqual([{ field: 'region', operator: 'in', value: ['west', 'east'] }])
+    expect(asConditions([{ field: 'region', values: ['west', 'east'], mode: 'keep' }])).toEqual([
+      { field: 'region', operator: 'in', value: ['west', 'east'] },
+    ])
   })
 
   it('an excluded selection becomes a `not_in`', () => {
     // "Everything except these three" is a question people actually
     // ask and a picker cannot express. It is what makes chart
     // filtering more than a fancy dropdown.
-    expect(asConditions([{ field: 'region', values: ['east'], mode: 'exclude' }]))
-      .toEqual([{ field: 'region', operator: 'not_in', value: ['east'] }])
+    expect(asConditions([{ field: 'region', values: ['east'], mode: 'exclude' }])).toEqual([
+      { field: 'region', operator: 'not_in', value: ['east'] },
+    ])
   })
 
   it('fields AND together rather than unioning', () => {

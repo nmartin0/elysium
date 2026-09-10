@@ -24,9 +24,7 @@ vi.mock('@elysium/shell-api/components/Chart', () => ({
   default: ({ ariaLabel, onSelect }: { ariaLabel: string; onSelect?: (v: string) => void }) => (
     <div>
       <span>{ariaLabel}</span>
-      {onSelect && (
-        <button onClick={() => onSelect('us-west')}>select:region:us-west</button>
-      )}
+      {onSelect && <button onClick={() => onSelect('us-west')}>select:region:us-west</button>}
     </div>
   ),
 }))
@@ -53,11 +51,7 @@ const CUSTOMER_SCHEMA: VisibleSchema = {
 function renderPanel(visibleSchema: VisibleSchema | null, onSessionExpired: () => void = vi.fn()) {
   return render(
     <MemoryRouter>
-      <ObjectSearchPanel
-        visibleSchema={visibleSchema}
-        username="alice"
-        onSessionExpired={onSessionExpired}
-      />
+      <ObjectSearchPanel visibleSchema={visibleSchema} username="alice" onSessionExpired={onSessionExpired} />
     </MemoryRouter>,
   )
 }
@@ -276,7 +270,9 @@ describe('ObjectSearchPanel -- results rendering', () => {
 
     await waitFor(() =>
       expect(mockedSearchObjects).toHaveBeenCalledWith(
-        'Customer', '', expect.objectContaining({ pageToken: 'v1.opaque-token' }),
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: 'v1.opaque-token' }),
       ),
     )
   })
@@ -292,7 +288,9 @@ describe('ObjectSearchPanel -- results rendering', () => {
 
     await waitFor(() =>
       expect(mockedSearchObjects).toHaveBeenCalledWith(
-        'Customer', '', expect.objectContaining({ orderBy: 'name:desc' }),
+        'Customer',
+        '',
+        expect.objectContaining({ orderBy: 'name:desc' }),
       ),
     )
   })
@@ -309,7 +307,9 @@ describe('ObjectSearchPanel -- results rendering', () => {
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
     await waitFor(() =>
       expect(mockedSearchObjects).toHaveBeenCalledWith(
-        'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: 'v1.page2' }),
       ),
     )
 
@@ -320,7 +320,9 @@ describe('ObjectSearchPanel -- results rendering', () => {
 
     await waitFor(() =>
       expect(mockedSearchObjects).toHaveBeenCalledWith(
-        'Customer', 'ada', expect.objectContaining({ pageToken: undefined }),
+        'Customer',
+        'ada',
+        expect.objectContaining({ pageToken: undefined }),
       ),
     )
   })
@@ -445,9 +447,7 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
   }
 
   const RESULT = {
-    ...searchResult([
-      { id: 'cust_001', fields: { name: 'Ada', region: 'us-west', internal: 'note' } },
-    ]),
+    ...searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west', internal: 'note' } }]),
   }
 
   it('defaults to the fields the ontology declares prominent', async () => {
@@ -517,9 +517,7 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
     // The server decides which fields a search summary includes.
     // Offering one it never returns would be a checkbox that does
     // nothing.
-    mockedSearchObjects.mockResolvedValue(
-      searchResult([{ id: 'cust_001', fields: { region: 'us-west' } }]),
-    )
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { region: 'us-west' } }]))
     renderPanel(WITH_VISIBILITY)
 
     await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
@@ -538,9 +536,7 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
     Account: { fields: { balance: { type: 'data' } } },
   }
 
-  const RESULT = searchResult([
-    { id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } },
-  ])
+  const RESULT = searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } }])
 
   it('remembers a column choice across an unmount', async () => {
     // THE bug this file's tests missed. Browse and the object detail
@@ -634,12 +630,15 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     openCharts()
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '',
-      expect.objectContaining({
-        conditions: [{ field: 'region', operator: 'in', value: ['us-west'] }],
-      }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({
+          conditions: [{ field: 'region', operator: 'in', value: ['us-west'] }],
+        }),
+      ),
+    )
   })
 
   it('a chart click ANDs with the text query rather than replacing it', async () => {
@@ -653,19 +652,20 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     fireEvent.change(screen.getByPlaceholderText(/Search Customer/), {
       target: { value: 'ada' },
     })
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', 'ada', expect.anything(),
-    ))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', 'ada', expect.anything()))
     mockedSearchObjects.mockClear()
 
     openCharts()
 
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', 'ada',
-      expect.objectContaining({ conditions: expect.arrayContaining([expect.anything()]) }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        'ada',
+        expect.objectContaining({ conditions: expect.arrayContaining([expect.anything()]) }),
+      ),
+    )
   })
 
   it('clicking the same value again undoes it', async () => {
@@ -677,18 +677,22 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     renderPanel(SCHEMA)
     openCharts()
     fireEvent.click(await screen.findByText('select:region:us-west'))
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ conditions: expect.any(Array) }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ conditions: expect.any(Array) }),
+      ),
+    )
     mockedSearchObjects.mockClear()
 
     openCharts()
 
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ conditions: [] }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', '', expect.objectContaining({ conditions: [] })),
+    )
   })
 
   it('returns to the first page when a chart filter changes', async () => {
@@ -701,18 +705,26 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     renderPanel(SCHEMA)
     await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: 'v1.page2' }),
+      ),
+    )
     mockedSearchObjects.mockClear()
 
     openCharts()
 
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ pageToken: undefined }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: undefined }),
+      ),
+    )
   })
 })
 
@@ -739,12 +751,15 @@ describe('ObjectSearchPanel -- typed filters', () => {
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '99999' } })
     fireEvent.click(screen.getByRole('button', { name: /Add/ }))
 
-    return waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '',
-      expect.objectContaining({
-        conditions: [{ field: 'balance', operator: 'range', value: ['10000', '99999'] }],
-      }),
-    ))
+    return waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({
+          conditions: [{ field: 'balance', operator: 'range', value: ['10000', '99999'] }],
+        }),
+      ),
+    )
   })
 
   // NO test here for a typed filter AND a chart selection together.
@@ -767,17 +782,25 @@ describe('ObjectSearchPanel -- typed filters', () => {
     renderPanel(SCHEMA)
     await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: 'v1.page2' }),
+      ),
+    )
     mockedSearchObjects.mockClear()
 
     fireEvent.change(screen.getByLabelText('Field to filter'), { target: { value: 'name' } })
     fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'Ada' } })
     fireEvent.click(screen.getByRole('button', { name: /Add/ }))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ pageToken: undefined }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: undefined }),
+      ),
+    )
   })
 })

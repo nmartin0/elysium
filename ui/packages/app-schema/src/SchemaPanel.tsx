@@ -81,7 +81,9 @@ function statusIntent(status: string | undefined) {
 }
 
 function FieldTable({
-  fields, onOpenObjectType, onOpenLinkType,
+  fields,
+  onOpenObjectType,
+  onOpenLinkType,
 }: {
   fields: [string, SchemaField][]
   onOpenObjectType: (objectType: string) => void
@@ -105,9 +107,7 @@ function FieldTable({
               {/* The API name is what a caller uses programmatically,
                   and is worth showing -- but only when it differs from
                   the label, or it is the same word twice. */}
-              {apiName !== (field.display_name ?? apiName) && (
-                <div className="schema-panel__api-name">{apiName}</div>
-              )}
+              {apiName !== (field.display_name ?? apiName) && <div className="schema-panel__api-name">{apiName}</div>}
             </td>
             <td>
               {field.type === 'link' ? (
@@ -154,7 +154,10 @@ function FieldTable({
 }
 
 function ObjectTypeCard({
-  apiName, type, onOpenObjectType, onOpenLinkType,
+  apiName,
+  type,
+  onOpenObjectType,
+  onOpenLinkType,
 }: {
   apiName: string
   type: SchemaObjectType
@@ -163,14 +166,12 @@ function ObjectTypeCard({
 }) {
   const entries = Object.entries(type.fields ?? {})
   const prominent = entries.filter(([, f]) => f.visibility === PROMINENT)
-  const normal = entries.filter(([, f]) => (f.visibility ?? 'normal') !== PROMINENT
-    && f.visibility !== HIDDEN)
+  const normal = entries.filter(([, f]) => (f.visibility ?? 'normal') !== PROMINENT && f.visibility !== HIDDEN)
 
   return (
     <section className="schema-panel__type" data-testid={`object-type-${apiName}`}>
       <h3>
-        {iconOrNone(type.icon) && <Icon icon={iconOrNone(type.icon)} />}{' '}
-        {type.display_name ?? apiName}
+        {iconOrNone(type.icon) && <Icon icon={iconOrNone(type.icon)} />} {type.display_name ?? apiName}
         {type.status && type.status !== 'active' && (
           <>
             {' '}
@@ -186,32 +187,18 @@ function ObjectTypeCard({
           </>
         )}
       </h3>
-      {apiName !== (type.display_name ?? apiName) && (
-        <div className="schema-panel__api-name">{apiName}</div>
-      )}
+      {apiName !== (type.display_name ?? apiName) && <div className="schema-panel__api-name">{apiName}</div>}
       {type.description && <p>{type.description}</p>}
 
       {prominent.length > 0 && (
         <>
           <h4>Prominent</h4>
-          <FieldTable
-            fields={prominent}
-            onOpenObjectType={onOpenObjectType}
-            onOpenLinkType={onOpenLinkType}
-          />
+          <FieldTable fields={prominent} onOpenObjectType={onOpenObjectType} onOpenLinkType={onOpenLinkType} />
         </>
       )}
       <h4>Properties</h4>
-      <FieldTable
-        fields={normal}
-        onOpenObjectType={onOpenObjectType}
-        onOpenLinkType={onOpenLinkType}
-      />
-      {entries.length === 0 && (
-        <Callout intent="none">
-          No fields are visible to you on this object type.
-        </Callout>
-      )}
+      <FieldTable fields={normal} onOpenObjectType={onOpenObjectType} onOpenLinkType={onOpenLinkType} />
+      {entries.length === 0 && <Callout intent="none">No fields are visible to you on this object type.</Callout>}
     </section>
   )
 }
@@ -281,11 +268,16 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
    * through them one at a time instead of leaving the graph.
    */
   const [selection, setSelection] = useState<GraphSelection | null>(null)
-  const [graphActionTypes, setGraphActionTypes] = useState<Record<string, {
-    display_name?: string | null
-    description?: string | null
-    affected_object_types?: string[]
-  }>>({})
+  const [graphActionTypes, setGraphActionTypes] = useState<
+    Record<
+      string,
+      {
+        display_name?: string | null
+        description?: string | null
+        affected_object_types?: string[]
+      }
+    >
+  >({})
 
   useEffect(() => {
     // The same cache Action types and the graph itself use, so opening
@@ -300,10 +292,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const filter = selectedTab === 'object-types' ? query : ''
   const linkFilter = selectedTab === 'link-types' ? query : ''
   const actionFilter = selectedTab === 'action-types' ? query : ''
-  const [typedFilter, setTypedFilter, adoptFilter] = useDeferredWrite(
-    query,
-    (text) => go(selectedTab, text, 'replace'),
-  )
+  const [typedFilter, setTypedFilter, adoptFilter] = useDeferredWrite(query, (text) => go(selectedTab, text, 'replace'))
 
   // A navigation -- Back, a tab click, a cross-reference -- sets the
   // query from outside, and the box must follow it. adopt() also
@@ -314,11 +303,8 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query])
 
-  const filterNoun = selectedTab === 'link-types'
-    ? 'link types'
-    : selectedTab === 'action-types'
-      ? 'action types'
-      : 'object types'
+  const filterNoun =
+    selectedTab === 'link-types' ? 'link types' : selectedTab === 'action-types' ? 'action types' : 'object types'
 
   /**
    * PUSH for navigation, REPLACE for typing.
@@ -352,11 +338,13 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
     if (!schema) return []
     const needle = filter.trim().toLowerCase()
     return Object.entries(schema)
-      .filter(([apiName, type]) =>
-        needle === ''
-        || apiName.toLowerCase().includes(needle)
-        || (type.display_name ?? apiName).toLowerCase().includes(needle)
-        || (type.group ?? '').toLowerCase().includes(needle))
+      .filter(
+        ([apiName, type]) =>
+          needle === '' ||
+          apiName.toLowerCase().includes(needle) ||
+          (type.display_name ?? apiName).toLowerCase().includes(needle) ||
+          (type.group ?? '').toLowerCase().includes(needle),
+      )
       .sort(([, a], [, b]) => (a.display_name ?? '').localeCompare(b.display_name ?? ''))
   }, [schema, filter])
 
@@ -384,21 +372,13 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               where a single filter did not: the earlier note about
               sidebars being for more than five filters was about
               FILTERS, and this is navigation. */}
-          <ViewSelector
-            views={SCHEMA_VIEWS}
-            selected={selectedTab}
-            onSelect={(id) => go(id, '', 'push')}
-          />
+          <ViewSelector views={SCHEMA_VIEWS} selected={selectedTab} onSelect={(id) => go(id, '', 'push')} />
 
           {/* No filter on Overview: a graph is not a list, and a box
               that filters nothing is a control that lies. */}
           {selectedTab !== 'overview' && (
             <WorkspaceFilter label="Filter" htmlFor="schema-filter">
-              <FilterBox
-                value={typedFilter}
-                onChange={setTypedFilter}
-                placeholder={`Filter ${filterNoun}...`}
-              />
+              <FilterBox value={typedFilter} onChange={setTypedFilter} placeholder={`Filter ${filterNoun}...`} />
             </WorkspaceFilter>
           )}
         </>
@@ -410,13 +390,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           exists because following a reference is one click and
           retracing it should be too, not because the browser's is
           inadequate. */}
-      <Button
-        minimal
-        small
-        icon="arrow-left"
-        aria-label="Back"
-        onClick={() => navigate(-1)}
-      >
+      <Button minimal small icon="arrow-left" aria-label="Back" onClick={() => navigate(-1)}>
         Back
       </Button>
       {/* Three resource kinds, matching how the reference
@@ -433,46 +407,38 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           so the mental model had to be rebuilt on arrival. */}
       {selectedTab === 'discover' && (
         <Discover
-              schema={schema}
-              username={username}
-              version={favouriteVersion}
-              onFavouriteChange={() => {
-                // Replaces: starring something is not a step to retrace.
-                setSearchParams(
-                  { tab: 'discover', fav: String(favouriteVersion + 1) },
-                  { replace: true },
-                )
-              }}
-              onOpen={openObjectType}
-            />
+          schema={schema}
+          username={username}
+          version={favouriteVersion}
+          onFavouriteChange={() => {
+            // Replaces: starring something is not a step to retrace.
+            setSearchParams({ tab: 'discover', fav: String(favouriteVersion + 1) }, { replace: true })
+          }}
+          onOpen={openObjectType}
+        />
       )}
       {selectedTab === 'object-types' && (
         <>
-              {Object.keys(schema).length === 0 ? (
-                <Callout intent="none">
-                  You do not have read access to any object type in this ontology.
-                </Callout>
-              ) : matches.length === 0 ? (
-                <Callout intent="none">No object type matches {filter}.</Callout>
-              ) : (
-                matches.map(([apiName, type]) => (
-                  <ObjectTypeCard
-                    key={apiName}
-                    apiName={apiName}
-                    type={type}
-                    onOpenObjectType={openObjectType}
-                    onOpenLinkType={openLinkType}
-                  />
-                ))
-              )}
-            </>
+          {Object.keys(schema).length === 0 ? (
+            <Callout intent="none">You do not have read access to any object type in this ontology.</Callout>
+          ) : matches.length === 0 ? (
+            <Callout intent="none">No object type matches {filter}.</Callout>
+          ) : (
+            matches.map(([apiName, type]) => (
+              <ObjectTypeCard
+                key={apiName}
+                apiName={apiName}
+                type={type}
+                onOpenObjectType={openObjectType}
+                onOpenLinkType={openLinkType}
+              />
+            ))
+          )}
+        </>
       )}
       {selectedTab === 'overview' && (
         <div className="schema-overview">
-          <SchemaGraph
-            schema={schema}
-            onSelect={(next) => setSelection((current) => toggleSelection(current, next))}
-          />
+          <SchemaGraph schema={schema} onSelect={(next) => setSelection((current) => toggleSelection(current, next))} />
           {/* The preview BESIDE the graph, not instead of it. Clicking
               used to navigate away, and returning re-laid the graph
               out -- so exploring cost you your place every time. */}
@@ -487,9 +453,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 // alone once sent every click to Object types, where
                 // an action is never found -- and a link had no way
                 // out at all.
-                const view = kind === 'action' ? 'action-types'
-                  : kind === 'link' ? 'link-types'
-                    : 'object-types'
+                const view = kind === 'action' ? 'action-types' : kind === 'link' ? 'link-types' : 'object-types'
                 go(view, name, 'push')
               }}
             />
@@ -498,21 +462,13 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       )}
       {selectedTab === 'link-types' && (
         <>
-              <LinkTypes
-                schema={schema}
-                filter={linkFilter}
-                onOpenObjectType={openObjectType}
-              />
-            </>
+          <LinkTypes schema={schema} filter={linkFilter} onOpenObjectType={openObjectType} />
+        </>
       )}
       {selectedTab === 'action-types' && (
         <>
-              <ActionTypes
-                onSessionExpired={onSessionExpired}
-                filter={actionFilter}
-                onOpenObjectType={openObjectType}
-              />
-            </>
+          <ActionTypes onSessionExpired={onSessionExpired} filter={actionFilter} onOpenObjectType={openObjectType} />
+        </>
       )}
     </Workspace>
   )

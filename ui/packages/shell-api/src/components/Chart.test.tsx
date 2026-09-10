@@ -42,7 +42,10 @@ vi.mock('echarts/core', async () => {
 // import error rather than a failure about the thing under test.
 vi.mock('echarts/charts', () => ({ BarChart: {}, GraphChart: {}, PieChart: {} }))
 vi.mock('echarts/components', () => ({
-  GridComponent: {}, LegendComponent: {}, TitleComponent: {}, TooltipComponent: {},
+  GridComponent: {},
+  LegendComponent: {},
+  TitleComponent: {},
+  TooltipComponent: {},
 }))
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
 
@@ -50,10 +53,13 @@ beforeEach(() => {
   vi.clearAllMocks()
   clickHandler = null
   // jsdom has no ResizeObserver.
-  vi.stubGlobal('ResizeObserver', class {
-    observe() {}
-    disconnect() {}
-  })
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  )
 })
 
 afterEach(() => {

@@ -7,8 +7,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     // The REAL shape: a record keyed by api_name, not an array.
-    getVisibleActionTypesCached: () =>
-      Promise.resolve({ UpdateCustomerName: { affected_object_types: ['Customer'] } }),
+    getVisibleActionTypesCached: () => Promise.resolve({ UpdateCustomerName: { affected_object_types: ['Customer'] } }),
   }
 })
 
@@ -18,7 +17,10 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
 let chartOnSelect: ((name: string, dataType?: string, data?: unknown) => void) | null = null
 
 vi.mock('@elysium/shell-api/components/Chart', () => ({
-  default: ({ ariaLabel, onSelect }: {
+  default: ({
+    ariaLabel,
+    onSelect,
+  }: {
     ariaLabel: string
     onSelect?: (name: string, dataType?: string, data?: unknown) => void
   }) => {
@@ -42,8 +44,10 @@ const TWO_TYPES: VisibleSchema = {
     fields: {
       name: { type: 'data' },
       transactions: {
-        type: 'link', target: 'Transaction',
-        link_type: 'CustomerTransactions', cardinality: 'one_to_many',
+        type: 'link',
+        target: 'Transaction',
+        link_type: 'CustomerTransactions',
+        cardinality: 'one_to_many',
       },
     },
   },
@@ -51,8 +55,10 @@ const TWO_TYPES: VisibleSchema = {
     fields: {
       amount: { type: 'data' },
       customer_id: {
-        type: 'link', target: 'Customer',
-        link_type: 'CustomerTransactions', cardinality: 'many_to_one',
+        type: 'link',
+        target: 'Customer',
+        link_type: 'CustomerTransactions',
+        cardinality: 'many_to_one',
       },
     },
   },
@@ -60,8 +66,11 @@ const TWO_TYPES: VisibleSchema = {
 
 describe('buildGraph', () => {
   it('makes a node per object type', () => {
-    expect(buildGraph(TWO_TYPES).nodes.map((n) => n.name).sort())
-      .toEqual(['Customer', 'Transaction'])
+    expect(
+      buildGraph(TWO_TYPES)
+        .nodes.map((n) => n.name)
+        .sort(),
+    ).toEqual(['Customer', 'Transaction'])
   })
 
   it('draws a two-sided link ONCE', () => {
@@ -89,8 +98,10 @@ describe('buildGraph', () => {
       Customer: {
         fields: {
           secret: {
-            type: 'link', target: 'Ledger',
-            link_type: 'CustomerLedger', cardinality: 'one_to_one',
+            type: 'link',
+            target: 'Ledger',
+            link_type: 'CustomerLedger',
+            cardinality: 'one_to_one',
           },
         },
       },
@@ -146,8 +157,7 @@ describe('the graph is the same picture every time', () => {
     const first = buildGraph(TWO_TYPES)
     const second = buildGraph(TWO_TYPES)
 
-    expect(first.nodes.map((n) => [n.name, n.x, n.y]))
-      .toEqual(second.nodes.map((n) => [n.name, n.x, n.y]))
+    expect(first.nodes.map((n) => [n.name, n.x, n.y])).toEqual(second.nodes.map((n) => [n.name, n.x, n.y]))
   })
 
   it('does not depend on the order the schema arrived in', () => {
@@ -159,8 +169,9 @@ describe('the graph is the same picture every time', () => {
       Customer: TWO_TYPES.Customer!,
     }
 
-    expect(buildGraph(reversed).nodes.map((n) => [n.name, n.x]))
-      .toEqual(buildGraph(TWO_TYPES).nodes.map((n) => [n.name, n.x]))
+    expect(buildGraph(reversed).nodes.map((n) => [n.name, n.x])).toEqual(
+      buildGraph(TWO_TYPES).nodes.map((n) => [n.name, n.x]),
+    )
   })
 })
 
@@ -210,8 +221,7 @@ describe('actions in the graph', () => {
 
     const action = model.nodes.find((n) => n.name === 'UpdateCustomerName')
     expect(action?.kind).toBe('action')
-    expect(model.links.some((l) =>
-      l.source === 'UpdateCustomerName' && l.target === 'Customer')).toBe(true)
+    expect(model.links.some((l) => l.source === 'UpdateCustomerName' && l.target === 'Customer')).toBe(true)
   })
 
   it('omits an action that touches nothing the caller can see', () => {
@@ -250,9 +260,7 @@ describe('SchemaGraph renders against the real API shape', () => {
     const { default: SchemaGraphComponent } = await import('./SchemaGraph')
     const { render } = await import('@testing-library/react')
 
-    expect(() => render(
-      <SchemaGraphComponent schema={TWO_TYPES} onSelect={() => {}} />,
-    )).not.toThrow()
+    expect(() => render(<SchemaGraphComponent schema={TWO_TYPES} onSelect={() => {}} />)).not.toThrow()
   })
 
   it('says so when the caller can read no object type', async () => {

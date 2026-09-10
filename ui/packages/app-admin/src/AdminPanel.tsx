@@ -148,18 +148,10 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
               showed a form for a screen you were not looking at. The
               pane's contents have to swap with the selection -- that
               is the whole point of a secondary pane beside a rail. */}
-          <ViewSelector
-            views={ADMIN_VIEWS}
-            selected={view}
-            onSelect={setView}
-          />
+          <ViewSelector views={ADMIN_VIEWS} selected={view} onSelect={setView} />
 
           {view === 'users' && (
-            <CreateUserForm
-              onCreated={loadUsers}
-              onError={setError}
-              onSessionExpired={onSessionExpired}
-            />
+            <CreateUserForm onCreated={loadUsers} onError={setError} onSessionExpired={onSessionExpired} />
           )}
         </>
       }
@@ -169,56 +161,57 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       {view === 'deployment' && <DeploymentConfig onSessionExpired={onSessionExpired} />}
       {view === 'silos' && <Silos onSessionExpired={onSessionExpired} />}
 
-      {view === 'users' && (users === null ? (
-        <p>Loading…</p>
-      ) : (
-        // HTMLTable, not a bare <table> -- Blueprint's own styled
-        // wrapper around a real HTML table, confirmed directly against
-        // its real type definition before using it: it only wraps the
-        // outer <table> element itself (extends React's own real
-        // TableHTMLAttributes), so every child below (<thead>,
-        // <tbody>, <tr>, <td>) stays exactly what it already was, not
-        // rewritten into some other, different table abstraction.
-        // interactive: real hover feedback on a genuinely scannable
-        // list of rows; striped: alternating row backgrounds, which
-        // matters here specifically since each user can also expand a
-        // second, full-width schema row directly beneath its own row
-        // (see the schemaByUsername block below) -- striping helps
-        // keep a user's own two rows visually paired at a glance.
-        <HTMLTable className="user-table" interactive striped>
-          <thead>
-            <tr>
-              <th>Username</th>
-              <th>Role</th>
-              <th>MAC value</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <Fragment key={user.username}>
-                <tr>
-                  <td>{user.username}</td>
-                  <td>{user.role_name}</td>
-                  <td>{user.mac_value ?? '—'}</td>
-                  <td>{user.disabled ? 'Disabled' : 'Active'}</td>
-                  <td className="user-table__actions">
-                    {user.disabled ? (
-                      <button onClick={() => handleAction(enableUser, user.username)}>Enable</button>
-                    ) : (
-                      <button onClick={() => handleAction(disableUser, user.username)}>Disable</button>
-                    )}
-                    <button onClick={() => handleAction(logoutAllForUser, user.username)}>Log out sessions</button>
-                    <button onClick={() => handleToggleSchema(user.username)}>
-                      {schemaByUsername[user.username] ? 'Hide schema' : 'View schema'}
-                    </button>
-                    <button className="danger" onClick={() => setPendingDeleteUsername(user.username)}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-                {/* !== undefined, not a bare truthy check -- schemaByUsername's
+      {view === 'users' &&
+        (users === null ? (
+          <p>Loading…</p>
+        ) : (
+          // HTMLTable, not a bare <table> -- Blueprint's own styled
+          // wrapper around a real HTML table, confirmed directly against
+          // its real type definition before using it: it only wraps the
+          // outer <table> element itself (extends React's own real
+          // TableHTMLAttributes), so every child below (<thead>,
+          // <tbody>, <tr>, <td>) stays exactly what it already was, not
+          // rewritten into some other, different table abstraction.
+          // interactive: real hover feedback on a genuinely scannable
+          // list of rows; striped: alternating row backgrounds, which
+          // matters here specifically since each user can also expand a
+          // second, full-width schema row directly beneath its own row
+          // (see the schemaByUsername block below) -- striping helps
+          // keep a user's own two rows visually paired at a glance.
+          <HTMLTable className="user-table" interactive striped>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>MAC value</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <Fragment key={user.username}>
+                  <tr>
+                    <td>{user.username}</td>
+                    <td>{user.role_name}</td>
+                    <td>{user.mac_value ?? '—'}</td>
+                    <td>{user.disabled ? 'Disabled' : 'Active'}</td>
+                    <td className="user-table__actions">
+                      {user.disabled ? (
+                        <button onClick={() => handleAction(enableUser, user.username)}>Enable</button>
+                      ) : (
+                        <button onClick={() => handleAction(disableUser, user.username)}>Disable</button>
+                      )}
+                      <button onClick={() => handleAction(logoutAllForUser, user.username)}>Log out sessions</button>
+                      <button onClick={() => handleToggleSchema(user.username)}>
+                        {schemaByUsername[user.username] ? 'Hide schema' : 'View schema'}
+                      </button>
+                      <button className="danger" onClick={() => setPendingDeleteUsername(user.username)}>
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                  {/* !== undefined, not a bare truthy check -- schemaByUsername's
                     own values are typed unknown (Record<string, unknown>),
                     and `unknown && <jsx>` is not assignable to ReactNode
                     (confirmed directly via tsc, not assumed): TypeScript
@@ -228,18 +221,18 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
                     always a real, truthy object from the backend, never
                     null/0/''/false, so the only two real states are
                     "absent" (undefined) or "a real object" either way. */}
-                {schemaByUsername[user.username] !== undefined && (
-                  <tr>
-                    <td colSpan={5}>
-                      <pre>{JSON.stringify(schemaByUsername[user.username], null, 2)}</pre>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </HTMLTable>
-      ))}
+                  {schemaByUsername[user.username] !== undefined && (
+                    <tr>
+                      <td colSpan={5}>
+                        <pre>{JSON.stringify(schemaByUsername[user.username], null, 2)}</pre>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </HTMLTable>
+        ))}
 
       {/* One, shared Alert, not one per row -- see pendingDeleteUsername's
           own comment above for why. isOpen is real, controlled state

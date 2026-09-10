@@ -33,7 +33,6 @@ export interface SubAppProps {
   onSessionExpired: () => void
 }
 
-
 // --- The ontology, as GET /me/visible-schema returns it -------------
 //
 // Here rather than in a module of its own: this file is already "the

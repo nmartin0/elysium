@@ -30,10 +30,8 @@ describe('ViewSelector', () => {
      */
     render(<ViewSelector views={VIEWS} selected="users" onSelect={vi.fn()} />)
 
-    expect(screen.getByRole('button', { name: 'Users' }))
-      .toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Silos' }))
-      .toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Users' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Silos' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('names the group', () => {

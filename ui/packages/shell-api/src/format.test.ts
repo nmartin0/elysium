@@ -127,8 +127,12 @@ describe('formatTimestamp', () => {
      */
     const older = formatTimestamp('2026-07-22T13:00:00Z', now)
     const withoutZone = new Date('2026-07-22T13:00:00Z').toLocaleString(undefined, {
-      weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     })
 
     expect(older.startsWith(withoutZone)).toBe(true)

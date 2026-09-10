@@ -56,7 +56,11 @@ export default function Workspace({ config, children }: WorkspaceProps) {
  * sub-app wants the same thing, and three of them writing the same
  * div-and-label by hand is how the spacing drifts.
  */
-export function WorkspaceFilter({ label, htmlFor, children }: {
+export function WorkspaceFilter({
+  label,
+  htmlFor,
+  children,
+}: {
   label: string
   htmlFor?: string
   children: ReactNode

@@ -48,7 +48,10 @@ describe('ObjectNotes', () => {
      * display something it just confirmed.
      */
     createObjectNote.mockResolvedValue({
-      id: 'n2', text: 'New thought', author: 'bob', created_at: '2026-09-07',
+      id: 'n2',
+      text: 'New thought',
+      author: 'bob',
+      created_at: '2026-09-07',
     })
     render(<ObjectNotes {...props} />)
     await screen.findByText(/Nothing has been written/)

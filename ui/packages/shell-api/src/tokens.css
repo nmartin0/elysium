@@ -26,12 +26,12 @@
    * Lightness IS the hierarchy. Chrome and configuration sit dark,
    * content sits light, and a raised surface sits lightest.
    */
-  --surface-chrome: #1c2127;      /* sidebar, header: app furniture --
+  --surface-chrome: #1c2127; /* sidebar, header: app furniture --
                                      dark in BOTH themes, because it is
                                      furniture rather than content */
-  --surface-config: #f6f7f9;      /* filter panels, toolbars */
-  --surface-content: #ffffff;     /* results, the thing being read */
-  --surface-sunken: #edeff2;      /* wells, empty states */
+  --surface-config: #f6f7f9; /* filter panels, toolbars */
+  --surface-content: #ffffff; /* results, the thing being read */
+  --surface-sunken: #edeff2; /* wells, empty states */
 
   --border-subtle: #d3d8de;
 

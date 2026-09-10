@@ -358,7 +358,6 @@ describe('Shell -- the mobile Drawer', () => {
     expect(screen.getByRole('menuitem', { name: 'Schema' })).toBeInTheDocument()
   })
 
-
   it('navigating does not dismiss the rail', () => {
     // The Drawer auto-closed on navigation because it covered the
     // content. A rail does not cover anything, so there is nothing to
@@ -423,13 +422,7 @@ describe('Shell -- the Suspense boundary around lazy-loaded sub-app routes', () 
       <MemoryRouter initialEntries={['/slow']}>
         <Routes>
           <Route
-            element={
-              <Shell
-                visibleApps={[{ name: 'Query', path: '/query' }]}
-                currentUser={null}
-                onLogout={onLogout}
-              />
-            }
+            element={<Shell visibleApps={[{ name: 'Query', path: '/query' }]} currentUser={null} onLogout={onLogout} />}
           >
             <Route path="/slow" element={<LazyComponent />} />
           </Route>
@@ -558,10 +551,8 @@ describe('the app rail', () => {
     // fail for the wrong reason.
     renderShell(APPS, vi.fn(), '/query')
 
-    expect(screen.getByRole('menuitem', { name: 'Query' }))
-      .toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('menuitem', { name: 'Browse' }))
-      .not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('menuitem', { name: 'Browse' })).not.toHaveAttribute('aria-current')
   })
 })
 

@@ -33,8 +33,12 @@ const CUSTOMER = {
     email: { type: 'data', display_name: 'Email', visibility: 'normal', status: 'active' },
     internal: { type: 'data', display_name: 'Internal', visibility: 'hidden', status: 'active' },
     transactions: {
-      type: 'link', display_name: 'Transactions', target: 'Transaction',
-      cardinality: 'many', link_type: 'CustomerTransactions', visibility: 'normal',
+      type: 'link',
+      display_name: 'Transactions',
+      target: 'Transaction',
+      cardinality: 'many',
+      link_type: 'CustomerTransactions',
+      visibility: 'normal',
     },
   },
 }
@@ -213,11 +217,7 @@ describe('SchemaPanel -- retracing steps', () => {
   function renderAt(entries: string[]) {
     return render(
       <MemoryRouter initialEntries={entries}>
-        <SchemaPanel
-          visibleSchema={{ Customer: CUSTOMER }}
-          username="alice"
-          onSessionExpired={noop}
-        />
+        <SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />
       </MemoryRouter>,
     )
   }
@@ -265,16 +265,12 @@ describe('SchemaPanel -- retracing steps', () => {
     // containing "Cus" does not match "Cu" either. It also could not
     // have detected a failure: with one entry Back cannot move at all.
     const router = createMemoryRouter(
-      [{
-        path: '/schema',
-        element: (
-          <SchemaPanel
-            visibleSchema={{ Customer: CUSTOMER }}
-            username="alice"
-            onSessionExpired={noop}
-          />
-        ),
-      }],
+      [
+        {
+          path: '/schema',
+          element: <SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />,
+        },
+      ],
       { initialEntries: ['/schema?tab=discover', '/schema?tab=object-types'], initialIndex: 1 },
     )
     render(<RouterProvider router={router} />)
@@ -288,9 +284,7 @@ describe('SchemaPanel -- retracing steps', () => {
     // box updates per keystroke and the router write happens once
     // typing settles, so asserting immediately would test the moment
     // before the write rather than the write.
-    await waitFor(() =>
-      expect(router.state.location.search).toContain('q=Cus'),
-    )
+    await waitFor(() => expect(router.state.location.search).toContain('q=Cus'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
@@ -320,11 +314,7 @@ describe('SchemaPanel -- icons', () => {
 
   function renderWithIcon(icon: string | null) {
     renderPanel(
-      <SchemaPanel
-        visibleSchema={{ Customer: { ...CUSTOMER, icon } }}
-        username="alice"
-        onSessionExpired={noop}
-      />,
+      <SchemaPanel visibleSchema={{ Customer: { ...CUSTOMER, icon } }} username="alice" onSessionExpired={noop} />,
     )
     openObjectTypes()
   }

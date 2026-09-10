@@ -1,12 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout } from '@blueprintjs/core'
-import {
-  confirmWrite,
-  getDataFreshness,
-  getErrorMessage,
-  handleIfSessionExpired,
-  type DataFreshness,
-} from '../api'
+import { confirmWrite, getDataFreshness, getErrorMessage, handleIfSessionExpired, type DataFreshness } from '../api'
 import { formatFieldName, formatValue } from '../format'
 
 // The real shape of one proposed change, as the backend's own /query

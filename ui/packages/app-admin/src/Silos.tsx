@@ -36,10 +36,7 @@ interface SiloStatus {
 }
 
 export default function Silos({ onSessionExpired }: { onSessionExpired: () => void }) {
-  const { data: silos, error } = useFetchOnce<SiloStatus[]>(
-    () => getSilos(),
-    onSessionExpired,
-  )
+  const { data: silos, error } = useFetchOnce<SiloStatus[]>(() => getSilos(), onSessionExpired)
 
   /**
    * Which silos are expanded, by name.
@@ -63,115 +60,126 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
       {(silos) => {
         const unreachable = silos.filter((silo) => !silo.reachable)
         return (
-        <div className="silos">
-          {/* The summary first, because "is anything wrong" is the question
+          <div className="silos">
+            {/* The summary first, because "is anything wrong" is the question
               this screen is opened to answer. A table of green rows makes
               you read every one to find that out. */}
-          {unreachable.length > 0 ? (
-            <Callout intent="danger" title="Some silos are not answering">
-              {unreachable.map((silo) => silo.name).join(', ')}
-            </Callout>
-          ) : (
-            <Callout intent="success">All {silos.length} silos are reachable.</Callout>
-          )}
+            {unreachable.length > 0 ? (
+              <Callout intent="danger" title="Some silos are not answering">
+                {unreachable.map((silo) => silo.name).join(', ')}
+              </Callout>
+            ) : (
+              <Callout intent="success">All {silos.length} silos are reachable.</Callout>
+            )}
 
-          <HTMLTable compact striped className="silos__table">
-            <thead>
-              <tr>
-                <th>Silo</th>
-                <th>Adapter</th>
-                <th>Status</th>
-                <th>Object types</th>
-              </tr>
-            </thead>
-            <tbody>
-              {silos.flatMap((silo) => [
-                <tr key={silo.name}>
-                  <td>
-                    <Button
-                      minimal
-                      small
-                      icon={expanded.has(silo.name) ? 'chevron-down' : 'chevron-right'}
-                      onClick={() => toggle(silo.name)}
-                      aria-expanded={expanded.has(silo.name)}
-                      aria-label={`${expanded.has(silo.name) ? 'Hide' : 'Show'} fields backed by ${silo.name}`}
-                    />
-                    {silo.name}
-                  </td>
-                  <td><Tag minimal>{silo.adapter}</Tag></td>
-                  <td>
-                    {silo.reachable ? (
-                      <Tag minimal intent="success">reachable</Tag>
-                    ) : (
-                      <>
-                        <Tag minimal intent="danger">unreachable</Tag>{' '}
-                        <span className="silos__failure">{silo.failure}</span>
-                      </>
-                    )}
-                  </td>
-                  <td>{silo.object_types.join(', ') || '—'}</td>
-                </tr>,
-                ...(expanded.has(silo.name) ? [
-                  <tr key={`${silo.name}-fields`} className="silos__fields-row">
-                    <td colSpan={4}>
-                      {silo.fields.length === 0 ? (
-                        <span className="silos__failure">
-                          No fields are backed by this silo.
-                        </span>
+            <HTMLTable compact striped className="silos__table">
+              <thead>
+                <tr>
+                  <th>Silo</th>
+                  <th>Adapter</th>
+                  <th>Status</th>
+                  <th>Object types</th>
+                </tr>
+              </thead>
+              <tbody>
+                {silos.flatMap((silo) => [
+                  <tr key={silo.name}>
+                    <td>
+                      <Button
+                        minimal
+                        small
+                        icon={expanded.has(silo.name) ? 'chevron-down' : 'chevron-right'}
+                        onClick={() => toggle(silo.name)}
+                        aria-expanded={expanded.has(silo.name)}
+                        aria-label={`${expanded.has(silo.name) ? 'Hide' : 'Show'} fields backed by ${silo.name}`}
+                      />
+                      {silo.name}
+                    </td>
+                    <td>
+                      <Tag minimal>{silo.adapter}</Tag>
+                    </td>
+                    <td>
+                      {silo.reachable ? (
+                        <Tag minimal intent="success">
+                          reachable
+                        </Tag>
                       ) : (
-                        <HTMLTable compact className="silos__fields">
-                          <thead>
-                            <tr>
-                              <th>Object type</th>
-                              <th>Field</th>
-                              <th>Table</th>
-                              <th>Column</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {silo.fields.map((field) => (
-                              <tr key={`${field.object_type}.${field.field}`}>
-                                <td>{field.object_type}</td>
-                                <td>
-                                  {field.field}
-                                  {/* The join key, tagged in place. A wrong
+                        <>
+                          <Tag minimal intent="danger">
+                            unreachable
+                          </Tag>{' '}
+                          <span className="silos__failure">{silo.failure}</span>
+                        </>
+                      )}
+                    </td>
+                    <td>{silo.object_types.join(', ') || '—'}</td>
+                  </tr>,
+                  ...(expanded.has(silo.name)
+                    ? [
+                        <tr key={`${silo.name}-fields`} className="silos__fields-row">
+                          <td colSpan={4}>
+                            {silo.fields.length === 0 ? (
+                              <span className="silos__failure">No fields are backed by this silo.</span>
+                            ) : (
+                              <HTMLTable compact className="silos__fields">
+                                <thead>
+                                  <tr>
+                                    <th>Object type</th>
+                                    <th>Field</th>
+                                    <th>Table</th>
+                                    <th>Column</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {silo.fields.map((field) => (
+                                    <tr key={`${field.object_type}.${field.field}`}>
+                                      <td>{field.object_type}</td>
+                                      <td>
+                                        {field.field}
+                                        {/* The join key, tagged in place. A wrong
                                       one returns nothing or another
                                       object's row rather than a wrong
                                       value, so it belongs where someone is
                                       already scanning for mismatches. */}
-                                  {/* A REAL space, not a CSS margin. Margin
+                                        {/* A REAL space, not a CSS margin. Margin
                                       separates it visually and leaves the
                                       DOM text as "customer_ididentifier"
                                       -- which is what a screen reader
                                       announces and what a copy-paste
                                       produces. */}
-                                  {field.is_identifier && (
-                                    <> <Tag minimal className="silos__id-tag">identifier</Tag></>
-                                  )}
-                                </td>
-                                <td>{field.table}</td>
-                                <td>
-                                  {/* Marked when it differs from the field
+                                        {field.is_identifier && (
+                                          <>
+                                            {' '}
+                                            <Tag minimal className="silos__id-tag">
+                                              identifier
+                                            </Tag>
+                                          </>
+                                        )}
+                                      </td>
+                                      <td>{field.table}</td>
+                                      <td>
+                                        {/* Marked when it differs from the field
                                       name, because that is the case worth
                                       noticing: Customer.risk_score reads a
                                       column called score_val. */}
-                                  {field.column}
-                                  {field.column !== field.field && (
-                                    <span className="silos__renamed"> (renamed)</span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </HTMLTable>
-                      )}
-                    </td>
-                  </tr>,
-                ] : []),
-              ])}
-            </tbody>
-          </HTMLTable>
-        </div>
+                                        {field.column}
+                                        {field.column !== field.field && (
+                                          <span className="silos__renamed"> (renamed)</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </HTMLTable>
+                            )}
+                          </td>
+                        </tr>,
+                      ]
+                    : []),
+                ])}
+              </tbody>
+            </HTMLTable>
+          </div>
         )
       }}
     </AsyncPanel>

@@ -24,15 +24,16 @@ interface Note {
   created_at: string
 }
 
-export default function ObjectNotes({ objectType, objectId, onSessionExpired }: {
+export default function ObjectNotes({
+  objectType,
+  objectId,
+  onSessionExpired,
+}: {
   objectType: string
   objectId: string
   onSessionExpired: () => void
 }) {
-  const { data, error } = useFetchOnce<Note[]>(
-    () => getObjectNotes(objectType, objectId),
-    onSessionExpired,
-  )
+  const { data, error } = useFetchOnce<Note[]>(() => getObjectNotes(objectType, objectId), onSessionExpired)
   /**
    * Notes added since load, held separately from the fetched list.
    *
@@ -51,7 +52,7 @@ export default function ObjectNotes({ objectType, objectId, onSessionExpired }: 
     setSaving(true)
     setSaveError(null)
     try {
-      const created = await createObjectNote(objectType, objectId, text) as Note
+      const created = (await createObjectNote(objectType, objectId, text)) as Note
       setAdded([...added, created])
       setText('')
     } catch (err: unknown) {

@@ -30,7 +30,12 @@ interface DiscoverProps {
 }
 
 function TypeList({
-  names, schema, onOpen, username, onFavouriteChange, empty,
+  names,
+  schema,
+  onOpen,
+  username,
+  onFavouriteChange,
+  empty,
 }: {
   names: string[]
   schema: VisibleSchema
@@ -63,9 +68,7 @@ function TypeList({
   )
 }
 
-export default function Discover({
-  schema, username, onOpen, version, onFavouriteChange,
-}: DiscoverProps) {
+export default function Discover({ schema, username, onOpen, version, onFavouriteChange }: DiscoverProps) {
   // `version` is read so this recomputes when a favourite is toggled;
   // storage is not reactive on its own.
   void version
@@ -79,32 +82,37 @@ export default function Discover({
     .sort((a, b) => (schema[a]?.display_name ?? a).localeCompare(schema[b]?.display_name ?? b))
 
   if (visibleTypes.length === 0) {
-    return (
-      <Callout intent="none">
-        You do not have read access to any object type in this ontology.
-      </Callout>
-    )
+    return <Callout intent="none">You do not have read access to any object type in this ontology.</Callout>
   }
 
   return (
     <div className="schema-panel__discover">
       <h4>Favourites</h4>
       <TypeList
-        names={favourites} schema={schema} onOpen={onOpen} username={username}
+        names={favourites}
+        schema={schema}
+        onOpen={onOpen}
+        username={username}
         onFavouriteChange={onFavouriteChange}
         empty="Star an object type to keep it here."
       />
 
       <h4>Recently viewed</h4>
       <TypeList
-        names={recent} schema={schema} onOpen={onOpen} username={username}
+        names={recent}
+        schema={schema}
+        onOpen={onOpen}
+        username={username}
         onFavouriteChange={onFavouriteChange}
         empty="Object types you open will appear here."
       />
 
       <h4>All active</h4>
       <TypeList
-        names={active} schema={schema} onOpen={onOpen} username={username}
+        names={active}
+        schema={schema}
+        onOpen={onOpen}
+        username={username}
         onFavouriteChange={onFavouriteChange}
         empty="No active object types."
       />
@@ -112,10 +120,16 @@ export default function Discover({
       {deprecated.length > 0 && (
         <>
           <h4>
-            Deprecated <Tag minimal intent="danger">{deprecated.length}</Tag>
+            Deprecated{' '}
+            <Tag minimal intent="danger">
+              {deprecated.length}
+            </Tag>
           </h4>
           <TypeList
-            names={deprecated} schema={schema} onOpen={onOpen} username={username}
+            names={deprecated}
+            schema={schema}
+            onOpen={onOpen}
+            username={username}
             onFavouriteChange={onFavouriteChange}
             empty=""
           />

@@ -114,9 +114,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
       {/* Under the answer, and only when there IS one. A trace with
           nothing to explain is a control that raises a question the
           screen cannot answer. */}
-      {answer && requestId && (
-        <AnswerTrace requestId={requestId} onSessionExpired={onSessionExpired} />
-      )}
+      {answer && requestId && <AnswerTrace requestId={requestId} onSessionExpired={onSessionExpired} />}
       {pendingWrite && (
         // No persistent view of an object here to refresh once
         // resolved (unlike ObjectDetailPanel.jsx's own ActionForm) --

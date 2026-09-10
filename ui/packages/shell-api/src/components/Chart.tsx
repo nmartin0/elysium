@@ -25,12 +25,7 @@
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts/core'
 import { BarChart, GraphChart, PieChart } from 'echarts/charts'
-import {
-  GridComponent,
-  LegendComponent,
-  TitleComponent,
-  TooltipComponent,
-} from 'echarts/components'
+import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
 // Registered once, at module load. Registering per render would
@@ -116,12 +111,5 @@ export default function Chart({ option, onSelect, height = 240, ariaLabel }: Cha
     }
   }, [onSelect])
 
-  return (
-    <div
-      ref={container}
-      role="img"
-      aria-label={ariaLabel}
-      style={{ height, width: '100%' }}
-    />
-  )
+  return <div ref={container} role="img" aria-label={ariaLabel} style={{ height, width: '100%' }} />
 }

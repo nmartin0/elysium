@@ -48,9 +48,7 @@ describe('FilterBox', () => {
     // The other direction, and why local state alone is not enough:
     // pressing Back or following a cross-reference sets the filter
     // from outside, and the box must show it.
-    const { rerender } = render(
-      <FilterBox value="" onChange={() => {}} placeholder="Filter..." />,
-    )
+    const { rerender } = render(<FilterBox value="" onChange={() => {}} placeholder="Filter..." />)
 
     rerender(<FilterBox value="CustomerTransactions" onChange={() => {}} placeholder="Filter..." />)
 
@@ -95,7 +93,6 @@ describe('FilterBox', () => {
  * could be recognised as an echo -- which is exactly what made
  * navigating BACK to a previously-typed value indistinguishable from
  * one. Waiting for a single outstanding send needs no bound at all. */
-
 
 describe('FilterBox -- bounded memory', () => {
   it('still keeps every character when the parent lags', () => {

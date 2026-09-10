@@ -40,19 +40,20 @@ interface HistoryBody {
   entries: HistoryEntry[]
 }
 
-export default function ObjectHistory({ objectType, objectId, onSessionExpired }: {
+export default function ObjectHistory({
+  objectType,
+  objectId,
+  onSessionExpired,
+}: {
   objectType: string
   objectId: string
   onSessionExpired: () => void
 }) {
-  const { data, error } = useFetchOnce<HistoryBody>(
-    () => getObjectHistory(objectType, objectId),
-    onSessionExpired,
-  )
+  const { data, error } = useFetchOnce<HistoryBody>(() => getObjectHistory(objectType, objectId), onSessionExpired)
 
   return (
     <AsyncPanel error={error} data={data}>
-      {(body) => (
+      {(body) =>
         body.entries.length === 0 ? (
           // An object nobody has edited is the ordinary case, and it
           // deserves a sentence rather than an empty table.
@@ -77,23 +78,21 @@ export default function ObjectHistory({ objectType, objectId, onSessionExpired }
                   <td>{entry.user_id}</td>
                   <td>
                     <Tag minimal>{entry.operation}</Tag>{' '}
-                    {Object.keys(entry.changes).length > 0
-                      ? Object.keys(entry.changes).map(formatFieldName).join(', ')
-                      : (
-                        // Said plainly rather than left blank. An empty
-                        // cell reads as a rendering fault; this is a
-                        // deliberate disclosure boundary.
-                        <span className="object-history__withheld">
-                          fields you cannot read
-                        </span>
-                      )}
+                    {Object.keys(entry.changes).length > 0 ? (
+                      Object.keys(entry.changes).map(formatFieldName).join(', ')
+                    ) : (
+                      // Said plainly rather than left blank. An empty
+                      // cell reads as a rendering fault; this is a
+                      // deliberate disclosure boundary.
+                      <span className="object-history__withheld">fields you cannot read</span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </HTMLTable>
         )
-      )}
+      }
     </AsyncPanel>
   )
 }

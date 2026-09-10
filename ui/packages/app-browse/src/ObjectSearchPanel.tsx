@@ -62,7 +62,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const [pageToken, setPageToken] = useState<string | null>(null)
   const [previousTokens, setPreviousTokens] = useState<string[]>([])
   const [nextPageToken, setNextPageToken] = useState<string | null>(null)
-  const [orderBy, setOrderBy] = useState<string>("")
+  const [orderBy, setOrderBy] = useState<string>('')
   // Per type, so switching types does not carry one type's chosen
   // columns onto another where those field names mean nothing.
   //
@@ -70,8 +70,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // coming back reset the choice silently. Found by using it, not by a
   // test -- the tests checked per-type isolation and never navigated
   // away.
-  const [chosenColumns, setChosenColumnsState] = useState<Record<string, string[]>>(
-    () => readPreference("browseColumns", username, {}),
+  const [chosenColumns, setChosenColumnsState] = useState<Record<string, string[]>>(() =>
+    readPreference('browseColumns', username, {}),
   )
 
   /**
@@ -85,7 +85,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     setCrossFilter((current) => {
       const existing = current.find((entry) => entry.field === field)
       if (existing === undefined) {
-        return [...current, { field, values: [value], mode: "keep" }]
+        return [...current, { field, values: [value], mode: 'keep' }]
       }
       const values = existing.values.includes(value)
         ? existing.values.filter((existingValue: string) => existingValue !== value)
@@ -100,7 +100,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
 
   function setChosenColumns(next: Record<string, string[]>) {
     setChosenColumnsState(next)
-    writePreference("browseColumns", username, next)
+    writePreference('browseColumns', username, next)
   }
   const [totalMatches, setTotalMatches] = useState(0)
   /**
@@ -124,7 +124,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * would be editing the other's state.
    */
   const [barFilters, setBarFilters] = useState<FieldFilter[]>([])
-  const [view, setView] = useState<string>("table")
+  const [view, setView] = useState<string>('table')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -166,18 +166,17 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     const chosen = chosenColumns[selectedType]
     if (chosen) return returned.filter((field) => chosen.includes(field))
     const schemaFields = visibleSchema?.[selectedType]?.fields ?? {}
-    const prominent = returned.filter(
-      (field) => schemaFields[field]?.visibility === "prominent",
-    )
+    const prominent = returned.filter((field) => schemaFields[field]?.visibility === 'prominent')
     if (prominent.length > 0) return prominent
-    return returned.filter((field) => schemaFields[field]?.visibility !== "hidden")
+    return returned.filter((field) => schemaFields[field]?.visibility !== 'hidden')
   }
 
-  const sortableFields = selectedType && visibleSchema
-    ? Object.entries(visibleSchema[selectedType]?.fields ?? {})
-        .filter(([, field]) => field.type !== "link")
-        .map(([name, field]) => ({ name, label: field.display_name ?? name }))
-    : []
+  const sortableFields =
+    selectedType && visibleSchema
+      ? Object.entries(visibleSchema[selectedType]?.fields ?? {})
+          .filter(([, field]) => field.type !== 'link')
+          .map(([name, field]) => ({ name, label: field.display_name ?? name }))
+      : []
 
   useEffect(() => {
     if (selectedType === null && objectTypes && objectTypes.length > 0) {
@@ -279,14 +278,14 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               throughout. */}
           <ViewSelector views={BROWSE_VIEWS} selected={view} onSelect={setView} />
 
-        <WorkspaceFilter label="Object type" htmlFor="object-type">
-          <select
-            id="object-type"
-            aria-label="Object type"
-            value={currentType}
-            onChange={(event) => setSelectedType(event.target.value)}
-          >
-          {/* selectedType itself still starts as null -- the effect
+          <WorkspaceFilter label="Object type" htmlFor="object-type">
+            <select
+              id="object-type"
+              aria-label="Object type"
+              value={currentType}
+              onChange={(event) => setSelectedType(event.target.value)}
+            >
+              {/* selectedType itself still starts as null -- the effect
               below sets it to a real value once objectTypes is known,
               and the search effect further down correctly waits for
               that real value before firing (gated on `if
@@ -299,87 +298,85 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               all, objectTypes is already confirmed non-null and non-
               empty (see the two early returns above), so
               objectTypes[0] is always safe here. */}
-            {objectTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </WorkspaceFilter>
+              {objectTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </WorkspaceFilter>
 
-        {/* currentType, not selectedType: selectedType is null until
+          {/* currentType, not selectedType: selectedType is null until
             someone picks one, while the panel already SHOWS the first
             type -- guarding on it would hide the filter bar on the
             very screen a user lands on. */}
-        {visibleSchema?.[currentType] && (
-          <WorkspaceFilter label="Filters">
-            <FilterBar
-              fields={visibleSchema[currentType]?.fields ?? {}}
-              filters={barFilters}
-              onChange={(next) => {
-                setBarFilters(next)
-                // A filter change is a new result set, so a page token
-                // from the old one means nothing.
-                setPageToken(null)
-              }}
+          {visibleSchema?.[currentType] && (
+            <WorkspaceFilter label="Filters">
+              <FilterBar
+                fields={visibleSchema[currentType]?.fields ?? {}}
+                filters={barFilters}
+                onChange={(next) => {
+                  setBarFilters(next)
+                  // A filter change is a new result set, so a page token
+                  // from the old one means nothing.
+                  setPageToken(null)
+                }}
+              />
+            </WorkspaceFilter>
+          )}
+          <WorkspaceFilter label="Search" htmlFor="object-search-text">
+            <input
+              id="object-search-text"
+              type="text"
+              value={queryText}
+              onChange={(event) => setQueryText(event.target.value)}
+              placeholder={`Search ${currentType}…`}
             />
           </WorkspaceFilter>
-        )}
-        <WorkspaceFilter label="Search" htmlFor="object-search-text">
-          <input
-            id="object-search-text"
-            type="text"
-            value={queryText}
-            onChange={(event) => setQueryText(event.target.value)}
-            placeholder={`Search ${currentType}…`}
-          />
-        </WorkspaceFilter>
 
-        {sortableFields.length > 0 && (
-          <WorkspaceFilter label="Sort by" htmlFor="object-search-sort">
-            <HTMLSelect
-              id="object-search-sort"
-              aria-label="Sort by"
-              value={orderBy}
-              onChange={(event) => setOrderBy(event.currentTarget.value)}
-            >
-              <option value="">Default</option>
-              {sortableFields.map((field) => (
-                <Fragment key={field.name}>
-                  <option value={field.name}>{field.label} (A-Z)</option>
-                  <option value={`${field.name}:desc`}>{field.label} (Z-A)</option>
-                </Fragment>
-              ))}
-            </HTMLSelect>
-          </WorkspaceFilter>
-        )}
+          {sortableFields.length > 0 && (
+            <WorkspaceFilter label="Sort by" htmlFor="object-search-sort">
+              <HTMLSelect
+                id="object-search-sort"
+                aria-label="Sort by"
+                value={orderBy}
+                onChange={(event) => setOrderBy(event.currentTarget.value)}
+              >
+                <option value="">Default</option>
+                {sortableFields.map((field) => (
+                  <Fragment key={field.name}>
+                    <option value={field.name}>{field.label} (A-Z)</option>
+                    <option value={`${field.name}:desc`}>{field.label} (Z-A)</option>
+                  </Fragment>
+                ))}
+              </HTMLSelect>
+            </WorkspaceFilter>
+          )}
 
-        {/* Columns live with the other controls now, not in a
+          {/* Columns live with the other controls now, not in a
             disclosure above the results -- a configuration column is
             where configuration belongs, and it no longer has to hide
             to avoid pushing the results down the page. */}
-        {selectedType && results.length > 0 && (
-          <WorkspaceFilter label="Columns">
-            {Object.keys(results[0]?.fields ?? {}).map((field) => {
-              const shown = visibleColumns(Object.keys(results[0]?.fields ?? {})).includes(field)
-              return (
-                <Checkbox
-                  key={field}
-                  checked={shown}
-                  label={formatFieldName(field)}
-                  onChange={() => {
-                    const all = Object.keys(results[0]?.fields ?? {})
-                    const current = chosenColumns[selectedType] ?? visibleColumns(all)
-                    const next = shown
-                      ? current.filter((name) => name !== field)
-                      : [...current, field]
-                    setChosenColumns({ ...chosenColumns, [selectedType]: next })
-                  }}
-                />
-              )
-            })}
-          </WorkspaceFilter>
-        )}
+          {selectedType && results.length > 0 && (
+            <WorkspaceFilter label="Columns">
+              {Object.keys(results[0]?.fields ?? {}).map((field) => {
+                const shown = visibleColumns(Object.keys(results[0]?.fields ?? {})).includes(field)
+                return (
+                  <Checkbox
+                    key={field}
+                    checked={shown}
+                    label={formatFieldName(field)}
+                    onChange={() => {
+                      const all = Object.keys(results[0]?.fields ?? {})
+                      const current = chosenColumns[selectedType] ?? visibleColumns(all)
+                      const next = shown ? current.filter((name) => name !== field) : [...current, field]
+                      setChosenColumns({ ...chosenColumns, [selectedType]: next })
+                    }}
+                  />
+                )
+              })}
+            </WorkspaceFilter>
+          )}
         </>
       }
     >
@@ -395,52 +392,54 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           other two read left to right. */}
       {view === 'charts' && selectedType && (
         <ChartsPanel
-                        objectType={selectedType}
-                        visibleSchema={visibleSchema}
-                        queryText={queryText}
-                        filters={crossFilter}
-                        onSelect={toggleChartValue}
-                        onSessionExpired={onSessionExpired}
-                      />
+          objectType={selectedType}
+          visibleSchema={visibleSchema}
+          queryText={queryText}
+          filters={crossFilter}
+          onSelect={toggleChartValue}
+          onSessionExpired={onSessionExpired}
+        />
       )}
 
       {loading && <p className="object-search__status">Searching…</p>}
 
-      {view === "table" && !loading && results.length === 0 && !error && (
+      {view === 'table' && !loading && results.length === 0 && !error && (
         <p className="object-search__empty">No results.</p>
       )}
 
-      {view === "table" && (
-      <CardList className="object-search__results">
-        {results.map((result) => {
-          const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
-          return (
-            // interactive -- real hover feedback, matching every other
-            // clickable Card this migration has already used it for.
-            // The real "stretched link" pattern below (see index.css's
-            // own comment on .object-search__link::after) is what
-            // makes the WHOLE card clickable/keyboard-focusable, not
-            // just interactive's own hover styling on its own.
-            <Card key={result.id} interactive className="object-search__result">
-              <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
-                <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
-              </Link>
-              {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
-              <dl className="object-search__result-fields">
-                {visibleColumns(Object.keys(result.fields)).map((field) => [field, result.fields[field]] as const).map(([field, value]) => (
-                  <div key={field} className="object-search__result-field">
-                    <dt>{formatFieldName(field)}</dt>
-                    <dd>{formatValue(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </Card>
-          )
-        })}
-      </CardList>
+      {view === 'table' && (
+        <CardList className="object-search__results">
+          {results.map((result) => {
+            const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
+            return (
+              // interactive -- real hover feedback, matching every other
+              // clickable Card this migration has already used it for.
+              // The real "stretched link" pattern below (see index.css's
+              // own comment on .object-search__link::after) is what
+              // makes the WHOLE card clickable/keyboard-focusable, not
+              // just interactive's own hover styling on its own.
+              <Card key={result.id} interactive className="object-search__result">
+                <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
+                  <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
+                </Link>
+                {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
+                <dl className="object-search__result-fields">
+                  {visibleColumns(Object.keys(result.fields))
+                    .map((field) => [field, result.fields[field]] as const)
+                    .map(([field, value]) => (
+                      <div key={field} className="object-search__result-field">
+                        <dt>{formatFieldName(field)}</dt>
+                        <dd>{formatValue(value)}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </Card>
+            )
+          })}
+        </CardList>
       )}
 
-      {view === "table" && (nextPageToken || previousTokens.length > 0) && (
+      {view === 'table' && (nextPageToken || previousTokens.length > 0) && (
         <div className="object-search__pager">
           <Button
             minimal
@@ -469,7 +468,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
             rightIcon="chevron-right"
             disabled={!nextPageToken}
             onClick={() => {
-              setPreviousTokens([...previousTokens, pageToken ?? ""])
+              setPreviousTokens([...previousTokens, pageToken ?? ''])
               setPageToken(nextPageToken)
             }}
           >

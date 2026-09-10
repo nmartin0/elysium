@@ -64,14 +64,17 @@ export function chartableFields(
   const fields = visibleSchema?.[objectType]?.fields ?? {}
   const usable = Object.entries(fields).filter(([, field]) => field.type !== 'link')
   const prominent = usable.filter(([, field]) => field.visibility === 'prominent')
-  const chosen = prominent.length > 0
-    ? prominent
-    : usable.filter(([, field]) => field.visibility !== 'hidden')
+  const chosen = prominent.length > 0 ? prominent : usable.filter(([, field]) => field.visibility !== 'hidden')
   return chosen.map(([name, field]) => ({ field: name, label: field.display_name ?? name }))
 }
 
 export default function ChartsPanel({
-  objectType, visibleSchema, queryText, filters, onSelect, onSessionExpired,
+  objectType,
+  visibleSchema,
+  queryText,
+  filters,
+  onSelect,
+  onSessionExpired,
 }: ChartsPanelProps) {
   const [charts, setCharts] = useState<FieldChart[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -89,14 +92,14 @@ export default function ChartsPanel({
 
     Promise.all(
       fields.map(async ({ field, label }) => {
-        const body = await aggregateObjects(objectType, {
+        const body = (await aggregateObjects(objectType, {
           // Every OTHER chart's selection, not this one's -- a chart
           // that filtered itself would drop to a single bar the moment
           // you clicked it.
           conditions: conditionsExcluding(JSON.parse(filterKey) as ChartFilter[], field),
           aggregate: 'count',
           group_by: field,
-        }) as { results: AggregateResults }
+        })) as { results: AggregateResults }
         return { field, label, results: body.results }
       }),
     )
@@ -121,34 +124,34 @@ export default function ChartsPanel({
 
   return (
     <AsyncPanel error={error} data={charts}>
-      {(charts) => (
+      {(charts) =>
         // An EMPTY result is not a loading state and not a failure --
         // every field has one distinct value, which is a true answer
         // and needs saying rather than showing an empty box.
         charts.length === 0 ? (
           <Callout intent="none">
-            No field in this object type has more than one distinct value in the
-            current results, so there is nothing to chart.
+            No field in this object type has more than one distinct value in the current results, so there is nothing to
+            chart.
           </Callout>
         ) : (
-        <div className="charts-panel">
-          {charts.map((chart) => (
-            <section key={chart.field} className="charts-panel__chart">
-              <h4>{chart.label}</h4>
-              <Chart
-                ariaLabel={`${chart.label} distribution`}
-                onSelect={(value) => onSelect(chart.field, value)}
-                option={
-                  suitsAPie(chart.results)
-                    ? pieOption(chart.results)
-                    : valueCountsOption(chart.results, selectionFor(filters, chart.field))
-                }
-              />
-            </section>
-          ))}
-        </div>
+          <div className="charts-panel">
+            {charts.map((chart) => (
+              <section key={chart.field} className="charts-panel__chart">
+                <h4>{chart.label}</h4>
+                <Chart
+                  ariaLabel={`${chart.label} distribution`}
+                  onSelect={(value) => onSelect(chart.field, value)}
+                  option={
+                    suitsAPie(chart.results)
+                      ? pieOption(chart.results)
+                      : valueCountsOption(chart.results, selectionFor(filters, chart.field))
+                  }
+                />
+              </section>
+            ))}
+          </div>
         )
-      )}
+      }
     </AsyncPanel>
   )
 }

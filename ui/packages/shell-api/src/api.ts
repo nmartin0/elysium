@@ -358,11 +358,11 @@ export async function searchObjects(
   // Omitted rather than sent empty: the server has defaults, and
   // sending page_size="" would make it parse and reject a value the
   // caller never chose.
-  if (options.pageToken) params.set("page_token", options.pageToken)
-  if (options.pageSize) params.set("page_size", String(options.pageSize))
-  if (options.orderBy) params.set("order_by", options.orderBy)
+  if (options.pageToken) params.set('page_token', options.pageToken)
+  if (options.pageSize) params.set('page_size', String(options.pageSize))
+  if (options.orderBy) params.set('order_by', options.orderBy)
   if (options.conditions?.length) {
-    params.set("conditions", JSON.stringify(options.conditions))
+    params.set('conditions', JSON.stringify(options.conditions))
   }
   const response = await apiFetchOrThrow(`/objects/${objectType}/search?${params}`)
   return response.json()
@@ -435,68 +435,46 @@ export interface AggregateBody {
   group_by?: string
 }
 
-export async function aggregateObjects(
-  objectType: string,
-  body: AggregateBody,
-): Promise<unknown> {
+export async function aggregateObjects(objectType: string, body: AggregateBody): Promise<unknown> {
   const response = await apiFetchOrThrow(`/objects/${objectType}/aggregate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   return response.json()
 }
 
 export async function getRequestTrace(requestId: string): Promise<unknown> {
-  const response = await apiFetchOrThrow(
-    `/requests/${encodeURIComponent(requestId)}/trace`,
-  )
+  const response = await apiFetchOrThrow(`/requests/${encodeURIComponent(requestId)}/trace`)
   return response.json()
 }
 
-export async function getObjectNotes(
-  objectType: string,
-  objectId: string,
-): Promise<unknown> {
-  const response = await apiFetchOrThrow(
-    `/objects/${objectType}/${encodeURIComponent(objectId)}/notes`,
-  )
+export async function getObjectNotes(objectType: string, objectId: string): Promise<unknown> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/notes`)
   return response.json()
 }
 
-export async function createObjectNote(
-  objectType: string,
-  objectId: string,
-  text: string,
-): Promise<unknown> {
-  const response = await apiFetchOrThrow(
-    `/objects/${objectType}/${encodeURIComponent(objectId)}/notes`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    },
-  )
+export async function createObjectNote(objectType: string, objectId: string, text: string): Promise<unknown> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
   return response.json()
 }
 
-export async function getObjectHistory(
-  objectType: string,
-  objectId: string,
-): Promise<unknown> {
-  const response = await apiFetchOrThrow(
-    `/objects/${objectType}/${encodeURIComponent(objectId)}/history`,
-  )
+export async function getObjectHistory(objectType: string, objectId: string): Promise<unknown> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/history`)
   return response.json()
 }
 
 export async function getSilos(): Promise<unknown> {
-  const response = await apiFetchOrThrow("/silos")
+  const response = await apiFetchOrThrow('/silos')
   return response.json()
 }
 
 export async function getDeploymentConfig(): Promise<unknown> {
-  const response = await apiFetchOrThrow("/config")
+  const response = await apiFetchOrThrow('/config')
   return response.json()
 }
 

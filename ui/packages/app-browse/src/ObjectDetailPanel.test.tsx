@@ -363,8 +363,10 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
       fields: {
         name: { type: 'data' },
         transactions: {
-          type: 'link', target: 'Transaction',
-          link_type: 'CustomerTransactions', cardinality: 'one_to_many',
+          type: 'link',
+          target: 'Transaction',
+          link_type: 'CustomerTransactions',
+          cardinality: 'one_to_many',
         },
       },
     },
@@ -392,9 +394,7 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
      * searching that type -- this list is an entry point, not a
      * substitute for Browse.
      */
-    mockedGetObjectDetail.mockResolvedValue(
-      detailWith(Array.from({ length: 25 }, (_, i) => `t${i}`)),
-    )
+    mockedGetObjectDetail.mockResolvedValue(detailWith(Array.from({ length: 25 }, (_, i) => `t${i}`)))
 
     renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
 
@@ -406,9 +406,7 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
   it('counts exactly even when it shows few', async () => {
     // The cap is on RENDERING. A count that capped too would be a
     // number that quietly lies once a customer gets busy.
-    mockedGetObjectDetail.mockResolvedValue(
-      detailWith(Array.from({ length: 40000 }, (_, i) => `t${i}`)),
-    )
+    mockedGetObjectDetail.mockResolvedValue(detailWith(Array.from({ length: 40000 }, (_, i) => `t${i}`)))
 
     renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
 
@@ -420,8 +418,7 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
 
     renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
 
-    expect((await screen.findByText('t1')).closest('a'))
-      .toHaveAttribute('href', '/objects/Transaction/t1')
+    expect((await screen.findByText('t1')).closest('a')).toHaveAttribute('href', '/objects/Transaction/t1')
   })
 })
 

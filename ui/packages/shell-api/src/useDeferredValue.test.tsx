@@ -52,7 +52,9 @@ describe('useDeferredWrite', () => {
     }
     expect(write).not.toHaveBeenCalled()
 
-    act(() => { vi.advanceTimersByTime(SETTLE_MS) })
+    act(() => {
+      vi.advanceTimersByTime(SETTLE_MS)
+    })
 
     expect(write).toHaveBeenCalledTimes(1)
     expect(write).toHaveBeenCalledWith('Cust')
@@ -68,7 +70,9 @@ describe('useDeferredWrite', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'half' } })
 
     fireEvent.click(screen.getByText('adopt'))
-    act(() => { vi.advanceTimersByTime(SETTLE_MS * 2) })
+    act(() => {
+      vi.advanceTimersByTime(SETTLE_MS * 2)
+    })
 
     expect(write).not.toHaveBeenCalled()
     expect(screen.getByRole('textbox')).toHaveValue('elsewhere')
@@ -82,7 +86,9 @@ describe('useDeferredWrite', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'x' } })
 
     unmount()
-    act(() => { vi.advanceTimersByTime(SETTLE_MS * 2) })
+    act(() => {
+      vi.advanceTimersByTime(SETTLE_MS * 2)
+    })
 
     expect(write).not.toHaveBeenCalled()
   })
@@ -96,7 +102,9 @@ describe('useDeferredWrite', () => {
     rerender(<Harness write={second} />)
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'x' } })
-    act(() => { vi.advanceTimersByTime(SETTLE_MS) })
+    act(() => {
+      vi.advanceTimersByTime(SETTLE_MS)
+    })
 
     expect(first).not.toHaveBeenCalled()
     expect(second).toHaveBeenCalledWith('x')

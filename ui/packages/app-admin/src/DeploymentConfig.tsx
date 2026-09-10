@@ -37,63 +37,79 @@ interface DeploymentConfigBody {
 }
 
 export default function DeploymentConfig({ onSessionExpired }: { onSessionExpired: () => void }) {
-  const { data: config, error } = useFetchOnce<DeploymentConfigBody>(
-    () => getDeploymentConfig(),
-    onSessionExpired,
-  )
+  const { data: config, error } = useFetchOnce<DeploymentConfigBody>(() => getDeploymentConfig(), onSessionExpired)
 
   return (
     <AsyncPanel error={error} data={config}>
       {(config) => {
-      // Grouped by what a reader is looking for, not by the order the
-      // config happens to declare them.
-      const groups: [string, [string, React.ReactNode][]][] = [
-        ['Model', [
-          ['Provider', config.llm_provider],
-          ['Step model', config.step_model],
-          ['Synthesis model', config.synthesis_model],
-        ]],
-        ['Agent bounds', [
-          ['Max hops', config.max_hops],
-          ['Max consecutive duplicates', config.max_consecutive_duplicates],
-          ['Max consecutive invalid steps', config.max_consecutive_invalid_steps],
-          ['Max concurrent requests', config.max_concurrent_requests],
-        ]],
-        ['Ontology', [
-          ['Object types', config.object_type_count],
-          ['Action types', config.action_type_count],
-          ['Security attribute', config.security_attribute],
-          ['Reading from mirror', config.read_from_mirror ? 'yes' : 'no'],
-        ]],
-        ['Configured', [
-          // NAMES only. The endpoint deliberately does not send silo
-          // connection details or role grants -- names answer "what is
-          // configured", contents would answer "what could I attack".
-          ['Silos', config.silo_names.join(', ') || '—'],
-          ['Roles', config.role_names.join(', ') || '—'],
-          ['Tools', config.enabled_tools.length > 0
-            ? config.enabled_tools.map((tool) => <Tag key={tool} minimal>{tool}</Tag>)
-            : '—'],
-        ]],
-      ]
+        // Grouped by what a reader is looking for, not by the order the
+        // config happens to declare them.
+        const groups: [string, [string, React.ReactNode][]][] = [
+          [
+            'Model',
+            [
+              ['Provider', config.llm_provider],
+              ['Step model', config.step_model],
+              ['Synthesis model', config.synthesis_model],
+            ],
+          ],
+          [
+            'Agent bounds',
+            [
+              ['Max hops', config.max_hops],
+              ['Max consecutive duplicates', config.max_consecutive_duplicates],
+              ['Max consecutive invalid steps', config.max_consecutive_invalid_steps],
+              ['Max concurrent requests', config.max_concurrent_requests],
+            ],
+          ],
+          [
+            'Ontology',
+            [
+              ['Object types', config.object_type_count],
+              ['Action types', config.action_type_count],
+              ['Security attribute', config.security_attribute],
+              ['Reading from mirror', config.read_from_mirror ? 'yes' : 'no'],
+            ],
+          ],
+          [
+            'Configured',
+            [
+              // NAMES only. The endpoint deliberately does not send silo
+              // connection details or role grants -- names answer "what is
+              // configured", contents would answer "what could I attack".
+              ['Silos', config.silo_names.join(', ') || '—'],
+              ['Roles', config.role_names.join(', ') || '—'],
+              [
+                'Tools',
+                config.enabled_tools.length > 0
+                  ? config.enabled_tools.map((tool) => (
+                      <Tag key={tool} minimal>
+                        {tool}
+                      </Tag>
+                    ))
+                  : '—',
+              ],
+            ],
+          ],
+        ]
         return (
-        <div className="deployment-config">
-          {groups.map(([heading, rows]) => (
-            <section key={heading}>
-              <h3>{heading}</h3>
-              <HTMLTable compact striped className="deployment-config__table">
-                <tbody>
-                  {rows.map(([label, value]) => (
-                    <tr key={label}>
-                      <td className="deployment-config__label">{label}</td>
-                      <td>{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </HTMLTable>
-            </section>
-          ))}
-        </div>
+          <div className="deployment-config">
+            {groups.map(([heading, rows]) => (
+              <section key={heading}>
+                <h3>{heading}</h3>
+                <HTMLTable compact striped className="deployment-config__table">
+                  <tbody>
+                    {rows.map(([label, value]) => (
+                      <tr key={label}>
+                        <td className="deployment-config__label">{label}</td>
+                        <td>{value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </HTMLTable>
+              </section>
+            ))}
+          </div>
         )
       }}
     </AsyncPanel>

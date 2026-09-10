@@ -25,9 +25,7 @@ describe('which operators a field offers', () => {
   })
 
   it('offers the text and date operators only for strings', () => {
-    expect(operatorsFor('string')).toEqual(
-      expect.arrayContaining(['contains', 'date_range', 'relative_date']),
-    )
+    expect(operatorsFor('string')).toEqual(expect.arrayContaining(['contains', 'date_range', 'relative_date']))
     expect(operatorsFor('number')).not.toContain('contains')
   })
 
@@ -56,8 +54,7 @@ describe('which operators a field offers', () => {
 
 describe('how an applied filter reads', () => {
   it('says what a range covers', () => {
-    expect(describeFilter({ field: 'balance', operator: 'range', value: [10, 20] }))
-      .toContain('10')
+    expect(describeFilter({ field: 'balance', operator: 'range', value: [10, 20] })).toContain('10')
   })
 
   it('distinguishes keep from exclude', () => {
@@ -84,9 +81,7 @@ describe('FilterBar', () => {
     fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'Ada' } })
     fireEvent.click(screen.getByRole('button', { name: /Add/ }))
 
-    expect(onChange).toHaveBeenCalledWith([
-      { field: 'name', operator: 'equals', value: 'Ada' },
-    ])
+    expect(onChange).toHaveBeenCalledWith([{ field: 'name', operator: 'equals', value: 'Ada' }])
   })
 
   it('sends a PAIR for a two-part operator', () => {
@@ -104,9 +99,7 @@ describe('FilterBar', () => {
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '20' } })
     fireEvent.click(screen.getByRole('button', { name: /Add/ }))
 
-    expect(onChange).toHaveBeenCalledWith([
-      { field: 'balance', operator: 'range', value: ['10', '20'] },
-    ])
+    expect(onChange).toHaveBeenCalledWith([{ field: 'balance', operator: 'range', value: ['10', '20'] }])
   })
 
   it('resets the operator when the field changes', () => {

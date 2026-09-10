@@ -234,8 +234,8 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
    * and re-choosing it every visit is the kind of small friction that
    * makes an app feel unfinished.
    */
-  const [dark, setDark] = useState(() =>
-    readPreference<string>('theme', currentUser?.username ?? '', 'light') === 'dark',
+  const [dark, setDark] = useState(
+    () => readPreference<string>('theme', currentUser?.username ?? '', 'light') === 'dark',
   )
 
   useEffect(() => {
@@ -583,7 +583,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     <div className={collapsed ? 'app-frame app-frame--sidebar-collapsed' : 'app-frame'}>
       {header}
       <div className="app">
-      {/* NO Drawer branch any more, and the rail is why.
+        {/* NO Drawer branch any more, and the rail is why.
           
           A Drawer existed because a 240px sidebar eats a narrow
           screen, so below 640px it hid entirely and closing it left
@@ -595,31 +595,27 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
           
           This is the point of a rail over a hideable sidebar: moving
           between sub-apps never costs a step, at any size. */}
-      {(
-        // Classes.DARK on the sidebar ALWAYS, not only in dark mode:
-        // it is dark chrome in both themes, and a Blueprint widget
-        // styles itself for whatever surface it is told it sits on.
-        // Without this the theme toggle and user menu rendered
-        // dark-on-dark and were effectively invisible.
-                // NO aria-hidden. It made sense when collapsing meant width
-        // 0 -- content off screen should not be announced. A rail IS
-        // on screen, so hiding it from assistive technology makes the
-        // navigation invisible to exactly the users the visible-label
-        // work was for.
-        <aside className={`app__sidebar ${Classes.DARK}`}>
-          {sidebarContent}
-        </aside>
-      )}
+        {
+          // Classes.DARK on the sidebar ALWAYS, not only in dark mode:
+          // it is dark chrome in both themes, and a Blueprint widget
+          // styles itself for whatever surface it is told it sits on.
+          // Without this the theme toggle and user menu rendered
+          // dark-on-dark and were effectively invisible.
+          // NO aria-hidden. It made sense when collapsing meant width
+          // 0 -- content off screen should not be announced. A rail IS
+          // on screen, so hiding it from assistive technology makes the
+          // navigation invisible to exactly the users the visible-label
+          // work was for.
+          <aside className={`app__sidebar ${Classes.DARK}`}>{sidebarContent}</aside>
+        }
 
-      <div className="app__content">
-        
-
-        <main>
-          <Suspense fallback={<p>Loading…</p>}>
-            <Outlet />
-          </Suspense>
-        </main>
-      </div>
+        <div className="app__content">
+          <main>
+            <Suspense fallback={<p>Loading…</p>}>
+              <Outlet />
+            </Suspense>
+          </main>
+        </div>
       </div>
     </div>
   )

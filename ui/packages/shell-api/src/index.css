@@ -118,7 +118,7 @@ body {
  * children, so without it the line landed across the MIDDLE of the
  * pane. */
 .app__header::after {
-  content: "";
+  content: '';
   position: absolute;
   bottom: 0;
   left: var(--sidebar-rail);
@@ -187,7 +187,6 @@ body {
     padding-left 0.15s ease,
     padding-right 0.15s ease;
 }
-
 
 .app__nav {
   flex: 1;
@@ -793,15 +792,9 @@ button.danger {
   inset: 0;
 }
 
-
-
-
-
 .object-search__result-field:last-child {
   border-bottom: none;
 }
-
-
 
 .object-detail__type {
   margin: 0;
@@ -938,7 +931,7 @@ button.danger {
 }
 
 .object-search__result-field dt::after {
-  content: ":";
+  content: ':';
 }
 
 .object-search__result-field dd {
@@ -985,8 +978,6 @@ button.danger {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-
-
 
 /* --- The rail -----------------------------------------------------
  *
@@ -1082,8 +1073,8 @@ button.danger {
  */
 button,
 select,
-input[type="checkbox"],
-[role="button"] {
+input[type='checkbox'],
+[role='button'] {
   min-height: var(--target-min);
 }
 

@@ -10,8 +10,11 @@ const SCHEMA = {
     display_name: 'Customer',
     fields: {
       transactions: {
-        type: 'link', display_name: 'Transactions', target: 'Transaction',
-        cardinality: 'many', link_type: 'CustomerTransactions',
+        type: 'link',
+        display_name: 'Transactions',
+        target: 'Transaction',
+        cardinality: 'many',
+        link_type: 'CustomerTransactions',
       },
     },
   },
@@ -19,8 +22,11 @@ const SCHEMA = {
     display_name: 'Transaction',
     fields: {
       customer_id: {
-        type: 'link', display_name: 'Customer', target: 'Customer',
-        cardinality: 'one', link_type: 'CustomerTransactions',
+        type: 'link',
+        display_name: 'Customer',
+        target: 'Customer',
+        cardinality: 'one',
+        link_type: 'CustomerTransactions',
       },
       amount: { type: 'data', display_name: 'Amount' },
     },
@@ -82,9 +88,7 @@ describe('LinkTypes', () => {
 
 describe('LinkTypes -- filtering and navigation', () => {
   it('matches on the link type name', () => {
-    render(
-      <LinkTypes schema={SCHEMA} filter="CustomerTrans" onOpenObjectType={() => {}} />,
-    )
+    render(<LinkTypes schema={SCHEMA} filter="CustomerTrans" onOpenObjectType={() => {}} />)
 
     expect(screen.getByText('CustomerTransactions')).toBeInTheDocument()
   })

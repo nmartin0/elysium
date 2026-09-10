@@ -75,14 +75,22 @@ describe('which fields get a chart', () => {
 describe('ChartsPanel', () => {
   it('asks for a count grouped by each chartable field', async () => {
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
-    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
-      'Customer',
-      expect.objectContaining({ aggregate: 'count', group_by: 'region' }),
-    ))
+    await waitFor(() =>
+      expect(aggregateObjects).toHaveBeenCalledWith(
+        'Customer',
+        expect.objectContaining({ aggregate: 'count', group_by: 'region' }),
+      ),
+    )
   })
 
   it('excludes a field\u2019s OWN selection from its own chart', async () => {
@@ -92,19 +100,31 @@ describe('ChartsPanel', () => {
     // using it.
     const filters = [{ field: 'region', values: ['us-west'], mode: 'keep' as const }]
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={filters} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={filters}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
-    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
-      'Customer', expect.objectContaining({ conditions: [] }),
-    ))
+    await waitFor(() =>
+      expect(aggregateObjects).toHaveBeenCalledWith('Customer', expect.objectContaining({ conditions: [] })),
+    )
   })
 
   it('draws a chart per field that has something to show', async () => {
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
     expect(await screen.findByText('Region distribution')).toBeInTheDocument()
@@ -116,8 +136,14 @@ describe('ChartsPanel', () => {
     aggregateObjects.mockResolvedValue({ results: { 'us-west': 4 } })
 
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
     expect(await screen.findByText(/nothing to chart/)).toBeInTheDocument()
@@ -127,8 +153,14 @@ describe('ChartsPanel', () => {
     aggregateObjects.mockRejectedValue(new Error('aggregate unavailable'))
 
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
     expect(await screen.findByText(/aggregate unavailable/)).toBeInTheDocument()
@@ -139,14 +171,26 @@ describe('ChartsPanel', () => {
     // Depending on its identity would refetch every chart on every
     // keystroke in the search box beside it.
     const { rerender } = render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledTimes(1))
 
     rerender(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
     expect(aggregateObjects).toHaveBeenCalledTimes(1)
@@ -178,9 +222,12 @@ describe('a chart does not filter itself', () => {
 
     render(
       <ChartsPanel
-        objectType="Customer" visibleSchema={SCHEMA} queryText=""
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
         filters={[{ field: 'region', values: ['us-west'], mode: 'keep' }]}
-        onSelect={noop2} onSessionExpired={noop}
+        onSelect={noop2}
+        onSessionExpired={noop}
       />,
     )
 
@@ -206,17 +253,22 @@ describe('a chart does not filter itself', () => {
             },
           },
         }}
-        queryText="" filters={filters} onSelect={noop2} onSessionExpired={noop}
+        queryText=""
+        filters={filters}
+        onSelect={noop2}
+        onSessionExpired={noop}
       />,
     )
 
     // The region chart sees the NAME filter but not its own.
-    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
-      'Customer',
-      expect.objectContaining({
-        group_by: 'region',
-        conditions: [{ field: 'name', operator: 'in', value: ['Ada'] }],
-      }),
-    ))
+    await waitFor(() =>
+      expect(aggregateObjects).toHaveBeenCalledWith(
+        'Customer',
+        expect.objectContaining({
+          group_by: 'region',
+          conditions: [{ field: 'name', operator: 'in', value: ['Ada'] }],
+        }),
+      ),
+    )
   })
 })

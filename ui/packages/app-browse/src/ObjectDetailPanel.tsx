@@ -5,7 +5,12 @@ import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ObjectHistory from './ObjectHistory'
 import ObjectNotes from './ObjectNotes'
-import { getObjectDetail, getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import {
+  getObjectDetail,
+  getVisibleActionTypesCached,
+  getErrorMessage,
+  handleIfSessionExpired,
+} from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
@@ -188,9 +193,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           </span>
         ))}
         {linkedIds.length > shown.length && (
-          <span className="object-detail__link-more">
-            {' '}and {linkedIds.length - shown.length} more
-          </span>
+          <span className="object-detail__link-more"> and {linkedIds.length - shown.length} more</span>
         )}
       </span>
     )
@@ -252,11 +255,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           -- history answers "what happened", notes answer "why". */}
       <section className="object-detail__notes">
         <h3>Notes</h3>
-        <ObjectNotes
-          objectType={objectType}
-          objectId={objectId}
-          onSessionExpired={onSessionExpired}
-        />
+        <ObjectNotes objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
       </section>
 
       {/* History under the fields, not beside them. What an object IS
@@ -265,11 +264,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           follow-up. */}
       <section className="object-detail__history">
         <h3>History</h3>
-        <ObjectHistory
-          objectType={objectType}
-          objectId={objectId}
-          onSessionExpired={onSessionExpired}
-        />
+        <ObjectHistory objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
       </section>
 
       {availableActions.length > 0 && !activeAction && (
