@@ -188,3 +188,105 @@ def test_object_ids_present_but_field_names_missing_fails_closed():
                   '"object_ids": [1, 2]}')
 
     assert step["step"] == "finish"
+
+
+# --- the whole loop, which is where this broke ---
+#
+# THE GAP THIS CLOSES. Everything above tests _step_get_object and the
+# step parser. Nothing tested the path BETWEEN them -- run()'s own
+# duplicate detection, which called step["object_id"] directly in two
+# places. Both raised KeyError on the first real query:
+#
+#   File "core/agent/agentic_loop.py", line 124, in _step_signature
+#     return ("get_object", step["object_type"], step["object_id"], ...)
+#   KeyError: 'object_id'
+#
+# Two unit tests either side of a crash is not coverage of the thing
+# between them.
+
+from core.agent.agentic_loop import _object_ids_in, _step_signature  # noqa: E402
+
+
+class _Scripted:
+    """An LLMAdapter that returns each queued response in turn."""
+
+    def __init__(self, *responses):
+        self.responses = list(responses)
+
+    def chat(self, *args, **kwargs):
+        return self.responses.pop(0) if self.responses else '{"step": "finish"}'
+
+
+def test_a_set_shaped_step_survives_a_whole_run():
+    # The regression test proper. Goes through run(), so it exercises
+    # signature building and duplicate recording, not just the handler.
+    mediator = _FakeMediator()
+    mediator.visible_schema = lambda user_record: {}
+    loop = AgentLoop(
+        client=_Scripted(
+            '{"step": "get_object", "object_type": "Transaction",'
+            ' "object_ids": [1, 2], "field_names": ["amount"]}',
+            '{"step": "finish"}',
+        ),
+        mediator=mediator,
+    )
+
+    result = loop.run("alice", "what are the amounts?")
+
+    assert len(result.gathered) == 2
+    assert [g["object_id"] for g in result.gathered] == [1, 2]
+
+
+def test_a_signature_can_be_built_for_either_form():
+    # _step_signature must not care which key was used. It raised
+    # KeyError on the set form.
+    plural = _step_signature({
+        "step": "get_object", "object_type": "T", "object_ids": [1, 2],
+        "field_names": ["amount"],
+    })
+    singular = _step_signature({
+        "step": "get_object", "object_type": "T", "object_id": 1,
+        "field_names": ["amount"],
+    })
+
+    assert plural != singular
+    assert hash(plural) and hash(singular), "signatures must stay hashable"
+
+
+def test_naming_the_same_objects_in_a_different_order_is_the_same_request():
+    # frozenset over ids for the same reason field_names already used
+    # one: order is not part of what was asked.
+    first = _step_signature({"step": "get_object", "object_type": "T",
+                             "object_ids": [1, 2], "field_names": ["a"]})
+    second = _step_signature({"step": "get_object", "object_type": "T",
+                              "object_ids": [2, 1], "field_names": ["a"]})
+
+    assert first == second
+
+
+def test_a_later_get_field_on_an_already_batched_object_is_a_duplicate():
+    # run() records a get_field-shaped signature per object per field,
+    # so following a batch with a single read of one of those fields is
+    # caught. Before the fix this recorded ONE entry for the whole set.
+    mediator = _FakeMediator()
+    mediator.visible_schema = lambda user_record: {}
+    loop = AgentLoop(
+        client=_Scripted(
+            '{"step": "get_object", "object_type": "Transaction",'
+            ' "object_ids": [1, 2], "field_names": ["amount"]}',
+            '{"step": "get_field", "object_type": "Transaction",'
+            ' "object_id": 2, "field_name": "amount"}',
+            '{"step": "finish"}',
+        ),
+        mediator=mediator,
+        max_consecutive_duplicates=1,
+    )
+
+    loop.run("alice", "amounts?")
+
+    assert len(mediator.calls) == 2, "the repeated read must not reach the mediator a third time"
+
+
+def test_the_id_helper_is_the_one_place_the_two_keys_are_resolved():
+    assert _object_ids_in({"object_ids": [1, 2]}) == [1, 2]
+    assert _object_ids_in({"object_id": "cust_001"}) == ["cust_001"]

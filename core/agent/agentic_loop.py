@@ -107,6 +107,22 @@ class AgentLoopResult:
     hit_max_hops: bool = False
 
 
+def _object_ids_in(step: dict) -> list:
+    """The objects a get_object step names, whichever key it used.
+
+    Module-level, and used by _step_signature(), the duplicate-
+    recording loop in run(), AND AgentLoop._step_get_object(), because
+    the first version of the set-shaped read had each of those reading
+    step["object_id"] directly. Two of them were missed, and run()
+    crashed with a KeyError on the first real query -- caught by a live
+    run, not by the tests, which exercised the step handler and the
+    parser but never the path between them.
+    """
+    if "object_ids" in step:
+        return list(step["object_ids"])
+    return [step["object_id"]]
+
+
 def _step_signature(step: dict):
     # A hashable fingerprint of one step, used to detect exact repeats.
     # propose_action has NO entry here -- see module docstring for why a
@@ -121,7 +137,10 @@ def _step_signature(step: dict):
         # set of fields on the SAME object twice must be detected as a
         # genuine repeat regardless of what ORDER it happened to list
         # them in either time.
-        return ("get_object", step["object_type"], step["object_id"], frozenset(step["field_names"]))
+        # frozenset over the ids too, for the same reason: naming the
+        # same objects in a different ORDER is the same request.
+        return ("get_object", step["object_type"], frozenset(_object_ids_in(step)),
+                frozenset(step["field_names"]))
     if step["step"] == "use_tool":
         # Function args can contain UNHASHABLE values (e.g. lists for
         # x_values/y_values) -- frozenset(dict.items()), used for the
@@ -425,12 +444,10 @@ class AgentLoop:
     def _object_ids_for(step: dict) -> list:
         # Accepts either key. A step naming one `object_id` is the
         # common case and keeps working unchanged.
-        if "object_ids" in step:
-            object_ids = step["object_ids"]
-            if not isinstance(object_ids, list) or not object_ids:
-                raise ValueError("get_object: 'object_ids' must be a non-empty list")
-        else:
-            object_ids = [step["object_id"]]
+        if "object_ids" in step and (
+                not isinstance(step["object_ids"], list) or not step["object_ids"]):
+            raise ValueError("get_object: 'object_ids' must be a non-empty list")
+        object_ids = _object_ids_in(step)
 
         if len(object_ids) > MAX_OBJECT_IDS:
             # A NAMED refusal, never a silent truncation -- answering
@@ -651,8 +668,10 @@ class AgentLoop:
                     # AI-notes for the reverse, rarer case (get_field
                     # first, then a LARGER get_object covering that
                     # same field among others) this does NOT close.
-                    for field_name in step["field_names"]:
-                        seen_signatures.add(("get_field", step["object_type"], step["object_id"], field_name))
+                    for object_id in _object_ids_in(step):
+                        for field_name in step["field_names"]:
+                            seen_signatures.add(
+                                ("get_field", step["object_type"], object_id, field_name))
 
             consecutive_invalid, consecutive_business_rule, should_stop, pending_write = self._execute_step(
                 step, user_record, visible_schema, gathered, consecutive_invalid,
