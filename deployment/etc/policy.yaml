@@ -64,6 +64,11 @@ roles:
       - read:Transaction.category
       - read:Transaction.transaction_date
       - read:Transaction.customer_id
+      # Without this, RecategorizeTransaction stays invisible: an
+      # action type declared in ontology_schema.yaml is not usable
+      # until some role is granted execute: on it by name, the same
+      # way a field needs its own read: grant.
+      - execute:RecategorizeTransaction
 
 users:
   user_alice:

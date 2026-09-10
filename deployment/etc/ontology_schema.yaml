@@ -58,3 +58,42 @@ object_types:
         type: link
         target: Customer
         cardinality: one
+
+# ------------------------------------------------------------------
+# Action types -- the ONLY way data in this deployment is ever
+# changed. Every write is a NAMED, independently-governed operation
+# with its own execute: grant, its own declared parameters and its own
+# declared mutations, matching Palantir Foundry's action-type model.
+# There is deliberately no generic "update this field" verb.
+#
+# Declaring an action type here is NOT enough to make it usable: it
+# also needs an execute:<ActionName> grant in policy.yaml, exactly the
+# same way a field needs a read: grant. Until then it stays invisible.
+# ------------------------------------------------------------------
+action_types:
+  RecategorizeTransaction:
+    description: Change which category a transaction is filed under.
+    affected_object_types: [Transaction]
+    parameters:
+      transaction_id:
+        type: object_reference
+        object_type: Transaction
+        required: true
+        # Pre-fills and LOCKS this parameter to whichever Transaction
+        # the form was opened from, so the object being changed is
+        # never retyped by hand. Marked explicitly, by parameter
+        # identity -- never inferred from object_type, since an action
+        # can legitimately reference two objects of the same type.
+        is_current_object: true
+      new_category:
+        type: string
+        required: true
+        display_name: New category
+    sub_writes:
+      - object_type: Transaction
+        object_id: parameter.transaction_id
+        operation: update
+        mutations:
+          - set:
+              property: category
+              value: parameter.new_category
