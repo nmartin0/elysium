@@ -22,6 +22,11 @@ requests<3.0        # HTTP calls to the local Ollama API
 pyyaml<7.0          # reading deployment config/schema/policy YAML files
 argon2-cffi<26.0     # password hashing for core/auth/ -- argon2id, the current OWASP-recommended algorithm
 fastapi<1.0         # api/ -- the HTTP layer
+pydantic>=2.0,<3.0  # core/ -- declarative validation of deployment config. Previously reached only
+                  # transitively through fastapi, which was fine while api/ was the only importer.
+                  # core/ontology/submission_criteria.py imports it directly now, so it is declared
+                  # directly: a fastapi release that drops or re-bounds pydantic would otherwise
+                  # break core/ with nothing in this file mentioning the package at all.
 uvicorn<1.0         # ASGI server to actually run api/app.py
 starlette>=1.0.1,<2.0  # FastAPI's ASGI layer -- pinned: versions before this had a real, disclosed
                   # authentication-bypass CVE (CVE-2026-48710), fixed in 1.0.1. Since we're
