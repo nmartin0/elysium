@@ -142,6 +142,40 @@ def _repeat(loop, user_record, query: str, times: int) -> int:
     return 0
 
 
+class _TimedClient:
+    """Wraps an LLMAdapter to record how long each call took.
+
+    Here rather than in core/agent/agentic_loop.py deliberately: the
+    loop should not carry instrumentation for a debugging script, and
+    wrapping the adapter measures exactly what the loop waits on
+    without changing what it does.
+
+    WHAT THE PER-CALL SPLIT ANSWERS, and why it was worth adding. A
+    query that takes six minutes tells you nothing about WHERE the time
+    went. Six hops at one minute each is a token-generation problem; one
+    hop at four minutes and five at twenty seconds means the first call
+    paid to read the prompt and the rest reused a cached prefix. Those
+    have opposite fixes, and total elapsed cannot tell them apart.
+
+    Delegates every other attribute, so a caller that reaches past chat()
+    -- max_concurrent_requests, for instance -- sees the real adapter.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.call_seconds: list[float] = []
+
+    def chat(self, *args, **kwargs):
+        started = time.time()
+        try:
+            return self._inner.chat(*args, **kwargs)
+        finally:
+            self.call_seconds.append(time.time() - started)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[2].strip())
     parser.add_argument("query", help="the question to ask, as one argument")
@@ -177,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     loop = AgentLoop.from_deployment(deployment, mediator, write_mediator)
+    timed = _TimedClient(loop.client)
+    loop.client = timed
 
     print(f"query : {args.query}")
     print(f"user  : {args.user} ({deployment.security_attribute}={user_record.security_value}, "
@@ -203,6 +239,22 @@ def main(argv: list[str] | None = None) -> int:
         print(_render(step, index))
 
     print()
+    if timed.call_seconds:
+        print("model calls:")
+        for index, seconds in enumerate(timed.call_seconds, start=1):
+            print(f"  call {index}: {seconds:6.1f}s")
+        # The comparison the caching question turns on. A first call
+        # much slower than the rest means the prompt prefix was reused;
+        # roughly equal calls mean it was re-read every time.
+        first, rest = timed.call_seconds[0], timed.call_seconds[1:]
+        if rest:
+            average_rest = sum(rest) / len(rest)
+            print(f"  first {first:.1f}s vs later avg {average_rest:.1f}s "
+                  f"({first / average_rest:.1f}x)" if average_rest else "")
+        model_total = sum(timed.call_seconds)
+        print(f"  model total    : {model_total:.1f}s of {elapsed:.1f}s elapsed "
+              f"({100 * model_total / elapsed:.0f}%)")
+        print()
     print(f"elapsed        : {elapsed:.1f}s")
     print(f"hit max hops   : {result.hit_max_hops}")
     print(f"pending write  : {result.pending_write is not None}")
