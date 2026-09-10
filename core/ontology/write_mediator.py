@@ -106,13 +106,14 @@ class PendingWrite:
     # sub_writes is ALWAYS at least one entry, even for what looks like
     # an ordinary single-object action -- there is deliberately no
     # separate "single-object" representation living alongside a
-    # "multi-object" one. propose_action() and core/ontology/
-    # action_types.py's own schema-load validation already fully
-    # support declaring and resolving more than one -- the one piece
-    # still catching up is confirm_and_execute()'s own apply logic
-    # (still only ever applies sub_writes[0] as of this writing; see
-    # this file's own AI-notes at the bottom for exactly where that
-    # stands).
+    # "multi-object" one. propose_action(), core/ontology/
+    # action_types.py's own schema-load validation, AND confirm_and_
+    # execute()'s own apply logic all fully support more than one:
+    # every write goes through _apply_batch(), one sub_write or many,
+    # with no special case for either. (This comment used to say the
+    # apply side "still only ever applies sub_writes[0]" -- true when
+    # written, stale since the batch work landed. See this file's own
+    # AI-notes and write_log.py's MULTI-OBJECT BATCHES section.)
     #
     # action_type_name is the action's own real, raw name (e.g.
     # "TransferFunds") -- distinct from description, which is a
