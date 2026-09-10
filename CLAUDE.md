@@ -108,6 +108,80 @@ rather than assuming a script exists; one would have to be written.
 Pointing `ELYSIUM_DATA_DIR` somewhere under `$HOME` would end this.
 It has been suggested and not done; suggest it again if it bites.
 
+## The loop, every change
+
+`AGENTS.md` lists the commands. This is the ORDER, and skipping steps
+is how the mistakes below happen.
+
+1. **Read the code that already does this.** Three features on the
+   roadmap turned out to exist. Read the response model before
+   writing a fixture against it, and read the docstring of anything
+   being changed — several were load-bearing and said so.
+2. **Write it**, with the reasoning in comments where a later reader
+   would otherwise wonder.
+3. **`npx tsc --noEmit`** — before any test run. It catches shape
+   errors in seconds that a test run finds in minutes, and
+   `AGENTS.md`'s command list omits it.
+4. **Run the narrow test**, then widen: the one file, then the
+   package, then everything.
+5. **Write the test, then break the code.** For every guarantee
+   claimed, mutate the source so it should fail, and confirm it does.
+   Restore from a backup copy, never by hand-editing back.
+6. **Full verification before the commit message**, not after:
+
+   ```bash
+   ./lint.sh
+   python -m pytest tests/ -q -m "not integration"
+   python -m pytest tests/integration/test_api.py -q    # if api/ changed
+   cd ui && npx vitest run && npx tsc --noEmit && npm run lint
+   ```
+
+7. **Verify each factual claim** the commit message makes, with a
+   command, before writing it. This has caught wrong claims about
+   parallelism, about enforcement, and about a script that did not
+   exist.
+8. **Generate the patch, dry-run it, present it**, and say what to
+   look at in the browser.
+
+**Numbers in a commit message are measurements, not estimates.** If
+it says 548 frontend tests, that number came from a run in that
+session.
+
+## Standing requests from the user
+
+Beyond the synopsis, these were asked for explicitly and apply to
+every session.
+
+**Research real precedent before inventing a pattern**, and say what
+it says. This project models Foundry, so "what does Palantir do here"
+is usually answerable and usually changes the design — relative
+timestamps, colour limits, the ontology graph's features, and the
+Naked Objects precedent all came from looking rather than reasoning
+from first principles. `PRINCIPLES.md` §9 is the rule; the practice
+is to quote the source in the commit message so the next reader can
+weigh it.
+
+**Prefer extending over rewriting.** Inheritance or composition where
+functionality is being added, rather than changing a signature that
+four callers depend on. Use judgement: it was the right call for the
+shared UI components and the wrong call for the request context,
+where a subclass could not carry per-request state safely — and
+saying why it was wrong is part of the answer.
+
+**Write scripts for anything they need to verify by hand.**
+`create_colleague_user.py` exists because "notes are shared with the
+role" was a claim they could not otherwise check. A script that
+prints the steps and says what a failure means is worth more than an
+assertion in a suite they never see.
+
+**Say plainly when something cannot be tested**, rather than shipping
+a test that passes vacuously. Two guards this project are documented
+as untested with the reason written where the test would have been.
+
+**Flag when context is running low**, before starting something that
+cannot be finished well. They asked for this directly and it was the
+right call twice.
+
 ## Failure modes that recur
 
 These are not hypothetical. Each happened this project, most of them
