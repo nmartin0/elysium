@@ -26,6 +26,32 @@ class OllamaAdapter:
         # inference at a time. A hosted API adapter would declare a
         # much higher number, or None.
         self.max_concurrent_requests = connection.get("max_concurrent_requests", 1)
+        # PROVIDER OPTIONS, passed through opaquely. Anything Ollama
+        # accepts under its own "options" key -- num_ctx, num_thread,
+        # num_batch, seed, and so on -- is a deployment decision, not a
+        # code change: different hardware genuinely needs different
+        # values, and enumerating Ollama's option names in core/ would
+        # both break llm_connection's deliberate opacity and go stale.
+        #
+        # NAMESPACED UNDER "options", NEVER MERGED INTO THE PAYLOAD.
+        # This is a security property, not a style choice. Ollama's
+        # "messages" and "format" are TOP-LEVEL keys; a blind
+        # payload.update(config) would let a config file rewrite the
+        # conversation itself or silently disable JSON mode. Config
+        # supplies inference parameters and nothing else.
+        #
+        # The cost of opacity, stated plainly: a misspelled option name
+        # is ignored by Ollama at request time rather than rejected at
+        # load, which is weaker than this project's usual "fail loudly
+        # at startup" discipline. Accepted because validating the names
+        # here would require core/ to carry Ollama's option list.
+        self.options = dict(connection.get("options") or {})
+        # Whether the model stays resident between requests. Ollama's
+        # own default evicts after five minutes; -1 pins it. On CPU-only
+        # hardware a reload has been measured at 12-47 seconds, paid
+        # once per query or worse, so this is worth a deployment being
+        # able to set.
+        self.keep_alive = connection.get("keep_alive")
 
     def chat(self, system_prompt: str, user_message: str,
               json_mode: bool = False, temperature: float | None = None) -> str:
@@ -54,8 +80,19 @@ class OllamaAdapter:
         }
         if json_mode:
             payload["format"] = "json"
+        if self.keep_alive is not None:
+            payload["keep_alive"] = self.keep_alive
+        # THE CALLER'S TEMPERATURE WINS over a configured one,
+        # deliberately. next_step() passes temperature=0 because a step
+        # has to parse as one specific JSON shape; a deployment quietly
+        # raising it would make step selection erratic and the audit
+        # trail harder to reason about. Config sets a default for calls
+        # that express no opinion, never an override for those that do.
+        options = {**self.options}
         if temperature is not None:
-            payload["options"] = {"temperature": temperature}
+            options["temperature"] = temperature
+        if options:
+            payload["options"] = options
 
         try:
             response = requests.post(self.base_url, json=payload, timeout=self.timeout_seconds)
