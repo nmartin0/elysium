@@ -42,10 +42,52 @@ git branch -D vfy -q 2>/dev/null; git checkout -q -B vfy origin/dev
 git am <patch> && git checkout -q dev && git branch -D vfy -q
 ```
 
-If `git am` fails, the user's `dev` has moved. `git fetch && git
-rebase origin/dev`, resolve, regenerate. Check the patch contains the
-number of commits you expect — a patch with two commits when you made
-one means the user already applied the first.
+**Clear old patches before generating** — `rm -f
+/mnt/user-data/outputs/*.patch`. Otherwise the outputs folder holds
+several and the user can apply a stale one.
+
+**Give the user the commands, every time.** They should not have to
+remember them:
+
+```bash
+cd ~/elysium
+git checkout dev && git pull
+git am ~/Downloads/<the-patch-file>.patch && git push
+```
+
+**And say whether the server needs restarting.** A patch touching
+`api/` or `core/` needs `uvicorn` restarted; a frontend-only patch
+does not. Saying "restart uvicorn" beside the commands has prevented
+several confused 404 reports.
+
+**Then say what to look at.** Which sub-app, which control, what
+should be different. A patch delivered without that is one they will
+apply and not verify.
+
+### When the dry-run fails
+
+Two different causes, and the fix differs.
+
+**The user's `dev` moved forward.** `git fetch && git rebase
+origin/dev`, resolve, regenerate.
+
+**The user already applied an earlier commit**, under a different
+hash — this happens constantly, because `git am` rewrites the commit
+id. The patch then carries a commit the remote already has, and the
+count is one higher than expected. The fix:
+
+```bash
+git rebase --onto origin/dev <your-copy-of-the-applied-commit>
+```
+
+**Check the commit count on every patch:**
+
+```bash
+grep -c '^From ' <patch>
+```
+
+If it is not the number you just committed, one of the two above has
+happened. Do not present the patch until it is.
 
 **Start every session with `git fetch origin && git reset --hard
 origin/dev`.** Three patches went missing in one session because local
