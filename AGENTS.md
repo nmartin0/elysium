@@ -30,8 +30,21 @@ uv pip compile requirements.txt requirements-dev.txt --generate-hashes \
 ```bash
 ./lint.sh                                    # ruff, mypy, vulture, import-linter
 python -m pytest tests/ -q -m "not integration"   # the suite that must pass
-cd ui && npx vitest run && npm run lint      # frontend
+cd ui && npx vitest run && npm run lint      # oxlint + tsc
+cd ui && npm run format:check && npm run knip     # oxfmt + dead code
 ```
+
+**The frontend gate is FOUR tools, not two**, matching the backend's
+own four-way split: oxlint asks whether a file is well-formed, `tsc
+--noEmit` whether the types agree, knip whether anything still uses a
+file or export or dependency at all, and oxfmt whether it is
+formatted. `npm run lint` runs only the first two. The other two are a
+separate line above deliberately -- leaving them out of this list once
+already let 57 files and three findings drift in unnoticed.
+
+Note that **oxlint exits 0 on warnings.** `npm run lint` passing does
+not mean oxlint found nothing; read the count. Fourteen unused imports
+accumulated that way.
 
 Integration tests marked `test_real_model_*` need a live Ollama. They
 fail in sandboxes without one. That is environmental, not a regression.

@@ -176,7 +176,14 @@ is how the mistakes below happen.
    python -m pytest tests/ -q -m "not integration"
    python -m pytest tests/integration/test_api.py -q    # if api/ changed
    cd ui && npx vitest run && npx tsc --noEmit && npm run lint
+   cd ui && npm run format:check && npm run knip
    ```
+
+   That last line is not optional and is the one that gets dropped.
+   `npm run lint` is oxlint plus tsc only; oxfmt and knip are their own
+   commands, and omitting them from this list is exactly how 57 files
+   drifted out of format. oxlint also exits 0 on warnings, so read its
+   count rather than its exit code.
 
 7. **Verify each factual claim** the commit message makes, with a
    command, before writing it. This has caught wrong claims about
