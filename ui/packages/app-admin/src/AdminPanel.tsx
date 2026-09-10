@@ -374,7 +374,12 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
 //   needing @blueprintjs/icons added as a direct dependency at all --
 //   nothing here ever imports from that package directly, only passes a
 //   string @blueprintjs/core itself already resolves internally via its
-//   own, already-direct dependency on icons. The three existing tests
+//   own, already-direct dependency on icons. (Still true OF THIS FILE,
+//   but no longer true of ui/ as a whole: appIcons.ts, ViewSelector.tsx
+//   and SchemaPanel.tsx do import from that package now, so it is a
+//   declared dependency again. Kept rather than rewritten because it
+//   records why the Alert work correctly needed no such change.) The
+//   three existing tests
 //   that exercised the old window.confirm() mock were rewritten against
 //   the real Alert (open/cancel/confirm), each confirmed meaningful with
 //   a real negative control, not just written and trusted. Confirmed
