@@ -17,7 +17,7 @@
  * browser should.
  */
 
-import { Button, Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
+import { Button, HTMLTable, Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'

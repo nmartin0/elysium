@@ -13,7 +13,7 @@
  */
 
 import { useState } from 'react'
-import { Button, Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
+import { Button, Callout, HTMLTable, Tag } from '@blueprintjs/core'
 import { getSilos } from '@elysium/shell-api/api'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'

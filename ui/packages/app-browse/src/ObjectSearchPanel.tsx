@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, Tab, Tabs } from '@blueprintjs/core'
+import { Button, Callout, Card, CardList, Checkbox, HTMLSelect } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'

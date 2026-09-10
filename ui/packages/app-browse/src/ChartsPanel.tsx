@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Callout, Spinner } from '@blueprintjs/core'
+import { Callout } from '@blueprintjs/core'
 import Chart from '@elysium/shell-api/components/Chart'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { aggregateObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'

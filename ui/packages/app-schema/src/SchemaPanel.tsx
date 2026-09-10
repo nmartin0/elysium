@@ -16,7 +16,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Callout, HTMLTable, Icon, Spinner, Tab, Tabs, Tag } from '@blueprintjs/core'
+import { Button, Callout, HTMLTable, Icon, Spinner, Tag } from '@blueprintjs/core'
 import { IconNames, type IconName } from '@blueprintjs/icons'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/types'

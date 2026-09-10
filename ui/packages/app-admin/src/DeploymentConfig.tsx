@@ -14,7 +14,7 @@
  * request disagreeing with itself.
  */
 
-import { Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
+import { HTMLTable, Tag } from '@blueprintjs/core'
 import { getDeploymentConfig } from '@elysium/shell-api/api'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
