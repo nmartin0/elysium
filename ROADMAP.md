@@ -629,6 +629,91 @@ is a different kind of blocked from this.
 
 ---
 
+## Submission criteria as a capability
+
+Criteria exist and work, but have never been tracked as a feature area
+with a stated scope. Written down here because the Approvals work
+depends on them and kept discovering their edges by hitting them.
+
+**What they express today.** A flat AND-list per sub_write, evaluated
+at propose time. Three check kinds: `current_state` (the object as it
+is now, read through the write log so a pending edit is not missed),
+`parameter` (what this call supplied), and `user` (the acting
+principal -- `user_id`, `security_value`, `role_name`, following
+Foundry's Current User template). Seven operators. Values are literals.
+Shape and vocabulary are validated at schema load by a pydantic model.
+
+**What they cannot express, in rough order of how much it matters:**
+
+- **Conditionals.** Everything is ANDed, so "above 10,000 a manager
+  must do it" is not sayable -- only "a manager must do it". This is
+  why a `role_name` criterion currently duplicates an `execute:` grant
+  rather than refining it, and the single biggest limit on the whole
+  mechanism.
+- **Dynamic values.** `value` is a literal. Comparing one side against
+  another -- the acting user against an object property, or against a
+  parameter -- is what four-eyes needs, and Foundry supports it
+  ("compared against either a statically defined list of user IDs or
+  any string parameter that stores a user ID"). Blocks the Approvals
+  build order's step 3. NOTE when doing this: `_collect_parameter_
+  references()` in action_types.py already tries to collect
+  `parameter.` references from criteria, but reads them off action_def
+  when they live per sub_write, so it finds nothing. Dead today
+  because values are literals; live and silently wrong the moment they
+  are not.
+- **OR, and negation of a group.** No way to say "either of these two
+  conditions".
+- **Cross-object criteria.** A criterion reads the sub_write's own
+  object, not another one.
+- **Field existence checking at load.** A misspelled `current_state`
+  field reads as None and the comparison simply fails, so a deployment
+  could be relying on that today -- rejecting it at load is a
+  behaviour change rather than a typo catch, and deserves its own
+  decision. Deliberately left out when load-time validation was added.
+
+**What is deliberately NOT wanted.** Criteria are not a scripting
+language. Foundry's is condition-template-based for the same reason,
+and the value of the flat list is that a deployment author can read a
+criterion and know what it does. Each item above should be added
+because something concrete needs it, not to round out a feature
+matrix.
+
+## Declarative validation for deployment config
+
+`action_types.py`, `object_type_validation.py` and
+`policy_validation.py` are roughly 1,064 lines of hand-rolled
+validation of YAML documents. `submission_criteria.py`'s `Criterion`
+model is the first piece done declaratively, and it worked well enough
+to be worth generalising -- it replaced an argument about where shared
+constants should live with a type, and made the vocabulary something
+mypy checks.
+
+**NOT a rewrite, and the split matters.** Roughly 60% of those lines
+are shape -- required keys, a value being one of three strings, a list
+being non-empty -- which a pydantic model replaces cleanly. The other
+40% is CROSS-DOCUMENT reference checking, and no model expresses it:
+
+- every name in `affected_object_types` is a real declared object type
+- `affected_object_types` matches what `sub_writes` actually touches
+- every mutation's `property` is a real field on THAT object type
+- every `parameter.x` reference resolves to a declared parameter
+- at most one parameter marked `is_current_object`, its type in
+  `affected_object_types`
+
+Those need the object-type dictionary in hand, so they stay custom
+validators either way. The end state is a declarative core with custom
+validators for cross-references -- not the deletion of what is there.
+
+**Costs to price before starting.** 32 tests assert on exact validator
+message text via `match=`; pydantic's messages are differently shaped.
+Error messages are a deployment author's primary interface to this
+system, so the migration should preserve the position information
+`scripts/lint_deployment.py` adds (file and line), and its ability to
+report EVERY bad entry rather than the first -- which is the reason
+that collecting pass exists at all.
+
+---
+
 ## Read-only data mirror architecture
 
 Raised directly -- "we must be able to provide a GUARANTEE that the
