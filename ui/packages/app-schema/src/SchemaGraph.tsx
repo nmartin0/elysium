@@ -42,7 +42,7 @@ interface SchemaGraphProps {
   onSelect: (selection: GraphSelection) => void
 }
 
-export interface GraphNode {
+interface GraphNode {
   name: string
   value: number
   x: number
@@ -53,7 +53,7 @@ export interface GraphNode {
   kind: 'object' | 'action'
 }
 
-export interface GraphEdge {
+interface GraphEdge {
   source: string
   target: string
   name: string
