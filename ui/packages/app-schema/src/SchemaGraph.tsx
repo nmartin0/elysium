@@ -253,6 +253,13 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
       // arrives at it still.
       force: { repulsion: 420, edgeLength: 170, layoutAnimation: false },
       label: { show: true, position: 'right' },
+      // Labels that would sit on top of each other are hidden rather
+      // than stacked. It does not stop a label overlapping a NODE --
+      // ECharts draws a graph node's label as part of the node, so it
+      // shares the node's hit area and cannot be made unclickable
+      // without turning labels off entirely. Recorded rather than left
+      // looking solved: clicking a label still selects its node.
+      labelLayout: { hideOverlap: true },
       emphasis: { focus: 'adjacency' },
       // An arrow at the target end. A relationship has a direction and
       // an undirected line loses it -- "1:M" alone does not say which

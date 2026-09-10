@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 
-import GraphPreview from './GraphPreview'
+import GraphPreview, { toggleSelection, type GraphSelection } from './GraphPreview'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 const SCHEMA: VisibleSchema = {
@@ -212,5 +212,36 @@ describe('GraphPreview -- closing it', () => {
       expect(onClose, `${selection.kind} should be closable`).toHaveBeenCalled()
       unmount()
     }
+  })
+})
+describe('selecting the same thing twice closes it', () => {
+  // The REAL function, not a copy. A first version of this block
+  // reimplemented the comparison here, so it tested its own copy and
+  // would have passed with the panel wired to anything.
+  const toggle = toggleSelection
+
+  it('closes when the same node is clicked again', () => {
+    // Clicking a node you are already reading is how someone dismisses
+    // it without hunting for the close control.
+    const first: GraphSelection = { kind: 'object', name: 'Customer' }
+
+    expect(toggle(first, { kind: 'object', name: 'Customer' })).toBeNull()
+  })
+
+  it('switches when a DIFFERENT node is clicked', () => {
+    const first: GraphSelection = { kind: 'object', name: 'Customer' }
+
+    expect(toggle(first, { kind: 'object', name: 'Transaction' }))
+      .toEqual({ kind: 'object', name: 'Transaction' })
+  })
+
+  it('distinguishes an action from an object of the same name', () => {
+    // Both are keyed by name, so a toggle comparing names alone would
+    // close the panel when moving between two different things that
+    // happen to share one.
+    const first: GraphSelection = { kind: 'object', name: 'Transfer' }
+
+    expect(toggle(first, { kind: 'action', name: 'Transfer' }))
+      .toEqual({ kind: 'action', name: 'Transfer' })
   })
 })

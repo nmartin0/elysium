@@ -1174,6 +1174,53 @@ one. The preview panel now marks it per field; the graph itself still
 does not distinguish them, and should when an ontology has enough
 hidden types for that to matter.
 
+## An ontology-centric Elysium, for the long term
+
+**The idea:** drop the sub-app rail and have ONE view of the ontology,
+with each sub-app's functionality becoming a filter over it. A user
+works the ontology directly rather than choosing an application first.
+
+**IT HAS A NAME AND A THESIS.** Naked Objects, from Richard Pawson's
+PhD, defined by three principles: business logic encapsulated on the
+domain objects; "the user interface should be a DIRECT REPRESENTATION
+of the domain objects, with all user actions consisting of creating,
+retrieving, or invoking methods on domain objects"; and "the user
+interface shall be ENTIRELY AUTOMATICALLY CREATED from the definitions
+of the domain objects".
+
+The wider family is the object-oriented user interface. Nielsen:
+"object-oriented interfaces are sometimes described as turning the
+application inside-out compared to function-oriented interfaces -- the
+main focus of the interaction changes to become the users' data". And
+the interaction argument is that people think NOUN-VERB, not
+verb-noun: you pick the customer, then decide what to do.
+
+**ELYSIUM IS UNUSUALLY WELL PLACED.** The backend is already this
+shape: the mediator is the domain layer, visible_schema is the
+reflection mechanism, and Browse already renders ANY object type
+without knowing which types exist. Schema is the ontology looking at
+itself. Three of four sub-apps are already views over one model.
+
+**TWO HONEST OBSTACLES.**
+
+Admin does not fit at all. Users, silos and deployment config are NOT
+ontology objects, and pretending otherwise would mean inventing fake
+object types for them.
+
+And task-blindness is the documented failure mode -- which is why the
+usual phrasing is "at least in its naive form". A generic object
+browser does not know that "handle this complaint" is a thing people
+do. PALANTIR HIT THIS AND ANSWERED IT WITH WORKSHOP: task-specific
+applications built ON the ontology rather than collapsed into it. They
+deliberately did not do what this proposes.
+
+**The shape worth aiming at**, then, is not pure Naked Objects: an
+ontology-centric CORE where Browse, Schema and the graph become one
+thing -- they genuinely are one thing wearing three hats -- with Admin
+beside it because it is outside the ontology, and Query as a different
+mode of asking rather than a filter. That is closer to Foundry's
+actual answer, and for the same reason.
+
 ## Recorded with reservations, not endorsed
 
 These were asked for and are written down; the objection is recorded

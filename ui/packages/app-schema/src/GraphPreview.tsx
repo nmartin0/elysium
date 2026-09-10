@@ -24,6 +24,30 @@ export type GraphSelection =
   | { kind: 'action'; name: string }
   | { kind: 'link'; name: string; source: string; target: string; label: string }
 
+/**
+ * What a click should leave selected.
+ *
+ * Clicking the SAME thing closes it: a selection is a toggle, and
+ * clicking a node you are already reading is how someone dismisses it
+ * without hunting for the close control.
+ *
+ * COMPARES KIND AS WELL AS NAME. Both are keyed by name, so comparing
+ * names alone would close the panel when moving between an action and
+ * an object type that happen to share one.
+ *
+ * Exported and pure because it is the whole of the behaviour -- a test
+ * that reimplemented this comparison would be testing its own copy.
+ */
+export function toggleSelection(
+  current: GraphSelection | null,
+  next: GraphSelection,
+): GraphSelection | null {
+  if (current !== null && current.kind === next.kind && current.name === next.name) {
+    return null
+  }
+  return next
+}
+
 interface GraphPreviewProps {
   /** Closing it. It could be opened and not closed, which left the
    *  panel covering part of the graph with no way to get it back. */

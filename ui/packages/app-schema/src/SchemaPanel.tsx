@@ -28,7 +28,7 @@ import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/Vie
 
 import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
 
-import GraphPreview, { type GraphSelection } from './GraphPreview'
+import GraphPreview, { toggleSelection, type GraphSelection } from './GraphPreview'
 import SchemaGraph from './SchemaGraph'
 import { useDeferredWrite } from '@elysium/shell-api/useDeferredValue'
 import Discover from './Discover'
@@ -469,7 +469,10 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       )}
       {selectedTab === 'overview' && (
         <div className="schema-overview">
-          <SchemaGraph schema={schema} onSelect={setSelection} />
+          <SchemaGraph
+            schema={schema}
+            onSelect={(next) => setSelection((current) => toggleSelection(current, next))}
+          />
           {/* The preview BESIDE the graph, not instead of it. Clicking
               used to navigate away, and returning re-laid the graph
               out -- so exploring cost you your place every time. */}
