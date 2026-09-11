@@ -272,7 +272,13 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.session_store = SessionStore(app.state.credentials_db_path)
     app.state.login_attempt_tracker = LoginAttemptTracker(app.state.credentials_db_path)
     app.state.query_rate_limiter = QueryRateLimiter(app.state.credentials_db_path)
-    app.state.user_directory = UserDirectory(app.state.credentials_db_path, config.roles)
+    # A CALLABLE, not config.roles: this object survives a reload (it
+    # owns credentials.db) while the configuration it validates against
+    # is replaced. A snapshot taken here would be stale the moment
+    # anything reloaded -- see UserDirectory.__init__.
+    app.state.user_directory = UserDirectory(
+        app.state.credentials_db_path, lambda: app.state.generation.config.roles,
+    )
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request. Reads its own write_log directly from
     # mediator (see WriteMediator's own write_log property) -- nothing

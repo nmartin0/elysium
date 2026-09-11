@@ -441,6 +441,34 @@ configuration was in force for any entry.
       generation to which, and the digest. A configuration change is a
       security-relevant event and currently has no record at all.
 
+### A THIRD CATEGORY the two-way split missed
+
+The plan divides app.state into configuration-derived (rebuilt on
+reload) and runtime state (survives a reload). Building step 3 found a
+third case the split does not cover: **runtime state that CARRIES A
+SLICE OF CONFIGURATION.**
+
+UserDirectory owns credentials.db, so it must survive a reload -- but
+it also validated role names against a roles dict captured at
+construction. A surviving object holding a snapshot of replaced config
+is stale by construction: after a reload added a role, creating a user
+with it failed "Unknown role" until the process restarted.
+
+Its own docstring said roles "comes from the same static,
+per-deployment policy.yaml that never changes across this instance's
+lifetime". True when written; falsified by step 3.
+
+**The fix generalises**: such an object reads configuration through a
+CALLABLE onto the current generation rather than holding a snapshot.
+It survives, and what it reads is always current.
+
+**Audit for others before step 4.** Anything on app.state that took a
+config value at construction has the same defect. Known holders of
+config slices: UserDirectory (fixed). Not yet checked:
+query_rate_limiter, login_attempt_tracker, session_store,
+credential_store, pending_writes, artifact_store. Each needs asking:
+does it hold a config value, and would a reload leave it stale?
+
 ### 4. Narrowing the evaluation window
 
   4a. Re-resolve `UserRecord` per hop rather than per request, closing

@@ -172,3 +172,50 @@ def test_runtime_state_is_not_touched_by_a_reload(tmp_path):
 
     assert app.state.session_store is sentinel
     assert app.state.pending_writes is pending
+
+
+# --- runtime state that carries a slice of configuration ---
+
+def test_a_role_added_by_a_reload_is_usable_without_a_restart(tmp_path):
+    # THE BUG THIS CLOSES, found by a test while building the reload
+    # endpoint: after a reload added a role, creating a user with it
+    # failed "Unknown role" until the process restarted.
+    #
+    # UserDirectory is RUNTIME state -- it owns credentials.db and must
+    # survive a reload -- but it carries a slice of CONFIGURATION. A
+    # surviving object holding a snapshot of replaced config is stale
+    # by construction. It now reads through a callable.
+    import dataclasses
+
+    from core.immutable import deep_freeze
+    from core.user_directory import UserDirectory
+
+    app = _app(tmp_path)
+    directory = UserDirectory(tmp_path / "credentials.db",
+                              lambda: app.state.generation.config.roles)
+
+    with pytest.raises(ValueError, match="Unknown role"):
+        directory.create_user("someone", "pw", None, "auditor")
+
+    # The reload: a new generation whose config declares the role.
+    config = app.state.generation.config
+    app.state.generation = dataclasses.replace(
+        app.state.generation,
+        config=dataclasses.replace(
+            config,
+            roles=deep_freeze({**config.roles, "auditor": {"allowed_actions": frozenset()}}),
+        ),
+    )
+
+    directory.create_user("someone", "pw", None, "auditor")
+
+
+def test_the_mapping_form_still_works_for_scripts(tmp_path):
+    # scripts/bootstrap_root.py and friends pass a plain dict. A
+    # one-shot script has no reload to be stale across, and requiring
+    # it to wrap a dict in a lambda would be ceremony without a reason.
+    from core.user_directory import UserDirectory
+
+    directory = UserDirectory(tmp_path / "c.db", {"admin": {"allowed_actions": frozenset()}})
+
+    assert "admin" in directory.roles
