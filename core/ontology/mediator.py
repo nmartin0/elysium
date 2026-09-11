@@ -1431,6 +1431,34 @@ class DataMediator:
         if aggregate != "count" and field_name is None:
             raise ValueError(f"aggregate {aggregate!r} requires a field_name")
 
+        # NEITHER group_by NOR field_name MAY NAME A LINK. A link is
+        # not a column -- it is resolved through the link machinery --
+        # so passing one here reaches the adapter as a column name and
+        # fails in SQL rather than as a usable error:
+        #
+        #   sqlite3.OperationalError: no such column: transactions
+        #
+        # Observed on a real query, once aggregate_object became
+        # reachable from the agent loop: the model asked to aggregate
+        # over "transactions", which is a link field on Customer and
+        # does have a read: grant, so it passed authorization and then
+        # failed at the database.
+        #
+        # Checked HERE rather than in next_step()'s validation because
+        # this is the enforcing side: the agent is one caller among
+        # several, and a link is not aggregatable for anyone.
+        type_config = self.schema.get(object_type) or {}
+        for argument_name, candidate in (("group_by", group_by), ("field_name", field_name)):
+            if candidate is None:
+                continue
+            field_info = (type_config.get("fields") or {}).get(candidate)
+            if field_info and is_link_field(field_info):
+                raise ValueError(
+                    f"{argument_name} {candidate!r} is a link on {object_type}, not an "
+                    f"aggregatable field. Follow the link with search_around first, then "
+                    f"aggregate over the objects on the far side."
+                )
+
         visible_ids = set(self.search_object(user_record, object_type, conditions))
         if not visible_ids:
             return {}
