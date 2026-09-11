@@ -87,15 +87,13 @@ from fastapi import FastAPI, Request
 
 from api.csrf_middleware import csrf_protect
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
-from core.agent.agentic_loop import AgentLoop
 from core.artifact_store import ArtifactStore
 from core.auth.credential_store import CredentialStore
 from core.auth.database import connection
 from core.auth.login_attempt_tracker import LoginAttemptTracker
 from core.auth.query_rate_limiter import QueryRateLimiter
 from core.auth.session_store import SessionStore
-from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
-from core.ontology.write_mediator import WriteMediator
+from core.deployment_loader import RuntimePaths, build_generation, resolve_runtime_paths
 from core.pending_write_store import PendingWriteStore
 from core.sqlite_connection import require_assertions_enabled
 from core.user_directory import UserDirectory
@@ -196,9 +194,22 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
-    config, mediator, write_adapters = load_deployment_bundle(
+    # ONE construction path. Everything derived from the configuration
+    # files is built together, as an immutable DeploymentGeneration,
+    # and the individual names below are VIEWS onto it rather than
+    # independently constructed objects.
+    #
+    # The five attributes are kept for now so routes stay unchanged;
+    # HOT_RELOAD_PLAN.md step 2d migrates them to the pinned
+    # generation and 2e deletes them. Deleting them is the point --
+    # while they exist a route can reach past the pin and reintroduce
+    # the torn read this exists to remove.
+    generation = build_generation(
         runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
     )
+    app.state.generation = generation
+    config = generation.config
+    mediator = generation.mediator
 
     app.state.config = config
     app.state.mediator = mediator
@@ -256,9 +267,12 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # to pass or verify matches here; load_deployment_bundle() always
     # constructs mediator with a real write_log, and WriteMediator's
     # own __init__ raises a clear error if that were ever not true.
-    app.state.write_mediator = WriteMediator(
-        mediator, write_adapters, config.roles, config.action_types, config.generation,
-    )
+    app.state.write_mediator = generation.write_mediator
+    # STARTUP ONLY, and deliberately not part of build_generation().
+    # This recovers writes interrupted by a crash; a RELOAD must not
+    # repeat it, because the writes it recovers are already recovered
+    # and re-running it against in-flight state is a different
+    # operation with different risks.
     resume_summary = app.state.write_mediator.resume_pending_writes()
     if resume_summary["resumed"] or resume_summary["already_applied"] or resume_summary["ambiguous"]:
         logger.info(f"resume_pending_writes() on startup: {resume_summary}")
@@ -267,8 +281,8 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             f"{resume_summary['ambiguous']} write(s) left ambiguous after resume -- "
             f"see audit.log's write_resume_ambiguous entries for detail; these need manual review."
         )
-    app.state.loop = AgentLoop.from_deployment(config, mediator, write_mediator=app.state.write_mediator)
-    app.state.synthesis_client = build_llm_adapter(config, config.synthesis_model)
+    app.state.loop = generation.loop
+    app.state.synthesis_client = generation.synthesis_client
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
     # Shares the SAME AuditLog instance mediator itself holds -- not a
     # second, separately-constructed one that happens to point at the

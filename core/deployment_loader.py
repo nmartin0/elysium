@@ -29,10 +29,11 @@ import hashlib
 import itertools
 import os
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from pyiceberg.catalog.sql import SqlCatalog
 
@@ -40,6 +41,10 @@ from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
+
+if TYPE_CHECKING:
+    from core.agent.agentic_loop import AgentLoop
+    from core.ontology.write_mediator import WriteMediator
 from core.functions.registry import validate_function_declarations
 from core.immutable import deep_freeze
 from core.intermediate_layer.audit import AuditLog
@@ -587,6 +592,123 @@ def resolve_runtime_paths() -> RuntimePaths:
     paths.secrets_dir.mkdir(parents=True, exist_ok=True)
     paths.secrets_dir.chmod(0o700)
     return paths
+
+
+@dataclass(frozen=True)
+class DeploymentGeneration:
+    """Everything derived from one load of the configuration files.
+
+    THE POINT IS THAT THESE MOVE TOGETHER OR NOT AT ALL. Until now they
+    were five separate attributes on api/app.py's `app.state`, and a
+    route read `app.state.mediator` and `app.state.config` as two
+    independent reads. Replacing them one at a time gives a window
+    where a request sees a new mediator and an old config -- schema and
+    grants disagreeing inside one request, which is an authorization
+    bug rather than a cosmetic one.
+
+    That is not hypothetical. Step 2a hit it directly: a test replaced
+    config.roles and the MEDIATOR carried on authorizing against the
+    old grants, because it holds its own reference. Mutation had only
+    ever "worked" because all three held the same dict object.
+
+    Frozen, and holding a deep-frozen DeploymentConfig, because the
+    read path takes no lock: a request reads this reference once and
+    uses it throughout. That is read-copy-update, and it is only sound
+    while the shared object genuinely cannot be mutated.
+
+    WHAT IS DELIBERATELY NOT HERE: sessions, credentials, the user
+    directory, lockout counters, rate limiters, pending writes, the
+    artifact store, the thread pool. Those are RUNTIME STATE and must
+    SURVIVE a reload. Rebuilding them would log out every user, discard
+    every pending write, and reset every lockout counter -- which would
+    let an attacker clear their own rate limit by triggering a reload.
+    See HOT_RELOAD_PLAN.md for the full split.
+    """
+
+    generation: int
+    loaded_at: datetime
+    source_digest: str
+
+    config: DeploymentConfig
+    mediator: DataMediator
+    write_mediator: "WriteMediator"
+    loop: "AgentLoop"
+    synthesis_client: LLMAdapter
+    write_adapters: dict
+
+    # WHICH DATA this generation reads, per mirrored table, as
+    # {"silo.table": snapshot_id}. The config digest answers "did the
+    # DEFINITION change"; this answers "which data does it describe".
+    # Two questions, two fields, deliberately not conflated -- folding
+    # snapshot state into the digest would make "did the config
+    # change?" unanswerable whenever a sync ran.
+    #
+    # Present from the start rather than added later because a
+    # generation's SHAPE is decided once; adding a field afterwards
+    # means changing every construction site twice.
+    #
+    # Empty when read_from_mirror is off: there is no mirror being read,
+    # so there is nothing to pin.
+    mirror_snapshots: Mapping[str, int]
+
+
+def _mirror_snapshot_ids(config: DeploymentConfig, data_dir: Path) -> Mapping[str, int]:
+    # Same enumeration _mirror_last_synced_at() already does, reading
+    # the id rather than the timestamp. A table that has never synced
+    # is absent rather than present with a null -- there is no snapshot
+    # to pin, and a placeholder would look like one.
+    from core.mirror.iceberg_sync import IcebergMirrorSync
+    from core.mirror.sync_targets import resolve_sync_targets
+
+    sync = IcebergMirrorSync(data_dir / "mirror", {})
+    ids = {}
+    for target in resolve_sync_targets({"object_types": config.schema}):
+        snapshot_id = sync.current_snapshot_id(target.silo_name, target.table_name)
+        if snapshot_id is not None:
+            ids[f"{target.silo_name}.{target.table_name}"] = snapshot_id
+    return deep_freeze(ids)
+
+
+def build_generation(
+    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None
+) -> DeploymentGeneration:
+    """Builds one complete, immutable generation from the files on disk.
+
+    PURE with respect to process state: it touches no global, mutates
+    nothing, and either returns a whole generation or raises. That is
+    what lets a failed reload leave the running generation untouched
+    (HOT_RELOAD_PLAN.md step 3), and what lets this be tested without
+    a server.
+
+    NOT included, deliberately: resume_pending_writes(). It recovers
+    writes interrupted by a crash and belongs to STARTING UP, not to
+    loading configuration. A reload must not repeat it -- the writes
+    it recovers are already recovered, and re-running it against
+    in-flight state is a different operation with different risks.
+    api/app.py calls it once, after the first generation is built.
+    """
+    from core.agent.agentic_loop import AgentLoop
+    from core.ontology.write_mediator import WriteMediator
+
+    config, mediator, write_adapters = load_deployment_bundle(config_dir, data_dir, log_dir)
+    write_mediator = WriteMediator(
+        mediator, write_adapters, config.roles, config.action_types, config.generation,
+    )
+    resolved_data_dir = data_dir if data_dir is not None else config_dir
+    return DeploymentGeneration(
+        generation=config.generation,
+        loaded_at=config.loaded_at,
+        source_digest=config.source_digest,
+        config=config,
+        mediator=mediator,
+        write_mediator=write_mediator,
+        loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator),
+        synthesis_client=build_llm_adapter(config, config.synthesis_model),
+        write_adapters=write_adapters,
+        mirror_snapshots=(
+            _mirror_snapshot_ids(config, resolved_data_dir) if config.read_from_mirror else deep_freeze({})
+        ),
+    )
 
 
 def load_deployment_bundle(

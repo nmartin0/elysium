@@ -177,3 +177,8 @@ model_config
 # project references the name. See Criterion in core/ontology/
 # submission_criteria.py.
 _user_field_must_be_a_real_user_attribute
+
+# DeploymentGeneration.mirror_snapshots -- read through the frozen
+# dataclass in api/routes.py's /config response, which vulture does not
+# follow. See core/deployment_loader.py.
+mirror_snapshots
