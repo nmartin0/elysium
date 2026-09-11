@@ -41,6 +41,11 @@ from core.ontology.submission_criteria import SubmissionCriteriaViolation, evalu
 
 logger = logging.getLogger(__name__)
 
+# The aggregates DataMediator.aggregate_by_field() accepts. Stated here
+# because next_step() rejects a bad one before it costs a hop; the
+# mediator remains the enforcing side.
+AGGREGATES = frozenset({"count", "sum", "avg", "min", "max"})
+
 
 def _finish_step() -> dict:
     # A fresh dict on every call, deliberately -- NOT a shared
@@ -541,6 +546,51 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
             "object_type": parsed["object_type"],
             id_key: parsed[id_key],
             "field_names": field_names,
+        }
+
+    if step == "aggregate_object":
+        # BOTH THIS AND search_around BELOW WERE MISSING, and their
+        # handlers have existed in AgentLoop._step_handlers() the whole
+        # time. An unmatched step falls through to the "unrecognized
+        # step" branch at the bottom and is silently converted into a
+        # finish, so the prompt has been teaching two step types the
+        # parser rejected. Observed live, on a real query:
+        #
+        #   unrecognized step 'aggregate_object', finishing
+        #
+        # and the query ended after two steps having answered a count
+        # question by reading a link list.
+        if not _has_required_keys(parsed, {"object_type", "aggregate"}, "aggregate_object"):
+            return _finish_step()
+        aggregate = parsed["aggregate"]
+        if aggregate not in AGGREGATES:
+            logger.warning(f"malformed aggregate_object step (unknown aggregate {aggregate!r}), finishing")
+            return _finish_step()
+        # count needs no field; every other aggregate does. Checked
+        # here rather than left to the mediator, because at this depth
+        # a bad step costs a whole hop to discover.
+        if aggregate != "count" and not parsed.get("field_name"):
+            logger.warning(f"malformed aggregate_object step ({aggregate} needs field_name), finishing")
+            return _finish_step()
+        validated = {
+            "step": "aggregate_object",
+            "object_type": parsed["object_type"],
+            "aggregate": aggregate,
+            "filter": parsed.get("filter") or {},
+        }
+        for optional in ("field_name", "group_by"):
+            if parsed.get(optional):
+                validated[optional] = parsed[optional]
+        return validated
+
+    if step == "search_around":
+        if not _has_required_keys(parsed, {"object_type", "link_field"}, "search_around"):
+            return _finish_step()
+        return {
+            "step": "search_around",
+            "object_type": parsed["object_type"],
+            "link_field": parsed["link_field"],
+            "filter": parsed.get("filter") or {},
         }
 
     if step == "use_tool":
