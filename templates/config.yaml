@@ -54,6 +54,15 @@ agent:
   max_consecutive_duplicates: 2     # corrective nudges before giving up if the
                                      # model keeps repeating an identical step
   max_consecutive_invalid_steps: 2  # same, for requesting something invalid
+  # REQUIRES A RESTART to take effect, unlike every other setting in
+  # this file. A ThreadPoolExecutor's size is fixed when it is built,
+  # and the pool is deliberately NOT rebuilt by a configuration reload
+  # -- rebuilding it would abandon whatever work is in flight.
+  #
+  # Editing this and reloading changes the reported configuration
+  # without changing the running pool. Said here rather than left to
+  # be discovered, because a setting that silently does not apply is
+  # worse than one that plainly cannot.
   max_concurrent_requests: 4        # thread pool size for api/ and
                                      # scripts/serve_requests.py
 

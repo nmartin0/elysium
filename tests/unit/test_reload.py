@@ -219,3 +219,33 @@ def test_the_mapping_form_still_works_for_scripts(tmp_path):
     directory = UserDirectory(tmp_path / "c.db", {"admin": {"allowed_actions": frozenset()}})
 
     assert "admin" in directory.roles
+
+
+def test_pending_writes_audit_against_the_current_generation(tmp_path):
+    # PendingWriteStore SURVIVES a reload; each generation builds its
+    # own AuditLog, stamped with its own generation number. Holding an
+    # instance would record a write expiring after a reload against the
+    # STARTUP log -- naming the wrong generation, which is a
+    # wrong-but-plausible value in an audit trail and worse than an
+    # obviously missing one.
+    from core.pending_write_store import PendingWriteStore
+
+    app = _app(tmp_path)
+    store = PendingWriteStore(audit_log=lambda: app.state.generation.mediator.audit_log)
+    before = store.audit_log
+
+    reload_generation(app)
+
+    assert store.audit_log is not before
+    assert store.audit_log is app.state.generation.mediator.audit_log
+
+
+def test_the_instance_form_still_works(tmp_path):
+    # Tests and scripts construct a store with a plain AuditLog, and a
+    # one-shot caller has no reload to be stale across.
+    from core.intermediate_layer.audit import AuditLog
+    from core.pending_write_store import PendingWriteStore
+
+    log = AuditLog(tmp_path / "audit.log")
+
+    assert PendingWriteStore(audit_log=log).audit_log is log

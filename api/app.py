@@ -224,7 +224,6 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.runtime_paths = runtime_paths
     app.state.generation = generation
     config = generation.config
-    mediator = generation.mediator
     # Kept alongside the three stores below for tests/integration/
     # test_api.py's own direct, HTTP-bypassing test-setup DB access --
     # a genuinely different, legitimate need from route handlers, which
@@ -298,13 +297,24 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             f"{resume_summary['ambiguous']} write(s) left ambiguous after resume -- "
             f"see audit.log's write_resume_ambiguous entries for detail; these need manual review."
         )
+    # NOT REBUILT BY A RELOAD, and unfixable by the callable pattern
+    # the other runtime-state holders use. A ThreadPoolExecutor's size
+    # is fixed at construction, and rebuilding it would abandon
+    # in-flight work -- so max_concurrent_requests is configuration
+    # that is unreloadable by NATURE rather than by oversight.
+    # templates/config.yaml says so where a deployer will read it.
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
     # Shares the SAME AuditLog instance mediator itself holds -- not a
     # second, separately-constructed one that happens to point at the
     # same file, matching the "one shared instance" discipline this
     # whole app.state build already uses for write_log/credential_store/
     # session_store/user_directory.
-    app.state.pending_writes = PendingWriteStore(audit_log=mediator.audit_log)
+    # A CALLABLE: this store survives a reload while each generation
+    # builds its own AuditLog. Holding an instance would stamp entries
+    # with the STARTUP generation -- see PendingWriteStore.__init__.
+    app.state.pending_writes = PendingWriteStore(
+        audit_log=lambda: app.state.generation.mediator.audit_log,
+    )
 
     from api.routes import router
     # ALL real API routes live under /api -- a real, structural

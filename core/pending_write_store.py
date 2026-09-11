@@ -45,6 +45,7 @@ Used by: api/app.py (one instance, stored on app.state, same lifecycle
 
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -62,11 +63,35 @@ class _StoredWrite:
 
 
 class PendingWriteStore:
-    def __init__(self, ttl: timedelta = DEFAULT_TTL, audit_log: AuditLog | None = None):
+    def __init__(self, ttl: timedelta = DEFAULT_TTL,
+                 audit_log: AuditLog | Callable[[], AuditLog] | None = None):
+        """`audit_log` may be an instance or a callable returning one.
+
+        A CALLABLE because this store SURVIVES a configuration reload
+        while the audit log does not: each generation builds its own,
+        stamped with its own generation number. Holding an instance
+        means a write expiring after a reload is recorded against the
+        log object from STARTUP, so the entry names the wrong
+        generation -- a wrong-but-plausible value in an audit trail,
+        which is worse than an obviously missing one.
+
+        Same shape as UserDirectory's roles, and the same reason: this
+        is runtime state that carries a slice of configuration. See
+        HOT_RELOAD_PLAN.md.
+
+        Not yet load-bearing, since every generation's AuditLog writes
+        to the same file. It becomes load-bearing the moment pending
+        writes outlive several generations, which is exactly what an
+        approvals inbox is for.
+        """
         self._ttl = ttl
         self._audit_log = audit_log if audit_log is not None else AuditLog()
         self._lock = threading.Lock()
         self._writes: dict[str, _StoredWrite] = {}
+
+    @property
+    def audit_log(self) -> AuditLog:
+        return self._audit_log() if callable(self._audit_log) else self._audit_log
 
     def _expire_stale_locked(self) -> None:
         # Called with self._lock already held.
@@ -74,7 +99,7 @@ class PendingWriteStore:
         expired_ids = [write_id for write_id, stored in self._writes.items() if now >= stored.expires_at]
         for write_id in expired_ids:
             stored = self._writes.pop(write_id)
-            self._audit_log.log_write_expired(write_id, stored.owner_user_id, stored.pending.description)
+            self.audit_log.log_write_expired(write_id, stored.owner_user_id, stored.pending.description)
 
     def store(self, pending: PendingWrite) -> str:
         write_id = str(uuid.uuid4())

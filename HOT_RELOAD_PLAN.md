@@ -462,12 +462,45 @@ lifetime". True when written; falsified by step 3.
 CALLABLE onto the current generation rather than holding a snapshot.
 It survives, and what it reads is always current.
 
-**Audit for others before step 4.** Anything on app.state that took a
-config value at construction has the same defect. Known holders of
-config slices: UserDirectory (fixed). Not yet checked:
-query_rate_limiter, login_attempt_tracker, session_store,
-credential_store, pending_writes, artifact_store. Each needs asking:
-does it hold a config value, and would a reload leave it stale?
+**AUDIT DONE. Three findings, each a different kind.**
+
+**CLEAN (five).** credential_store, session_store,
+login_attempt_tracker, query_rate_limiter and artifact_store take only
+a database path. A path is not configuration in the sense that matters
+-- it comes from RuntimePaths, which is environment rather than
+policy, and a reload cannot change where the process was told to look.
+Nothing stale.
+
+**pending_writes: NOT STALE, BUT COUPLED.** It takes
+`mediator.audit_log` -- the audit log belonging to the generation in
+force at startup. It survives a reload; that audit log does not get
+replaced under it, so writes proposed later are audited against the
+STARTUP generation's log object.
+
+Not a correctness bug today, because every generation's AuditLog writes
+to the same file and carries its own generation stamp -- so the stamp
+on an expiry entry would name the startup generation rather than the
+current one. That is a wrong-but-plausible value in an audit trail,
+which is the category this project treats seriously. Worth fixing by
+the same callable pattern, and worth fixing BEFORE the approvals inbox
+makes pending writes long-lived enough to outlive several generations.
+
+**executor: A DIFFERENT PROBLEM ENTIRELY, and the only one that is
+genuinely unfixable by the callable pattern.** It is built with
+`max_workers=config.max_concurrent_requests`. A reload changing that
+number does nothing: a ThreadPoolExecutor's size is fixed at
+construction, and rebuilding it would abandon in-flight work.
+
+So `max_concurrent_requests` is a setting that CANNOT take effect
+without a restart. The honest options are to say so where it is
+declared, to reject a reload that changes it, or to accept it silently
+-- and silently is the one option this project's stated discipline
+rules out. Worth deciding before someone edits it, reloads, and
+believes it applied.
+
+That is a fourth category the split does not cover: **configuration
+that is unreloadable by nature.** Anything sizing a pool, binding a
+socket, or opening a file handle at startup belongs to it.
 
 ### 4. Narrowing the evaluation window
 
