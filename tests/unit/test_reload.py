@@ -249,3 +249,103 @@ def test_the_instance_form_still_works(tmp_path):
     log = AuditLog(tmp_path / "audit.log")
 
     assert PendingWriteStore(audit_log=log).audit_log is log
+
+
+# --- SIGHUP ---
+
+def test_sighup_returns_immediately_rather_than_reloading_inline(tmp_path):
+    # THE POINT of running the work on a thread, and this asserts the
+    # timing rather than the outcome. A signal handler runs on the MAIN
+    # thread, interrupting the event loop; building a generation opens
+    # databases and parses four files. Inline, that stalls every
+    # request in flight for the duration.
+    #
+    # An earlier version of this test only checked that the generation
+    # advanced, which passes whether or not a thread is used -- a
+    # control doing the work inline did not fail it.
+    import signal
+    import time
+
+    import api.reload as reload_module
+    from api.reload import install_sighup_handler
+
+    app = _app(tmp_path)
+    building = threading.Event()
+    release = threading.Event()
+    original = reload_module.build_generation
+
+    def slow_build(*args, **kwargs):
+        building.set()
+        release.wait(timeout=5)
+        return original(*args, **kwargs)
+
+    reload_module.build_generation = slow_build
+    try:
+        install_sighup_handler(app)
+        started = time.monotonic()
+        signal.raise_signal(signal.SIGHUP)
+        handler_returned = time.monotonic() - started
+
+        assert building.wait(timeout=5), "the reload never started"
+        assert handler_returned < 1.0, (
+            f"the signal handler blocked for {handler_returned:.2f}s -- it is doing "
+            f"the reload inline rather than handing it to a thread"
+        )
+        release.set()
+    finally:
+        reload_module.build_generation = original
+
+
+def test_sighup_actually_reloads(tmp_path):
+    # The outcome, separately from the timing above.
+    import signal
+    import time
+
+    from api.reload import install_sighup_handler
+
+    app = _app(tmp_path)
+    before = app.state.generation.generation
+    install_sighup_handler(app)
+
+    signal.raise_signal(signal.SIGHUP)
+
+    deadline = time.time() + 5
+    while app.state.generation.generation == before and time.time() < deadline:
+        time.sleep(0.02)
+
+    assert app.state.generation.generation > before
+
+
+def test_a_failing_sighup_reload_raises_nothing_out_of_its_thread(tmp_path):
+    # There is no caller to return an error to, so the thread must
+    # catch everything. A signal that cannot be answered must not take
+    # the service down -- especially when the likely cause is a
+    # half-saved YAML file.
+    #
+    # Asserted via threading.excepthook, because an exception escaping
+    # a daemon thread does NOT fail a test on its own: an earlier
+    # version of this test passed with the catch removed.
+    import signal
+    import time
+
+    from api.reload import install_sighup_handler
+
+    app = _app(tmp_path)
+    before = app.state.generation
+    broken = tmp_path / "sighup_broken"
+    broken.mkdir()
+    (broken / "config.yaml").write_text(": : bad\n")
+    app.state.runtime_paths.config_dir = broken
+
+    escaped = []
+    original_hook = threading.excepthook
+    threading.excepthook = lambda args: escaped.append(args.exc_type)
+    try:
+        install_sighup_handler(app)
+        signal.raise_signal(signal.SIGHUP)
+        time.sleep(0.5)
+    finally:
+        threading.excepthook = original_hook
+
+    assert escaped == [], f"an exception escaped the SIGHUP thread: {escaped}"
+    assert app.state.generation is before, "a failed SIGHUP reload replaced the generation"

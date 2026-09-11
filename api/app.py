@@ -86,6 +86,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 
 from api.csrf_middleware import csrf_protect
+from api.reload import install_sighup_handler
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.artifact_store import ArtifactStore
 from core.auth.credential_store import CredentialStore
@@ -328,6 +329,10 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # header, instead of ever loading this app at all). Every existing
     # frontend/backend caller already updated to match -- see that
     # same AI-notes entry for the full list.
+    # LAST, after everything is wired: a SIGHUP arriving mid-startup
+    # would otherwise reload against a half-built app.state.
+    install_sighup_handler(app)
+
     app.include_router(router, prefix="/api")
 
     if UI_DIST_DIR.is_dir():

@@ -8,6 +8,7 @@ which also makes it testable without standing a server up.
 """
 
 import logging
+import signal
 import threading
 
 from core.deployment_loader import DeploymentGeneration, build_generation
@@ -85,3 +86,52 @@ def reload_generation(app, requested_by: str = "unknown") -> DeploymentGeneratio
         return new
     finally:
         _reload_lock.release()
+
+
+def install_sighup_handler(app) -> None:
+    """Makes SIGHUP reload configuration, the way daemons have forever.
+
+    THE WORK RUNS ON A SHORT-LIVED THREAD, not in the handler. A signal
+    handler runs on the MAIN thread, interrupting whatever it was
+    doing -- which under uvicorn is the event loop. Building a
+    generation opens databases and parses four files; doing that inline
+    would stall every request in flight for the duration, turning a
+    reload into an outage for as long as it takes.
+
+    A thread per signal rather than a permanent worker, deliberately. A
+    standing background thread is a concurrency surface that exists
+    even when nothing is happening, for work that happens rarely and on
+    demand -- the same argument that keeps a scheduler out of this
+    process. These threads exist for the length of one reload.
+
+    A BURST OF SIGNALS IS SAFE. reload_generation() takes its lock
+    non-blocking, so the first wins and the rest are rejected
+    immediately rather than queueing rebuilds nobody asked for.
+
+    FAILURE NEVER REACHES THE PROCESS. There is no caller to return an
+    error to, so the thread catches everything and logs it. A signal
+    that cannot be answered must not be able to kill the service --
+    especially when the likely cause is a half-saved YAML file.
+    """
+
+    def _handle(_signum, _frame):
+        # Both arguments are required by signal.signal's contract and
+        # neither is useful here: there is only one signal registered,
+        # and the interrupted frame is not something a reload cares
+        # about.
+        threading.Thread(target=_reload_from_signal, args=(app,), daemon=True).start()
+
+    signal.signal(signal.SIGHUP, _handle)
+    logger.info("SIGHUP will reload configuration")
+
+
+def _reload_from_signal(app) -> None:
+    try:
+        reload_generation(app, requested_by="SIGHUP")
+    except ReloadInProgress:
+        logger.warning("SIGHUP ignored: a configuration reload is already in progress")
+    except Exception as e:
+        # Logged and swallowed. The audit entry recording the rejection
+        # is written by reload_generation() before it raises, so the
+        # failure is on the record either way.
+        logger.error(f"SIGHUP reload failed, configuration unchanged: {e}")
