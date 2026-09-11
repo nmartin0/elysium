@@ -148,3 +148,65 @@ def read_audit_log(log_dir: Path) -> list[dict]:
     if not log_path.exists():
         return []
     return [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
+
+
+def with_config(app, **fields) -> None:
+    """Replaces a running app's config with one differing in `fields`.
+
+    The general form of with_roles() below, for any field that is not
+    a dict needing a merge. DeploymentConfig is frozen, so
+    `config.read_from_mirror = True` raises -- a test wanting different
+    settings is asking for a different CONFIGURATION, and this says so.
+    """
+    import dataclasses
+
+    app.state.config = dataclasses.replace(app.state.config, **fields)
+
+
+def with_roles(app, **roles) -> None:
+    """Replaces a running app's config with one that has extra roles.
+
+    REPLACES rather than mutates, because DeploymentConfig is
+    deep-frozen -- see core/immutable.py. A test that needs a role the
+    deployment does not declare is asking for a DIFFERENT
+    configuration, and this makes that explicit instead of reaching
+    into the live one.
+
+    It is also a rehearsal for the real thing: swapping app.state for a
+    newly built, immutable configuration is exactly what a reload does
+    (HOT_RELOAD_PLAN.md steps 2 and 3). These tests were mutating in
+    place, which is the operation that becomes impossible once a
+    configuration is shared across concurrent requests.
+
+    The generation is deliberately NOT advanced here. A real reload
+    mints a new one; this is a test fixture standing up a scenario, and
+    pretending otherwise would put a fictitious generation into audit
+    entries the test then asserts on.
+    """
+    import dataclasses
+
+    from core.immutable import deep_freeze
+
+    updated = deep_freeze({**app.state.config.roles, **roles})
+    app.state.config = dataclasses.replace(app.state.config, roles=updated)
+
+    # THE MEDIATOR AND WRITE MEDIATOR HOLD THEIR OWN REFERENCE to the
+    # roles dict, so replacing the config alone leaves them
+    # authorizing against the old one. Found by a test, not by
+    # inspection: replacing config.roles made a visible-schema
+    # assertion fail because the mediator was still using the previous
+    # grants.
+    #
+    # This is EXACTLY the torn read HOT_RELOAD_PLAN.md step 2 exists to
+    # remove. Today these are five separate app.state attributes that
+    # must be updated together and nothing enforces it; once they live
+    # in one immutable DeploymentGeneration, swapping one reference
+    # swaps all of them atomically and this helper collapses to a
+    # single assignment.
+    #
+    # It used to "work" only because mutation was in place: config,
+    # mediator and write_mediator all held the SAME dict object, so
+    # changing it changed all three. That shared mutable object is the
+    # hazard, not the fix.
+    app.state.mediator.roles = updated
+    app.state.write_mediator.roles = updated

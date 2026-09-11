@@ -159,6 +159,12 @@ layers = [
     # A leaf with no dependencies can be depended on by any layer
     # without creating a cycle.
     "request_context",
+    # deep_freeze, the same shape as filters and request_context above:
+    # a leaf importing nothing but the standard library. It knows what a
+    # dict, list and set are and nothing else -- not what a schema is,
+    # not what a role is. deployment_loader is its only caller today,
+    # and any layer may reach it without creating a cycle.
+    "immutable",
     # The artifact store, also a leaf. It persists and scopes saved
     # things -- searches, selections, pending writes -- and knows
     # nothing about what is inside one: `body` is opaque JSON.

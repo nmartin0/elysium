@@ -41,6 +41,7 @@ from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
 from core.functions.registry import validate_function_declarations
+from core.immutable import deep_freeze
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.policy_validation import validate_roles
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
@@ -80,8 +81,18 @@ _LLM_ADAPTER_REGISTRY: dict[str, type] = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class DeploymentConfig:
+    """What this deployment IS. Immutable, and enforced rather than
+    asked for.
+
+    frozen=True stops a FIELD being rebound. It does nothing about
+    mutating what is inside one, so the dicts below are additionally
+    deep-frozen by load_deployment() -- see core/immutable.py for the
+    two concrete hazards that closes and why enforcement was chosen
+    over a convention.
+    """
+
     base_path: Path
     llm_provider: str            # e.g. "ollama" -- key into _LLM_ADAPTER_REGISTRY
     llm_connection: dict           # opaque to core/ -- e.g. {"base_url": ..., "request_timeout_seconds": ...}
@@ -349,33 +360,52 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
 
     step_model, synthesis_model = _resolve_models(config["llm"])
 
+    # Named before the config is built, because the VALIDATORS below run
+    # against this RAW form rather than against the frozen config.
+    #
+    # WHY: deep_freeze turns lists into tuples, and several validators
+    # type-check with isinstance(..., list) -- correctly, since their
+    # job is to check what was parsed out of a YAML file, and that
+    # genuinely is a list. Validating the raw parse and freezing the
+    # RESULT keeps both honest: validators check the document, the
+    # frozen config is what the running system holds.
+    #
+    # Found by the tests, not by inspection. An earlier version of this
+    # commit froze first, and every action type in every deployment
+    # failed with "'sub_writes' must be a non-empty list".
+    action_types_raw = schema_raw.get("action_types", {})
+
     try:
+        # DEEP-FROZEN as it is built, not afterwards. Freezing a
+        # constructed object would mean constructing a mutable one
+        # first and trusting nothing touched it in between; this way
+        # there is no window and no mutable version to leak.
         deployment_config = DeploymentConfig(
             generation=_next_generation(),
             loaded_at=datetime.now(UTC),
             source_digest=source_digest,
             base_path=base_path,
             llm_provider=config["llm"]["provider"],
-            llm_connection=config["llm"]["connection"],
+            llm_connection=deep_freeze(config["llm"]["connection"]),
             step_model=step_model,
             synthesis_model=synthesis_model,
             max_hops=config["agent"]["max_hops"],
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
             max_concurrent_requests=config["agent"].get("max_concurrent_requests", 4),
-            schema=schema_raw["object_types"],
-            users=policy_raw["users"],
-            roles=_freeze_roles(policy_raw["roles"]),
+            schema=deep_freeze(schema_raw["object_types"]),
+            users=deep_freeze(policy_raw["users"]),
+            roles=deep_freeze(_freeze_roles(policy_raw["roles"])),
             security_attribute=policy_raw["security_attribute"],
-            silo_configs=data_silos_raw["data_silos"],
-            enabled_tools=enabled_tools,
+            silo_configs=deep_freeze(data_silos_raw["data_silos"]),
+            enabled_tools=deep_freeze(enabled_tools),
             # GENUINELY optional in the YAML itself -- .get() with a {}
             # default, same as enabled_tools above, NOT inside the
             # strict required-key try/except: a deployment predating
             # named actions entirely (or simply not using them) has no
             # "action_types:" key in ontology_schema.yaml at all, and
             # that must remain completely valid.
-            action_types=schema_raw.get("action_types", {}),
+            action_types=deep_freeze(action_types_raw),
             # GENUINELY optional, defaulting to False -- a deployment
             # that has never run a sync (or simply wants live reads)
             # must stay completely valid, and the live path stays the
@@ -393,18 +423,18 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # docstring for the full reasoning on why this belongs here, at
     # load time, not deferred to propose_action() -- including why a
     # missing "sub_writes" is now REJECTED, not silently skipped).
-    validate_action_types(deployment_config.action_types, deployment_config.schema)
+    validate_action_types(action_types_raw, schema_raw["object_types"])
     # Separate call because core/ontology/action_types.py may not
     # import core/ontology/submission_criteria.py -- they are siblings
     # in pyproject.toml's core.ontology layering. See that function's
     # own docstring.
-    validate_action_type_criteria(deployment_config.action_types)
+    validate_action_type_criteria(action_types_raw)
 
     # title_field -- an OPTIONAL, per-object-type display-name
     # declaration (see core/ontology/object_type_validation.py's own
     # module docstring for the full reasoning, including what's
     # DELIBERATELY still deferred).
-    validate_object_types(deployment_config.schema)
+    validate_object_types(schema_raw["object_types"])
 
     # Every role's own grants, checked against what they actually
     # reference -- see core/intermediate_layer/policy_validation.py's

@@ -39,6 +39,7 @@ from core.auth.database import connection
 from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW
 from core.deployment_loader import RuntimePaths
 from core.intermediate_layer.auth import UserRecord
+from tests.conftest import with_config, with_roles
 
 pytestmark = pytest.mark.mocked_llm
 
@@ -422,7 +423,7 @@ def test_data_freshness_reports_the_mirror_sync_time_when_reading_from_it(client
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    client.app.state.config.read_from_mirror = True
+    with_config(client.app, read_from_mirror=True)
     client.app.state.mediator.mirror_synced_at = "2026-01-15T09:00:00+00:00"
 
     response = client.get("/api/data-freshness")
@@ -1416,7 +1417,7 @@ def _make_admin(client):
     # small number of callers that need to act as this admin AND
     # another, separate user within the same test -- see that
     # helper's own comment.
-    client.app.state.config.roles["admin"] = {"allowed_actions": frozenset(["manage:users", "manage:locks"])}
+    with_roles(client.app, admin={"allowed_actions": frozenset(["manage:users", "manage:locks"])})
     client.app.state.user_directory.create_user("admin_user", "adminpass", None, "admin")
     _login(client, "admin_user", "adminpass")
     return _capture_session(client)
@@ -1495,9 +1496,9 @@ def test_admin_logout_all_for_a_target_user_works(client):
 
 
 def test_visible_schema_debug_view_shows_what_the_target_user_can_see(client):
-    client.app.state.config.roles["customer_service"] = {"allowed_actions": [
+    with_roles(client.app, customer_service={"allowed_actions": [
         "read:Customer", "read:Customer.customer_id", "read:Customer.name",
-    ]}
+    ]})
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _make_admin(client)
 
