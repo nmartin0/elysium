@@ -15,16 +15,39 @@ llm:
                                     # _LLM_ADAPTER_REGISTRY for what's built in
   connection:
     base_url: "http://localhost:11434/api/chat"
-    request_timeout_seconds: 240   # local CPU-only inference can be genuinely
-                                    # slow -- raise this if you see timeouts
-  step_model: "phi4-mini"          # handles step-by-step decisions -- smaller,
-                                    # "reasoning-flavored" models have generally
-                                    # worked better here than larger general-
-                                    # purpose ones; this is real trial-and-error
-  synthesis_model: "qwen2.5:3b"    # writes the final answer from already-
-                                    # gathered data -- less demanding than
-                                    # step_model, doesn't need to follow a
-                                    # strict output format
+    request_timeout_seconds: 600   # local CPU-only inference can be genuinely
+                                    # slow. A 1300-token prompt at the ~5 tokens
+                                    # /sec prompt-eval rate measured on a 2-vCPU
+                                    # VM is ~4 minutes BEFORE the model writes
+                                    # anything; 240 timed out on the first hop
+    keep_alive: -1                 # keep the model resident between calls. The
+                                    # default evicts after five minutes, and the
+                                    # agent loop can idle longer than that
+                                    # between hops on slow hardware. A reload
+                                    # was measured at 12-47 seconds
+    options: {}                    # passed straight through to the provider.
+                                    # num_thread and num_ctx are the ones worth
+                                    # setting on constrained hardware; leave
+                                    # empty to use the provider's own defaults
+
+  # ONE model for every call. Two models mean the provider loading and
+  # evicting between them, which on CPU-only hardware costs more than
+  # any difference between the two models.
+  #
+  # Choose a NON-REASONING model. Measured on a 2-vCPU VM, asked to
+  # reply with a single word: phi4-mini emitted 2 tokens, gemma4:e2b
+  # 84, qwen3.5:2b 370. At ~1.5 tokens/sec generation the token COUNT
+  # dominates, not the model's benchmark scores.
+  #
+  # Faster per token is NOT the same as better. qwen2.5:3b measured 36%
+  # faster on prompt evaluation and was still rejected: on a multi-hop
+  # question it repeated a step it had already been corrected on until
+  # the loop stopped it, and never produced an answer.
+  model: "phi4-mini"
+
+  # A deployment wanting a different model for each job may name
+  # step_model and synthesis_model INSTEAD of model. Naming both forms
+  # is rejected at load rather than resolved by precedence.
 
 agent:
   max_hops: 8                       # hard ceiling on steps per question
