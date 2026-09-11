@@ -160,7 +160,18 @@ def with_config(app, **fields) -> None:
     """
     import dataclasses
 
-    app.state.config = dataclasses.replace(app.state.config, **fields)
+    config = dataclasses.replace(app.state.config, **fields)
+    app.state.config = config
+    # AND the generation, because routes read the PINNED generation
+    # rather than app.state.config -- that is the whole point of step
+    # 2c. Replacing only app.state.config leaves every route seeing the
+    # old settings, which is how this was found: a data-freshness test
+    # flipped read_from_mirror and the route carried on reporting
+    # "live".
+    #
+    # Once step 2e deletes app.state.config, this collapses to the one
+    # generation replacement.
+    app.state.generation = dataclasses.replace(app.state.generation, config=config)
 
 
 def with_roles(app, **roles) -> None:
@@ -210,3 +221,4 @@ def with_roles(app, **roles) -> None:
     # hazard, not the fix.
     app.state.mediator.roles = updated
     app.state.write_mediator.roles = updated
+    app.state.generation = dataclasses.replace(app.state.generation, config=app.state.config)

@@ -207,9 +207,16 @@ modules = ["core.auth", "core.intermediate_layer"]
 # designed from assumption).
 
 [[tool.importlinter.contracts]]
-name = "api/ internal layering (app wires routes + csrf + request size limit; routes wires apps + auth_dependency)"
+name = "api/ internal layering (app wires routes + csrf + request size limit; routes wires apps + dependencies)"
 type = "layers"
-layers = ["app", "routes", "apps | auth_dependency | csrf_middleware | request_size_limit_middleware"]
+# generation_dependency sits beside auth_dependency: both are
+# per-request dependencies routes wires, and neither may import the
+# other. One resolves WHO is asking, the other WHICH configuration
+# answers -- independent questions, deliberately kept that way.
+layers = [
+    "app", "routes",
+    "apps | auth_dependency | generation_dependency | csrf_middleware | request_size_limit_middleware",
+]
 containers = ["api"]
 exhaustive = true
 

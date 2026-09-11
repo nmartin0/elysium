@@ -122,6 +122,7 @@ from pydantic import BaseModel
 
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
+from api.generation_dependency import get_generation
 from core.agent.agentic_loop import AgentLoop
 from core.auth.auth_cookies import (
     SESSION_COOKIE_NAME,
@@ -142,6 +143,23 @@ from core.request_context import RequestContext
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+def _generation(request: Request):
+    """The configuration this request is pinned to.
+
+    Pinned ONCE per request by api/generation_dependency.py and cached
+    on request.state; this reads that pin rather than app.state, so a
+    reload landing mid-request cannot make two reads in one request
+    disagree. Falls back to app.state for the small number of internal
+    callers that construct a Request without going through the
+    dependency -- notably the test client's own direct calls.
+    """
+    pinned = getattr(request.state, "generation", None)
+    if pinned is not None:
+        return pinned
+    return get_generation(request)
+
+
 
 
 class LoginRequest(BaseModel):
@@ -589,7 +607,7 @@ def deployment_config_route(request: Request,
     contents would answer "what could I attack".
     """
     _require_manage_users(request, current_user)
-    config = request.app.state.config
+    config = _generation(request).config
     return {
         "generation": config.generation,
         "loaded_at": config.loaded_at.isoformat(),
@@ -663,7 +681,7 @@ def request_trace_route(request_id: str, request: Request,
     same uniform denial every read path uses, so the response never
     distinguishes "no such request" from "not yours".
     """
-    entries = request.app.state.mediator.audit_log.entries_for_request(
+    entries = _generation(request).mediator.audit_log.entries_for_request(
         request_id, current_user.user_id,
     )
     return [
@@ -744,7 +762,7 @@ def list_notes_route(object_type: str, object_id: str, request: Request,
     an error -- uniform denial, so the response never distinguishes "no
     notes" from "not allowed".
     """
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     if not _may_read_object(mediator, current_user, object_type, object_id):
         return []
 
@@ -781,7 +799,7 @@ def create_note_route(object_type: str, object_id: str, body: CreateNoteRequest,
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="A note cannot be empty")
 
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     if not _may_read_object(mediator, current_user, object_type, object_id):
         # Uniform denial: the same 404 whether the object is absent or
         # unreadable, so writing a note cannot be used to probe for
@@ -829,8 +847,8 @@ def silos_route(request: Request,
     through a screenshot, a bug report, or a browser cache.
     """
     _require_manage_users(request, current_user)
-    config = request.app.state.config
-    mediator = request.app.state.mediator
+    config = _generation(request).config
+    mediator = _generation(request).mediator
 
     # PRIMARY storage, from silo_for_type.
     types_by_silo: dict[str, list[str]] = {name: [] for name in config.silo_configs}
@@ -951,7 +969,7 @@ def create_user_route(body: CreateUserRequest, request: Request,
 def _require_manage_users(request: Request, current_user: UserRecord) -> None:
     # Shared by every account-management route below -- one place for
     # the check, rather than five copies of the same three lines.
-    roles = request.app.state.config.roles
+    roles = _generation(request).config.roles
     if not authorize(current_user, roles, "manage:users"):
         raise HTTPException(status_code=403, detail="Not authorized to manage users")
 
@@ -987,7 +1005,7 @@ def visible_schema_route(username: str, request: Request,
         raise HTTPException(status_code=404, detail=f"Unknown user {username!r}")
 
     target_record = user_directory.get_user_record(username)
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     return mediator.visible_schema(target_record)
 
 
@@ -1086,8 +1104,8 @@ def data_freshness_route(request: Request,
     # Gating it behind a permission would mean the people most likely
     # to need it (anyone about to approve a write against possibly
     # stale data) are the least likely to see it.
-    config = request.app.state.config
-    mediator = request.app.state.mediator
+    config = _generation(request).config
+    mediator = _generation(request).mediator
 
     if not config.read_from_mirror:
         # A live deployment reads the customer's real database on every
@@ -1129,7 +1147,7 @@ def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(g
     # -- that internal filtering logic genuinely reads it; only this
     # HTTP-facing shape excludes it, same "filter at the boundary, not
     # the shared internal source" pattern as both prior fixes.
-    roles = request.app.state.config.roles
+    roles = _generation(request).config.roles
     return [{"name": app["name"], "path": app["path"]} for app in visible_apps_for(current_user, roles)]
 
 
@@ -1145,7 +1163,7 @@ def my_visible_schema_route(request: Request, current_user: UserRecord = Depends
     # object types even exist and are visible BEFORE a person can pick
     # one to search -- there was no self-service way to ask that at
     # all before this route.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     return mediator.visible_schema(current_user)
 
 
@@ -1294,7 +1312,7 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     # independently-guessed set that could silently drift out of sync
     # with what was actually searched), not just a bare id the UI would
     # otherwise need a SEPARATE call per result to make sense of.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     try:
         parsed = parse_filters(json.loads(conditions)) if conditions else None
     except (json.JSONDecodeError, TypeError) as e:
@@ -1375,7 +1393,7 @@ def get_object_detail_route(object_type: str, object_id: str, request: Request,
     # real enumeration primitive worth denying, not merely a REST-
     # idiom nicety to relax for a cleaner 404. NEVER "fix" this to a
     # 404 without re-reading this reasoning first.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     visible = mediator.visible_schema(current_user)
     type_def = visible.get(object_type)
     if type_def is None:
@@ -1444,8 +1462,8 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
     # an action's shape without being able to invoke it, and the UI
     # needs to know which is which to decide whether to offer a
     # button at all (see ObjectDetailPanel.jsx's own comment).
-    write_mediator: WriteMediator = request.app.state.write_mediator
-    roles = request.app.state.config.roles
+    write_mediator: WriteMediator = _generation(request).write_mediator
+    roles = _generation(request).config.roles
     visible = write_mediator.visible_action_types(current_user)
     return {
         action_name: {
@@ -1505,7 +1523,7 @@ def propose_action_route(action_type_name: str, body: ProposeActionRequest, requ
     # specific role isn't the audience the generic default protects).
     # Every OTHER role keeps the fully generic, undifferentiated
     # response exactly as before.
-    write_mediator: WriteMediator = request.app.state.write_mediator
+    write_mediator: WriteMediator = _generation(request).write_mediator
     try:
         # origin="human": this route IS the person-filled form. The
         # agent reaches propose_action() through AgentLoop instead,
@@ -1515,7 +1533,7 @@ def propose_action_route(action_type_name: str, body: ProposeActionRequest, requ
         )
     except (ValueError, TypeError, PermissionError) as e:
         logger.warning(f"propose_action_route: {action_type_name!r} rejected for {current_user.user_id!r}: {e}")
-        roles = request.app.state.config.roles
+        roles = _generation(request).config.roles
         if authorize(current_user, roles, "discover:action_types"):
             status_code = 403 if isinstance(e, PermissionError) else 400
             raise HTTPException(status_code=status_code, detail=str(e)) from e
@@ -1562,8 +1580,8 @@ async def query(body: QueryRequest, request: Request,
         raise HTTPException(status_code=429, detail="Too many queries -- please wait before trying again")
     request.app.state.query_rate_limiter.record_query(current_user.user_id)
 
-    loop: AgentLoop = request.app.state.loop
-    synthesis_client = request.app.state.synthesis_client
+    loop: AgentLoop = _generation(request).loop
+    synthesis_client = _generation(request).synthesis_client
     executor = request.app.state.executor
     event_loop = asyncio.get_running_loop()
 
@@ -1587,7 +1605,7 @@ async def query(body: QueryRequest, request: Request,
         watcher_task.cancel()
 
     if result.cancelled:
-        request.app.state.mediator.audit_log.log_query_cancelled(
+        _generation(request).mediator.audit_log.log_query_cancelled(
             current_user.user_id, body.query, len(result.gathered)
         )
         raise HTTPException(status_code=499, detail="Client disconnected")
@@ -1664,7 +1682,7 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
         # look identical. See module docstring.
         raise HTTPException(status_code=404, detail="Unknown or expired pending write")
 
-    write_mediator: WriteMediator = request.app.state.write_mediator
+    write_mediator: WriteMediator = _generation(request).write_mediator
     # Offloaded to the SAME executor /query uses -- no longer "a
     # single, already-atomic SQL statement," which used to be why this
     # ran synchronously on the request-handling thread. Once an update
@@ -1699,7 +1717,7 @@ def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: 
     # count -- two users legitimately get different answers, and a
     # count ignoring MAC would leak the existence of rows outside the
     # caller's boundary.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     try:
         return {"count": mediator.count_objects(current_user, object_type, body.as_conditions())}
     except ValueError as e:
@@ -1709,7 +1727,7 @@ def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: 
 @router.post("/objects/{object_type}/aggregate", response_model=AggregateResponse)
 def aggregate_objects_route(object_type: str, body: AggregateRequest, request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     try:
         results = mediator.aggregate_by_field(
             current_user, object_type, body.as_conditions(),
@@ -1734,7 +1752,7 @@ def search_around_route(object_type: str, body: SearchAroundRequest, request: Re
     # An ungranted or non-link field yields an empty list rather than
     # an error -- the same uniform denial every other read path uses,
     # so a caller learns nothing about whether the field exists.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     ids = mediator.search_around(current_user, object_type, body.as_conditions(), body.link_field)
     return {"ids": ids, "total": len(ids)}
 
@@ -1755,7 +1773,7 @@ def object_history_route(object_type: str, object_id: str, request: Request,
     # Paged with the same machinery as search, rather than a second
     # scheme: an object with a long edit history is exactly what a
     # timeline widget scrolls through.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
 
     # Bounds resolved against the COUNT, then only that page is read --
     # rather than reading the whole history and slicing it in Python,
