@@ -1087,6 +1087,46 @@ look like obvious wins to anyone who has not read the measurements:
 - **Speculative decoding.** The 2026 default for large open-weight
   serving, and inapplicable below ~7B: target and draft are too close
   in capability to pay for themselves.
+- **Depending on pyiceberg `main` for `fast_forward_branch`.** Asked
+  directly -- why not just upgrade? Because there is nothing to
+  upgrade TO. 0.12.0 is the latest RELEASE and is what we already run;
+  `ManageSnapshots.fast_forward_branch` merged to pyiceberg's main on
+  10 September 2026 and has shipped in no release. Getting it means a
+  git dependency.
+
+  **The cost is specific, not general caution.** requirements.lock
+  installs with `--require-hashes`, and a git dependency has no PyPI
+  artifact to hash -- so it means abandoning hash-pinning for that
+  package or for the whole file. The lock's own preamble says why that
+  matters: a pinned version still fetches whatever PyPI serves under
+  that name, while a hash fails the install if the artifact changed,
+  and Elysium runs next to a customer's databases where a compromised
+  transitive package is a real threat.
+
+  **AND WE DO NOT NEED IT, which is the stronger half.** The
+  generation-swap design in HOT_RELOAD_PLAN.md step 5 is not a
+  workaround for the missing method -- it is better than the method.
+  Publishing via a config generation is ONE atomic swap covering both
+  the ontology definition and the data snapshot. Fast-forward would
+  move only the data half, leaving the definition half to a generation
+  swap anyway: two publish mechanisms, and a window where they
+  disagree. The design would stay the same with the feature in hand.
+
+  **Revisit when**, and these are different triggers. (1) A release
+  carrying it ships -- then it is an ordinary version bump with a hash
+  and no principle traded, worth re-reading this entry but probably
+  not worth changing anything. (2) THE REAL ONE: if sync ever stops
+  being a full `overwrite()` and becomes incremental. Merging a
+  backfill branch into main is a genuine operation that generation
+  swapping does not express well, and that is the case where branch
+  merge semantics start earning their keep.
+
+  Note that `pyiceberg[sql-sqlite,pyarrow]<1.0` in requirements.txt
+  means a 0.13 would be adopted automatically on the next lock
+  regeneration. That is the right posture for a pre-1.0 library only
+  because regenerating the lock is a deliberate, separately reviewable
+  commit gated by scripts/check_lockfiles.py -- not because loose
+  pinning is safe in itself.
 
 **NOT work, but a property to protect.** Infrastructure-as-code and
 runtime schema introspection are both things Foundry users are actively
