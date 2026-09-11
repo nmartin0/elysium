@@ -440,20 +440,117 @@ configuration was in force for any entry.
       finish-and-record, since the audit entry will say which
       generation applied.
 
-### 5. The silo layer
+### 5. The mirror, and adapting to sources that change shape
 
-  5a. Connection lifecycle across a reload: retire adapters from the
-      old generation without killing in-flight reads. Refcounting
-      gives this for free IF adapters hold no process-global state --
-      **verify that before relying on it**, do not assume it.
-  5b. Detect source schema drift at reload: a column named in
-      `ontology_schema.yaml` that no longer exists in the table. WARN
-      rather than fail, copying Foundry's schema-check posture -- a
-      deployment should not become unbootable because one unused
-      column was dropped.
-  5c. Repointing a silo (path or credentials change) is a destructive
-      change for anything holding an open connection. Treat it as
-      such in step 6.
+**REWRITTEN. The first version of this section was wrong, and the
+error is recorded because it changed the design rather than the
+wording.**
+
+It said Elysium "queries the customer's databases live, so there is no
+index to rebuild", and concluded that source schema drift should WARN
+rather than adapt. Both false. ROADMAP.md's read-only mirror
+architecture is largely built -- Phases 0, 1, 2 and 4 done,
+core/mirror/iceberg_sync.py syncs into Iceberg, core/mirror/
+mirror_adapter.py reads from it, read_from_mirror is already a config
+flag. Elysium HAS the versioned internal copy Foundry has, so
+hydration, readiness gates and the additive/destructive split apply
+directly rather than by analogy. The mirror is ours, so drift is not
+merely detected -- it is absorbed.
+
+**WHAT ICEBERG ALREADY GIVES US**, verified against the pinned
+pyiceberg 0.12: `update_schema()` (add, rename, update, delete column,
+tracked by unique FIELD ID so a rename does not break readers and an
+add or drop does not rewrite data); `manage_snapshots()` (create_branch,
+create_tag, remove_branch); and `scan(snapshot_id=...)`.
+
+**WHAT IT DOES NOT GIVE US AT 0.12**, and this constraint shaped the
+design: `ManageSnapshots.fast_forward_branch` landed on pyiceberg main
+on 10 September 2026 and is NOT in the pinned release. Branch merge
+strategies generally -- merge, squash, rebase, cherry-pick,
+fast-forward -- are an open upstream feature request. Any design
+requiring a branch to be MERGED into main is therefore not buildable
+today without an unreleased dependency or hand-rolled merge semantics.
+
+**THE DESIGN THAT NEEDS NO MERGE.** Publishing is a CONFIG GENERATION
+SWAP, not an Iceberg ref move. A generation records, per mirrored
+table, the snapshot id it reads. Sync produces new snapshots; a new
+generation naming them is what makes them live. Better than
+branch-and-merge rather than a substitute for it:
+
+- Uses only what 0.12 has.
+- ONE atomic publish for both halves: a request pins a generation and
+  gets the ontology definition AND the data snapshot that match it,
+  which neither half provides alone.
+- Rollback is naming an older generation, not restoring anything.
+- Keeps each versioning system doing what it is good at: git versions
+  the DEFINITION -- the infrastructure-as-code property Foundry users
+  are asking Palantir for -- and Iceberg versions the DATA.
+
+**WHAT THE SYNC DOES TODAY, read rather than assumed.** It fails
+loudly on drift: transform_rows() detects type drift and iceberg_sync
+raises ValueError(describe_drift(...)), per this project's own "fail
+loudly, never silently substitute" rule. There is NO call to
+update_schema() anywhere -- grepped, zero hits -- so the mirror cannot
+absorb any schema change at all today, and overwrite() writes to main
+directly.
+
+  5a. Pin a snapshot on read. mirror_adapter calls load_table(...)
+      .scan(...), which reads whatever is current. Passing the
+      generation's snapshot id is small, and is what makes a
+      generation mean anything for data.
+  5b. Record per-table snapshot ids on the generation, alongside the
+      config digest from step 1a. The digest answers "did the
+      definition change"; these answer "which data does it describe".
+      Two questions, two fields, deliberately not conflated.
+  5c. Sync writes to a BRANCH and validates there, leaving main alone.
+      Publishing is 5b, not a merge. create_branch exists at 0.12.
+  5d. Absorb ADDITIVE source change via update_schema().add_column()
+      on the branch. A new source column is not an error.
+  5e. Absorb DESTRUCTIVE source change -- needs a decision, not just
+      an implementation. A dropped source column can be dropped from
+      the mirror (delete_column) or retained and nulled. Retaining is
+      safer for readers on older generations and field IDs make it
+      cheap. Neither should happen automatically without the operator
+      seeing it.
+  5f. Connection lifecycle across a reload: retire old-generation
+      adapters without killing in-flight reads. Refcounting gives this
+      free IF adapters hold no process-global state -- verified for
+      sqlite_adapter, NOT yet for the mirror adapter's catalog handle.
+  5g. Repointing a silo is destructive for anything holding an open
+      connection. Treat it as such in step 6.
+
+### Retrace: is the work already committed compatible?
+
+Checked when step 5 was rewritten, because a design change that
+invalidates shipped commits is worth knowing about immediately rather
+than at step 5. **It does not. Nothing needs undoing, and the reason is
+structural rather than lucky.**
+
+- **`generation` is an OPAQUE INTEGER.** It identifies a load; it does
+  not encode what a load consists of. Adding per-table snapshot ids to
+  the generation extends what a generation NAMES without changing what
+  a generation IS, so `audit.generation` and
+  `PendingWrite.proposed_under_generation` keep meaning exactly what
+  they meant.
+- **`source_digest` covers the four YAML files and nothing else** --
+  `CONFIG_FILENAMES` names them explicitly. That is still precisely
+  right: it answers "did the DEFINITION change". Snapshot ids answer
+  "which DATA does it describe". Two questions, and 5b keeps them as
+  two fields rather than folding data state into the digest, which
+  would make "did the config change?" unanswerable whenever a sync
+  ran.
+- **Nothing conflates the two today** -- grepped, no generation code
+  mentions snapshots or the mirror.
+
+**THE GENERALISABLE POINT, and the reason this survived a design
+reversal:** step 1 gave a load an IDENTITY rather than a DESCRIPTION.
+An identity survives learning new things about what it identifies. Had
+step 1a instead defined the generation as, say, a hash of the schema
+contents, extending it to cover data would have been a breaking change
+to every record already stamped.
+
+Worth remembering for the steps still unbuilt: prefer naming a thing
+over describing it.
 
 ### 6. Destructive changes and existing obligations
 
