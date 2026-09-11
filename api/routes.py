@@ -544,6 +544,20 @@ class DeploymentConfigResponse(BaseModel):
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
     max_concurrent_requests: int
+    # WHICH configuration this is, not just what it says. Answers a
+    # question the rest of this response cannot: two deployments with
+    # identical settings below may still be different loads of
+    # different files. Once configuration can be reloaded while running
+    # (HOT_RELOAD_PLAN.md) this becomes the only way to tell which
+    # generation served a given request.
+    #
+    # The digest is over the four config files' bytes. Safe to expose
+    # alongside the rest of this response: it discloses WHETHER the
+    # files changed, never what is in them, and this endpoint already
+    # requires manage:users.
+    generation: int
+    loaded_at: str
+    source_digest: str
     security_attribute: str
     read_from_mirror: bool
     enabled_tools: list[str]
@@ -577,6 +591,9 @@ def deployment_config_route(request: Request,
     _require_manage_users(request, current_user)
     config = request.app.state.config
     return {
+        "generation": config.generation,
+        "loaded_at": config.loaded_at.isoformat(),
+        "source_digest": config.source_digest,
         "llm_provider": config.llm_provider,
         "step_model": config.step_model,
         "synthesis_model": config.synthesis_model,

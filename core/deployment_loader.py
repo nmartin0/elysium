@@ -25,8 +25,12 @@ Called by: scripts/run_deployment.py, scripts/serve_requests.py,
            api/app.py, tests/integration/conftest.py
 """
 
+import hashlib
+import itertools
 import os
+import threading
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -107,6 +111,75 @@ class DeploymentConfig:
                                    # not a dataclass-level default -- same "explicit, not
                                    # silently inferred" discipline as writes_enabled/
                                    # visible_action_types in agent_step_prompt.py.
+
+    # --- WHICH CONFIGURATION THIS IS -------------------------------
+    #
+    # Elysium reads these four files once at startup. Nothing today can
+    # say WHICH configuration was in force for a given audit entry or a
+    # given pending write, because there has only ever been one. That
+    # stops being true the moment configuration can be reloaded while
+    # running, and it is already not quite true now: a restart with
+    # edited files produces a second configuration that the log cannot
+    # distinguish from the first.
+    #
+    # Stamped on the audit log and on pending writes rather than kept
+    # here alone -- see HOT_RELOAD_PLAN.md step 1. This is the whole of
+    # step 1a: identity only, no reloading, no behaviour change.
+    #
+    # Modelled on Palantir treating version as a PARAMETER carried by
+    # each operation rather than a global the server swaps: every
+    # Foundry Ontology call names the ontology it acts against.
+    generation: int               # monotonic within one process, first load is 1
+    loaded_at: datetime           # when this configuration was read, UTC and aware
+    source_digest: str            # sha256 over the four files' bytes -- see _source_digest()
+
+
+# Assigned by the loader, never by a caller, so two callers cannot mint
+# the same number. Guarded because a reload triggered by a signal
+# handler and one triggered by an HTTP request could otherwise race
+# (step 3), and getting the counter right later is harder than getting
+# it right now.
+_generation_lock = threading.Lock()
+_generation_counter = itertools.count(1)
+
+
+def _next_generation() -> int:
+    with _generation_lock:
+        return next(_generation_counter)
+
+
+# The four files that ARE the deployment. Named once so that
+# _source_digest() and load_deployment() cannot drift into disagreeing
+# about what a deployment consists of -- the same reasoning as the step
+# vocabulary probe in tests/unit/test_step_vocabulary_consistency.py.
+CONFIG_FILENAMES = ["config.yaml", "ontology_schema.yaml", "policy.yaml", "data_silos.yaml"]
+
+
+def _source_digest(base_path: Path, filenames: list[str]) -> str:
+    """A stable fingerprint of the configuration files on disk.
+
+    Over the RAW BYTES, not the parsed structures, and deliberately:
+    the question this answers is "are these the same files as last
+    time", which is about what was read, not about what it meant.
+    Comparing parsed dicts would call a comment change identical and a
+    key reordering different, both backwards for this purpose.
+
+    Sorted by filename so the digest does not depend on iteration
+    order, and each file's name is fed in alongside its content so that
+    moving text between two files changes the digest.
+
+    A missing file is fed as its name with no content rather than
+    raising. load_deployment() below reports a missing file far better
+    than a hash function could, and this must not become a second,
+    worse place that error surfaces.
+    """
+    digest = hashlib.sha256()
+    for name in sorted(filenames):
+        digest.update(name.encode())
+        path = base_path / name
+        if path.exists():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
 
 
 def _freeze_roles(roles_raw: dict) -> dict:
@@ -238,6 +311,11 @@ def _resolve_models(llm_config: dict) -> tuple[str, str]:
 
 
 def load_deployment(base_path: Path) -> DeploymentConfig:
+    # Digested BEFORE parsing, so the fingerprint describes exactly the
+    # bytes this load saw. Taking it afterwards would leave a window in
+    # which a file changed between being read and being hashed.
+    source_digest = _source_digest(base_path, CONFIG_FILENAMES)
+
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
     policy_raw = load_yaml(base_path / "policy.yaml")
@@ -273,6 +351,9 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
 
     try:
         deployment_config = DeploymentConfig(
+            generation=_next_generation(),
+            loaded_at=datetime.now(UTC),
+            source_digest=source_digest,
             base_path=base_path,
             llm_provider=config["llm"]["provider"],
             llm_connection=config["llm"]["connection"],
