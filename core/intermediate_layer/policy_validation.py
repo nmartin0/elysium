@@ -85,6 +85,14 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
     if grant == "discover:action_types":
         return
 
+    if grant == "manage:deployment":
+        # Reloading configuration while running. A SEPARATE grant from
+        # manage:users, deliberately: creating an account and replacing
+        # the ontology, the grants and the silo wiring are different
+        # powers, and a deployment should be able to hand out one
+        # without the other.
+        return
+
     if grant.startswith("execute:"):
         action_name = grant.removeprefix("execute:")
         if action_name not in action_types:

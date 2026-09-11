@@ -1,0 +1,174 @@
+"""
+Reloading configuration without a restart -- step 3 of
+HOT_RELOAD_PLAN.md.
+
+Until now the only way to load edited configuration was to restart,
+which drops every session, every in-flight query and every pending
+write. And a restart with a BROKEN file does not come back.
+
+THE THREE PROPERTIES, in order of how much damage their absence does:
+
+  - a failed reload changes nothing
+  - a successful reload swaps atomically, so no request sees a
+    half-built configuration
+  - two reloads cannot interleave
+"""
+
+import threading
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import yaml
+
+from api.reload import ReloadInProgress, reload_generation
+from core.deployment_loader import build_generation
+
+DEPLOYMENT = Path(__file__).resolve().parent.parent.parent / "deployment" / "etc"
+
+
+def _app(tmp_path):
+    generation = build_generation(DEPLOYMENT, data_dir=tmp_path, log_dir=tmp_path / "log")
+    return SimpleNamespace(state=SimpleNamespace(
+        generation=generation,
+        runtime_paths=SimpleNamespace(
+            config_dir=DEPLOYMENT, data_dir=tmp_path, log_dir=tmp_path / "log",
+        ),
+    ))
+
+
+def test_a_reload_replaces_the_generation(tmp_path):
+    app = _app(tmp_path)
+    before = app.state.generation
+
+    after = reload_generation(app, requested_by="alice")
+
+    assert after is not before
+    assert after.generation > before.generation
+    assert app.state.generation is after
+
+
+def test_reloading_unchanged_files_keeps_the_same_digest(tmp_path):
+    # A new GENERATION of the same CONFIGURATION. The digest says what
+    # was read; the generation says which read it was. Conflating them
+    # would make "did anything change?" unanswerable.
+    app = _app(tmp_path)
+    before = app.state.generation
+
+    after = reload_generation(app)
+
+    assert after.source_digest == before.source_digest
+    assert after.generation != before.generation
+
+
+def test_a_failed_reload_changes_nothing(tmp_path):
+    # THE PROPERTY THAT MATTERS MOST. Today a broken edit plus a
+    # restart is an outage that does not come back; here it is a no-op
+    # with an error.
+    app = _app(tmp_path)
+    before = app.state.generation
+    # yaml.YAMLError is in the expected set because load_deployment()
+    # lets a parse error through unwrapped -- worth knowing rather than
+    # catching blind Exception, which hides exactly this kind of
+    # detail.
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    (broken / "config.yaml").write_text(": : not valid yaml\n")
+    app.state.runtime_paths.config_dir = broken
+
+    with pytest.raises((ValueError, KeyError, yaml.YAMLError)):
+        reload_generation(app)
+
+    assert app.state.generation is before, "the running generation was replaced by a failure"
+
+
+def test_a_second_reload_is_rejected_rather_than_queued(tmp_path):
+    # Rejected, because queueing lets a burst of signals stack up
+    # rebuilds nobody asked for, and the caller learns nothing from
+    # waiting behind one.
+    app = _app(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    rejected = []
+
+    def slow_build(*args, **kwargs):
+        started.set()
+        release.wait(timeout=5)
+        return app.state.generation
+
+    import api.reload as reload_module
+    original = reload_module.build_generation
+    reload_module.build_generation = slow_build
+    try:
+        first = threading.Thread(target=lambda: reload_generation(app))
+        first.start()
+        started.wait(timeout=5)
+        try:
+            reload_generation(app)
+        except ReloadInProgress:
+            rejected.append(True)
+        release.set()
+        first.join(timeout=5)
+    finally:
+        reload_module.build_generation = original
+
+    assert rejected == [True], "a concurrent reload was not rejected"
+
+
+def test_the_lock_is_released_after_a_failure(tmp_path):
+    # A failed reload must not wedge the lock, or one bad edit makes
+    # every later reload impossible until a restart -- which is the
+    # thing this feature exists to avoid.
+    app = _app(tmp_path)
+    broken = tmp_path / "broken2"
+    broken.mkdir()
+    (broken / "config.yaml").write_text(": : bad\n")
+    good = app.state.runtime_paths.config_dir
+    app.state.runtime_paths.config_dir = broken
+
+    with pytest.raises((ValueError, KeyError, yaml.YAMLError)):
+        reload_generation(app)
+
+    app.state.runtime_paths.config_dir = good
+    assert reload_generation(app) is app.state.generation
+
+
+def test_a_reload_is_audited_whether_it_succeeds_or_fails(tmp_path):
+    # A configuration change is security-relevant and was previously
+    # unrecordable, because configuration could only change by
+    # restarting. A rejected reload is as interesting as an accepted
+    # one, and more so if someone is probing.
+    import json
+
+    app = _app(tmp_path)
+    reload_generation(app, requested_by="alice")
+    broken = tmp_path / "broken3"
+    broken.mkdir()
+    (broken / "config.yaml").write_text(": : bad\n")
+    app.state.runtime_paths.config_dir = broken
+    with pytest.raises((ValueError, KeyError, yaml.YAMLError)):
+        reload_generation(app, requested_by="mallory")
+
+    entries = [json.loads(line) for line in
+               (tmp_path / "log" / "audit.log").read_text().splitlines()]
+    reloads = [e for e in entries if e.get("stage") == "config_reload"]
+
+    assert [e["outcome"] for e in reloads] == ["applied", "rejected"]
+    assert reloads[0]["user_id"] == "alice"
+    assert reloads[1]["user_id"] == "mallory"
+    assert reloads[1]["to_generation"] is None, "a failure has no new generation to name"
+
+
+def test_runtime_state_is_not_touched_by_a_reload(tmp_path):
+    # Sessions, credentials, lockout counters and pending writes must
+    # SURVIVE. Rebuilding them would log out every user and reset every
+    # lockout counter -- letting an attacker clear their own rate limit
+    # by triggering a reload.
+    app = _app(tmp_path)
+    app.state.session_store = sentinel = object()
+    app.state.pending_writes = pending = object()
+
+    reload_generation(app)
+
+    assert app.state.session_store is sentinel
+    assert app.state.pending_writes is pending

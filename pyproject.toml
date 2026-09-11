@@ -215,7 +215,7 @@ type = "layers"
 # answers -- independent questions, deliberately kept that way.
 layers = [
     "app", "routes",
-    "apps | auth_dependency | generation_dependency | csrf_middleware | request_size_limit_middleware",
+    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware",
 ]
 containers = ["api"]
 exhaustive = true

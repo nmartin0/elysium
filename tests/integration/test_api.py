@@ -2798,3 +2798,41 @@ def test_a_request_trace_is_empty_for_a_request_you_did_not_make(client):
 
 def test_a_request_trace_needs_a_session(client):
     assert client.get("/api/requests/x/trace").status_code == 401
+
+
+def test_reload_requires_its_own_grant_not_manage_users(client):
+    """manage:users is NOT enough to reload configuration.
+
+    Creating an account and replacing the ontology, the grants and the
+    silo wiring are different powers. A deployment should be able to
+    hand out one without the other, which is why manage:deployment
+    exists as a separate grant rather than reusing the admin gate.
+    """
+    _make_admin(client)  # holds manage:users
+
+    assert client.post("/api/admin/reload", headers=_csrf_headers(client)).status_code == 403
+
+
+def test_reload_with_the_grant_advances_the_generation(client):
+    with_roles(client.app, reloader={"allowed_actions": frozenset(["manage:deployment"])})
+    client.app.state.user_directory.create_user("reloader", "pw", None, "reloader")
+    _login(client, "reloader", "pw")
+    before = client.app.state.generation.generation
+
+    response = client.post("/api/admin/reload", headers=_csrf_headers(client))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["from_generation"] == before
+    assert body["to_generation"] > before
+    # Unchanged files: a new GENERATION of the same CONFIGURATION.
+    assert body["changed"] is False
+    assert client.app.state.generation.generation == body["to_generation"]
+
+
+def test_an_unauthenticated_reload_is_refused(client):
+    # 403 from CSRF, not 401 from auth: the middleware runs first and
+    # an unauthenticated caller has no CSRF cookie to present. Both are
+    # refusals; asserting the wrong one would be asserting a mechanism
+    # this test does not care about.
+    assert client.post("/api/admin/reload").status_code in (401, 403)

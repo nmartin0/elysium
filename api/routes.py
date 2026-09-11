@@ -123,6 +123,7 @@ from pydantic import BaseModel
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
 from api.generation_dependency import get_generation
+from api.reload import ReloadInProgress, reload_generation
 from core.agent.agentic_loop import AgentLoop
 from core.auth.auth_cookies import (
     SESSION_COOKIE_NAME,
@@ -583,6 +584,61 @@ class DeploymentConfigResponse(BaseModel):
     object_type_count: int
     action_type_count: int
     role_names: list[str]
+
+
+class ReloadResponse(BaseModel):
+    """The outcome of a configuration reload."""
+
+    from_generation: int
+    to_generation: int
+    source_digest: str
+    changed: bool
+
+
+@router.post("/admin/reload", response_model=ReloadResponse)
+def reload_route(request: Request,
+                 current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Reloads configuration from disk without restarting.
+
+    GATED ON manage:deployment, a SEPARATE grant from manage:users.
+    Creating an account and replacing the ontology, the grants and the
+    silo wiring are different powers, and a deployment should be able
+    to hand out one without the other.
+
+    FAILURE CHANGES NOTHING. build_generation() validates fully and
+    either returns a whole generation or raises, so a broken YAML edit
+    is a 400 with the validation error rather than an outage. That is
+    strictly better than today, where the only way to load new
+    configuration is to restart -- and a restart with a broken file
+    does not come back.
+
+    Requests already in flight keep the generation they pinned and
+    finish on it. The next request gets the new one.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to reload configuration")
+
+    try:
+        new = reload_generation(request.app, requested_by=current_user.user_id)
+    except ReloadInProgress as e:
+        # 409, not 429: this is a conflict with another operation, not
+        # a rate limit. Rejected rather than queued -- see
+        # reload_generation() for why.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Reload rejected: {e}") from e
+
+    return {
+        "from_generation": generation.generation,
+        "to_generation": new.generation,
+        "source_digest": new.source_digest,
+        # Whether the FILES actually differ, as opposed to whether a
+        # reload happened. Reloading unchanged files is a new
+        # generation of the same configuration, and conflating the two
+        # would make "did anything change?" unanswerable.
+        "changed": new.source_digest != generation.source_digest,
+    }
 
 
 @router.get("/config", response_model=DeploymentConfigResponse)

@@ -39,6 +39,7 @@ list_notes_route
 create_note_route
 silos_route
 deployment_config_route
+reload_route
 list_users_route
 create_user_route
 visible_schema_route
@@ -182,3 +183,8 @@ _user_field_must_be_a_real_user_attribute
 # dataclass in api/routes.py's /config response, which vulture does not
 # follow. See core/deployment_loader.py.
 mirror_snapshots
+
+# ReloadResponse.changed (api/routes.py) -- read by FastAPI's serialiser
+# from the returned dict, never by our own code, the same as every
+# other response-model field above.
+changed

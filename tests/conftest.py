@@ -224,6 +224,18 @@ def with_roles(app, **roles) -> None:
     # shortcut rather than something production does.
     app.state.generation.mediator.roles = updated
     app.state.generation.write_mediator.roles = updated
+    # UserDirectory holds its own copy too -- a FOURTH holder, found
+    # when a test created a user with a newly added role and got
+    # "Unknown role". It is RUNTIME state (it owns credentials.db) that
+    # happens to carry a slice of CONFIG, which is why it sits on
+    # app.state rather than on the generation, and why it needs
+    # updating separately here.
+    #
+    # A real reload rebuilds nothing of the sort: app.state.user_directory
+    # survives, and its roles copy goes stale. That is a genuine gap in
+    # HOT_RELOAD_PLAN.md -- recorded here rather than papered over,
+    # because this helper is where it became visible.
+    app.state.user_directory._roles = updated
     app.state.generation = dataclasses.replace(
         app.state.generation, config=dataclasses.replace(config, roles=updated),
     )

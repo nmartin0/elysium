@@ -281,6 +281,31 @@ class AuditLog:
             "object_id": object_id,
         })
 
+    def log_reload(self, user_id: str, outcome: str, from_generation: int,
+                    to_generation: int | None, source_digest: str | None,
+                    detail: str | None = None) -> None:
+        """A configuration reload was attempted.
+
+        Security-relevant and previously unrecordable, because a
+        configuration could only change by restarting. Records the
+        attempt whether it SUCCEEDED or FAILED -- a rejected reload is
+        as interesting as an accepted one, and more so if someone is
+        probing.
+
+        to_generation and source_digest are None on failure, because
+        there is no new generation to name. A failed reload changes
+        nothing, which is the point of validating before swapping.
+        """
+        self._write({
+            "stage": "config_reload",
+            "user_id": user_id,
+            "outcome": outcome,
+            "from_generation": from_generation,
+            "to_generation": to_generation,
+            "new_source_digest": source_digest,
+            "detail": detail,
+        })
+
     def log_pre(self, request_id: str, user_id: str, query_text: str,
                 action_id: str, params: dict, decision: bool) -> None:
         self._write({

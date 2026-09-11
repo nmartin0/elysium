@@ -93,7 +93,11 @@ from core.auth.database import connection
 from core.auth.login_attempt_tracker import LoginAttemptTracker
 from core.auth.query_rate_limiter import QueryRateLimiter
 from core.auth.session_store import SessionStore
-from core.deployment_loader import RuntimePaths, build_generation, resolve_runtime_paths
+from core.deployment_loader import (
+    RuntimePaths,
+    build_generation,
+    resolve_runtime_paths,
+)
 from core.pending_write_store import PendingWriteStore
 from core.sqlite_connection import require_assertions_enabled
 from core.user_directory import UserDirectory
@@ -217,6 +221,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # disagreeing inside one request, silently, with nothing about the
     # call site looking wrong. Deleting them makes the pin structural
     # rather than advisory.
+    app.state.runtime_paths = runtime_paths
     app.state.generation = generation
     config = generation.config
     mediator = generation.mediator
