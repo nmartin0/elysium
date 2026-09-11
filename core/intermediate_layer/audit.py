@@ -94,7 +94,23 @@ _DEFAULT_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "deployment"
 
 
 class AuditLog:
-    def __init__(self, log_path: Path = _DEFAULT_LOG_PATH):
+    def __init__(self, log_path: Path = _DEFAULT_LOG_PATH, generation: int | None = None):
+        """`generation` identifies WHICH configuration load produced
+        these entries -- see HOT_RELOAD_PLAN.md step 1.
+
+        Held here rather than threaded through every logging call
+        because this object is already built per configuration load, by
+        load_deployment_bundle(). One instance belongs to exactly one
+        generation for its whole life, so there is nothing to keep in
+        sync and no call site that can forget to pass it.
+
+        Optional, and None means "not recorded", because the two
+        callers that construct a bare AuditLog() -- DataMediator and
+        PendingWriteStore, each defaulting one for tests -- genuinely
+        have no generation to name. A zero or a -1 would be a value
+        that looks like an answer.
+        """
+        self._generation = generation
         self._log_path = log_path
         # Set once the directory is known to exist -- see _write().
         # A plain bool rather than a lock: two threads both creating it
@@ -120,6 +136,11 @@ class AuditLog:
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
             self._log_dir_ready = True
         entry["timestamp"] = datetime.now(UTC).isoformat()
+        # Stamped HERE, in the one place every entry passes through, so
+        # that a new kind of entry added later cannot be the one that
+        # forgets it -- the same reasoning as the timestamp above.
+        if self._generation is not None:
+            entry["generation"] = self._generation
         with open(self._log_path, "a") as f:
             f.write(json.dumps(entry) + "\n")
 

@@ -218,7 +218,7 @@ def write_loop(tmp_path):
                    else dict(action))
             for name, action in schema["action_types"].items()
         }
-        write_mediator = WriteMediator(mediator, adapters, policy["roles"], action_types)
+        write_mediator = WriteMediator(mediator, adapters, policy["roles"], action_types, generation=1)
         return AgentLoop(client=None, mediator=mediator, write_mediator=write_mediator), mediator
 
     return build

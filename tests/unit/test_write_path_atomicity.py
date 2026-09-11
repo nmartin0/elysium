@@ -84,8 +84,7 @@ def deployment(tmp_path):
         write_log=write_log,
     )
     write_mediator = WriteMediator(
-        mediator, adapters, policy["roles"], schema["action_types"]
-    )
+        mediator, adapters, policy["roles"], schema["action_types"], generation=1)
     return mediator, write_mediator, write_log, db_path
 
 

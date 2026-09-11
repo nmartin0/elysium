@@ -44,7 +44,7 @@ from core.ontology.write_mediator import WriteMediator
 
 @pytest.mark.integration
 def test_real_model_never_attempts_a_write_when_no_action_is_visible(deployment, mediator, write_adapters):
-    write_mediator = WriteMediator(mediator, write_adapters, deployment.roles, deployment.action_types)
+    write_mediator = WriteMediator(mediator, write_adapters, deployment.roles, deployment.action_types, generation=1)
     loop = AgentLoop.from_deployment(deployment, mediator, write_mediator=write_mediator)
     user_record = resolve_user_record(deployment.users, "user_alice", deployment.security_attribute)
 

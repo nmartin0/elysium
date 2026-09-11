@@ -86,8 +86,7 @@ def _deployment(tmp_path, trial):
         write_log=WriteLogWriter(tmp_path / f"wl{trial}.db"),
     )
     write_mediator = WriteMediator(
-        mediator, adapters, policy["roles"], schema["action_types"]
-    )
+        mediator, adapters, policy["roles"], schema["action_types"], generation=1)
     return mediator, write_mediator
 
 

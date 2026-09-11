@@ -108,7 +108,7 @@ def write_mediator(tmp_path, isolated_audit_log):
     audit_log = AuditLog(isolated_audit_log / "audit.log")
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES,
                              write_log=write_log, audit_log=audit_log)
-    return WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    return WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
 
 
 def test_valid_action_call_succeeds_end_to_end(write_mediator):

@@ -103,3 +103,97 @@ def test_loaded_at_is_an_aware_utc_instant():
 
     assert config.loaded_at.tzinfo is not None
     assert before <= config.loaded_at <= datetime.now(UTC)
+
+
+# --- the generation reaching the durable records ---
+#
+# Step 1a gave a configuration load an identity. This is the half that
+# makes it useful: the identity has to reach the things that OUTLIVE
+# the load, or it answers nothing.
+
+import json  # noqa: E402
+
+import pytest  # noqa: E402
+
+from core.intermediate_layer.audit import AuditLog  # noqa: E402
+from tests.unit.test_named_actions import _record, write_mediator  # noqa: E402,F401
+
+
+def test_every_audit_entry_carries_the_generation(tmp_path):
+    # Stamped in _write(), the one place every entry passes through, so
+    # a new kind of entry added later cannot be the one that forgets.
+    log = AuditLog(tmp_path / "audit.log", generation=7)
+    log.log_access("alice", "Customer", "c1", "read", mac_allowed=True, rbac_allowed=True)
+
+    entry = json.loads((tmp_path / "audit.log").read_text().splitlines()[0])
+    assert entry["generation"] == 7
+
+
+def test_an_audit_log_with_no_generation_omits_the_field(tmp_path):
+    # None means "not recorded", not zero. DataMediator and
+    # PendingWriteStore each default a bare AuditLog for tests, and
+    # they genuinely have no generation to name -- a 0 or -1 would be a
+    # value that looks like an answer.
+    log = AuditLog(tmp_path / "audit.log")
+    log.log_access("alice", "Customer", "c1", "read", mac_allowed=True, rbac_allowed=True)
+
+    entry = json.loads((tmp_path / "audit.log").read_text().splitlines()[0])
+    assert "generation" not in entry
+
+
+def test_a_pending_write_records_the_generation_that_authorized_it(write_mediator):  # noqa: F811
+    # The first thing in Elysium that OUTLIVES the request that made
+    # it. Everything else is decided and finished inside one call, so
+    # configuration could never change underneath it.
+    write_mediator.generation = 42
+
+    pending = write_mediator.propose_action(
+        _record("lead"), "ReopenTicket", {"ticket_id": "t1", "reason": "again"}, origin="human",
+    )
+
+    assert pending.proposed_under_generation == 42
+
+
+def test_apply_time_audit_records_the_generation_the_write_was_proposed_under(write_mediator, tmp_path):  # noqa: F811
+    # THE POINT OF THE FIELD. The audit log stamps the generation in
+    # force when a write is APPLIED; the pending write carries the one
+    # it was PROPOSED under. An entry carrying two different numbers is
+    # a write that outlived a configuration change -- ordinary once an
+    # approvals inbox exists, and currently undetectable.
+    write_mediator.generation = 3
+    write_mediator.mediator.audit_log = AuditLog(tmp_path / "audit.log", generation=3)
+
+    pending = write_mediator.propose_action(
+        _record("lead"), "ReopenTicket", {"ticket_id": "t1", "reason": "again"}, origin="human",
+    )
+
+    # THE RELOAD. Between proposing and approving, configuration
+    # changed: this deployment is now serving generation 4. Simulated
+    # by moving both, exactly as rebuilding the bundle will at step 2.
+    #
+    # Without this the test cannot tell the two generations apart -- a
+    # control that replaced pending.proposed_under_generation with
+    # self.generation passed, because both were 3.
+    write_mediator.generation = 4
+    write_mediator.mediator.audit_log = AuditLog(tmp_path / "audit.log", generation=4)
+
+    write_mediator.confirm_and_execute(pending, approved=True)
+
+    # Nested under "params", which is where log_pre() puts the write's
+    # own detail -- checked against the code rather than assumed, after
+    # a first version of this test asserted the wrong shape and blamed
+    # the implementation.
+    entries = [json.loads(line) for line in (tmp_path / "audit.log").read_text().splitlines()]
+    pre = [e for e in entries if e.get("stage") == "pre"]
+    assert pre, "no pre-write audit entry at all"
+    assert pre[0]["params"]["proposed_under_generation"] == 3
+    assert pre[0]["generation"] == 4, "the applying generation must be recorded too"
+
+
+def test_the_generation_is_required_on_a_pending_write():
+    # No default, for the same reason origin has none: a default would
+    # be a guess written into an audit trail.
+    from core.ontology.write_mediator import PendingWrite
+
+    with pytest.raises(TypeError):
+        PendingWrite((), "alice", "desc", "Act", "human", datetime.now(UTC))

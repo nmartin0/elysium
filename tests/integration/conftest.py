@@ -100,7 +100,7 @@ def propose_named_action(deployment, mediator, write_adapters, query_text: str, 
     # user (user_henry, the dedicated accountant-role user) needed
     # this same shared flow, rather than that test growing its own,
     # near-identical copy of this same logic.
-    write_mediator = WriteMediator(mediator, write_adapters, deployment.roles, deployment.action_types)
+    write_mediator = WriteMediator(mediator, write_adapters, deployment.roles, deployment.action_types, generation=1)
     loop = AgentLoop.from_deployment(deployment, mediator, write_mediator=write_mediator)
     user_record = resolve_user_record(deployment.users, user_id, deployment.security_attribute)
 

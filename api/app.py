@@ -256,7 +256,9 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # to pass or verify matches here; load_deployment_bundle() always
     # constructs mediator with a real write_log, and WriteMediator's
     # own __init__ raises a clear error if that were ever not true.
-    app.state.write_mediator = WriteMediator(mediator, write_adapters, config.roles, config.action_types)
+    app.state.write_mediator = WriteMediator(
+        mediator, write_adapters, config.roles, config.action_types, config.generation,
+    )
     resume_summary = app.state.write_mediator.resume_pending_writes()
     if resume_summary["resumed"] or resume_summary["already_applied"] or resume_summary["ambiguous"]:
         logger.info(f"resume_pending_writes() on startup: {resume_summary}")

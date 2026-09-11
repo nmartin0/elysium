@@ -183,7 +183,7 @@ def fixture(tmp_path, isolated_audit_log):
     }, _WRITE_ADAPTER_REGISTRY)
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Customer": "primary_sql"}, TEST_ROLES,
                              write_log=write_log, audit_log=audit_log)
-    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     return mediator, write_mediator, write_log
 
 

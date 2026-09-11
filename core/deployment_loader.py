@@ -644,7 +644,10 @@ def load_deployment_bundle(
     # AuditLog itself (see its own docstring for why that default
     # exists and this store is never left without one) -- nothing
     # further to do here in that case.
-    audit_log = AuditLog(log_dir / "audit.log") if log_dir is not None else None
+    audit_log = (
+        AuditLog(log_dir / "audit.log", generation=config.generation)
+        if log_dir is not None else None
+    )
     # The mirror's own last-sync time -- what bounds the read-your-writes
     # overlay (see DataMediator._read_field_with_log_check()). None for a
     # live deployment, which disables the overlay entirely.

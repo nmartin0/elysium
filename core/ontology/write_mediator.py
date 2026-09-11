@@ -178,11 +178,29 @@ class PendingWrite:
     # no timestamp anywhere.
     origin: Origin
     proposed_at: datetime
+    # WHICH CONFIGURATION AUTHORIZED THIS -- see HOT_RELOAD_PLAN.md.
+    #
+    # A pending write is the first thing in Elysium that OUTLIVES the
+    # request that made it. Everything else is decided and finished
+    # inside one call, so the configuration in force could never have
+    # changed underneath it. This one waits for a human.
+    #
+    # Once configuration can be reloaded while running, a write can be
+    # proposed under one set of grants and approved under another. That
+    # is not hypothetical for an approvals inbox, where the wait is the
+    # entire point. Recording the generation is what makes the question
+    # answerable at all; deciding what to DO about a mismatch is a
+    # later step of that plan, and deliberately not this one.
+    #
+    # Required, no default, for the same reason origin above is: a
+    # default would be a guess written into an audit trail.
+    proposed_under_generation: int
 
 
 class WriteMediator:
     def __init__(
-        self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict, action_types: dict
+        self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict,
+        action_types: dict, generation: int,
     ):
         # action_types is required, not optional -- a WriteMediator's
         # only real capability is propose_action(), which is useless
@@ -195,6 +213,12 @@ class WriteMediator:
         self.mediator = mediator
         self.roles = roles
         self.action_types = action_types
+        # Taken from the SAME DeploymentConfig the mediator's audit log
+        # was built from, so a pending write and the audit entries
+        # describing it can never name different generations. Passing
+        # it separately to each was the alternative and is exactly how
+        # two sources of one truth start to disagree.
+        self.generation = generation
         # write_adapters -- a real, SEPARATE, independent set of
         # adapters, never mediator's own (see this class's own
         # AI-notes for the full story: Phase 0 of the read-only mirror
@@ -1001,7 +1025,7 @@ class WriteMediator:
         description = f"{action_type_name}(parameters={parameters})"
         return PendingWrite(
             tuple(resolved_sub_writes), user_record.user_id, description, action_type_name,
-            origin, datetime.now(UTC),
+            origin, datetime.now(UTC), self.generation,
         )
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
@@ -1032,6 +1056,15 @@ class WriteMediator:
                 # to be hit, which the log does not record.
                 "origin": pending.origin,
                 "proposed_at": pending.proposed_at.isoformat(),
+                # The configuration in force when this was PROPOSED.
+                # The audit log stamps the generation in force when it
+                # is APPLIED, so an entry carrying two different
+                # numbers is a write that outlived a configuration
+                # change -- which is exactly the thing an approvals
+                # inbox makes ordinary, and which nothing could
+                # currently detect. Recorded now; what to DO about a
+                # mismatch is a later step of HOT_RELOAD_PLAN.md.
+                "proposed_under_generation": pending.proposed_under_generation,
                 "sub_writes": [
                     {"object_type": sw.object_type, "object_id": sw.object_id, "changes": sw.changes}
                     for sw in pending.sub_writes

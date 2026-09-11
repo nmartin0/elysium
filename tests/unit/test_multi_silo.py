@@ -156,7 +156,7 @@ def test_an_action_to_one_silo_never_touches_the_other(mediator):
             }],
         },
     }
-    write_mediator = WriteMediator(mediator, mediator.adapters, roles, action_types)
+    write_mediator = WriteMediator(mediator, mediator.adapters, roles, action_types, generation=1)
     pending = write_mediator.propose_action(
         carol, "RenameWidget", {"widget_id": "w1", "new_name": "Renamed Widget"}, origin="human",
     )

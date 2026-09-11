@@ -227,7 +227,7 @@ def test_search_mixing_fields_from_different_storages_is_rejected(mediator):
 
 
 def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
-    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(
@@ -257,7 +257,7 @@ def test_create_without_explicit_id_is_rejected(mediator):
     # declared mutations mix a primary field (name) and an MDO field
     # (risk_score) without ever naming customer_id itself -- the
     # multi-storage case still exercises this same, now-universal rule.
-    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     alice = _record("alice")
     with pytest.raises(ValueError, match="requires an explicit 'customer_id' value"):
         write_mediator.propose_action(alice, "CreateCustomerWithNameAndRiskScore",
@@ -431,7 +431,7 @@ def test_create_without_setting_security_field_produces_an_unreadable_row(mediat
     # addition, this test never actually verified the log entry fires
     # here, only that the return values are correctly None. A genuine
     # gap between what the docstring claimed and what was proven.
-    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "CreateCustomerRiskOnly",

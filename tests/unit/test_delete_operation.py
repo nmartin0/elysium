@@ -76,8 +76,7 @@ def deployment(tmp_path):
         policy["roles"], write_log=write_log,
     )
     write_mediator = WriteMediator(
-        mediator, adapters, policy["roles"], schema["action_types"]
-    )
+        mediator, adapters, policy["roles"], schema["action_types"], generation=1)
     return mediator, write_mediator, write_log, db_path
 
 
@@ -91,6 +90,7 @@ def _write(write_mediator, operation, object_id="cust_001", changes=None, expect
         action_type_name="TestAction",
         origin="human",
         proposed_at=datetime.now(UTC),
+        proposed_under_generation=1,
     )
     return write_mediator.confirm_and_execute(pending, approved=True)
 
