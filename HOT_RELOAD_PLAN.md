@@ -651,6 +651,39 @@ directly.
       of magnitude makes the case unreachable rather than merely
       unlikely.
 
+      **CHECKED AGAINST FOUNDRY AFTERWARDS, and the age-margin
+      conclusion holds -- but it was incomplete.** Foundry's retention
+      does offer an age selector ("selects transactions older than the
+      given duration"), so age-based retention is precedent rather
+      than invention. What I had missed is the rule they treat as
+      PRIMARY, and it is simpler and stronger than age:
+
+      **NEVER DELETE WHAT IS CURRENT.** "By default, retention policies
+      will never delete transactions that are in the latest view of any
+      branch." Overriding it is available and documented as "very
+      dangerous", explicitly because it "may result in the deletion of
+      current data that is still in use".
+
+      For us that means: whatever expiry is added must never reclaim a
+      table's CURRENT snapshot, regardless of age. That protects every
+      request that pinned the newest snapshot -- the overwhelmingly
+      common case -- absolutely rather than probabilistically, and it
+      needs no threshold tuning at all. The age margin then covers the
+      narrower case of a request pinned to a snapshot that a sync has
+      since superseded.
+
+      Both, not either: the structural rule handles the common case
+      exactly, the age margin handles the tail.
+
+      **ALSO WORTH COPYING, though not required: MARK, THEN DELETE.**
+      Foundry marks a transaction first -- "the data in the transaction
+      may be deleted at any point, and so should not be read" -- and
+      performs the real deletion periodically afterwards. The gap
+      between the two is a grace period, and it is what makes their
+      retention safe to run against a live system rather than merely
+      careful. Over-engineered for a single-process deployment today;
+      the right answer if expiry ever becomes aggressive.
+
       **NOT BUILT, deliberately: nothing expires snapshots today** --
       grepped, zero occurrences. Building retention machinery before
       retention exists is speculative, and the protection is only

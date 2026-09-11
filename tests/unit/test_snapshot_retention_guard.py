@@ -17,11 +17,24 @@ is only meaningful alongside the thing it protects against. This fails
 the moment expiry appears, which is exactly when the decision needs
 making -- and not before.
 
-THE DECISION, recorded in HOT_RELOAD_PLAN.md step 5h: expire by AGE,
-with a margin longer than the longest possible request. NOT by
-coordinating with live generations -- expiry would run in a different
-PROCESS from the server, so a Python-side refcount of live generations
-is invisible to it and protects nothing.
+THE DECISION, recorded in HOT_RELOAD_PLAN.md step 5h, and TWO rules
+rather than one:
+
+  - NEVER reclaim a table's CURRENT snapshot, whatever its age. This is
+    the rule Foundry treats as primary -- their retention "will never
+    delete transactions that are in the latest view of any branch", and
+    the override is documented as "very dangerous" precisely because it
+    "may result in the deletion of current data that is still in use".
+    It protects every request pinned to the newest snapshot -- the
+    common case -- absolutely, with no threshold to tune.
+  - EXPIRE BY AGE with a margin longer than the longest possible
+    request, covering the narrower case of a request pinned to a
+    snapshot a sync has since superseded. Foundry has an age selector
+    too, so this is precedent rather than invention.
+
+NOT by coordinating with live generations: expiry would run in a
+different PROCESS from the server, so a Python-side refcount of live
+generations is invisible to it and protects nothing.
 """
 
 from pathlib import Path
