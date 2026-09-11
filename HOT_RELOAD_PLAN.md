@@ -508,15 +508,27 @@ socket, or opening a file handle at startup belongs to it.
       the disable-and-role-change window already recorded in
       ROADMAP.md's security backlog. Costs one `credentials.db` read
       per step.
-  4b. Recompute `visible_schema` only when the pinned generation
-      differs from the one the loop started with. Not per hop --
-      that also changes the prompt mid-query and interacts with prefix
-      caching, which is measured and load-bearing.
-  4c. Decide what an in-flight agent loop does when the generation
-      moves underneath it. Options: finish under the pinned one
-      (consistent, possibly stale), or abort and report. Leaning
-      finish-and-record, since the audit entry will say which
-      generation applied.
+  4b. **CLOSED BY CONSTRUCTION -- no code needed.** visible_schema has
+      exactly two inputs: the mediator's schema and roles, both from
+      the pinned deep-frozen generation, and the acting UserRecord,
+      which 4a now stops the loop on if it changes. There is no path
+      by which it can differ mid-query, so "recompute when the
+      generation moves" would recompute the same answer. Asserted by a
+      test rather than left as reasoning.
+  4c. **ALSO CLOSED BY CONSTRUCTION.** The route takes its loop from
+      the PINNED generation, and the loop holds that generation's
+      mediator, so an in-flight query finishes under the configuration
+      it started with. That is the finish-under-the-pinned-one option
+      this step listed, and step 2 already made it the only reachable
+      behaviour. Tested.
+
+      The gap that WAS real: nothing stopped a route reading
+      `app.state.generation` directly, which bypasses the pin as
+      effectively as the five deleted attributes did -- it reads
+      whatever is current at that instant rather than what the request
+      pinned. Found by a control, and the guard now covers it. A guard
+      naming five specific attributes did not generalise to the
+      sixth.
 
 ### 5. The mirror, and adapting to sources that change shape
 

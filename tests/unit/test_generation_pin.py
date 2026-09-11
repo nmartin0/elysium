@@ -73,6 +73,20 @@ def test_routes_read_the_pin_rather_than_app_state():
             f"use the pinned generation instead"
         )
 
+    # AND not app.state.generation itself, which bypasses the pin just
+    # as effectively: it reads whatever is current at that instant
+    # rather than what this request pinned, so two reads in one request
+    # can straddle a reload.
+    #
+    # This case was MISSING until a control exposed it -- swapping a
+    # route to read app.state.generation.loop directly passed every
+    # test above. A guard that names five specific attributes does not
+    # generalise to the sixth.
+    assert "app.state.generation" not in source, (
+        "api/routes.py reads app.state.generation directly; use _generation(request), "
+        "which returns the generation this request pinned at entry"
+    )
+
 
 def test_runtime_state_is_still_read_from_app_state():
     # The CONTROL for the test above. Sessions, credentials, rate

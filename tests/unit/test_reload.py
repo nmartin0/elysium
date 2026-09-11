@@ -349,3 +349,49 @@ def test_a_failing_sighup_reload_raises_nothing_out_of_its_thread(tmp_path):
 
     assert escaped == [], f"an exception escaped the SIGHUP thread: {escaped}"
     assert app.state.generation is before, "a failed SIGHUP reload replaced the generation"
+
+
+# --- steps 4b and 4c: an in-flight query and a reload ---
+
+def test_a_running_loop_keeps_its_own_generations_mediator(tmp_path):
+    # STEP 4c, ANSWERED BY CONSTRUCTION rather than by new code. The
+    # route takes its loop from the PINNED generation, and the loop
+    # holds that generation's mediator. A reload builds a whole new
+    # generation with its own loop; the running one is untouched.
+    #
+    # That is the "finish under the pinned generation" option the plan
+    # listed -- consistent, possibly stale -- and step 2 already made
+    # it the only reachable behaviour.
+    app = _app(tmp_path)
+    running_loop = app.state.generation.loop
+    pinned_mediator = running_loop.mediator
+
+    reload_generation(app)
+
+    assert running_loop.mediator is pinned_mediator
+    assert app.state.generation.loop is not running_loop
+    assert app.state.generation.mediator is not pinned_mediator
+
+
+def test_visible_schema_cannot_change_under_a_running_loop(tmp_path):
+    # STEP 4b, and the reason it needs no code. visible_schema has
+    # exactly two inputs: the mediator's schema and roles -- both from
+    # the pinned, deep-frozen generation -- and the acting UserRecord,
+    # which step 4a already stops the loop on if it changes.
+    #
+    # So there is no path by which it can differ mid-query, and
+    # "recompute when the generation moves" would recompute the same
+    # answer.
+    from core.intermediate_layer.auth import resolve_user_record
+
+    app = _app(tmp_path)
+    running_loop = app.state.generation.loop
+    record = resolve_user_record(
+        app.state.generation.config.users, "user_alice",
+        app.state.generation.config.security_attribute,
+    )
+    before = running_loop.mediator.visible_schema(record)
+
+    reload_generation(app)
+
+    assert running_loop.mediator.visible_schema(record) == before
