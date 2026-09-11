@@ -86,6 +86,50 @@ noticed within a few minutes.
 When you write a test for a bug you fixed, **break the fix and confirm
 the test fails.** If it still passes, find out why before moving on.
 
+**THE CONTROL IS NOT A FINAL CHECK. IT IS HOW YOU FIND OUT WHETHER YOU
+WROTE A TEST.** Do not treat it as diligence performed on a test you
+already believe. Until the control has failed, you do not know that
+what you wrote asserts anything, and "it passes" is evidence of
+nothing -- a test that cannot fail passes for the same reason a
+correct one does.
+
+State the property first, in one sentence, then ask what change to the
+code would make that sentence false. If you cannot name one, you are
+about to write a test that cannot fail. Write the control first if
+that helps; the order matters less than doing it before you believe
+the result.
+
+**THE FAILURE MODE IS SPECIFIC AND RECURRING: a test written beside
+the code it tests tends to assert the code's SHAPE rather than its
+PROPERTY.** You have just read the implementation, so you reach for
+what it does instead of what it must guarantee, and those agree
+exactly while the code is correct. Only breaking it separates them.
+Recent instances, each caught only by the control:
+
+- A test that a signal handler does not block asserted the reload
+  eventually happened. That is true whether the work runs on a thread
+  or inline -- it tested the outcome, not the timing.
+- A test that an exception cannot escape a thread expected the
+  exception to fail the test. An exception escaping a DAEMON thread
+  does not fail a test; it prints a warning and the run goes green.
+- A test that an audit entry names the PROPOSING generation passed
+  with the implementation replaced by the APPLYING one, because the
+  fixture had both at the same number.
+- A test that a thread was awaited polled for a side effect with a
+  deadline, so it returned while the thread still held a lock.
+
+**CHECK THE CONTROL FAILS FOR THE RIGHT REASON, AND THAT THE RIGHT
+TESTS FAIL.** A control that fails everything is usually broken
+setup, not a guarded property. Say in the commit message which tests
+failed and how many: "cap truncates silently -> 1 fail" is a
+verification; "the control failed" is a claim.
+
+**AND CHECK THE OPPOSITE DIRECTION WHERE THERE IS ONE.** A guard that
+only ever fires is decoration. If a test asserts something must NOT
+appear, add its pair asserting the legitimate case still passes --
+otherwise an over-eager future change satisfies the guard by breaking
+something else.
+
 This caught five hollow tests in one session: a concurrency test that
 passed against a racy lock (one trial, wrong interleaving), a batching
 test that passed unbatched (two-row fixture), a pagination test that
