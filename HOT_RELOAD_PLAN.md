@@ -619,21 +619,44 @@ directly.
         4. Hop 5 of the still-running query scans 12345. Gone.
 
       On CPU-only hardware a query can run half an hour, so the window
-      is wide. Iceberg's own primitive is the fix: a TAG is a named,
-      immutable reference that keeps a snapshot alive. A generation
-      tags the snapshots it names and releases them when no request
-      holds it -- refcounting the DATA, not just the Python object.
+      is wide.
 
-      The tag must be taken at the same moment the id is recorded (5b),
-      or a sync can expire it in between. That refcount is real shared
-      mutable state across threads and wants a tested primitive, not an
-      incidental lock: wrong one way deletes data a live request is
-      reading, wrong the other leaks snapshots forever.
+      **REVISED. The tag-and-release design first written here was
+      wrong, and structurally rather than in a detail.**
 
-      Note this also constrains 5c: the reload must read its snapshot
-      ids AND take its tags under the SAME flock scripts/run_sync.py
-      already uses, so reload and sync are mutually exclusive rather
-      than racing. A second lock would be a second thing to get right.
+      It said a generation TAGS the snapshots it names and releases
+      them when no request holds it, refcounting the data. That reads
+      well and cannot work, because **expiry would run in a DIFFERENT
+      PROCESS.** scripts/run_sync.py is a script; generations live in
+      the server. A Python-side refcount of live generations is
+      invisible to whatever does the expiring, so it protects nothing.
+
+      Tags WOULD be visible across processes, since they live in the
+      catalog -- which is why the original reached for them. But taking
+      a tag is a WRITE to the mirror catalog, and the server process
+      currently only READS the mirror. Giving the read path write
+      access purely for bookkeeping widens what a compromised server
+      can do, for a benefit with a much cheaper alternative.
+
+      **EXPIRE BY AGE, WITH A MARGIN.** Iceberg's expiry already
+      supports an age threshold. Set it comfortably longer than the
+      longest possible request -- hours, not minutes -- and no
+      coordination is needed at all: no cross-process protocol, no new
+      write capability on the read path, no refcount to get wrong in
+      either direction.
+
+      Weaker in theory, since a request outliving the threshold would
+      still break. But max_hops and the request timeout BOUND how long
+      a query can run, so a threshold exceeding that bound by an order
+      of magnitude makes the case unreachable rather than merely
+      unlikely.
+
+      **NOT BUILT, deliberately: nothing expires snapshots today** --
+      grepped, zero occurrences. Building retention machinery before
+      retention exists is speculative, and the protection is only
+      meaningful alongside the thing it protects against. What IS built
+      is a guard that fires the moment expiry appears, pointing
+      whoever adds it at this decision.
   5i. Report freshness FOR THE PINNED GENERATION, not for the
       mediator's current state. /data-freshness already exists and
       returns source plus last_synced_at, which is the right idea --
