@@ -301,7 +301,14 @@ def test_sighup_returns_immediately_rather_than_reloading_inline(tmp_path):
 
     reload_module.build_generation = slow_build
     try:
-        install_sighup_handler(app)
+        spawned = []
+
+        def recording_factory(**kwargs):
+            thread = threading.Thread(**kwargs)
+            spawned.append(thread)
+            return thread
+
+        install_sighup_handler(app, thread_factory=recording_factory)
         started = time.monotonic()
         signal.raise_signal(signal.SIGHUP)
         handler_returned = time.monotonic() - started
@@ -312,16 +319,19 @@ def test_sighup_returns_immediately_rather_than_reloading_inline(tmp_path):
             f"the reload inline rather than handing it to a thread"
         )
         release.set()
-        # WAIT FOR THE THREAD TO FINISH before returning. It holds the
-        # reload lock until it does, and the next test's SIGHUP would
-        # then be rejected as "already in progress" -- which is exactly
-        # how this was found: a later test failed depending on ordering
-        # and passed alone.
-        deadline = time.monotonic() + 5
-        while app.state.generation.generation == before and time.monotonic() < deadline:
-            time.sleep(0.02)
     finally:
         reload_module.build_generation = original
+        # JOINED, not polled. The thread holds the reload lock until it
+        # finishes, so a test that returns while it runs leaves the
+        # NEXT test's signal rejected as "already in progress" -- which
+        # happened, and failed on ordering rather than reproducibly.
+        #
+        # A join is a guarantee; polling for a side effect with a
+        # deadline is an assumption about how fast the machine is.
+        for thread in spawned:
+            thread.join(timeout=10)
+            assert not thread.is_alive(), "the reload thread did not finish"
+    assert app.state.generation.generation > before
 
 
 def test_sighup_actually_reloads(tmp_path):

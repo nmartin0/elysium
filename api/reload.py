@@ -94,7 +94,7 @@ def reload_generation(app, requested_by: str = "unknown") -> DeploymentGeneratio
         _reload_lock.release()
 
 
-def install_sighup_handler(app) -> None:
+def install_sighup_handler(app, thread_factory=threading.Thread) -> None:
     """Makes SIGHUP reload configuration, the way daemons have forever.
 
     THE WORK RUNS ON A SHORT-LIVED THREAD, not in the handler. A signal
@@ -120,12 +120,22 @@ def install_sighup_handler(app) -> None:
     especially when the likely cause is a half-saved YAML file.
     """
 
+    # thread_factory is injected ONLY so a test can hold the thread and
+    # join it. A test that polls for a side effect instead leaves the
+    # thread running when it returns -- and that thread holds the
+    # reload lock, so the NEXT test's signal is rejected as "already in
+    # progress". That is not hypothetical: it happened, and the failure
+    # depended on test ordering, which is the hardest kind to read.
+    #
+    # Injected rather than stored in module state, which would be
+    # shared between tests and is the thing being fixed.
+
     def _handle(_signum, _frame):
         # Both arguments are required by signal.signal's contract and
         # neither is useful here: there is only one signal registered,
         # and the interrupted frame is not something a reload cares
         # about.
-        threading.Thread(target=_reload_from_signal, args=(app,), daemon=True).start()
+        thread_factory(target=_reload_from_signal, args=(app,), daemon=True).start()
 
     signal.signal(signal.SIGHUP, _handle)
     logger.info("SIGHUP will reload configuration")
