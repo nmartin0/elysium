@@ -27,6 +27,22 @@ from core.deployment_loader import build_generation
 DEPLOYMENT = Path(__file__).resolve().parent.parent.parent / "deployment" / "etc"
 
 
+@pytest.fixture(autouse=True)
+def _restore_sighup():
+    """signal.signal is PROCESS-GLOBAL.
+
+    A handler installed by one test stays live for every test after it,
+    pointing at that test's app. A later test raising SIGHUP then
+    reloads somebody else's deployment -- which is how one of these
+    tests failed under full-suite load while passing alone.
+    """
+    import signal
+
+    previous = signal.getsignal(signal.SIGHUP)
+    yield
+    signal.signal(signal.SIGHUP, previous)
+
+
 def _app(tmp_path):
     generation = build_generation(DEPLOYMENT, data_dir=tmp_path, log_dir=tmp_path / "log")
     return SimpleNamespace(state=SimpleNamespace(

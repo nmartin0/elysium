@@ -188,3 +188,7 @@ mirror_snapshots
 # from the returned dict, never by our own code, the same as every
 # other response-model field above.
 changed
+
+# tests/unit/test_reload.py's autouse fixture -- pytest calls it by
+# registration, never by name.
+_restore_sighup

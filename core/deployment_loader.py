@@ -520,7 +520,43 @@ def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
         uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
         warehouse=f"file://{mirror_dir / 'warehouse'}",
     )
-    return {silo_name: MirrorReadAdapter(catalog, silo_name) for silo_name in resolved_silo_configs}
+    # Computed HERE, where the catalog already exists, and passed into
+    # each adapter rather than set on it afterwards. Setting it after
+    # construction would leave a window in which an adapter existed
+    # unpinned, and "mostly immutable" is the shape of object this
+    # project keeps finding bugs in.
+    snapshot_ids = _snapshot_ids_from_catalog(catalog, config)
+    return {
+        silo_name: MirrorReadAdapter(
+            catalog, silo_name,
+            snapshot_ids={
+                table: snapshot for (silo, table), snapshot in snapshot_ids.items()
+                if silo == silo_name
+            },
+        )
+        for silo_name in resolved_silo_configs
+    }
+
+
+def _snapshot_ids_from_catalog(catalog, config: DeploymentConfig) -> dict:
+    # {(silo, table): snapshot_id} for every mirrored table that has
+    # actually synced. A table that never has is ABSENT rather than
+    # present with a null: there is no snapshot to pin, and a
+    # placeholder would look like one.
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    from core.mirror.sync_targets import resolve_sync_targets
+
+    ids = {}
+    for target in resolve_sync_targets({"object_types": config.schema}):
+        try:
+            table = catalog.load_table(f"{target.silo_name}.{target.table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            continue
+        snapshot = table.current_snapshot()
+        if snapshot is not None:
+            ids[(target.silo_name, target.table_name)] = snapshot.snapshot_id
+    return ids
 
 
 def _build_adapters(
@@ -652,20 +688,23 @@ class DeploymentGeneration:
     mirror_snapshots: Mapping[str, int]
 
 
-def _mirror_snapshot_ids(config: DeploymentConfig, data_dir: Path) -> Mapping[str, int]:
-    # Same enumeration _mirror_last_synced_at() already does, reading
-    # the id rather than the timestamp. A table that has never synced
-    # is absent rather than present with a null -- there is no snapshot
-    # to pin, and a placeholder would look like one.
-    from core.mirror.iceberg_sync import IcebergMirrorSync
-    from core.mirror.sync_targets import resolve_sync_targets
+def _mirror_snapshot_ids(mediator: DataMediator) -> Mapping[str, int]:
+    """What the READ ADAPTERS are actually pinned to, as
+    {"silo.table": snapshot_id}.
 
-    sync = IcebergMirrorSync(data_dir / "mirror", {})
+    READ OFF THE ADAPTERS rather than re-enumerated from the catalog,
+    and that is the whole point. An independent second walk would be a
+    second source of truth: it could disagree with what the adapters
+    pinned -- a sync committing between the two would be enough -- and
+    the generation would then REPORT a snapshot nobody was reading.
+
+    Same reasoning as mediator.roles being the same OBJECT as
+    config.roles rather than an equal copy.
+    """
     ids = {}
-    for target in resolve_sync_targets({"object_types": config.schema}):
-        snapshot_id = sync.current_snapshot_id(target.silo_name, target.table_name)
-        if snapshot_id is not None:
-            ids[f"{target.silo_name}.{target.table_name}"] = snapshot_id
+    for silo_name, adapter in mediator.adapters.items():
+        for table_name, snapshot_id in getattr(adapter, "_snapshot_ids", {}).items():
+            ids[f"{silo_name}.{table_name}"] = snapshot_id
     return deep_freeze(ids)
 
 
@@ -694,7 +733,6 @@ def build_generation(
     write_mediator = WriteMediator(
         mediator, write_adapters, config.roles, config.action_types, config.generation,
     )
-    resolved_data_dir = data_dir if data_dir is not None else config_dir
     return DeploymentGeneration(
         generation=config.generation,
         loaded_at=config.loaded_at,
@@ -705,9 +743,7 @@ def build_generation(
         loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator),
         synthesis_client=build_llm_adapter(config, config.synthesis_model),
         write_adapters=write_adapters,
-        mirror_snapshots=(
-            _mirror_snapshot_ids(config, resolved_data_dir) if config.read_from_mirror else deep_freeze({})
-        ),
+        mirror_snapshots=_mirror_snapshot_ids(mediator),
     )
 
 

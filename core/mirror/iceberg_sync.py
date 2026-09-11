@@ -167,17 +167,6 @@ class IcebergMirrorSync(MirrorSync):
         # what actually happened.
         return datetime.fromtimestamp(snapshot.timestamp_ms / 1000, tz=UTC)
 
-    def current_snapshot_id(self, silo_name: str, table_name: str) -> int | None:
-        # The snapshot a generation pins for this table. None when the
-        # table does not exist or has never synced -- there is nothing
-        # to pin, and a placeholder would look like something.
-        try:
-            table = self._catalog.load_table(f"{silo_name}.{table_name}")
-        except (NoSuchTableError, NoSuchNamespaceError):
-            return None
-        snapshot = table.current_snapshot()
-        return snapshot.snapshot_id if snapshot is not None else None
-
     def _ensure_namespace(self, silo_name: str) -> None:
         try:
             self._catalog.create_namespace(silo_name)
