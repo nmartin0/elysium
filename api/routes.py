@@ -1810,7 +1810,14 @@ def health_route(request: Request) -> dict:
     """
     checks: dict[str, str] = {}
 
-    mediator = getattr(request.app.state, "mediator", None)
+    # Through the PIN, not app.state -- which no longer has a mediator
+    # at all (step 2e). The getattr default this replaced was written
+    # to tolerate a not-yet-wired app, and after the attribute was
+    # deleted it silently returned None and reported "unconfigured" on
+    # a perfectly healthy deployment. A defensive default outliving the
+    # thing it defended against is worse than no default: it turns a
+    # missing dependency into a plausible-looking answer.
+    mediator = getattr(_generation(request), "mediator", None)
     checks["ontology"] = "ready" if mediator is not None else "unconfigured"
 
     for silo_name, adapter in (getattr(mediator, "adapters", {}) or {}).items():

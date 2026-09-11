@@ -207,12 +207,19 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     generation = build_generation(
         runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
     )
+    # THE ONLY REFERENCE. The five configuration-derived objects are
+    # reachable through this and nowhere else -- there is deliberately
+    # no app.state.config, no app.state.mediator and so on.
+    #
+    # Their absence is the point, not tidiness. While they existed, a
+    # route could read app.state.mediator directly and get a DIFFERENT
+    # generation from the one its request pinned -- schema and grants
+    # disagreeing inside one request, silently, with nothing about the
+    # call site looking wrong. Deleting them makes the pin structural
+    # rather than advisory.
     app.state.generation = generation
     config = generation.config
     mediator = generation.mediator
-
-    app.state.config = config
-    app.state.mediator = mediator
     # Kept alongside the three stores below for tests/integration/
     # test_api.py's own direct, HTTP-bypassing test-setup DB access --
     # a genuinely different, legitimate need from route handlers, which
@@ -267,13 +274,12 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # to pass or verify matches here; load_deployment_bundle() always
     # constructs mediator with a real write_log, and WriteMediator's
     # own __init__ raises a clear error if that were ever not true.
-    app.state.write_mediator = generation.write_mediator
     # STARTUP ONLY, and deliberately not part of build_generation().
     # This recovers writes interrupted by a crash; a RELOAD must not
     # repeat it, because the writes it recovers are already recovered
     # and re-running it against in-flight state is a different
     # operation with different risks.
-    resume_summary = app.state.write_mediator.resume_pending_writes()
+    resume_summary = generation.write_mediator.resume_pending_writes()
     if resume_summary["resumed"] or resume_summary["already_applied"] or resume_summary["ambiguous"]:
         logger.info(f"resume_pending_writes() on startup: {resume_summary}")
     if resume_summary["ambiguous"]:
@@ -281,8 +287,6 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             f"{resume_summary['ambiguous']} write(s) left ambiguous after resume -- "
             f"see audit.log's write_resume_ambiguous entries for detail; these need manual review."
         )
-    app.state.loop = generation.loop
-    app.state.synthesis_client = generation.synthesis_client
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
     # Shares the SAME AuditLog instance mediator itself holds -- not a
     # second, separately-constructed one that happens to point at the

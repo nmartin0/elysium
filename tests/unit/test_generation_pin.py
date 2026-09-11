@@ -100,3 +100,38 @@ def test_replacing_a_generation_leaves_the_previous_one_intact():
 
     assert first.config == "old"
     assert second.config == "new"
+
+
+# --- step 2e: the attributes are gone, not merely unused ---
+
+def test_app_state_no_longer_carries_the_configuration_derived_objects():
+    # The DIFFERENCE step 2e makes. Step 2d stopped routes reading
+    # them; this stops them existing. While they existed, a route could
+    # reach past its pin and get a different generation, silently, with
+    # nothing at the call site looking wrong.
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent.parent / "api" / "app.py").read_text()
+    assignments = [
+        line for line in source.splitlines()
+        if line.strip().startswith("app.state.") and "=" in line
+    ]
+    assigned = {line.split("app.state.")[1].split()[0].split("=")[0] for line in assignments}
+
+    for gone in ("config", "mediator", "write_mediator", "loop", "synthesis_client"):
+        assert gone not in assigned, f"api/app.py still assigns app.state.{gone}"
+
+
+def test_runtime_state_is_still_assigned_on_app_state():
+    # The CONTROL. Sessions, credentials, rate limiters and pending
+    # writes must SURVIVE a reload, so they belong on app.state and NOT
+    # on the generation. A deletion that took them too would pass the
+    # test above while logging out every user on reload.
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent.parent / "api" / "app.py").read_text()
+
+    for kept in ("session_store", "credential_store", "user_directory",
+                 "login_attempt_tracker", "query_rate_limiter", "pending_writes",
+                 "artifact_store", "executor"):
+        assert f"app.state.{kept} =" in source, f"runtime state app.state.{kept} was removed"

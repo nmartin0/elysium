@@ -160,17 +160,12 @@ def with_config(app, **fields) -> None:
     """
     import dataclasses
 
-    config = dataclasses.replace(app.state.config, **fields)
-    app.state.config = config
-    # AND the generation, because routes read the PINNED generation
-    # rather than app.state.config -- that is the whole point of step
-    # 2c. Replacing only app.state.config leaves every route seeing the
-    # old settings, which is how this was found: a data-freshness test
-    # flipped read_from_mirror and the route carried on reporting
-    # "live".
-    #
-    # Once step 2e deletes app.state.config, this collapses to the one
-    # generation replacement.
+    # ONE replacement, because there is one reference: step 2e deleted
+    # app.state.config, so the generation is the only way in. That is
+    # also what makes this a faithful rehearsal of a reload -- swapping
+    # a whole immutable configuration, not patching pieces of a live
+    # one.
+    config = dataclasses.replace(app.state.generation.config, **fields)
     app.state.generation = dataclasses.replace(app.state.generation, config=config)
 
 
@@ -198,8 +193,8 @@ def with_roles(app, **roles) -> None:
 
     from core.immutable import deep_freeze
 
-    updated = deep_freeze({**app.state.config.roles, **roles})
-    app.state.config = dataclasses.replace(app.state.config, roles=updated)
+    config = app.state.generation.config
+    updated = deep_freeze({**config.roles, **roles})
 
     # THE MEDIATOR AND WRITE MEDIATOR HOLD THEIR OWN REFERENCE to the
     # roles dict, so replacing the config alone leaves them
@@ -219,6 +214,28 @@ def with_roles(app, **roles) -> None:
     # mediator and write_mediator all held the SAME dict object, so
     # changing it changed all three. That shared mutable object is the
     # hazard, not the fix.
-    app.state.mediator.roles = updated
-    app.state.write_mediator.roles = updated
-    app.state.generation = dataclasses.replace(app.state.generation, config=app.state.config)
+    # The mediator and write_mediator hold their OWN reference to the
+    # roles dict, so replacing the config alone leaves them authorizing
+    # against the old grants. Found by a test at step 2a, and still
+    # true: the generation bundles them but does not rebuild them.
+    #
+    # A real reload builds new ones from scratch, which is why
+    # build_generation() exists and why this stays a test-only
+    # shortcut rather than something production does.
+    app.state.generation.mediator.roles = updated
+    app.state.generation.write_mediator.roles = updated
+    app.state.generation = dataclasses.replace(
+        app.state.generation, config=dataclasses.replace(config, roles=updated),
+    )
+
+
+def mediator_of(app):
+    """The running app's mediator, for test setup that needs it directly.
+
+    Reaches through app.state.generation, because api/app.py no longer
+    keeps app.state.mediator -- see HOT_RELOAD_PLAN.md step 2e. Tests
+    doing direct database setup are a legitimate need and a genuinely
+    different one from a route handler's; this gives them a named way
+    in rather than reinstating the attribute a route could then reach.
+    """
+    return app.state.generation.mediator

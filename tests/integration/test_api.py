@@ -39,7 +39,7 @@ from core.auth.database import connection
 from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW
 from core.deployment_loader import RuntimePaths
 from core.intermediate_layer.auth import UserRecord
-from tests.conftest import with_config, with_roles
+from tests.conftest import mediator_of, with_config, with_roles
 
 pytestmark = pytest.mark.mocked_llm
 
@@ -424,7 +424,7 @@ def test_data_freshness_reports_the_mirror_sync_time_when_reading_from_it(client
     _login(client, "alice", "correct-pw")
 
     with_config(client.app, read_from_mirror=True)
-    client.app.state.mediator.mirror_synced_at = "2026-01-15T09:00:00+00:00"
+    mediator_of(client.app).mirror_synced_at = "2026-01-15T09:00:00+00:00"
 
     response = client.get("/api/data-freshness")
 
@@ -1361,8 +1361,8 @@ def test_confirming_an_approved_action_actually_changes_the_database(client):
     # Real proof the database actually changed -- a direct adapter
     # read, not just trusting the confirm endpoint's own claim. This
     # fixture's OWN, disposable database -- nothing to restore afterward.
-    adapter = client.app.state.mediator._adapter_for("Customer")
-    type_config = client.app.state.mediator._type_schema("Customer")
+    adapter = mediator_of(client.app)._adapter_for("Customer")
+    type_config = mediator_of(client.app)._type_schema("Customer")
     actual_value = adapter.get_raw_field("Customer", "cust_001", "name", type_config)
     assert actual_value == "Updated Name"
 
@@ -1380,8 +1380,8 @@ def test_confirming_a_rejected_action_does_not_change_the_database(client):
     assert confirm_response.status_code == 200
     assert confirm_response.json()["status"] == "rejected"
 
-    adapter = client.app.state.mediator._adapter_for("Customer")
-    type_config = client.app.state.mediator._type_schema("Customer")
+    adapter = mediator_of(client.app)._adapter_for("Customer")
+    type_config = mediator_of(client.app)._type_schema("Customer")
     actual_value = adapter.get_raw_field("Customer", "cust_001", "name", type_config)
     assert actual_value == "Ada Okafor"  # the fixture's real, unchanged seed value
 
@@ -1823,7 +1823,7 @@ def _many_customers(client, count=137):
     directory = client.app.state.user_directory
     directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
-    adapter = client.app.state.mediator.adapters["primary_sql"]
+    adapter = mediator_of(client.app).adapters["primary_sql"]
     conn = sqlite3.connect(adapter.db_path)
     conn.executemany(
         "INSERT INTO customers VALUES (?, ?, ?, ?)",
@@ -1963,7 +1963,7 @@ def test_paging_survives_an_unstable_underlying_order(client):
     import random
 
     total = _many_customers(client, count=40)
-    mediator = client.app.state.mediator
+    mediator = mediator_of(client.app)
     real_search = mediator.search_object_free_text
 
     def shuffled(*args, **kwargs):
@@ -2023,7 +2023,7 @@ def _record_edit(client, changes, description, user_id="alice"):
     same database, exactly as the app's own WriteMediator does."""
     from core.ontology.write_log import WriteLogWriter
 
-    writer = WriteLogWriter(client.app.state.mediator.write_log.db_path)
+    writer = WriteLogWriter(mediator_of(client.app).write_log.db_path)
     writer.mark_applied(
         writer.log_pending_update(
             "Customer", "cust_001", changes, {}, user_id, description
@@ -2219,7 +2219,7 @@ def test_health_reports_degraded_rather_than_failing(client, monkeypatch):
     # distinguishing "the service is down" from "the service is up but
     # its database is not" needs both answers to arrive, and a non-200
     # collapses them into one.
-    adapter = next(iter(client.app.state.mediator.adapters.values()))
+    adapter = next(iter(mediator_of(client.app).adapters.values()))
 
     def unreachable():
         raise OSError("database is gone")
@@ -2561,7 +2561,7 @@ def test_silos_route_reports_the_failure_KIND_not_the_message(client, tmp_path):
     report or a browser cache.
     """
     _admin_user(client, "silofail")
-    mediator = client.app.state.mediator
+    mediator = mediator_of(client.app)
     adapter = mediator.adapters["primary_sql"]
     original = adapter.db_path
     adapter.db_path = str(tmp_path / "gone.db")
