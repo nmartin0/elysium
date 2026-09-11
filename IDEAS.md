@@ -56,12 +56,66 @@ every question shape rather than one.
 
 Confidence: low on any fix, high that measuring first is right.
 
+## Counting across a link, which the model keeps asking for
+
+Three times in one run, qwen2.5:3b emitted:
+
+    aggregate_object(Customer, count, field_name="transactions")
+
+`transactions` is a LINK, so this is refused -- correctly, since a link
+is not a column. The supported route is search_around to the far side,
+then aggregate there.
+
+**But the INTENT is entirely reasonable**: "count this customer's
+transactions" is the obvious reading of the question that was asked.
+The model was corrected once, followed the advice and used
+search_around at step 4 -- then reverted to the same invalid shape at
+step 7 and repeated it until the run stopped.
+
+**A model persistently reaching for the same unsupported shape is
+usually a signal about the API, not the model.** Two routes to the same
+answer, one of which is refused, and the refused one is the one that
+matches how the question was phrased.
+
+Worth considering: allow `count` over a link field, meaning the number
+of linked objects on the far side, resolved through the link machinery
+rather than as a column. It is a real ontology operation -- link
+cardinality -- and it collapses search_around-then-count into one hop,
+which on this hardware is ~190 seconds saved per occurrence.
+
+**Open questions before building it.** Whether MAC on the far side is
+correctly applied -- counting links must count only objects the caller
+may see, or the count itself leaks. Whether it generalises past `count`
+(sum over a link's far side is coherent but a bigger change). And
+whether Foundry has an equivalent, which has not been checked.
+
+Confidence: medium that this is worth doing, high that the repeated
+attempts are evidence and not noise.
+
 ## Aggregates are not being chosen when they should be
 
-Related to the above but a distinct failure. The trace's question was a
-COUNT. `aggregate_object` would have answered it in one hop without
-reading a single amount. The prompt already says to prefer aggregates
-over reading objects one at a time. The model ignored it.
+**AMENDED TWICE, and both amendments are recorded rather than edited
+away, because the reversals are the useful part.**
+
+Originally this entry said the model "ignores" the aggregate guidance
+and speculated about wording and position. Then a live run surfaced
+`unrecognized step 'aggregate_object', finishing` and the conclusion
+flipped: the model was not ignoring anything, the parser was silently
+discarding it. Then a probe asked three aggregate-shaped questions from
+an empty gathered and got `search_object` for all three -- including
+"what is the total of all transaction amounts?", where it picked the
+wrong OBJECT TYPE entirely.
+
+**So both causes were real and independent.** The parser discarded
+aggregates the model did emit (fixed). The model ALSO under-selects
+aggregates as an opening move, missing two of three cases where one
+would answer in a single hop. Only the first is closed.
+
+The lesson is narrower than "measure first" -- there was a
+measurement, and it was over-read. One observation of the model
+emitting an aggregate showed that it CAN, not that it reliably does,
+and that was generalised into a conclusion about a different
+question.
 
 That is not "chose a suboptimal path" -- it is "did not recognise the
 question type", which is a different problem.
@@ -201,11 +255,25 @@ system prompt, `object_ids` batching landed, and duplicate detection
 now records a signature per object per field rather than one per set.
 The prompt qwen2.5:3b failed against is not the prompt it would see.
 
-**The measurement:** switch `model:` and run agent_trace on a
-multi-hop question. Watch for a repeated step -- the same
-`search_object` twice, or a field re-read. Faster AND no repetition
-wins. One repetition and phi4-mini stays: a model 20% quicker per step
-that occasionally burns the whole hop budget is worse.
+**RESOLVED: phi4-mini stays.** The multi-hop run was done and
+qwen2.5:3b failed it, reproducing exactly the behaviour the config note
+warned about. In one query it emitted the same invalid step it had
+already been corrected on, then repeated it until duplicate detection
+stopped the run -- eight steps, 643 seconds, NO ANSWER. phi4-mini
+answered the same question in 443 seconds.
+
+It also did not use the `object_ids` batching phi4-mini adopted on
+first exposure, spending two hops on two amounts where one would do.
+
+The hypothesis that the changed prompt might have rescued it -- the
+action verdicts moved, batching added, duplicate detection tightened --
+was wrong. Faster per token, worse at everything that decides whether a
+query completes.
+
+One thing it did BETTER, worth keeping in view: it reached for
+`aggregate_object` at all, which phi4-mini never did in any recorded
+trace. The aggregate-selection weakness above may be worse on the model
+that won.
 
 **Two things the benchmark could not see, worth stating so nobody
 over-reads it.** Every model scored 2/2 valid, so correctness did not
@@ -918,11 +986,11 @@ later-call ratio.
     fixing one instance of a drift class is worth much less than
     catching the class.
 
-**Waiting on a measurement already queued:**
+**RESOLVED, no longer blocking:**
 
-0. **The model decision.** A multi-hop agent_trace on qwen2.5:3b
-   decides it, and it gates templates/config.yaml behind it. Costs
-   nothing but the run.
+0. ~~The model decision.~~ Done. phi4-mini stays; qwen2.5:3b
+   reproduced its recorded looping failure on a multi-hop run and
+   never reached an answer. templates/config.yaml is unblocked.
 
 **Then, in this order:**
 
@@ -975,6 +1043,12 @@ than as its own piece of work:
   values, so the data exists; the design question is whose authority a
   revert runs under, and that answer should follow elevation rather
   than precede it.
+- **Counting across a link in one step.** Two routes to the same
+  answer today, one refused, and the refused one matches how the
+  question is naturally phrased -- which a model demonstrated three
+  times in a single run. Needs the MAC question answered first:
+  counting linked objects must count only those the caller may see, or
+  the count itself leaks.
 - **Marking which prompt content came from ontology data.** The cheap
   half of CaMeL's control/data separation. Full CaMeL is far too heavy
   here, but recording provenance within the prompt would make an
