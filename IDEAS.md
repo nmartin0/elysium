@@ -971,6 +971,40 @@ serving. llama.cpp's single-slot prefix reuse is what this deployment
 has, and it is already working -- measured at an 8.8x first-call to
 later-call ratio.
 
+## Is SQLite running in WAL mode, and should it be?
+
+Surfaced by a question about readers-writer locks, and it is the one
+place a genuine readers-writer problem exists in this system -- inside
+SQLite rather than in our code.
+
+`grep` finds NO `journal_mode` anywhere. SQLite therefore defaults to
+rollback journal, in which **a writer blocks all readers** for the
+duration of its transaction. WAL mode removes that: readers proceed
+against the last committed state while a writer works. It is SQLite's
+own implementation of the MVCC property Iceberg already gives the
+mirror for free.
+
+**Not obviously a bug, and possibly deliberate.** WAL does not work
+over network filesystems and creates extra files a backup has to
+account for. The write path is already serialised per object, so
+contention may be low in practice. But no comment records it as a
+decision anywhere, which usually means it is a default rather than a
+choice -- and this project's habit is to state why a default was kept.
+
+**Measure before changing.** Whether reads actually block during a
+write on a real deployment is answerable with a test that holds a
+write transaction open and times a concurrent read. Changing journal
+mode blind, on the store holding credentials and the write log, is not
+the shape of change this project makes.
+
+Independent of hot-reloading, and of the PostgreSQL question, which
+ROADMAP.md has already settled: Postgres does solve concurrent writes
+better -- true row-level MVCC where SQLite allows one writer
+database-wide even in WAL -- but the recorded position is that neither
+justifying condition has been MEASURED because neither exists yet. WAL
+is a one-line change to databases we already have; Postgres is a
+migration. They are not the same question.
+
 ---
 
 ## Suggested order

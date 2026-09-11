@@ -399,28 +399,45 @@ configuration was in force for any entry.
       reload that validates less than a boot would be a hole that
       only opens under reload.
   3b. The rebind: on success, `app.state.generation = new`. One
-      statement, atomic in CPython, no lock on the read path. Old
-      generations are freed when the last request pinning them
-      finishes; refcounting handles this and no scheme is needed.
-  3c. Failure leaves the running generation in place, and the error is
+      statement, atomic in CPython, and NO LOCK ON THE READ PATH -- a
+      lock there would serialise every request to buy what a single
+      atomic reference read already gives. This is read-copy-update,
+      and it only works because step 2a made the shared object
+      genuinely immutable.
+
+      **CORRECTION to an earlier version of this step**, which said
+      refcounting frees old generations and "no scheme is needed".
+      That is true of MEMORY and false of STORAGE. Refcounting frees
+      the Python object; it does nothing about the Iceberg snapshot
+      that generation names, which expiry can delete out from under a
+      still-running request. See 5h.
+  3c. SERIALISE THE RELOAD ITSELF. SIGHUP and an admin request can
+      arrive together. `_generation_lock` added in step 1a only stops
+      duplicate NUMBERS -- two builds could still race to swap, and
+      the loser's work is either wasted or lands second and wins.
+      The whole build-validate-swap needs one lock, and it should be
+      NON-BLOCKING: a second reload arriving mid-reload is rejected
+      with "already in progress", not queued. Queueing would let a
+      burst of SIGHUPs stack up rebuilds nobody asked for.
+  3d. Failure leaves the running generation in place, and the error is
       returned to the caller with the same file-and-line detail
       `scripts/lint_deployment.py` produces. A broken YAML edit
       becomes a no-op with a message, where today it is an outage.
-  3d. `POST /admin/reload`, requiring `manage:deployment` -- a NEW
+  3e. `POST /admin/reload`, requiring `manage:deployment` -- a NEW
       grant, not `manage:users`, because reloading configuration and
       creating accounts are different powers. Returns the new
       generation number, or the validation error.
-  3e. `SIGHUP` as a second trigger, sharing 3a-3c exactly. **NOT
+  3f. `SIGHUP` as a second trigger, sharing 3a-3d exactly. **NOT
       file-watching**: a half-saved YAML would trigger a reload
       mid-write, and the failure mode is a partial read that happens
       to parse.
-  3f. Concurrency tests, and these are the load-bearing ones for the
+  3g. Concurrency tests, and these are the load-bearing ones for the
       whole plan: a reload during an in-flight request leaves that
       request on its pinned generation; N concurrent readers during a
       swap each see exactly one generation; a failed reload changes
       nothing observable. Run under the forced-interleaving discipline
       the existing concurrency tests already use.
-  3g. Audit the reload itself -- who triggered it, from which
+  3h. Audit the reload itself -- who triggered it, from which
       generation to which, and the digest. A configuration change is a
       security-relevant event and currently has no record at all.
 
@@ -518,6 +535,39 @@ directly.
       sqlite_adapter, NOT yet for the mirror adapter's catalog handle.
   5g. Repointing a silo is destructive for anything holding an open
       connection. Treat it as such in step 6.
+  5h. **SNAPSHOT RETENTION MUST RESPECT PINNED GENERATIONS**, and this
+      is a data-loss gap rather than a tidiness one. Nothing expires
+      Iceberg snapshots today -- grepped, zero hits -- but retention is
+      ordinary practice and the moment it is added this goes live:
+
+        1. A query pins generation N, naming snapshot 12345.
+        2. Sync runs twice. 12345 is two versions back.
+        3. expire_snapshots reclaims it and DELETES the Parquet files.
+        4. Hop 5 of the still-running query scans 12345. Gone.
+
+      On CPU-only hardware a query can run half an hour, so the window
+      is wide. Iceberg's own primitive is the fix: a TAG is a named,
+      immutable reference that keeps a snapshot alive. A generation
+      tags the snapshots it names and releases them when no request
+      holds it -- refcounting the DATA, not just the Python object.
+
+      The tag must be taken at the same moment the id is recorded (5b),
+      or a sync can expire it in between. That refcount is real shared
+      mutable state across threads and wants a tested primitive, not an
+      incidental lock: wrong one way deletes data a live request is
+      reading, wrong the other leaks snapshots forever.
+
+      Note this also constrains 5c: the reload must read its snapshot
+      ids AND take its tags under the SAME flock scripts/run_sync.py
+      already uses, so reload and sync are mutually exclusive rather
+      than racing. A second lock would be a second thing to get right.
+  5i. Report freshness FOR THE PINNED GENERATION, not for the
+      mediator's current state. /data-freshness already exists and
+      returns source plus last_synced_at, which is the right idea --
+      but once requests pin a generation, a user reading
+      stale-but-consistent data should be told WHICH point in time
+      they are seeing. Otherwise "consistently stale" is invisible and
+      looks like being wrong.
 
 ### Retrace: is the work already committed compatible?
 
@@ -551,6 +601,54 @@ to every record already stamped.
 
 Worth remembering for the steps still unbuilt: prefer naming a thing
 over describing it.
+
+### Synchronisation: what is needed, and what is deliberately not
+
+Audited directly rather than assumed, because adding locks to a system
+that already has the right ones is how throughput dies.
+
+**ALREADY COVERED, and no hot-reload work changes it.** Striped
+per-object locks in the mediator for writes; a ConcurrencyLimiter
+semaphore per silo; flock(LOCK_EX) on sync.lock so two syncs cannot
+overlap, released automatically on crash; a lock in PendingWriteStore;
+_schema_verified_lock; a request thread pool; cancel_event for long
+queries. SQLite transactions and Iceberg's atomic commits cover
+storage.
+
+**ADDED BY THIS PLAN:** the reload lock (3c) and the snapshot tag
+refcount (5h). Those are the only two.
+
+**NO READERS-WRITER LOCKS ANYWHERE, decided rather than skipped.**
+Every place one would apply already has something strictly better:
+
+- Configuration is the textbook RW case -- many readers, rare writer
+  -- and is instead lock-free by immutability plus an atomic reference
+  swap. Readers never block and the writer never waits. An RW lock
+  would be worse on both counts. This is why step 2a mattered: RCU
+  only works if the shared object genuinely cannot be mutated.
+- The mirror is MVCC. A reader pinned to a snapshot is unaffected by a
+  sync committing a new one, in either direction.
+- Per-object locks are taken on the WRITE path only; reads never
+  acquire them, so there is no contention for an RW lock to relieve.
+- The remaining locks guard short read-modify-write sections, where an
+  RW lock adds overhead and a writer-starvation failure mode for
+  nothing.
+
+**NO SCHEDULER.** Sync is triggered externally by run_sync.py and
+reload will be admin-triggered or SIGHUP. An in-process scheduler
+means a background thread -- a new concurrency surface for something
+cron and systemd timers already do.
+
+**NO LOCK IN THE ADAPTER BASE CLASS.** ExternalReadAdapter and
+ExternalWriteAdapter are real ABCs, so it is mechanically possible and
+still wrong three ways: the granularity is per-SILO where the mediator
+already locks per-OBJECT; deciding what may overlap is an
+ontology-level question the adapter cannot answer because it does not
+know object identity; and the three adapters sit on three different
+concurrency models -- SQLite's single-writer lock, Iceberg's snapshot
+isolation, none at all -- so one policy would force a single answer
+onto three different problems, and for Iceberg would REMOVE
+concurrency that MVCC provides free.
 
 ### 6. Destructive changes and existing obligations
 
