@@ -145,6 +145,10 @@ class DeploymentConfig:
     # Modelled on Palantir treating version as a PARAMETER carried by
     # each operation rather than a global the server swaps: every
     # Foundry Ontology call names the ontology it acts against.
+    # The four files' text, exactly as read. Carried so that whoever
+    # builds a generation can record it (core/config_history.py)
+    # without re-reading and possibly getting different bytes.
+    source_text: Mapping[str, str]
     generation: int               # monotonic within one process, first load is 1
     loaded_at: datetime           # when this configuration was read, UTC and aware
     source_digest: str            # sha256 over the four files' bytes -- see _source_digest()
@@ -331,6 +335,16 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # bytes this load saw. Taking it afterwards would leave a window in
     # which a file changed between being read and being hashed.
     source_digest = _source_digest(base_path, CONFIG_FILENAMES)
+    # The same bytes the digest was taken over, kept so a generation
+    # can later be inspected, diffed or restored -- see
+    # core/config_history.py. Read HERE rather than re-read later for
+    # the same reason the digest is taken here: anything else leaves a
+    # window in which a file changed between the two reads, and the
+    # history would then describe a configuration that never ran.
+    source_text = {
+        name: (base_path / name).read_text()
+        for name in CONFIG_FILENAMES if (base_path / name).exists()
+    }
 
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
@@ -386,6 +400,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
         # first and trusting nothing touched it in between; this way
         # there is no window and no mutable version to leak.
         deployment_config = DeploymentConfig(
+            source_text=deep_freeze(source_text),
             generation=_next_generation(),
             loaded_at=datetime.now(UTC),
             source_digest=source_digest,

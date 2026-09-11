@@ -45,8 +45,11 @@ def _restore_sighup():
 
 def _app(tmp_path):
     generation = build_generation(DEPLOYMENT, data_dir=tmp_path, log_dir=tmp_path / "log")
+    from core.config_history import ConfigHistory
+
     return SimpleNamespace(state=SimpleNamespace(
         generation=generation,
+        config_history=ConfigHistory(tmp_path / "config_history.db"),
         runtime_paths=SimpleNamespace(
             config_dir=DEPLOYMENT, data_dir=tmp_path, log_dir=tmp_path / "log",
         ),
@@ -286,6 +289,7 @@ def test_sighup_returns_immediately_rather_than_reloading_inline(tmp_path):
     from api.reload import install_sighup_handler
 
     app = _app(tmp_path)
+    before = app.state.generation.generation
     building = threading.Event()
     release = threading.Event()
     original = reload_module.build_generation
@@ -308,6 +312,14 @@ def test_sighup_returns_immediately_rather_than_reloading_inline(tmp_path):
             f"the reload inline rather than handing it to a thread"
         )
         release.set()
+        # WAIT FOR THE THREAD TO FINISH before returning. It holds the
+        # reload lock until it does, and the next test's SIGHUP would
+        # then be rejected as "already in progress" -- which is exactly
+        # how this was found: a later test failed depending on ordering
+        # and passed alone.
+        deadline = time.monotonic() + 5
+        while app.state.generation.generation == before and time.monotonic() < deadline:
+            time.sleep(0.02)
     finally:
         reload_module.build_generation = original
 

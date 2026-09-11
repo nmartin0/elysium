@@ -94,6 +94,7 @@ from core.auth.database import connection
 from core.auth.login_attempt_tracker import LoginAttemptTracker
 from core.auth.query_rate_limiter import QueryRateLimiter
 from core.auth.session_store import SessionStore
+from core.config_history import ConfigHistory, record_generation
 from core.deployment_loader import (
     RuntimePaths,
     build_generation,
@@ -223,6 +224,16 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # call site looking wrong. Deleting them makes the pin structural
     # rather than advisory.
     app.state.runtime_paths = runtime_paths
+    # WHAT each generation contained, not merely which one it was.
+    # Without this a reload leaves an audit line saying 7 became 8 and
+    # no way to see what either WAS -- see core/config_history.py.
+    #
+    # Its own database, beside write_log.db and artifacts.db rather
+    # than inside credentials.db: configuration history has a different
+    # retention story from credentials, and mixing them means a restore
+    # or a purge cannot treat them differently.
+    app.state.config_history = ConfigHistory(runtime_paths.data_dir / "config_history.db")
+    record_generation(app.state.config_history, generation)
     app.state.generation = generation
     config = generation.config
     # Kept alongside the three stores below for tests/integration/

@@ -642,6 +642,91 @@ def reload_route(request: Request,
     }
 
 
+class GenerationSummary(BaseModel):
+    generation: int
+    loaded_at: str
+    source_digest: str
+
+
+class ConfigHistoryResponse(BaseModel):
+    """Which configurations this deployment has run.
+
+    SUMMARIES ONLY -- no file contents. The files carry silo hosts,
+    paths and credential references, which the /config route already
+    declines to return for exactly that reason. Listing what ran is a
+    different disclosure from handing over what it said.
+    """
+
+    current_generation: int
+    generations: list[GenerationSummary]
+
+
+@router.get("/admin/config-history", response_model=ConfigHistoryResponse)
+def config_history_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What configurations this deployment has run, most recent first.
+
+    Answers the question a reload otherwise leaves open. The audit log
+    records that generation 7 became 8; without this there is no way to
+    see what either WAS.
+
+    GATED ON manage:deployment, the same grant that can reload. Someone
+    who may replace the configuration may see which ones have run.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to view configuration history")
+
+    history = request.app.state.config_history
+    return {
+        "current_generation": generation.generation,
+        "generations": [
+            {"generation": r.generation, "loaded_at": r.loaded_at,
+             "source_digest": r.source_digest}
+            for r in history.list_generations()
+        ],
+    }
+
+
+class ConfigDiffResponse(BaseModel):
+    """What changed between two configurations, file by file."""
+
+    older: int
+    newer: int
+    changed_files: list[str]
+    unchanged: bool
+
+
+@router.get("/admin/config-history/{older}/{newer}", response_model=ConfigDiffResponse)
+def config_diff_route(older: int, newer: int, request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """WHICH FILES differ between two generations, not their contents.
+
+    Naming the changed files is enough to answer "did the policy change
+    or only the models?" -- which is the question an operator has at
+    three in the morning -- without returning silo hosts and credential
+    references over HTTP. Reading the files themselves requires access
+    to the machine, which is the correct bar for that.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to view configuration history")
+
+    try:
+        changed = request.app.state.config_history.diff(older, newer)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    return {
+        "older": older, "newer": newer,
+        "changed_files": sorted(changed),
+        # Explicit rather than inferred from an empty list: a reload of
+        # UNCHANGED files is a real and common event, and "nothing
+        # changed" should not look like "I found nothing".
+        "unchanged": not changed,
+    }
+
+
 @router.get("/config", response_model=DeploymentConfigResponse)
 def deployment_config_route(request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:

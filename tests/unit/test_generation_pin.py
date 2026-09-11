@@ -67,8 +67,14 @@ def test_routes_read_the_pin_rather_than_app_state():
 
     source = (Path(__file__).resolve().parent.parent.parent / "api" / "routes.py").read_text()
 
+    # WORD-BOUNDED, not a substring match. "app.state.config" is a
+    # prefix of "app.state.config_history", which is legitimate runtime
+    # state -- and the substring version flagged it as a violation. A
+    # guard that cries wolf gets weakened by whoever hits it next.
+    import re
+
     for attribute in ("config", "mediator", "write_mediator", "loop", "synthesis_client"):
-        assert f"app.state.{attribute}" not in source, (
+        assert not re.search(rf"app\.state\.{attribute}\b(?!_)", source), (
             f"api/routes.py still reads app.state.{attribute} directly; "
             f"use the pinned generation instead"
         )
@@ -82,7 +88,7 @@ def test_routes_read_the_pin_rather_than_app_state():
     # route to read app.state.generation.loop directly passed every
     # test above. A guard that names five specific attributes does not
     # generalise to the sixth.
-    assert "app.state.generation" not in source, (
+    assert not re.search(r"app\.state\.generation\b(?!_)", source), (
         "api/routes.py reads app.state.generation directly; use _generation(request), "
         "which returns the generation this request pinned at entry"
     )

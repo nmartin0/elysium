@@ -40,6 +40,8 @@ create_note_route
 silos_route
 deployment_config_route
 reload_route
+config_history_route
+config_diff_route
 list_users_route
 create_user_route
 visible_schema_route
@@ -192,3 +194,12 @@ changed
 # tests/unit/test_reload.py's autouse fixture -- pytest calls it by
 # registration, never by name.
 _restore_sighup
+
+# ConfigHistoryResponse / ConfigDiffResponse fields (api/routes.py) --
+# read by FastAPI's serialiser from the returned dict, as with every
+# other response model above.
+current_generation
+generations
+changed_files
+unchanged
+recorded_at

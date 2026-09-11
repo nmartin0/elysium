@@ -11,6 +11,7 @@ import logging
 import signal
 import threading
 
+from core.config_history import record_generation
 from core.deployment_loader import DeploymentGeneration, build_generation
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,11 @@ def reload_generation(app, requested_by: str = "unknown") -> DeploymentGeneratio
                                  None, None, detail=str(e)[:500])
             raise
         app.state.generation = new
+        # Recorded BEFORE the audit entry, so a history row exists for
+        # any generation the audit mentions. The reverse order would
+        # leave an audit line pointing at a generation with no content
+        # recorded, which is the exact gap this closes.
+        record_generation(app.state.config_history, new)
         audit_log.log_reload(requested_by, "applied", current.generation,
                              new.generation, new.source_digest)
         logger.info(

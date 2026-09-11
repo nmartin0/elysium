@@ -165,6 +165,9 @@ layers = [
     # not what a role is. deployment_loader is its only caller today,
     # and any layer may reach it without creating a cycle.
     "immutable",
+    # config_history, a leaf like artifact_store: its own SQLite store,
+    # importing nothing from core but the shared connection helper.
+    "config_history",
     # The artifact store, also a leaf. It persists and scopes saved
     # things -- searches, selections, pending writes -- and knows
     # nothing about what is inside one: `body` is opaque JSON.
