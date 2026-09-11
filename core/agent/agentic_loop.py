@@ -65,6 +65,7 @@ Used by: scripts/run_deployment.py, api/routes.py, and directly by
 import json
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -105,6 +106,10 @@ class AgentLoopResult:
     pending_write: PendingWrite | None = None
     cancelled: bool = False
     hit_max_hops: bool = False
+    # The acting user's authority changed mid-query and the loop
+    # stopped. Distinct from cancelled: nobody asked for this, and the
+    # caller should say something different about it.
+    authority_changed: bool = False
 
 
 def _object_ids_in(step: dict) -> list:
@@ -592,7 +597,8 @@ class AgentLoop:
 
     def run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None,
-            context: RequestContext | None = None) -> AgentLoopResult:
+            context: RequestContext | None = None,
+            refresh_user: "Callable[[], UserRecord | None] | None" = None) -> AgentLoopResult:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # a proposed write/cancellation/max_hops -- whichever comes
@@ -625,6 +631,34 @@ class AgentLoop:
         for _ in range(1, self.max_hops + 1):
             if cancel_event is not None and cancel_event.is_set():
                 return AgentLoopResult(gathered=gathered, cancelled=True)
+
+            # THE ACTING USER IS RE-RESOLVED EVERY HOP, not once per
+            # request. Identity is resolved once when the request
+            # arrives, and on this deployment a query can run for
+            # minutes -- long enough for an administrator to disable an
+            # account or change a role and reasonably expect it to take
+            # effect. Recorded in ROADMAP.md's security backlog before
+            # this migration began.
+            #
+            # A CHANGE STOPS THE LOOP rather than continuing under the
+            # new authority, and that is the substantive decision. The
+            # alternative -- carry on with the new record -- produces an
+            # answer assembled partly under one set of grants and partly
+            # under another, which was never authorized as a whole. That
+            # is the same objection as a torn read, and as an answer
+            # that mixes two data snapshots.
+            #
+            # Recomputing visible_schema instead was the other option.
+            # It has the same defect: the gathered data was read under
+            # the old schema and would be reported under the new one.
+            if refresh_user is not None:
+                current = refresh_user()
+                if current is None or current != user_record:
+                    # None means the account is gone or disabled. Either
+                    # way the work so far is returned: it WAS authorized
+                    # when it was read, and discarding it would lose
+                    # information the user was entitled to.
+                    return AgentLoopResult(gathered=gathered, authority_changed=True)
 
             step = next_step(
                 self.client, query_text, visible_schema, gathered, self.tools, writes_enabled, visible_action_types

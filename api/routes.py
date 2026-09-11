@@ -111,6 +111,7 @@ loop for meaningfully longer than intended.
 
 import asyncio
 import base64
+import functools
 import json
 import logging
 import threading
@@ -1653,8 +1654,29 @@ async def query(body: QueryRequest, request: Request,
         # is the unit of work, and the loop is one thing that happens
         # during it.
         request_context = RequestContext.new()
+        # refresh_user lets the loop notice a changed or revoked
+        # authority BETWEEN HOPS rather than only at the end. The
+        # post-query re-verification below still runs and still
+        # matters -- it catches a change during the final hop -- but on
+        # this deployment a query can run for minutes, and discovering
+        # a revocation only after all of it has executed is a long way
+        # from "takes effect".
+        #
+        # Returns None when the account is gone or disabled, which the
+        # loop treats the same as a change.
+        user_directory = request.app.state.user_directory
+
+        def refresh_user():
+            if user_directory.is_user_disabled(current_user.user_id):
+                return None
+            return user_directory.get_user_record(current_user.user_id)
+
         result = await event_loop.run_in_executor(
-            executor, loop.run, current_user, body.query, cancel_event, request_context,
+            executor,
+            functools.partial(
+                loop.run, current_user, body.query, cancel_event, request_context,
+                refresh_user=refresh_user,
+            ),
         )
     finally:
         cancel_event.set()
@@ -1665,6 +1687,20 @@ async def query(body: QueryRequest, request: Request,
             current_user.user_id, body.query, len(result.gathered)
         )
         raise HTTPException(status_code=499, detail="Client disconnected")
+
+    if result.authority_changed:
+        # The loop stopped because the acting user's authority moved
+        # underneath it. Same 409 as the post-query check below, and
+        # deliberately the same message: from the caller's side these
+        # are one situation, differing only in how early it was
+        # noticed.
+        _generation(request).mediator.audit_log.log_query_cancelled(
+            current_user.user_id, body.query, len(result.gathered)
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="Your permissions changed while this request was processing -- please try again",
+        )
 
     # THE re-verification -- see module docstring. Applies before
     # EITHER branch below.
