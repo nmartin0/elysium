@@ -121,7 +121,11 @@ def test_a_failed_read_leaves_the_last_good_mirror_intact(sync, source):
     conn.commit()
     conn.close()
 
-    with pytest.raises(sqlite3.OperationalError):
+    # ValueError since the drift policy landed -- see the note on the
+    # missing-table test below. The property here is the LAST GOOD
+    # MIRROR surviving a failed read, which is unaffected by which
+    # exception reports the failure.
+    with pytest.raises(ValueError):
         _sync(sync)
 
     mirrored = _mirror(sync)
@@ -154,7 +158,14 @@ def test_syncing_a_table_that_does_not_exist_fails_loudly(sync):
     # Never a silently empty mirror table -- a typo'd or dropped source
     # table must be an error, since an empty mirror is otherwise
     # indistinguishable from a genuinely empty source.
-    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+    #
+    # ValueError, not sqlite3.OperationalError, since the drift policy
+    # landed: a missing table means every declared column is missing,
+    # which the policy decides on BEFORE the adapter's SELECT gets a
+    # chance to fail. The property this guards is unchanged and the
+    # message is strictly better -- it now says what to do rather than
+    # naming a SQLite error.
+    with pytest.raises(ValueError, match="gone"):
         sync.sync_table("primary", "nonexistent", "id", ["id"])
 
 

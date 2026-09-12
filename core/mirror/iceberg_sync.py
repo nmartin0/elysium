@@ -41,6 +41,7 @@ columns Elysium has no business copying at all.
 Used by: scripts/run_sync.py
 """
 
+import logging
 import warnings
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,14 +54,22 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
 )
 
+from core.mirror.drift_policy import (
+    DriftVerdict,
+    verdict_for_removed_column,
+    verdict_for_type_change,
+)
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.transform import describe_drift, transform_rows
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for
 from core.ontology.interface import ExternalReadAdapter
 
+logger = logging.getLogger(__name__)
+
 
 class IcebergMirrorSync(MirrorSync):
-    def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter]):
+    def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter],
+                 write_log=None):
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
         # customer's own data; see adapters/sqlite_adapter.py's own
@@ -71,6 +80,11 @@ class IcebergMirrorSync(MirrorSync):
         # intention.
         self.mirror_dir = mirror_dir
         self.adapters = adapters
+        # OPTIONAL, and its absence is not "nothing was written". A
+        # sync without one cannot check what depends on a vanished
+        # column, so drift_policy refuses rather than absorbing on the
+        # strength of a check that did not happen.
+        self._write_log = write_log
         mirror_dir.mkdir(parents=True, exist_ok=True)
         (mirror_dir / "warehouse").mkdir(exist_ok=True)
         self._catalog = SqlCatalog(
@@ -80,13 +94,33 @@ class IcebergMirrorSync(MirrorSync):
         )
 
     def sync_table(self, silo_name: str, table_name: str, id_column: str,
-                    columns: list[str], column_types: dict[str, str] | None = None) -> SyncResult:
+                    columns: list[str], column_types: dict[str, str] | None = None,
+                    fields_by_column: dict[str, str] | None = None) -> SyncResult:
         adapter = self.adapters.get(silo_name)
         if adapter is None:
             raise ValueError(
                 f"No adapter for silo {silo_name!r} -- "
                 f"known silos: {sorted(self.adapters.keys())}"
             )
+
+        # A VANISHED COLUMN IS CHECKED BEFORE READING, because reading
+        # is what fails and the policy has to speak before the adapter
+        # does. Until columns_present() existed this was not a handled
+        # case at all -- it surfaced as whatever the SELECT raised,
+        # which is the storage-dictated behaviour drift_policy exists
+        # to replace.
+        present = adapter.columns_present(table_name)
+        missing = [column for column in columns if column not in present]
+        if missing:
+            verdict = self._verdict_for_missing(
+                silo_name, table_name, missing, fields_by_column or {},
+            )
+            if not verdict.absorbed:
+                raise ValueError(verdict.detail)
+            logger.warning(verdict.detail)
+            columns = [column for column in columns if column not in missing]
+            if column_types is not None:
+                column_types = {k: v for k, v in column_types.items() if k not in missing}
 
         raw_rows = self._read_source_rows(adapter, table_name, id_column, columns)
 
@@ -106,7 +140,17 @@ class IcebergMirrorSync(MirrorSync):
         # than a stack trace.
         transformed = transform_rows(raw_rows, columns, column_types)
         if transformed.has_drift:
-            raise ValueError(describe_drift(silo_name, table_name, transformed.drift))
+            # THROUGH THE POLICY, not straight to a raise. The outcome
+            # is the same -- refuse -- but it now comes from a module
+            # that NAMES the shape and states the decision, rather than
+            # from an if-statement that happens to raise. The detailed
+            # per-column report follows, because the policy says WHAT
+            # and describe_drift says WHICH VALUES.
+            verdict = verdict_for_type_change(silo_name, table_name, transformed.drift[0].column)
+            raise ValueError(
+                f"{verdict.detail}\n\n"
+                f"{describe_drift(silo_name, table_name, transformed.drift)}"
+            )
 
         arrow_table = self._to_arrow(transformed.rows, columns, column_types)
 
@@ -184,6 +228,57 @@ class IcebergMirrorSync(MirrorSync):
             # operation itself fails" -- which turns a clear cause into
             # a confusing symptom one step removed from it.
             pass
+
+    def _verdict_for_missing(self, silo_name: str, table_name: str, missing: list[str],
+                              fields_by_column: dict[str, str]):
+        """One verdict for several missing columns, decided by the worst.
+
+        A REFUSAL WINS OVER AN ABSORPTION. If three columns vanished and
+        one of them has pending writes, the sync must stop -- absorbing
+        the other two while refusing the third would leave the mirror
+        half-migrated to a shape nobody approved.
+        """
+        verdicts = [
+            verdict_for_removed_column(
+                silo_name, table_name, column, fields_by_column.get(column),
+                self._edits_for(table_name, fields_by_column.get(column)),
+            )
+            for column in missing
+        ]
+        refusals = [verdict for verdict in verdicts if not verdict.absorbed]
+        if refusals:
+            return DriftVerdict(
+                absorbed=False,
+                shape=refusals[0].shape,
+                detail="\n\n".join(verdict.detail for verdict in refusals),
+            )
+        return DriftVerdict(
+            absorbed=True,
+            shape=verdicts[0].shape,
+            detail="\n".join(verdict.detail for verdict in verdicts),
+        )
+
+    def _edits_for(self, table_name: str, field: str | None) -> dict | None:
+        """What the write log says about a field, or None if it cannot say.
+
+        None is NOT "nothing was written" -- see
+        drift_policy.verdict_for_removed_column on why the difference
+        decides the verdict. A sync constructed without a write log
+        (most tests, and scripts that only copy data) genuinely cannot
+        check, and must not be allowed to look as though it did.
+        """
+        if self._write_log is None or field is None:
+            return None
+        return self._write_log.edits_touching_field(self._object_type_for(table_name), field)
+
+    def _object_type_for(self, table_name: str) -> str:
+        # The write log is keyed by OBJECT TYPE and the sync works in
+        # TABLES. They coincide in every deployment written so far, and
+        # where they do not the count comes back zero -- which REFUSES
+        # nothing, because zero edits means absorb. Wrong in the safe
+        # direction, and worth replacing with a real mapping once a
+        # deployment separates them.
+        return table_name
 
     def _read_source_rows(self, adapter: ExternalReadAdapter, table_name: str,
                            id_column: str, columns: list[str]) -> list[dict]:

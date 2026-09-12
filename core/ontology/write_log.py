@@ -511,6 +511,46 @@ class WriteLogReader(InternalReadAdapter):
             ).fetchone()
         return row["n"]
 
+    def edits_touching_field(self, object_type: str, field_name: str) -> dict:
+        """How much written data depends on one field.
+
+        THE QUESTION FOUNDRY ASKS BEFORE CALLING A SCHEMA CHANGE
+        BREAKING. Deleting a property nobody ever edited is not a
+        breaking change there; it becomes one once user edits exist,
+        because those are what a migration has to do something with.
+        This log is the same thing under another name.
+
+        APPLIED AND PENDING ARE COUNTED SEPARATELY because they need
+        different answers. An applied write is HISTORY -- the value was
+        set, and dropping the field does not unmake it. A pending write
+        is an OBLIGATION -- proposed, undecided, and if its field goes
+        it can never be applied and will sit in the queue forever.
+
+        Scans rather than indexes, deliberately: this runs when a sync
+        finds drift, never on a read path, and an index over a JSON
+        payload would be a second source of truth maintained for a
+        query nobody makes twice a year.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT status, changes FROM write_log WHERE object_type = ?",
+                (object_type,),
+            ).fetchall()
+
+        counts = {"applied": 0, "pending": 0}
+        for row in rows:
+            try:
+                changed = json.loads(row["changes"])
+            except (TypeError, ValueError):
+                # A payload we cannot read is not evidence the field is
+                # unused. Skipped rather than guessed at in either
+                # direction: an over-count refuses a change that may
+                # have been safe, an under-count discards data.
+                continue
+            if isinstance(changed, dict) and field_name in changed and row["status"] in counts:
+                counts[row["status"]] += 1
+        return counts
+
     def deleted_object_ids(self, object_type: str) -> set:
         """Objects of this type whose latest applied write is a delete.
 

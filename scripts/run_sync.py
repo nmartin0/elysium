@@ -124,7 +124,15 @@ def run_sync(runtime_paths=None) -> int:
             runtime_paths.config_dir, runtime_paths.data_dir
         )
         targets = resolve_sync_targets({"object_types": config.schema})
-        sync = IcebergMirrorSync(runtime_paths.data_dir / "mirror", mediator.adapters)
+        # THE WRITE LOG IS PASSED, and without it the drift policy
+        # refuses every vanished column rather than absorbing one it
+        # could not check. The mediator already holds the reader, so
+        # this costs nothing and is the difference between "nothing
+        # depends on this column" and "I did not look".
+        sync = IcebergMirrorSync(
+            runtime_paths.data_dir / "mirror", mediator.adapters,
+            write_log=mediator.write_log,
+        )
 
         failures = 0
         for target in targets:
@@ -133,6 +141,7 @@ def run_sync(runtime_paths=None) -> int:
                 result = sync.sync_table(
                     target.silo_name, target.table_name, target.id_column,
                     target.columns, target.column_types,
+                    target.fields_by_column,
                 )
             except Exception as exc:
                 # Per-table, deliberately -- see this module's docstring.

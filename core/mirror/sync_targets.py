@@ -68,6 +68,12 @@ class SyncTarget:
     # `columns` itself, deliberately -- deriving them separately would
     # be two passes that could disagree about which columns exist.
     column_types: dict[str, str]
+    # column -> the ontology field it backs, so a verdict about a
+    # vanished COLUMN can name the FIELD an operator actually edits.
+    # Without it, an error says "source column cust_region is gone" and
+    # leaves them grepping ontology_schema.yaml to find out which
+    # declaration cares.
+    fields_by_column: dict[str, str]
 
 
 def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
@@ -82,15 +88,24 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
     by_table: dict[tuple[str, str], dict] = {}
 
     for type_def in schema.get("object_types", {}).values():
-        for silo_name, table_name, id_column, columns, column_types in _targets_for_type(type_def):
+        for (silo_name, table_name, id_column, columns,
+             column_types, fields_by_column) in _targets_for_type(type_def):
             key = (silo_name, table_name)
             if key not in by_table:
-                by_table[key] = {"id_column": id_column, "columns": [], "column_types": {}}
+                by_table[key] = {"id_column": id_column, "columns": [], "column_types": {},
+                             "fields_by_column": {}}
             existing = by_table[key]["columns"]
             for column in columns:
                 if column not in existing:
                     existing.append(column)
             by_table[key]["column_types"].update(column_types)
+            # FIRST DECLARATION WINS on a shared table. Two object
+            # types can back onto one table, and if both map the same
+            # column the field names are interchangeable for the
+            # purpose this serves -- naming either one tells the
+            # operator where to look.
+            for column, field in fields_by_column.items():
+                by_table[key]["fields_by_column"].setdefault(column, field)
 
     for (silo_name, table_name), entry in by_table.items():
         # INVARIANT: the id column is always synced, and every typed
@@ -118,6 +133,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             id_column=entry["id_column"],
             columns=entry["columns"],
             column_types=entry["column_types"],
+            fields_by_column=entry["fields_by_column"],
         )
         for (silo_name, table_name), entry in by_table.items()
     ]
@@ -139,6 +155,12 @@ def _targets_for_type(type_def: dict):
     # an untyped schema produces an empty map and the previous
     # behavior exactly.
     types_by_storage: dict[str | None, dict[str, str]] = {name: {} for name in storages}
+    # column -> the field it backs, so a drift verdict about a vanished
+    # COLUMN can name the FIELD an operator edits. The id column and
+    # the MAC security column are deliberately absent: neither is a
+    # declared field, and claiming one is would send an operator
+    # looking for a declaration that does not exist.
+    fields_by_storage: dict[str | None, dict[str, str]] = {name: {} for name in storages}
 
     # The id column of each storage is always needed -- it is what rows
     # are matched on, both during the sync itself and by every read
@@ -170,6 +192,7 @@ def _targets_for_type(type_def: dict):
         column = field_config.get("column", field_name)
         if column not in columns_by_storage[storage_key]:
             columns_by_storage[storage_key].append(column)
+        fields_by_storage[storage_key].setdefault(column, field_name)
         declared = field_config.get("data_type")
         if declared is not None:
             types_by_storage[storage_key][column] = declared
@@ -194,4 +217,5 @@ def _targets_for_type(type_def: dict):
             storage["id_column"],
             columns_by_storage[storage_key],
             types_by_storage[storage_key],
+            fields_by_storage[storage_key],
         )
