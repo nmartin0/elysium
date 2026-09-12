@@ -461,6 +461,90 @@ class HealthResponse(BaseModel):
     checks: dict[str, str]
 
 
+def _no_store(response: Response) -> None:
+    # Shared by every /me/* route below (dependencies=[Depends(_no_store)])
+    # -- each one returns session-specific data about the CALLER
+    # specifically (their own profile, their own visible schema/apps/
+    # action types), never something safe for a shared or intermediate
+    # cache to persist and later hand back to a different person on
+    # the same machine. Cache-Control: no-store is the real, current,
+    # standard recommendation for exactly this class of response
+    # (confirmed directly against current guidance, not assumed) --
+    # matters most on a shared workstation, a realistic scenario for
+    # an internal tool like this one, not a hypothetical.
+    #
+    # A real, standard FastAPI pattern, not a workaround: a route (or,
+    # as here, a dependency) can declare a plain `response: Response`
+    # parameter and set headers on it directly, while the route itself
+    # still returns an ordinary dict for the body -- FastAPI merges
+    # the two into the one, real response actually sent (confirmed
+    # directly against FastAPI's own docs before using it this way).
+    response.headers["Cache-Control"] = "no-store"
+
+
+@router.get("/users/{username}/visible-schema", response_model=dict[str, VisibleObjectTypeResponse])
+def visible_schema_route(username: str, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    _require_manage_users(request, current_user)
+
+    user_directory = request.app.state.user_directory
+    if not user_directory.user_exists(username):
+        raise HTTPException(status_code=404, detail=f"Unknown user {username!r}")
+
+    target_record = user_directory.get_user_record(username)
+    mediator = _generation(request).mediator
+    return mediator.visible_schema(target_record)
+
+
+@router.post("/users/{username}/logout-all", status_code=204)
+def logout_all_for_user(username: str, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    request.app.state.session_store.invalidate_all_sessions(username)
+
+
+@router.post("/users/{username}/disable", status_code=204)
+def disable_user_route(username: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.disable_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post("/users/{username}/enable", status_code=204)
+def enable_user_route(username: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.enable_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.delete("/users/{username}", status_code=204)
+def delete_user_route(username: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.delete_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+async def _watch_for_disconnect(request: Request, cancel_event: threading.Event) -> None:
+    # Runs CONCURRENTLY with the executor-offloaded loop.run() call,
+    # not racing it -- just sets cancel_event if it notices the client
+    # is gone; AgentLoop.run() itself notices the event on its next hop
+    # and returns early. Polling, not instant, but cheap and bounded.
+    while not cancel_event.is_set():
+        if await request.is_disconnected():
+            cancel_event.set()
+            return
+        await asyncio.sleep(0.5)
+
+
 class AwaitingWriteResponse(BaseModel):
     """One proposal waiting for a decision.
 
@@ -496,7 +580,8 @@ class AwaitingWriteResponse(BaseModel):
     proposed_by_you: bool
 
 
-@router.get("/writes/awaiting", response_model=list[AwaitingWriteResponse])
+@router.get("/writes/awaiting", dependencies=[Depends(_no_store)],
+            response_model=list[AwaitingWriteResponse])
 def awaiting_writes_route(request: Request,
                           current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
     """Proposals this user may decide on.
@@ -608,7 +693,8 @@ class WriteDetailResponse(BaseModel):
     has_redacted_fields: bool
 
 
-@router.get("/writes/{write_id}", response_model=WriteDetailResponse)
+@router.get("/writes/{write_id}", dependencies=[Depends(_no_store)],
+            response_model=WriteDetailResponse)
 def write_detail_route(write_id: str, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:
     """What a pending write would actually change.
@@ -1350,90 +1436,6 @@ def _require_manage_users(request: Request, current_user: UserRecord) -> None:
     roles = _generation(request).config.roles
     if not authorize(current_user, roles, "manage:users"):
         raise HTTPException(status_code=403, detail="Not authorized to manage users")
-
-
-def _no_store(response: Response) -> None:
-    # Shared by every /me/* route below (dependencies=[Depends(_no_store)])
-    # -- each one returns session-specific data about the CALLER
-    # specifically (their own profile, their own visible schema/apps/
-    # action types), never something safe for a shared or intermediate
-    # cache to persist and later hand back to a different person on
-    # the same machine. Cache-Control: no-store is the real, current,
-    # standard recommendation for exactly this class of response
-    # (confirmed directly against current guidance, not assumed) --
-    # matters most on a shared workstation, a realistic scenario for
-    # an internal tool like this one, not a hypothetical.
-    #
-    # A real, standard FastAPI pattern, not a workaround: a route (or,
-    # as here, a dependency) can declare a plain `response: Response`
-    # parameter and set headers on it directly, while the route itself
-    # still returns an ordinary dict for the body -- FastAPI merges
-    # the two into the one, real response actually sent (confirmed
-    # directly against FastAPI's own docs before using it this way).
-    response.headers["Cache-Control"] = "no-store"
-
-
-@router.get("/users/{username}/visible-schema", response_model=dict[str, VisibleObjectTypeResponse])
-def visible_schema_route(username: str, request: Request,
-                          current_user: UserRecord = Depends(get_current_user)) -> dict:
-    _require_manage_users(request, current_user)
-
-    user_directory = request.app.state.user_directory
-    if not user_directory.user_exists(username):
-        raise HTTPException(status_code=404, detail=f"Unknown user {username!r}")
-
-    target_record = user_directory.get_user_record(username)
-    mediator = _generation(request).mediator
-    return mediator.visible_schema(target_record)
-
-
-@router.post("/users/{username}/logout-all", status_code=204)
-def logout_all_for_user(username: str, request: Request,
-                         current_user: UserRecord = Depends(get_current_user)) -> None:
-    _require_manage_users(request, current_user)
-    request.app.state.session_store.invalidate_all_sessions(username)
-
-
-@router.post("/users/{username}/disable", status_code=204)
-def disable_user_route(username: str, request: Request,
-                        current_user: UserRecord = Depends(get_current_user)) -> None:
-    _require_manage_users(request, current_user)
-    try:
-        request.app.state.user_directory.disable_user(username)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
-
-@router.post("/users/{username}/enable", status_code=204)
-def enable_user_route(username: str, request: Request,
-                       current_user: UserRecord = Depends(get_current_user)) -> None:
-    _require_manage_users(request, current_user)
-    try:
-        request.app.state.user_directory.enable_user(username)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
-
-@router.delete("/users/{username}", status_code=204)
-def delete_user_route(username: str, request: Request,
-                       current_user: UserRecord = Depends(get_current_user)) -> None:
-    _require_manage_users(request, current_user)
-    try:
-        request.app.state.user_directory.delete_user(username)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
-
-async def _watch_for_disconnect(request: Request, cancel_event: threading.Event) -> None:
-    # Runs CONCURRENTLY with the executor-offloaded loop.run() call,
-    # not racing it -- just sets cancel_event if it notices the client
-    # is gone; AgentLoop.run() itself notices the event on its next hop
-    # and returns early. Polling, not instant, but cheap and bounded.
-    while not cancel_event.is_set():
-        if await request.is_disconnected():
-            cancel_event.set()
-            return
-        await asyncio.sleep(0.5)
 
 
 @router.get("/me", dependencies=[Depends(_no_store)], response_model=ProfileResponse)

@@ -3132,3 +3132,53 @@ def test_a_successful_approval_still_consumes_the_write(client):
     assert approved.status_code == 200
     listed = client.get("/api/writes/awaiting").json()
     assert write_id not in [entry["write_id"] for entry in listed]
+
+
+def test_every_per_caller_route_forbids_caching(client):
+    """Session-specific responses must not be cached.
+
+    THE BUG THIS CATCHES, found by using the product: the approvals
+    inbox had no Cache-Control, so a browser served a stale EMPTY list
+    after a write had been proposed. The data was right and the screen
+    was wrong.
+
+    That is the mild version. The reason _no_store exists, in its own
+    words, is that these responses are "never something safe for a
+    shared or intermediate cache to persist and later hand back to a
+    DIFFERENT PERSON on the same machine" -- a realistic scenario for
+    an internal tool on a shared workstation.
+
+    ASSERTED ACROSS EVERY SUCH ROUTE rather than the two I just fixed.
+    The existing ones were equally unguarded; naming only mine would
+    leave the next one to be found the same way.
+    """
+    _propose_as(client, "alice")
+
+    per_caller = [
+        "/api/me",
+        "/api/me/visible-apps",
+        "/api/me/visible-schema",
+        "/api/me/visible-action-types",
+        "/api/data-freshness",
+        "/api/writes/awaiting",
+    ]
+
+    for path in per_caller:
+        response = client.get(path)
+        assert response.status_code == 200, f"{path} -> {response.status_code}"
+        assert "no-store" in response.headers.get("cache-control", ""), (
+            f"{path} may be cached and handed to a different user on the same machine"
+        )
+
+
+def test_a_write_detail_forbids_caching_too(client):
+    # Separate because it needs an id. Its contents are gated per
+    # reviewer -- redacted differently for different people -- so a
+    # cached copy is the worst case of all: one person's permitted view
+    # served to another.
+    write_id = _propose_as(client, "alice")
+
+    response = client.get(f"/api/writes/{write_id}")
+
+    assert response.status_code == 200
+    assert "no-store" in response.headers.get("cache-control", "")
