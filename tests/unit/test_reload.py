@@ -487,3 +487,95 @@ def test_a_generations_snapshots_and_its_sync_time_come_from_one_load(tmp_path):
     assert generation.config.read_from_mirror is False
     assert generation.mirror_snapshots == {}
     assert generation.mediator.mirror_synced_at is None
+
+
+# --- step 5g: repointing a silo ---
+
+def test_a_repointed_silo_is_named_in_the_audit(tmp_path):
+    """Changing WHERE THE DATA COMES FROM is the change a reviewer most
+    needs to see, and it used to be invisible.
+
+    A reload recorded only that generation 7 became 8. Someone reading
+    that log could not distinguish a model-timeout tweak from the
+    customer's database being swapped underneath the ontology.
+    """
+    import dataclasses
+    import json
+
+    from core.immutable import deep_freeze
+
+    app = _app(tmp_path)
+    before = app.state.generation.config
+    moved = deep_freeze({
+        name: {**silo, "connection": {"path": "/somewhere/else.db"}}
+        for name, silo in before.silo_configs.items()
+    })
+    app.state.generation = dataclasses.replace(
+        app.state.generation,
+        config=dataclasses.replace(before, silo_configs=moved),
+    )
+
+    reload_generation(app, requested_by="alice")
+
+    entries = [json.loads(line) for line in
+               (tmp_path / "log" / "audit.log").read_text().splitlines()]
+    reload_entry = [e for e in entries if e.get("stage") == "config_reload"][-1]
+
+    assert "repointed silos" in (reload_entry["detail"] or "")
+    assert next(iter(before.silo_configs)) in reload_entry["detail"]
+
+
+def test_an_ordinary_reload_reports_no_repoint(tmp_path):
+    # THE CONTROL, and it has to exist: an audit line that fires on
+    # every reload is one nobody reads, and it would make the real
+    # signal worthless rather than merely noisy.
+    import json
+
+    app = _app(tmp_path)
+    reload_generation(app, requested_by="alice")
+
+    entries = [json.loads(line) for line in
+               (tmp_path / "log" / "audit.log").read_text().splitlines()]
+    reload_entry = [e for e in entries if e.get("stage") == "config_reload"][-1]
+
+    assert reload_entry["detail"] is None
+
+
+def test_adding_a_silo_is_not_a_repoint(tmp_path):
+    # Neither an added nor a removed silo redirects an EXISTING read: a
+    # new one has nothing pointed at it yet, and a removed one fails
+    # validation at load if anything still declares it.
+    from core.deployment_loader import repointed_silos
+
+    app = _app(tmp_path)
+    import dataclasses
+
+    from core.immutable import deep_freeze
+
+    before = app.state.generation.config
+    after = dataclasses.replace(before, silo_configs=deep_freeze({
+        **before.silo_configs,
+        "brand_new": {"adapter": "sqlite", "connection": {"path": "/new.db"}},
+    }))
+
+    assert repointed_silos(before, after) == []
+
+
+def test_changing_the_adapter_type_counts_as_a_repoint(tmp_path):
+    # A different adapter over the same path is a different source in
+    # every way that matters -- and is the sharper version of the
+    # change this detects.
+    import dataclasses
+
+    from core.deployment_loader import repointed_silos
+    from core.immutable import deep_freeze
+
+    app = _app(tmp_path)
+    before = app.state.generation.config
+    name = next(iter(before.silo_configs))
+    after = dataclasses.replace(before, silo_configs=deep_freeze({
+        **before.silo_configs,
+        name: {**before.silo_configs[name], "adapter": "postgres"},
+    }))
+
+    assert repointed_silos(before, after) == [name]

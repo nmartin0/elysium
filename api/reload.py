@@ -12,7 +12,11 @@ import signal
 import threading
 
 from core.config_history import record_generation
-from core.deployment_loader import DeploymentGeneration, build_generation
+from core.deployment_loader import (
+    DeploymentGeneration,
+    build_generation,
+    repointed_silos,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +81,42 @@ def reload_generation(app, requested_by: str = "unknown") -> DeploymentGeneratio
             audit_log.log_reload(requested_by, "rejected", current.generation,
                                  None, None, detail=str(e)[:500])
             raise
+        # REPOINTED SILOS ARE NAMED IN THE AUDIT, because "generation 7
+        # became 8" does not distinguish a model-timeout tweak from the
+        # customer's database being swapped underneath the ontology.
+        # Recorded even though the reload succeeds: this is not an
+        # error, it is the single change a reviewer most needs to see.
+        repointed = repointed_silos(current.config, new.config)
+
+        if repointed:
+            # WARNED, NOT REFUSED, and the distinction is deliberate.
+            # Requests already in flight keep the OLD adapters and go
+            # on reading the OLD source -- correct, since an answer
+            # assembled half from one database and half from another
+            # was never true anywhere. But if the operator repointed
+            # because the old path is going away, those reads are on
+            # borrowed time, and only they know which it is.
+            #
+            # Refusing would be worse: a deployment that cannot be
+            # repointed without a restart loses the thing this whole
+            # migration is for.
+            logger.warning(
+                f"configuration reload repointed silo(s) {', '.join(repointed)}. "
+                f"Requests already running keep reading the previous source; "
+                f"if it is being decommissioned, let them drain first."
+            )
+
         app.state.generation = new
         # Recorded BEFORE the audit entry, so a history row exists for
         # any generation the audit mentions. The reverse order would
         # leave an audit line pointing at a generation with no content
         # recorded, which is the exact gap this closes.
         record_generation(app.state.config_history, new)
-        audit_log.log_reload(requested_by, "applied", current.generation,
-                             new.generation, new.source_digest)
+        audit_log.log_reload(
+            requested_by, "applied", current.generation, new.generation,
+            new.source_digest,
+            detail=f"repointed silos: {', '.join(repointed)}" if repointed else None,
+        )
         logger.info(
             f"configuration reloaded by {requested_by}: generation "
             f"{current.generation} -> {new.generation}, digest {new.source_digest[:12]}"

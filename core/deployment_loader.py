@@ -703,6 +703,36 @@ class DeploymentGeneration:
     mirror_snapshots: Mapping[str, int]
 
 
+def repointed_silos(before: DeploymentConfig, after: DeploymentConfig) -> list[str]:
+    """Silos whose CONNECTION changed between two configurations.
+
+    THE MOST SECURITY-RELEVANT CHANGE A RELOAD CAN MAKE, and until this
+    it was invisible: repointing a silo changes WHERE THE CUSTOMER'S
+    DATA COMES FROM, and the audit entry said only that generation 7
+    became 8. Someone reviewing that log could not tell a model-timeout
+    tweak from a database being swapped underneath the ontology.
+
+    COMPARES THE CONNECTION ONLY, not the whole silo entry. Changing
+    the adapter TYPE is already a different silo in every way that
+    matters and shows up here too; changing an unrelated key does not,
+    because an audit line that fires on every edit is one nobody reads.
+
+    A silo ADDED or REMOVED is deliberately not reported as a repoint.
+    Neither redirects an existing read: a new silo has nothing pointed
+    at it yet, and a removed one fails validation at load if anything
+    still declares it.
+    """
+    changed = []
+    for name, new_silo in after.silo_configs.items():
+        old_silo = before.silo_configs.get(name)
+        if old_silo is None:
+            continue
+        if old_silo.get("connection") != new_silo.get("connection") or \
+                old_silo.get("adapter") != new_silo.get("adapter"):
+            changed.append(name)
+    return sorted(changed)
+
+
 def _mirror_snapshot_ids(mediator: DataMediator) -> Mapping[str, int]:
     """What the READ ADAPTERS are actually pinned to, as
     {"silo.table": snapshot_id}.

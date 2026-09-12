@@ -677,8 +677,32 @@ directly.
       safe when a silo is REPOINTED, which is 5g and is a different
       question. Coexisting over one file is not the same as surviving
       the file changing underneath you.
-  5g. Repointing a silo is destructive for anything holding an open
-      connection. Treat it as such in step 6.
+  5g. **NAMED AND WARNED, not refused.** Repointing a silo changes
+      WHERE THE CUSTOMER'S DATA COMES FROM -- the most
+      security-relevant change a reload can make -- and it was
+      invisible: the audit said only that generation 7 became 8, which
+      does not distinguish a model-timeout tweak from a database being
+      swapped underneath the ontology. The reload entry now names the
+      silos whose connection or adapter changed.
+
+      WARNED RATHER THAN REFUSED, deliberately. Requests already in
+      flight keep the OLD adapters and go on reading the OLD source,
+      which is correct -- an answer assembled half from one database
+      and half from another was never true anywhere. But if the
+      operator repointed because the old path is being decommissioned,
+      those reads are on borrowed time, and only they know which case
+      it is. Refusing would be worse: a deployment that cannot be
+      repointed without a restart loses what this migration is for.
+
+      The comparison is deliberately NARROW -- connection and adapter
+      only. An audit line that fires on every edit is one nobody reads,
+      and there is a test asserting an ordinary reload reports nothing.
+      An ADDED or REMOVED silo is not a repoint either: neither
+      redirects an existing read.
+
+      What remains for step 6 is the obligation half: a pending write
+      proposed against the old source, still queued when the silo
+      moves.
   5h. **SNAPSHOT RETENTION MUST RESPECT PINNED GENERATIONS**, and this
       is a data-loss gap rather than a tidiness one. Nothing expires
       Iceberg snapshots today -- grepped, zero hits -- but retention is
