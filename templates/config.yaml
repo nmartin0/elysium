@@ -66,6 +66,22 @@ agent:
   max_concurrent_requests: 4        # thread pool size for api/ and
                                      # scripts/serve_requests.py
 
+# How proposed writes behave while they wait for a decision.
+writes:
+  # REQUIRES A RESTART to take effect, like max_concurrent_requests
+  # above: the pending-write store survives a configuration reload
+  # deliberately, and rebuilding it to pick up a new TTL would discard
+  # every proposal currently waiting for someone to decide on it.
+  #
+  # Four hours by default. Fifteen minutes was right when a proposer
+  # confirmed their own write seconds later, and is wrong for an
+  # approvals queue -- the point of four-eyes is that the reviewer is
+  # somebody else, and somebody else is not necessarily at their desk.
+  #
+  # A proposal that expires is audited either way, never silently
+  # dropped.
+  pending_write_ttl_minutes: 240
+
 # Tools the LLM may call, by name -- entirely optional; omitting this
 # section (or listing none) is completely valid, unlike llm:, which
 # every deployment needs. Registered tools live in

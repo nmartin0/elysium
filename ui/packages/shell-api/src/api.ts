@@ -239,6 +239,37 @@ export async function confirmWrite(writeId: string, approved: boolean): Promise<
   return response.json()
 }
 
+/** One proposal waiting for this user to decide on it.
+ *
+ * DELIBERATELY WITHOUT THE CHANGED VALUES. A pending write names object
+ * ids and the fields it would set, both governed by MAC and
+ * field-level RBAC on every other read path -- returning them because
+ * the caller holds an execute grant would be a way around the read
+ * rules. The server enforces this; the type says so, so a component
+ * cannot be written expecting values that will never arrive.
+ */
+export interface AwaitingWrite {
+  write_id: string
+  action_type_name: string
+  description: string
+  proposed_by: string
+  proposed_at: string
+  object_count: number
+  expires_at: string
+}
+
+/** Proposals this user may decide on, oldest first.
+ *
+ * Before this existed, confirming a write required knowing its id --
+ * which only the proposer had. Four-eyes was enforceable and
+ * unreachable: the one person who could find a write was the one
+ * person forbidden to approve it.
+ */
+export async function getAwaitingWrites(): Promise<AwaitingWrite[]> {
+  const response = await apiFetchOrThrow('/writes/awaiting')
+  return response.json() as Promise<AwaitingWrite[]>
+}
+
 // How current the data being read actually is. A deployment-wide fact,
 // identical for every caller -- see api/routes.py's own
 // data_freshness_route() for why it is its own endpoint rather than a

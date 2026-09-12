@@ -107,6 +107,19 @@ class DeploymentConfig:
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
     max_concurrent_requests: int   # dispatch-layer thread pool size
+    # How long a proposed write waits for a decision.
+    #
+    # WAS A HARDCODED 15 MINUTES, which was right when the proposer
+    # confirmed their own write seconds later and is wrong for an
+    # approvals queue: the whole point is that the reviewer is somebody
+    # else, and somebody else is not necessarily at their desk. A
+    # colleague had fifteen minutes to notice, open and decide.
+    #
+    # Configurable rather than a new hardcoded number, because the
+    # right value is a property of how a deployment works -- a trading
+    # desk and a quarterly compliance review want different answers,
+    # and neither is Elysium's to pick.
+    pending_write_ttl_minutes: int
     schema: dict
     users: dict
     roles: dict                    # role name -> {"allowed_actions": [...]} -- RBAC
@@ -413,6 +426,14 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
             max_concurrent_requests=config["agent"].get("max_concurrent_requests", 4),
+            # FOUR HOURS by default, not fifteen minutes. Long enough
+            # that a reviewer can be in a meeting; short enough that a
+            # forgotten proposal does not outlive the context that
+            # produced it. A proposal that expires leaves an audit
+            # trail either way -- see log_write_expired().
+            pending_write_ttl_minutes=config.get("writes", {}).get(
+                "pending_write_ttl_minutes", 240,
+            ),
             schema=deep_freeze(schema_raw["object_types"]),
             users=deep_freeze(policy_raw["users"]),
             roles=deep_freeze(_freeze_roles(policy_raw["roles"])),

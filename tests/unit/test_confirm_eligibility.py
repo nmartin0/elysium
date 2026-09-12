@@ -172,3 +172,47 @@ class TestAwaiting:
 
         assert store.expires_at(write_id) is not None
         assert store.expires_at("no-such-id") is None
+
+
+class TestTheTTLIsConfigurable:
+    """How long a reviewer has to decide.
+
+    FIFTEEN MINUTES WAS THE HARDCODED DEFAULT, which was right when the
+    proposer confirmed their own write seconds later and wrong for an
+    approvals queue: the point of four-eyes is that the reviewer is
+    somebody else, and somebody else is not necessarily at their desk.
+    """
+
+    def test_the_store_honours_the_ttl_it_is_given(self):
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(seconds=-1))
+        write_id = store.store(_pending())
+
+        assert store.claim(write_id, lambda _pending: True) is None
+
+    def test_a_longer_ttl_keeps_a_write_decidable(self):
+        # THE CONTROL. A store that expired everything would pass the
+        # test above while making the feature useless.
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(hours=4))
+        write_id = store.store(_pending())
+
+        assert store.claim(write_id, lambda _pending: True) is not None
+
+    def test_the_deployment_default_is_long_enough_to_be_useful(self):
+        # A four-hour default is long enough for a reviewer to be in a
+        # meeting and short enough that a forgotten proposal does not
+        # outlive the context that produced it. Asserted against the
+        # real config rather than the constant, because the constant is
+        # only a fallback now.
+        from pathlib import Path
+
+        from core.deployment_loader import load_deployment
+
+        config = load_deployment(
+            Path(__file__).resolve().parent.parent.parent / "deployment" / "etc",
+        )
+
+        assert config.pending_write_ttl_minutes >= 60

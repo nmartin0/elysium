@@ -233,6 +233,15 @@ def with_roles(app, **roles) -> None:
     )
 
 
+def config_of(app):
+    """The running app's configuration, for tests that assert on wiring.
+
+    Removed once as speculative when it had no callers; back because it
+    has one -- a test that the pending-write TTL reaches the store.
+    """
+    return app.state.generation.config
+
+
 def mediator_of(app):
     """The running app's mediator, for test setup that needs it directly.
 

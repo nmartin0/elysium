@@ -39,7 +39,7 @@ from core.auth.database import connection
 from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW
 from core.deployment_loader import RuntimePaths
 from core.intermediate_layer.auth import UserRecord
-from tests.conftest import mediator_of, with_config, with_roles
+from tests.conftest import config_of, mediator_of, with_config, with_roles
 
 pytestmark = pytest.mark.mocked_llm
 
@@ -2884,3 +2884,23 @@ def test_awaiting_writes_never_returns_the_changed_values(client):
 
 def test_awaiting_writes_requires_a_login(client):
     assert client.get("/api/writes/awaiting").status_code in (401, 403)
+
+
+def test_the_pending_write_store_uses_the_configured_ttl(client):
+    """The wiring, which nothing asserted.
+
+    A configuration value that is read, validated, and then never
+    passed to the thing it configures is the quietest kind of dead
+    setting: /config reports it, the template documents it, and it does
+    nothing. A control removing the ttl= argument from api/app.py
+    passed every other test.
+    """
+    from datetime import timedelta
+
+    store = client.app.state.pending_writes
+    expected = timedelta(minutes=config_of(client.app).pending_write_ttl_minutes)
+
+    assert store._ttl == expected
+    # And it is not the old hardcoded default, which is what makes the
+    # assertion above mean something rather than coincide.
+    assert store._ttl != timedelta(minutes=15)

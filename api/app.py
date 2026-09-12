@@ -81,6 +81,7 @@ still runs correctly as a pure API backend; only a real install
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -324,7 +325,13 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # A CALLABLE: this store survives a reload while each generation
     # builds its own AuditLog. Holding an instance would stamp entries
     # with the STARTUP generation -- see PendingWriteStore.__init__.
+    # THE TTL IS RUNTIME STATE, read once at startup and not rebuilt by
+    # a reload -- the store survives a reload deliberately, and
+    # rebuilding it to pick up a new TTL would discard every proposal
+    # waiting for a decision. A changed TTL takes effect at the next
+    # restart, which templates/config.yaml says.
     app.state.pending_writes = PendingWriteStore(
+        ttl=timedelta(minutes=config.pending_write_ttl_minutes),
         audit_log=lambda: app.state.generation.mediator.audit_log,
     )
 
