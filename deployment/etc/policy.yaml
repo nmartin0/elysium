@@ -70,6 +70,41 @@ roles:
       # way a field needs its own read: grant.
       - execute:RecategorizeTransaction
 
+  # DEVELOPMENT ONLY. One login that reaches every sub-app and reads
+  # every object type, so checking a layout does not mean switching
+  # users three times. scripts/create_debug_user.py creates the account
+  # that uses it.
+  #
+  # INVENTS NO PERMISSION. Every grant here is one some other role above
+  # already holds, plus manage:deployment for reload testing. It is a
+  # convenience, not an escalation -- but a real deployment gives each
+  # role what its work needs, and an account like this has no place in
+  # one. See the guard in create_debug_user.py.
+  #
+  # NOT KEPT IN SYNC AUTOMATICALLY: adding an object type, a field or an
+  # action means adding it here too, or the debug user silently cannot
+  # see it. That is the cost of explicit grants and it applies to every
+  # role equally.
+  debug:
+    allowed_actions:
+      - manage:users
+      - manage:deployment
+      - discover:action_types
+      - read:Customer
+      - read:Customer.customer_id
+      - read:Customer.region
+      - read:Customer.name
+      - read:Customer.email
+      - read:Customer.transactions
+      - read:Transaction
+      - read:Transaction.transaction_id
+      - read:Transaction.amount
+      - read:Transaction.currency
+      - read:Transaction.category
+      - read:Transaction.transaction_date
+      - read:Transaction.customer_id
+      - execute:RecategorizeTransaction
+
 users:
   user_alice:
     region: us-west

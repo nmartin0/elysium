@@ -23,6 +23,7 @@ import pytest
 import yaml
 
 TEMPLATES = Path(__file__).resolve().parent.parent.parent / "templates"
+DEPLOYMENT = Path(__file__).resolve().parent.parent.parent / "deployment" / "etc"
 
 
 def test_every_template_yaml_parses():
@@ -84,3 +85,41 @@ def test_every_role_grant_in_the_template_names_something_real():
                 unknown.append(f"{role_name}: {grant}")
 
     assert not unknown, f"grants naming things the template's schema lacks: {unknown}"
+
+
+# --- the debug role ---
+#
+# scripts/create_debug_user.py makes an account with every grant and
+# the password "a". That is a convenience for manual UI testing and a
+# back door anywhere else, which is why the script refuses to run
+# without an explicit flag.
+
+def test_the_debug_role_invents_no_permission():
+    """Every debug grant is one another role already holds.
+
+    THE PROPERTY THAT MAKES IT SAFE TO EXIST. A convenience account
+    that reaches everything is defensible; one that reaches something
+    no legitimate role reaches is a new capability introduced through
+    the back door, and nobody would be looking for it there.
+
+    manage:deployment is the exception and is asserted separately
+    below: it is held by no other role because reload testing is the
+    only thing that needs it yet.
+    """
+    policy = yaml.safe_load((DEPLOYMENT / "policy.yaml").read_text())
+    roles = policy["roles"]
+    debug = set(roles["debug"]["allowed_actions"])
+    others = {grant for name, role in roles.items() if name != "debug"
+              for grant in role["allowed_actions"]}
+
+    assert debug - others == {"manage:deployment", "discover:action_types"}
+
+
+def test_the_debug_script_refuses_without_the_flag():
+    # A guard rather than a warning: this script exists to be run
+    # without thinking, which is exactly the property that gets it run
+    # somewhere it should not be.
+    source = (DEPLOYMENT.parent.parent / "scripts" / "create_debug_user.py").read_text()
+
+    assert "--yes-this-is-development" in source
+    assert "REFUSING" in source
