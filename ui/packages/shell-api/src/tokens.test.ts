@@ -177,3 +177,43 @@ describe('layout responds to the canvas, not the viewport', () => {
     expect(mediaBlocks.filter((body) => body.includes('.workspace'))).toEqual([])
   })
 })
+
+describe('scrolling stays where it was started', () => {
+  /**
+   * THE SHELL HAS FIVE INDEPENDENT SCROLL CONTAINERS: the sidebar, the
+   * canvas main, the workspace config pane, the workspace content, and
+   * the graph preview. Each one can reach its end while the reader is
+   * still inside it.
+   *
+   * Without containment, reaching that end hands the wheel to the
+   * parent and the page moves under the cursor -- the reader loses
+   * their place in a list they were not trying to leave. It reads as
+   * the app being twitchy rather than as a bug worth reporting, which
+   * is why it survives.
+   */
+  const shell = read('packages/shell-api/src/index.css')
+
+  it('contains scroll in every pane that scrolls', () => {
+    // Counted rather than spot-checked: a new scrolling pane added
+    // without containment is the regression, and naming the current
+    // five would not catch a sixth.
+    // COMMENTS STRIPPED FIRST. A comment in this file discusses
+    // "overflow-y: auto never engages because nothing constrains
+    // them", and counting prose as code made this assert 6 against 5.
+    // The token tests above strip comments for the same reason.
+    const rules = shell.replace(/\/\*[\s\S]*?\*\//g, '')
+    const scrollers = [...rules.matchAll(/overflow-y:\s*auto/g)].length
+    const contained = [...rules.matchAll(/overscroll-behavior:\s*contain/g)].length
+
+    expect(scrollers).toBeGreaterThan(0)
+    expect(contained).toBe(scrollers)
+  })
+
+  it('keeps the reader in place when content loads above them', () => {
+    // A chart resolving, a freshness note appearing, a Callout
+    // replacing a spinner -- all insert content ABOVE what someone is
+    // reading. Declared rather than left to the default, so nobody
+    // turns it off further down without meeting the comment.
+    expect(shell).toMatch(/overflow-anchor:\s*auto/)
+  })
+})
