@@ -9,6 +9,32 @@
  * elevation carry meaning rather than being chosen per rule. Where a
  * literal survives below it is because the rule predates the tokens
  * and its own comment explains why the value is what it is.
+ *
+ * --- A SHRINKING CHILD NEEDS AN EXPLICIT MINIMUM ---------------------
+ *
+ * A flex item defaults to `min-width: auto` and a grid track to
+ * `min-content`. Both mean "never smaller than my contents", so a wide
+ * table inside one pushes its parent wider than the viewport instead
+ * of scrolling within it. The page grows a horizontal scrollbar, the
+ * fixed chrome stops lining up, and nothing in the offending rule
+ * looks wrong -- the cause is a default nobody wrote down.
+ *
+ * ALREADY APPLIED where it bites: `min-width: 0` on .app__content and
+ * .app__content main, `min-height: 0` on the shell rows, and
+ * `minmax(0, 1fr)` on every grid track that has to give.
+ *
+ * THE RULE, for whoever adds the next pane: a child of a flex or grid
+ * container that is expected to SHRINK -- because it scrolls, holds a
+ * table, or sits in a 1fr track -- needs min-width: 0, and min-height:
+ * 0 when the axis is vertical. A child with a FIXED width, as the
+ * sidebar and config pane have, does not; adding one there says
+ * something untrue about the layout.
+ *
+ * NOT ENFORCED BY A TEST, deliberately. Whether an element is a
+ * shrinking flex or grid child is not decidable from the text of its
+ * own rule, and three of the five scrolling panes here legitimately
+ * lack the property. A guard would be wrong three times in five, and a
+ * guard that cries wolf is weakened by whoever hits it next.
  */
 
 * {
