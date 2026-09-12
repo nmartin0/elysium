@@ -657,10 +657,26 @@ directly.
       safer for readers on older generations and field IDs make it
       cheap. Neither should happen automatically without the operator
       seeing it.
-  5f. Connection lifecycle across a reload: retire old-generation
-      adapters without killing in-flight reads. Refcounting gives this
-      free IF adapters hold no process-global state -- verified for
-      sqlite_adapter, NOT yet for the mirror adapter's catalog handle.
+  5f. **VERIFIED, which is what this step asked for.** Refcounting
+      retires old-generation adapters for free IF they hold no
+      process-global state. sqlite_adapter had been checked; the mirror
+      adapter's catalog handle had not, and a reload builds a SECOND
+      SqlCatalog over the same catalog.db while requests pinned to the
+      previous generation are still reading through the first.
+
+      Probed before assuming: twenty concurrent reads on an old adapter
+      while ten new catalogs were built and read over the same mirror.
+      No errors. Neither adapter has module-level state, no lru_cache,
+      and two adapters never share a catalog object.
+
+      Now a test rather than a one-off probe, because the property
+      belongs to pyiceberg and SQLite rather than to us -- a dependency
+      bump could take it away and nothing else here would notice.
+
+      Note what this does NOT establish: that an adapter mid-read is
+      safe when a silo is REPOINTED, which is 5g and is a different
+      question. Coexisting over one file is not the same as surviving
+      the file changing underneath you.
   5g. Repointing a silo is destructive for anything holding an open
       connection. Treat it as such in step 6.
   5h. **SNAPSHOT RETENTION MUST RESPECT PINNED GENERATIONS**, and this
