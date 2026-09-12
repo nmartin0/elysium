@@ -147,12 +147,21 @@ resolves `parameter.<name>` and `user.security_value` today. Extending
 that same convention to the criteria `value:` side is consistent rather
 than novel, which is the argument that settled `check: user`.
 
-**THE LANDMINE, already recorded in ROADMAP.md and worth repeating
-because step 3 is when it detonates.** `_collect_parameter_references`
-in action_types.py already tries to collect `parameter.` references out
-of submission criteria -- but reads them off `action_def` when criteria
-live per sub_write. It finds nothing. That is harmless while values are
-literals and silently wrong the moment they are not.
+**THE LANDMINE: DEFUSED.** `_collect_parameter_references` read
+criteria off `action_def` when they live per sub_write, and found
+nothing. Now reads both levels, with tests and a control that
+reinstates the original bug.
+
+Demonstrated before fixing rather than assumed: given a criterion
+holding `parameter.approver` in the real shape, the collector returned
+`{ticket_id}`; given the same criterion in the shape it was looking at,
+`{ticket_id, approver}`.
+
+The damage it would have done is the bad kind. A parameter used ONLY by
+a criterion gets reported declared-but-unused, so an author deletes the
+declaration on the validator's advice and breaks the criterion. A
+validator that tells you to remove something load-bearing is worse than
+one that says nothing.
 
 **Then** eligibility moves off `PendingWriteStore.pop()`'s
 owner-equality check onto grant + MAC + criteria evaluated at APPROVE

@@ -344,6 +344,24 @@ def _collect_parameter_references(action_def: dict) -> set[str]:
         note(sub_write.get("object_id"))
         for mutation in sub_write.get("mutations") or []:
             note((mutation.get("set") or {}).get("value"))
+        # CRITERIA LIVE ON THE SUB_WRITE, which is where
+        # WriteMediator reads them (sw_def["submission_criteria"]).
+        # This loop previously read action_def["submission_criteria"]
+        # instead, one level too high, and found nothing at all --
+        # harmless while every criterion value is a literal, and
+        # silently wrong the moment one is not.
+        #
+        # The failure it would have caused is the bad kind: a parameter
+        # used ONLY by a criterion would be reported as declared-but-
+        # unused, so an author would delete the declaration and break
+        # the criterion, with the validator having told them to.
+        for criterion in sub_write.get("submission_criteria") or []:
+            for value in (criterion or {}).values():
+                note(value)
+
+    # The action level is still read, because nothing forbids a
+    # deployment putting criteria there and a validator that quietly
+    # ignored half the file would be its own version of this bug.
     for criterion in action_def.get("submission_criteria") or []:
         for value in (criterion or {}).values():
             note(value)
