@@ -13,10 +13,13 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     // every test here would hit a real fetch and the charts would show
     // an error instead of bars.
     aggregateObjects: vi.fn(),
+    // The panel reports whether it is reading mirrored data. Unmocked,
+    // every test here would hit a real fetch for it.
+    getDataFreshness: vi.fn(),
   }
 })
 
-import { aggregateObjects, searchObjects, ApiError } from '@elysium/shell-api/api'
+import { ApiError, aggregateObjects, getDataFreshness, searchObjects } from '@elysium/shell-api/api'
 import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
@@ -30,6 +33,7 @@ vi.mock('@elysium/shell-api/components/Chart', () => ({
 }))
 
 const mockedSearchObjects = vi.mocked(searchObjects)
+const mockedGetDataFreshness = vi.mocked(getDataFreshness)
 const mockedAggregate = vi.mocked(aggregateObjects)
 
 const CUSTOMER_SCHEMA: VisibleSchema = {
@@ -65,6 +69,10 @@ beforeEach(() => {
   // FOR in a browser and exactly what makes tests interfere.
   window.localStorage.clear()
   mockedAggregate.mockResolvedValue({ results: { 'us-west': 3, 'us-east': 1 } })
+  // A default, because every test renders the panel and the panel asks.
+  // Live rather than mirror, so the freshness note is absent unless a
+  // test deliberately asks for it.
+  mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
   vi.clearAllMocks()
 })
 
@@ -225,6 +233,76 @@ describe('ObjectSearchPanel -- results rendering', () => {
     renderPanel(CUSTOMER_SCHEMA)
 
     await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+  })
+
+  describe('data freshness', () => {
+    /**
+     * WHEN the data was current, stated rather than warned about.
+     *
+     * read_from_mirror is deployment-wide: when on, EVERY read comes
+     * from the mirror, so a warning Callout would be permanently
+     * present -- and a permanent warning is one people stop seeing,
+     * which is worse than none because it looks like the system is
+     * saying something.
+     */
+    it('says nothing at all when reading live', async () => {
+      // THE PROPERTY THAT KEEPS IT HONEST. A live deployment is not
+      // stale and must not be told it is, or the indicator means
+      // nothing wherever it appears.
+      mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+      expect(screen.queryByText(/mirrored data/i)).toBeNull()
+    })
+
+    it('reports when the mirror was last synced', async () => {
+      mockedGetDataFreshness.mockResolvedValue({
+        source: 'mirror',
+        last_synced_at: new Date(Date.now() - 4 * 60_000).toISOString(),
+      })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText(/4 minutes ago/)).toBeInTheDocument())
+    })
+
+    it('says so when the mirror has never synced', async () => {
+      // Distinct from "synced a long time ago": never-synced data is
+      // not old, it is absent, and an empty result set means something
+      // different in each case.
+      mockedGetDataFreshness.mockResolvedValue({ source: 'mirror', last_synced_at: null })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText(/not been synced yet/i)).toBeInTheDocument())
+    })
+
+    it('still shows results when the freshness check fails', async () => {
+      /**
+       * The freshness call and the search are INDEPENDENT: a failure
+       * in one must not blank the other.
+       *
+       * HONEST LIMIT, stated because a control exposed it. The
+       * component's `.catch` is good hygiene and is NOT observable
+       * here: without it the promise rejects, the browser logs it, and
+       * the UI behaves identically. An attempt to assert it via the
+       * unhandledrejection event did not fire under jsdom, and a test
+       * that cannot fail is worse than none.
+       *
+       * So this guards the real property -- the two are not coupled --
+       * which is what a future change would actually break.
+       */
+      mockedGetDataFreshness.mockRejectedValue(new Error('unreachable'))
+      mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada' } }]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      // getAllByText: "Ada" is in the result title AND the charts
+      // panel's labels. The point is that results rendered at all.
+      await waitFor(() => expect(screen.getAllByText('Ada').length).toBeGreaterThan(0))
+      expect(screen.queryByText(/mirrored data/i)).toBeNull()
+    })
   })
 
   describe('the two empty states', () => {

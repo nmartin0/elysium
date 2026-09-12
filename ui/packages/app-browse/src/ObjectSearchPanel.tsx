@@ -1,11 +1,17 @@
 import { Fragment, useEffect, useState } from 'react'
 import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
-import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import {
+  searchObjects,
+  getDataFreshness,
+  getErrorMessage,
+  handleIfSessionExpired,
+  type DataFreshness,
+} from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
-import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -120,6 +126,18 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // and chart cross-filters both count: either one can empty a result
   // set that would otherwise have rows.
   const hasFilters = queryText.trim() !== '' || crossFilter.length > 0
+
+  // Fetched once for the panel, not per search: freshness is a
+  // deployment-wide fact and does not change between queries. A
+  // failure is swallowed to null -- the indicator is worth having and
+  // is not worth failing a search over, which is the same call
+  // PendingWriteCard already makes.
+  const [freshness, setFreshness] = useState<DataFreshness | null>(null)
+  useEffect(() => {
+    getDataFreshness()
+      .then(setFreshness)
+      .catch(() => setFreshness(null))
+  }, [])
 
   const clearAllFilters = () => {
     setQueryText('')
@@ -413,6 +431,32 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
       )}
 
       {loading && <p className="object-search__status">Searching…</p>}
+
+      {/*
+       * WHEN the data was current, stated rather than warned about.
+       *
+       * read_from_mirror is deployment-wide: when it is on, EVERY read
+       * comes from the mirror, always. So a warning Callout here would
+       * be permanently present, and a permanent warning is one people
+       * stop seeing -- which is worse than none, because it looks like
+       * the system is telling them something.
+       *
+       * A muted fact instead. "synced 4 minutes ago" and "synced 3
+       * days ago" are both unremarkable to render and completely
+       * different to read, and the analyst is the one who knows which
+       * matters for the question they are asking.
+       *
+       * PendingWriteCard keeps its warning Callout, correctly: that is
+       * a decision point, not continuous reading, and someone about to
+       * approve a write against stale values should be interrupted.
+       */}
+      {freshness?.source === 'mirror' && (
+        <p className="object-search__freshness">
+          {freshness.last_synced_at
+            ? `Showing mirrored data, synced ${formatTimestamp(freshness.last_synced_at)}.`
+            : 'Showing mirrored data, which has not been synced yet.'}
+        </p>
+      )}
 
       {view === 'table' && !loading && results.length === 0 && !error && (
         /*

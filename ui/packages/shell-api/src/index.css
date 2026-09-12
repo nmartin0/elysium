@@ -727,6 +727,15 @@ button.danger {
   background: var(--fill-danger);
 }
 
+/* A muted FACT, not a warning. read_from_mirror is deployment-wide, so
+ * this is present on every view when it is on -- and a permanent
+ * warning is one people stop seeing. Secondary text, small, no icon. */
+.object-search__freshness {
+  margin: 0 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
 .object-search__controls {
   display: flex;
   gap: 0.6rem;
