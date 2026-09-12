@@ -1800,10 +1800,37 @@ the region.
    so the "before the first dashboard ships" window has closed. Needs
    categorical (6-8 hues, CVD-safe), sequential and diverging scales
    on both themes. The ONE palette decision Blueprint does not cover.
-5. **View-state matrix.** Nine states. Thirty-one components handle
-   loading or empty; ZERO use Blueprint's NonIdealState. Elysium can
-   already distinguish permission-denied from empty (uniform denial)
-   and stale from fresh (/data-freshness) and surfaces neither.
+5. **View-state matrix.** Nine states in the spec, and ONE OF THEM
+   CANNOT BE BUILT HERE -- recorded before someone tries.
+
+   The spec asks for a PERMISSION DENIED state "distinct from empty --
+   state that results exist but are not visible to this user". Elysium
+   deliberately does the opposite. Its uniform denial means "the
+   response never distinguishes 'no history' from 'not allowed' from
+   'no such object'", and that is a SECURITY PROPERTY, not an
+   oversight: telling a caller that hidden rows exist leaks the
+   existence of data they cannot see, which is what MAC is for. A UI
+   saying "3 results hidden by your clearance" would defeat the read
+   path's core guarantee. The generic spec assumes an access model
+   Elysium does not have.
+
+   WHAT CAN BE DISTINGUISHED, and should be:
+   - loading FIRST vs loading a REFRESH, where existing data stays
+     readable. AsyncPanel already reasons about exactly this and
+     deliberately excludes Browse for that reason.
+   - empty because NOTHING EXISTS YET vs empty because THE FILTERS
+     MATCHED NOTHING -- echo the filters, offer to clear them.
+   - STALE: /data-freshness already knows when the mirror last synced
+     and whether reads come from it. Nothing surfaces it.
+   - PARTIAL: the loop already reports hit_max_hops through
+     possibly_incomplete, and a search cut short is not a search that
+     found nothing.
+   - ERROR, which AsyncPanel already handles.
+
+   Thirty-one components handle loading or empty; ZERO use Blueprint's
+   NonIdealState. ObjectSearchPanel renders the bare string "No
+   results." for every empty case, which is the collapse worth fixing
+   first -- both halves are answerable without leaking anything.
 
 **Then:**
 

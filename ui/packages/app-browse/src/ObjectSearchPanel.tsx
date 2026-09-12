@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Callout, Card, CardList, Checkbox, HTMLSelect } from '@blueprintjs/core'
+import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
@@ -114,6 +114,17 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * narrows within a search rather than discarding it.
    */
   const [crossFilter, setCrossFilter] = useState<ChartFilter[]>([])
+
+  // Whether the user narrowed anything, which is what separates "your
+  // filters matched nothing" from "there is nothing here". Text search
+  // and chart cross-filters both count: either one can empty a result
+  // set that would otherwise have rows.
+  const hasFilters = queryText.trim() !== '' || crossFilter.length > 0
+
+  const clearAllFilters = () => {
+    setQueryText('')
+    setCrossFilter([])
+  }
   /**
    * Filters built in the filter bar, kept SEPARATE from the chart
    * cross-filter and combined only when a query is sent.
@@ -404,7 +415,36 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
       {loading && <p className="object-search__status">Searching…</p>}
 
       {view === 'table' && !loading && results.length === 0 && !error && (
-        <p className="object-search__empty">No results.</p>
+        /*
+         * TWO EMPTY STATES, not one. "Your filters matched nothing" and
+         * "this type has no rows" are different facts and lead to
+         * different next actions: clear the filters, or go and look
+         * somewhere else. Collapsing them into one grey "No results."
+         * -- which is what this was -- makes an analyst guess which.
+         *
+         * A THIRD STATE IS DELIBERATELY ABSENT. The spec this came
+         * from also wants "results exist but are not visible to you".
+         * Elysium's uniform denial means the response never
+         * distinguishes "no rows" from "not allowed", and that is a
+         * security property: saying hidden rows exist leaks the
+         * existence of data the caller cannot see. See UI_ROADMAP.md.
+         */
+        <NonIdealState
+          icon={hasFilters ? 'filter-remove' : 'search'}
+          title={hasFilters ? 'No matches' : 'Nothing here yet'}
+          description={
+            hasFilters
+              ? `No ${currentType} matches the filters you have applied.`
+              : `No ${currentType} records are available to show.`
+          }
+          action={
+            hasFilters ? (
+              <Button icon="filter-remove" onClick={clearAllFilters}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        />
       )}
 
       {view === 'table' && (

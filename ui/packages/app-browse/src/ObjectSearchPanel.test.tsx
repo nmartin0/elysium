@@ -220,11 +220,57 @@ describe('ObjectSearchPanel -- results rendering', () => {
     await waitFor(() => expect(screen.getByRole('link')).toHaveAttribute('href', '/objects/Customer/weird%2Fid'))
   })
 
-  it('shows "No results." only once loading has finished and nothing came back', async () => {
+  it('shows an empty state only once loading has finished and nothing came back', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() => expect(screen.getByText('No results.')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+  })
+
+  describe('the two empty states', () => {
+    /**
+     * "Your filters matched nothing" and "this type has no rows" are
+     * different facts leading to different next actions -- clear the
+     * filters, or go and look somewhere else. They used to share one
+     * grey "No results.", which made an analyst guess which.
+     *
+     * A THIRD STATE IS DELIBERATELY ABSENT. The spec these came from
+     * also wants "results exist but are not visible to you". Elysium's
+     * uniform denial means the response never distinguishes "no rows"
+     * from "not allowed" -- saying hidden rows exist would leak the
+     * existence of data the caller cannot see.
+     */
+    it('says nothing exists when no filter has been applied', async () => {
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+      expect(screen.queryByRole('button', { name: /clear filters/i })).toBeNull()
+    })
+
+    it('says the filters matched nothing, and offers to clear them', async () => {
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+      await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+
+      fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'zzz' } })
+
+      await waitFor(() => expect(screen.getByText('No matches')).toBeInTheDocument())
+      expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument()
+    })
+
+    it('clearing the filters returns to the unfiltered empty state', async () => {
+      // The action has to WORK, not merely appear. A button that
+      // offers a way out and does not take it is worse than no button.
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+      fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'zzz' } })
+      await waitFor(() => expect(screen.getByText('No matches')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: /clear filters/i }))
+
+      await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+    })
   })
 
   it('offers paging instead of telling the user to narrow their search', async () => {
