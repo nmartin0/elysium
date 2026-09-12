@@ -73,7 +73,54 @@ describe('Chart', () => {
     render(<Chart option={OPTION} ariaLabel="Customers by region" />)
 
     expect(init).toHaveBeenCalledTimes(1)
-    expect(setOption).toHaveBeenCalledWith(OPTION, true)
+    // The caller's own keys survive verbatim. The palette is ADDED
+    // around them, which is why this asserts containment rather than
+    // equality -- it used to assert equality, and that broke the
+    // moment a default was supplied.
+    expect(setOption).toHaveBeenCalledWith(expect.objectContaining(OPTION), true)
+  })
+
+  describe('the palette', () => {
+    it('supplies a colour scale the caller did not ask for', () => {
+      // Applied HERE so no caller chooses. Before this, each one either
+      // picked its own or fell through to ECharts' defaults, so two
+      // charts on one screen could use different palettes and none had
+      // been checked for colour vision deficiency.
+      render(<Chart option={OPTION} ariaLabel="Customers by region" />)
+
+      const [applied] = setOption.mock.calls[0] as [Record<string, unknown>]
+      expect(applied.color).toHaveLength(8)
+    })
+
+    it("does NOT override a caller's own colours", () => {
+      // THE PROPERTY THAT MATTERS MOST. A status breakdown where red
+      // must mean failed says so explicitly, and a wrapper that
+      // silently overrode it would be worse than no wrapper.
+      const explicit = { ...OPTION, color: ['#ff0000'] }
+      render(<Chart option={explicit} ariaLabel="Writes by outcome" />)
+
+      const [applied] = setOption.mock.calls[0] as [Record<string, unknown>]
+      expect(applied.color).toEqual(['#ff0000'])
+    })
+
+    it('themes axes the caller declared, and invents none', () => {
+      // Adding an xAxis to a pie chart makes ECharts render an empty
+      // grid behind it, so an axis is themed only where one exists.
+      render(<Chart option={{ ...OPTION, xAxis: {} }} ariaLabel="By month" />)
+
+      const [withAxis] = setOption.mock.calls[0] as [Record<string, unknown>]
+      expect((withAxis.xAxis as Record<string, unknown>).axisLabel).toBeDefined()
+      expect(withAxis.yAxis).toBeUndefined()
+    })
+
+    it("leaves a caller's own axis label colour alone", () => {
+      const declared = { ...OPTION, xAxis: { axisLabel: { color: '#123456' } } }
+      render(<Chart option={declared} ariaLabel="By month" />)
+
+      const [applied] = setOption.mock.calls[0] as [Record<string, unknown>]
+      const axis = applied.xAxis as { axisLabel: { color: string } }
+      expect(axis.axisLabel.color).toBe('#123456')
+    })
   })
 
   it('disposes the instance on unmount', () => {
@@ -107,7 +154,9 @@ describe('Chart', () => {
 
     rerender(<Chart option={next} ariaLabel="Chart" />)
 
-    expect(setOption).toHaveBeenLastCalledWith(next, true)
+    // Containment, not equality: the palette is added around the
+    // caller's option. Same reason as the first test above.
+    expect(setOption).toHaveBeenLastCalledWith(expect.objectContaining(next), true)
     // ...without building a second chart for the same div.
     expect(init).toHaveBeenCalledTimes(1)
   })

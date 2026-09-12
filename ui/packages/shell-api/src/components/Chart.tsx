@@ -28,6 +28,8 @@ import { BarChart, GraphChart, PieChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
+import { chartTheme } from '../chartColors'
+
 // Registered once, at module load. Registering per render would
 // re-register the same modules on every mount for no benefit.
 echarts.use([
@@ -68,6 +70,43 @@ export interface ChartProps {
   ariaLabel: string
 }
 
+/**
+ * Applies Elysium's chart palette to a caller's option object.
+ *
+ * APPLIED HERE, so no caller chooses colours. Before this, every
+ * caller either picked its own or fell through to ECharts' defaults --
+ * which meant two charts on one screen could use different palettes,
+ * and none of them was checked for colour vision deficiency.
+ *
+ * A CALLER'S OWN `color` WINS. A chart that genuinely needs specific
+ * colours -- a status breakdown where red must mean failed -- says so
+ * explicitly, and this must not silently override it. Defaults are
+ * supplied; decisions are not overridden.
+ *
+ * The axis and gridline colours are likewise only filled in where the
+ * caller left them unset, and only for axes the caller actually
+ * declared: adding an xAxis to a pie chart would make ECharts render
+ * an empty grid behind it.
+ */
+function withTheme(option: Record<string, unknown>): Record<string, unknown> {
+  const theme = chartTheme(document.documentElement.classList.contains('bp5-dark'))
+  const themed: Record<string, unknown> = { color: theme.categorical, ...option }
+
+  for (const axis of ['xAxis', 'yAxis'] as const) {
+    if (option[axis] === undefined) continue
+    const declared = option[axis] as Record<string, unknown>
+    themed[axis] = {
+      ...declared,
+      axisLabel: { color: theme.axisLabel, ...(declared.axisLabel as object) },
+      splitLine: {
+        lineStyle: { color: theme.gridLine },
+        ...(declared.splitLine as object),
+      },
+    }
+  }
+  return themed
+}
+
 export default function Chart({ option, onSelect, height = 240, ariaLabel }: ChartProps) {
   const container = useRef<HTMLDivElement | null>(null)
   const instance = useRef<echarts.ECharts | null>(null)
@@ -90,7 +129,7 @@ export default function Chart({ option, onSelect, height = 240, ariaLabel }: Cha
   }, [])
 
   useEffect(() => {
-    instance.current?.setOption(option, true)
+    instance.current?.setOption(withTheme(option), true)
   }, [option])
 
   useEffect(() => {
