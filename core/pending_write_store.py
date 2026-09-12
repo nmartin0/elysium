@@ -109,6 +109,49 @@ class PendingWriteStore:
             self._writes[write_id] = _StoredWrite(pending, pending.user_id, expires_at)
         return write_id
 
+    def awaiting(self, may_claim) -> list[tuple[str, PendingWrite]]:
+        """Every unexpired write the caller may act on, id and all.
+
+        THE SAME PREDICATE claim() takes, deliberately. A listing that
+        decided eligibility differently from the claim would show writes
+        that cannot be claimed, or hide ones that can -- and the second
+        is worse, because an approver would never learn a decision was
+        waiting for them.
+
+        EXPIRES FIRST, so a listing never shows a write that would 404
+        on the next request. A stale entry in an inbox is worse than an
+        absent one: the reviewer spends attention on a decision that has
+        already been taken away from them.
+
+        RETURNS IDS, and that is the point -- before this, confirming a
+        write required knowing its id, which only the proposer had. A
+        four-eyes rule was enforceable and unreachable: the one person
+        who could find the write was the one person forbidden to
+        approve it.
+
+        NOT SORTED HERE. Oldest-first is what an inbox wants, but that
+        is a presentation choice and the caller has the timestamps.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            return [
+                (write_id, stored.pending)
+                for write_id, stored in self._writes.items()
+                if may_claim(stored.pending)
+            ]
+
+    def expires_at(self, write_id: str) -> str | None:
+        """When a write stops being decidable, as an ISO timestamp.
+
+        SEPARATE FROM awaiting(), because the expiry is the store's own
+        bookkeeping rather than part of the write -- PendingWrite does
+        not carry it, and adding it there would put a value that
+        changes per storage into the object being stored.
+        """
+        with self._lock:
+            stored = self._writes.get(write_id)
+            return stored.expires_at.isoformat() if stored is not None else None
+
     def claim(self, write_id: str, may_claim) -> PendingWrite | None:
         """Removes and returns a write, if the caller may act on it.
 

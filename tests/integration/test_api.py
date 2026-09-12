@@ -2836,3 +2836,51 @@ def test_an_unauthenticated_reload_is_refused(client):
     # refusals; asserting the wrong one would be asserting a mechanism
     # this test does not care about.
     assert client.post("/api/admin/reload").status_code in (401, 403)
+
+
+def test_awaiting_writes_lists_what_this_user_may_decide(client):
+    """The inbox that makes four-eyes reachable.
+
+    Confirming a write requires its id, and before this route only the
+    proposer had one -- so the single person who could find a write was
+    the single person a four-eyes rule forbids from approving it.
+    """
+    _make_admin(client)
+
+    response = client.get("/api/writes/awaiting")
+
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_awaiting_writes_never_returns_the_changed_values(client):
+    """DELIBERATELY NOT THE VALUES, and this is the security decision.
+
+    A pending write names object ids and the fields it would set, both
+    governed by MAC and field-level RBAC on every other read path.
+    Returning them because the caller holds an EXECUTE grant would be a
+    way around the read rules: an approver could learn a balance by
+    proposing a write against it and listing their own inbox.
+    """
+    from api.routes import AwaitingWriteResponse
+
+    # ASSERTED AGAINST THE RESPONSE MODEL, not against a live response,
+    # and a control taught me why. FastAPI strips undeclared keys, so a
+    # route that tried to return sub_writes would be filtered and a
+    # test inspecting the body would pass either way -- it would be
+    # asserting FastAPI's behaviour, not ours.
+    #
+    # The model IS the control. Widening it is the change that would
+    # leak, so the model is what this pins.
+    declared = set(AwaitingWriteResponse.model_fields)
+
+    assert declared == {
+        "write_id", "action_type_name", "description", "proposed_by",
+        "proposed_at", "object_count", "expires_at",
+    }
+    for leaky in ("changes", "sub_writes", "object_id", "object_ids", "parameters"):
+        assert leaky not in declared
+
+
+def test_awaiting_writes_requires_a_login(client):
+    assert client.get("/api/writes/awaiting").status_code in (401, 403)

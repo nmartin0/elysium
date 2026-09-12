@@ -42,6 +42,7 @@ deployment_config_route
 reload_route
 config_history_route
 config_diff_route
+awaiting_writes_route
 list_users_route
 create_user_route
 visible_schema_route
@@ -203,3 +204,8 @@ generations
 changed_files
 unchanged
 recorded_at
+
+# AwaitingWriteResponse fields (api/routes.py) -- read by FastAPI's
+# serialiser from the returned dicts, as with every response model.
+proposed_by
+object_count

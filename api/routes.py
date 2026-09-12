@@ -460,6 +460,71 @@ class HealthResponse(BaseModel):
     checks: dict[str, str]
 
 
+class AwaitingWriteResponse(BaseModel):
+    """One proposal waiting for a decision.
+
+    DELIBERATELY NOT THE CHANGED VALUES. A pending write names object
+    ids and the fields it would set, and both are governed by MAC and
+    field-level RBAC on every other read path. Returning them here
+    because the caller happens to hold an execute grant would be a way
+    around the read rules -- an approver could learn an account balance
+    by proposing a write against it and listing their own inbox.
+
+    So: what is being decided, by whom, and how long the reviewer has.
+    The values are visible through the ordinary read path, subject to
+    the ordinary checks, and a reviewer who cannot see them there
+    should not see them here.
+    """
+
+    write_id: str
+    action_type_name: str
+    description: str
+    proposed_by: str
+    proposed_at: str
+    object_count: int
+    expires_at: str
+
+
+@router.get("/writes/awaiting", response_model=list[AwaitingWriteResponse])
+def awaiting_writes_route(request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """Proposals this user may decide on.
+
+    WITHOUT THIS, FOUR-EYES IS ENFORCEABLE AND UNREACHABLE. Confirming
+    a write requires its id, and only the proposer had one -- so the
+    single person who could find a write was the single person a
+    four-eyes rule forbids from approving it.
+
+    THE SAME ELIGIBILITY TEST THE CONFIRM ROUTE USES, so a listed write
+    can always be claimed and a claimable write is always listed.
+    Deciding them separately is how an inbox ends up showing rows that
+    404, or silently hiding a decision somebody is waiting on.
+    """
+    roles = _generation(request).config.roles
+
+    def may_confirm(candidate) -> bool:
+        return authorize(current_user, roles, f"execute:{candidate.action_type_name}")
+
+    store: PendingWriteStore = request.app.state.pending_writes
+    waiting = store.awaiting(may_confirm)
+
+    return [
+        {
+            "write_id": write_id,
+            "action_type_name": pending.action_type_name,
+            "description": pending.description,
+            "proposed_by": pending.user_id,
+            "proposed_at": pending.proposed_at.isoformat(),
+            "object_count": len(pending.sub_writes),
+            "expires_at": store.expires_at(write_id),
+        }
+        # OLDEST FIRST. A reviewer works through a queue, and the write
+        # closest to expiring is the one whose decision is about to be
+        # taken away from them.
+        for write_id, pending in sorted(waiting, key=lambda item: item[1].proposed_at)
+    ]
+
+
 class ConfirmWriteRequest(BaseModel):
     approved: bool
 

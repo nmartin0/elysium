@@ -111,3 +111,64 @@ class TestClaim:
         store.claim("no-such-id", lambda pending: called.append(pending) or True)
 
         assert called == []
+
+
+class TestAwaiting:
+    """Listing what a reviewer may decide on.
+
+    WITHOUT IT, FOUR-EYES IS ENFORCEABLE AND UNREACHABLE. Confirming a
+    write requires its id, and only the proposer had one -- so the
+    single person who could find a write was the single person a
+    four-eyes rule forbids from approving it.
+    """
+
+    def test_lists_a_write_the_caller_may_claim(self):
+        store, write_id = _store()
+
+        listed = store.awaiting(lambda _pending: True)
+
+        assert [item[0] for item in listed] == [write_id]
+
+    def test_hides_a_write_the_caller_may_not_claim(self):
+        store, _ = _store()
+
+        assert store.awaiting(lambda _pending: False) == []
+
+    def test_listing_does_not_consume_anything(self):
+        # An inbox is read constantly. If looking at it removed writes,
+        # the first reviewer to open the page would destroy the queue.
+        store, write_id = _store()
+
+        store.awaiting(lambda _pending: True)
+
+        assert store.claim(write_id, lambda _pending: True) is not None
+
+    def test_what_is_listed_can_always_be_claimed(self):
+        # THE PROPERTY THAT MAKES AN INBOX HONEST, and the reason both
+        # take the same predicate. Deciding eligibility separately is
+        # how a queue ends up showing rows that 404 -- or worse, hiding
+        # a decision somebody is waiting on.
+        store, _ = _store()
+        eligible = lambda pending: pending.action_type_name == "RenameAuthor"  # noqa: E731
+
+        listed = store.awaiting(eligible)
+
+        for write_id, _pending in listed:
+            assert store.claim(write_id, eligible) is not None
+
+    def test_an_expired_write_is_not_listed(self):
+        # A stale entry in an inbox is worse than an absent one: the
+        # reviewer spends attention on a decision that has already been
+        # taken away from them.
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(seconds=-1))
+        store.store(_pending())
+
+        assert store.awaiting(lambda _pending: True) == []
+
+    def test_reports_when_a_write_expires(self):
+        store, write_id = _store()
+
+        assert store.expires_at(write_id) is not None
+        assert store.expires_at("no-such-id") is None
