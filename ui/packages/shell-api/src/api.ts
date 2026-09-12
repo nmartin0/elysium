@@ -261,6 +261,14 @@ export interface AwaitingWrite {
    *  misreport the other. */
   awaiting_your_review: boolean
   proposed_by_you: boolean
+  /** Fields the ontology no longer declares, as "Type.field".
+   *
+   *  Non-empty means this write CANNOT be approved -- the
+   *  configuration moved on while it waited. A different state from
+   *  rejected: rejected means a human decided against it, this means
+   *  nobody can act on it either way.
+   */
+  undeclared_fields: string[]
 }
 
 /** Proposals this user may decide on, oldest first.

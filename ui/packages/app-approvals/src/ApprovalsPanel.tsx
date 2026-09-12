@@ -120,7 +120,16 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                     {/* BOTH CAN BE TRUE. A deployment with no four-eyes
                     rule lets someone approve their own write, and
                     showing one tag would misreport the other. */}
-                    {write.awaiting_your_review && <Tag intent="primary">Awaiting your review</Tag>}
+                    {/* UNAPPLYABLE REPLACES the invitation rather than
+                        sitting beside it. Both can be true -- you may
+                        hold the grant AND the write may be impossible
+                        -- and showing them together invites a decision
+                        that cannot be carried out. */}
+                    {write.undeclared_fields.length > 0 ? (
+                      <Tag intent="warning">Cannot be applied</Tag>
+                    ) : (
+                      write.awaiting_your_review && <Tag intent="primary">Awaiting your review</Tag>
+                    )}
                     {write.proposed_by_you && <Tag minimal>Proposed by you</Tag>}
                   </div>
 
@@ -134,7 +143,11 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                     {/* ONLY WHERE THE SERVER SAYS SO. The confirm route
                     checks this again -- this is not the control, it is
                     the button not lying about what will happen. */}
-                    {write.awaiting_your_review && (
+                    {/* NO APPROVE on a write that cannot be applied:
+                        confirm_and_execute() would refuse it, and a
+                        button whose only outcome is a refusal wastes
+                        a reviewer's decision. Reject stays below. */}
+                    {write.awaiting_your_review && write.undeclared_fields.length === 0 && (
                       <>
                         <Button
                           small
@@ -144,15 +157,23 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                         >
                           Approve
                         </Button>
-                        <Button
-                          small
-                          intent="danger"
-                          loading={busyWriteId === write.write_id}
-                          onClick={() => void decide(write.write_id, false)}
-                        >
-                          Reject
-                        </Button>
                       </>
+                    )}
+                    {/* REJECT STAYS even when a write cannot be
+                        applied. A reviewer still needs to clear it out
+                        of the queue, and a rejection is deliberately
+                        never blocked by the criteria or the
+                        unapplyable check -- otherwise a proposal
+                        nobody can act on sits there until its TTL. */}
+                    {write.awaiting_your_review && (
+                      <Button
+                        small
+                        intent="danger"
+                        loading={busyWriteId === write.write_id}
+                        onClick={() => void decide(write.write_id, false)}
+                      >
+                        Reject
+                      </Button>
                     )}
                   </div>
 

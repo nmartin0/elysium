@@ -2986,7 +2986,7 @@ def test_awaiting_writes_never_returns_the_changed_values(client):
     assert declared == {
         "write_id", "action_type_name", "description", "proposed_by",
         "proposed_at", "object_count", "expires_at",
-        "awaiting_your_review", "proposed_by_you",
+        "awaiting_your_review", "proposed_by_you", "undeclared_fields",
     }
     for leaky in ("changes", "sub_writes", "object_id", "object_ids", "parameters"):
         assert leaky not in declared
@@ -3211,3 +3211,34 @@ def test_a_write_detail_forbids_caching_too(client):
 
     assert response.status_code == 200
     assert "no-store" in response.headers.get("cache-control", "")
+
+
+def test_the_listing_reports_a_write_the_ontology_has_outrun(client):
+    """HOT_RELOAD_PLAN.md step 6c, server side.
+
+    A write whose field the ontology no longer declares cannot be
+    approved -- confirm_and_execute() refuses it. The listing says so,
+    so an inbox never offers a decision that would only be refused.
+
+    THE SAME FUNCTION BOTH PATHS USE. A listing computing applicability
+    its own way could mark a write unapplyable that would have worked,
+    so nobody tries -- which is worse than the button that fails,
+    because nothing reveals the mistake.
+    """
+    write_id = _propose_as(client, "alice")
+
+    before = client.get("/api/writes/awaiting").json()
+    assert [e["undeclared_fields"] for e in before if e["write_id"] == write_id] == [[]]
+
+    # The write mediator's view of the ontology loses the field.
+    write_mediator = client.app.state.generation.write_mediator
+    original = type(write_mediator)._fields_no_longer_declared
+    type(write_mediator)._fields_no_longer_declared = lambda self, pending: ["Customer.name"]
+    try:
+        after = client.get("/api/writes/awaiting").json()
+    finally:
+        type(write_mediator)._fields_no_longer_declared = original
+
+    assert [e["undeclared_fields"] for e in after if e["write_id"] == write_id] == [
+        ["Customer.name"]
+    ]

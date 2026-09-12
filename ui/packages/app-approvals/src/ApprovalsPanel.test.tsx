@@ -30,6 +30,7 @@ function write(overrides = {}) {
     expires_at: new Date(Date.now() + 3600_000).toISOString(),
     awaiting_your_review: true,
     proposed_by_you: false,
+    undeclared_fields: [],
     ...overrides,
   }
 }
@@ -121,5 +122,63 @@ describe('ApprovalsPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'View changes' }))
 
     await waitFor(() => expect(mockedDetail).toHaveBeenCalledWith('w1'))
+  })
+})
+
+describe('a write the configuration has outrun', () => {
+  /**
+   * HOT_RELOAD_PLAN.md step 6c. A write whose field the ontology no
+   * longer declares CANNOT be approved -- the unapplyable check
+   * refuses it. Before this, the inbox still offered an Approve
+   * button: a reviewer made a decision, learned it was refused, and
+   * had gained nothing.
+   *
+   * A DIFFERENT STATE FROM REJECTED. Rejected means a human decided
+   * against it; this means nobody can act on it either way.
+   */
+  it('does not offer Approve', async () => {
+    mockedList.mockResolvedValue([write({ undeclared_fields: ['Customer.name'] })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText(/Change which category/)
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+  })
+
+  it('still offers Reject', async () => {
+    // A reviewer needs to clear it out of the queue. Rejection is
+    // deliberately never blocked by the unapplyable check -- otherwise
+    // a proposal nobody can act on sits there until its TTL.
+    mockedList.mockResolvedValue([write({ undeclared_fields: ['Customer.name'] })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByRole('button', { name: 'Reject' })).toBeInTheDocument()
+  })
+
+  it('says so rather than looking ordinary', async () => {
+    mockedList.mockResolvedValue([write({ undeclared_fields: ['Customer.name'] })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('Cannot be applied')).toBeInTheDocument()
+  })
+
+  it('replaces the invitation rather than sitting beside it', async () => {
+    // Both can be true -- you may hold the grant AND the write may be
+    // impossible -- and showing "Awaiting your review" next to "Cannot
+    // be applied" invites a decision that cannot be carried out.
+    mockedList.mockResolvedValue([write({ undeclared_fields: ['Customer.name'] })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText('Cannot be applied')
+    expect(screen.queryByText('Awaiting your review')).toBeNull()
+  })
+
+  it('leaves an ordinary write alone', async () => {
+    // THE CONTROL. A panel that hid Approve unconditionally would pass
+    // every test above while making the feature useless.
+    mockedList.mockResolvedValue([write()])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
+    expect(screen.queryByText('Cannot be applied')).toBeNull()
   })
 })

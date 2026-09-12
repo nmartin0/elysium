@@ -1238,6 +1238,18 @@ class WriteMediator:
         self.audit_log.log_post(request_id, "success", object_ids)
         return {"status": "written", "object_ids": object_ids}
 
+    def fields_no_longer_declared(self, pending: PendingWrite) -> list[str]:
+        """Public name for the same question the confirm path asks.
+
+        THE INBOX AND THE CONFIRM PATH MUST AGREE. A listing that
+        computed applicability its own way could show a write as
+        approvable that confirm then refuses -- or, worse, mark one
+        unapplyable that would have worked, so nobody tries.
+
+        One function, two callers, no second opinion.
+        """
+        return self._fields_no_longer_declared(pending)
+
     def _fields_no_longer_declared(self, pending: PendingWrite) -> list[str]:
         """Fields this write targets that the current ontology lacks.
 

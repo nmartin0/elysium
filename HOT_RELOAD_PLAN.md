@@ -921,9 +921,29 @@ visible rather than discovered.
       declining it; whether it COULD have been applied is irrelevant,
       and refusing the rejection would leave a proposal nobody can
       clear.
-  6c. Surface it in the approvals inbox: a write invalidated by a
-      configuration change is a different state from rejected, and the
-      audit trail must say which.
+  6c. **DONE.** The listing reports `undeclared_fields`, and the inbox
+      shows "Cannot be applied" in place of "Awaiting your review",
+      with no Approve button.
+
+      A DIFFERENT STATE FROM REJECTED, which is what this step asked
+      for. Rejected means a human decided against it; this means nobody
+      can act on it either way. Before it, a reviewer made a decision,
+      learned it was refused, and had gained nothing.
+
+      REJECT STAYS AVAILABLE, deliberately. A reviewer still needs to
+      clear it out of the queue, and rejection is never blocked by the
+      criteria or the unapplyable check -- otherwise a proposal nobody
+      can act on sits there until its TTL.
+
+      THE SAME FUNCTION BOTH PATHS USE. A listing computing
+      applicability its own way could mark a write unapplyable that
+      would have worked, so nobody tries -- worse than the button that
+      fails, because nothing reveals the mistake.
+
+      Still open: the AUDIT half. An unapplyable write is logged via
+      log_write_unapplyable() when someone tries to approve it, but
+      nothing records a write that was never attempted because the
+      inbox correctly discouraged it.
 
 ### What is deliberately NOT in this roadmap
 

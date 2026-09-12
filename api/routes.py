@@ -578,6 +578,16 @@ class AwaitingWriteResponse(BaseModel):
     # rule from letting someone approve their own write.
     awaiting_your_review: bool
     proposed_by_you: bool
+    # Fields this write targets that the ontology no longer declares,
+    # as "Type.field". Non-empty means it CANNOT be approved -- the
+    # configuration moved on while it waited.
+    #
+    # A DIFFERENT STATE FROM REJECTED, which is what step 6c of
+    # HOT_RELOAD_PLAN.md asks for: rejected means a human decided
+    # against it, this means nobody can act on it either way. An inbox
+    # that showed an Approve button here would let a reviewer make a
+    # decision, learn it was refused, and have gained nothing.
+    undeclared_fields: list[str]
 
 
 @router.get("/writes/awaiting", dependencies=[Depends(_no_store)],
@@ -615,6 +625,7 @@ def awaiting_writes_route(request: Request,
         return may_confirm(candidate) or candidate.user_id == current_user.user_id
 
     store: PendingWriteStore = request.app.state.pending_writes
+    write_mediator = _generation(request).write_mediator
     waiting = store.awaiting(relevant)
 
     return [
@@ -628,6 +639,11 @@ def awaiting_writes_route(request: Request,
             "expires_at": store.expires_at(write_id),
             "awaiting_your_review": may_confirm(pending),
             "proposed_by_you": pending.user_id == current_user.user_id,
+            # THE SAME FUNCTION confirm_and_execute() uses, so the
+            # inbox cannot disagree with what approving would actually
+            # do. Computing it separately here is how a queue ends up
+            # offering a button that always fails.
+            "undeclared_fields": write_mediator.fields_no_longer_declared(pending),
         }
         # OLDEST FIRST. A reviewer works through a queue, and the write
         # closest to expiring is the one whose decision is about to be

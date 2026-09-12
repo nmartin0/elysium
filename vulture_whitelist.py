@@ -223,3 +223,7 @@ readable
 current_value
 proposed_value
 has_redacted_fields
+
+# AwaitingWriteResponse.undeclared_fields (api/routes.py) -- serialised
+# by FastAPI from the returned dict, like every other response field.
+undeclared_fields
