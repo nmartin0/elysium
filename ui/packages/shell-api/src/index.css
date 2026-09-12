@@ -1518,3 +1518,66 @@ input[type='checkbox'],
 .graph-preview__visibility {
   margin-left: var(--space-hair);
 }
+
+/* --- Approvals: a queue of proposals awaiting a decision ------------
+ *
+ * Rows are read by someone scanning for what needs them, so the
+ * DESCRIPTION leads and everything else is secondary. The tags carry
+ * the two facts a reviewer sorts on -- is this mine to decide, or mine
+ * to wait on -- and both can be true at once.
+ */
+.approvals__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  align-items: stretch;
+}
+
+.approvals__description {
+  margin: 0;
+  font-weight: 600;
+}
+
+.approvals__meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.approvals__tags {
+  display: flex;
+  gap: var(--space-hair);
+}
+
+.approvals__actions {
+  display: flex;
+  gap: var(--space-hair);
+}
+
+/* The diff, revealed under a row rather than in a modal. A modal
+ * hides the queue behind it, and in analytic work the surrounding
+ * context is usually what the reader needs -- see UI_ROADMAP.md on
+ * drawers and popovers over modals. */
+.write-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-tight);
+}
+
+.write-detail__object-title {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.write-detail__changes {
+  width: 100%;
+  /* Values are ids, amounts and categories read side by side against
+   * their proposed replacements -- tabular figures keep the two
+   * columns comparable at a glance. */
+  font-variant-numeric: tabular-nums;
+}

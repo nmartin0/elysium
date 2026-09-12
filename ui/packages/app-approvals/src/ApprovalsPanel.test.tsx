@@ -1,0 +1,125 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+
+vi.mock('@elysium/shell-api/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
+  return {
+    ...actual,
+    getAwaitingWrites: vi.fn(),
+    getWriteDetail: vi.fn(),
+    confirmWrite: vi.fn(),
+  }
+})
+
+import { confirmWrite, getAwaitingWrites, getWriteDetail } from '@elysium/shell-api/api'
+
+import ApprovalsPanel from './ApprovalsPanel'
+
+const mockedList = vi.mocked(getAwaitingWrites)
+const mockedDetail = vi.mocked(getWriteDetail)
+const mockedConfirm = vi.mocked(confirmWrite)
+
+function write(overrides = {}) {
+  return {
+    write_id: 'w1',
+    action_type_name: 'RecategorizeTransaction',
+    description: 'Change which category a transaction is filed under. (New category: travel)',
+    proposed_by: 'alice',
+    proposed_at: new Date().toISOString(),
+    object_count: 1,
+    expires_at: new Date(Date.now() + 3600_000).toISOString(),
+    awaiting_your_review: true,
+    proposed_by_you: false,
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockedList.mockResolvedValue([])
+})
+
+describe('ApprovalsPanel', () => {
+  it('says so plainly when nothing is waiting', async () => {
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('Nothing waiting')).toBeInTheDocument()
+  })
+
+  it('leads with the description, not the action name', async () => {
+    // The description is the sentence a reviewer reads to decide
+    // whether to look further. It was a Python repr until recently,
+    // which is why this asserts the readable form specifically.
+    mockedList.mockResolvedValue([write()])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/Change which category/)).toBeInTheDocument()
+  })
+
+  it('offers Approve only where the server says this user may', async () => {
+    // NOT THE CONTROL -- the confirm route checks again. This is the
+    // button not lying about what will happen.
+    mockedList.mockResolvedValue([write({ awaiting_your_review: false, proposed_by_you: true })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText(/Change which category/)
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(screen.getByText('Proposed by you')).toBeInTheDocument()
+  })
+
+  it('shows both tags when both are true', async () => {
+    // A deployment with no four-eyes rule lets someone approve their
+    // own write, and showing one tag would misreport the other.
+    mockedList.mockResolvedValue([write({ proposed_by_you: true })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('Awaiting your review')).toBeInTheDocument()
+    expect(screen.getByText('Proposed by you')).toBeInTheDocument()
+  })
+
+  it('surfaces the reason a decision was refused', async () => {
+    // WHERE THE INTERESTING REFUSALS LAND: a four-eyes rule rejecting
+    // a self-approval, or a write whose field the ontology no longer
+    // declares. Both are decisions the server made for a stated
+    // reason, and a generic failure would waste it.
+    mockedList.mockResolvedValue([write()])
+    mockedConfirm.mockRejectedValue(new Error('approved by someone other than its proposer'))
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }))
+
+    await waitFor(() => expect(screen.getByText(/other than its proposer/)).toBeInTheDocument())
+  })
+
+  it('does not fetch the diff until a row is opened', async () => {
+    // A diff is a permission-checked read per field per object. Doing
+    // it for every row would cost hundreds of reads to render a queue
+    // somebody is scanning rather than reading.
+    mockedList.mockResolvedValue([write()])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText(/Change which category/)
+    expect(mockedDetail).not.toHaveBeenCalled()
+  })
+
+  it('fetches the diff when a row is opened', async () => {
+    mockedList.mockResolvedValue([write()])
+    mockedDetail.mockResolvedValue({
+      write_id: 'w1',
+      action_type_name: 'A',
+      description: 'd',
+      proposed_by: 'alice',
+      proposed_at: 't',
+      expires_at: 't',
+      awaiting_your_review: true,
+      proposed_by_you: false,
+      objects: [],
+      has_redacted_fields: false,
+    })
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View changes' }))
+
+    await waitFor(() => expect(mockedDetail).toHaveBeenCalledWith('w1'))
+  })
+})

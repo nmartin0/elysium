@@ -256,6 +256,11 @@ export interface AwaitingWrite {
   proposed_at: string
   object_count: number
   expires_at: string
+  /** Both can be true: a deployment with no four-eyes rule lets
+   *  someone approve their own write, and showing one flag would
+   *  misreport the other. */
+  awaiting_your_review: boolean
+  proposed_by_you: boolean
 }
 
 /** Proposals this user may decide on, oldest first.
@@ -268,6 +273,53 @@ export interface AwaitingWrite {
 export async function getAwaitingWrites(): Promise<AwaitingWrite[]> {
   const response = await apiFetchOrThrow('/writes/awaiting')
   return response.json() as Promise<AwaitingWrite[]>
+}
+
+/** One field a pending write would change.
+ *
+ * `readable` false means the reviewer lacks the read grant for it, and
+ * both values are null as a REDACTION rather than because the data is
+ * null. The distinction matters in a diff: a reviewer deciding on a
+ * change needs to know the difference between "this becomes empty" and
+ * "you may not see this".
+ */
+export interface FieldChange {
+  field_name: string
+  readable: boolean
+  current_value: unknown
+  proposed_value: unknown
+}
+
+export interface ObjectChange {
+  object_type: string
+  object_id: string
+  operation: string
+  changes: FieldChange[]
+}
+
+export interface WriteDetailResponse {
+  write_id: string
+  action_type_name: string
+  description: string
+  proposed_by: string
+  proposed_at: string
+  expires_at: string
+  awaiting_your_review: boolean
+  proposed_by_you: boolean
+  objects: ObjectChange[]
+  has_redacted_fields: boolean
+}
+
+/** What a pending write would actually change.
+ *
+ * SEPARATE FROM THE LISTING, because a diff needs the current value of
+ * every changed field -- a permission-checked read per field per
+ * object. Fetched when a reviewer opens a row, not for every row of a
+ * queue they are scanning.
+ */
+export async function getWriteDetail(writeId: string): Promise<WriteDetailResponse> {
+  const response = await apiFetchOrThrow(`/writes/${writeId}`)
+  return response.json() as Promise<WriteDetailResponse>
 }
 
 // How current the data being read actually is. A deployment-wide fact,
