@@ -211,6 +211,45 @@ class PendingWrite:
     proposer: UserRecord
 
 
+def _describe_action(action_type_name: str, action_def: dict, parameters: dict) -> str:
+    """A sentence a reviewer can read, not a repr of a dict.
+
+    This was `f"{name}(parameters={parameters})"`, which was fine as a
+    log line and became the primary text of an inbox row the moment
+    /writes/awaiting existed. Seen in a real queue it reads
+    `RecategorizeTransaction(parameters={'transaction_id': 1,
+    'new_category': 'travel'})` -- Python punctuation a reviewer has to
+    parse before they can think about the decision.
+
+    BUILT FROM WHAT THE DEPLOYMENT ALREADY AUTHORED, not from a new
+    field nobody has filled in. Action types carry a `description`
+    written for humans, and parameters carry `display_name`. Both
+    existed and neither was used here, so a schema that already reads
+    well produces a row that already reads well.
+
+    LOSES NOTHING THE OLD FORM CARRIED. Every parameter name and value
+    still appears; only the punctuation changes. That matters because
+    this string reaches the audit log -- as log_pre's query_text, and
+    as the text on an expiry entry -- and a prettier description that
+    dropped a parameter would be a quieter audit trail bought with
+    readability.
+    """
+    sentence = (action_def or {}).get("description") or action_type_name
+    declared = (action_def or {}).get("parameters") or {}
+
+    parts = []
+    for name, value in parameters.items():
+        # The authored label where there is one. Falling back to the
+        # raw name keeps an un-labelled parameter visible rather than
+        # dropping it -- see the docstring on losing nothing.
+        label = (declared.get(name) or {}).get("display_name") or name
+        parts.append(f"{label}: {value}")
+
+    if not parts:
+        return sentence
+    return f"{sentence} ({', '.join(parts)})"
+
+
 class WriteMediator:
     def __init__(
         self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict,
@@ -1036,7 +1075,7 @@ class WriteMediator:
             )
             resolved_sub_writes.append(SubWrite(object_type, object_id, operation, changes, expected_current_values))
 
-        description = f"{action_type_name}(parameters={parameters})"
+        description = _describe_action(action_type_name, action_def, parameters)
         return PendingWrite(
             tuple(resolved_sub_writes), user_record.user_id, description, action_type_name,
             origin, datetime.now(UTC), self.generation,
