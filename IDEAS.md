@@ -144,7 +144,16 @@ mutation's value already used. Four-eyes is expressible:
     check: user
     field: user_id
     operator: not_equals
-    value: parameter.proposed_by
+    value: proposer.user_id
+
+`proposer.`, NOT `parameter.proposed_by`, and the difference is the
+security of the rule. A parameter is filled in by whoever PROPOSES the
+write, so a four-eyes rule reading `parameter.proposed_by` is trivially
+defeated: the proposer passes somebody else's id and approves their own
+write. The rule would be present, evaluated, and useless. Same argument
+as user.security_value on the mutation side -- the values a rule
+depends on for its OWN integrity cannot come from the party the rule
+constrains.
 
 An unresolvable reference RAISES rather than resolving to None, and
 that direction is the point: a criterion whose expected value silently

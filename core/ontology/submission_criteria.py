@@ -76,6 +76,7 @@ from core.intermediate_layer.auth import UserRecord
 
 PARAMETER_PREFIX = "parameter."
 USER_PREFIX = "user."
+PROPOSER_PREFIX = "proposer."
 
 # THE VOCABULARY, AS TYPES. These two Literals are the single source of
 # truth for what a criterion may say, and they are types rather than
@@ -251,13 +252,16 @@ class SubmissionCriteriaViolation(ValueError):
     pass
 
 
-def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | None):
+def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | None,
+                       proposer: UserRecord | None = None):
     """Resolves a criterion's `value:` side, the same way a mutation's is.
 
     THREE KINDS, matching _resolve_mutation_value() exactly:
       - a LITERAL, used as-is
       - "parameter.<name>", one of the action's own declared parameters
       - "user.<attribute>", the ACTING user's own record
+      - "proposer.<attribute>", the user who PROPOSED the write being
+        approved -- system-supplied, never caller-supplied
 
     WHY BOTH SIDES NEED TO BE DYNAMIC. Four-eyes approval is the
     motivating case and cannot be written otherwise: it compares the
@@ -294,6 +298,33 @@ def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | No
             )
         return parameters[name]
 
+    if value_spec.startswith(PROPOSER_PREFIX):
+        # SYSTEM-SUPPLIED, NEVER CALLER-SUPPLIED, and that is the whole
+        # reason this prefix exists rather than reusing
+        # "parameter.proposed_by".
+        #
+        # A parameter is filled in by whoever proposes the write. A
+        # four-eyes rule reading `value: parameter.proposed_by` is
+        # therefore trivially defeated: the proposer passes somebody
+        # else's user id and approves their own write. The rule would
+        # be present, evaluated, and useless.
+        #
+        # Same argument as user.security_value on the mutation side:
+        # the values a rule depends on for its OWN integrity cannot
+        # come from the party the rule constrains.
+        if proposer is None:
+            raise ValueError(
+                f"submission_criteria: {value_spec!r} was evaluated without a "
+                f"proposer -- it is only meaningful when approving an existing "
+                f"pending write"
+            )
+        attribute = value_spec[len(PROPOSER_PREFIX):]
+        if not hasattr(proposer, attribute):
+            raise ValueError(
+                f"submission_criteria: {value_spec!r} names no attribute of a user record"
+            )
+        return getattr(proposer, attribute)
+
     if value_spec.startswith(USER_PREFIX):
         attribute = value_spec[len(USER_PREFIX):]
         if user_record is None:
@@ -313,7 +344,8 @@ def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | No
 
 
 def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dict | None,
-                                  parameters: dict, user_record: UserRecord | None) -> None:
+                                  parameters: dict, user_record: UserRecord | None,
+                                  proposer: UserRecord | None = None) -> None:
     # Raises SubmissionCriteriaViolation, with the FIRST failing
     # criterion's own "description," the moment one is found -- not a
     # combined report of every violation. Returns None (does nothing)
@@ -365,7 +397,7 @@ def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dic
         else:
             raise ValueError(f"Unknown submission_criteria check kind: {check_kind!r}")
 
-        expected_value = _resolve_expected(expected_value, parameters, user_record)
+        expected_value = _resolve_expected(expected_value, parameters, user_record, proposer)
 
         operator_fn = _OPERATORS.get(operator_name)
         if operator_fn is None:
