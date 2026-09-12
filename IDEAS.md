@@ -137,10 +137,20 @@ The only item here that is product work rather than maintenance, and
 the best specified. Everything else on this list came out of a
 performance detour whose purpose was making this testable.
 
-**The blocker** is that submission criteria compare a check against a
-LITERAL `value`. Four-eyes needs both sides dynamic: the approving user
-against the write's proposer. Foundry has the precedent -- user IDs
-compared against a static list OR a parameter holding one.
+**The blocker: REMOVED.** A criterion's `value:` now resolves
+`parameter.<name>` and `user.<attribute>`, the same vocabulary a
+mutation's value already used. Four-eyes is expressible:
+
+    check: user
+    field: user_id
+    operator: not_equals
+    value: parameter.proposed_by
+
+An unresolvable reference RAISES rather than resolving to None, and
+that direction is the point: a criterion whose expected value silently
+became None compares unequal to almost anything, so the rule above
+would PASS for every approver INCLUDING the proposer. It would look
+present and enforce nothing.
 
 **The vocabulary already exists elsewhere.** `_resolve_mutation_value`
 resolves `parameter.<name>` and `user.security_value` today. Extending

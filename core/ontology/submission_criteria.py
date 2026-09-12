@@ -74,6 +74,9 @@ from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from core.intermediate_layer.auth import UserRecord
 
+PARAMETER_PREFIX = "parameter."
+USER_PREFIX = "user."
+
 # THE VOCABULARY, AS TYPES. These two Literals are the single source of
 # truth for what a criterion may say, and they are types rather than
 # constants deliberately: mypy checks them, and the schema-load
@@ -248,6 +251,67 @@ class SubmissionCriteriaViolation(ValueError):
     pass
 
 
+def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | None):
+    """Resolves a criterion's `value:` side, the same way a mutation's is.
+
+    THREE KINDS, matching _resolve_mutation_value() exactly:
+      - a LITERAL, used as-is
+      - "parameter.<name>", one of the action's own declared parameters
+      - "user.<attribute>", the ACTING user's own record
+
+    WHY BOTH SIDES NEED TO BE DYNAMIC. Four-eyes approval is the
+    motivating case and cannot be written otherwise: it compares the
+    APPROVING user against the write's PROPOSER, and the proposer is
+    not known when the schema is authored. A literal cannot express it.
+
+    THE SAME VOCABULARY, DELIBERATELY, rather than a new one. The
+    convention already exists on the mutation side, and extending it is
+    the argument that settled `check: user` -- consistency beats a
+    second syntax that does the same job differently.
+
+    STILL NOT AN EXPRESSION LANGUAGE. A small, fixed set of string
+    prefixes, for the reason this module's own docstring gives about
+    its operator set: a surface small enough to validate, rather than
+    something needing an evaluator.
+
+    AN UNRESOLVABLE REFERENCE RAISES rather than comparing against
+    None. A criterion whose expected value silently became None would
+    compare unequal to almost anything -- so a four-eyes rule reading
+    "the approver must not be the proposer" would PASS for every
+    approver, including the proposer. Failing loudly is the only safe
+    direction when the alternative is a rule that quietly stops
+    applying.
+    """
+    if not isinstance(value_spec, str):
+        return value_spec
+
+    if value_spec.startswith(PARAMETER_PREFIX):
+        name = value_spec[len(PARAMETER_PREFIX):]
+        if name not in parameters:
+            raise ValueError(
+                f"submission_criteria: {value_spec!r} refers to a parameter this "
+                f"action did not supply -- declared parameters: {sorted(parameters)}"
+            )
+        return parameters[name]
+
+    if value_spec.startswith(USER_PREFIX):
+        attribute = value_spec[len(USER_PREFIX):]
+        if user_record is None:
+            # Same refusal as a "user" CHECK without an acting user,
+            # and for the same reason: guessing would either weaken a
+            # rule or invent a violation.
+            raise ValueError(
+                f"submission_criteria: {value_spec!r} was evaluated without an acting user"
+            )
+        if not hasattr(user_record, attribute):
+            raise ValueError(
+                f"submission_criteria: {value_spec!r} names no attribute of a user record"
+            )
+        return getattr(user_record, attribute)
+
+    return value_spec
+
+
 def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dict | None,
                                   parameters: dict, user_record: UserRecord | None) -> None:
     # Raises SubmissionCriteriaViolation, with the FIRST failing
@@ -300,6 +364,8 @@ def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dic
             actual_value = parameters[field_name]
         else:
             raise ValueError(f"Unknown submission_criteria check kind: {check_kind!r}")
+
+        expected_value = _resolve_expected(expected_value, parameters, user_record)
 
         operator_fn = _OPERATORS.get(operator_name)
         if operator_fn is None:
