@@ -196,6 +196,20 @@ class PendingWrite:
     # default would be a guess written into an audit trail.
     proposed_under_generation: int
 
+    # WHAT A CONFIRM-TIME CRITERION NEEDS, and neither is reconstructible
+    # later. The parameters are the action's own inputs, which a
+    # `parameter.<name>` reference resolves against; the proposer is the
+    # full record, which `proposer.<attribute>` resolves against.
+    #
+    # THE PROPOSER IS STORED AS A RECORD, not just the user_id already
+    # on this class, because a criterion may compare against any
+    # attribute -- their MAC value, their role. Re-resolving it at
+    # confirm time from the directory would read the CURRENT record,
+    # and a four-eyes rule must compare against who proposed it, not
+    # against whoever holds that username now.
+    parameters: dict
+    proposer: UserRecord
+
 
 class WriteMediator:
     def __init__(
@@ -1026,9 +1040,51 @@ class WriteMediator:
         return PendingWrite(
             tuple(resolved_sub_writes), user_record.user_id, description, action_type_name,
             origin, datetime.now(UTC), self.generation,
+            parameters=dict(parameters), proposer=user_record,
         )
 
-    def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
+    def _criteria_for(self, pending: PendingWrite) -> list[tuple[str, Any, list]]:
+        """Each sub_write's criteria, from the CURRENT action definition.
+
+        CURRENT, not the definition in force when the write was
+        proposed, and that is the same choice step 6b already made
+        about fields: the deployment's rules today are what governs a
+        decision taken today. A write proposed before a four-eyes rule
+        was added must still obey it.
+        """
+        action_def = self.action_types.get(pending.action_type_name) or {}
+        declared = action_def.get("sub_writes") or []
+        return [
+            (sub_write.object_type, sub_write.object_id, (sw_def or {}).get("submission_criteria") or [])
+            for sub_write, sw_def in zip(pending.sub_writes, declared, strict=False)
+        ]
+
+    def _check_approver_criteria(self, pending: PendingWrite, approver: UserRecord) -> None:
+        """Re-evaluates submission criteria with the APPROVER acting.
+
+        WHY AGAIN, when propose_action() already evaluated them: it
+        evaluated them against the PROPOSER. A four-eyes rule is about
+        the approver and says nothing at propose time -- there is no
+        approver yet. Evaluating only once is why four-eyes could not
+        be enforced at all before this.
+
+        The proposer is threaded through so `proposer.<attribute>`
+        resolves, which is what makes the rule unspoofable -- see
+        submission_criteria.py on why a parameter cannot do this job.
+        """
+        for object_type, object_id, criteria in self._criteria_for(pending):
+            if not criteria:
+                continue
+            current_state = self._read_current_state_for_criteria(
+                object_type, object_id, criteria,
+            )
+            evaluate_submission_criteria(
+                criteria, current_state, pending.parameters, approver,
+                proposer=pending.proposer,
+            )
+
+    def confirm_and_execute(self, pending: PendingWrite, approved: bool,
+                             approver: UserRecord | None = None) -> dict | None:
         # ALWAYS goes through _apply_batch() below, one sub_write or
         # many -- see this file's own AI-notes at the bottom, and
         # write_log.py's own MULTI-OBJECT BATCHES docstring section,
@@ -1057,6 +1113,13 @@ class WriteMediator:
         # the correctness half -- a write must be refused whether or
         # not anything got round to marking it, and this is the refusal
         # that cannot be skipped.
+        if approved and approver is not None:
+            # BEFORE the unapplyable check and before anything is
+            # written: an approver who is not permitted to approve
+            # should learn that, not learn about a schema change they
+            # cannot act on either way.
+            self._check_approver_criteria(pending, approver)
+
         if approved:
             unapplyable = self._fields_no_longer_declared(pending)
             if unapplyable:

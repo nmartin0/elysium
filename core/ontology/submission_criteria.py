@@ -78,6 +78,15 @@ PARAMETER_PREFIX = "parameter."
 USER_PREFIX = "user."
 PROPOSER_PREFIX = "proposer."
 
+
+class _SkipCriterion(Exception):
+    """This criterion has nothing to say in the current call.
+
+    A sentinel rather than a return value, because None and False are
+    both legitimate resolved values -- a criterion comparing against a
+    genuinely-None attribute must still be evaluated.
+    """
+
 # THE VOCABULARY, AS TYPES. These two Literals are the single source of
 # truth for what a criterion may say, and they are types rather than
 # constants deliberately: mypy checks them, and the schema-load
@@ -313,11 +322,22 @@ def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | No
         # the values a rule depends on for its OWN integrity cannot
         # come from the party the rule constrains.
         if proposer is None:
-            raise ValueError(
-                f"submission_criteria: {value_spec!r} was evaluated without a "
-                f"proposer -- it is only meaningful when approving an existing "
-                f"pending write"
-            )
+            # SKIPPED, NOT REFUSED, and this is the one place a missing
+            # reference is not an error. A proposer.<attribute> rule is
+            # about APPROVAL, and propose_action() evaluates the same
+            # criteria list with no proposer yet -- there is genuinely
+            # nothing for the rule to say at that point, exactly as a
+            # "current_state" criterion says nothing on a create.
+            #
+            # Raising here instead made every four-eyes action
+            # impossible to PROPOSE, which is how this was found: the
+            # rule would have looked like it forbade the action outright
+            # rather than forbidding self-approval.
+            #
+            # Safe because the rule is re-evaluated at confirm time
+            # WITH a proposer, and that evaluation is the one that
+            # decides. A skip here cannot let an approval through.
+            raise _SkipCriterion
         attribute = value_spec[len(PROPOSER_PREFIX):]
         if not hasattr(proposer, attribute):
             raise ValueError(
@@ -397,7 +417,10 @@ def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dic
         else:
             raise ValueError(f"Unknown submission_criteria check kind: {check_kind!r}")
 
-        expected_value = _resolve_expected(expected_value, parameters, user_record, proposer)
+        try:
+            expected_value = _resolve_expected(expected_value, parameters, user_record, proposer)
+        except _SkipCriterion:
+            continue
 
         operator_fn = _OPERATORS.get(operator_name)
         if operator_fn is None:

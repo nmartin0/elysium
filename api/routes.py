@@ -1871,7 +1871,23 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
     # directly tracing this call chain, not just reasoned about.
     executor = request.app.state.executor
     event_loop = asyncio.get_running_loop()
-    outcome = await event_loop.run_in_executor(executor, write_mediator.confirm_and_execute, pending, body.approved)
+    # THE APPROVER IS PASSED, which is what lets submission criteria be
+    # re-evaluated against the person deciding rather than the person
+    # who proposed. A four-eyes rule says nothing at propose time --
+    # there is no approver yet -- so evaluating only once is why it
+    # could not be enforced at all before.
+    #
+    # functools.partial rather than more positional arguments: the
+    # executor call already has four, and a fifth that silently lands
+    # in the wrong slot is the kind of mistake this file has made
+    # before.
+    outcome = await event_loop.run_in_executor(
+        executor,
+        functools.partial(
+            write_mediator.confirm_and_execute, pending, body.approved,
+            approver=current_user,
+        ),
+    )
     return outcome if outcome is not None else {"status": "rejected"}
 
 # --- Object Set operations: the analytical half of the read surface.

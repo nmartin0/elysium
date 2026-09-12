@@ -146,12 +146,32 @@ class TestUnresolvableReferences:
 
 
 class TestTheProposerReference:
-    def test_a_proposer_reference_without_a_proposer_raises(self):
-        # Only meaningful when approving an EXISTING pending write.
-        # Evaluated at propose time there is no proposer yet, and
-        # resolving to None would make the rule pass for everyone.
-        with pytest.raises(ValueError, match="without a proposer"):
-            evaluate_submission_criteria(_four_eyes(), None, {}, ALICE)
+    def test_a_proposer_reference_is_SKIPPED_when_there_is_no_proposer(self):
+        """The one place a missing reference is not an error.
+
+        A proposer.<attribute> rule is about APPROVAL, and
+        propose_action() evaluates the same criteria list with no
+        proposer yet -- there is genuinely nothing for the rule to say
+        then, exactly as a "current_state" criterion says nothing on a
+        create.
+
+        FOUND BY BUILDING ON IT. An earlier version raised here, which
+        made every four-eyes action impossible to PROPOSE: the rule
+        looked like it forbade the action outright rather than
+        forbidding self-approval.
+
+        SAFE ONLY BECAUSE THE RULE IS RE-EVALUATED AT CONFIRM TIME with
+        a proposer, and that evaluation is the one that decides. A skip
+        here cannot let an approval through -- the test below proves
+        the confirm-time check still refuses.
+        """
+        evaluate_submission_criteria(_four_eyes(), None, {}, ALICE)
+
+    def test_the_skip_does_not_weaken_the_rule_at_approval(self):
+        # THE PAIR TO THE TEST ABOVE. Skipping at propose time would be
+        # a hole if it also skipped at approval; it does not.
+        with pytest.raises(SubmissionCriteriaViolation, match="other than its proposer"):
+            evaluate_submission_criteria(_four_eyes(), None, {}, ALICE, proposer=ALICE)
 
     def test_a_proposer_reference_to_no_such_attribute_raises(self):
         criteria = [{

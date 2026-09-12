@@ -91,6 +91,8 @@ def _write(write_mediator, operation, object_id="cust_001", changes=None, expect
         origin="human",
         proposed_at=datetime.now(UTC),
         proposed_under_generation=1,
+        parameters={},
+        proposer=UserRecord("u1", "us-west", "analyst"),
     )
     return write_mediator.confirm_and_execute(pending, approved=True)
 

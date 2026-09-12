@@ -29,6 +29,7 @@ import pytest
 from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
+from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_log import WriteLogWriter
 from core.ontology.write_mediator import WriteMediator
 
@@ -338,3 +339,127 @@ def test_an_ordinary_write_is_unaffected(wm):
     )
 
     assert wm.confirm_and_execute(pending, approved=True)["status"] == "written"
+
+
+# --- four-eyes: criteria evaluated against the APPROVER ---
+#
+# propose_action() evaluates criteria against the PROPOSER. A four-eyes
+# rule is about the approver and says nothing at propose time, because
+# there is no approver yet -- which is why evaluating only once meant
+# the rule could be written and never enforced.
+
+FOUR_EYES = [{
+    "check": "user",
+    "field": "user_id",
+    "operator": "not_equals",
+    "value": "proposer.user_id",
+    "description": "A write must be approved by someone other than its proposer.",
+}]
+
+
+def _with_four_eyes(wm):
+    """Adds a four-eyes rule to RenameAuthor's sub_write.
+
+    Restored by the caller: action_types is shared across this module
+    and an unrestored mutation makes later tests fail for reasons that
+    have nothing to do with them.
+    """
+    action = wm.action_types["RenameAuthor"]
+    original = action["sub_writes"]
+    action["sub_writes"] = [{**original[0], "submission_criteria": FOUR_EYES}]
+    return original
+
+
+def test_someone_else_may_approve_a_write(wm):
+    original = _with_four_eyes(wm)
+    try:
+        pending = wm.propose_action(
+            _record("alice"), "RenameAuthor",
+            {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+        )
+
+        result = wm.confirm_and_execute(pending, approved=True, approver=_record("bob"))
+
+        assert result["status"] == "written"
+    finally:
+        wm.action_types["RenameAuthor"]["sub_writes"] = original
+
+
+def test_the_proposer_may_not_approve_their_own_write(wm):
+    # THE RULE THIS EXISTS FOR, and it could not be enforced at all
+    # before criteria were evaluated at confirm time.
+    original = _with_four_eyes(wm)
+    try:
+        pending = wm.propose_action(
+            _record("alice"), "RenameAuthor",
+            {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+        )
+
+        with pytest.raises(SubmissionCriteriaViolation, match="other than its proposer"):
+            wm.confirm_and_execute(pending, approved=True, approver=_record("alice"))
+    finally:
+        wm.action_types["RenameAuthor"]["sub_writes"] = original
+
+
+def test_a_refused_approval_writes_nothing(wm):
+    # The criteria check runs BEFORE anything is applied, so a refusal
+    # must leave the object exactly as it was.
+    original = _with_four_eyes(wm)
+    try:
+        before = wm.mediator.get_field(_record("alice"), "Author", "auth_001", "name")
+        pending = wm.propose_action(
+            _record("alice"), "RenameAuthor",
+            {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+        )
+
+        with pytest.raises(SubmissionCriteriaViolation):
+            wm.confirm_and_execute(pending, approved=True, approver=_record("alice"))
+
+        assert wm.mediator.get_field(_record("alice"), "Author", "auth_001", "name") == before
+    finally:
+        wm.action_types["RenameAuthor"]["sub_writes"] = original
+
+
+def test_a_rejection_is_not_blocked_by_criteria(wm):
+    # The proposer may always REJECT their own write. Whether they
+    # could have approved it is irrelevant, and blocking the rejection
+    # would leave a proposal nobody can clear.
+    original = _with_four_eyes(wm)
+    try:
+        pending = wm.propose_action(
+            _record("alice"), "RenameAuthor",
+            {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+        )
+
+        assert wm.confirm_and_execute(pending, approved=False, approver=_record("alice")) is None
+    finally:
+        wm.action_types["RenameAuthor"]["sub_writes"] = original
+
+
+def test_an_action_with_no_criteria_is_unaffected_by_the_approver(wm):
+    # THE CONTROL. Most actions declare no criteria at all, and a
+    # confirm-time check that refused them would break every write.
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor",
+        {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+    )
+
+    assert wm.confirm_and_execute(
+        pending, approved=True, approver=_record("alice"),
+    )["status"] == "written"
+
+
+def test_an_omitted_approver_skips_the_check_rather_than_failing(wm):
+    # scripts/run_deployment.py and older tests call without one. A
+    # missing approver must not mean "deny": that would break every
+    # non-HTTP caller, and the HTTP route always supplies one.
+    original = _with_four_eyes(wm)
+    try:
+        pending = wm.propose_action(
+            _record("alice"), "RenameAuthor",
+            {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+        )
+
+        assert wm.confirm_and_execute(pending, approved=True)["status"] == "written"
+    finally:
+        wm.action_types["RenameAuthor"]["sub_writes"] = original

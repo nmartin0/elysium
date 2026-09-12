@@ -90,6 +90,8 @@ def _edit(write_mediator, changes, expected, user_id="alice", operation="update"
         origin="human",
         proposed_at=datetime.now(UTC),
         proposed_under_generation=1,
+        parameters={},
+        proposer=UserRecord(user_id, "us-west", "analyst"),
     )
     return write_mediator.confirm_and_execute(pending, approved=True)
 
