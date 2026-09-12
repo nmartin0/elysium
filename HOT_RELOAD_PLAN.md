@@ -596,7 +596,62 @@ directly.
       Publishing is 5b, not a merge. create_branch exists at 0.12.
   5d. Absorb ADDITIVE source change via update_schema().add_column()
       on the branch. A new source column is not an error.
-  5e. Absorb DESTRUCTIVE source change -- needs a decision, not just
+  5e. **DECIDED, following Foundry, and blocked on a capability the
+      adapter contract does not have.**
+
+      THE RULE IS NOT "ALWAYS REFUSE". In Object Storage v2 a schema
+      change is breaking only if the property HAS RECEIVED USER EDITS;
+      deleting one nobody ever edited is not breaking at all. The write
+      log is the same thing under another name, so the verdict depends
+      on what it holds:
+
+      - column gone, NOTHING ever wrote that field -> ABSORB. No
+        obligation to strand, no history to orphan. Refusing here
+        freezes the mirror over a column nobody used, and a frozen
+        mirror goes stale while the source moves on -- stale data that
+        looks current is its own kind of wrong.
+      - column gone, WRITES EXIST -> REFUSE, naming the field, the
+        counts, and the options. Foundry's own instruction is "drop all
+        property edits", used "when deleting a property and there is no
+        new property as a replacement": a named disposition chosen by a
+        human, never a default.
+
+      THE ORPHANED-ROWS QUESTION IS ANSWERED, and it needed answering
+      because leaving it undecided was the same fault the policy exists
+      to fix. Applied and pending writes get DIFFERENT treatment:
+
+      - an APPLIED write is HISTORY. The value was set, the change
+        happened, and dropping the field does not unmake it. Its
+        write_log row stays, exactly as Foundry keeps edit history
+        separate from the index -- which is why they can migrate and
+        OSv1 could not.
+      - a PENDING write is an OBLIGATION. Someone proposed it, nobody
+        decided, and the field it targets no longer exists, so it can
+        never be applied and would sit in the queue forever. It must be
+        marked unapplyable at the moment the field goes, not discovered
+        at apply time. That is step 6's work and this is the trigger
+        for it.
+
+      TYPE CHANGE IS ALWAYS REFUSED and does not soften when nothing
+      has been written, unlike a removal: the column is still THERE and
+      still READ, so absorbing it means serving values of a type the
+      ontology says they are not. That reaches every reader, not only
+      writers.
+
+      **BLOCKED ON: ExternalReadAdapter cannot report its columns.**
+      read_all_rows() takes the columns it is told to read, so a
+      vanished column surfaces as whatever the adapter's SELECT raises
+      -- which IS the storage-dictated behaviour this policy exists to
+      replace. Detecting it needs a new method on the contract,
+      implemented by all three adapters. That is a separate change from
+      deciding what to do, and doing both at once would land the
+      decision untested against a capability added in the same commit.
+
+      Written up rather than half-built: a drift_policy module with
+      four verdicts and one reachable caller is three speculative
+      functions, which is what this project deletes.
+
+  5e-original. Absorb DESTRUCTIVE source change -- needs a decision, not just
       an implementation. A dropped source column can be dropped from
       the mirror (delete_column) or retained and nulled. Retaining is
       safer for readers on older generations and field IDs make it
