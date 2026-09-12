@@ -173,6 +173,31 @@ class IcebergMirrorSync(MirrorSync):
         # otherwise appear on every single first sync and train
         # readers to ignore warnings from this module generally.
         # Scoped to this one call, not silenced project-wide.
+        # A COLUMN ADDED TO THE ONTOLOGY IS ABSORBED, not a failure.
+        # Step 5d, and it turned out to be a live defect rather than an
+        # enhancement: without this, declaring a new field on an
+        # existing object type breaks that table's sync outright, with
+        # pyiceberg reporting "PyArrow table contains more columns".
+        # The mirror then serves its last good contents forever while
+        # the ontology says something else.
+        #
+        # Additive change is the SAFE direction and Foundry treats it
+        # as a non-event -- "additive changes to the backing dataset do
+        # not interfere with the synchronization process". A column
+        # nothing previously read cannot have been read wrongly.
+        #
+        # union_by_name() rather than add_column() per field: the
+        # incoming Arrow schema already describes exactly what the
+        # ontology now declares, so asking Iceberg to reconcile against
+        # it is one operation instead of a diff we would have to
+        # compute and keep correct.
+        #
+        # DESTRUCTIVE change does NOT come through here -- a removed
+        # column is decided by drift_policy before any read happens,
+        # and a type change is refused. This path only ever widens.
+        with table.update_schema() as update:
+            update.union_by_name(arrow_table.schema)
+
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Delete operation did not match any records")
             table.overwrite(arrow_table)

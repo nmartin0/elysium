@@ -594,7 +594,26 @@ directly.
       Two questions, two fields, deliberately not conflated.
   5c. Sync writes to a BRANCH and validates there, leaving main alone.
       Publishing is 5b, not a merge. create_branch exists at 0.12.
-  5d. Absorb ADDITIVE source change via update_schema().add_column()
+  5d. **DONE, and it was a LIVE DEFECT rather than the enhancement
+      this step described.** Probed before building: declaring a new
+      field on an existing object type broke that table's sync
+      outright, pyiceberg refusing with "PyArrow table contains more
+      columns". The mirror then served its last good contents forever
+      while the ontology said something else.
+
+      union_by_name() against the incoming Arrow schema, not
+      add_column() per field: the Arrow schema already describes
+      exactly what the ontology declares, so reconciling against it is
+      one operation rather than a diff we would have to compute and
+      keep correct.
+
+      Additive is the SAFE direction -- a column nothing previously
+      read cannot have been read wrongly -- and Foundry treats the same
+      change as a non-event. Destructive change never reaches here: a
+      removed column is decided by drift_policy before any read, and a
+      type change is refused. This path only ever widens.
+
+  5d-original. Absorb ADDITIVE source change via update_schema().add_column()
       on the branch. A new source column is not an error.
   5e. **DECIDED, following Foundry, and blocked on a capability the
       adapter contract does not have.**
@@ -897,8 +916,40 @@ Only meaningful once writes are long-lived, i.e. once the approvals
 inbox exists. Deferred deliberately, and listed so the dependency is
 visible rather than discovered.
 
-  6a. Diff a new generation against the current one and classify each
-      change additive or destructive, per Foundry's own split.
+  6a. **LARGELY ABSORBED. Closed as an assessment, not built.**
+
+      This step existed to FEED 6b: classify every configuration
+      change, then work out which pending writes the destructive ones
+      affect. 6b ended up answering that question directly and better
+      -- it asks each write whether ITS OWN fields still exist, rather
+      than classifying changes and inferring consequences from the
+      category. Inference was the weaker route, and it is gone.
+
+      What covers the ground now:
+
+      - repointed_silos() names a changed data source at reload, and
+        the audit entry says which silos.
+      - fields_no_longer_declared() decides applicability per write,
+        used by both the confirm path and the inbox.
+      - _audit_writes_invalidated_by() records the consequence at the
+        moment a reload causes it.
+      - /admin/config-history/{older}/{newer} names which files changed
+        between any two generations.
+      - core/mirror/drift_policy.py classifies SOURCE-side change with
+        decided outcomes per shape.
+
+      WHAT IS GENUINELY NOT COVERED, stated precisely so it is not
+      mistaken for done: a configuration change with no pending-write
+      consequence but a real human one -- a role losing a permission,
+      an object type disappearing. Nobody is told at reload; an
+      operator would have to notice via config-history.
+
+      That is a DIFFERENT feature from what 6a describes, and it wants
+      wanting before it is built. A classifier that categorises changes
+      nobody acts on is the speculative code this project deletes --
+      and the specific consequences that DO matter each got their own
+      handling, which is why this step emptied out rather than being
+      completed.
   6b. **THE CORRECTNESS HALF IS DONE; the experience half still wants
       the inbox.** confirm_and_execute() now refuses a write whose
       fields the ontology no longer declares, naming the fields and
