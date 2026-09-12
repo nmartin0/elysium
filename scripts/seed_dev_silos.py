@@ -35,6 +35,28 @@ DATABASES = [
 ]
 
 
+def _has_tables(db_path) -> bool:
+    """Whether a database can actually serve a read.
+
+    PRESENCE IS NOT USABILITY, and this script conflated them. So did
+    SQLiteReadAdapter.health_check(), which reported an empty database
+    reachable -- the same fault in two places, found when a dev
+    database was restored to a state with no tables and every read
+    returned a raw 500 while everything claimed to be fine.
+    """
+    import sqlite3
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            return bool(conn.execute(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table'"
+            ).fetchone()[0])
+    except sqlite3.Error:
+        # Unreadable is as unusable as empty, and rebuilding is the
+        # right answer to both.
+        return False
+
+
 def build(schema_path: Path, db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
@@ -60,9 +82,21 @@ def main() -> int:
             print(f"Missing fixture schema {schema_path}", file=sys.stderr)
             return 1
         db_path = target / db_name
-        if db_path.exists() and not args.force:
+        if db_path.exists() and not args.force and _has_tables(db_path):
             print(f"  {db_name} exists, left alone (--force to rebuild)")
             continue
+        if db_path.exists() and not args.force:
+            # EXISTS BUT IS EMPTY, which the old check could not see. It
+            # tested for the FILE and reported "left alone" about a
+            # database with no tables -- reassurance while the
+            # deployment was unusable, and the operator then had to
+            # work out that --force was needed for a database they had
+            # just been told was fine.
+            #
+            # Rebuilt without --force, because an empty database is not
+            # data anybody is using: the flag exists to protect real
+            # rows, and there are none.
+            print(f"  {db_name} exists but has no tables -- rebuilding")
         if db_path.exists():
             db_path.unlink()
         build(schema_path, db_path)

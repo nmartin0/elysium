@@ -74,6 +74,27 @@ from typing import Any
 from core.adapter_roles import ReadAdapter, WriteAdapter
 
 
+class StorageUnavailable(RuntimeError):
+    """A source could not answer, for a reason the operator can act on.
+
+    RAISED BY ADAPTERS, caught at the API boundary, and never confused
+    with a bug. A dropped source table, a renamed column, a database
+    restored from a state that predates the ontology -- all deployment
+    problems with specific remedies, and all of them arrived as opaque
+    500s before this existed.
+
+    A DISTINCT TYPE RATHER THAN A MESSAGE, because the route has to
+    tell these apart from a genuine fault: one is worth showing the
+    caller verbatim and the other is not. Catching RuntimeError
+    broadly would eventually swallow a real bug and report it as a
+    configuration problem, which is the more expensive mistake.
+
+    Lives here, on the adapter contract, because every adapter owes the
+    same promise -- a future Postgres or REST adapter raises this for
+    the same class of failure rather than inventing its own.
+    """
+
+
 class ExternalReadAdapter(ReadAdapter):
     max_concurrent_reads: int | None
 

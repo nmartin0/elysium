@@ -2244,7 +2244,13 @@ def test_a_missing_sqlite_file_is_not_reported_healthy(tmp_path):
     from adapters.sqlite_adapter import SQLiteReadAdapter
 
     db_path = tmp_path / "silo.db"
-    sqlite_module.connect(db_path).close()
+    connection = sqlite_module.connect(db_path)
+    # A REAL TABLE, because an empty database is no longer healthy
+    # either -- see the test below. This one is about the file being
+    # GONE, so it needs a database that would otherwise pass.
+    connection.execute("CREATE TABLE customers (customer_id TEXT)")
+    connection.commit()
+    connection.close()
     adapter = SQLiteReadAdapter({"path": db_path})
     adapter.health_check()
 
@@ -2252,6 +2258,29 @@ def test_a_missing_sqlite_file_is_not_reported_healthy(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         adapter.health_check()
+
+
+def test_an_EMPTY_database_is_not_reported_healthy_either(tmp_path):
+    """The same bug one layer in, and the comment above stopped short
+    of it.
+
+    sqlite3.connect() creates an empty database, and an empty database
+    answers SELECT 1 happily -- so a file that EXISTS but has no tables
+    passed every check and failed every read.
+
+    Found the hard way: a dev database was restored to a state with no
+    tables, Silos reported all three silos reachable, and every object
+    read returned a raw 500.
+    """
+    import sqlite3 as sqlite_module
+
+    from adapters.sqlite_adapter import SQLiteReadAdapter
+
+    db_path = tmp_path / "empty.db"
+    sqlite_module.connect(db_path).close()
+
+    with pytest.raises(RuntimeError, match="no tables"):
+        SQLiteReadAdapter({"path": db_path}).health_check()
 
 
 def test_a_link_field_carries_its_link_type_through_the_response_model(client):

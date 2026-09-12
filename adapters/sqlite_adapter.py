@@ -48,17 +48,64 @@ from pathlib import Path
 from typing import Any
 
 from core.filters import FilterError, UnsupportedFilter
-from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
+from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter, StorageUnavailable
 from core.sqlite_connection import open_connection as _connect
 
 
-def _run_query(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
-    rows = conn.execute(sql, params).fetchall()
+def _describe_failure(error: sqlite3.OperationalError, db_path) -> str:
+    """A storage error a reader can act on.
+
+    THE PATH IS PASSED IN, not asked of the connection. A first version
+    used `PRAGMA database_list` and got "(unknown database)" every
+    time: this adapter reads through an authorizer permitting only
+    SELECT, READ and FUNCTION, and PRAGMA is denied -- the same control
+    that shaped columns_present(). The adapter knows its own path
+    anyway, so asking SQLite for it was the wrong instinct twice over.
+
+    "no such table: transactions" propagated raw through the mediator,
+    the route and FastAPI, arriving as an opaque 500. The information
+    needed to diagnose it -- WHICH database, and that the ontology
+    declares a table the source does not have -- was available at the
+    point of failure and discarded.
+
+    core/mirror/drift_policy.py already argues this for the sync path:
+    storage behaviour must not become policy by default. The same
+    applies on the READ path, where a dropped source table is a
+    deployment problem with a specific remedy, not a server fault.
+    """
+    message = str(error)
+    if "no such table" in message:
+        table = message.rsplit(":", 1)[-1].strip()
+        return (
+            f"{db_path}: the ontology declares table {table!r} and the database "
+            f"does not have it. Either the source table was dropped or renamed, "
+            f"or this database was restored from a state that predates it."
+        )
+    if "no such column" in message:
+        column = message.rsplit(":", 1)[-1].strip()
+        return (
+            f"{db_path}: the ontology declares column {column!r} and the database "
+            f"does not have it. See core/mirror/drift_policy.py for what a sync "
+            f"does about the same change."
+        )
+    return f"{db_path}: {message}"
+
+
+def _run_query(conn: sqlite3.Connection, sql: str, params: tuple = (),
+                db_path: str = "(unknown database)") -> list[dict]:
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as error:
+        raise StorageUnavailable(_describe_failure(error, db_path)) from error
     return [dict(row) for row in rows]
 
 
-def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> dict | None:
-    row = conn.execute(sql, params).fetchone()
+def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = (),
+                    db_path: str = "(unknown database)") -> dict | None:
+    try:
+        row = conn.execute(sql, params).fetchone()
+    except sqlite3.OperationalError as error:
+        raise StorageUnavailable(_describe_failure(error, db_path)) from error
     return dict(row) if row is not None else None
 
 
@@ -201,9 +248,10 @@ class SQLiteReadAdapter(ExternalReadAdapter):
                     conn,
                     f"SELECT {id_column} FROM {table} WHERE {where_clause}",
                     tuple(values),
+                    db_path=str(self.db_path),
                 )
             else:
-                rows = _run_query(conn, f"SELECT {id_column} FROM {table}")
+                rows = _run_query(conn, f"SELECT {id_column} FROM {table}", db_path=str(self.db_path))
         return [row[id_column] for row in rows]
 
     def find_ids_matching_text(self, object_type: str, columns: list[str], query_text: str,
@@ -238,7 +286,10 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         values = tuple(pattern for _ in columns)
 
         with self._connection() as conn:
-            rows = _run_query(conn, f"SELECT {id_column} FROM {table} WHERE {where_clause}", values)
+            rows = _run_query(
+                conn, f"SELECT {id_column} FROM {table} WHERE {where_clause}", values,
+                db_path=str(self.db_path),
+            )
             return [row[id_column] for row in rows]
 
     def get_raw_field(self, object_type: str, object_id: Any, field_name: str, type_config: dict) -> Any:
@@ -247,7 +298,8 @@ class SQLiteReadAdapter(ExternalReadAdapter):
 
         with self._connection() as conn:
             row = _run_query_one(
-                conn, f"SELECT {field_name} FROM {table} WHERE {id_column} = ?", (object_id,)
+                conn, f"SELECT {field_name} FROM {table} WHERE {id_column} = ?", (object_id,),
+                db_path=str(self.db_path),
             )
             return row[field_name] if row else None
 
@@ -275,6 +327,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
                 f"SELECT {result_column}, {via_column} FROM {via_table} "
                 f"WHERE {via_column} IN ({placeholders})",
                 tuple(object_ids),
+                db_path=str(self.db_path),
             )
 
         grouped: dict = {}
@@ -295,6 +348,26 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             raise FileNotFoundError(f"No database at {self.db_path}")
         with self._connection() as conn:
             conn.execute("SELECT 1").fetchone()
+            # AND THAT IT HAS TABLES, which SELECT 1 does not tell you.
+            # The comment above stopped one step short: a file that
+            # EXISTS but is empty passes every check here and fails
+            # every read, because sqlite3.connect() creates an empty
+            # database and an empty database answers SELECT 1 happily.
+            #
+            # Found the hard way. A dev database was restored to a
+            # state with no tables; Silos reported all three reachable
+            # while every object read returned a raw 500. A health
+            # check that goes green on an unusable database is the same
+            # failure the paragraph above describes, one layer in.
+            tables = conn.execute(
+                "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'"
+            ).fetchone()["n"]
+            if tables == 0:
+                raise RuntimeError(
+                    f"Database at {self.db_path} exists but contains no tables -- "
+                    f"it was created empty, truncated, or restored from a state "
+                    f"that had none. Every read against this silo will fail."
+                )
 
     def read_fields_for_ids(self, table_name: str, id_column: str, object_ids: list,
                              columns: list[str], type_config: dict) -> list[dict]:
@@ -311,6 +384,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
                 conn,
                 f"SELECT {selected} FROM {table_name} WHERE {id_column} IN ({placeholders})",
                 tuple(object_ids),
+                db_path=str(self.db_path),
             )
         return [dict(row) for row in rows]
 
@@ -326,7 +400,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             return []
         column_list = ", ".join(columns)
         with self._connection() as conn:
-            return _run_query(conn, f"SELECT {column_list} FROM {table_name}")
+            return _run_query(conn, f"SELECT {column_list} FROM {table_name}", db_path=str(self.db_path))
 
     def columns_present(self, table_name: str) -> set[str]:
         """Which columns this table ACTUALLY has, right now.
@@ -373,7 +447,8 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         result_column = field_config.get("via_target_column", target_id_column)
         with self._connection() as conn:
             rows = _run_query(
-                conn, f"SELECT {result_column} FROM {via_table} WHERE {via_column} = ?", (object_id,)
+                conn, f"SELECT {result_column} FROM {via_table} WHERE {via_column} = ?", (object_id,),
+                db_path=str(self.db_path),
             )
             return [row[result_column] for row in rows]
 
