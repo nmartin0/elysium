@@ -109,11 +109,34 @@ class PendingWriteStore:
             self._writes[write_id] = _StoredWrite(pending, pending.user_id, expires_at)
         return write_id
 
-    def pop(self, write_id: str, requesting_user_id: str) -> PendingWrite | None:
+    def claim(self, write_id: str, may_claim) -> PendingWrite | None:
+        """Removes and returns a write, if the caller may act on it.
+
+        THE PREDICATE RUNS UNDER THE LOCK, which is the whole reason
+        this is a store method and not two calls. A caller that looked
+        the write up, decided, and then popped it would leave a window
+        in which two approvers both pass the check and both claim the
+        same write -- and the second one applies a change that was
+        already applied.
+
+        WHO MAY CLAIM IS THE CALLER'S QUESTION, not this store's. It
+        used to be answered here as owner-equality, which made
+        four-eyes unreachable: the only person who could confirm a
+        write was the one person a four-eyes rule forbids. Policy
+        belongs where the grants and criteria live; atomicity belongs
+        here.
+
+        UNIFORM DENIAL IS PRESERVED BY CONSTRUCTION. Unknown id,
+        expired id and ineligible caller all return None, and the
+        caller cannot tell which -- the same property the old
+        owner-equality check had, kept deliberately rather than
+        rebuilt. A probing caller learns nothing about which write ids
+        exist.
+        """
         with self._lock:
             self._expire_stale_locked()
             stored = self._writes.get(write_id)
-            if stored is None or stored.owner_user_id != requesting_user_id:
+            if stored is None or not may_claim(stored.pending):
                 return None
             del self._writes[write_id]
             return stored.pending

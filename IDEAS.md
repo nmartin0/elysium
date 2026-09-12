@@ -182,11 +182,23 @@ declaration on the validator's advice and breaks the criterion. A
 validator that tells you to remove something load-bearing is worse than
 one that says nothing.
 
-**Then** eligibility moves off `PendingWriteStore.pop()`'s
-owner-equality check onto grant + MAC + criteria evaluated at APPROVE
-time, with the decision audited naming both parties.
+**Eligibility: MOVED.** `pop()` became `claim(write_id, may_claim)`,
+with the predicate running UNDER THE STORE'S LOCK -- a caller that
+looked up, decided, then popped would leave a window where two
+approvers both claim one write. Policy is the route's (the grant);
+atomicity stays the store's.
 
-Confidence: high. Do this first.
+Uniform denial is preserved by construction: unknown id, expired id and
+ineligible caller all return None and the caller cannot tell which.
+
+The widening is deliberate and the opposite policy is now EXPRESSIBLE
+rather than hardcoded -- a criterion of `operator: equals, value:
+proposer.user_id` restores owner-only confirmation for a deployment
+that wants it.
+
+**Still open:** the decision is audited as an ordinary write, not as an
+approval naming BOTH parties. An approvals inbox wants "bob approved
+alice's write" as a first-class entry.
 
 ## A deliberate security pass over the agent loop
 

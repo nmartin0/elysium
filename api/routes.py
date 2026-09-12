@@ -1853,7 +1853,32 @@ async def query(body: QueryRequest, request: Request,
 async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request: Request,
                                current_user: UserRecord = Depends(get_current_user)) -> dict:
     store: PendingWriteStore = request.app.state.pending_writes
-    pending = store.pop(write_id, current_user.user_id)
+    def may_confirm(candidate) -> bool:
+        # THE GRANT, not ownership. Whoever may EXECUTE an action may
+        # decide on a proposal of it -- which is what makes an approvals
+        # flow possible at all: owner-equality meant the only person who
+        # could confirm a write was the one person a four-eyes rule
+        # forbids.
+        #
+        # This is a real widening for a deployment that declares no
+        # criteria: previously only the proposer could confirm, now any
+        # holder of the grant can. That is the intended model rather
+        # than a side effect, and the OPPOSITE policy is now
+        # expressible where it was previously hardcoded -- a criterion
+        # of `check: user, field: user_id, operator: equals, value:
+        # proposer.user_id` restores owner-only confirmation for a
+        # deployment that wants it.
+        #
+        # MAC and the criteria are NOT checked here. Both are evaluated
+        # inside confirm_and_execute() against the objects actually
+        # touched, which is where they can see what they are deciding
+        # about; duplicating them here would be a second, weaker copy.
+        return authorize(
+            current_user, _generation(request).config.roles,
+            f"execute:{candidate.action_type_name}",
+        )
+
+    pending = store.claim(write_id, may_confirm)
     if pending is None:
         # Uniform denial -- wrong user, unknown ID, and expired ID all
         # look identical. See module docstring.
