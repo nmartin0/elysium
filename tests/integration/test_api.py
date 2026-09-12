@@ -3071,3 +3071,64 @@ def test_reading_the_detail_does_not_consume_the_write(client):
 
     assert client.get(f"/api/writes/{write_id}").status_code == 200
     assert client.get(f"/api/writes/{write_id}").status_code == 200
+
+
+def test_a_refused_approval_leaves_the_write_for_someone_else(client):
+    """THE BUG THIS COMMIT FIXES, end to end.
+
+    The route claimed the write -- removing it -- and only then ran the
+    decision. A refusal therefore destroyed the proposal: the colleague
+    entitled to approve it never got the chance, and nothing told them
+    it had existed.
+
+    Worse than losing a write, because the refusal is the system
+    working CORRECTLY.
+    """
+    write_id = _propose_as(client, "alice")
+
+    # A confirm that fails INSIDE confirm_and_execute, after the
+    # reservation. The write adapter is made to raise, which is the
+    # general shape of every such failure -- a criteria violation, an
+    # unapplyable field, a database error.
+    #
+    # The schema itself cannot be mutated to provoke this: step 2a
+    # deep-froze the configuration, and an attempt raises
+    # "'mappingproxy' object does not support item assignment". That
+    # guarantee holding is why this test reaches for the adapter
+    # instead.
+    write_mediator = client.app.state.generation.write_mediator
+    original_apply = type(write_mediator)._apply_batch
+
+    def refuse(self, pending):
+        raise ValueError("a four-eyes rule refused this")
+
+    type(write_mediator)._apply_batch = refuse
+    try:
+        refused = client.post(
+            f"/api/writes/{write_id}/confirm",
+            json={"approved": True},
+            headers=_csrf_headers(client),
+        )
+        assert refused.status_code >= 400
+    finally:
+        type(write_mediator)._apply_batch = original_apply
+
+    # THE WRITE IS STILL THERE. Before the fix this was an empty list.
+    listed = client.get("/api/writes/awaiting").json()
+    assert write_id in [entry["write_id"] for entry in listed]
+
+
+def test_a_successful_approval_still_consumes_the_write(client):
+    # THE CONTROL. A store that never consumed anything would pass the
+    # test above while letting one proposal be applied repeatedly.
+    write_id = _propose_as(client, "alice")
+
+    approved = client.post(
+        f"/api/writes/{write_id}/confirm",
+        json={"approved": True},
+        headers=_csrf_headers(client),
+    )
+
+    assert approved.status_code == 200
+    listed = client.get("/api/writes/awaiting").json()
+    assert write_id not in [entry["write_id"] for entry in listed]

@@ -23,7 +23,10 @@ Worth stating plainly: when this changed, NO TEST NOTICED. Owner-only
 was a convention rather than a guarantee, which is why these exist.
 """
 
+import contextlib
 from datetime import UTC, datetime
+
+import pytest
 
 from core.intermediate_layer.auth import UserRecord
 from core.ontology.write_mediator import PendingWrite, SubWrite
@@ -252,3 +255,92 @@ class TestBothCategories:
         store.store(_pending(user_id="bob"))
 
         assert store.awaiting(lambda pending: pending.user_id == "carol") == []
+
+
+class TestReservation:
+    """A failed decision must not destroy the proposal.
+
+    THE BUG THIS FIXES. claim() removed the write and handed it back,
+    and the decision could then FAIL -- a four-eyes rule refusing a
+    self-approval, or a field the ontology no longer declares. The
+    proposal was already gone: the colleague entitled to approve it
+    never got the chance, and nothing told them it had existed.
+
+    Worse than simply losing a write, because the refusal is the system
+    working CORRECTLY. Every control built for this flow -- criteria
+    evaluated against the approver, the unapplyable check -- lands
+    after the point of no return.
+    """
+
+    def test_a_clean_decision_consumes_the_write(self):
+        store, write_id = _store()
+
+        with store.reserved(write_id, lambda _pending: True) as pending:
+            assert pending is not None
+
+        assert store.awaiting(lambda _pending: True) == []
+
+    def test_a_FAILED_decision_puts_the_write_back(self):
+        # THE PROPERTY. The reviewer who could have approved it must
+        # still find it there.
+        store, write_id = _store()
+
+        with pytest.raises(ValueError):
+            with store.reserved(write_id, lambda _pending: True) as pending:
+                assert pending is not None
+                raise ValueError("a four-eyes rule refused this")
+
+        assert [item[0] for item in store.awaiting(lambda _p: True)] == [write_id]
+
+    def test_a_second_reviewer_cannot_reserve_what_is_being_decided(self):
+        # The atomicity claim() existed for, preserved. Two approvers
+        # must not both act on one write.
+        store, write_id = _store()
+
+        with store.reserved(write_id, lambda _pending: True) as first:
+            assert first is not None
+            with store.reserved(write_id, lambda _pending: True) as second:
+                assert second is None
+
+    def test_a_reserved_write_is_hidden_from_the_listing(self):
+        # Somebody is deciding on it right now, and a reservation lasts
+        # one request. Showing it would invite a second reviewer to
+        # open something about to disappear.
+        store, write_id = _store()
+
+        with store.reserved(write_id, lambda _pending: True):
+            assert store.awaiting(lambda _pending: True) == []
+
+    def test_a_released_write_becomes_listable_again(self):
+        # THE PAIR to the test above. Hiding it permanently would be
+        # the same lost write by another route.
+        store, write_id = _store()
+
+        with contextlib.suppress(ValueError):
+            with store.reserved(write_id, lambda _pending: True):
+                raise ValueError("refused")
+
+        assert [item[0] for item in store.awaiting(lambda _p: True)] == [write_id]
+
+    def test_an_ineligible_reviewer_reserves_nothing(self):
+        store, write_id = _store()
+
+        with store.reserved(write_id, lambda _pending: False) as pending:
+            assert pending is None
+
+        # And the write survives, so someone eligible can still act.
+        assert [item[0] for item in store.awaiting(lambda _p: True)] == [write_id]
+
+    def test_a_write_that_expires_mid_decision_is_not_resurrected(self):
+        # Releasing must not put back something the TTL already took
+        # away -- an expired write is audited as expired, and a
+        # reappearing one would contradict its own audit entry.
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(seconds=-1))
+        write_id = store.store(_pending())
+
+        with store.reserved(write_id, lambda _pending: True) as pending:
+            assert pending is None
+
+        assert store.awaiting(lambda _pending: True) == []

@@ -46,7 +46,8 @@ Used by: api/app.py (one instance, stored on app.state, same lifecycle
 import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from core.intermediate_layer.audit import AuditLog
@@ -60,6 +61,10 @@ class _StoredWrite:
     pending: PendingWrite
     owner_user_id: str
     expires_at: datetime
+    # Somebody is deciding on this RIGHT NOW. Set for the length of one
+    # confirm request, so a second reviewer cannot reserve it and a
+    # listing does not offer it. Cleared if the decision fails.
+    reserved: bool = False
 
 
 class PendingWriteStore:
@@ -137,7 +142,12 @@ class PendingWriteStore:
             return [
                 (write_id, stored.pending)
                 for write_id, stored in self._writes.items()
-                if may_claim(stored.pending)
+                # A RESERVED WRITE IS HIDDEN. Somebody is deciding on
+                # it right now, and a reservation lasts one request --
+                # showing it would invite a second reviewer to open
+                # something about to disappear. If the decision fails
+                # it is released and reappears.
+                if not stored.reserved and may_claim(stored.pending)
             ]
 
     def expires_at(self, write_id: str) -> str | None:
@@ -151,6 +161,63 @@ class PendingWriteStore:
         with self._lock:
             stored = self._writes.get(write_id)
             return stored.expires_at.isoformat() if stored is not None else None
+
+    @contextmanager
+    def reserved(self, write_id: str, may_claim):
+        """Holds a write while a decision is made, then commits or releases.
+
+        WHY TWO PHASES. claim() removed the write and handed it back,
+        and the decision could then FAIL -- a four-eyes rule refusing a
+        self-approval, or a field the ontology no longer declares. The
+        proposal was already gone. The colleague entitled to approve it
+        never got the chance and nothing told them it had existed.
+
+        Worse than losing a write, because the refusal is the system
+        working correctly: every control built for this flow lands
+        AFTER the point of no return.
+
+        RESERVATION IS UNDER THE LOCK, so the atomicity claim() existed
+        for survives: two approvers cannot both reserve one write, and
+        the second sees exactly what an unknown id looks like.
+
+        A CONTEXT MANAGER RATHER THAN THREE CALLS, because the release
+        is the half that gets forgotten. An exception anywhere in the
+        body -- a criteria violation, a database failure, a bug --
+        puts the write back. Only a clean exit consumes it.
+
+        A CRASH BETWEEN RESERVE AND COMMIT leaves a write reserved
+        forever, which is why expiry still applies to reserved writes:
+        the TTL is the backstop, and a stuck reservation resolves
+        itself rather than needing a restart.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            if stored is None or stored.reserved or not may_claim(stored.pending):
+                reserved = None
+            else:
+                self._writes[write_id] = replace(stored, reserved=True)
+                reserved = stored.pending
+
+        if reserved is None:
+            yield None
+            return
+
+        committed = False
+        try:
+            yield reserved
+            committed = True
+        finally:
+            with self._lock:
+                still_there = self._writes.get(write_id)
+                if still_there is None:
+                    # Expired mid-decision. Nothing to commit or put
+                    # back, and the expiry was already audited.
+                    pass
+                elif committed:
+                    del self._writes[write_id]
+                else:
+                    self._writes[write_id] = replace(still_there, reserved=False)
 
     def claim(self, write_id: str, may_claim) -> PendingWrite | None:
         """Removes and returns a write, if the caller may act on it.

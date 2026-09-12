@@ -138,6 +138,7 @@ from core.filters import FieldFilter, as_equality_conditions, parse_filters
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.schema import get_field_column, sort_key
+from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import WriteMediator
 from core.pending_write_store import PendingWriteStore
 from core.request_context import RequestContext
@@ -2113,7 +2114,24 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
             f"execute:{candidate.action_type_name}",
         )
 
-    pending = store.claim(write_id, may_confirm)
+    # RESERVED, NOT CLAIMED, and the difference is a lost write.
+    # claim() removed the proposal and handed it back, and the decision
+    # could then fail -- a four-eyes rule refusing a self-approval, or
+    # a field the ontology no longer declares. The write was already
+    # gone, so the colleague entitled to approve it never got the
+    # chance and nothing told them it had existed.
+    #
+    # The reservation is released by the context manager on ANY
+    # exception, which is exactly the set of cases where the decision
+    # did not happen.
+    with store.reserved(write_id, may_confirm) as pending:
+        return await _decide_reserved_write(
+            request, write_id, pending, body.approved, current_user,
+        )
+
+
+async def _decide_reserved_write(request: Request, write_id: str, pending, approved: bool,
+                                 current_user: UserRecord):
     if pending is None:
         # Uniform denial -- wrong user, unknown ID, and expired ID all
         # look identical. See module docstring.
@@ -2141,13 +2159,27 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
     # executor call already has four, and a fifth that silently lands
     # in the wrong slot is the kind of mistake this file has made
     # before.
-    outcome = await event_loop.run_in_executor(
-        executor,
-        functools.partial(
-            write_mediator.confirm_and_execute, pending, body.approved,
-            approver=current_user,
-        ),
-    )
+    try:
+        outcome = await event_loop.run_in_executor(
+            executor,
+            functools.partial(
+                write_mediator.confirm_and_execute, pending, approved,
+                approver=current_user,
+            ),
+        )
+    except (SubmissionCriteriaViolation, ValueError) as e:
+        # A REFUSAL IS A 409, NOT A 500, and the message is the point.
+        # These are decisions the system made for a stated reason -- a
+        # four-eyes rule declining a self-approval, a field the
+        # ontology no longer declares -- and the reviewer needs the
+        # reason, not a generic failure.
+        #
+        # Raising HTTPException here also leaves the reservation
+        # released: the context manager releases on ANY exception, and
+        # an HTTPException is one. The write goes back in the queue for
+        # somebody who can approve it.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
     return outcome if outcome is not None else {"status": "rejected"}
 
 # --- Object Set operations: the analytical half of the read surface.
