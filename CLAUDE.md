@@ -148,6 +148,14 @@ chart with many distinct values. If a feature needs volume, say so
 rather than assuming a script exists; one would have to be written.
 
 Pointing `ELYSIUM_DATA_DIR` somewhere under `$HOME` would end this.
+
+**Do not run uvicorn with `--reload` while testing writes.** The
+pending-write store is in-process memory, so a restart empties it —
+and `--reload` restarts on any watched file change, including the
+`policy.yaml` edit someone makes to exercise an approvals flow.
+Proposals then vanish between steps and look like a bug in the queue.
+Configuration needs no restart anyway: `POST /api/admin/reload`
+applies it and deliberately preserves pending writes.
 It has been suggested and not done; suggest it again if it bites.
 
 ## The loop, every change

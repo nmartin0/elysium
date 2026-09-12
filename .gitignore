@@ -3,9 +3,21 @@ __pycache__/
 venv/
 .pytest_cache/
 # generated at runtime -- not source
+#
+# EVERY .db UNDER var/lib, not a list of the ones that existed when
+# this was written. The list had already fallen behind twice:
+# config_history.db was committed by a `git add -A`, and the dev-silo
+# databases are BUILT by scripts/seed_dev_silos.py from the .sql files
+# beside them -- which are the real source and stay tracked.
+#
+# A tracked database is worse than clutter. It changes on every reload,
+# sync or login, so the tree is permanently dirty, and `git am` refuses
+# to apply a patch over a modified file. That cost five rounds of
+# debugging a patch that was correct the whole time.
 deployment/var/log/
-deployment/var/lib/credentials.db
-deployment/var/lib/write_log.db
+deployment/var/lib/**/*.db
+# a curl session jar, written while testing by hand
+cookies.txt
 # secrets, if you ever add a .env for a real API key
 .env
 # editor/OS noise

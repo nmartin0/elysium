@@ -16,6 +16,18 @@ shared store instead; a confirmation routed to a different worker
 process than the one that handled the proposal would find nothing
 here. Flagged now, not discovered later.
 
+AND THE CONSEQUENCE FOR TESTING BY HAND, which the paragraph above
+implies without saying: a RESTART empties this store. Running uvicorn
+with --reload restarts it on any watched file change, so editing
+policy.yaml -- exactly what someone does to exercise an approvals flow
+-- silently discards every pending proposal mid-test.
+
+That cost a real debugging session: proposals kept vanishing between
+steps and looked like a bug in the queue. Use --reload when editing
+Python; do not use it while testing writes. Configuration changes need
+no restart at all, and POST /api/admin/reload deliberately PRESERVES
+this store.
+
 Every stored write has a real TTL (DEFAULT_TTL) -- an unconfirmed
 proposal doesn't linger forever. Expiry is LAZY (checked at the top of
 store()/pop(), not a separate periodic background task) -- this is a

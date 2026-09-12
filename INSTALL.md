@@ -29,7 +29,7 @@ source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
 
 pip install -r requirements.txt
 
-cd ui && npm install && cd ..
+cd ui && npm ci && cd ..
 ```
 
 For a real, running production install, see section 7 instead.

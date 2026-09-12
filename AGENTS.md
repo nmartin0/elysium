@@ -81,6 +81,24 @@ work and start the next task on a tree missing it. That happened here;
 the commit was recoverable from the reflog only because it was
 noticed within a few minutes.
 
+## `npm ci`, not `npm install`
+
+`npm install` REWRITES package-lock.json whenever a `^` range resolves
+upward -- a dependency releasing a patch version is enough. The tree
+then has a modified lockfile nobody asked for, and `git am` refuses to
+apply any patch touching that file: "does not match index".
+
+That is not hypothetical. It blocked a correct patch for five rounds
+of debugging, during which the symptom looked like a bug in the code
+being applied.
+
+`npm ci` installs exactly what the lockfile says and never writes to
+it. Use it whenever the intent is "give me the declared tree" -- which
+is every time except deliberately adding or upgrading a dependency.
+
+When a dependency IS being changed, `npm install` is correct and the
+lockfile change belongs in that commit, where a reviewer can see it.
+
 ## Run the feature before committing it
 
 **A PASSING TEST SUITE IS NOT EVIDENCE THAT A FEATURE WORKS.** Before
