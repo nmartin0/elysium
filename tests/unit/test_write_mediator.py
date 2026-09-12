@@ -231,3 +231,110 @@ def test_approved_create_action_actually_creates_a_new_row(wm):
 
     real_value = wm.mediator.get_field(_record("alice"), "Author", "auth_003", "name")
     assert real_value == "Grace Hopper"
+
+
+# --- a write that outlived the configuration it was written against ---
+#
+# HOT_RELOAD_PLAN.md step 6. The pending-write store SURVIVES a reload,
+# deliberately -- discarding proposals on every configuration change
+# would make an approvals inbox useless -- so the ontology a write was
+# written against may no longer describe the fields it targets.
+
+def test_a_write_whose_field_is_gone_is_refused_at_confirm_time(wm):
+    """REFUSED BEFORE APPLYING, not during.
+
+    The failure would otherwise arrive AFTER a human approved it: the
+    approver is told their decision was accepted, and then that it
+    could not be carried out. That is the worst order to learn those
+    two things in.
+    """
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."},
+        origin="human",
+    )
+
+    # The reload: `name` is no longer declared on Author.
+    #
+    # RESTORED IN A finally, because this schema dict is shared across
+    # the module and an unrestored mutation makes later tests fail for
+    # a reason that has nothing to do with them -- which is exactly
+    # what happened while writing these.
+    schema = wm._adapter_mediator.schema
+    original = schema["Author"]
+    schema["Author"] = {**original, "fields": {}}
+    try:
+        with pytest.raises(ValueError, match="no longer declares"):
+            wm.confirm_and_execute(pending, approved=True)
+    finally:
+        schema["Author"] = original
+
+
+def test_the_refusal_names_the_field_and_both_generations(wm):
+    # The pair of generations IS the explanation: proposed under 7 and
+    # refused under 12 says exactly where to look for what changed. A
+    # message naming only the field leaves the operator guessing when.
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."},
+        origin="human",
+    )
+    schema = wm._adapter_mediator.schema
+    original = schema["Author"]
+    schema["Author"] = {**original, "fields": {}}
+    wm.generation = 12
+    try:
+        with pytest.raises(ValueError) as caught:
+            wm.confirm_and_execute(pending, approved=True)
+    finally:
+        schema["Author"] = original
+
+    assert "Author.name" in str(caught.value)
+    assert "generation 1" in str(caught.value)
+    assert "now on 12" in str(caught.value)
+
+
+def test_nothing_is_written_when_a_write_is_refused(wm):
+    # "Nothing has been written" is a claim the message makes, so it is
+    # a claim worth checking.
+    before = wm.mediator.get_field(_record("alice"), "Author", "auth_001", "name")
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."},
+        origin="human",
+    )
+    schema = wm._adapter_mediator.schema
+    original = schema["Author"]
+    schema["Author"] = {**original, "fields": {}}
+
+    with pytest.raises(ValueError):
+        wm.confirm_and_execute(pending, approved=True)
+
+    schema["Author"] = original
+    assert wm.mediator.get_field(_record("alice"), "Author", "auth_001", "name") == before
+
+
+def test_a_REJECTED_write_is_not_checked_at_all(wm):
+    # Rejecting a write whose field vanished must still work. The
+    # approver is declining it; whether it COULD have been applied is
+    # irrelevant, and refusing the rejection would leave a proposal
+    # nobody can clear.
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."},
+        origin="human",
+    )
+    schema = wm._adapter_mediator.schema
+    original = schema["Author"]
+    schema["Author"] = {**original, "fields": {}}
+    try:
+        assert wm.confirm_and_execute(pending, approved=False) is None
+    finally:
+        schema["Author"] = original
+
+
+def test_an_ordinary_write_is_unaffected(wm):
+    # THE CONTROL. A check that refused everything would pass every
+    # test above while breaking the product.
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor", {"author_id": "auth_001", "new_name": "Ada L."},
+        origin="human",
+    )
+
+    assert wm.confirm_and_execute(pending, approved=True)["status"] == "written"

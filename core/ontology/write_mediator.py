@@ -1038,6 +1038,40 @@ class WriteMediator:
         # _group_changes_by_storage() already lets a single-storage
         # object apply through the exact same loop as a multi-storage
         # one, with no special case for either.
+        # STILL APPLICABLE? A pending write proposed under one
+        # configuration can be confirmed under another -- the store
+        # survives a reload, deliberately, because discarding proposals
+        # on every configuration change would make an approvals inbox
+        # useless. So the ontology it was written against may no longer
+        # describe the fields it targets.
+        #
+        # CHECKED AT CONFIRM TIME rather than only at apply time,
+        # because the failure would otherwise arrive AFTER a human
+        # approved it: the approver would be told their decision was
+        # accepted and then that it could not be carried out, which is
+        # the worst order to learn those two things in.
+        #
+        # HOT_RELOAD_PLAN.md step 6 also wants these marked unapplyable
+        # at RELOAD time, so an inbox never shows a proposal that
+        # cannot be approved. That is a better experience and it is not
+        # the correctness half -- a write must be refused whether or
+        # not anything got round to marking it, and this is the refusal
+        # that cannot be skipped.
+        if approved:
+            unapplyable = self._fields_no_longer_declared(pending)
+            if unapplyable:
+                self.audit_log.log_write_unapplyable(
+                    pending.user_id, pending.description,
+                    pending.proposed_under_generation, self.generation, unapplyable,
+                )
+                raise ValueError(
+                    f"This write can no longer be applied: it changes "
+                    f"{', '.join(unapplyable)}, which the ontology no longer "
+                    f"declares. It was proposed under configuration generation "
+                    f"{pending.proposed_under_generation} and the deployment is now "
+                    f"on {self.generation}. Nothing has been written."
+                )
+
         request_id = str(uuid.uuid4())
         self.audit_log.log_pre(
             request_id, pending.user_id, pending.description, f"write:{pending.action_type_name}",
@@ -1079,6 +1113,44 @@ class WriteMediator:
         object_ids = self._apply_batch(pending)
         self.audit_log.log_post(request_id, "success", object_ids)
         return {"status": "written", "object_ids": object_ids}
+
+    def _fields_no_longer_declared(self, pending: PendingWrite) -> list[str]:
+        """Fields this write targets that the current ontology lacks.
+
+        Returned as "Type.field" strings because that is what an
+        operator greps ontology_schema.yaml for -- a bare field name
+        sends them to the wrong declaration when two types share one.
+
+        AN UNKNOWN OBJECT TYPE COUNTS TOO, and is the sharper case: a
+        type removed entirely takes every field with it, and reporting
+        only "the type is gone" would leave the approver guessing which
+        of their changes were affected.
+        """
+        missing: list[str] = []
+        for sub_write in pending.sub_writes:
+            try:
+                declared = self._adapter_mediator._type_schema(sub_write.object_type)
+            except (KeyError, ValueError):
+                missing.extend(
+                    f"{sub_write.object_type}.{field}" for field in sub_write.changes
+                )
+                continue
+            # THE ID FIELD IS DECLARED SEPARATELY, not inside `fields`,
+            # and a create legitimately sets it. Found by five existing
+            # tests: without this, every create was refused as targeting
+            # an undeclared field, and the message said so while
+            # reporting the SAME generation on both sides -- which is
+            # itself the tell that nothing had changed and the check was
+            # simply wrong.
+            declared_names = set(declared.get("fields", {}))
+            id_field = declared.get("id_field")
+            if id_field is not None:
+                declared_names.add(id_field)
+            missing.extend(
+                f"{sub_write.object_type}.{field}"
+                for field in sub_write.changes if field not in declared_names
+            )
+        return missing
 
     def _apply_batch(self, pending: PendingWrite) -> list:
         # THE actual atomicity boundary for the WHOLE write, one

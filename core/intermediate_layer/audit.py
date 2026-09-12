@@ -306,6 +306,30 @@ class AuditLog:
             "detail": detail,
         })
 
+    def log_write_unapplyable(self, user_id: str, description: str,
+                               proposed_under: int, applying_under: int,
+                               fields: list[str]) -> None:
+        """A confirmed write was refused because its fields are gone.
+
+        A DISTINCT OUTCOME from rejected, and the audit must say which.
+        Rejected means a human decided against it; this means a human
+        decided FOR it and the configuration had moved on. Collapsing
+        them would make the log say someone declined a change they
+        actually approved.
+
+        Both generations are recorded, because the pair IS the
+        explanation: a write proposed under 7 and refused under 12 says
+        exactly where to look for what changed.
+        """
+        self._write({
+            "stage": "write_unapplyable",
+            "user_id": user_id,
+            "description": description,
+            "proposed_under_generation": proposed_under,
+            "applying_under_generation": applying_under,
+            "undeclared_fields": fields,
+        })
+
     def log_pre(self, request_id: str, user_id: str, query_text: str,
                 action_id: str, params: dict, decision: bool) -> None:
         self._write({

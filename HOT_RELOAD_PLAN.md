@@ -899,10 +899,28 @@ visible rather than discovered.
 
   6a. Diff a new generation against the current one and classify each
       change additive or destructive, per Foundry's own split.
-  6b. On a destructive change, mark affected pending writes
-      unapplyable with a specific reason -- a write referencing a
-      removed field cannot be approved, and finding that out at apply
-      time is worse than at reload time.
+  6b. **THE CORRECTNESS HALF IS DONE; the experience half still wants
+      the inbox.** confirm_and_execute() now refuses a write whose
+      fields the ontology no longer declares, naming the fields and
+      BOTH generations -- the pair is the explanation, since "proposed
+      under 7, refused under 12" says exactly where to look.
+
+      CHECKED AT CONFIRM TIME, not apply time, because the failure
+      would otherwise arrive AFTER a human approved it: the approver is
+      told their decision was accepted and then that it could not be
+      carried out, which is the worst order to learn those two things.
+
+      Marking writes unapplyable at RELOAD time is still worth doing
+      and is a better experience -- an inbox should never show a
+      proposal that cannot be approved. But it is not the correctness
+      half: a write must be refused whether or not anything got round
+      to marking it, and this is the refusal that cannot be skipped.
+      That ordering is why this was buildable before the inbox exists.
+
+      A REJECTION IS DELIBERATELY NOT CHECKED. The approver is
+      declining it; whether it COULD have been applied is irrelevant,
+      and refusing the rejection would leave a proposal nobody can
+      clear.
   6c. Surface it in the approvals inbox: a write invalidated by a
       configuration change is a different state from rejected, and the
       audit trail must say which.
