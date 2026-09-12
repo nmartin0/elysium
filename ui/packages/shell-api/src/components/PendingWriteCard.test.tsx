@@ -354,7 +354,25 @@ describe('data freshness notice', () => {
     render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
     expect(await screen.findByText(/may not be current/i)).toBeInTheDocument()
-    expect(screen.getByText(/last synced/i)).toBeInTheDocument()
+    // A NAMED TIMEZONE on the absolute form. This card had its own
+    // formatter using toLocaleString(), which renders a bare
+    // "15/01/2026, 09:00" -- two colleagues in different offices see
+    // different numbers with no way to tell they mean the same moment.
+    // Now uses the shared formatTimestamp, which names the zone.
+    expect(screen.getByText(/last synced .*(GMT|UTC|[A-Z]{2,5}T)/)).toBeInTheDocument()
+  })
+
+  it('uses a relative time for a recent sync, not a bare clock reading', async () => {
+    // "7 minutes ago" is what someone about to approve a write against
+    // mirrored values actually needs. A timestamp makes them do the
+    // subtraction, at the moment they are least inclined to.
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'mirror',
+      last_synced_at: new Date(Date.now() - 7 * 60_000).toISOString(),
+    })
+    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    expect(await screen.findByText(/7 minutes ago/)).toBeInTheDocument()
   })
 
   it('says so plainly when the mirror has never synced', async () => {

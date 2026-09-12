@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout } from '@blueprintjs/core'
 import { confirmWrite, getDataFreshness, getErrorMessage, handleIfSessionExpired, type DataFreshness } from '../api'
-import { formatFieldName, formatValue } from '../format'
+import { formatFieldName, formatTimestamp, formatValue } from '../format'
 
 // The real shape of one proposed change, as the backend's own /query
 // and /actions/{name} responses hand it back (see api/routes.py's
@@ -36,16 +36,6 @@ export interface PendingWrite {
 // need a ticking re-render to stay honest, and a stale relative label
 // is worse than none at all for a person deciding whether to approve a
 // write against this data.
-function formatSyncTime(isoTimestamp: string): string {
-  const parsed = new Date(isoTimestamp)
-  if (Number.isNaN(parsed.getTime())) {
-    // A malformed timestamp is shown verbatim rather than as "Invalid
-    // Date" -- the raw value is at least diagnosable.
-    return isoTimestamp
-  }
-  return parsed.toLocaleString()
-}
-
 interface SubWriteFieldsProps {
   subWrite: SubWrite
 }
@@ -218,7 +208,7 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
       {freshness?.source === 'mirror' && (
         <Callout intent="warning" title="Data may not be current">
           {freshness.last_synced_at
-            ? `These values were last synced ${formatSyncTime(freshness.last_synced_at)}.`
+            ? `These values were last synced ${formatTimestamp(freshness.last_synced_at)}.`
             : 'These values have not been synced yet.'}
         </Callout>
       )}
