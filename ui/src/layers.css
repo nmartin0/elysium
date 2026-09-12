@@ -1,0 +1,30 @@
+/* layers.css -- the cascade order, declared once.
+ *
+ * A later layer beats an earlier one REGARDLESS OF SELECTOR
+ * SPECIFICITY. That is the whole point: sitting beside Blueprint stops
+ * requiring ever-more-specific selectors, and `!important` stops being
+ * the escape hatch. There are currently ZERO `!important` declarations
+ * in this UI; this is how that stays true.
+ *
+ * VENDOR MUST BE A LAYER, NOT LEFT UNLAYERED, and this is the trap.
+ * Unlayered styles beat EVERY layer, so importing Blueprint plainly
+ * while putting our own CSS in a layer would silently invert the
+ * entire override order -- Blueprint would win everything, the test
+ * suite would stay green, and the app would look wrong. Nothing in
+ * this repository can catch that: there are no computed-style
+ * assertions and no screenshot tests.
+ *
+ * The order, outermost-in:
+ *   vendor      Blueprint's own stylesheet
+ *   tokens      our custom properties (no rules, but ordered for clarity)
+ *   base        element defaults
+ *   layout      the shell grid, regions, spacing
+ *   components  everything a sub-app renders
+ *   utilities   single-purpose helpers
+ *   overrides   deliberate, documented exceptions -- should stay empty
+ */
+@layer vendor, tokens, base, layout, components, utilities, overrides;
+
+/* Blueprint, imported HERE rather than from App.tsx, because only a
+ * CSS @import can assign a layer. A JS import cannot. */
+@import url('@blueprintjs/core/lib/css/blueprint.css') layer(vendor);

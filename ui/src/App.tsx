@@ -18,7 +18,11 @@ import {
 // override Blueprint's own defaults where we actually want that, not
 // the reverse. The standard, conventional pattern -- library base
 // styles first, local overrides after.
-import '@blueprintjs/core/lib/css/blueprint.css'
+// layers.css declares the cascade order AND imports Blueprint into the
+// vendor layer. Blueprint is no longer imported directly here: only a
+// CSS @import can assign a layer, and leaving it unlayered would make
+// it beat every layer below. See layers.css.
+import './layers.css'
 import '@elysium/shell-api/tokens.css'
 // tokens BEFORE index.css: index.css consumes the variables, and a
 // consumer loaded first would resolve them to nothing.
