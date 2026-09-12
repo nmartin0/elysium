@@ -27,6 +27,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from adapters.sqlite_adapter import SQLiteWriteAdapter
+from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
@@ -463,3 +464,93 @@ def test_an_omitted_approver_skips_the_check_rather_than_failing(wm):
         assert wm.confirm_and_execute(pending, approved=True)["status"] == "written"
     finally:
         wm.action_types["RenameAuthor"]["sub_writes"] = original
+
+
+# --- the audit names both parties ---
+#
+# log_pre() records pending.user_id, which is the PROPOSER. A four-eyes
+# deployment could enforce that two different people were involved and
+# then be unable to PROVE it afterwards: the control existed, the
+# evidence did not.
+
+def _audit_entries(tmp_path):
+    import json
+
+    log = tmp_path / "audit.log"
+    if not log.exists():
+        return []
+    return [json.loads(line) for line in log.read_text().splitlines()]
+
+
+def test_the_audit_names_the_approver_as_well_as_the_proposer(wm, tmp_path):
+    # Set on the MEDIATOR, not the write mediator: audit_log is a
+    # read-only property that always returns the mediator's own
+    # instance, deliberately, so there is never a second copy.
+    wm.mediator.audit_log = AuditLog(tmp_path / "audit.log")
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor",
+        {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+    )
+
+    wm.confirm_and_execute(pending, approved=True, approver=_record("bob"))
+
+    entry = [e for e in _audit_entries(tmp_path) if e.get("stage") == "pre"][-1]
+    assert entry["user_id"] == "alice"
+    assert entry["params"]["approved_by"] == "bob"
+
+
+def test_a_self_approval_is_flagged_rather_than_left_to_be_derived(wm, tmp_path):
+    # Someone auditing a four-eyes control asks ONE question -- were
+    # these the same person -- and a log that makes them compare two
+    # fields invites the comparison being done wrong, or not at all.
+    # Set on the MEDIATOR, not the write mediator: audit_log is a
+    # read-only property that always returns the mediator's own
+    # instance, deliberately, so there is never a second copy.
+    wm.mediator.audit_log = AuditLog(tmp_path / "audit.log")
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor",
+        {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+    )
+
+    wm.confirm_and_execute(pending, approved=True, approver=_record("alice"))
+
+    entry = [e for e in _audit_entries(tmp_path) if e.get("stage") == "pre"][-1]
+    assert entry["params"]["self_approved"] is True
+
+
+def test_two_parties_are_not_flagged_as_self_approval(wm, tmp_path):
+    # THE CONTROL for the test above: a flag that is always true says
+    # nothing.
+    # Set on the MEDIATOR, not the write mediator: audit_log is a
+    # read-only property that always returns the mediator's own
+    # instance, deliberately, so there is never a second copy.
+    wm.mediator.audit_log = AuditLog(tmp_path / "audit.log")
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor",
+        {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+    )
+
+    wm.confirm_and_execute(pending, approved=True, approver=_record("bob"))
+
+    entry = [e for e in _audit_entries(tmp_path) if e.get("stage") == "pre"][-1]
+    assert entry["params"]["self_approved"] is False
+
+
+def test_an_unreviewed_write_records_no_approver(wm, tmp_path):
+    # HONEST RATHER THAN TIDY. scripts/run_deployment.py confirms
+    # without an approver, and writing the proposer into that field
+    # would make a single-party write look like a reviewed one.
+    # Set on the MEDIATOR, not the write mediator: audit_log is a
+    # read-only property that always returns the mediator's own
+    # instance, deliberately, so there is never a second copy.
+    wm.mediator.audit_log = AuditLog(tmp_path / "audit.log")
+    pending = wm.propose_action(
+        _record("alice"), "RenameAuthor",
+        {"author_id": "auth_001", "new_name": "Ada L."}, origin="human",
+    )
+
+    wm.confirm_and_execute(pending, approved=True)
+
+    entry = [e for e in _audit_entries(tmp_path) if e.get("stage") == "pre"][-1]
+    assert entry["params"]["approved_by"] is None
+    assert entry["params"]["self_approved"] is False

@@ -196,9 +196,18 @@ rather than hardcoded -- a criterion of `operator: equals, value:
 proposer.user_id` restores owner-only confirmation for a deployment
 that wants it.
 
-**Still open:** the decision is audited as an ordinary write, not as an
-approval naming BOTH parties. An approvals inbox wants "bob approved
-alice's write" as a first-class entry.
+**Both parties: RECORDED.** The pre entry carries `approved_by`
+alongside the proposer's `user_id`, plus a computed `self_approved`
+flag -- someone auditing a four-eyes control asks one question, and a
+log making them compare two fields invites the comparison being done
+wrong or not at all.
+
+`approved_by` is NULL, not the proposer, when no approver was supplied.
+scripts/run_deployment.py confirms without one, and writing the
+proposer there would make a single-party write look reviewed.
+
+**Still open:** no UI. GET /api/writes/awaiting exists and nothing
+renders it, so the inbox is reachable by curl and not by a person.
 
 ## A deliberate security pass over the agent loop
 

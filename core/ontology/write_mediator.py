@@ -1162,6 +1162,28 @@ class WriteMediator:
                 # currently detect. Recorded now; what to DO about a
                 # mismatch is a later step of HOT_RELOAD_PLAN.md.
                 "proposed_under_generation": pending.proposed_under_generation,
+                # WHO APPROVED IT, which this entry recorded nowhere.
+                # user_id above is the PROPOSER -- correct, since the
+                # write is theirs -- so a four-eyes deployment could
+                # enforce that two different people were involved and
+                # then not be able to PROVE it afterwards. The control
+                # existed; the evidence did not.
+                #
+                # None when no approver was supplied, which is honest
+                # rather than tidy: scripts/run_deployment.py confirms
+                # without one, and writing the proposer into this field
+                # would make a single-party write look like a reviewed
+                # one in the log.
+                "approved_by": approver.user_id if approver is not None else None,
+                # THE PAIR IS THE EVIDENCE, so it is computed here
+                # rather than left to a reader to derive. Someone
+                # auditing a four-eyes control asks one question --
+                # were these the same person -- and a log that makes
+                # them compare two fields invites the comparison being
+                # done wrong, or not at all.
+                "self_approved": (
+                    approver is not None and approver.user_id == pending.user_id
+                ),
                 "sub_writes": [
                     {"object_type": sw.object_type, "object_id": sw.object_id, "changes": sw.changes}
                     for sw in pending.sub_writes
