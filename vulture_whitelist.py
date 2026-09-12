@@ -43,6 +43,7 @@ reload_route
 config_history_route
 config_diff_route
 awaiting_writes_route
+write_detail_route
 list_users_route
 create_user_route
 visible_schema_route
@@ -214,3 +215,11 @@ object_count
 # FastAPI from the returned dict, like every other response field.
 awaiting_your_review
 proposed_by_you
+
+# WriteDetailResponse / FieldChangeResponse / ObjectChangeResponse
+# fields (api/routes.py) -- serialised by FastAPI from the returned
+# dicts, as with every other response model.
+readable
+current_value
+proposed_value
+has_redacted_fields

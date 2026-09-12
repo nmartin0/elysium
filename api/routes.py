@@ -550,6 +550,151 @@ def awaiting_writes_route(request: Request,
     ]
 
 
+class FieldChangeResponse(BaseModel):
+    """One field a pending write would change.
+
+    THE FIELD NAME IS ALWAYS PRESENT. Values are shown only where the
+    reviewer may read them, and a field they may not read is marked
+    REDACTED rather than omitted.
+
+    That follows Foundry, whose review surfaces "redact certain
+    resources or users contained in a record if you do not have the
+    necessary permissions to view that item" -- and it is a deliberate
+    reversal of an earlier design here that omitted such fields and
+    reported only a boolean "something is hidden".
+
+    Omitting leaks less and is worse. A reviewer seeing three fields
+    cannot tell whether that is the whole change or a fragment, so they
+    approve believing they saw everything -- the rubber-stamp problem
+    in its worst form, because it produces MORE confidence rather than
+    less. Redaction discloses that a field exists and withholds its
+    value, which is the smaller cost: the reviewer already knows this
+    write exists and which object it touches.
+    """
+
+    field_name: str
+    # False means the reviewer lacks read:{Type}.{field}. The two value
+    # fields are then null, and that is a REDACTION rather than a null
+    # value in the data.
+    readable: bool
+    current_value: Any = None
+    proposed_value: Any = None
+
+
+class ObjectChangeResponse(BaseModel):
+    object_type: str
+    object_id: str
+    operation: str
+    changes: list[FieldChangeResponse]
+
+
+class WriteDetailResponse(BaseModel):
+    """Everything a reviewer needs to decide, and nothing more."""
+
+    write_id: str
+    action_type_name: str
+    description: str
+    proposed_by: str
+    proposed_at: str
+    expires_at: str
+    awaiting_your_review: bool
+    proposed_by_you: bool
+    objects: list[ObjectChangeResponse]
+    # Whether ANY field in this write is redacted for this reviewer.
+    # Computed rather than derived by a client, so a UI cannot forget
+    # to warn -- the one thing a reviewer must not miss is that they
+    # are seeing a partial change.
+    has_redacted_fields: bool
+
+
+@router.get("/writes/{write_id}", response_model=WriteDetailResponse)
+def write_detail_route(write_id: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What a pending write would actually change.
+
+    SEPARATE FROM THE LISTING, because a diff needs the CURRENT value
+    of every changed field, which means a gated read per field per
+    object. A pending write can touch twenty objects; doing that for
+    every row of an inbox would cost hundreds of reads to render a
+    queue somebody is scanning rather than reading. Foundry splits it
+    the same way -- the inbox lists requests, and you open one to see
+    its tasks.
+
+    THE SAME VISIBILITY RULE AS THE LISTING: you may see a write you
+    could approve, or one you proposed. Anything else is a 404, not a
+    403, matching the uniform denial every other path here uses.
+    """
+    generation = _generation(request)
+    roles = generation.config.roles
+    store: PendingWriteStore = request.app.state.pending_writes
+
+    may_confirm_action = None
+    pending = None
+    for candidate_id, candidate in store.awaiting(lambda _pending: True):
+        if candidate_id != write_id:
+            continue
+        may_confirm_action = authorize(
+            current_user, roles, f"execute:{candidate.action_type_name}",
+        )
+        if may_confirm_action or candidate.user_id == current_user.user_id:
+            pending = candidate
+        break
+
+    if pending is None:
+        # Unknown, expired, and not-yours are one answer, deliberately.
+        raise HTTPException(status_code=404, detail="Unknown or expired pending write")
+
+    # WHAT THIS REVIEWER MAY READ, per type. visible_schema is already
+    # the single source of truth for that question everywhere else, so
+    # the diff asks it rather than re-deriving the grants.
+    visible = generation.mediator.visible_schema(current_user)
+
+    objects = []
+    redacted_anywhere = False
+    for sub_write in pending.sub_writes:
+        readable_fields = set((visible.get(sub_write.object_type) or {}).get("fields") or {})
+        changes = []
+        for field_name, proposed in sub_write.changes.items():
+            readable = field_name in readable_fields
+            redacted_anywhere = redacted_anywhere or not readable
+            changes.append({
+                "field_name": field_name,
+                "readable": readable,
+                # The CURRENT value comes from the ordinary read path,
+                # so MAC applies to the object as well as RBAC to the
+                # field. A null here is indistinguishable from a
+                # MAC-denied object, which is the same uniform denial
+                # every other read gives and is deliberate.
+                "current_value": generation.mediator.get_field(
+                    current_user, sub_write.object_type, sub_write.object_id, field_name,
+                ) if readable else None,
+                # Gated identically. A field you may not read is a
+                # field whose PROPOSED value you may not read either --
+                # otherwise proposing a write would be a way to learn
+                # what you are about to be told.
+                "proposed_value": proposed if readable else None,
+            })
+        objects.append({
+            "object_type": sub_write.object_type,
+            "object_id": str(sub_write.object_id),
+            "operation": sub_write.operation,
+            "changes": changes,
+        })
+
+    return {
+        "write_id": write_id,
+        "action_type_name": pending.action_type_name,
+        "description": pending.description,
+        "proposed_by": pending.user_id,
+        "proposed_at": pending.proposed_at.isoformat(),
+        "expires_at": store.expires_at(write_id),
+        "awaiting_your_review": bool(may_confirm_action),
+        "proposed_by_you": pending.user_id == current_user.user_id,
+        "objects": objects,
+        "has_redacted_fields": redacted_anywhere,
+    }
+
+
 class ConfirmWriteRequest(BaseModel):
     approved: bool
 

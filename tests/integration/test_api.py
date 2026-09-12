@@ -2985,3 +2985,89 @@ def test_the_pending_write_store_uses_the_configured_ttl(client):
     # And it is not the old hardcoded default, which is what makes the
     # assertion above mean something rather than coincide.
     assert store._ttl != timedelta(minutes=15)
+
+
+# --- the redacting diff: what a reviewer actually sees ---
+
+def test_a_reviewer_sees_the_values_they_may_read(client):
+    write_id = _propose_as(client, "alice")
+
+    body = client.get(f"/api/writes/{write_id}").json()
+
+    assert body["action_type_name"] == "UpdateCustomerName"
+    [changed] = body["objects"][0]["changes"]
+    assert changed["field_name"] == "name"
+    assert changed["readable"] is True
+    assert changed["proposed_value"] == "By alice"
+    assert body["has_redacted_fields"] is False
+
+
+def test_a_field_the_reviewer_cannot_read_is_REDACTED_not_omitted(client):
+    """THE DESIGN DECISION IN THIS COMMIT, and a reversal of an earlier
+    one.
+
+    Omitting an unreadable field leaks less and is worse: a reviewer
+    seeing three fields cannot tell whether that is the whole change or
+    a fragment, so they approve believing they saw everything. That is
+    the rubber-stamp problem in its worst form, because it produces
+    MORE confidence rather than less.
+
+    Foundry redacts -- "certain resources or users contained in a
+    record if you do not have the necessary permissions to view that
+    item" -- and this follows it.
+    """
+    write_id = _propose_as(client, "alice")
+
+    # Strip the reviewer's read grant on the field, keeping everything
+    # else: they may still execute the action, so they remain an
+    # eligible reviewer with no way to read what they are approving.
+    with_roles(client.app, editor={"allowed_actions": frozenset([
+        "read:Customer", "execute:UpdateCustomerName",
+    ])})
+
+    body = client.get(f"/api/writes/{write_id}").json()
+    [changed] = body["objects"][0]["changes"]
+
+    # The field is STILL LISTED -- that is the redaction.
+    assert changed["field_name"] == "name"
+    assert changed["readable"] is False
+    assert changed["current_value"] is None
+    assert changed["proposed_value"] is None
+    assert body["has_redacted_fields"] is True
+
+
+def test_the_proposed_value_is_gated_as_tightly_as_the_current_one(client):
+    # Otherwise proposing a write would be a way to learn what you are
+    # about to be told: a caller with execute but not read could read
+    # back their own proposal's values through this endpoint.
+    write_id = _propose_as(client, "alice")
+    with_roles(client.app, editor={"allowed_actions": frozenset([
+        "read:Customer", "execute:UpdateCustomerName",
+    ])})
+
+    body = client.get(f"/api/writes/{write_id}").json()
+
+    assert body["objects"][0]["changes"][0]["proposed_value"] is None
+
+
+def test_an_unknown_write_is_a_404_not_a_403(client):
+    # Uniform denial: unknown, expired and not-yours are one answer.
+    _propose_as(client, "alice")
+
+    assert client.get("/api/writes/no-such-id").status_code == 404
+
+
+def test_a_write_you_may_neither_review_nor_claim_is_a_404(client):
+    write_id = _propose_as(client, "alice")
+    _filter_user(client, "outsider")
+
+    assert client.get(f"/api/writes/{write_id}").status_code == 404
+
+
+def test_reading_the_detail_does_not_consume_the_write(client):
+    # An inbox is opened and closed. If looking at a write claimed it,
+    # the reviewer would lose the ability to approve it by reading it.
+    write_id = _propose_as(client, "alice")
+
+    assert client.get(f"/api/writes/{write_id}").status_code == 200
+    assert client.get(f"/api/writes/{write_id}").status_code == 200
