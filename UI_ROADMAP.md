@@ -1685,3 +1685,166 @@ A full Ontology Manager (self-service schema editing), point-and-click
 analysis beyond the three basic charts, trigger-based automations, and
 a full editable graph canvas. Each is real and each is a separate
 project; the near-term four do not depend on any of them.
+
+---
+
+## The design system: what was checked, what was rejected, what to build
+
+Five design inputs arrived in one conversation -- a token spec, a UI
+spec (twice), shell layout guidance, a frontend architecture fragment,
+and one rule. None of it was written down. Recorded with what was
+CHECKED AGAINST THE CODE rather than assumed, because a third of it
+turned out to already exist and two "bugs" turned out to be my own
+bad greps.
+
+### THE RULE, settled first: Blueprint always wins
+
+Stated directly: **if a new colour or component means overriding
+Blueprint, do not do it.** tokens.css already argued this -- "inventing
+a parallel palette would mean two that drift" -- and it now applies
+beyond the palette.
+
+The consequence is larger than it sounds. Blueprint 6 ships intents,
+a gray ramp, a dark theme, an icon set and a font stack. So an external
+spec's status colours, accents, dark hexes and icon library are all OUT.
+What survives is its DISCIPLINE -- contrast stated per token, status
+always paired with a label, accent functional only -- not its values.
+
+### Already true. Checked, not assumed.
+
+- Chrome fixed in px, canvas fluid -- the layout guide's "single most
+  important rule", and what tokens.css already does
+- Rail 56px, sidebar 240px, top bar 48px, sidebar rows 32px
+- 4px spacing base, 8px rhythm, 2px radius matched to Blueprint's
+- WCAG 2.2 target-size floor recorded as a token
+- `font-variant-numeric: tabular-nums` in use
+- System font stack, which also ANSWERS THE FONT LICENCE QUESTION:
+  nothing to redistribute, no font-CDN request, works air-gapped --
+  which matters for a deployment beside a customer's databases
+- The shell is already one CSS Grid driven by custom properties
+- Zero `!important` across the entire UI
+- `minmax(0, 1fr)` on grid tracks -- the min-width:auto blowout already
+  solved where it bites
+- Sub-apps create zero landmarks; the shell has header, nav, aside AND
+  main, each with recorded reasoning
+- Navigation uses Blueprint MenuItem with a real `href`, so middle-click,
+  back and open-in-new-tab work
+- Four sub-apps, so the rail's three-to-seven guidance holds
+
+TWO ITEMS I LISTED AS BUGS WERE MY OWN ERRORS. I reported the
+authenticated shell as having no `<main>` and navigation as possibly
+using buttons. Both were wrong: my grep covered ui/src/App.tsx and
+shell-api but not ui/src/Shell.tsx, which is where the authenticated
+shell lives. Recorded because "checked" and "checked the right file"
+are different claims, and the second one is the one that counts.
+
+### Does not apply to Elysium
+
+- **Workspace switcher and tenant/white-label logos.** Elysium is
+  SINGLE-TENANT, stated in README.md and PRINCIPLES.md. There are no
+  workspaces to switch between.
+- **Most of the branding table.** There is no logo -- zero SVGs in ui/.
+  Splash screens, favicons, export lockups and marketing headers are a
+  brand asset project, not a usability one.
+- **Offline banner.** Elysium runs beside the customer's databases,
+  often on the same network. "Offline" is a different failure mode
+  than for a SaaS app.
+- **Radix / React Aria** for focus traps and popovers. The PRINCIPLE
+  is right -- do not hand-roll these -- but Blueprint already ships
+  Popover, Dialog, Menu and Omnibar. A second component system is the
+  drift the rule exists to prevent.
+- **Lucide / Phosphor icons.** @blueprintjs/icons is the dependency.
+  Take only the SIZE convention: 16px inline, 20px rail.
+
+### REMOVING THE TOP BAR: considered and rejected
+
+Raised after observing that a Palantir product appeared not to have
+one, and that the canvas would be larger without it.
+
+REJECTED, and the evidence is in this repo: it was previously the
+other way. ui/src/Shell.test.tsx records that the theme toggle and user
+menu used to live in the rail, that this made "a rail doing two jobs",
+and that it "is why the columns started at different heights". The
+header was introduced to fix that, and there is a test pinning each
+half.
+
+The arithmetic is also weaker than it feels: 48px is 4.4% of a 1080p
+display, while the collapsible 240px sidebar is FIVE TIMES that and
+already half-built. Density controls recover more vertical space than
+the header costs. And the command palette trigger, notifications and
+breadcrumbs all need somewhere to live -- the palette especially, whose
+whole value is being visibly discoverable.
+
+If the header looks disproportionate in practice, the fix is its
+CONTENTS -- an `<h1>Elysium</h1>` where a compact mark would do -- not
+the region.
+
+### To build, in dependency order
+
+**Structural run first**, because each makes the next cheaper:
+
+1. **Cascade layers.** `@layer reset, tokens, base, layout, components,
+   utilities, overrides`, declared once. A later layer wins regardless
+   of specificity, so sitting beside Blueprint stops requiring
+   escalation. Zero `!important` today; this is how that stays true.
+2. **Token architecture.** Primitives, semantic, component. Components
+   consume layer 3 only. Cheap now and expensive after the dark theme,
+   because every component written before the split gets revisited.
+3. **Dark theme** via Blueprint's `.bp5-dark`, with a persisted toggle.
+   Most of the visual change asked for, for almost no work.
+
+**Then the two biggest user-visible wins:**
+
+4. **Chart colour scale.** LIVE, NOT HYPOTHETICAL -- echarts is a
+   dependency and shell-api/src/components/Chart.tsx already exists,
+   so the "before the first dashboard ships" window has closed. Needs
+   categorical (6-8 hues, CVD-safe), sequential and diverging scales
+   on both themes. The ONE palette decision Blueprint does not cover.
+5. **View-state matrix.** Nine states. Thirty-one components handle
+   loading or empty; ZERO use Blueprint's NonIdealState. Elysium can
+   already distinguish permission-denied from empty (uniform denial)
+   and stale from fresh (/data-freshness) and surfaces neither.
+
+**Then:**
+
+6. **Container queries.** Zero exist, three media queries. A
+   component's real constraint is its PANEL width, which changes when
+   the sidebar collapses -- not the viewport. Cheap at three, expensive
+   at thirty, and a precondition for per-sub-app sidebar collapse.
+7. **Scrolling.** overscroll-behavior: contain, sticky headers, scroll
+   restoration on back and on sub-app return, overflow-anchor, total
+   counts ("1,284 entities"), no row-shift on load-more, virtualize
+   above ~200.
+8. **Formatting.** Correctness, not style. UTC vs local, relative under
+   24h, timezone suffixes, fixed precision, IDs monospace with a copy
+   affordance, and NULL VS ZERO VS UNKNOWN VISUALLY DISTINCT -- a blank
+   cell in Elysium could mean no value, or could mean MAC hid it.
+9. **min-inline-size: 0 as a rule**, not three instances.
+
+**Deferred, with reasons:**
+
+- **Keyboard model.** Every source calls it expensive to retrofit and
+  that is true, but the ROVING-FOCUS half is a power-user feature and
+  nobody has established who uses Elysium daily. The FOCUS-RING half is
+  an accessibility floor and is unconditional -- fold it into the token
+  work.
+- **Command palette.** Premature at four sub-apps with two-level
+  navigation. Revisit at six or seven. Blueprint's Omnibar when it
+  happens.
+- **Table built properly once.** Right in principle and large; it
+  consumes the token split and the formatting rules, so it goes after
+  both.
+- **URL as state.** Real value, touches every view, and wants the state
+  matrix settled first.
+- **Sub-app manifest.** App.tsx imports each panel explicitly, so a
+  fifth sub-app edits the shell. Worth fixing only if a fifth is
+  coming -- a genuine open question.
+- **Motion, density, forms, canvas floor, sidebar behaviour.** All
+  worth doing, none urgent, natural follow-ons.
+
+### One rule that is a convention, not a guarantee
+
+Sub-apps create no landmarks today because four authors happened to
+agree, not because anything checks. A grep test over app-*/src would
+be three lines and would fail the day someone adds one -- the same
+pattern as the guards in tests/unit/test_generation_pin.py.
