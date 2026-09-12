@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { Classes } from '@blueprintjs/core'
+import { cleanup, render, screen } from '@testing-library/react'
 
 import Chart from './Chart'
 
@@ -111,6 +112,39 @@ describe('Chart', () => {
       const [withAxis] = setOption.mock.calls[0] as [Record<string, unknown>]
       expect((withAxis.xAxis as Record<string, unknown>).axisLabel).toBeDefined()
       expect(withAxis.yAxis).toBeUndefined()
+    })
+
+    it('follows the theme, reading the class the shell actually sets', () => {
+      /**
+       * THE BUG THIS CATCHES, which shipped and was invisible until an
+       * external audit read the line. The palette read
+       * `documentElement.classList.contains('bp5-dark')`: Blueprint 6
+       * emits `bp6-dark`, and the shell toggles the class on
+       * document.BODY. Either error alone made every chart draw
+       * light-theme axis labels and gridlines onto a dark surface.
+       *
+       * Asserting the class NAME as a literal would reproduce the
+       * original mistake -- a test naming 'bp5-dark' passes against
+       * code naming 'bp5-dark'. So this drives the REAL toggle: set
+       * the class the way Shell.tsx sets it, and check the output
+       * moved.
+       */
+      document.body.classList.add(Classes.DARK)
+      try {
+        render(<Chart option={OPTION} ariaLabel="Dark" />)
+        const [applied] = setOption.mock.calls[0] as [Record<string, unknown>]
+        const darkEighth = (applied.color as string[])[7]
+
+        setOption.mockClear()
+        cleanup()
+        document.body.classList.remove(Classes.DARK)
+        render(<Chart option={OPTION} ariaLabel="Light" />)
+        const [lightApplied] = setOption.mock.calls[0] as [Record<string, unknown>]
+
+        expect(darkEighth).not.toBe((lightApplied.color as string[])[7])
+      } finally {
+        document.body.classList.remove(Classes.DARK)
+      }
     })
 
     it("leaves a caller's own axis label colour alone", () => {

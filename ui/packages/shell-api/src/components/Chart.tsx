@@ -22,6 +22,7 @@
  * than trusting the call is there.
  */
 
+import { Classes } from '@blueprintjs/core'
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts/core'
 import { BarChart, GraphChart, PieChart } from 'echarts/charts'
@@ -89,7 +90,19 @@ export interface ChartProps {
  * an empty grid behind it.
  */
 function withTheme(option: Record<string, unknown>): Record<string, unknown> {
-  const theme = chartTheme(document.documentElement.classList.contains('bp5-dark'))
+  // Classes.DARK, not a literal, and document.body, not
+  // documentElement -- BOTH were wrong here, and each one alone was
+  // enough to make every chart draw light-theme axis labels and
+  // gridlines onto a dark surface. Silently, because the light palette
+  // looks perfectly fine on its own.
+  //
+  // Shell.tsx already warned about the literal at the exact line that
+  // sets the class: Blueprint 6 emits `bp6-dark` where 5 emitted
+  // `bp5-dark`, and "a hardcoded string silently stops working on a
+  // major upgrade, and the test asserting the same literal would keep
+  // passing". That comment exists because it had happened once
+  // before. This was the second time.
+  const theme = chartTheme(document.body.classList.contains(Classes.DARK))
   const themed: Record<string, unknown> = { color: theme.categorical, ...option }
 
   for (const axis of ['xAxis', 'yAxis'] as const) {
