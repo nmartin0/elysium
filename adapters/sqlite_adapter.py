@@ -328,6 +328,40 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         with self._connection() as conn:
             return _run_query(conn, f"SELECT {column_list} FROM {table_name}")
 
+    def columns_present(self, table_name: str) -> set[str]:
+        """Which columns this table ACTUALLY has, right now.
+
+        A ZERO-ROW SELECT, not PRAGMA table_info, and the reason is a
+        security control rather than taste. This adapter reads through
+        a connection whose authorizer permits SQLITE_SELECT, READ and
+        FUNCTION and denies everything else -- PRAGMA included, because
+        PRAGMA can write (journal_mode, synchronous, and others).
+        Reaching for PRAGMA here returned "not authorized", and the fix
+        is to use the operation that IS permitted, never to widen the
+        authorizer for the convenience of one query.
+
+        `LIMIT 0` reads no rows at all, so the answer is the table's
+        SHAPE and costs nothing on a large table -- and, unlike
+        inspecting a returned row, it is still correct for an empty
+        table. A table can be emptied and reshaped in the same
+        migration.
+
+        Interpolated, for the reason read_all_rows() above already
+        states: table names come from ontology_schema.yaml, validated
+        at load, never caller-supplied.
+        """
+        try:
+            with self._connection() as conn:
+                cursor = conn.execute(f"SELECT * FROM {table_name} LIMIT 0")
+                return {description[0] for description in cursor.description}
+        except sqlite3.Error:
+            # An absent table, an unopenable file, a denied read: all
+            # answer the caller's question the same way. Nothing here
+            # satisfies a declared field, and a caller asking which
+            # columns exist should not also have to handle "the file is
+            # gone" separately.
+            return set()
+
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         via_table = field_config["via_table"]
         via_column = field_config["via_column"]

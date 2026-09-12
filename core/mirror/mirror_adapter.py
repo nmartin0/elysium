@@ -239,6 +239,25 @@ class MirrorReadAdapter(ExternalReadAdapter):
             return []
         return arrow.to_pylist()
 
+    def columns_present(self, table_name: str) -> set[str]:
+        """What the MIRROR holds, which is not what the source holds.
+
+        Worth being clear about, because the sync uses this method on
+        the SOURCE adapter to detect a vanished column. Asked of the
+        mirror it answers a different question -- what was copied here
+        as of the pinned snapshot -- and that is the honest answer for
+        an adapter that reads a copy.
+
+        A table absent from the catalog returns an empty set, matching
+        the contract: every declared column is then missing, which is
+        accurate for a table that is not there.
+        """
+        try:
+            table = self._catalog.load_table(f"{self.silo_name}.{table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return set()
+        return {field.name for field in table.schema().fields}
+
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         via_table = field_config["via_table"]
         via_column = field_config["via_column"]

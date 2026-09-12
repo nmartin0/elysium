@@ -193,6 +193,27 @@ class ExternalReadAdapter(ReadAdapter):
         """
 
     @abstractmethod
+    def columns_present(self, table_name: str) -> set[str]:
+        """Which columns the source table ACTUALLY has, right now.
+
+        For the sync, and for one question: has a column the ontology
+        declares gone away? Until this existed, a vanished column
+        surfaced as whatever the adapter's own read happened to raise
+        -- storage behaviour standing in for a policy, which is the
+        thing core/mirror/ is trying to stop doing.
+
+        RETURNS THE TRUTH ON DISK, not the ontology's opinion of it.
+        The caller already knows what it declared; the whole value here
+        is the difference between the two.
+
+        An absent or unreadable table returns an EMPTY SET rather than
+        raising. Every declared column is then missing, which is
+        accurate -- a dropped table is a dropped column for each of
+        them -- and it lets one code path describe both without the
+        caller distinguishing a failure from an answer.
+        """
+
+    @abstractmethod
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         """IDs of objects referencing this one. target_id_column is
         pre-resolved by DataMediator (it requires cross-type schema
