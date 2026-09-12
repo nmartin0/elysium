@@ -198,17 +198,26 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
                     <td>{user.disabled ? 'Disabled' : 'Active'}</td>
                     <td className="user-table__actions">
                       {user.disabled ? (
-                        <button onClick={() => handleAction(enableUser, user.username)}>Enable</button>
+                        <Button small onClick={() => handleAction(enableUser, user.username)}>
+                          Enable
+                        </Button>
                       ) : (
-                        <button onClick={() => handleAction(disableUser, user.username)}>Disable</button>
+                        <Button small onClick={() => handleAction(disableUser, user.username)}>
+                          Disable
+                        </Button>
                       )}
-                      <button onClick={() => handleAction(logoutAllForUser, user.username)}>Log out sessions</button>
-                      <button onClick={() => handleToggleSchema(user.username)}>
+                      <Button small onClick={() => handleAction(logoutAllForUser, user.username)}>
+                        Log out sessions
+                      </Button>
+                      <Button small onClick={() => handleToggleSchema(user.username)}>
                         {schemaByUsername[user.username] ? 'Hide schema' : 'View schema'}
-                      </button>
-                      <button className="danger" onClick={() => setPendingDeleteUsername(user.username)}>
+                      </Button>
+                      {/* intent="danger", not a `danger` class: Blueprint
+                          already HAS a destructive intent, and its own is
+                          theme-aware where the class was a fixed red. */}
+                      <Button small intent="danger" onClick={() => setPendingDeleteUsername(user.username)}>
                         Delete
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                   {/* !== undefined, not a bare truthy check -- schemaByUsername's

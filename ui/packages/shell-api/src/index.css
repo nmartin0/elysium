@@ -538,8 +538,17 @@ label {
   font-size: 0.9rem;
 }
 
-input,
-textarea {
+/* SCOPED to the plain controls that still exist, not every input in
+ * the app. As a bare element selector this also styled every Blueprint
+ * InputGroup and TextArea, fighting their own geometry -- the same
+ * fault the `button` rule below had, just less visible because it set
+ * borders and padding rather than colour.
+ *
+ * Two plain controls remain: ObjectSearchPanel's search box and
+ * QueryPanel's textarea. Everything else is a Blueprint widget and
+ * styles itself. */
+.object-search__controls input,
+.query-panel__input {
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
@@ -547,28 +556,32 @@ textarea {
   font-family: inherit;
 }
 
-button {
-  padding: 0.55rem 1rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--surface-chrome);
-  color: var(--text-on-danger); /* on the danger red below, not a theme surface */
-  font-size: 0.95rem;
-  cursor: pointer;
-  text-decoration: none;
-  display: inline-block;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-button.secondary {
-  background: transparent;
-  border: 1px solid var(--border-control);
-  color: var(--text-primary);
-}
+/* NO BARE `button` RULE, deliberately, and this is worth knowing
+ * before anyone adds one back.
+ *
+ * There was one. It set `background: var(--surface-chrome)` on EVERY
+ * button in the app -- including every Blueprint <Button>, because
+ * Blueprint renders a real <button> element. --surface-chrome is dark
+ * in BOTH themes by design, since it is furniture rather than content,
+ * so every Blueprint button rendered dark-on-light.
+ *
+ * Reported as "the Table and Charts navigation buttons are dark in
+ * light mode and it looks awful". It was legacy from before the
+ * Blueprint migration and had been silently overriding the library
+ * ever since -- an element selector cannot be scoped away by a
+ * component, so nothing downstream could have fixed it.
+ *
+ * The `.secondary` and `.danger` companions went with it: .secondary
+ * had no users left at all (confirmed by grep -- only comments
+ * describing its removal), and .danger's single user now uses
+ * Blueprint's own intent="danger", which is theme-aware where a fixed
+ * red was not.
+ *
+ * THE RULE THIS LEAVES: Blueprint's components style themselves and we
+ * do not reach in. An element selector is the one thing a component
+ * cannot opt out of, so it is the one kind of rule that must never
+ * describe a widget the library owns.
+ */
 
 /* .error class removed -- confirmed dead via a real, whole-frontend
    grep before removing it, not assumed: AdminPanel.tsx and LoginForm.

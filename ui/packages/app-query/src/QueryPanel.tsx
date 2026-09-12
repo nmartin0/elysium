@@ -87,6 +87,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
     <Workspace>
       <form onSubmit={handleSubmit}>
         <textarea
+          className="query-panel__input"
           value={queryText}
           onChange={(event) => setQueryText(event.target.value)}
           placeholder="Ask a question…"

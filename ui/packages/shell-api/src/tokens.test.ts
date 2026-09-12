@@ -95,3 +95,50 @@ describe('token layers', () => {
     expect(overridden.length).toBeGreaterThan(4)
   })
 })
+
+describe('element selectors do not describe Blueprint widgets', () => {
+  /**
+   * THE BUG THIS GUARDS. index.css carried a bare `button { background:
+   * var(--surface-chrome) }`. Blueprint renders a real <button>, and
+   * --surface-chrome is dark in BOTH themes because it is furniture --
+   * so every Blueprint button in the app rendered dark-on-light.
+   *
+   * AN ELEMENT SELECTOR IS THE ONE THING A COMPONENT CANNOT OPT OUT OF.
+   * A class can be not-applied and a variable can be overridden, but a
+   * bare `button` rule reaches every button that will ever exist,
+   * including ones the library owns. That is why this is worth a test
+   * rather than a convention.
+   *
+   * `a` is excluded: Blueprint's AnchorButton aside, links are ours to
+   * style and there is no bare `a` rule today anyway.
+   */
+  const OWNED_BY_BLUEPRINT = ['button', 'select', 'input', 'textarea', 'table']
+
+  /**
+   * ONE EXCEPTION, and the distinction matters. A bare selector
+   * imposing our DESIGN on a Blueprint widget is the bug. A bare
+   * selector enforcing an accessibility FLOOR across everything is
+   * legitimate and should reach Blueprint's widgets too -- the
+   * min-height rule applying WCAG 2.2's target size is exactly that.
+   *
+   * Distinguished by what the rule DECLARES, not by what it selects.
+   */
+  const ACCESSIBILITY_FLOOR = /min-height|min-width|outline/
+
+  it('declares no bare rule imposing our design on an element Blueprint renders', () => {
+    for (const css of stylesheets) {
+      const blocks = css.replace(/\/\*[\s\S]*?\*\//g, '').split('}')
+      const offenders = blocks.filter((block) => {
+        const selector = block.split('{')[0] ?? ''
+        const body = block.split('{')[1] ?? ''
+        const bare = selector
+          .split(',')
+          .map((part) => part.trim())
+          .some((part) => OWNED_BY_BLUEPRINT.includes(part))
+        return bare && !ACCESSIBILITY_FLOOR.test(body)
+      })
+
+      expect(offenders).toEqual([])
+    }
+  })
+})
