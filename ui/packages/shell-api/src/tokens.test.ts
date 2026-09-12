@@ -142,3 +142,38 @@ describe('element selectors do not describe Blueprint widgets', () => {
     }
   })
 })
+
+describe('layout responds to the canvas, not the viewport', () => {
+  /**
+   * A media query asks how wide the VIEWPORT is. What decides whether a
+   * two-column workspace fits is how wide the CANVAS is, and those are
+   * different numbers whenever the sidebar is open -- at a 1200px
+   * viewport with the sidebar out, the canvas is about 900px.
+   *
+   * The distinction is not stylistic. It will widen further once the
+   * sidebar collapses per sub-app, and again if an inspector is added.
+   */
+  const shell = read('packages/shell-api/src/index.css')
+
+  it('declares the canvas as a named query container', () => {
+    // NAMED, so a query reads as asking about the canvas rather than
+    // about whichever ancestor happens to be nearest -- which changes
+    // silently when someone adds a container in between.
+    expect(shell).toMatch(/\.app__content\s*\{[^}]*container-name:\s*canvas/s)
+    expect(shell).toMatch(/\.app__content\s*\{[^}]*container-type:\s*inline-size/s)
+  })
+
+  it('sizes the workspace against the canvas', () => {
+    expect(shell).toMatch(/@container canvas \(max-width/)
+  })
+
+  it('does not decide the workspace layout from the viewport', () => {
+    // THE REGRESSION THIS GUARDS. A media query reintroduced here
+    // would work at most viewport widths and fail precisely when the
+    // sidebar is open -- the case nobody tests by hand, because the
+    // window looks plenty wide.
+    const mediaBlocks = [...shell.matchAll(/@media[^{]*\{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? '')
+
+    expect(mediaBlocks.filter((body) => body.includes('.workspace'))).toEqual([])
+  })
+})

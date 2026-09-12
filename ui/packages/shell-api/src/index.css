@@ -309,6 +309,14 @@ body {
    * the overflow the shell height was set to prevent. */
   min-width: 0;
   min-height: 0;
+  /* THE CANVAS IS A QUERY CONTAINER, so what is inside it can size
+   * against the space it actually has rather than against the
+   * viewport. Those are different numbers whenever the sidebar is
+   * open, and they will diverge further once the sidebar collapses
+   * per sub-app. Named, so a query reads as asking about the canvas
+   * rather than about whichever ancestor happens to be nearest. */
+  container-type: inline-size;
+  container-name: canvas;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -455,19 +463,38 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* Below this, a two-column workspace leaves neither column usable. */
-/* THE breakpoint, and there is only one.
+/* Below this, a two-column workspace leaves neither column usable.
  *
- * Three widths were in play: the workspace collapsed to one column at
- * 900, the sidebar overlaid at 1100, and it auto-collapsed at 640.
- * Between them a sidebar could float over a two-column workspace with
- * nothing collapsing it, which is what hid the Back button and the
- * left edge of every screen.
+ * A CONTAINER QUERY, not a media query, and the difference is the
+ * whole point. A media query asks how wide the VIEWPORT is; what
+ * decides whether two columns fit is how wide the CANVAS is, and those
+ * are different numbers whenever the sidebar is open. At a 1200px
+ * viewport with the sidebar out, the canvas is about 900px -- narrow
+ * enough that two columns do not work -- and a viewport query says
+ * nothing is wrong because 1200 > 1099.
  *
- * One number now, matched in Shell.tsx, so the three behaviours that
- * depend on it change together. Derived: below this a config pane
- * plus content plus a rail leaves the content unusable. */
-@media (max-width: 1099px) {
+ * THIS REPLACES A COUPLING RATHER THAN BREAKING ONE, which matters
+ * because the coupling was itself a fix. Three widths were once in
+ * play: the workspace collapsed at 900, the sidebar overlaid at 1100,
+ * and it auto-collapsed at 640. Between them a sidebar could float
+ * over a two-column workspace with nothing collapsing it, which hid
+ * the Back button and the left edge of every screen. One shared number
+ * fixed that by making the three move together.
+ *
+ * Asking the canvas directly is strictly stronger: the workspace
+ * collapses whenever it is ACTUALLY narrow, whatever made it narrow --
+ * a small viewport, an open sidebar, a future inspector. There is no
+ * gap between the numbers to fall into, because there is one number
+ * and it measures the thing that matters.
+ *
+ * Shell.tsx keeps its own 1099px media query, correctly: whether the
+ * SIDEBAR becomes a drawer is a viewport question, not a canvas one.
+ *
+ * The threshold is 840px rather than 1099: the canvas at a 1099px
+ * viewport with the rail (56px) and an open sidebar (240px) is about
+ * 800px, so this fires at close to the same real width it used to --
+ * it is the same judgement, measured where it applies. */
+@container canvas (max-width: 840px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
   }
