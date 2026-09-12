@@ -2838,6 +2838,86 @@ def test_an_unauthenticated_reload_is_refused(client):
     assert client.post("/api/admin/reload").status_code in (401, 403)
 
 
+def _propose_as(client, username, role="editor"):
+    """Logs a user in and has them propose a real write. Returns its id."""
+    client.app.state.user_directory.create_user(username, "pw", "us-west", role)
+    _login(client, username, "pw")
+    response = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_001", "new_name": f"By {username}"}},
+        headers=_csrf_headers(client),
+    )
+    assert response.status_code == 202, response.text
+    return response.json()["pending_write"]["id"]
+
+
+def test_a_colleague_sees_a_write_they_did_not_propose(client):
+    """THE WHOLE POINT OF THE INBOX, and what three controls showed my
+    first tests were not checking: they called the endpoint against an
+    EMPTY store, so they asserted the response shape and nothing about
+    who sees what.
+    """
+    _propose_as(client, "alice")
+    _propose_as(client, "bob")  # logs bob in, replacing alice's session
+
+    body = client.get("/api/writes/awaiting").json()
+    mine = [entry for entry in body if entry["proposed_by"] == "alice"]
+
+    assert mine, "bob cannot see a write alice proposed"
+    assert mine[0]["awaiting_your_review"] is True
+    assert mine[0]["proposed_by_you"] is False
+
+
+def test_a_proposer_sees_their_own_write(client):
+    # Without this a proposer who cannot approve their own write -- the
+    # four-eyes case -- has no way to learn whether anyone looked at
+    # it. A proposal that vanishes into silence is one people stop
+    # making.
+    _propose_as(client, "alice")
+
+    body = client.get("/api/writes/awaiting").json()
+    mine = [entry for entry in body if entry["proposed_by"] == "alice"]
+
+    assert mine
+    assert mine[0]["proposed_by_you"] is True
+
+
+def test_a_proposer_still_sees_their_write_after_losing_the_grant(client):
+    """WHEN THE `proposed_by_you` CLAUSE IS ACTUALLY LOAD-BEARING.
+
+    Found by a control that did NOT fire: in this deployment every
+    proposer also holds the execute grant, so the clause is unreachable
+    in the ordinary case and removing it changed nothing.
+
+    It matters when a grant is revoked after proposing -- a role
+    change, or a deployment that separates proposing from approving.
+    The proposer must still be able to see that their write exists,
+    or it disappears from their view entirely while continuing to sit
+    in somebody else's queue.
+    """
+    _propose_as(client, "alice")
+
+    # Strip the grant alice proposed under, leaving her everything else.
+    with_roles(client.app, editor={"allowed_actions": frozenset(["read:Customer"])})
+
+    body = client.get("/api/writes/awaiting").json()
+    mine = [entry for entry in body if entry["proposed_by"] == "alice"]
+
+    assert mine, "alice cannot see her own write after losing the grant"
+    assert mine[0]["proposed_by_you"] is True
+    assert mine[0]["awaiting_your_review"] is False
+
+
+def test_someone_with_neither_relationship_sees_nothing(client):
+    # THE CONTROL that matters. Without it, a predicate returning
+    # everything would turn the inbox into a directory of every write
+    # in the deployment -- and the two tests above would still pass.
+    _propose_as(client, "alice")
+    _filter_user(client, "outsider")  # no execute grant, proposed nothing
+
+    assert client.get("/api/writes/awaiting").json() == []
+
+
 def test_awaiting_writes_lists_what_this_user_may_decide(client):
     """The inbox that makes four-eyes reachable.
 
@@ -2877,6 +2957,7 @@ def test_awaiting_writes_never_returns_the_changed_values(client):
     assert declared == {
         "write_id", "action_type_name", "description", "proposed_by",
         "proposed_at", "object_count", "expires_at",
+        "awaiting_your_review", "proposed_by_you",
     }
     for leaky in ("changes", "sub_writes", "object_id", "object_ids", "parameters"):
         assert leaky not in declared

@@ -209,3 +209,8 @@ recorded_at
 # serialiser from the returned dicts, as with every response model.
 proposed_by
 object_count
+
+# AwaitingWriteResponse's own flags (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field.
+awaiting_your_review
+proposed_by_you

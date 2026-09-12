@@ -216,3 +216,39 @@ class TestTheTTLIsConfigurable:
         )
 
         assert config.pending_write_ttl_minutes >= 60
+
+
+class TestBothCategories:
+    """An inbox shows what you may decide AND what you proposed.
+
+    Following Foundry, whose Approvals inbox filters "Your inbox" and
+    "Created by you" rather than showing only one.
+
+    THE PROPOSER NEEDS THE SECOND ESPECIALLY ONCE FOUR-EYES IS ON: they
+    cannot approve their own write, so without this they propose
+    something and have no way to see whether anyone has looked at it. A
+    proposal that vanishes into silence is one people stop making.
+    """
+
+    def test_a_proposer_sees_their_own_write_even_without_the_grant(self):
+        store, _ = _store()  # proposed by alice
+
+        listed = store.awaiting(lambda pending: pending.user_id == "alice")
+
+        assert len(listed) == 1
+
+    def test_a_reviewer_sees_a_write_they_did_not_propose(self):
+        store = PendingWriteStore()
+        store.store(_pending(user_id="bob"))
+
+        listed = store.awaiting(lambda _pending: True)
+
+        assert [pending.user_id for _id, pending in listed] == ["bob"]
+
+    def test_someone_with_neither_relationship_sees_nothing(self):
+        # THE CONTROL. A predicate that returned everything would make
+        # the inbox a directory of every write in the deployment.
+        store = PendingWriteStore()
+        store.store(_pending(user_id="bob"))
+
+        assert store.awaiting(lambda pending: pending.user_id == "carol") == []

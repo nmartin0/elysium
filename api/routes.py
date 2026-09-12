@@ -483,6 +483,16 @@ class AwaitingWriteResponse(BaseModel):
     proposed_at: str
     object_count: int
     expires_at: str
+    # WHETHER THIS IS YOURS TO DECIDE OR YOURS TO WAIT ON. A reviewer
+    # and a proposer see the same row and need different things from
+    # it, and a client that had to compare proposed_by against the
+    # current user would be re-deriving something the server already
+    # knows.
+    #
+    # Both can be true: nothing stops a deployment without a four-eyes
+    # rule from letting someone approve their own write.
+    awaiting_your_review: bool
+    proposed_by_you: bool
 
 
 @router.get("/writes/awaiting", response_model=list[AwaitingWriteResponse])
@@ -505,8 +515,21 @@ def awaiting_writes_route(request: Request,
     def may_confirm(candidate) -> bool:
         return authorize(current_user, roles, f"execute:{candidate.action_type_name}")
 
+    def relevant(candidate) -> bool:
+        # EITHER YOURS TO DECIDE OR YOURS TO WAIT ON, following
+        # Foundry's inbox, which filters "Your inbox" and "Created by
+        # you" rather than showing only one.
+        #
+        # A proposer needs the second especially once four-eyes is on:
+        # they CANNOT approve their own write, so without this they
+        # propose something and then have no way to see whether anyone
+        # has looked at it. Nothing else in the product would tell
+        # them, and a proposal that vanishes into silence is one people
+        # stop making.
+        return may_confirm(candidate) or candidate.user_id == current_user.user_id
+
     store: PendingWriteStore = request.app.state.pending_writes
-    waiting = store.awaiting(may_confirm)
+    waiting = store.awaiting(relevant)
 
     return [
         {
@@ -517,6 +540,8 @@ def awaiting_writes_route(request: Request,
             "proposed_at": pending.proposed_at.isoformat(),
             "object_count": len(pending.sub_writes),
             "expires_at": store.expires_at(write_id),
+            "awaiting_your_review": may_confirm(pending),
+            "proposed_by_you": pending.user_id == current_user.user_id,
         }
         # OLDEST FIRST. A reviewer works through a queue, and the write
         # closest to expiring is the one whose decision is about to be
