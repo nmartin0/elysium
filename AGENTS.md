@@ -81,6 +81,44 @@ work and start the next task on a tree missing it. That happened here;
 the commit was recoverable from the reflog only because it was
 noticed within a few minutes.
 
+## Run the feature before committing it
+
+**A PASSING TEST SUITE IS NOT EVIDENCE THAT A FEATURE WORKS.** Before
+committing anything that adds a capability, EXERCISE IT THROUGH THE
+REAL ENTRY POINT -- with a throwaway probe script, deleted afterwards.
+Not the handler: the loop that calls it. Not a fake: the real mediator,
+the real deployment config, the real database.
+
+This exists because three shipped commits crashed on the user's first
+real run, and every one passed a full green suite first:
+
+- `get_object` gained an `object_ids` form. Seventeen tests covered the
+  step handler and the parser. Nothing covered `run()`, which sits
+  between them -- and `run()` raised KeyError on the first query.
+- `aggregate_object` was made reachable. Tests proved the parser
+  accepted it. Nothing ever EXECUTED one, so a link column reached
+  SQLite and the loop died.
+- Configuration reload shipped. Tests proved it reloaded. Nothing
+  created a user afterwards, so a stale roles copy went unnoticed.
+
+**Cleaner commits would not have caught any of them.** One minute of
+running the feature would have caught all three. The pattern already
+exists in this repository: the probe that reproduced the `get_object`
+crash against the real mediator was written AFTER shipping the bug
+instead of before.
+
+**THE TEST IS "WHAT DID I RUN", NOT "WHAT PASSED".** A commit message
+saying "1,319 tests pass" is weaker than one saying "proposed and
+confirmed a write through run() against the real mediator". Say the
+second.
+
+**SQUASH WITHIN A CHANGE, NEVER ACROSS.** A bug found in work not yet
+handed over is amended into the commit that introduced it. A bug found
+in work already pushed gets its own commit -- do NOT rewrite published
+history to hide it. Those fix commits are often the most useful
+documentation in the repository, because they record the trap and how
+it was found.
+
 ## Verification that actually verifies
 
 When you write a test for a bug you fixed, **break the fix and confirm
