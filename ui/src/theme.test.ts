@@ -58,9 +58,19 @@ describe('theming', () => {
      * theme buttons with it -- reported as "the buttons are not
      * present".
      */
+    // RESOLVED THROUGH the primitive layer, because semantic tokens now
+    // hold `var(--grey-900)` rather than a literal. Comparing primitive
+    // NAMES would be weaker: two names can point at the same hex, which
+    // is exactly the bug this guards.
     const dark = TOKENS.slice(TOKENS.indexOf('.bp6-dark'))
-    const chrome = /--surface-chrome: (#[0-9a-f]{6})/.exec(dark)?.[1]
-    const sunken = /--surface-sunken: (#[0-9a-f]{6})/.exec(dark)?.[1]
+    const resolve = (token: string) => {
+      const ref = new RegExp(`--${token}: var\\((--[a-z0-9-]+)\\)`).exec(dark)?.[1]
+      if (ref === undefined) return undefined
+      return new RegExp(`\\${ref}: (#[0-9a-f]{6})`).exec(TOKENS)?.[1]
+    }
+
+    const chrome = resolve('surface-chrome')
+    const sunken = resolve('surface-sunken')
 
     expect(chrome).toBeDefined()
     expect(sunken).toBeDefined()

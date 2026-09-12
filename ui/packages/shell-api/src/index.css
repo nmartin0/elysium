@@ -552,7 +552,7 @@ button {
   border: none;
   border-radius: 6px;
   background: var(--surface-chrome);
-  color: #ffffff; /* on the danger red below, not a theme surface */
+  color: var(--text-on-danger); /* on the danger red below, not a theme surface */
   font-size: 0.95rem;
   cursor: pointer;
   text-decoration: none;
@@ -566,7 +566,7 @@ button:disabled {
 
 button.secondary {
   background: transparent;
-  border: 1px solid #999;
+  border: 1px solid var(--border-control);
   color: var(--text-primary);
 }
 
@@ -711,7 +711,7 @@ button.secondary {
 }
 
 button.danger {
-  background: #b3261e;
+  background: var(--fill-danger);
 }
 
 .object-search__controls {

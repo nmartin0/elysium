@@ -21,27 +21,96 @@
  * inventing a parallel palette would mean two that drift.
  */
 
+/* --- LAYER 1: PRIMITIVES ------------------------------------------
+ *
+ * The raw ramp. Nothing outside this block should contain a literal
+ * colour, and nothing in a component should reference these directly
+ * -- components use the semantic names below, which is what makes a
+ * theme change touch this block instead of every rule in the app.
+ *
+ * Named by WHAT THEY ARE, not what they are for: --grey-700 says
+ * nothing about whether it is a border or a label, which is the point.
+ * A primitive that encodes its purpose is a semantic token wearing the
+ * wrong name, and it stops being reusable the moment a second thing
+ * wants the same colour.
+ *
+ * Values are Blueprint's own palette, per the rule that Blueprint
+ * always wins: these are the greys and blues its components already
+ * render, so a surface built from them sits flush against a Blueprint
+ * widget rather than a shade off it.
+ */
 :root {
+  --grey-900: #111418;
+  --grey-800: #1c2127;
+  --grey-700: #252a31;
+  --grey-600: #2f343c;
+  --grey-500: #404854;
+  --grey-400: #5f6b7c;
+  --grey-300: #999999;
+  --grey-200: #abb3bf;
+  --grey-150: #d3d8de;
+  --grey-100: #edeff2;
+  --grey-50: #f6f7f9;
+  --white: #ffffff;
+
+  /* Blueprint's blue, for focus and selection. */
+  --blue-400: #2d72d2;
+  --blue-200: #8abbff;
+
+  /* Danger. Only the fill is needed today; the text that sits on it is
+   * --white above, because this red is dark enough for white either
+   * way and is NOT a theme surface. */
+  --red-500: #b3261e;
+}
+
+:root {
+  /* --- LAYER 2: SEMANTIC -------------------------------------------
+   * Role names: what a thing IS in this interface, not which colour it
+   * happens to be. Every value below is a primitive reference, never a
+   * literal -- a literal here is a primitive that escaped.
+   */
+
   /* --- Surfaces, darkest to lightest -----------------------------
    * Lightness IS the hierarchy. Chrome and configuration sit dark,
    * content sits light, and a raised surface sits lightest.
    */
-  --surface-chrome: #1c2127; /* sidebar, header: app furniture --
+  --surface-chrome: var(--grey-800); /* sidebar, header: app furniture --
                                      dark in BOTH themes, because it is
                                      furniture rather than content */
-  --surface-config: #f6f7f9; /* filter panels, toolbars */
-  --surface-content: #ffffff; /* results, the thing being read */
-  --surface-sunken: #edeff2; /* wells, empty states */
+  --surface-config: var(--grey-50); /* filter panels, toolbars */
+  --surface-content: var(--white); /* results, the thing being read */
+  --surface-sunken: var(--grey-100); /* wells, empty states */
 
-  --border-subtle: #d3d8de;
+  --border-subtle: var(--grey-150);
 
-  --text-primary: #1c2127;
-  --text-secondary: #5f6b7c;
-  --text-on-chrome: #f6f7f9;
-  --text-on-chrome-dim: #abb3bf;
+  --text-primary: var(--grey-800);
+  --text-secondary: var(--grey-400);
+  --text-on-chrome: var(--grey-50);
+  --text-on-chrome-dim: var(--grey-200);
 
   /* Blueprint's own focus blue, so our controls ring the same as its. */
-  --accent-focus: #2d72d2;
+  --accent-focus: var(--blue-400);
+
+  /* Danger, and the text that sits on it. A FILL, not a surface --
+   * "surface" names a layer in the depth hierarchy (chrome, config,
+   * content, sunken), and theme.test.ts enforces that every one of
+   * those is redefined for dark mode. A destructive button's fill is
+   * not part of that hierarchy and must NOT move with the theme: this
+   * red is dark enough for white text either way, and a destructive
+   * control that changed colour with the theme would be the one thing
+   * users most need to recognise instantly.
+   *
+   * Added because index.css carried #b3261e and #ffffff as literals,
+   * which made a destructive button the one element the token system
+   * did not describe. */
+  --fill-danger: var(--red-500);
+  --text-on-danger: var(--white);
+
+  /* A visible edge on a transparent control -- a secondary button has
+   * no fill of its own, so its border is what makes it a button.
+   * Distinct from --border-subtle, which separates surfaces and is
+   * deliberately near-invisible. */
+  --border-control: var(--grey-300);
 
   /* --- Elevation --------------------------------------------------
    * ONE level. An earlier version defined raised, overlay and inset;
@@ -104,13 +173,13 @@
      dissolves. In the first dark palette both were #1c2127, so the
      sidebar vanished into the background and took its buttons with
      it -- which is what "the logout button is not present" was. */
-  --surface-chrome: #111418;
-  --surface-config: #252a31;
-  --surface-content: #2f343c;
-  --surface-sunken: #1c2127;
-  --border-subtle: #404854;
-  --text-primary: #f6f7f9;
-  --text-secondary: #abb3bf;
-  --accent-focus: #8abbff;
+  --surface-chrome: var(--grey-900);
+  --surface-config: var(--grey-700);
+  --surface-content: var(--grey-600);
+  --surface-sunken: var(--grey-800);
+  --border-subtle: var(--grey-500);
+  --text-primary: var(--grey-50);
+  --text-secondary: var(--grey-200);
+  --accent-focus: var(--blue-200);
   --elevate-raised: 0 1px 3px rgba(17, 20, 24, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
