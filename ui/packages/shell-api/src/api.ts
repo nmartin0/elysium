@@ -269,6 +269,14 @@ export interface AwaitingWrite {
    *  nobody can act on it either way.
    */
   undeclared_fields: string[]
+  /** How many OTHER pending writes propose exactly this change.
+   *
+   *  Surfaced rather than prevented: a second identical proposal might
+   *  be a double-click, a colleague re-requesting something forgotten,
+   *  or a deliberate nudge, and the server cannot tell which. What was
+   *  wrong was identical rows being indistinguishable.
+   */
+  duplicate_count: number
 }
 
 /** Proposals this user may decide on, oldest first.

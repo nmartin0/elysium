@@ -2947,6 +2947,7 @@ def test_awaiting_writes_never_returns_the_changed_values(client):
         "write_id", "action_type_name", "description", "proposed_by",
         "proposed_at", "object_count", "expires_at",
         "awaiting_your_review", "proposed_by_you", "undeclared_fields",
+        "duplicate_count",
     }
     for leaky in ("changes", "sub_writes", "object_id", "object_ids", "parameters"):
         assert leaky not in declared

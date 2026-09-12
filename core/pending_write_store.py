@@ -79,6 +79,30 @@ class _StoredWrite:
     reserved: bool = False
 
 
+def _fingerprint(pending) -> tuple:
+    """What makes two proposals the same proposal.
+
+    THE CHANGE ITSELF: the action, and every object/operation/values
+    triple it would apply. Not the proposer, not the description, not
+    the time.
+
+    Sorted, because sub_writes order is an implementation detail of how
+    an action resolves and two identical proposals must not differ by
+    it. json.dumps with sort_keys for the values, since a dict is not
+    hashable and key order is equally incidental.
+    """
+    import json
+
+    return (
+        pending.action_type_name,
+        tuple(sorted(
+            (sub.object_type, str(sub.object_id), sub.operation,
+             json.dumps(sub.changes, sort_keys=True, default=str))
+            for sub in pending.sub_writes
+        )),
+    )
+
+
 class PendingWriteStore:
     def __init__(self, ttl: timedelta = DEFAULT_TTL,
                  audit_log: AuditLog | Callable[[], AuditLog] | None = None):
@@ -230,6 +254,41 @@ class PendingWriteStore:
                     del self._writes[write_id]
                 else:
                     self._writes[write_id] = replace(still_there, reserved=False)
+
+    def duplicates_of(self, write_id: str) -> int:
+        """How many OTHER pending writes propose the same change.
+
+        SURFACED, NOT PREVENTED, and that distinction is the whole
+        design. A second identical proposal might be a double-click, or
+        a colleague re-requesting something forgotten, or a deliberate
+        nudge -- and Elysium cannot tell which. Foundry allows
+        duplicates too and relies on the reviewer seeing them together.
+
+        What was actually wrong was that three identical rows were
+        INDISTINGUISHABLE: same action, same object, same values, no
+        way to tell one mistake pasted three times from three separate
+        requests. A reviewer approving one left two behind with nothing
+        explaining why.
+
+        IDENTITY IS THE CHANGE, NOT THE PROPOSER. Two people
+        independently proposing the same edit is the clearest case of a
+        duplicate there is, and keying on the proposer would hide
+        exactly that.
+
+        Reserved writes are counted: somebody deciding on one right now
+        does not make it a different proposal, and excluding it would
+        make the count flicker during a decision.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            if stored is None:
+                return 0
+            fingerprint = _fingerprint(stored.pending)
+            return sum(
+                1 for other_id, other in self._writes.items()
+                if other_id != write_id and _fingerprint(other.pending) == fingerprint
+            )
 
     def claim(self, write_id: str, may_claim) -> PendingWrite | None:
         """Removes and returns a write, if the caller may act on it.

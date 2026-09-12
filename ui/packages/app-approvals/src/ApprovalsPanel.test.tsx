@@ -31,6 +31,7 @@ function write(overrides = {}) {
     awaiting_your_review: true,
     proposed_by_you: false,
     undeclared_fields: [],
+    duplicate_count: 0,
     ...overrides,
   }
 }
@@ -180,5 +181,41 @@ describe('a write the configuration has outrun', () => {
 
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
     expect(screen.queryByText('Cannot be applied')).toBeNull()
+  })
+})
+
+describe('identical proposals', () => {
+  /**
+   * Three identical rows appeared in a real inbox with no way to tell
+   * one mistake pasted three times from three separate requests.
+   *
+   * SURFACED, NOT DEDUPLICATED. The reviewer is the one who can tell a
+   * double-click from a deliberate re-request; the server cannot.
+   */
+  it('says how many others propose the same change', async () => {
+    mockedList.mockResolvedValue([write({ duplicate_count: 2 })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('2 identical proposals')).toBeInTheDocument()
+  })
+
+  it('reads correctly for a single duplicate', async () => {
+    // "1 identical proposals" is the kind of thing that makes a
+    // product look unfinished at exactly the moment someone is
+    // deciding whether to trust it.
+    mockedList.mockResolvedValue([write({ duplicate_count: 1 })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('1 identical proposal')).toBeInTheDocument()
+  })
+
+  it('says nothing when a proposal is unique', async () => {
+    // THE CONTROL. A tag shown always is a tag nobody reads, and most
+    // proposals are unique.
+    mockedList.mockResolvedValue([write()])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText(/Change which category/)
+    expect(screen.queryByText(/identical proposal/)).toBeNull()
   })
 })

@@ -314,3 +314,44 @@ class TestCaching:
         for path in ("/api/writes/awaiting", f"/api/writes/{write_id}"):
             response = client.get(path)
             assert "no-store" in response.headers.get("cache-control", ""), path
+
+
+class TestIdenticalProposals:
+    def test_the_queue_says_which_rows_are_duplicates(self, client):
+        """The defect a real inbox showed: three rows, same action, same
+        object, same values, nothing distinguishing them.
+
+        SURFACED, NOT PREVENTED. A second identical proposal might be a
+        double-click or a deliberate re-request, and only the reviewer
+        can tell.
+        """
+        _login(client, "alice")
+        _propose(client, "Ada L.")
+        _propose(client, "Ada L.")
+        _propose(client, "Ada L.")
+
+        counts = [entry["duplicate_count"] for entry in _inbox(client)]
+
+        assert counts == [2, 2, 2]
+
+    def test_a_different_value_is_not_a_duplicate(self, client):
+        # Two people proposing DIFFERENT names for one customer are in
+        # conflict, not agreement, and calling them duplicates would
+        # hide that.
+        _login(client, "alice")
+        _propose(client, "Ada L.")
+        _propose(client, "Grace H.")
+
+        assert [entry["duplicate_count"] for entry in _inbox(client)] == [0, 0]
+
+    def test_approving_one_lowers_the_count_on_the_rest(self, client):
+        # The count is live, not stamped at proposal time -- otherwise
+        # a reviewer clearing duplicates would watch the warning persist
+        # about rows that no longer exist.
+        _login(client, "alice")
+        ids = [_propose(client, "Ada L.") for _ in range(3)]
+
+        client.post(f"/api/writes/{ids[0]}/confirm", json={"approved": True},
+                    headers=_csrf(client))
+
+        assert [entry["duplicate_count"] for entry in _inbox(client)] == [1, 1]

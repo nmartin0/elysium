@@ -24,6 +24,7 @@ was a convention rather than a guarantee, which is why these exist.
 """
 
 import contextlib
+import dataclasses
 from datetime import UTC, datetime
 
 import pytest
@@ -344,3 +345,101 @@ class TestReservation:
             assert pending is None
 
         assert store.awaiting(lambda _pending: True) == []
+
+
+class TestDuplicateProposals:
+    """Identical proposals are surfaced, not prevented.
+
+    Three identical rows appeared in a real inbox -- same action, same
+    object, same values -- with no way to tell one mistake pasted three
+    times from three separate requests. A reviewer approving one left
+    two behind with nothing explaining why.
+
+    NOT DEDUPLICATED, deliberately. A second identical proposal might be
+    a double-click, a colleague re-requesting something forgotten, or a
+    deliberate nudge, and Elysium cannot tell which. Foundry allows
+    duplicates too and relies on the reviewer seeing them together --
+    which only works if they can SEE that they are duplicates.
+    """
+
+    def test_a_lone_proposal_has_no_duplicates(self):
+        store, write_id = _store()
+
+        assert store.duplicates_of(write_id) == 0
+
+    def test_an_identical_proposal_is_counted(self):
+        store, first = _store()
+        store.store(_pending())
+
+        assert store.duplicates_of(first) == 1
+
+    def test_two_identical_proposals_are_counted_from_either(self):
+        store, first = _store()
+        second = store.store(_pending())
+        third = store.store(_pending())
+
+        assert store.duplicates_of(first) == 2
+        assert store.duplicates_of(second) == 2
+        assert store.duplicates_of(third) == 2
+
+    def test_a_DIFFERENT_change_is_not_a_duplicate(self):
+        # THE CONTROL. A counter that matched everything would make the
+        # tag permanent and therefore meaningless.
+        from core.ontology.write_mediator import SubWrite
+
+        store, first = _store()
+        other = _pending()
+        store.store(dataclasses.replace(other, sub_writes=(
+            SubWrite("Author", "auth_002", "update", {"name": "Grace"}, {}),
+        )))
+
+        assert store.duplicates_of(first) == 0
+
+    def test_a_different_VALUE_is_not_a_duplicate(self):
+        # The sharper version: same object, same field, different
+        # target. Two people proposing different names for one customer
+        # are in conflict, not agreement, and calling them duplicates
+        # would hide that.
+        from core.ontology.write_mediator import SubWrite
+
+        store, first = _store()
+        store.store(dataclasses.replace(_pending(), sub_writes=(
+            SubWrite("Author", "auth_001", "update", {"name": "Grace"}, {}),
+        )))
+
+        assert store.duplicates_of(first) == 0
+
+    def test_a_different_PROPOSER_is_still_a_duplicate(self):
+        # IDENTITY IS THE CHANGE, NOT THE PROPOSER. Two people
+        # independently proposing the same edit is the clearest case of
+        # a duplicate there is, and keying on the proposer would hide
+        # exactly that.
+        store, first = _store()
+        store.store(_pending(user_id="bob"))
+
+        assert store.duplicates_of(first) == 1
+
+    def test_an_expired_duplicate_stops_counting(self):
+        # A count including writes nobody can act on would tell a
+        # reviewer to look for rows that are not there.
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(hours=1))
+        first = store.store(_pending())
+        store.store(_pending())
+        assert store.duplicates_of(first) == 1
+
+        store._writes = {
+            write_id: dataclasses.replace(
+                stored, expires_at=datetime.now(UTC) - timedelta(seconds=1),
+            )
+            if write_id != first else stored
+            for write_id, stored in store._writes.items()
+        }
+
+        assert store.duplicates_of(first) == 0
+
+    def test_an_unknown_id_reports_none(self):
+        store, _ = _store()
+
+        assert store.duplicates_of("no-such-id") == 0

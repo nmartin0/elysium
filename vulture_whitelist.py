@@ -227,3 +227,7 @@ has_redacted_fields
 # AwaitingWriteResponse.undeclared_fields (api/routes.py) -- serialised
 # by FastAPI from the returned dict, like every other response field.
 undeclared_fields
+
+# AwaitingWriteResponse.duplicate_count (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field.
+duplicate_count

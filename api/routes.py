@@ -588,6 +588,15 @@ class AwaitingWriteResponse(BaseModel):
     # that showed an Approve button here would let a reviewer make a
     # decision, learn it was refused, and have gained nothing.
     undeclared_fields: list[str]
+    # How many OTHER pending writes propose exactly this change.
+    #
+    # SURFACED, NOT PREVENTED. A second identical proposal might be a
+    # double-click, a colleague re-requesting something forgotten, or a
+    # deliberate nudge, and Elysium cannot tell which. What was wrong
+    # was that identical rows were INDISTINGUISHABLE -- a reviewer
+    # could not tell one mistake pasted three times from three separate
+    # requests, and approving one left the others behind unexplained.
+    duplicate_count: int
 
 
 @router.get("/writes/awaiting", dependencies=[Depends(_no_store)],
@@ -644,6 +653,7 @@ def awaiting_writes_route(request: Request,
             # do. Computing it separately here is how a queue ends up
             # offering a button that always fails.
             "undeclared_fields": write_mediator.fields_no_longer_declared(pending),
+            "duplicate_count": store.duplicates_of(write_id),
         }
         # OLDEST FIRST. A reviewer works through a queue, and the write
         # closest to expiring is the one whose decision is about to be

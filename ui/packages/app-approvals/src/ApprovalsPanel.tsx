@@ -131,6 +131,17 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                       write.awaiting_your_review && <Tag intent="primary">Awaiting your review</Tag>
                     )}
                     {write.proposed_by_you && <Tag minimal>Proposed by you</Tag>}
+                    {/* SAID PLAINLY, because the reviewer is the one
+                        who can tell a double-click from a deliberate
+                        re-request. Without it, identical rows look
+                        like a rendering fault. */}
+                    {write.duplicate_count > 0 && (
+                      <Tag minimal intent="warning">
+                        {write.duplicate_count === 1
+                          ? '1 identical proposal'
+                          : `${write.duplicate_count} identical proposals`}
+                      </Tag>
+                    )}
                   </div>
 
                   <div className="approvals__actions">
