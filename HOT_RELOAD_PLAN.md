@@ -940,10 +940,19 @@ visible rather than discovered.
       would have worked, so nobody tries -- worse than the button that
       fails, because nothing reveals the mistake.
 
-      Still open: the AUDIT half. An unapplyable write is logged via
-      log_write_unapplyable() when someone tries to approve it, but
-      nothing records a write that was never attempted because the
-      inbox correctly discouraged it.
+      THE AUDIT HALF IS DONE TOO. log_write_invalidated() records the
+      moment a reload makes a pending write unapplyable, which may be
+      the only entry it ever gets: a proposal the inbox correctly
+      discourages is never attempted, so it expires silently and the
+      trail would otherwise show a write proposed and a write expired
+      with nothing connecting them.
+
+      ONLY THE TRANSITION is logged, not the current state -- a write
+      already unapplyable was recorded when it became so, and
+      repeating it on every reload would bury the one entry that
+      matters. It names who RELOADED as well as who proposed: the
+      person whose write died did nothing, and an entry naming only
+      them would read as though they had.
 
 ### What is deliberately NOT in this roadmap
 

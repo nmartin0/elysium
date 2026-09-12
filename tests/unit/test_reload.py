@@ -579,3 +579,191 @@ def test_changing_the_adapter_type_counts_as_a_repoint(tmp_path):
     }))
 
     assert repointed_silos(before, after) == [name]
+
+
+# --- step 6: writes a reload invalidates ---
+
+def _app_with_store(tmp_path):
+    """The reload fixture plus a real pending-write store.
+
+    _app() builds a SimpleNamespace without one, because nothing in the
+    reload tests needed it until now. A real store rather than a stub:
+    the helper under test calls awaiting(), and a stub would let a
+    change to that method pass unnoticed here.
+    """
+    from core.pending_write_store import PendingWriteStore
+
+    app = _app(tmp_path)
+    app.state.pending_writes = PendingWriteStore()
+    return app
+
+
+def _a_pending_write():
+    from datetime import UTC, datetime
+
+    from core.intermediate_layer.auth import UserRecord
+    from core.ontology.write_mediator import PendingWrite, SubWrite
+
+    return PendingWrite(
+        sub_writes=(SubWrite("Customer", "cust_001", "update", {"name": "Ada"}, {}),),
+        user_id="alice",
+        description="rename",
+        action_type_name="RenameCustomer",
+        origin="human",
+        proposed_at=datetime.now(UTC),
+        proposed_under_generation=1,
+        parameters={},
+        proposer=UserRecord("alice", "us-west", "editor"),
+    )
+
+
+class _StubMediator:
+    """Reports a fixed set of undeclared fields, standing in for a schema."""
+
+    def __init__(self, undeclared):
+        self._undeclared = undeclared
+
+    def fields_no_longer_declared(self, _pending):
+        return list(self._undeclared)
+
+
+def _generation_reporting(app, undeclared, number):
+    import dataclasses
+    return dataclasses.replace(
+        app.state.generation,
+        write_mediator=_StubMediator(undeclared),
+        generation=number,
+    )
+
+
+def _audit_lines(tmp_path, stage):
+    import json
+    log = tmp_path / "log" / "audit.log"
+    if not log.exists():
+        return []
+    return [
+        entry for entry in (json.loads(line) for line in log.read_text().splitlines())
+        if entry.get("stage") == stage
+    ]
+
+
+def test_a_reload_that_invalidates_a_write_records_it(tmp_path):
+    """THE GAP THIS CLOSES.
+
+    confirm_and_execute() already refuses an unapplyable write and logs
+    the refusal -- but only if a reviewer TRIES. A proposal the inbox
+    correctly discourages is never attempted, so it expired silently
+    and nothing recorded that a configuration change had killed it. The
+    trail showed a write proposed and a write expired, with nothing
+    connecting them.
+    """
+    from api.reload import _audit_writes_invalidated_by
+
+    app = _app_with_store(tmp_path)
+    app.state.pending_writes.store(_a_pending_write())
+
+    _audit_writes_invalidated_by(
+        app,
+        _generation_reporting(app, [], 7),
+        _generation_reporting(app, ["Customer.name"], 8),
+        app.state.generation.mediator.audit_log,
+        "alice",
+    )
+
+    [entry] = _audit_lines(tmp_path, "write_invalidated")
+    assert entry["undeclared_fields"] == ["Customer.name"]
+    assert entry["from_generation"] == 7
+    assert entry["to_generation"] == 8
+
+
+def test_it_names_who_reloaded_as_well_as_who_proposed(tmp_path):
+    # The person whose write was invalidated did nothing. Somebody else
+    # changed the configuration, and an entry naming only the proposer
+    # would read as though they had.
+    from api.reload import _audit_writes_invalidated_by
+
+    app = _app_with_store(tmp_path)
+    app.state.pending_writes.store(_a_pending_write())
+
+    _audit_writes_invalidated_by(
+        app, _generation_reporting(app, [], 1),
+        _generation_reporting(app, ["Customer.name"], 2),
+        app.state.generation.mediator.audit_log, "operator_bob",
+    )
+
+    [entry] = _audit_lines(tmp_path, "write_invalidated")
+    assert entry["reloaded_by"] == "operator_bob"
+    assert entry["user_id"] != "operator_bob"
+
+
+def test_an_ALREADY_unapplyable_write_is_not_logged_again(tmp_path):
+    # ONLY THE TRANSITION. Logging the current state on every reload
+    # would bury the one entry that matters under repetitions of
+    # itself.
+    from api.reload import _audit_writes_invalidated_by
+
+    app = _app_with_store(tmp_path)
+    app.state.pending_writes.store(_a_pending_write())
+
+    _audit_writes_invalidated_by(
+        app, _generation_reporting(app, ["Customer.name"], 1),
+        _generation_reporting(app, ["Customer.name"], 2),
+        app.state.generation.mediator.audit_log, "alice",
+    )
+
+    assert _audit_lines(tmp_path, "write_invalidated") == []
+
+
+def test_a_reload_that_invalidates_nothing_logs_nothing(tmp_path):
+    # THE CONTROL. An entry on every reload would be noise, and noise
+    # is how a real entry gets missed.
+    from api.reload import _audit_writes_invalidated_by
+
+    app = _app_with_store(tmp_path)
+    app.state.pending_writes.store(_a_pending_write())
+
+    _audit_writes_invalidated_by(
+        app, _generation_reporting(app, [], 1), _generation_reporting(app, [], 2),
+        app.state.generation.mediator.audit_log, "alice",
+    )
+
+    assert _audit_lines(tmp_path, "write_invalidated") == []
+
+
+def test_a_write_RESTORED_by_a_reload_is_not_logged(tmp_path):
+    # The reverse transition is not a loss. Putting a field back makes
+    # a write applyable again, and recording that as an invalidation
+    # would be actively wrong.
+    from api.reload import _audit_writes_invalidated_by
+
+    app = _app_with_store(tmp_path)
+    app.state.pending_writes.store(_a_pending_write())
+
+    _audit_writes_invalidated_by(
+        app, _generation_reporting(app, ["Customer.name"], 1),
+        _generation_reporting(app, [], 2),
+        app.state.generation.mediator.audit_log, "alice",
+    )
+
+    assert _audit_lines(tmp_path, "write_invalidated") == []
+
+
+def test_an_audit_failure_does_not_fail_the_reload(tmp_path):
+    # A configuration change that is otherwise valid must not be
+    # rejected because a note could not be written -- the same posture
+    # record_generation() takes.
+    from api.reload import _audit_writes_invalidated_by
+
+    app = _app_with_store(tmp_path)
+    app.state.pending_writes.store(_a_pending_write())
+
+    class _Exploding:
+        def fields_no_longer_declared(self, _pending):
+            raise RuntimeError("schema unreadable")
+
+    import dataclasses
+    broken = dataclasses.replace(app.state.generation, write_mediator=_Exploding())
+
+    _audit_writes_invalidated_by(
+        app, broken, broken, app.state.generation.mediator.audit_log, "alice",
+    )  # must not raise

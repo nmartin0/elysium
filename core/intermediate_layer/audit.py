@@ -306,6 +306,34 @@ class AuditLog:
             "detail": detail,
         })
 
+    def log_write_invalidated(self, write_id: str, user_id: str, description: str,
+                               from_generation: int, to_generation: int,
+                               fields: list[str], reloaded_by: str) -> None:
+        """A configuration change made a pending write impossible to apply.
+
+        DISTINCT FROM log_write_unapplyable(), which records a reviewer
+        being REFUSED. This records the moment the write died, which
+        may be the only entry it ever gets: a proposal the inbox
+        correctly discourages is never attempted, so it expires
+        silently and the trail shows a write proposed and a write
+        expired with nothing connecting them.
+
+        Names WHO RELOADED as well as who proposed. The person whose
+        write was invalidated did nothing; somebody else changed the
+        configuration, and an entry that named only the proposer would
+        read as though they had.
+        """
+        self._write({
+            "stage": "write_invalidated",
+            "write_id": write_id,
+            "user_id": user_id,
+            "description": description,
+            "from_generation": from_generation,
+            "to_generation": to_generation,
+            "undeclared_fields": fields,
+            "reloaded_by": reloaded_by,
+        })
+
     def log_write_unapplyable(self, user_id: str, description: str,
                                proposed_under: int, applying_under: int,
                                fields: list[str]) -> None:

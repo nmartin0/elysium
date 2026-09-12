@@ -67,9 +67,11 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from api.app import create_app
 from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import load_deployment_bundle
+from core.deployment_loader import RuntimePaths, load_deployment_bundle
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.write_mediator import WriteMediator
 
@@ -158,3 +160,54 @@ def write_adapters(_bundle):
     # now does the same (see api/app.py and scripts/run_deployment.py).
     _, _, write_adapters = _bundle
     return write_adapters
+
+
+# --- the `client` fixture, moved here from test_api.py --------------
+#
+# It lived there until a second integration file needed it. Copying it
+# would have left two setups to drift apart -- and this one encodes a
+# real found gap (a Secure cookie is not transmitted over TestClient's
+# plain-http base URL, matching a real browser), which is exactly the
+# kind of hard-won detail a copy loses.
+
+@pytest.fixture
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # TestClient's own base URL is plain http://testserver, not https --
+    # a real, found gap this test suite ran into directly: a Secure-
+    # flagged cookie (core/auth/auth_cookies.py's own default, matching
+    # a real production deployment) is genuinely never TRANSMITTED back
+    # by httpx's own cookie jar over a non-HTTPS connection, even
+    # though it IS still stored client-side -- exactly matching a real
+    # browser's own behavior, confirmed directly by isolating the
+    # exact mechanism before assuming this was the cause. Every real
+    # test in this file needs the same local-dev-style override a real
+    # developer's own machine would set, for the same reason.
+    monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
+
+    data_dir = tmp_path / "data"
+    dev_fixtures_dir = data_dir / "dev_fixtures"
+    dev_fixtures_dir.mkdir(parents=True)
+
+    # ALL THREE silos data_silos.yaml actually declares -- not just
+    # primary_sql. Was only ever mediator.db before this file's own
+    # get_object_detail_route tests needed a REAL Customer.risk_score
+    # (an MDO field, backed by risk_sql) to genuinely exist: a real
+    # gap this test fixture had, not something to work around in the
+    # test itself by avoiding a field a real customer_service user can
+    # actually see. Cheap to build (a handful of rows each) -- no
+    # meaningful cost to every OTHER test in this file gaining two
+    # small databases they don't happen to touch.
+    for db_name, schema_name in [
+        ("mediator.db", "schema.sql"),
+        ("support.db", "support_schema.sql"),
+        ("risk.db", "risk_schema.sql"),
+    ]:
+        conn = sqlite3.connect(dev_fixtures_dir / db_name)
+        conn.executescript((FIXTURES_DIR / schema_name).read_text())
+        conn.commit()
+        conn.close()
+
+    test_paths = RuntimePaths(config_dir=FIXTURES_DIR, data_dir=data_dir, log_dir=tmp_path / "log")
+    app = create_app(test_paths)
+
+    return TestClient(app)

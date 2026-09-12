@@ -32,12 +32,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 
-from api.app import create_app
 from core.auth.database import connection
 from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW
-from core.deployment_loader import RuntimePaths
 from core.intermediate_layer.auth import UserRecord
 from tests.conftest import config_of, mediator_of, with_config, with_roles
 
@@ -46,47 +43,10 @@ pytestmark = pytest.mark.mocked_llm
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-@pytest.fixture
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # TestClient's own base URL is plain http://testserver, not https --
-    # a real, found gap this test suite ran into directly: a Secure-
-    # flagged cookie (core/auth/auth_cookies.py's own default, matching
-    # a real production deployment) is genuinely never TRANSMITTED back
-    # by httpx's own cookie jar over a non-HTTPS connection, even
-    # though it IS still stored client-side -- exactly matching a real
-    # browser's own behavior, confirmed directly by isolating the
-    # exact mechanism before assuming this was the cause. Every real
-    # test in this file needs the same local-dev-style override a real
-    # developer's own machine would set, for the same reason.
-    monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
-
-    data_dir = tmp_path / "data"
-    dev_fixtures_dir = data_dir / "dev_fixtures"
-    dev_fixtures_dir.mkdir(parents=True)
-
-    # ALL THREE silos data_silos.yaml actually declares -- not just
-    # primary_sql. Was only ever mediator.db before this file's own
-    # get_object_detail_route tests needed a REAL Customer.risk_score
-    # (an MDO field, backed by risk_sql) to genuinely exist: a real
-    # gap this test fixture had, not something to work around in the
-    # test itself by avoiding a field a real customer_service user can
-    # actually see. Cheap to build (a handful of rows each) -- no
-    # meaningful cost to every OTHER test in this file gaining two
-    # small databases they don't happen to touch.
-    for db_name, schema_name in [
-        ("mediator.db", "schema.sql"),
-        ("support.db", "support_schema.sql"),
-        ("risk.db", "risk_schema.sql"),
-    ]:
-        conn = sqlite3.connect(dev_fixtures_dir / db_name)
-        conn.executescript((FIXTURES_DIR / schema_name).read_text())
-        conn.commit()
-        conn.close()
-
-    test_paths = RuntimePaths(config_dir=FIXTURES_DIR, data_dir=data_dir, log_dir=tmp_path / "log")
-    app = create_app(test_paths)
-
-    return TestClient(app)
+# The `client` fixture moved to tests/integration/conftest.py so
+# test_approvals_inbox.py can use the same one -- it encodes a real
+# found gap about Secure cookies over TestClient's plain-http base
+# URL, and a second copy would eventually drift from it.
 
 
 def _login(client, username, password):

@@ -28,6 +28,42 @@ class ReloadInProgress(RuntimeError):
 _reload_lock = threading.Lock()
 
 
+def _audit_writes_invalidated_by(app, before, after, audit_log, requested_by: str) -> None:
+    """Record pending writes this reload made impossible to apply.
+
+    ONLY THE TRANSITION, not the current state. A write already
+    unapplyable before this reload was audited when it became so, and
+    logging it again on every subsequent reload would bury the one
+    entry that matters under repetitions of itself.
+
+    Compared against the OLD generation rather than tracked in state:
+    "was applyable, is not now" is exactly the event, and asking both
+    generations the same question answers it without anything to keep
+    in sync.
+
+    NEVER FAILS THE RELOAD. A configuration change that is otherwise
+    valid must not be rejected because an audit line could not be
+    written -- the same posture record_generation() takes, and the
+    opposite of the audit log's usual one, for the same reason: this is
+    a note about something that already happened.
+    """
+    store = getattr(app.state, "pending_writes", None)
+    if store is None:
+        return
+
+    try:
+        for write_id, pending in store.awaiting(lambda _pending: True):
+            was = before.write_mediator.fields_no_longer_declared(pending)
+            now = after.write_mediator.fields_no_longer_declared(pending)
+            if now and not was:
+                audit_log.log_write_invalidated(
+                    write_id, pending.user_id, pending.description,
+                    before.generation, after.generation, now, requested_by,
+                )
+    except Exception:  # noqa: BLE001 -- see the docstring on never failing
+        logger.exception("could not audit writes invalidated by the reload")
+
+
 def reload_generation(app, requested_by: str = "unknown") -> DeploymentGeneration:
     """Replaces the running configuration with a freshly loaded one.
 
@@ -105,6 +141,17 @@ def reload_generation(app, requested_by: str = "unknown") -> DeploymentGeneratio
                 f"Requests already running keep reading the previous source; "
                 f"if it is being decommissioned, let them drain first."
             )
+
+        # WRITES THIS RELOAD JUST INVALIDATED, audited at the moment it
+        # happens rather than when somebody trips over it.
+        #
+        # confirm_and_execute() already refuses an unapplyable write and
+        # logs that refusal -- but only if a reviewer TRIES. A proposal
+        # the inbox correctly discourages is never attempted, so it
+        # expired silently and nothing recorded that a configuration
+        # change had killed it. The trail showed a write proposed and a
+        # write expired, with no connection between them.
+        _audit_writes_invalidated_by(app, current, new, audit_log, requested_by)
 
         app.state.generation = new
         # Recorded BEFORE the audit entry, so a history row exists for
