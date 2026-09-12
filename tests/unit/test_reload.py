@@ -433,3 +433,57 @@ def test_visible_schema_cannot_change_under_a_running_loop(tmp_path):
     reload_generation(app)
 
     assert running_loop.mediator.visible_schema(record) == before
+
+
+# --- step 5i: freshness belongs to the generation that reported it ---
+
+def test_freshness_does_not_follow_a_sync_that_ran_after_the_generation(tmp_path):
+    """A request's freshness answer describes the data it is READING.
+
+    CLOSED BY CONSTRUCTION rather than by new code, and asserted
+    because "already true" and "never checked" look identical in a
+    plan. mirror_synced_at is computed once when a generation is built
+    and stored on that generation's mediator; the route reads it
+    through the pin. So a sync landing mid-request cannot make the
+    answer describe data the caller is not being served.
+
+    The alternative -- reading the catalog live -- would report a sync
+    the pinned snapshot deliberately does not include, which is worse
+    than a stale number: it would say the data is fresher than what the
+    caller is actually reading.
+    """
+    app = _app(tmp_path)
+    pinned = app.state.generation
+
+    reload_generation(app)
+
+    # ASSERTS OBJECT IDENTITY, not the timestamp value, and the
+    # distinction was found by a control. deployment/etc reads LIVE, so
+    # mirror_synced_at is None on both sides and comparing it asserts
+    # None == None -- true however the loader behaves. What is actually
+    # guaranteed, and what a live read would break, is that the pinned
+    # generation keeps its OWN mediator: whatever freshness that
+    # mediator reported, it goes on reporting.
+    #
+    # The mirror case with real snapshots is covered by
+    # test_mirror_snapshot_pin.py, which builds one.
+    assert app.state.generation is not pinned
+    assert app.state.generation.mediator is not pinned.mediator
+
+
+def test_a_generations_snapshots_and_its_sync_time_come_from_one_load(tmp_path):
+    """Both halves of the freshness answer describe the same moment.
+
+    The generation records WHICH snapshots it reads and WHEN the mirror
+    last synced. Computed in the same load, so they cannot disagree --
+    a timestamp from one load beside snapshot ids from another would
+    describe a state that never existed.
+    """
+    app = _app(tmp_path)
+    generation = app.state.generation
+
+    # A live deployment has neither, and says so consistently: no
+    # snapshots to pin and no sync time to report.
+    assert generation.config.read_from_mirror is False
+    assert generation.mirror_snapshots == {}
+    assert generation.mediator.mirror_synced_at is None

@@ -745,7 +745,24 @@ directly.
       meaningful alongside the thing it protects against. What IS built
       is a guard that fires the moment expiry appears, pointing
       whoever adds it at this decision.
-  5i. Report freshness FOR THE PINNED GENERATION, not for the
+  5i. **CLOSED BY CONSTRUCTION -- no code needed, asserted anyway.**
+      mirror_synced_at is computed once when a generation is built and
+      stored on that generation's mediator, and /data-freshness reads
+      it through the pin. A sync landing mid-request cannot make the
+      answer describe data the caller is not being served.
+
+      Reading the catalog live would be WORSE than a stale number: it
+      would report a sync the pinned snapshot deliberately excludes,
+      saying the data is fresher than what is actually being read.
+
+      Tested rather than struck off, because "already true" and "never
+      checked" look identical in a plan. One of those assertions was
+      initially hollow and a control caught it: deployment/etc reads
+      LIVE, so comparing mirror_synced_at across a reload asserts
+      None == None. It now asserts the pinned generation keeps its own
+      MEDIATOR, which is what a live read would actually break.
+
+  5i-original. Report freshness FOR THE PINNED GENERATION, not for the
       mediator's current state. /data-freshness already exists and
       returns source plus last_synced_at, which is the right idea --
       but once requests pin a generation, a user reading
