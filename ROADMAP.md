@@ -1431,13 +1431,31 @@ unnoticed:
 
   The attack needs STRICT PREFIX ALIGNMENT -- a probe must match from
   the very first token. core/llm/agent_step_prompt.py's own
-  `_build_system_prompt()` opens with `_describe_schema(visible_
-  schema)`, the MAC/RBAC-filtered schema, so two users with different
-  access diverge within roughly the first hundred tokens and neither
-  can align against the other. The per-user schema is acting as a
-  cache partition key.
+  `_build_system_prompt()` puts the MAC/RBAC-filtered schema near the
+  front, so two users with different access diverge almost immediately
+  and neither can align far against the other. The per-user schema acts
+  as a cache partition key.
 
-  THAT IS ACCIDENTAL AND MUST NOT BE OPTIMISED AWAY. Moving the
+  MEASURED, and the original claim here was slightly wrong. It said the
+  prompt "opens with `_describe_schema(...)`"; it does not. A fixed
+  preamble comes first, and two users with COMPLETELY DISJOINT
+  ontologies still share 103 characters -- about 25 tokens -- ending
+  with the `- ` that opens the first object type line.
+
+  Twenty-five tokens is a foothold rather than a wall. It is where an
+  attacker would start probing forward, and what they would recover
+  first is the victim's leading object type name. Not nothing; far less
+  than the thousands of shared tokens a front-loaded instruction block
+  would give them.
+
+  NOW ENFORCED, not merely asserted. tests/unit/
+  test_prompt_prefix_is_user_specific.py fails if the shared prefix
+  grows past a loose budget, and separately if the examples move above
+  the schema. Two controls reproduce exactly the regression described
+  below.
+
+  THAT IS ACCIDENTAL AND MUST NOT BE OPTIMISED AWAY -- and it is a
+  test now, so it cannot be, silently. Moving the
   generic instructions and examples above the schema -- to lengthen
   the prefix that users share and improve cache hit rates -- would be
   a security regression, not a performance win. It is exactly the
