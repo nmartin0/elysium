@@ -572,11 +572,25 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
             Previous
           </Button>
           <span className="object-search__more">
-            {/* Deliberately NOT "page 3 of 12". The set is live, and
-                the API documents that default paging may duplicate or
-                miss rows as data changes underneath -- a page number
-                would promise a stability nothing provides. */}
-            Showing {results.length} of {totalMatches} matches
+            {/* Deliberately NOT "page 3 of 12". A page number would
+                promise a stability that a LIVE deployment does not
+                provide -- default paging there may duplicate or miss
+                rows as data changes underneath.
+
+                AND THE TOTAL CARRIES THE SAME CAVEAT, which this line
+                used to state unconditionally. On a live deployment
+                "of 4,312" is a number that was true when the query
+                ran and may not be true now; presenting it flatly
+                invites someone to reconcile it against a report and
+                find a discrepancy that is not one.
+
+                ON A MIRROR IT IS EXACT, and saying so matters as much.
+                A generation pins each table's snapshot, so every page
+                of one query reads the same immutable data -- the count
+                is authoritative and a UI that hedged it would
+                understate what the deployment guarantees. */}
+            Showing {results.length} of {totalMatches}
+            {freshness?.source === 'live' ? ' matches at the time of this query' : ' matches'}
           </span>
           <Button
             minimal

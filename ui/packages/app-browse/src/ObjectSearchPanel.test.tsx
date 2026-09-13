@@ -962,3 +962,60 @@ describe('a type on the middle rung of the grant ladder', () => {
     expect(screen.queryByText('You cannot search this type')).toBeNull()
   })
 })
+
+describe('the row count says which guarantee applies', () => {
+  /**
+   * A LIVE deployment reads the customer's database directly, and
+   * default paging there may duplicate or miss rows as data changes
+   * underneath. "of 4,312" is a number that was true when the query
+   * ran, and presenting it flatly invites someone to reconcile it
+   * against a report and find a discrepancy that is not one.
+   *
+   * A MIRROR pins each table's snapshot per generation, so every page
+   * of one query reads the same immutable data. The count is exact,
+   * and hedging it would understate what the deployment guarantees.
+   */
+  it('qualifies the count on a live deployment', async () => {
+    mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+    // A next_page_token, because the count lives inside the PAGER and
+    // a single-page result never renders it.
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 50),
+      next_page_token: 'p2',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText(/at the time of this query/)).toBeInTheDocument()
+  })
+
+  it('does NOT qualify it on a mirror', async () => {
+    // THE PAIR. Hedging everywhere would be as wrong as hedging
+    // nowhere -- it would tell a mirror deployment its exact count is
+    // approximate.
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'mirror',
+      last_synced_at: new Date().toISOString(),
+    })
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 50),
+      next_page_token: 'p2',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    await screen.findByText(/Showing 1 of/)
+    expect(screen.queryByText(/at the time of this query/)).toBeNull()
+  })
+
+  it('still shows the count itself either way', async () => {
+    // THE CONTROL. A change that dropped the number while adding the
+    // caveat would pass both tests above.
+    mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 50),
+      next_page_token: 'p2',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText(/Showing 1 of 50/)).toBeInTheDocument()
+  })
+})

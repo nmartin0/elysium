@@ -81,11 +81,6 @@ nobody has touched.
 loading, error and partial are still per-panel choices rather than one
 audited set.
 
-**The row count on a live deployment.** Browse renders "Showing N of M
-matches" unconditionally, which overstates the count where paging a
-live set may duplicate or miss rows. Correct on a mirror, where the
-generation pins a snapshot. /api/data-freshness already reports which.
-
 ---
 
 ## 4. Observability
