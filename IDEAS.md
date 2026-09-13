@@ -209,6 +209,91 @@ proposer there would make a single-party write look reviewed.
 **Still open:** no UI. GET /api/writes/awaiting exists and nothing
 renders it, so the inbox is reachable by curl and not by a person.
 
+## A permission LADDER, where there are independent strings today
+
+The largest open design question, recorded rather than started. It
+touches every read path, and a half-migration would be worse than
+either end state -- some paths hiding a field, some redacting it,
+decided by which route a reader arrived through. That inconsistency
+already exists in one place; see below.
+
+**THE FINDING THAT PROMPTED IT.** Grants are independent strings with
+no relationship between them, so this is currently permitted and
+nothing objects:
+
+    roles:
+      odd:
+        allowed_actions:
+          - read:Customer.email      # granted
+                                     # read:Customer is NOT
+
+Verified directly: authorize() returns False for `read:Customer` and
+True for `read:Customer.email` under that role. A role authorised to
+read a field of a type it cannot discover. Nonsense, and the model has
+no way to say so.
+
+**WE ALREADY CONTRADICT OURSELVES.** A field a caller cannot read
+VANISHES from visible_schema in Browse -- no name, no placeholder --
+and is REDACTED in the approvals diff, shown by name with its value
+withheld. Both were argued for on their own merits and both are
+defensible; what is not defensible is that the same field behaves
+differently depending on the code path, because there is no grant that
+expresses the difference.
+
+**FOUNDRY'S PRECEDENT, and it is closer to the proposal than to rwx.**
+Their discretionary controls are role grants: Owner, Editor, Viewer,
+and **Discoverer** -- the third state, named and shipped.
+
+More importantly they split it across TWO AXES rather than one.
+Ontology resources (the object type: property names, data types,
+descriptions) are permissioned separately from objects and links (the
+values), and their docs are explicit that "these resources do not
+refer to the actual property values". So: "if you only have viewing
+rights for the object type, you can only see information such as
+schema and contact information, not the actual data."
+
+Property security policies then do column filtering on top -- "a
+non-primary key property can be a member of at most one property
+security policy" -- which with row-level policies gives cell-level
+security.
+
+**rwx VERSUS A LADDER.** The rwx bits are INDEPENDENT, and that is
+their defining property. `-w-` is meaningful for a file: write without
+read is a drop box. For a field it is incoherent -- setting a value on
+something you cannot name. Independence is exactly what we do not want,
+and it is what we accidentally have.
+
+What we want is MONOTONIC: discover <= read <= write, each level
+implying the ones below. That is Foundry's ladder, and it would have
+made the nonsense above unrepresentable rather than merely unwise.
+
+Against: `r--` versus `rw-` reads instantly in a config file, and
+`level: discover` is more verbose and less scannable. The familiarity
+of rwx is a real benefit and the wrong semantics are a real cost; the
+semantics should win.
+
+**OPEN QUESTIONS, both needing an answer before any code.**
+
+Is discover wanted at FIELD level, or only at TYPE level? Type-level
+already exists in effect -- read:Customer with no field grants is
+discovery-only access, and the code comments already call it that.
+Field-level discovery is what the approvals diff needed, and is the
+special case that contradicts Browse.
+
+Does discovery leak? Knowing that Customer has a field called `ssn` is
+information. Foundry accepts that cost because schema and data are
+separately permissioned resources; adopting one ladder without their
+two-axis structure inherits the question without the answer.
+
+**Related, and probably downstream of this:** the recorded question
+about whether an error message leaks a field name the acting user
+cannot read. With no "you may know this exists" state there is no
+principled line for such a message to sit on, which is likely why
+nobody has been sure.
+
+Confidence: the finding is certain, the design is not. Do not start
+this alongside anything else.
+
 ## A deliberate security pass over the agent loop
 
 Three security items sit in ROADMAP.md unaddressed, and the pattern
@@ -250,9 +335,26 @@ the per-query snapshot, and it generalises.
   prompt, which is what gets discarded first. Not a security boundary
   -- the mediator enforces regardless -- but the failure would look
   like the model forgetting the rules, and nobody has tried it.
-- Does any error message leak a field name the acting user cannot read?
-  Uniform denial is enforced on DATA; error text is a separate surface
-  and has never been audited as one.
+- **AUDITED, AND IT HOLDS.** Filtering on a field the caller cannot
+  read and filtering on one that does not exist produce the identical
+  message -- "Invalid search criteria" -- with no field name and no
+  distinguishing detail. A prober learns nothing about which fields a
+  type has.
+
+  The protection is STRUCTURAL: both cases reach the same raise
+  statement, so there is no second branch to drift. Tests now pin the
+  message not naming the field, which is the erosion that would look
+  like a usability improvement.
+
+  (original note) Uniform denial is enforced on DATA; error text is a
+  separate surface and has never been audited as one.
+
+- Can `--context-shift` evict the system prompt mid-query? **Not ours
+  to answer.** It is a llama-server flag this repository never sets and
+  the operator chooses; there is nothing here to test. Worth a line in
+  the install notes if anyone starts recommending it, since the
+  guardrails sit at the FRONT of the prompt and are what a shift
+  discards first.
 
 **Deliberately not part of it: fixing everything found.** A pass that
 produces recorded findings with reproductions is worth more than one
