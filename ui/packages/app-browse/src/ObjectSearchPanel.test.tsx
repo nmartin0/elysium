@@ -928,3 +928,37 @@ describe('ObjectSearchPanel -- typed filters', () => {
     )
   })
 })
+
+describe('a type on the middle rung of the grant ladder', () => {
+  /**
+   * `readable: false` means the caller holds `discover:Type` and not
+   * `read:Type` -- the type exists and yields no ids at all.
+   *
+   * Searching it returns an empty result set, which renders as "no
+   * matches" -- a claim about the DATA when the truth is about their
+   * ACCESS. Those are answers to different questions.
+   *
+   * NOT THE STATE THE PANEL REFUSES. It still refuses "results exist
+   * but are hidden from you", which leaks the existence of data. This
+   * reports the caller's own GRANT, known before any query runs, and
+   * leaks nothing.
+   */
+  it('says so rather than reporting an empty result', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel({ Customer: { readable: false, fields: { name: { type: 'string' } } } })
+
+    expect(await screen.findByText('You cannot search this type')).toBeInTheDocument()
+    expect(screen.queryByText('Nothing here yet')).toBeNull()
+  })
+
+  it('still shows the ordinary empty state for a searchable type', async () => {
+    // THE CONTROL. `readable` is absent on any deployment that has not
+    // adopted discover:, so a panel treating undefined as false would
+    // tell every user they cannot search anything.
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText('Nothing here yet')).toBeInTheDocument()
+    expect(screen.queryByText('You cannot search this type')).toBeNull()
+  })
+})

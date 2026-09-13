@@ -471,3 +471,68 @@ describe('the link count reads as separate from the links', () => {
     expect(cell?.textContent).toMatch(/2 t1/)
   })
 })
+
+describe('a field on the middle rung of the grant ladder', () => {
+  /**
+   * `readable: false` means the caller holds `discover:Type.field` and
+   * not `read:Type.field` -- they may know the field exists and not
+   * what it holds.
+   *
+   * WITHHELD, NOT ABSENT. Omitting it would leave a reader unable to
+   * tell a partial view from a complete one, which produces MORE
+   * confidence rather than less. The approvals diff already solves it
+   * this way, and two surfaces showing the same state differently is
+   * what the ladder exists to end.
+   */
+  it('names the field and withholds the value', async () => {
+    const schema: VisibleSchema = {
+      Customer: { fields: { name: { type: 'string' }, ssn: { type: 'string', readable: false } } },
+    }
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', ssn: null } })
+    renderPanel('Customer', 'cust_001', { visibleSchema: schema })
+
+    await waitFor(() => expect(screen.getByText('Ada Okafor')).toBeInTheDocument())
+    expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument()
+  })
+
+  it('does not render it as absence', async () => {
+    // THE DISTINCTION. An em dash says "not set", which is a claim
+    // about the DATA -- and this is a fact about the reader's access.
+    // A readable field alongside, so the panel has something to
+    // render -- the assertion is that NO em dash appears, which needs
+    // a rendered panel to be meaningful.
+    const schema: VisibleSchema = {
+      Customer: { fields: { name: { type: 'string' }, ssn: { type: 'string', readable: false } } },
+    }
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', ssn: null } })
+    renderPanel('Customer', 'cust_001', { visibleSchema: schema })
+
+    await waitFor(() => expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument())
+    expect(screen.queryByText('—')).toBeNull()
+  })
+
+  it('withholds an unreadable LINK field too', async () => {
+    // Checked before the link handling, or the targets would render
+    // as links the caller may not follow.
+    const schema: VisibleSchema = {
+      Customer: { fields: { orders: { type: 'link', target: 'Order', readable: false } } },
+    }
+    mockedGetObjectDetail.mockResolvedValue({ fields: { orders: ['ord_1', 'ord_2'] } })
+    renderPanel('Customer', 'cust_001', { visibleSchema: schema })
+
+    await waitFor(() => expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: 'ord_1' })).toBeNull()
+  })
+
+  it('leaves a readable field alone', async () => {
+    // THE CONTROL. `readable` is absent on every field the agent view
+    // returns and on any deployment that has not adopted discover:, so
+    // a panel treating undefined as false would blank the product.
+    const schema: VisibleSchema = { Customer: { fields: { name: { type: 'string' } } } }
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor' } })
+    renderPanel('Customer', 'cust_001', { visibleSchema: schema })
+
+    await waitFor(() => expect(screen.getByText('Ada Okafor')).toBeInTheDocument())
+    expect(screen.queryByText('Hidden by your permissions')).toBeNull()
+  })
+})

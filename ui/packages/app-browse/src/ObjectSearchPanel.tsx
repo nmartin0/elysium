@@ -293,6 +293,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // relied on before this file had any types to make explicit.
   const currentType = selectedType ?? objectTypes[0]!
 
+  // A TYPE ON THE MIDDLE RUNG. The caller holds discover: and not
+  // read:, so they may know it exists and it yields no ids at all.
+  //
+  // Searching it would return an empty result set, which reads as "no
+  // matches" -- a claim about the DATA when the truth is about their
+  // access. Saying so is the difference between "there are none" and
+  // "you may not see them".
+  const searchable = visibleSchema?.[currentType]?.readable !== false
+
   return (
     // Workspace supplies the two-pane shape; this passes what goes in
     // each. The structure used to be three CSS class names nested by
@@ -458,7 +467,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         </p>
       )}
 
-      {view === 'table' && !loading && results.length === 0 && !error && (
+      {view === 'table' &&
+        !loading &&
+        results.length === 0 &&
+        !error &&
         /*
          * TWO EMPTY STATES, not one. "Your filters matched nothing" and
          * "this type has no rows" are different facts and lead to
@@ -466,30 +478,49 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
          * somewhere else. Collapsing them into one grey "No results."
          * -- which is what this was -- makes an analyst guess which.
          *
-         * A THIRD STATE IS DELIBERATELY ABSENT. The spec this came
-         * from also wants "results exist but are not visible to you".
-         * Elysium's uniform denial means the response never
-         * distinguishes "no rows" from "not allowed", and that is a
-         * security property: saying hidden rows exist leaks the
-         * existence of data the caller cannot see. See UI_ROADMAP.md.
+         * A THIRD STATE IS DELIBERATELY ABSENT, and it is not the one
+         * added below. The spec this came from wants "results exist
+         * but are not visible to you". Elysium's uniform denial means
+         * the response never distinguishes "no rows" from "not
+         * allowed", and that is a security property: saying hidden
+         * rows exist leaks the existence of data the caller cannot
+         * see. That state is still refused. See UI_ROADMAP.md.
+         *
+         * THE UNSEARCHABLE STATE IS A DIFFERENT FACT. It says nothing
+         * about whether rows exist -- it reports the caller's own
+         * GRANT, known before any query runs, and leaks nothing about
+         * the data. "You may not search this" and "there is nothing
+         * here" are answers to different questions, and rendering the
+         * first as the second is what this avoids.
          */
-        <NonIdealState
-          icon={hasFilters ? 'filter-remove' : 'search'}
-          title={hasFilters ? 'No matches' : 'Nothing here yet'}
-          description={
-            hasFilters
-              ? `No ${currentType} matches the filters you have applied.`
-              : `No ${currentType} records are available to show.`
-          }
-          action={
-            hasFilters ? (
-              <Button icon="filter-remove" onClick={clearAllFilters}>
-                Clear filters
-              </Button>
-            ) : undefined
-          }
-        />
-      )}
+        (!searchable ? (
+          <NonIdealState
+            icon="lock"
+            title="You cannot search this type"
+            description={
+              `Your permissions let you know ${currentType} exists, and not what it ` +
+              `holds. Nothing is hidden from the results below -- there are no ` +
+              `results to hide.`
+            }
+          />
+        ) : (
+          <NonIdealState
+            icon={hasFilters ? 'filter-remove' : 'search'}
+            title={hasFilters ? 'No matches' : 'Nothing here yet'}
+            description={
+              hasFilters
+                ? `No ${currentType} matches the filters you have applied.`
+                : `No ${currentType} records are available to show.`
+            }
+            action={
+              hasFilters ? (
+                <Button icon="filter-remove" onClick={clearAllFilters}>
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
+          />
+        ))}
 
       {view === 'table' && (
         <CardList className="object-search__results">

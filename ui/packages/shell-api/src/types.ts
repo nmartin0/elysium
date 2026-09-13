@@ -51,6 +51,19 @@ export interface SubAppProps {
 
 export interface FieldSchema {
   type: string
+  /** Whether this field's VALUE may be read.
+   *
+   *  False is the middle rung of the grant ladder: the caller holds
+   *  `discover:Type.field` and not `read:Type.field`, so they may know
+   *  the field exists and not what it holds. The field is still
+   *  present here -- omitting it would leave a reader unable to tell a
+   *  partial view from a complete one, which is the rubber-stamp
+   *  problem the approvals diff already solves this way.
+   *
+   *  Optional because the agent's own view of the schema omits
+   *  unreadable fields entirely, so anything it receives is readable.
+   */
+  readable?: boolean
   target?: string
   // Added by SchemaPanel, the next consumer to need more of this
   // shape -- optional, so nothing that already reads it changes.
@@ -67,6 +80,14 @@ export interface FieldSchema {
 }
 
 export interface TypeSchema {
+  /** Whether this type may be SEARCHED.
+   *
+   *  False means the caller holds `discover:Type` and not `read:Type`:
+   *  they may know the type exists, and it yields no ids. A search box
+   *  would return nothing, so offering one would be a lie about what
+   *  the deployment will do.
+   */
+  readable?: boolean
   title_field?: string | null
   fields?: Record<string, FieldSchema>
   // Display metadata. Every one is optional at the API too -- an

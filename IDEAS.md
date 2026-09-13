@@ -209,7 +209,33 @@ proposer there would make a single-party write look reviewed.
 **Still open:** no UI. GET /api/writes/awaiting exists and nothing
 renders it, so the inbox is reachable by curl and not by a person.
 
-## A permission LADDER, where there are independent strings today
+## A permission LADDER, where there are independent strings today -- BUILT
+
+**Shipped in three commits.** The verb and the implication; enforcement
+at both levels with the agent/UI split; the rendering.
+
+    (no grant)              does not exist, as far as you are concerned
+    discover:Customer       the type exists; no search, no ids
+    read:Customer           enumerate it, get ids back
+    discover:Customer.email the field exists; the value is withheld
+    read:Customer.email     the value
+
+`read:` implies `discover:`, one direction only, so every existing
+deployment behaves identically and the incoherent state --
+`read:Customer.email` without a grant on Customer -- is now refused at
+load rather than merely unwise.
+
+THE AGENT AND THE UI ARE DIFFERENT AUDIENCES. A discover-only type is
+worth showing a PERSON: it says the deployment holds something they
+cannot see. To the MODEL the schema is a menu of what it can DO, so it
+sees only what it can act on.
+
+The Browse/approvals contradiction this entry described is gone: both
+now render a withheld field the same way, because there is finally a
+grant that expresses the difference.
+
+The original entry follows, including the cost estimate that was wrong
+and how it was corrected.
 
 The largest open design question, recorded rather than started. It
 touches every read path, and a half-migration would be worse than

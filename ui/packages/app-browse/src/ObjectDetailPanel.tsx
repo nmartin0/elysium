@@ -145,6 +145,27 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 
   function renderFieldValue(fieldName: string, value: unknown): React.ReactNode {
     const fieldSchema = typeSchema?.fields?.[fieldName]
+
+    // WITHHELD, NOT ABSENT. The caller holds discover: and not read:
+    // on this field, so they may know it exists and not what it holds.
+    //
+    // Checked FIRST, before the link handling below: a link field the
+    // caller cannot read must not render its targets either, and a
+    // value that never arrived would otherwise fall through to the
+    // em dash and read as "not set" -- which is a different fact and a
+    // misleading one.
+    //
+    // The same treatment the approvals diff gives a redacted field,
+    // deliberately: two surfaces showing the same state differently is
+    // what the ladder exists to end.
+    if (fieldSchema?.readable === false) {
+      return (
+        <Tag minimal intent="warning">
+          Hidden by your permissions
+        </Tag>
+      )
+    }
+
     const isLink = fieldSchema?.type === 'link'
 
     if (!isLink) return formatValue(value)
