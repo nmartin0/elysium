@@ -30,10 +30,12 @@ from core.llm.agent_step_prompt import _build_system_prompt
 CUSTOMER = {"Customer": {"id_field": "customer_id", "fields": {"name": {"type": "string"}}}}
 SHIPMENT = {"Shipment": {"id_field": "shipment_id", "fields": {"port": {"type": "string"}}}}
 
-# Roughly four characters per token. A budget in characters rather than
-# tokens because tokenising here would mean depending on a tokeniser
-# that varies by model, and the point is an order of magnitude.
-MAX_SHARED_CHARS = 160
+# Two users with nothing in common now share "- ", the opening of a
+# list item, and nothing else. The budget allows a little slack for
+# wording changes and no more -- it was 160 while a fixed preamble came
+# first, and tightening it is the point of this change rather than an
+# incidental effect of it.
+MAX_SHARED_CHARS = 8
 
 
 def _shared_prefix(first: str, second: str) -> int:
@@ -50,14 +52,18 @@ def _shared_prefix(first: str, second: str) -> int:
 def test_two_users_with_disjoint_schemas_share_almost_no_prefix():
     """THE REGRESSION GUARD.
 
-    Measured at the time of writing: 103 characters, about 25 tokens --
-    the preamble plus the "- " that opens the first object type line.
+    Measured before the fix: 103 characters, about 25 tokens -- a fixed
+    preamble plus the "- " that opens the first object type line. That
+    was a foothold, not a wall: an attacker aligns on it and probes
+    forward, and what they recover first is the victim's leading object
+    type name, which visible_schema filters per user.
 
-    The budget is deliberately loose. It is not there to pin the
-    current number, which will drift as wording changes; it is there to
-    fail loudly if someone moves the instructions, the examples or the
-    step vocabulary ABOVE the schema, which would take this into the
-    thousands.
+    Measured after: 2 characters. The schema is now the first thing in
+    the prompt, so there is nothing to align against.
+
+    The budget allows slack for wording and no more. It fails loudly if
+    someone moves the instructions, the examples or the step vocabulary
+    ABOVE the schema, which would take this into the thousands.
     """
     shared = _shared_prefix(
         _build_system_prompt(CUSTOMER, [], False, {}, []),

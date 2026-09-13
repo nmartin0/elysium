@@ -351,10 +351,41 @@ a different action or a different object instead.
 
 {_describe_actions(visible_action_types)}
 """
-    return f"""You gather information step by step to answer a question,
-using ONLY these object types and fields:
+    # THE SCHEMA IS THE FIRST THING IN THE PROMPT, and that ordering is
+    # a SECURITY property rather than a stylistic one.
+    #
+    # Prefix caching makes a cache hit measurably faster than a miss,
+    # and published attacks (PROMPTPEEK, EarlyBird, InputSnatch)
+    # reconstruct another tenant's prompt token by token from latency
+    # alone. They need STRICT PREFIX ALIGNMENT -- a probe must match
+    # from the very first token.
+    #
+    # This previously opened with a fixed preamble, so two users with
+    # COMPLETELY DISJOINT ontologies still shared 103 characters, about
+    # 25 tokens. Measured, not estimated. That is a foothold: an
+    # attacker aligns on it and probes forward, and what they recover
+    # first is the victim's leading object type name -- which
+    # visible_schema filters per user, so it is exactly what RBAC
+    # withholds.
+    #
+    # With the MAC/RBAC-filtered schema first, two such users share
+    # nothing beyond the "- " that opens a list item. The per-user
+    # schema becomes a genuine cache partition key rather than one
+    # sitting behind a shared header.
+    #
+    # DO NOT MOVE INSTRUCTIONS, EXAMPLES OR THE STEP VOCABULARY ABOVE
+    # THIS. Lengthening the shared prefix to improve cache hit rates
+    # would be a security regression wearing the costume of a
+    # performance win -- see tests/unit/
+    # test_prompt_prefix_is_user_specific.py, which fails if it
+    # happens.
+    #
+    # Per-query material may still be appended at the END, which is
+    # what synthesis_prompt.py already does.
+    return f"""{_describe_schema(visible_schema)}
 
-{_describe_schema(visible_schema)}
+Using ONLY the object types and fields above, you gather information
+step by step to answer a question.
 {tools_section}{writes_section}
 At each step, respond with ONLY one JSON object, in one of these shapes:
 

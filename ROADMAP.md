@@ -1442,11 +1442,21 @@ unnoticed:
   ontologies still share 103 characters -- about 25 tokens -- ending
   with the `- ` that opens the first object type line.
 
-  Twenty-five tokens is a foothold rather than a wall. It is where an
-  attacker would start probing forward, and what they would recover
-  first is the victim's leading object type name. Not nothing; far less
-  than the thousands of shared tokens a front-loaded instruction block
-  would give them.
+  Twenty-five tokens was a foothold rather than a wall -- where an
+  attacker would start probing forward, recovering the victim's leading
+  object type name, which visible_schema filters per user and RBAC is
+  meant to withhold.
+
+  **FIXED, not filed.** The schema is now the FIRST thing in the
+  prompt, and the preamble follows it as "Using ONLY the object types
+  and fields above...". Two users with disjoint ontologies now share 2
+  characters -- the "- " that opens a list item -- instead of 103.
+  There is no longer anything to align against.
+
+  The earlier judgement that this was disproportionate to fix was
+  wrong, and wrong in a specific way: it treated `-np 1` as mitigating.
+  One slot limits CONCURRENCY, not cache REUSE, so sequential requests
+  are still timeable. The fix turned out to be two lines.
 
   NOW ENFORCED, not merely asserted. tests/unit/
   test_prompt_prefix_is_user_specific.py fails if the shared prefix
