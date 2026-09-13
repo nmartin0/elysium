@@ -1915,9 +1915,19 @@ what remains.
    "(not set)" repeated down a column competes with the values beside
    it.
 
-   STILL OPEN: fixed precision for numbers, and IDs in monospace with a
-   copy affordance. Neither is a correctness problem, which is why they
-   did not come with this.
+   IDS IN MONOSPACE: done, with a `--font-mono` primitive (Blueprint
+   ships no monospace token, so there was nothing to override) and
+   `user-select: all` so one click takes the WHOLE id -- a double-click
+   otherwise stops at the underscore in cust_001 and gives "cust".
+
+   AND A BUG THE BLANK-CELL WORK MISSED. ObjectDetailPanel passed
+   `null` for an empty link list, so "this customer has no orders" read
+   as "we do not know this customer's orders". The test agreed with it,
+   which is how it survived that commit.
+
+   STILL OPEN: fixed precision for numbers. Not a correctness problem
+   -- and it wants a decision about WHOSE precision, since the ontology
+   declares types but not scale.
 9. **min-inline-size: 0 as a rule. DONE as documentation**, not three
    instances.
 

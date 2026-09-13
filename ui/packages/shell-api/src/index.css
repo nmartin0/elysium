@@ -916,7 +916,16 @@ button.danger {
   margin: 0.15rem 0 0.15rem;
 }
 
+/* THE OBJECT ID, in monospace. It is read to compare and to copy, and
+ * proportional type makes both harder -- 1/l/I and 0/O collapse, and
+ * two ids of equal length look different widths.
+ *
+ * user-select: all so one click selects the WHOLE id. An id is never
+ * usefully selected in part, and a double-click otherwise stops at
+ * the underscore in cust_001. */
 .object-detail__subtitle {
+  font-family: var(--font-mono);
+  user-select: all;
   margin: 0 0 1rem;
   color: var(--text-secondary);
   font-size: 0.85rem;

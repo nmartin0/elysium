@@ -64,6 +64,20 @@
 }
 
 :root {
+  /* A MONOSPACE STACK, for identifiers rather than for code.
+   *
+   * An object id is read to COMPARE and to COPY -- is this the same
+   * cust_001 I was looking at, did I select all of it. Proportional
+   * type makes both harder: 1/l/I and 0/O collapse together, and the
+   * glyphs shift so two ids of equal length look different widths.
+   *
+   * Blueprint ships no monospace token, so this is a primitive rather
+   * than an override of one. The stack is the system's own, which is
+   * what every platform already renders code in -- a webfont for an
+   * id would be weight paid on the first paint of every page.
+   */
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
   /* --- LAYER 2: SEMANTIC -------------------------------------------
    * Role names: what a thing IS in this interface, not which colour it
    * happens to be. Every value below is a primitive reference, never a

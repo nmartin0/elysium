@@ -217,3 +217,42 @@ describe('scrolling stays where it was started', () => {
     expect(shell).toMatch(/overflow-anchor:\s*auto/)
   })
 })
+
+describe('identifiers are readable as identifiers', () => {
+  /**
+   * UI_ROADMAP.md item 8: "IDs monospace with a copy affordance".
+   *
+   * An object id is read to COMPARE and to COPY -- is this the same
+   * cust_001 I was looking at, did I select all of it. Proportional
+   * type makes both harder: 1/l/I and 0/O collapse together, and two
+   * ids of equal length render different widths.
+   */
+  const tokens = read('packages/shell-api/src/tokens.css')
+  const shell = read('packages/shell-api/src/index.css')
+
+  it('declares a monospace stack as a primitive', () => {
+    // A PRIMITIVE, not an override. Blueprint ships no monospace
+    // token, so there is nothing to override -- and a raw font stack
+    // inside one component rule is what the token layer exists to
+    // prevent.
+    expect(tokens).toMatch(/--font-mono:/)
+  })
+
+  it('uses the system stack rather than a webfont', () => {
+    // A webfont for an id is weight paid on the first paint of every
+    // page, for glyphs every platform already has.
+    expect(tokens).toMatch(/ui-monospace/)
+    expect(tokens).not.toMatch(/--font-mono:[^;]*url\(/)
+  })
+
+  it('renders the object id in it', () => {
+    expect(shell).toMatch(/\.object-detail__subtitle\s*\{[^}]*font-family:\s*var\(--font-mono\)/s)
+  })
+
+  it('makes one click select the whole id', () => {
+    // THE COPY AFFORDANCE. An id is never usefully selected in part,
+    // and a double-click otherwise stops at the underscore in
+    // cust_001 -- giving "cust" and a silent mistake downstream.
+    expect(shell).toMatch(/\.object-detail__subtitle\s*\{[^}]*user-select:\s*all/s)
+  })
+})

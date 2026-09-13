@@ -216,12 +216,23 @@ describe('ObjectDetailPanel -- link field rendering', () => {
     expect(screen.getByRole('link', { name: 'order_2' })).toHaveAttribute('href', '/objects/Order/order_2')
   })
 
-  it('renders an empty array link value as "—"', async () => {
+  it('renders an empty link as "(none)", not as absence', async () => {
+    // A LINK THAT WAS FOLLOWED AND FOUND NOTHING is not an unset
+    // field. "This customer has no orders" and "we do not know this
+    // customer's orders" are different answers, and a reader deciding
+    // whether to chase a missing record needs to know which.
+    //
+    // This test previously asserted the absence marker, which is how
+    // the bug survived: the call site passed null for an empty list,
+    // and the test agreed with it.
+    //
+    // The null case is already covered above ("renders a null link
+    // value as an em dash"), so the distinction holds at both ends.
     const schema: VisibleSchema = { Customer: { fields: { orders: { type: 'link', target: 'Order' } } } }
     mockedGetObjectDetail.mockResolvedValue({ fields: { orders: [] } })
     renderPanel('Customer', 'cust_001', { visibleSchema: schema })
 
-    await waitFor(() => expect(screen.getByText('—')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('(none)')).toBeInTheDocument())
   })
 
   it('renders a plain data field as a plain value, never as a link', async () => {

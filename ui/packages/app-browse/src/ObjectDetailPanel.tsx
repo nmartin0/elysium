@@ -156,7 +156,13 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
     // resolves both shapes correctly; this only decides how to RENDER
     // whichever shape arrived.
     const linkedIds = Array.isArray(value) ? value : [value]
-    if (linkedIds.length === 0) return formatValue(null)
+    // THE EMPTY ARRAY, not null. This passed null and so rendered as
+    // absence -- but a link that was FOLLOWED and found nothing is not
+    // an unset field. "A customer with no transactions" and "we do not
+    // know this customer's transactions" are different answers to the
+    // same question, and this call site predated formatValue learning
+    // to tell them apart.
+    if (linkedIds.length === 0) return formatValue([])
 
     /**
      * The COUNT first, then a bounded sample.
