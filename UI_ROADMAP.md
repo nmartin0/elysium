@@ -1813,26 +1813,34 @@ the region.
 
 ### To build, in dependency order
 
+**ALL OF 1-7 AND 9 ARE SHIPPED.** Marked individually below rather
+than deleted, because each carries the reasoning for a decision that is
+now load-bearing -- why Blueprint always wins, why the dark class is
+bp6 and not bp5, why an element selector may not impose on a Blueprint
+widget. Item 5 is partly done and item 8 has two leftovers; both say
+what remains.
+
 **Structural run first**, because each makes the next cheaper:
 
-1. **Cascade layers.** `@layer reset, tokens, base, layout, components,
+1. **Cascade layers. DONE.** `@layer reset, tokens, base, layout, components,
    utilities, overrides`, declared once. A later layer wins regardless
    of specificity, so sitting beside Blueprint stops requiring
    escalation. Zero `!important` today; this is how that stays true.
-2. **Token architecture.** Primitives, semantic, component. Components
+2. **Token architecture. DONE.** Primitives, semantic, component. Components
    consume layer 3 only. Cheap now and expensive after the dark theme,
    because every component written before the split gets revisited.
-3. **Dark theme** via Blueprint's `.bp5-dark`, with a persisted toggle.
+3. **Dark theme. DONE** -- via Blueprint's `.bp6-dark`, not bp5, with
+   a persisted toggle.
    Most of the visual change asked for, for almost no work.
 
 **Then the two biggest user-visible wins:**
 
-4. **Chart colour scale.** LIVE, NOT HYPOTHETICAL -- echarts is a
+4. **Chart colour scale. DONE.** LIVE, NOT HYPOTHETICAL -- echarts is a
    dependency and shell-api/src/components/Chart.tsx already exists,
    so the "before the first dashboard ships" window has closed. Needs
    categorical (6-8 hues, CVD-safe), sequential and diverging scales
    on both themes. The ONE palette decision Blueprint does not cover.
-5. **View-state matrix.** Nine states in the spec, and ONE OF THEM
+5. **View-state matrix. PARTLY DONE.** Nine states in the spec, and ONE OF THEM
    CANNOT BE BUILT HERE -- recorded before someone tries.
 
    The spec asks for a PERMISSION DENIED state "distinct from empty --
@@ -1866,11 +1874,20 @@ the region.
 
 **Then:**
 
-6. **Container queries.** Zero exist, three media queries. A
+
+   SHIPPED: the two empty states (nothing here yet vs no matches, with
+   a clear-filters action), and NonIdealState as the shared shape.
+   REJECTED, recorded so it is not rediscovered: a permission-denied
+   state, because uniform denial is a security property -- announcing
+   that hidden rows exist would violate MAC.
+
+   STILL OPEN: the loading, error and partial states as one audited
+   matrix rather than per-panel choices.
+6. **Container queries. DONE.** Zero exist, three media queries. A
    component's real constraint is its PANEL width, which changes when
    the sidebar collapses -- not the viewport. Cheap at three, expensive
    at thirty, and a precondition for per-sub-app sidebar collapse.
-7. **Scrolling.** overscroll-behavior: contain, sticky headers, scroll
+7. **Scrolling. DONE.** overscroll-behavior: contain, sticky headers, scroll
    restoration on back and on sub-app return, overflow-anchor, total
    counts ("1,284 entities"), no row-shift on load-more, virtualize
    above ~200.
@@ -1901,7 +1918,8 @@ the region.
    STILL OPEN: fixed precision for numbers, and IDs in monospace with a
    copy affordance. Neither is a correctness problem, which is why they
    did not come with this.
-9. **min-inline-size: 0 as a rule**, not three instances.
+9. **min-inline-size: 0 as a rule. DONE as documentation**, not three
+   instances.
 
 **Deferred, with reasons:**
 

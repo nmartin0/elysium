@@ -131,7 +131,7 @@ be one example.
 That teaches a keyword rather than a concept, and the next phrasing
 fails identically.
 
-## Approvals step 3, and the landmine already under it
+## Approvals step 3, and the landmine already under it -- SHIPPED
 
 The only item here that is product work rather than maintenance, and
 the best specified. Everything else on this list came out of a
@@ -294,7 +294,7 @@ nobody has been sure.
 Confidence: the finding is certain, the design is not. Do not start
 this alongside anything else.
 
-## A deliberate security pass over the agent loop
+## A deliberate security pass over the agent loop -- ALL THREE ANSWERED
 
 Three security items sit in ROADMAP.md unaddressed, and the pattern
 that produced them is the reason to schedule this: every one came from
@@ -330,11 +330,6 @@ the per-query snapshot, and it generalises.
   its UserRecord. If a session outlives that check, the exposure window
   is not one query but one token lifetime. `session_store` has not been
   read.
-- Can `--context-shift` evict the system prompt mid-query, and what
-  does the model do then? The guardrails are at the FRONT of the
-  prompt, which is what gets discarded first. Not a security boundary
-  -- the mediator enforces regardless -- but the failure would look
-  like the model forgetting the rules, and nobody has tried it.
 - **AUDITED, AND IT HOLDS.** Filtering on a field the caller cannot
   read and filtering on one that does not exist produce the identical
   message -- "Invalid search criteria" -- with no field name and no
@@ -456,7 +451,7 @@ load. Its generation is respectable, but generation is not the
 bottleneck. Worth recording that the MoE theory was tested and failed
 on this hardware, so nobody re-derives it.
 
-## templates/config.yaml still teaches the two-model form
+## templates/config.yaml still teaches the two-model form -- NO LONGER
 
 Small, and waiting on the item above. `templates/` is what a new
 deployment copies, and it still names a `step_model`/`synthesis_model`
@@ -524,7 +519,7 @@ Leaning toward always, with a comment saying why. Not urgent until a
 reasoning model is actually configured -- but the cost of finding out
 the hard way is a query that silently takes ten times longer.
 
-## Domain neutrality: the engine is clean, the prompts are not
+## Domain neutrality: the engine is clean, the prompts are not -- FIXED
 
 Asked directly -- does the ontology fully decouple from domain at its
 core, with data passed in shaping it and the machinery staying neutral?
@@ -1245,58 +1240,71 @@ migration. They are not the same question.
 
 ## Suggested order
 
-**RESOLVED, no longer blocking:**
+Rewritten after a session that closed most of it. **Five of the last
+eight items checked turned out already done or overstated** -- the
+lists had drifted, consistently toward understating what was true, and
+checking a premise was repeatedly more productive than following the
+plan. Do that first on anything below.
 
-00. ~~aggregate_object and search_around are unreachable.~~ **DONE** in
-    af12f7b, "Make aggregate_object and search_around reachable". Both
-    validator branches exist, and the three-way consistency probe this
-    entry asked for exists too, as
-    tests/unit/test_step_vocabulary_consistency.py -- handlers,
-    validator branches, and the step names the prompt teaches, checked
-    against each other so the drift CLASS is caught rather than the one
-    instance.
+**DONE, kept so the reasoning survives:**
 
-    Verified before trusting this note: a probe confirmed both branches
-    are present and reject only on missing keys, not on the step name.
+00. ~~aggregate_object and search_around unreachable.~~ Fixed in
+    af12f7b, with the three-way consistency probe the entry asked for.
+0.  ~~The model decision.~~ phi4-mini stays.
+1.  ~~Approvals step 3.~~ Shipped end to end: dynamic criteria values,
+    an unspoofable `proposer.` reference, criteria evaluated against
+    the APPROVER, eligibility by grant rather than ownership, a
+    listable queue, a redacting diff, both parties audited, and a
+    fifth sub-app to reach it. Two real bugs surfaced on the way -- a
+    refused approval destroyed the proposal, and the inbox was
+    cacheable -- both found by USING it rather than by any test.
+2.  ~~The security pass.~~ All three questions answered. Disabling is
+    immediate (one narrow gap found and closed); error messages leak
+    nothing, and the protection is structural; --context-shift is not
+    ours to answer.
 
-    **This unblocks item 3.** The prompt-quality measurement session was
-    held back because three of its four questions would have measured
-    the wrong thing while the parser silently converted these steps
-    into a finish.
+**THE ONE THING THAT NEEDS A MACHINE WITH A MODEL:**
 
-**RESOLVED, no longer blocking:**
+3.  **The prompt-quality items as ONE measurement session** -- the
+    over-fetching, the missed aggregates, the pre-flight verdicts, and
+    whether a small model can work without the schema in the prompt.
+    Unblocked now that item 00 is fixed: three of the four would have
+    measured the wrong thing while the parser silently converted
+    aggregate_object into a finish.
 
-0. ~~The model decision.~~ Done. phi4-mini stays; qwen2.5:3b
-   reproduced its recorded looping failure on a multi-hop run and
-   never reached an answer. templates/config.yaml is unblocked.
+    They share a harness -- one-shot calls against the real prompt,
+    varying one thing at a time -- so together they cost about an hour
+    of machine time and answer all four. ITERATE rather than testing
+    three hand-written prompts; see the 2026 research entry below.
 
-**Then, in this order:**
+    Three commits now point at this: the step-prompt examples were made
+    placeholders (nouns only, structure untouched, deliberately not
+    prejudging what the session asks), and both aggregate entries
+    depend on its findings.
 
-1. **Approvals step 3.** The only product work here. Everything else on
-   this list came out of a performance detour whose purpose was making
-   this testable.
-2. **The security pass.** The findings pattern is the signal: three
-   items, all found sideways, one of them by the user rather than by
-   any audit.
-3. **The prompt-quality items as ONE measurement session** -- the
-   over-fetching, the missed aggregates, the pre-flight verdicts, and
-   whether a small model can work without the schema in the prompt.
-   ONLY after item 00: three of the four would measure the wrong thing
-   while aggregate_object and search_around are unreachable.
-   They share a harness (one-shot calls against the real prompt,
-   varying one thing at a time), so together they cost about an hour of
-   machine time and answer all three.
+**PARKED, deliberately, with a note not to start it alongside anything
+else:**
 
-   **Two changes to how this session should run**, both from the 2026
-   research above. ITERATE rather than testing three hand-written
-   variants once -- iterative system-prompt optimisation took small
-   models from 0% output accuracy to 84-87% at near-baseline latency,
-   which is the single highest-leverage intervention documented for
-   this size class. And report FOUR metrics separately -- schema
-   validity, answer accuracy, executable accuracy, wrong-valid rate --
-   rather than the single `valid` column the model benchmark used,
-   where every model scored 2/2 and the column discriminated
-   nothing.
+4.  **The permission LADDER.** Grants are independent strings, so
+    `read:Customer.email` can be granted without `read:Customer` --
+    verified. Browse HIDES an unreadable field and the approvals diff
+    REDACTS it, which is a contradiction nothing can currently express.
+    Foundry's precedent is a ladder (Owner/Editor/Viewer/Discoverer)
+    with schema and data as separate resources, not rwx bits. It
+    touches every read path and a half-migration would reproduce the
+    inconsistency it exists to fix.
+
+**STILL OPEN, in no particular order and none of them urgent:**
+
+- The UI backlog: fixed precision and monospace IDs (item 8's
+  leftovers), the keyboard model's roving-focus half, URL-as-state.
+- What the LLM decides versus what Python already decides for it.
+- Whether the schema belongs in the prompt at all -- the largest open
+  architectural question here, and adjacent to the measurement session.
+- Calibration probes, admin performance metrics, host metrics.
+- 5c of HOT_RELOAD_PLAN.md: sync to a branch and validate there.
+  Genuinely optional -- the generation-swap design makes branch
+  validation belt-and-braces rather than load-bearing.
 
 **Fold into work already scheduled, rather than scheduling
 separately.** Each of these is cheaper done alongside its neighbour
