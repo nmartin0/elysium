@@ -420,7 +420,7 @@ def test_a_type_error_is_logged_as_a_likely_bug_not_just_a_bad_step(caplog):
         roles: dict = {}
         schema: dict = {}
 
-        def visible_schema(self, user_record):
+        def visible_schema(self, user_record, *, for_agent: bool = False):  # noqa: ARG002 -- accepted, ignored: this double returns a fixed schema
             return {}
 
         def search_object(self, *args, **kwargs):
@@ -451,7 +451,7 @@ def test_a_value_error_is_still_treated_as_an_ordinary_bad_step(caplog):
         roles: dict = {}
         schema: dict = {}
 
-        def visible_schema(self, user_record):
+        def visible_schema(self, user_record, *, for_agent: bool = False):  # noqa: ARG002 -- accepted, ignored: this double returns a fixed schema
             return {}
 
         def search_object(self, *args, **kwargs):

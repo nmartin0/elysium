@@ -25,7 +25,7 @@ class _Mediator:
     def __init__(self):
         self.reads = []
 
-    def visible_schema(self, user_record):
+    def visible_schema(self, user_record, *, for_agent: bool = False):  # noqa: ARG002 -- accepted, ignored: this double returns a fixed schema
         return {}
 
     def search_object(self, user_record, object_type, conditions, **kwargs):

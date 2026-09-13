@@ -625,7 +625,11 @@ class AgentLoop:
         # handled correctly already, since _build_system_prompt() itself
         # is rebuilt fresh on every call to next_step() below, and
         # `gathered` is the same list, growing across hops.
-        visible_schema = self.mediator.visible_schema(user_record)
+        # for_agent=True: the model's schema is a menu of what it can
+        # DO. A discover-only type or field is something it can only
+        # fail on -- prompt tokens every hop, and steps the mediator
+        # then denies. A PERSON sees them, through the UI's own call.
+        visible_schema = self.mediator.visible_schema(user_record, for_agent=True)
         visible_action_types = self.write_mediator.visible_action_types(user_record) if self.write_mediator else {}
 
         for _ in range(1, self.max_hops + 1):

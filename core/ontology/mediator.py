@@ -610,16 +610,36 @@ class DataMediator:
         security_value = self._get_security_value(object_type, object_id)
         return security_value is not None and security_value == requesting_user_security_value
 
-    def visible_schema(self, user_record: UserRecord) -> dict:
+    def visible_schema(self, user_record: UserRecord, *, for_agent: bool = False) -> dict:
         # THE single source of truth for "what does this user get to
-        # know exists." A type is included whenever read:{object_type}
-        # is granted -- even with zero visible DATA fields (discovery-
-        # only access is a real, legitimate state). id_field requires
-        # its own explicit read:{object_type}.{id_field} grant, same as
-        # any other field -- no special case.
+        # know exists." A type is included whenever discover:{type} is
+        # granted -- and `read:` implies `discover:`, so the ordinary
+        # grant still admits one. id_field requires its own explicit
+        # grant, same as any other field -- no special case.
+        #
+        # "Discovery-only access" USED TO MEAN read:{type} with no
+        # field grants, which the old comment here called a real and
+        # legitimate state. It was, but it was not discovery: read:
+        # gates search_object, so such a role could still enumerate
+        # every object and get ids back, and an id is data. The genuine
+        # middle rung is discover:{type}, which yields none.
+        #
+        # THE AGENT AND THE UI ARE DIFFERENT AUDIENCES, which for_agent
+        # selects between. A discover-only type is worth showing a
+        # PERSON -- it says the deployment holds something they cannot
+        # see, a fact about their own access. To the MODEL the schema
+        # is a menu of what it can DO, and a type it cannot search is
+        # an item it can only fail on: prompt tokens every hop, and
+        # steps the mediator then denies.
         visible = {}
         for object_type, type_def in self.schema.items():
-            if not authorize(user_record, self.roles, f"read:{object_type}"):
+            if not authorize(user_record, self.roles, f"discover:{object_type}"):
+                continue
+
+            # READABLE IS A SEPARATE QUESTION, and only it permits
+            # search. A discover-only type yields no ids at all.
+            readable = authorize(user_record, self.roles, f"read:{object_type}")
+            if for_agent and not readable:
                 continue
 
             visible_fields = {
@@ -628,10 +648,24 @@ class DataMediator:
                     "display_name": get_display_name(field_info, field_name),
                     "visibility": field_info.get("visibility", "normal"),
                     "status": field_info.get("status", "active"),
+                    # NAMED BUT WITHHELD. False means the caller may
+                    # know this field exists and not what it holds --
+                    # the middle rung, and what the approvals diff
+                    # already renders as "Hidden by your permissions".
+                    "readable": authorize(
+                        user_record, self.roles, f"read:{object_type}.{field_name}"
+                    ),
                 }
                 for field_name, field_info in type_def["fields"].items()
-                if authorize(user_record, self.roles, f"read:{object_type}.{field_name}")
+                if authorize(user_record, self.roles, f"discover:{object_type}.{field_name}")
             }
+
+            if for_agent:
+                # A field the model cannot read is one it cannot use,
+                # for the same reason as the type above.
+                visible_fields = {
+                    name: info for name, info in visible_fields.items() if info["readable"]
+                }
 
             id_field = type_def["id_field"]
             id_field_visible = authorize(user_record, self.roles, f"read:{object_type}.{id_field}")
@@ -678,6 +712,10 @@ class DataMediator:
             # keys below are ever included now.
             visible[object_type] = {
                 "fields": visible_fields,
+                # Whether this type can be SEARCHED, so a UI can decide
+                # whether to offer a search box at all rather than one
+                # that returns nothing.
+                "readable": readable,
                 "id_field": id_field if id_field_visible else None,
                 "title_field": title_field if title_field_visible else None,
                 # Display metadata, resolved here rather than in the

@@ -221,7 +221,7 @@ def test_a_set_shaped_step_survives_a_whole_run():
     # The regression test proper. Goes through run(), so it exercises
     # signature building and duplicate recording, not just the handler.
     mediator = _FakeMediator()
-    mediator.visible_schema = lambda user_record: {}
+    mediator.visible_schema = lambda user_record, **_kwargs: {}
     loop = AgentLoop(
         client=_Scripted(
             '{"step": "get_object", "object_type": "Transaction",'
@@ -269,7 +269,7 @@ def test_a_later_get_field_on_an_already_batched_object_is_a_duplicate():
     # so following a batch with a single read of one of those fields is
     # caught. Before the fix this recorded ONE entry for the whole set.
     mediator = _FakeMediator()
-    mediator.visible_schema = lambda user_record: {}
+    mediator.visible_schema = lambda user_record, **_kwargs: {}
     loop = AgentLoop(
         client=_Scripted(
             '{"step": "get_object", "object_type": "Transaction",'
