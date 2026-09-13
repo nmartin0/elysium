@@ -116,7 +116,14 @@ add it, and we will know what it is for.
 
 ---
 
-## Build order
+## Build order -- SEE BACKLOG.md
+
+> **The open items from this file now live in BACKLOG.md**, which is
+> the one list. What stays here is the REASONING -- why a thing was
+> decided, rejected or measured -- because that has been needed
+> repeatedly and a backlog entry is the wrong place for it.
+
+### The original phases, kept for their reasoning
 
 ### Phase 1 — the filter model (backend) — DONE
 

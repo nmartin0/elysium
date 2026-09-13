@@ -1299,7 +1299,14 @@ Not just an architecture change -- real, concrete new capability:
 
 ---
 
-## Near-term (prioritized, in build order)
+## Near-term -- SEE BACKLOG.md
+
+> **The open items from this file now live in BACKLOG.md**, which is
+> the one list. What stays here is the REASONING -- why a thing was
+> decided, rejected or measured -- because that has been needed
+> repeatedly and a backlog entry is the wrong place for it.
+
+### The original near-term list, kept for its reasoning
 
 Recommended order, from the original research: lowest-risk and
 highest-precedent first, highest-effort/lowest-immediate-ROI last.

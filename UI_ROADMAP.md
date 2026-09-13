@@ -1811,7 +1811,14 @@ If the header looks disproportionate in practice, the fix is its
 CONTENTS -- an `<h1>Elysium</h1>` where a compact mark would do -- not
 the region.
 
-### To build, in dependency order
+### To build, in dependency order -- SEE BACKLOG.md
+
+> **The open items from this file now live in BACKLOG.md**, which is
+> the one list. What stays here is the REASONING -- why a thing was
+> decided, rejected or measured -- because that has been needed
+> repeatedly and a backlog entry is the wrong place for it.
+
+### The original order, kept for its reasoning
 
 **ALL OF 1-7 AND 9 ARE SHIPPED.** Marked individually below rather
 than deleted, because each carries the reasoning for a decision that is
