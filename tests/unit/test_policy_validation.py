@@ -14,7 +14,7 @@ uses for the sibling ontology_schema.yaml validator.
 
 import pytest
 
-from core.intermediate_layer.policy_validation import validate_roles
+from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
 
 OBJECT_TYPES = {
     "Widget": {"id_field": "widget_id", "fields": {"name": {"type": "data"}}},
@@ -26,7 +26,24 @@ ENABLED_TOOLS = ["linear_regression"]
 
 
 def _role(*grants):
-    return {"editor": {"allowed_actions": list(grants)}}
+    """A role holding exactly these grants.
+
+    Field grants get their TYPE grant added automatically, because a
+    field grant without one is now refused -- a role cannot read a
+    field of a type it cannot see. These tests are about whether a
+    field grant NAMES something real, and each would otherwise fail on
+    a rule it is not testing.
+
+    Tests for the coherence rule itself build their roles directly, so
+    this helper cannot mask it.
+    """
+    grants = list(grants)
+    implied = [
+        f"read:{grant.split(':', 1)[1].split('.', 1)[0]}"
+        for grant in grants
+        if grant.startswith(("read:", "discover:")) and "." in grant.split(":", 1)[1]
+    ]
+    return {"editor": {"allowed_actions": grants + [g for g in implied if g not in grants]}}
 
 
 def test_manage_users_is_always_valid():
@@ -136,3 +153,55 @@ def test_one_invalid_role_does_not_hide_behind_a_valid_sibling():
 
 def test_a_role_with_no_allowed_actions_at_all_is_fine():
     validate_roles({"empty_role": {}}, OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)  # does not raise
+
+
+# --- the coherence rule: a field grant needs its type -----------------
+#
+# Grants were independent strings, so `read:Customer.email` could be
+# held WITHOUT any grant on Customer -- a role authorised to read a
+# field of a type it cannot even discover. Verified against authorize()
+# before the rule existed: True for the field, False for the type.
+#
+# Nothing enforced it because nothing looked at two grants together;
+# every other check in this module reads one string at a time.
+
+def test_a_field_grant_without_its_type_is_refused():
+    roles = {"editor": {"allowed_actions": ["read:Widget.name"]}}
+
+    with pytest.raises(ValueError, match="no grant on 'Widget'"):
+        validate_role_coherence(roles)
+
+
+def test_a_read_grant_on_the_type_satisfies_it():
+    roles = {"editor": {"allowed_actions": ["read:Widget", "read:Widget.name"]}}
+
+    validate_role_coherence(roles)
+
+
+def test_a_DISCOVER_grant_on_the_type_satisfies_it_too():
+    # The field needs the type to be VISIBLE, not readable. A role that
+    # may know Widget exists and may read one of its fields is
+    # coherent -- and is exactly the shape the ladder exists to allow.
+    roles = {"editor": {"allowed_actions": ["discover:Widget", "read:Widget.name"]}}
+
+    validate_role_coherence(roles)
+
+
+def test_a_discover_field_grant_needs_its_type_as_well():
+    roles = {"editor": {"allowed_actions": ["discover:Widget.name"]}}
+
+    with pytest.raises(ValueError, match="no grant on 'Widget'"):
+        validate_role_coherence(roles)
+
+
+def test_a_bare_type_grant_is_unaffected():
+    # THE CONTROL. The overwhelmingly common shape, and a rule that
+    # demanded something of it would break every deployment.
+    validate_roles(_role("read:Widget"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
+
+
+def test_discover_on_a_type_that_does_not_exist_is_refused():
+    # The new verb names the same things read: does, so a typo in it is
+    # the same mistake and must fail the same way.
+    with pytest.raises(ValueError, match="unknown type"):
+        validate_roles(_role("discover:Wigdet"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)

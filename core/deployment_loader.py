@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 from core.functions.registry import validate_function_declarations
 from core.immutable import deep_freeze
 from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.policy_validation import validate_roles
+from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
 from core.mirror.mirror_adapter import MirrorReadAdapter
@@ -485,6 +485,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # anywhere, just silently never match.
     validate_roles(deployment_config.roles, deployment_config.schema, deployment_config.action_types,
                     deployment_config.enabled_tools)
+    # Cross-grant coherence, which validate_roles() deliberately does
+    # not do -- see validate_role_coherence()'s own docstring for why
+    # it cannot live inside a function the linter calls per grant.
+    validate_role_coherence(deployment_config.roles)
 
     return deployment_config
 
