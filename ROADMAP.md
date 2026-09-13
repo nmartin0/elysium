@@ -1320,10 +1320,31 @@ highest-precedent first, highest-effort/lowest-immediate-ROI last.
    with a real batch cap. A small set of filter-capable charts
    (Listogram, Histogram, Single Statistic) before anything fancier
    (maps, grid plots).
-3. **A Pending Changes / Approvals inbox.** *(Currently on hold --
-   its own real, blocking backend prerequisite, the `PendingWriteStore`
-   rebuild, is deferred pending an eventual PostgreSQL migration; see
-   "Backend foundation work" above.)* The two-phase propose/confirm
+3. **A Pending Changes / Approvals inbox. SHIPPED**, on the existing
+   store rather than waiting for the PostgreSQL migration this entry
+   assumed was a prerequisite. It was not: the store survives a
+   configuration reload, which is what the inbox actually needed, and
+   its in-process limitation is a single-worker constraint rather than
+   a blocker.
+
+   What landed: criteria comparing against parameters, the acting user
+   and an unspoofable `proposer.`; criteria evaluated against the
+   APPROVER rather than only the proposer; eligibility by grant instead
+   of ownership; a listable queue showing both what you may decide and
+   what you proposed; a diff that REDACTS fields you may not read
+   rather than omitting them; both parties recorded in the audit; and a
+   fifth sub-app to reach it.
+
+   Two real bugs surfaced by using it: a refused approval destroyed the
+   proposal (the reservation is now two-phase), and the inbox was
+   cacheable. Neither was found by a test.
+
+   STILL OPEN: per-task eligibility, which Foundry has and we do not --
+   they scope a reviewer's action to the tasks they are eligible for,
+   where we approve a whole batch atomically. Ours is defensible, since
+   partial application of a multi-object write is a correctness
+   problem, but the two want reconciling rather than one replacing the
+   other.* The two-phase propose/confirm
    mechanism already exists (`write_log.db`, confirm/reject); this is
    giving it its own queue view across the whole org instead of only
    inline, per-submission. Reviewer eligibility derived from the SAME
@@ -1457,38 +1478,37 @@ unnoticed:
   documenting that it must not be enabled on an action reachable from
   attacker-influenced data.
 
-- **Authorization is snapshotted per query, not per hop.** Raised
-  directly, and worth recording because slow hardware turns a
-  theoretical window into a real one. `AgentLoop.run()` computes
-  `visible_schema` ONCE and passes the same dict to every hop, and
-  api/auth_dependency.py resolves the `UserRecord` -- including the
-  `is_user_disabled` check -- once per HTTP request.
+- **Authorization is snapshotted per query, not per hop. CLOSED --
+  fixed, not merely reassessed.** Kept because a security backlog
+  claiming a hole that no longer exists is worse than one that is
+  incomplete: it misdirects whoever reads it next.
 
-  Every access decision is still enforced per call, so no check is
-  skipped. What is stale is the SUBJECT of those checks. If an
-  administrator disables a user or changes their role while a query
-  is running, the query continues under the record it started with.
+  What this entry described was real. `AgentLoop.run()` computed
+  `visible_schema` once and api/auth_dependency.py resolved the
+  UserRecord once per request, so a user disabled mid-query continued
+  under the record they started with -- and on CPU-only hardware, where
+  a query can run for minutes, that window was long enough to matter.
 
-  On fast hardware that window is milliseconds. On a CPU-only
-  deployment where a single query can run for many minutes, it is
-  long enough to matter. Role-to-grant mappings are safe from this
-  today because policy.yaml is read once at startup by
-  load_deployment_bundle() and never reloaded -- but a user's ROLE
-  ASSIGNMENT lives in credentials.db and IS runtime-mutable.
+  HOT_RELOAD_PLAN.md step 4a closed it. `AgentLoop.run()` takes a
+  `refresh_user` callable and re-resolves the acting user EVERY HOP; a
+  changed or disabled record stops the loop and the route answers 409.
+  The gathered work is returned internally and discarded by the route,
+  so a disabled user receives nothing.
 
-  Also unaddressed, and part of the same question: an object type or
-  field removed from the ontology, or a silo removed from
-  data_silos.yaml, requires a restart to take effect, so a running
-  deployment can be describing a schema that no longer matches its
-  storage. The failure mode there is an adapter error rather than a
-  leak, but it has never been tested deliberately.
+  A REMAINING ASYMMETRY WAS FOUND AND CLOSED SEPARATELY. The per-hop
+  check asked `is_user_disabled`; the POST-LOOP re-verification
+  compared UserRecords, and `get_user_record()` returns the same record
+  whether or not an account is disabled -- so a user disabled after the
+  last hop but before synthesis finished was still served the answer.
+  That check now asks both.
 
-  The cheap partial fix is re-resolving the UserRecord per hop rather
-  than per request, which closes the disable/role-change case at the
-  cost of one credentials.db read per step. Recomputing
-  `visible_schema` per hop is more expensive and would also change
-  the prompt mid-query, which interacts with the caching note above
-  -- so it is a real decision, not an obvious improvement.
+  The two supporting claims are also out of date. Role-to-grant
+  mappings are no longer "read once at startup and never reloaded" --
+  policy.yaml reloads through POST /admin/reload without a restart. Nor
+  does a removed object type or field require a restart; a reload
+  rebuilds the generation, and core/mirror/drift_policy.py decides what
+  a vanished source column means rather than leaving it to whatever the
+  storage layer does.
 
 - **`TrustedHostMiddleware` / `Host` header validation. CLOSED, not
   deferred.** Re-examined rather than left open, and both original
