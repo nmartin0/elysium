@@ -2053,8 +2053,21 @@ async def query(body: QueryRequest, request: Request,
 
     # THE re-verification -- see module docstring. Applies before
     # EITHER branch below.
-    current_record_now = request.app.state.user_directory.get_user_record(current_user.user_id)
-    if current_record_now != current_user:
+    #
+    # DISABLED IS CHECKED SEPARATELY, because a record comparison
+    # cannot see it. get_user_record() returns the same UserRecord
+    # whether or not the account is disabled -- verified directly, not
+    # assumed -- so a user disabled mid-request with unchanged MAC and
+    # role compares EQUAL here and the answer is served.
+    #
+    # The per-hop refresh_user() above already checks is_user_disabled,
+    # so the exposure was narrow: disabled after the last hop but
+    # before synthesis finished. Narrow is not none, and the asymmetry
+    # was the tell -- two checks of the same thing disagreeing about
+    # what "still authorized" means.
+    user_directory = request.app.state.user_directory
+    current_record_now = user_directory.get_user_record(current_user.user_id)
+    if user_directory.is_user_disabled(current_user.user_id) or current_record_now != current_user:
         raise HTTPException(
             status_code=409,
             detail="Your permissions changed while this request was processing -- please try again",

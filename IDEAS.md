@@ -223,10 +223,27 @@ the per-query snapshot, and it generalises.
 
 **Specific things to check, none confirmed, all cheap to answer:**
 
-- Does disabling a user invalidate existing SESSIONS, or only block new
-  requests? `is_user_disabled` is checked when a request resolves its
-  UserRecord. If a session outlives that check, the exposure window is
-  not one query but one token lifetime. `session_store` has not been
+- **ANSWERED, and a narrow gap found and closed.** Disabling takes
+  effect IMMEDIATELY: every request resolves its UserRecord through
+  get_current_user(), which asks is_user_disabled(), so the exposure is
+  one request rather than one token lifetime. The worry in the original
+  note does not hold.
+
+  THE GAP WAS AN ASYMMETRY. The agent loop's per-hop refresh_user()
+  asks is_user_disabled(); the post-loop re-verification compared
+  UserRecords instead -- and get_user_record() returns the SAME record
+  whether or not an account is disabled, so a user disabled with
+  unchanged MAC and role compared EQUAL and was served the answer.
+  Window: after the last hop, before synthesis finished. Now closed.
+
+  Also pinned: an unknown user is deliberately NOT reported disabled
+  (the method answers one question and says so), and the safety for a
+  deleted account rests on get_user_record()'s empty-record contract --
+  verified to grant nothing, rather than assumed.
+
+  (original note) `is_user_disabled` is checked when a request resolves
+  its UserRecord. If a session outlives that check, the exposure window
+  is not one query but one token lifetime. `session_store` has not been
   read.
 - Can `--context-shift` evict the system prompt mid-query, and what
   does the model do then? The guardrails are at the FRONT of the
