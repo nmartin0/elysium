@@ -88,9 +88,44 @@ class OllamaAdapter:
         # raising it would make step selection erratic and the audit
         # trail harder to reason about. Config sets a default for calls
         # that express no opinion, never an override for those that do.
+        # DELIBERATION OFF BY DEFAULT, for the same reason the caller's
+        # temperature wins above: a reasoning model emits a chain of
+        # thought BEFORE its answer, and neither call here wants one. A
+        # step has to parse as a specific JSON shape; synthesis has a
+        # human waiting.
+        #
+        # THE COST IS THE WHOLE STORY ON THIS HARDWARE. Measured on
+        # this deployment, asked to reply with a single word: phi4-mini
+        # emitted 2 tokens, gemma4:e2b 84, qwen3.5:2b 370. At ~1.5
+        # tokens/sec that is under a second against six minutes, and
+        # think=false cut qwen3.5:2b from 370 tokens back to 2.
+        #
+        # NOTHING IS PAID TODAY -- no configured model reasons -- and
+        # that is exactly why this is worth sending now. The newest
+        # small models increasingly reason BY DEFAULT, so the first
+        # deployment to configure one would inherit a several-hundred-
+        # token surprise per hop with nothing in its config mentioning
+        # it. The failure would look like the deployment being slow.
+        #
+        # A DEPLOYMENT CAN STILL ASK FOR IT, by setting think in its own
+        # llm_connection options -- which is why this is applied BEFORE
+        # the passthrough rather than after. The Ollama-specific key
+        # objection is answered by where this lives: an Ollama key in
+        # the Ollama adapter is that adapter's job, and a provider
+        # without the concept simply never sees it.
+        payload["think"] = False
+
         options = {**self.options}
         if temperature is not None:
             options["temperature"] = temperature
+        if "think" in self.options:
+            # An explicit deployment choice wins. `think` is not an
+            # Ollama *option*, it is a top-level payload key, so a
+            # deployment naming it in connection options means the
+            # payload rather than the options block.
+            payload["think"] = self.options["think"]
+            options.pop("think", None)
+
         if options:
             payload["options"] = options
 

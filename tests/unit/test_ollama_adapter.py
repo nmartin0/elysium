@@ -103,3 +103,60 @@ def test_the_adapter_does_not_mutate_the_connection_dict_it_was_given():
     _sent(connection, temperature=0)
 
     assert connection["options"] == {"num_ctx": 2048}
+
+
+# --- deliberation, which nothing here wants ---
+#
+# A reasoning model emits a chain of thought BEFORE its answer, and
+# neither call this adapter makes wants one: a step has to parse as a
+# specific JSON shape, and synthesis has a human waiting.
+#
+# THE COST IS THE WHOLE STORY ON THIS HARDWARE. Measured on this
+# deployment, asked to reply with a single word: phi4-mini emitted 2
+# tokens, gemma4:e2b 84, qwen3.5:2b 370. At ~1.5 tokens/sec that is
+# under a second against six minutes.
+
+def test_deliberation_is_off_by_default():
+    payload = _sent(BASE)
+
+    assert payload["think"] is False
+
+
+def test_it_is_off_for_a_step_call_too():
+    # json_mode is the step call, which has the strictest requirement:
+    # the response must parse as one JSON shape, and a chain of thought
+    # in front of it does not.
+    payload = _sent(BASE, json_mode=True)
+
+    assert payload["think"] is False
+    assert payload["format"] == "json"
+
+
+def test_a_deployment_can_still_ask_for_it():
+    # NOT A LOCKOUT. The default is the fast correct thing; a
+    # deployment that genuinely wants deliberation says so and wins,
+    # the same way a configured temperature applies to calls that
+    # express no opinion.
+    payload = _sent({**BASE, "options": {"think": True}})
+
+    assert payload["think"] is True
+
+
+def test_an_explicit_choice_does_not_leak_into_the_options_block():
+    # `think` is a TOP-LEVEL payload key in Ollama's API, not an
+    # option. Passing it through under options would send it where
+    # nothing reads it, and the deployment would think it had asked.
+    payload = _sent({**BASE, "options": {"think": True, "num_ctx": 2048}})
+
+    assert payload["think"] is True
+    assert "think" not in payload["options"]
+    assert payload["options"] == {"num_ctx": 2048}
+
+
+def test_other_options_are_unaffected():
+    # THE CONTROL. A change that dropped the options block while
+    # handling think would pass every test above.
+    payload = _sent({**BASE, "options": {"num_ctx": 2048, "num_thread": 2}})
+
+    assert payload["think"] is False
+    assert payload["options"] == {"num_ctx": 2048, "num_thread": 2}

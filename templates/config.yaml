@@ -34,6 +34,11 @@ llm:
   # evicting between them, which on CPU-only hardware costs more than
   # any difference between the two models.
   #
+  # Deliberation is turned OFF for every call (the adapter sends
+  # think: false), so a reasoning model does not emit a chain of
+  # thought before each answer. A deployment that genuinely wants one
+  # can set  under llm_connection options below.
+  #
   # Choose a NON-REASONING model. Measured on a 2-vCPU VM, asked to
   # reply with a single word: phi4-mini emitted 2 tokens, gemma4:e2b
   # 84, qwen3.5:2b 370. At ~1.5 tokens/sec generation the token COUNT

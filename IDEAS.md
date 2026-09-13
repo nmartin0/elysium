@@ -468,7 +468,27 @@ Not fixed yet only because the model choice is unresolved: writing a
 default we are about to change would mean editing it twice. Update both
 config files together once the multi-hop run decides.
 
-## Should the adapter send think: false by default?
+## Should the adapter send think: false by default? -- YES, DONE
+
+**Decided: always, with an escape hatch.** The adapter sends
+`think: false` on every call, and a deployment naming `think` in its
+own llm_connection options overrides it.
+
+That resolves the tension the entry recorded rather than picking a
+side. The argument FOR always -- a step has to parse as one JSON shape
+and deliberation before it is never wanted -- is the same argument that
+makes the caller's temperature=0 win, and it holds. The argument
+AGAINST -- Ollama-specific keys are what the passthrough exists to
+avoid -- is answered by WHERE it lives: an Ollama key in the Ollama
+adapter is that adapter's job, and a provider without the concept never
+sees it.
+
+One thing the entry did not anticipate: `think` is a TOP-LEVEL payload
+key in Ollama's API, not an option. A deployment naming it under
+options would otherwise have it passed through to where nothing reads
+it, and would believe it had asked. The adapter lifts it out.
+
+The original entry follows.
 
 The benchmark sends `"think": false` and production does not. That gap
 is currently harmless and would stop being harmless quietly.
