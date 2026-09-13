@@ -1581,10 +1581,24 @@ written to be read.
 answer. Useful for a connection indicator; it deliberately carries no
 counts, names or paths.
 
-**Paging consistency is documented, not guaranteed.** Default paging
+**Paging consistency: GUARANTEED ON A MIRROR, not on a live
+deployment.** This note predated snapshot pinning and was too weak.
+
+A generation records the Iceberg snapshot id of each table when it is
+built, and every read in that generation uses it -- so page one and
+page two of the same query read the same immutable snapshot even if a
+sync commits between them. A UI CAN page an export on a mirror
+deployment. Tested, with a control showing an unpinned read does see
+the newer rows.
+
+It remains exactly right for a LIVE deployment, which reads the
+customer's database directly and has no snapshot to pin: default paging
 returns the latest results and may duplicate or miss rows if data
-changes between pages. Fine for browsing, wrong for an export. A UI
-offering an export should read once rather than page a moving target.
+changes between pages. Such a UI should read once rather than page a
+moving target.
+
+The distinction is visible to a caller: GET /api/data-freshness reports
+`source: mirror` or `source: live`.
 
 **The agent's step vocabulary** is `search_object`, `get_field`,
 `get_object`, `aggregate_object`, `search_around`, `use_tool`,
