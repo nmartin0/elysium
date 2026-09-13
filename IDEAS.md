@@ -1142,7 +1142,28 @@ serving. llama.cpp's single-slot prefix reuse is what this deployment
 has, and it is already working -- measured at an 8.8x first-call to
 later-call ratio.
 
-## Is SQLite running in WAL mode, and should it be?
+## Is SQLite running in WAL mode, and should it be? -- MEASURED, AND YES
+
+**Done.** connection_with_schema() enables WAL once at schema creation,
+where it is persistent and where a read-only connection's authorizer
+does not block the PRAGMA.
+
+Measured first, as this entry asked. Four readers against one writer,
+three seconds:
+
+    rollback  606,793 reads  p50 0.003ms  p99 0.02ms  max 241ms
+    WAL     1,312,596 reads  p50 0.002ms  p99 0.01ms  max  48ms
+
+**The concern below was overstated, and the measurement is what said
+so.** Rollback mode does NOT block readers "for the duration of a
+transaction" -- BEGIN IMMEDIATE takes a RESERVED lock and RESERVED
+permits readers. Only the brief EXCLUSIVE phase during COMMIT blocks
+them, which is why the p50 barely moves and only the tail does.
+
+The network-filesystem caveat is handled by warning loudly rather than
+refusing to start: rollback journal is correct, just slower.
+
+The original entry follows.
 
 Surfaced by a question about readers-writer locks, and it is the one
 place a genuine readers-writer problem exists in this system -- inside

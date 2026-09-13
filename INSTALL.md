@@ -393,3 +393,15 @@ When a server-backed adapter is added, its configuration in
 is the point at which the guidance above becomes directly actionable.
 Until then it is recorded here so the requirement is not discovered
 late.
+
+## A note for backups
+
+Internal databases under `deployment/var/lib/` run in SQLite WAL mode,
+which creates `-wal` and `-shm` files beside each `.db`. A backup that
+copies only the `.db` can miss committed transactions still in the WAL.
+Either copy all three files together, or use `sqlite3 <db> ".backup"`,
+which handles it.
+
+WAL does not work over a network filesystem. Putting `data_dir` on NFS
+logs a warning at startup and falls back to rollback journal, which is
+correct but stalls reads briefly during writes.
