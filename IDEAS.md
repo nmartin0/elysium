@@ -291,8 +291,28 @@ cannot read. With no "you may know this exists" state there is no
 principled line for such a message to sit on, which is likely why
 nobody has been sure.
 
-Confidence: the finding is certain, the design is not. Do not start
-this alongside anything else.
+**THE COST ESTIMATE WAS A GUESS, AND MEASURING IT CHANGED IT.** This
+entry said the change "touches every read path" and warned that a
+half-migration would be worse than either end state. Counted:
+
+  SIX call sites build a field-level grant string, ALL in
+  core/ontology/mediator.py, across FOUR functions -- visible_schema
+  (three of them), edit_history, _read_fields_for_ids, and get_field.
+
+That is a surface one person can hold in their head, not a migration.
+The warning about a half-migration still stands as a sequencing note --
+land it in one change rather than per-panel -- but "do not start this"
+was reasoning from an unmeasured cost, which is exactly the mistake
+that had the KV-cache prefix filed as disproportionate when the fix
+turned out to be two lines.
+
+WHAT IS GENUINELY UNDECIDED IS STILL THE DESIGN, not the size: whether
+discover belongs at field level or only at type level, and whether
+knowing a field EXISTS is itself a disclosure. Those want answering
+before code, and they are not made easier by the surface being small.
+
+Confidence: the finding is certain, the design is not, and the
+implementation is smaller than this entry claimed.
 
 ## A deliberate security pass over the agent loop -- ALL THREE ANSWERED
 

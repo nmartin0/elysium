@@ -99,6 +99,33 @@ is every time except deliberately adding or upgrading a dependency.
 When a dependency IS being changed, `npm install` is correct and the
 lockfile change belongs in that commit, where a reviewer can see it.
 
+## Measure the cost of a fix, not just the size of the problem
+
+A decision not to fix something is a claim about cost, and a claim
+about cost deserves the same scrutiny as a test that passes.
+
+FOUND BY BEING WRONG. A KV-cache timing exposure was measured
+precisely -- two users shared 103 characters of prompt prefix, enough
+for an attack to align on -- and then filed as disproportionate to fix
+on reasoning that was never checked. The fix was two lines, and it took
+the shared prefix from 103 characters to 2.
+
+The same commit repeated a mitigation claim without testing it: that
+the server running one slot narrowed the exposure. One slot limits
+CONCURRENCY, not cache REUSE, so sequential requests were still
+timeable. Two unmeasured claims, both load-bearing, both in the
+paragraph explaining why nothing needed doing.
+
+The tell is a sentence like "this touches every read path" or "a
+half-migration would be worse than either end" with no number in it.
+Those are estimates wearing the clothes of findings. Counting the call
+sites takes one grep.
+
+APPLIED IMMEDIATELY, and it moved a second decision: the permission
+ladder was parked partly on "touches every read path". Six call sites,
+all in one file, across four functions. Still parked -- the DESIGN is
+genuinely undecided -- but no longer parked on a guess about size.
+
 ## Run the feature before committing it
 
 **A PASSING TEST SUITE IS NOT EVIDENCE THAT A FEATURE WORKS.** Before
