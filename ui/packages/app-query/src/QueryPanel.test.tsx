@@ -215,3 +215,69 @@ describe('QueryPanel -- a new submit clears stale state from the previous one', 
     await waitFor(() => expect(screen.queryByTestId('pending-write-card')).not.toBeInTheDocument())
   })
 })
+
+describe('the backend wrote these messages to be read', () => {
+  /**
+   * UI_ROADMAP.md: "The API returns 400 with a real message for caller
+   * mistakes -- an unknown aggregate names the valid ones. Surface
+   * those messages rather than replacing them with a generic failure;
+   * they were written to be read."
+   *
+   * THE PROPERTY HELD AND NOTHING GUARDED IT. A refactor toward
+   * friendlier error handling would look like an improvement while
+   * replacing a message that names the valid aggregates with one that
+   * says "Something went wrong" -- and the person who most needs the
+   * detail is the one who just made the mistake.
+   */
+  it('shows a 400 exactly as the backend phrased it', async () => {
+    mockedQuery.mockResolvedValue(
+      fakeResponse(400, {
+        detail: "Unknown aggregate 'median' -- valid: count, sum, avg, min, max",
+      }),
+    )
+    render(<QueryPanel onSessionExpired={vi.fn()} />)
+
+    submit('what is the median transaction')
+
+    expect(await screen.findByText(/valid: count, sum, avg, min, max/)).toBeInTheDocument()
+  })
+
+  it('shows a 409 exactly as the backend phrased it', async () => {
+    // Permissions changing mid-request. The wording explains what to
+    // do about it -- try again -- which a generic failure would lose.
+    mockedQuery.mockResolvedValue(
+      fakeResponse(409, {
+        detail: 'Your permissions changed while this request was processing -- please try again',
+      }),
+    )
+    render(<QueryPanel onSessionExpired={vi.fn()} />)
+
+    submit('anything')
+
+    expect(await screen.findByText(/please try again/)).toBeInTheDocument()
+  })
+
+  it('falls back to a status only when the body carries no detail', async () => {
+    // A real response with nothing to surface. The status is the most
+    // that can honestly be said.
+    mockedQuery.mockResolvedValue(fakeResponse(500, {}))
+    render(<QueryPanel onSessionExpired={vi.fn()} />)
+
+    submit('anything')
+
+    expect(await screen.findByText(/Request failed \(500\)/)).toBeInTheDocument()
+  })
+
+  it('says the server is unreachable only when there was no response', async () => {
+    // THE ONE PLACE a generic message is correct: the request never
+    // arrived, so there is no backend wording to preserve. A control
+    // widening this to cover HTTP errors would swallow every message
+    // above.
+    mockedQuery.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<QueryPanel onSessionExpired={vi.fn()} />)
+
+    submit('anything')
+
+    expect(await screen.findByText('Could not reach the server.')).toBeInTheDocument()
+  })
+})

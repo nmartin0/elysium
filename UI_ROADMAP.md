@@ -1572,10 +1572,22 @@ hardest against.
 
 ## Cross-cutting, and worth deciding once
 
-**Error shape.** The API returns 400 with a real message for caller
-mistakes -- an unknown aggregate names the valid ones. Surface those
-messages rather than replacing them with a generic failure; they were
-written to be read.
+**Error shape. HELD, AND NOW GUARDED.** The API returns 400 with a real
+message for caller mistakes -- an unknown aggregate names the valid
+ones -- and the UI surfaces those messages rather than replacing them
+with a generic failure. They were written to be read.
+
+Checked rather than assumed: apiFetchOrThrow preserves body.detail, and
+QueryPanel shows it verbatim. The one generic message
+("Could not reach the server.") is correct where it sits, in the catch
+for a request that never arrived and so has no backend wording to
+preserve.
+
+Nothing guarded it until now. A refactor toward friendlier error
+handling would look like an improvement while replacing a message that
+names the valid aggregates with "Something went wrong" -- and the
+person who most needs the detail is the one who just made the
+mistake.
 
 **`/health` is unauthenticated** and reports only whether subsystems
 answer. Useful for a connection indicator; it carries no counts, names
