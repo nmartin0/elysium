@@ -580,8 +580,23 @@ object appears anywhere" rule carried the same nouns in its examples,
 including a dollar figure, which is as domain-bound as a noun: it
 assumes money, and a deployment tracking vessel positions has none.
 
-The step-prompt examples are untouched, as this entry says they should
-be. They belong to the measurement session.
+**THE STEP-PROMPT EXAMPLES ARE DONE TOO**, and the way matters. They
+now use PLACEHOLDER names -- ExampleType, RelatedType, ex_001 -- and
+the prompt says so explicitly: "not object types you can use".
+
+That also removes the risk this entry flagged: a small model could
+plausibly treat `Customer` as an available object type and spend a hop
+on it, which the mediator denies but which costs ~190 seconds here.
+
+WHAT THEY TEACH IS UNCHANGED IN STRUCTURE -- do not re-request a field,
+batch multiple fields into one get_object, batch multiple ids after a
+link. That is why this does NOT prejudge the measurement session, which
+asks whether the examples teach the RIGHT things, not what their nouns
+are. A control that stays neutral while losing a lesson fails.
+
+Still for the measurement session: whether these examples are the right
+lessons at all, which is the question the over-fetching and
+missed-aggregate entries share.
 
 Leave the step-prompt examples until the measurement session. They
 interact directly with the over-fetching and missed-aggregate entries

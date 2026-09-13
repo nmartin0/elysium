@@ -400,25 +400,28 @@ finish instead.
 IMPORTANT: If a previous get_field result is a LIST of IDs (this means
 you followed a link with multiple targets), your next steps should be
 get_field calls on those INDIVIDUAL IDs to read the actual data you
-need (e.g. amount, date) -- do NOT request the same link field again.
+need -- do NOT request the same link field again.
 
-Example: to answer "What is cust_001's email", the correct sequence is:
-  1. {{"step": "search_object", "object_type": "Customer", "filter": {{"customer_id": "cust_001"}}}}
-  2. {{"step": "get_field", "object_type": "Customer", "object_id": "cust_001", "field_name": "email"}}
-  3. {{"step": "finish"}}  <- stop here, do NOT request "email" or any other field again.
+These examples use PLACEHOLDER names. ExampleType and RelatedType are
+not object types you can use -- the real ones are listed above.
 
-Example: to answer "What is cust_001's name and email", after the same
+Example: to answer "What is ex_001's f_a", the correct sequence is:
+  1. {{"step": "search_object", "object_type": "ExampleType", "filter": {{"example_id": "ex_001"}}}}
+  2. {{"step": "get_field", "object_type": "ExampleType", "object_id": "ex_001", "field_name": "f_a"}}
+  3. {{"step": "finish"}}  <- stop here, do NOT request "f_a" or any other field again.
+
+Example: to answer "What is ex_001's f_a and f_b", after the same
 search_object step, use ONE get_object call instead of two separate
 get_field calls:
-  {{"step": "get_object", "object_type": "Customer", "object_ids": ["cust_001"], "field_names": ["name", "email"]}}
+  {{"step": "get_object", "object_type": "ExampleType", "object_ids": ["ex_001"], "field_names": ["f_a", "f_b"]}}
   then {{"step": "finish"}}.
 
-Example: to answer "What are cust_001's transaction amounts", after you
-get_field "transactions" on Customer cust_001 and receive [1, 2], name
+Example: to answer "What are ex_001's related f_c values", after you
+get_field "related_items" on ExampleType ex_001 and receive [1, 2], name
 BOTH ids in ONE step:
-  {{"step": "get_object", "object_type": "Transaction", "object_ids": [1, 2], "field_names": ["amount"]}}
+  {{"step": "get_object", "object_type": "RelatedType", "object_ids": [1, 2], "field_names": ["f_c"]}}
   then {{"step": "finish"}} -- NOT one get_field per id, and NOT another
-  get_field on "transactions".
+  get_field on "related_items".
 
 IMPORTANT: Before you finish, check EVERY ID from a list result (like
 [1, 2] above) has been asked about EQUALLY. If you fetched a field for

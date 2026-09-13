@@ -20,15 +20,23 @@ does not contain, and no equivalent help for its own. The underlying
 insight is generic -- a plural in the question may name an object type
 rather than a field -- and it had been written domain-specifically.
 
-DELIBERATELY NOT COVERING the step prompt's few-shot examples. Those
-hardcode Customer and Transaction too, but they teach SHAPE, and a
-model generalises from a Customer example to a Ship. Replacing them
-blind is the prompt-editing-before-measuring that IDEAS.md argues
-against; they belong to the measurement session.
+THE STEP PROMPT IS COVERED TOO, and the change there was made
+carefully. Its few-shot examples hardcoded Customer, Transaction and
+cust_001. They now use PLACEHOLDER names -- ExampleType, RelatedType,
+ex_001 -- and the prompt says so explicitly, which also removes the
+risk the audit flagged: a small model could plausibly treat `Customer`
+as an available object type and spend a whole hop on it.
+
+WHAT THEY TEACH IS BYTE-IDENTICAL IN STRUCTURE. The three lessons --
+do not re-request a field, batch multiple fields into one get_object,
+batch multiple ids after following a link -- are unchanged. That is why
+this does not prejudge the measurement session, which asks whether the
+examples teach the RIGHT things, not what their nouns are.
 """
 
 import re
 
+from core.llm.agent_step_prompt import _build_system_prompt
 from core.llm.synthesis_prompt import SYSTEM_PROMPT
 
 # Nouns from THIS deployment's ontology. A prompt naming them is
@@ -73,3 +81,47 @@ def test_no_currency_or_field_shaped_example_remains():
     assert not re.search(r"\$\d", SYSTEM_PROMPT), (
         "a currency example assumes the deployment's data is money"
     )
+
+
+# --- the step prompt, whose examples were the other half ---
+
+def _step_prompt():
+    """The step prompt as a deployment with NO domain nouns would see it.
+
+    An empty visible_schema deliberately: anything the prompt says with
+    no ontology to describe is something it says about ITSELF, which is
+    exactly what a domain noun here would be.
+    """
+    return _build_system_prompt({}, [], False, {}, [])
+
+
+def test_the_step_prompt_names_no_ontology_noun():
+    found = [noun for noun in DOMAIN_NOUNS if noun in _step_prompt().lower()]
+
+    assert found == [], (
+        f"the step prompt's examples teach {found} to every deployment, and a "
+        f"small model may spend a hop trying to use one"
+    )
+
+
+def test_its_examples_are_marked_as_placeholders():
+    # THE RISK THE AUDIT FLAGGED. A model treating an example's object
+    # type as available costs a whole hop -- ~190 seconds on this
+    # hardware -- and the mediator's denial is the only thing that
+    # stops it.
+    prompt = _step_prompt()
+
+    assert "PLACEHOLDER" in prompt
+    assert "not object types you can use" in prompt
+
+
+def test_it_still_teaches_all_three_lessons():
+    # THE CONTROL, and the reason this does not prejudge the
+    # measurement session: what the examples TEACH is unchanged, only
+    # their nouns. A rewrite that lost a lesson would pass a neutrality
+    # check and quietly make the agent worse.
+    prompt = _step_prompt()
+
+    assert "do NOT request" in prompt                    # no re-fetching
+    assert "ONE get_object call instead of two" in prompt  # batch fields
+    assert "BOTH ids in ONE step" in prompt              # batch ids
