@@ -1470,13 +1470,30 @@ unnoticed:
   action without consent, which is a different property and one this
   project otherwise takes seriously.
 
-  NOT LIVE: no deployment currently sets `auto_execute`. Verified,
-  not assumed. This is a note for whoever first does, and the obvious
-  mitigations are worth considering together -- restricting it to
-  actions whose sub_writes touch no field the model has read, or
-  requiring it to be paired with a submission criterion, or simply
-  documenting that it must not be enabled on an action reachable from
-  attacker-influenced data.
+  NOT LIVE: no deployment sets `auto_execute`. Re-verified, not
+  assumed.
+
+  **MITIGATED AT VALIDATION TIME.** auto_execute is now refused when
+  any mutation takes its value from `parameter.<name>`. That is the
+  distinction which is both statically detectable and load-bearing: a
+  model-supplied value means injected text decides WHETHER to write and
+  WHAT to write, where a literal lets it decide only whether. Refused
+  at load rather than warned about -- an action type is authored once
+  and read forever, and a startup warning is seen by whoever deployed
+  it and by nobody afterwards.
+
+  Of the three mitigations this entry proposed, the other two did not
+  survive examination. "No field the model has read" is not knowable at
+  validation time -- what a model has read is a property of a running
+  query, not of a schema. "Paired with a submission criterion" is
+  weaker than it sounds, since a criterion can be written vacuously
+  true: it would force an author to type something without forcing them
+  to think.
+
+  Still worth documenting for whoever first enables it: an auto_execute
+  action with literal mutations is bounded but not free. The model
+  still chooses WHEN, and an action that is harmless once may not be
+  harmless a thousand times.
 
 - **Authorization is snapshotted per query, not per hop. CLOSED --
   fixed, not merely reassessed.** Kept because a security backlog

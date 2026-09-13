@@ -489,6 +489,53 @@ def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:
             f"Action type {action_type_name!r}: auto_execute must be true or false, "
             f"got {value!r}."
         )
+    if value is not True:
+        return
+
+    # UNATTENDED WRITES MAY NOT TAKE MODEL-SUPPLIED VALUES.
+    #
+    # Ontology data flows into `gathered`, and `gathered` flows into the
+    # prompt, so a field value containing instructions reaches the model
+    # as text. Three gates normally sit between a model's decision and a
+    # write: the execute grant, MAC per sub_write per object, and a
+    # human at confirm. auto_execute removes the third.
+    #
+    # What remains is bounded by the acting user's own grants, so this
+    # is not privilege escalation. It is action without consent, which
+    # is a different property and one this project takes seriously.
+    #
+    # THE DISTINCTION THAT IS STATICALLY DETECTABLE, and it is the one
+    # that matters: a mutation whose value is `parameter.<name>` is
+    # chosen BY THE MODEL. Combined with auto_execute, injected text
+    # decides both WHETHER to write and WHAT to write. A mutation whose
+    # value is a literal, or `user.<attribute>`, lets it decide only
+    # whether -- a far smaller blast radius, and one a deployment can
+    # reason about.
+    #
+    # Refused at load rather than warned about. An action type is
+    # authored once and read forever; a warning at startup is seen by
+    # whoever deployed it and by nobody afterwards.
+    #
+    # The narrower rule from ROADMAP.md -- "no field the model has
+    # read" -- is not knowable here: what a model has read is a
+    # property of a running query, not of a schema.
+    model_supplied = [
+        mutation["set"]["property"]
+        for sub_write in action_def.get("sub_writes") or []
+        for mutation in sub_write.get("mutations") or []
+        if isinstance((mutation.get("set") or {}).get("value"), str)
+        and mutation["set"]["value"].startswith(PARAMETER_PREFIX)
+    ]
+    if model_supplied:
+        raise ValueError(
+            f"Action type {action_type_name!r}: auto_execute cannot be combined with "
+            f"model-supplied values. Field(s) {sorted(set(model_supplied))} are set "
+            f"from action parameters, so an unattended write would let the model "
+            f"choose both whether to write and what to write -- and ontology data "
+            f"reaches the model as text, so that text can be attacker-influenced. "
+            f"Either set these fields from literals, or leave auto_execute off so a "
+            f"human confirms."
+        )
 
 
 def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, object_types: dict,
