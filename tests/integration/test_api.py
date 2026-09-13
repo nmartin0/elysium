@@ -445,6 +445,13 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 # it -- MORE restrictive than the server, which allows
                 # any operator on a field declaring no type.
                 "data_type",
+                # Whether this field's VALUE may be read. A permission
+                # OUTCOME, not infrastructure -- the opposite of the
+                # storage and security keys this guard exists to keep
+                # out. Withholding it would leave a caller unable to
+                # tell a withheld field from an empty one, which is the
+                # ambiguity the grant ladder was built to end.
+                "readable",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 
@@ -3228,3 +3235,48 @@ def test_the_listing_reports_a_write_the_ontology_has_outrun(client):
     assert [e["undeclared_fields"] for e in after if e["write_id"] == write_id] == [
         ["Customer.name"]
     ]
+
+
+def test_the_readable_flag_survives_serialisation(client):
+    """THE GAP THAT SHIPPED, and the reason it shipped.
+
+    visible_schema computed `readable` correctly and every test of it
+    passed -- because they all called the mediator DIRECTLY. FastAPI's
+    response_model silently strips keys it is not told about, so the
+    flag never left the process, and the UI rendering built on top of
+    it could never have worked.
+
+    Found by a person running the thing, not by the suite. The same
+    mechanism caught the approvals card earlier: a test aimed one layer
+    below the contract it guards.
+    """
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    body = client.get("/api/me/visible-schema").json()
+
+    # Present on every field and every type, whatever its value.
+    for type_name, type_schema in body.items():
+        assert "readable" in type_schema, f"{type_name} lost its readable flag"
+        for field_name, field_info in type_schema["fields"].items():
+            assert "readable" in field_info, f"{type_name}.{field_name} lost its readable flag"
+
+
+def test_a_discover_only_field_reports_itself_unreadable_over_http(client):
+    """The end-to-end version: a grant change reaches the browser.
+
+    Without this the flag could be present and always True, which is
+    what a default gives you and is indistinguishable from working.
+    """
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    granted = set(mediator_of(client.app).roles["customer_service"]["allowed_actions"])
+    with_roles(client.app, customer_service={"allowed_actions": frozenset(
+        (granted - {"read:Customer.email"}) | {"discover:Customer.email"},
+    )})
+
+    fields = client.get("/api/me/visible-schema").json()["Customer"]["fields"]
+
+    assert fields["email"]["readable"] is False
+    assert fields["name"]["readable"] is True

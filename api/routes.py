@@ -263,6 +263,14 @@ class SchemaFieldResponse(BaseModel):
     # for everything -- more restrictive than the server, which allows
     # any operator on a field with no declared type.
     type: str
+    # Whether this field's VALUE may be read. False is the middle rung:
+    # the caller holds discover:{Type}.{field} and not read:, so they
+    # may know the field exists and not what it holds, and a UI names
+    # it while withholding the value.
+    #
+    # Defaulted to True so a response model without the key behaves as
+    # every pre-ladder deployment did.
+    readable: bool = True
     data_type: str | None = None
     target: str | None = None
     cardinality: str | None = None
@@ -292,6 +300,17 @@ class SchemaFieldResponse(BaseModel):
 
 class VisibleObjectTypeResponse(BaseModel):
     fields: dict[str, SchemaFieldResponse]
+    # Whether this type may be SEARCHED, as opposed to merely known
+    # about. False is the middle rung: the caller holds discover:{Type}
+    # and not read:{Type}, so a search returns nothing and a UI should
+    # say so rather than render "no matches" -- a claim about the data
+    # when the truth is about their access.
+    #
+    # Defaulted, because a response model without it SILENTLY STRIPS
+    # the key FastAPI is not told about. That is how this was missed:
+    # the mediator was correct, every mediator-level test passed, and
+    # the flag never survived serialisation.
+    readable: bool = True
     id_field: str | None
     title_field: str | None
     # Matching Foundry's own object type metadata (displayName,
