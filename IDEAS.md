@@ -580,11 +580,14 @@ formatter or column definition, or a default that assumes a field like
 Same scan that was run against core/ would do it, and it costs
 minutes.
 
-## aggregate_object and search_around are UNREACHABLE
+## aggregate_object and search_around are UNREACHABLE -- FIXED
+
+**Resolved in af12f7b.** Kept because the entry below explains what the
+bug invalidated, which still matters: it rewrote the "aggregates are
+not being chosen" entry, and anyone reading that one needs this.
 
 Found while auditing what the LLM decides versus what Python decides.
-This is a bug, not an idea, and it should probably graduate straight to
-a fix.
+This was a bug, not an idea, and it graduated straight to a fix.
 
 AgentLoop._step_handlers() registers seven step types, including
 `aggregate_object` and `search_around`. next_step()'s validation in
@@ -1177,16 +1180,24 @@ migration. They are not the same question.
 
 ## Suggested order
 
-**Blocking everything below it:**
+**RESOLVED, no longer blocking:**
 
-00. **aggregate_object and search_around are unreachable.** A bug, not
-    an idea. It likely explains the missed aggregates AND the
-    hand-rolled link traversal, which means the prompt-quality
-    measurement session would measure the wrong thing until it is
-    fixed. Add the three-way consistency probe with it -- handlers,
-    validator branches, and the step names the PROMPT teaches -- since
-    fixing one instance of a drift class is worth much less than
-    catching the class.
+00. ~~aggregate_object and search_around are unreachable.~~ **DONE** in
+    af12f7b, "Make aggregate_object and search_around reachable". Both
+    validator branches exist, and the three-way consistency probe this
+    entry asked for exists too, as
+    tests/unit/test_step_vocabulary_consistency.py -- handlers,
+    validator branches, and the step names the prompt teaches, checked
+    against each other so the drift CLASS is caught rather than the one
+    instance.
+
+    Verified before trusting this note: a probe confirmed both branches
+    are present and reject only on missing keys, not on the step name.
+
+    **This unblocks item 3.** The prompt-quality measurement session was
+    held back because three of its four questions would have measured
+    the wrong thing while the parser silently converted these steps
+    into a finish.
 
 **RESOLVED, no longer blocking:**
 
