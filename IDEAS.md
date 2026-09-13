@@ -571,8 +571,17 @@ for its own. The underlying insight is generic -- a plural in the
 question may name an object type rather than a field -- but it has been
 written domain-specifically.
 
-**The fix, and the split.** Generalise the synthesis rule: same
-guidance, no noun. Small and clearly correct, so do it whenever.
+**The fix, and the split. SYNTHESIS HALF DONE.** The rule is
+generalised -- same guidance, no noun -- and tests now assert the
+synthesis prompt names no ontology noun at all.
+
+TWO PASSAGES, not the one this entry named. The "IMPORTANT: if an
+object appears anywhere" rule carried the same nouns in its examples,
+including a dollar figure, which is as domain-bound as a noun: it
+assumes money, and a deployment tracking vessel positions has none.
+
+The step-prompt examples are untouched, as this entry says they should
+be. They belong to the measurement session.
 
 Leave the step-prompt examples until the measurement session. They
 interact directly with the over-fetching and missed-aggregate entries
