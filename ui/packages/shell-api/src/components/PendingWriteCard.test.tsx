@@ -124,7 +124,7 @@ describe('PendingWriteCard -- rendering', () => {
     expect(screen.getByText('Reopen reason')).toBeInTheDocument()
   })
 
-  it('a null value formats as "(not set)"', () => {
+  it('a null value formats as "—"', () => {
     const write = singleObjectWrite({
       sub_writes: [
         {
@@ -136,7 +136,7 @@ describe('PendingWriteCard -- rendering', () => {
       ],
     })
     render(<PendingWriteCard pendingWrite={write} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
-    expect(screen.getByText('(not set)')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
   })
 })
 

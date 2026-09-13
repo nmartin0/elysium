@@ -27,7 +27,42 @@ export function formatFieldName(name: string): string {
 // function's own signature should tell just because String() happens
 // to accept anything.
 export function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return '(not set)'
+  // A BLANK CELL IS AMBIGUOUS, and this exists to stop producing one.
+  // Rendered blank, a reader cannot tell an empty string from a field
+  // that was never fetched, a failed render, or -- the case
+  // UI_ROADMAP.md raised -- something their permissions withheld.
+  //
+  // The last of those turned out NOT to happen: a field the caller may
+  // not read is OMITTED from the response entirely rather than nulled,
+  // verified directly against the mediator. So it never reaches this
+  // function. The other three do.
+  //
+  // AN EM DASH, not "(not set)". Four places already render an absent
+  // value as a dash -- AdminPanel's mac_value, DeploymentConfig's silo
+  // and role lists, Silos' object types -- so the app had two
+  // conventions before this function gained a third. A dash is also
+  // the better one in a dense table: "(not set)" repeated down a
+  // column is noise competing with the values beside it, where a dash
+  // reads as absence at a glance.
+  if (value === null || value === undefined) return '—'
+
+  // EMPTY AND WHITESPACE-ONLY STRINGS, which String() renders as
+  // nothing at all. "" and "   " are real values a source can hold,
+  // and both are indistinguishable from an absent cell once painted.
+  if (typeof value === 'string' && value.trim() === '') {
+    return value === '' ? '(empty)' : '(whitespace)'
+  }
+
+  // AN EMPTY ARRAY is a link that resolved to nothing -- a customer
+  // with no transactions. String([]) is "", so this read as blank too,
+  // and "no linked records" is a different fact from "not set": one
+  // says the link was followed and found nothing.
+  if (Array.isArray(value) && value.length === 0) return '(none)'
+
+  // ZERO AND FALSE ARE LEFT ALONE, deliberately. Both are genuine
+  // values and String() already renders them distinctly; a guard that
+  // treated them as empty would be the classic falsy bug, and in a
+  // financial or count field it would hide the answer.
   return String(value)
 }
 

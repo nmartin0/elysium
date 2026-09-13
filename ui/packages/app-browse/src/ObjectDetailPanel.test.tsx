@@ -194,11 +194,11 @@ describe('ObjectDetailPanel -- link field rendering', () => {
     expect(screen.getByRole('link', { name: 'acct_001' })).toHaveAttribute('href', '/objects/Account/acct_001')
   })
 
-  it('renders a null link value as "(not set)", not a broken link', async () => {
+  it('renders a null link value as "—", not a broken link', async () => {
     mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', account_id: null } })
     renderPanel('Customer', 'cust_001')
 
-    await waitFor(() => expect(screen.getByText('(not set)')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('—')).toBeInTheDocument())
     expect(screen.queryByRole('link', { name: 'acct_001' })).not.toBeInTheDocument()
   })
 
@@ -216,12 +216,12 @@ describe('ObjectDetailPanel -- link field rendering', () => {
     expect(screen.getByRole('link', { name: 'order_2' })).toHaveAttribute('href', '/objects/Order/order_2')
   })
 
-  it('renders an empty array link value as "(not set)"', async () => {
+  it('renders an empty array link value as "—"', async () => {
     const schema: VisibleSchema = { Customer: { fields: { orders: { type: 'link', target: 'Order' } } } }
     mockedGetObjectDetail.mockResolvedValue({ fields: { orders: [] } })
     renderPanel('Customer', 'cust_001', { visibleSchema: schema })
 
-    await waitFor(() => expect(screen.getByText('(not set)')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('—')).toBeInTheDocument())
   })
 
   it('renders a plain data field as a plain value, never as a link', async () => {

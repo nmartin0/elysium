@@ -1842,10 +1842,33 @@ the region.
    restoration on back and on sub-app return, overflow-anchor, total
    counts ("1,284 entities"), no row-shift on load-more, virtualize
    above ~200.
-8. **Formatting.** Correctness, not style. UTC vs local, relative under
-   24h, timezone suffixes, fixed precision, IDs monospace with a copy
-   affordance, and NULL VS ZERO VS UNKNOWN VISUALLY DISTINCT -- a blank
-   cell in Elysium could mean no value, or could mean MAC hid it.
+8. **Formatting. PARTLY DONE.** Timestamps were already correct --
+   relative under 24h, absolute with a NAMED timezone beyond it, which
+   formatTimestamp has done since the freshness work.
+
+   NULL VS ZERO VS UNKNOWN: done. formatValue no longer produces a
+   blank cell for any input. An empty string reads "(empty)",
+   whitespace "(whitespace)", an empty array "(none)" -- a link
+   followed that found nothing, which is a different fact from never
+   set -- and absence is an em dash. Zero and false are deliberately
+   left alone: a guard treating them as empty is the classic falsy bug
+   and would hide the answer in any count or balance field.
+
+   THE MAC PREMISE WAS WRONG, and checking it is what found the real
+   problems. A field the caller may not read is OMITTED from the
+   response entirely rather than returned as null, verified against the
+   mediator -- so it never reaches a formatter and cannot render blank.
+   The ambiguities that DO exist were the empty string, the empty array
+   and whitespace, none of which this item named.
+
+   Also unified: four places rendered absence as an em dash while
+   formatValue said "(not set)". One convention now, the dash, because
+   "(not set)" repeated down a column competes with the values beside
+   it.
+
+   STILL OPEN: fixed precision for numbers, and IDs in monospace with a
+   copy affordance. Neither is a correctness problem, which is why they
+   did not come with this.
 9. **min-inline-size: 0 as a rule**, not three instances.
 
 **Deferred, with reasons:**

@@ -23,6 +23,7 @@ import {
   getWriteDetail,
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
+import { formatValue } from '@elysium/shell-api/format'
 
 interface WriteDetailProps {
   writeId: string
@@ -106,16 +107,4 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
       ))}
     </div>
   )
-}
-
-/** An em dash for no value, never a blank cell.
- *
- * A blank is ambiguous between "null", "empty string" and "the table
- * failed to render this", and in a diff a reviewer is deciding on the
- * difference between two of those.
- */
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return '—'
-  if (value === '') return '(empty)'
-  return String(value)
 }
