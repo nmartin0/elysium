@@ -2346,15 +2346,37 @@ def health_route(request: Request) -> dict:
     mediator = getattr(_generation(request), "mediator", None)
     checks["ontology"] = "ready" if mediator is not None else "unconfigured"
 
-    for silo_name, adapter in (getattr(mediator, "adapters", {}) or {}).items():
+    # SILOS ARE REPORTED IN AGGREGATE, not by name. Each entry was
+    # previously keyed "silo:{silo_name}", so an UNAUTHENTICATED caller
+    # learned every data source's name and how many there were.
+    #
+    # The docstring already promised "no counts, names, paths or
+    # configuration", and the test enforcing it checked the VALUES and
+    # grepped for paths and passwords -- never the KEYS, which is where
+    # the names were.
+    #
+    # A silo name is deployment-chosen and usually descriptive:
+    # `risk_sql`, `hr_payroll`, `claims`. On an anonymous endpoint that
+    # is reconnaissance, saying what a deployment holds before anyone
+    # has logged in.
+    #
+    # One entry still answers what this endpoint is FOR. A connection
+    # indicator needs to know the deployment is degraded, not which
+    # part; anyone entitled to the detail has GET /silos, which is
+    # authenticated and already backs the Silos screen.
+    unreachable = 0
+    adapters = getattr(mediator, "adapters", {}) or {}
+    for adapter in adapters.values():
         try:
             adapter.health_check()
-            checks[f"silo:{silo_name}"] = "reachable"
         except Exception:
             # The reason is deliberately NOT reported. This endpoint is
             # unauthenticated, and a connection error routinely carries
             # a host, a path, or a username.
-            checks[f"silo:{silo_name}"] = "unreachable"
+            unreachable += 1
+
+    if adapters:
+        checks["silos"] = "unreachable" if unreachable else "reachable"
 
     degraded = any(value == "unreachable" for value in checks.values())
     return {"status": "degraded" if degraded else "ok", "checks": checks}

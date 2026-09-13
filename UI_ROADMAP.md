@@ -1578,8 +1578,14 @@ messages rather than replacing them with a generic failure; they were
 written to be read.
 
 **`/health` is unauthenticated** and reports only whether subsystems
-answer. Useful for a connection indicator; it deliberately carries no
-counts, names or paths.
+answer. Useful for a connection indicator; it carries no counts, names
+or paths.
+
+That claim was FALSE when written and is true now. Each silo was
+reported under a key of `silo:{silo_name}`, so an anonymous caller
+learned every data source's name and how many there were -- and a silo
+name is deployment-chosen and usually descriptive. Silos are now one
+aggregate entry. Detail lives on GET /silos, which is authenticated.
 
 **Paging consistency: GUARANTEED ON A MIRROR, not on a live
 deployment.** This note predated snapshot pinning and was too weak.

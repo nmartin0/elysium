@@ -2154,11 +2154,23 @@ def test_health_is_reachable_without_authentication(client):
     assert response.json()["status"] == "ok"
 
 
-def test_health_reports_each_silo(client):
+def test_health_reports_silos_in_aggregate_not_by_name(client):
+    """It used to key each entry "silo:{silo_name}".
+
+    So an UNAUTHENTICATED caller learned every data source's name and
+    how many there were. A silo name is deployment-chosen and usually
+    descriptive -- `risk_sql`, `hr_payroll`, `claims` -- which on an
+    anonymous endpoint says what a deployment holds before anyone has
+    logged in.
+
+    One entry still answers what this endpoint is for. Anyone entitled
+    to the detail has GET /silos, which is authenticated.
+    """
     body = client.get("/api/health").json()
 
     assert body["checks"]["ontology"] == "ready"
-    assert any(key.startswith("silo:") for key in body["checks"])
+    assert body["checks"]["silos"] in ("reachable", "unreachable")
+    assert not [key for key in body["checks"] if key.startswith("silo:")]
 
 
 def test_health_leaks_nothing_about_the_data(client):
@@ -2172,6 +2184,19 @@ def test_health_leaks_nothing_about_the_data(client):
     for leaked in ("cust_", "password", "/home/", "sqlite", ".db"):
         assert leaked not in serialized, f"/health exposed {leaked!r}"
     assert set(body["checks"].values()) <= {"ready", "reachable", "unreachable", "unconfigured"}
+
+    # THE KEYS TOO, which this test did not check and which is where a
+    # leak actually lived: silo names were keys, not values, so a
+    # value-set assertion and a grep for paths both passed while every
+    # data source's name was in the response.
+    assert set(body["checks"]) <= {"ontology", "silos"}, (
+        f"/health exposed deployment configuration in its keys: {sorted(body['checks'])}"
+    )
+
+    # And no deployment-chosen identifier anywhere. The silo names this
+    # deployment declares must not appear in any form.
+    for silo_name in mediator_of(client.app).adapters:
+        assert silo_name not in serialized, f"/health exposed silo name {silo_name!r}"
 
 
 def test_health_reports_degraded_rather_than_failing(client, monkeypatch):
