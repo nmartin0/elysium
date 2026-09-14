@@ -125,3 +125,50 @@ def test_a_withheld_link_field_is_omitted(mediator):
     spotter = UserRecord("spotter", "us-west", "spotter")
 
     assert "transactions" not in mediator.link_counts(spotter, "Customer", "cust_001")
+
+
+# --- decimal places reaching a caller ---------------------------------
+#
+# The unit tests check the ontology ACCEPTS a declaration. Whether it
+# then reaches anyone is a different question, and lives here because
+# the mediator fixture does.
+
+def test_the_mediator_carries_it_to_the_caller(mediator):
+    """THE WIRING, which the validation tests cannot see.
+
+    They check the ontology ACCEPTS a declaration. Whether it then
+    reaches anyone is a different question, and a control removing it
+    from visible_schema failed nothing until this existed -- the
+    fourth time this session that a gap hid behind tests that stopped
+    one layer short.
+    """
+    from core.intermediate_layer.auth import UserRecord
+
+    # A REPLACEMENT SCHEMA, because the loaded one is deep-frozen -- a
+    # mappingproxy, deliberately, so nothing can mutate the ontology at
+    # runtime. Rebuilding the one field is truer to how a deployment
+    # would declare it anyway.
+    schema = {
+        name: {
+            **type_def,
+            "fields": {
+                field: ({**info, "decimal_places": 3} if name == "Customer" and field == "region"
+                        else info)
+                for field, info in type_def["fields"].items()
+            },
+        }
+        for name, type_def in mediator.schema.items()
+    }
+    mediator.schema = schema
+
+    fields = mediator.visible_schema(UserRecord("alice", "us-west", "customer_service"))
+    assert fields["Customer"]["fields"]["region"]["decimal_places"] == 3
+
+
+def test_a_field_without_one_reports_none(mediator):
+    # Absent must arrive as absent rather than as a default, or the UI
+    # cannot tell "no opinion" from "zero places".
+    from core.intermediate_layer.auth import UserRecord
+
+    fields = mediator.visible_schema(UserRecord("alice", "us-west", "customer_service"))
+    assert fields["Customer"]["fields"]["name"]["decimal_places"] is None

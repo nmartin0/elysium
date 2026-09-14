@@ -26,7 +26,7 @@ export function formatFieldName(name: string): string {
 // literal null -- honestly unknown at this boundary, not a lie this
 // function's own signature should tell just because String() happens
 // to accept anything.
-export function formatValue(value: unknown): string {
+export function formatValue(value: unknown, decimalPlaces?: number | null): string {
   // A BLANK CELL IS AMBIGUOUS, and this exists to stop producing one.
   // Rendered blank, a reader cannot tell an empty string from a field
   // that was never fetched, a failed render, or -- the case
@@ -58,6 +58,23 @@ export function formatValue(value: unknown): string {
   // and "no linked records" is a different fact from "not set": one
   // says the link was followed and found nothing.
   if (Array.isArray(value) && value.length === 0) return '(none)'
+
+  // DECIMAL PLACES, WHERE THE ONTOLOGY DECLARED THEM. The UI cannot
+  // know how precise a number is worth showing -- two places is wrong
+  // for a coordinate and for a count alike -- so this only rounds when
+  // an author said so, and shows the value as it arrived otherwise.
+  //
+  // DISPLAY ONLY. The stored value, the value an action writes and the
+  // value a filter compares against are all untouched. Rounding for
+  // display and then filtering on the rounded figure would be a
+  // different and much worse feature.
+  //
+  // Number.isFinite rather than typeof: NaN and Infinity are numbers
+  // and toFixed on them produces "NaN" and "Infinity", which read as
+  // data rather than as the absence of it.
+  if (decimalPlaces !== undefined && decimalPlaces !== null && typeof value === 'number' && Number.isFinite(value)) {
+    return value.toFixed(decimalPlaces)
+  }
 
   // ZERO AND FALSE ARE LEFT ALONE, deliberately. Both are genuine
   // values and String() already renders them distinctly; a guard that

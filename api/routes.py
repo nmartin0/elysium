@@ -271,6 +271,10 @@ class SchemaFieldResponse(BaseModel):
     # Defaulted to True so a response model without the key behaves as
     # every pre-ladder deployment did.
     readable: bool = True
+    # Declared by the ontology, absent when it says nothing. A response
+    # model that did not name it would strip it silently -- which is
+    # exactly how `readable` shipped broken.
+    decimal_places: int | None = None
     data_type: str | None = None
     target: str | None = None
     cardinality: str | None = None

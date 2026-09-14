@@ -48,6 +48,12 @@ object_types:
     fields:
       amount:
         type: data
+        # Money, so two places -- and the ontology is the only thing
+        # that knows that. A UI cannot infer it: the same `number` type
+        # carries a coordinate, a count and a ratio, each wanting a
+        # different answer. Display only; the stored value, what an
+        # action writes and what a filter compares are untouched.
+        decimal_places: 2
       currency:
         type: data
       category:

@@ -216,3 +216,54 @@ describe('a blank cell is never produced', () => {
     expect(formatValue(undefined)).toBe('—')
   })
 })
+
+describe('decimal places, where the ontology declared them', () => {
+  /**
+   * The UI cannot know how precise a number is worth showing. The same
+   * `number` type carries a coordinate, a count and a ratio, and two
+   * places is wrong for at least two of them -- so this only rounds
+   * when an ontology author said so.
+   *
+   * DISPLAY ONLY. The stored value, the value an action writes and the
+   * value a filter compares against are all untouched. Rounding for
+   * display and then filtering on the rounded figure would be a
+   * different and much worse feature.
+   */
+  it('rounds to the declared places', () => {
+    expect(formatValue(49.9876, 2)).toBe('49.99')
+  })
+
+  it('pads to them as well', () => {
+    // "49.9" under a column of "49.99" is harder to compare than
+    // "49.90", which is the whole point of a declared precision.
+    expect(formatValue(49.9, 2)).toBe('49.90')
+  })
+
+  it('zero places is a real answer, not an absent one', () => {
+    expect(formatValue(1234.56, 0)).toBe('1235')
+  })
+
+  it('leaves the number alone when nothing was declared', () => {
+    // THE CONTROL, and the overwhelmingly common case. A default would
+    // silently reformat every number in every deployment.
+    expect(formatValue(49.9876)).toBe('49.9876')
+    expect(formatValue(49.9876, null)).toBe('49.9876')
+  })
+
+  it('does not touch a string that looks like a number', () => {
+    // toFixed on a string throws. A value arriving as text is text,
+    // whatever the ontology says the column holds.
+    expect(formatValue('49.9876', 2)).toBe('49.9876')
+  })
+
+  it('does not turn NaN into the word NaN', () => {
+    // NaN and Infinity are numbers, and toFixed renders them as words
+    // that read like data rather than like the absence of it.
+    expect(formatValue(Number.NaN, 2)).toBe('NaN')
+    expect(formatValue(Number.POSITIVE_INFINITY, 2)).toBe('Infinity')
+  })
+
+  it('still withholds null rather than rounding it', () => {
+    expect(formatValue(null, 2)).toBe('—')
+  })
+})

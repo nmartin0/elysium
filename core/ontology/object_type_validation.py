@@ -106,6 +106,18 @@ def validate_object_types(object_types: dict, only: str | None = None) -> None:
 VISIBILITIES = ("prominent", "normal", "hidden")
 STATUSES = ("active", "experimental", "deprecated")
 
+# HOW MANY DECIMAL PLACES a numeric field is worth showing. Declared on
+# the PROPERTY, not chosen by the UI, because the UI cannot know: the
+# ontology says a field is a number and says nothing about its scale,
+# and two decimals is wrong for a coordinate and for a count alike.
+#
+# Foundry puts this in the same place -- value formatting is property
+# metadata that transforms "raw values into more readable versions in
+# user applications" -- and it sits beside `visibility` and `status`
+# here for the same reason: all three are things the ontology author
+# knows and an application cannot infer.
+MAX_DECIMAL_PLACES = 10
+
 
 def _validate_ui_metadata(object_type_name: str, type_def: dict) -> None:
     """Checks the optional hints a UI renders an ontology with.
@@ -145,6 +157,51 @@ def _validate_ui_metadata(object_type_name: str, type_def: dict) -> None:
                 f"{owner}: visibility must be one of {list(VISIBILITIES)}, got {visibility!r}"
             )
         _validate_status(owner, field_info)
+        _validate_decimal_places(owner, field_info)
+
+
+def _validate_decimal_places(owner: str, field_info: dict) -> None:
+    """Checks `decimal_places`, if a field declares one.
+
+    COSMETIC, like everything else this module validates. It changes
+    how a number is DISPLAYED and never what it is -- the stored value,
+    the value an action writes, and the value a filter compares against
+    are all untouched. A deployment rounding for display and then
+    filtering on the rounded figure would be a different and much worse
+    feature.
+
+    WHY A SEPARATE KEY RATHER THAN A FORMAT STRING. "%.2f" would carry
+    padding, thousands separators, currency symbols and locale
+    assumptions along with the precision, and every one of those is a
+    decision this project has not made. A count of places is the whole
+    of what the ontology knows.
+    """
+    places = field_info.get("decimal_places")
+    if places is None:
+        return
+
+    # bool is an int in Python, and `decimal_places: true` is a typo
+    # that would otherwise mean one place.
+    if isinstance(places, bool) or not isinstance(places, int):
+        raise ValueError(
+            f"{owner}: decimal_places must be a whole number, got {places!r}"
+        )
+    if places < 0 or places > MAX_DECIMAL_PLACES:
+        raise ValueError(
+            f"{owner}: decimal_places must be between 0 and {MAX_DECIMAL_PLACES}, "
+            f"got {places}"
+        )
+
+    # ONLY MEANINGFUL ON A NUMBER. Declared on a string it would be
+    # silently ignored, and an author who wrote it meant something by
+    # it -- saying so at load is kinder than leaving them to notice the
+    # field renders unchanged.
+    data_type = field_info.get("data_type")
+    if data_type is not None and data_type not in ("number", "integer"):
+        raise ValueError(
+            f"{owner}: decimal_places is only meaningful on a numeric field, "
+            f"but this one is {data_type!r}"
+        )
 
 
 def _validate_status(owner: str, definition: dict) -> None:

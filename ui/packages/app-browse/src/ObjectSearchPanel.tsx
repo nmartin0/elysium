@@ -331,6 +331,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // access. Saying so is the difference between "there are none" and
   // "you may not see them".
   const searchable = visibleSchema?.[currentType]?.readable !== false
+  // The current type's field metadata, for rendering hints the
+  // ontology declares -- decimal places today.
+  const typeSchemaFields = visibleSchema?.[currentType]?.fields
 
   return (
     // Workspace supplies the two-pane shape; this passes what goes in
@@ -584,7 +587,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                     .map(([field, value]) => (
                       <div key={field} className="object-search__result-field">
                         <dt>{formatFieldName(field)}</dt>
-                        <dd>{formatValue(value)}</dd>
+                        <dd>{formatValue(value, typeSchemaFields?.[field]?.decimal_places)}</dd>
                       </div>
                     ))}
                 </dl>

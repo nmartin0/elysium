@@ -452,6 +452,11 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 # tell a withheld field from an empty one, which is the
                 # ambiguity the grant ladder was built to end.
                 "readable",
+                # How many decimal places to SHOW. Cosmetic ontology
+                # metadata in the same family as visibility and status
+                # -- it says nothing about where the data lives or how
+                # it is secured, which is what this guard keeps out.
+                "decimal_places",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 

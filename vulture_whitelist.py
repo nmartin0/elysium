@@ -240,3 +240,7 @@ links
 # decorator, which Vulture cannot see. Every route in this file is
 # reached the same way.
 link_counts_route
+
+# SchemaFieldResponse.decimal_places (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field.
+decimal_places

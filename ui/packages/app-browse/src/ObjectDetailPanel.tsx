@@ -171,7 +171,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 
     const isLink = fieldSchema?.type === 'link'
 
-    if (!isLink) return formatValue(value)
+    if (!isLink) return formatValue(value, fieldSchema?.decimal_places)
     if (value === null || value === undefined) return formatValue(value)
 
     const targetType = fieldSchema.target

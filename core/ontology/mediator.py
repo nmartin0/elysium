@@ -648,6 +648,12 @@ class DataMediator:
                     "display_name": get_display_name(field_info, field_name),
                     "visibility": field_info.get("visibility", "normal"),
                     "status": field_info.get("status", "active"),
+                    # HOW MANY DECIMAL PLACES this field is worth
+                    # showing, if the ontology says. Absent means the
+                    # UI shows the value as it arrived -- there is no
+                    # sensible default, which is the whole reason this
+                    # is declared rather than guessed.
+                    "decimal_places": field_info.get("decimal_places"),
                     # NAMED BUT WITHHELD. False means the caller may
                     # know this field exists and not what it holds --
                     # the middle rung, and what the approvals diff

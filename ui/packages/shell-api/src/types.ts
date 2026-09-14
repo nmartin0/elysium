@@ -64,6 +64,11 @@ export interface FieldSchema {
    *  unreadable fields entirely, so anything it receives is readable.
    */
   readable?: boolean
+  /** How many decimal places this field is worth showing, if the
+   *  ontology says. Absent means show the value as it arrived --
+   *  there is no sensible default, which is why it is declared rather
+   *  than guessed. */
+  decimal_places?: number | null
   target?: string
   // Added by SchemaPanel, the next consumer to need more of this
   // shape -- optional, so nothing that already reads it changes.

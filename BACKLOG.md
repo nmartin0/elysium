@@ -84,9 +84,21 @@ reconciling rather than one replacing the other.
 
 ## 3. UI, none of it urgent
 
-**Fixed precision for numbers.** Blocked on a decision rather than
-effort: the ontology declares types but not scale, and two decimal
-places is wrong for a coordinate and for a count alike.
+**Fixed precision for numbers. DONE**, and the Foundry precedent
+decided it: value formatting is PROPERTY metadata, transforming raw
+values "into more readable versions in user applications". So
+`decimal_places` sits beside `visibility` and `status` on a field --
+all three are things an ontology author knows and an application
+cannot infer.
+
+Display only. The stored value, what an action writes, and what a
+filter compares against are untouched.
+
+DELIBERATELY NOT BUILT: a format STRING. "%.2f" carries padding,
+thousands separators, currency symbols and locale assumptions, and
+every one of those is a decision this project has not made. Foundry
+separates four concerns -- value formatting, render hints, type
+classes and conditional formatting -- and only the first is in scope.
 
 **The keyboard model's roving-focus half. GATED, not merely
 unstarted.** I described this as "the accessibility work nobody has
