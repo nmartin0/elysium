@@ -205,7 +205,7 @@ def _validate_object_reference_parameters(action_type_name: str, declared_params
     # "does this object_type actually exist" scrutiny either way.
     default_to_current_object_params = []
     for param_name, param_spec in declared_params.items():
-        if param_spec.get("type") != "object_reference":
+        if param_spec.get("type") not in OBJECT_REFERENCE_TYPES:
             if "default_to_current_object" in param_spec:
                 # A real, previously-possible mistake -- this flag
                 # only makes sense on an object_reference parameter
@@ -324,6 +324,19 @@ def _validate_parameter_display_metadata(action_type_name: str, declared_params:
 
 
 PARAMETER_PREFIX = "parameter."
+
+# THE TWO WAYS A PARAMETER CAN NAME OBJECTS. `object_reference` names
+# one; `object_reference_list` names many, and the write mediator
+# expands the list into one sub-write per object -- each with its own
+# authorization check, its own submission criteria, and its own place
+# in the atomic batch.
+#
+# Foundry draws the line identically: a "bulk action type" is one
+# "using an object reference list parameter". Bulk is a property of the
+# ACTION, declared in the ontology, rather than a mode an application
+# switches into -- which is what makes it reviewable before anyone runs
+# it.
+OBJECT_REFERENCE_TYPES = ("object_reference", "object_reference_list")
 
 
 def _collect_parameter_references(action_def: dict) -> set[str]:
@@ -612,10 +625,20 @@ def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, 
                 f"Action type {action_type_name!r}: sub_writes[{index}].object_id references "
                 f"undeclared parameter {param_name!r}."
             )
-        if param_spec.get("type") != "object_reference":
+        # EITHER FORM. object_reference names one object;
+        # object_reference_list names many, and the write mediator
+        # expands the list into one sub-write per object -- each
+        # getting its own authorization check, its own submission
+        # criteria and its own place in the atomic batch.
+        #
+        # Foundry draws the line here too: a "bulk action type" is one
+        # "using an object reference list parameter", a property of the
+        # ACTION rather than a mode the UI switches into.
+        if param_spec.get("type") not in OBJECT_REFERENCE_TYPES:
             raise ValueError(
                 f"Action type {action_type_name!r}: sub_writes[{index}].object_id's parameter "
-                f"{param_name!r} must be type 'object_reference', got {param_spec.get('type')!r}."
+                f"{param_name!r} must be type 'object_reference' or 'object_reference_list', "
+                f"got {param_spec.get('type')!r}."
             )
         if param_spec.get("object_type") != object_type:
             raise ValueError(

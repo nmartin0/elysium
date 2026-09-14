@@ -71,8 +71,28 @@ STILL OPEN: following a link should arguably keep the trail visible --
 Browse with a filter applied and no memory of how you got there. That
 is a navigation question worth answering before adding more hops.
 
-**Bulk actions**, through the existing propose/confirm flow. Depends on
-saved selections above.
+**Bulk actions. THE MECHANISM IS DONE**; the UI is not.
+
+`object_reference_list` is a parameter type, and a sub_write whose
+object_id resolves to a list expands into one sub-write per object --
+each getting its own authorization check, its own submission criteria
+and its own place in the ATOMIC batch. Forty objects means forty writes
+that all succeed or all fail.
+
+Foundry draws the line identically: a "bulk action type" is one "using
+an object reference list parameter". Bulk is a property of the ACTION,
+declared and reviewable before anyone runs it, rather than a mode an
+application switches into.
+
+STILL OPEN, all of it UI:
+- Checkboxes on the results table, and an Actions menu fed by them.
+- "No selection means the whole filtered set", which is Foundry's
+  rule: the current set "or all objects, if none are selected".
+- Select-all across pages means the FILTER, not the page.
+- A ceiling. Foundry stops at 1000 selected objects; we have no limit
+  and a bulk write of 50,000 would be one atomic batch.
+- No shipped action declares a list parameter yet, so the path is
+  exercised only by tests.
 
 **Per-task approval eligibility.** Foundry scopes a reviewer's action
 to the tasks they are eligible for; we approve a whole batch

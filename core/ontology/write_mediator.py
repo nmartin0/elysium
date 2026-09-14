@@ -1012,68 +1012,90 @@ class WriteMediator:
             # already uses -- see this method's own top-level comment
             # for why object_id is just an ordinary parameter now, not
             # a special case.
-            object_id = self._resolve_mutation_value(sw_def["object_id"], parameters, user_record)
+            resolved = self._resolve_mutation_value(sw_def["object_id"], parameters, user_record)
 
-            # The FULL duplicate check, against REAL resolved ids --
-            # the complement to core/ontology/action_types.py's own,
-            # WEAKER, load-time-only structural check. Two DIFFERENT
-            # object_id expressions (e.g. parameter.from_id and
-            # parameter.to_id) could still resolve to the SAME real id
-            # once real parameters arrive -- the schema-load check can
-            # never catch that; only this, with real values in hand,
-            # can.
-            object_ref = (object_type, str(object_id))
-            if object_ref in seen_object_refs:
-                raise ValueError(
-                    f"Action {action_type_name!r}: two sub_writes both resolved to the "
-                    f"identical {object_type} {object_id!r}"
-                )
-            seen_object_refs.add(object_ref)
-
-            self._authorize_sub_write(
-                user_record, object_type, object_id, operation, execute_action_id, rbac_allowed
-            )
-
-            # Submission criteria -- now PER SUB_WRITE, not per action;
-            # see core/ontology/submission_criteria.py's own docstring
-            # for why this stays a property of the write being
-            # proposed, not a generic validation bolted onto "update"
-            # itself. The "parameter" check kind still reads from the
-            # action's own declared parameter names, shared across
-            # every sub_write, not a per-sub_write namespace.
-            criteria = sw_def.get("submission_criteria", [])
-            if criteria:
-                current_state = self._read_current_state_for_criteria(object_type, object_id, criteria) \
-                    if operation == "update" else None
-                evaluate_submission_criteria(criteria, current_state, parameters, user_record)
-
-            # Resolve this sub_write's own declared mutations into a
-            # concrete field-value dict -- this, not free-form model
-            # input, is what actually gets written.
-            # A DELETE HAS NO MUTATIONS. Validation has allowed that
-            # since deletes were added -- a delete names an object, not
-            # a change to it -- but this path still required the key,
-            # so a delete action validated cleanly at load and raised
-            # KeyError the moment an agent proposed one.
+            # A LIST EXPANDS INTO ONE SUB-WRITE PER OBJECT. This is
+            # the whole of "bulk": an action whose object_id comes
+            # from an object_reference_list parameter touches every
+            # object named, and each one goes through the SAME
+            # per-object checks below -- authorization, submission
+            # criteria, the duplicate guard. Nothing is skipped
+            # because there are many.
             #
-            # Each half was tested and the SEAM between them was not,
-            # which is what the end-to-end test that found this exists
-            # for.
-            changes = {
-                mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"],
-                                                                            parameters, user_record)
-                for mutation in (sw_def.get("mutations") or [])
-            }
+            # Foundry draws the line in the same place: a "bulk
+            # action type" is one "using an object reference list
+            # parameter", so it is a property of the ACTION rather
+            # than a mode the UI switches into.
+            #
+            # STILL ONE ATOMIC BATCH. Forty objects means forty
+            # writes that all succeed or all fail, which is what
+            # makes a bulk action safe to approve as a unit -- a
+            # half-applied bulk edit is the state nobody can
+            # reason about.
+            for object_id in (resolved if isinstance(resolved, list) else [resolved]):
 
-            # For "update," expected_current_values is built PER
-            # STORAGE GROUP (same _group_changes_by_storage()
-            # confirm_and_execute() itself uses) -- this is what makes
-            # a multi-storage update possible at all; see write_log.py's
-            # own module docstring for the full mechanism.
-            expected_current_values = self._expected_current_values_for(
-                operation, object_type, object_id, changes, action_type_name
-            )
-            resolved_sub_writes.append(SubWrite(object_type, object_id, operation, changes, expected_current_values))
+                # The FULL duplicate check, against REAL resolved ids --
+                # the complement to core/ontology/action_types.py's own,
+                # WEAKER, load-time-only structural check. Two DIFFERENT
+                # object_id expressions (e.g. parameter.from_id and
+                # parameter.to_id) could still resolve to the SAME real id
+                # once real parameters arrive -- the schema-load check can
+                # never catch that; only this, with real values in hand,
+                # can.
+                object_ref = (object_type, str(object_id))
+                if object_ref in seen_object_refs:
+                    raise ValueError(
+                        f"Action {action_type_name!r}: two sub_writes both resolved to the "
+                        f"identical {object_type} {object_id!r}"
+                    )
+                seen_object_refs.add(object_ref)
+
+                self._authorize_sub_write(
+                    user_record, object_type, object_id, operation, execute_action_id, rbac_allowed
+                )
+
+                # Submission criteria -- now PER SUB_WRITE, not per action;
+                # see core/ontology/submission_criteria.py's own docstring
+                # for why this stays a property of the write being
+                # proposed, not a generic validation bolted onto "update"
+                # itself. The "parameter" check kind still reads from the
+                # action's own declared parameter names, shared across
+                # every sub_write, not a per-sub_write namespace.
+                criteria = sw_def.get("submission_criteria", [])
+                if criteria:
+                    current_state = self._read_current_state_for_criteria(object_type, object_id, criteria) \
+                        if operation == "update" else None
+                    evaluate_submission_criteria(criteria, current_state, parameters, user_record)
+
+                # Resolve this sub_write's own declared mutations into a
+                # concrete field-value dict -- this, not free-form model
+                # input, is what actually gets written.
+                # A DELETE HAS NO MUTATIONS. Validation has allowed that
+                # since deletes were added -- a delete names an object, not
+                # a change to it -- but this path still required the key,
+                # so a delete action validated cleanly at load and raised
+                # KeyError the moment an agent proposed one.
+                #
+                # Each half was tested and the SEAM between them was not,
+                # which is what the end-to-end test that found this exists
+                # for.
+                changes = {
+                    mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"],
+                                                                                parameters, user_record)
+                    for mutation in (sw_def.get("mutations") or [])
+                }
+
+                # For "update," expected_current_values is built PER
+                # STORAGE GROUP (same _group_changes_by_storage()
+                # confirm_and_execute() itself uses) -- this is what makes
+                # a multi-storage update possible at all; see write_log.py's
+                # own module docstring for the full mechanism.
+                expected_current_values = self._expected_current_values_for(
+                    operation, object_type, object_id, changes, action_type_name
+                )
+                resolved_sub_writes.append(
+                    SubWrite(object_type, object_id, operation, changes, expected_current_values)
+                )
 
         description = _describe_action(action_type_name, action_def, parameters)
         return PendingWrite(
