@@ -1550,6 +1550,28 @@ input[type='checkbox'],
   border: 0;
 }
 
+/* Saved views -- a popover, because saving is a momentary act and the
+ * list is short. A permanent sidebar section would spend space on
+ * something most people touch once a week. */
+.saved-views__menu {
+  min-width: 18rem;
+}
+
+.saved-views__save {
+  display: flex;
+  gap: var(--space-tight);
+  align-items: center;
+  padding: var(--space-tight);
+}
+
+.saved-views__save .bp6-input-group {
+  flex: 1;
+  /* Without an explicit minimum a flex child refuses to shrink below
+   * its content, so a long placeholder would widen the popover. The
+   * same rule the workspace panes needed. */
+  min-inline-size: 0;
+}
+
 /* The shared loading treatment -- see components/LoadingState.tsx for
  * why a spinner alone was not enough. */
 .loading-state {

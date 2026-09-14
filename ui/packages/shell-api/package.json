@@ -21,6 +21,7 @@
     "./index.css": "./src/index.css",
     "./tokens.css": "./src/tokens.css",
     "./types": "./src/types.ts",
+    "./savedViews": "./src/savedViews.ts",
     "./useUrlState": "./src/useUrlState.ts",
     "./useDeferredValue": "./src/useDeferredValue.ts",
     "./useFetchOnce": "./src/useFetchOnce.ts",

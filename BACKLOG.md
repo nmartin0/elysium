@@ -43,14 +43,18 @@ findings.
 
 ## 2. Product work, buildable here
 
-**Saved Explorations.** A search plus its filters and chart
-configuration, persisted and returnable to. NOW MUCH SMALLER: Browse's
-view state lives in the URL, so an exploration is that URL plus a name,
-not a schema to design. Appears independently on
-two lists, which is usually a sign of a real need. No backend exists;
-ConfigHistory and PendingWriteStore are both precedents for the store.
-Saved SELECTIONS are a distinct thing from saved searches and the UI
-must not conflate them.
+**Saved Explorations. DONE for Browse**, as a URL plus a name in
+per-user browser storage. PERSONAL, NOT SHARED, and the URL work is
+why: sharing a view is already solved by sending the link, so what
+this answers is "the thing I set up on Tuesday, where did it go".
+No permission model, no server store, no ownership rules.
+
+STILL OPEN, and a genuinely different thing: saved SELECTIONS. A set
+of chosen OBJECTS rather than a question, and what bulk actions would
+operate on. The UI must not conflate the two.
+
+Shared explorations, if ever wanted, are a separate feature with a
+permission model rather than a flag on this one.
 
 **Vertex-lite: a read-only link explorer.** The largest remaining
 feature. The schema already declares link types and cardinality, and

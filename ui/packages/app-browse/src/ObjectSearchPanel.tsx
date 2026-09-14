@@ -13,6 +13,8 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
+
+import SavedViews from './SavedViews'
 import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
@@ -337,6 +339,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               Schema and Admin put theirs, so the shell reads one way
               throughout. */}
           <ViewSelector views={BROWSE_VIEWS} selected={view} onSelect={setView} />
+
+          <SavedViews username={username} />
 
           <WorkspaceFilter label="Object type" htmlFor="object-type">
             <select
