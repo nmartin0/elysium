@@ -88,8 +88,17 @@ reconciling rather than one replacing the other.
 effort: the ontology declares types but not scale, and two decimal
 places is wrong for a coordinate and for a count alike.
 
-**The keyboard model's roving-focus half.** The accessibility work
-nobody has touched.
+**The keyboard model's roving-focus half. GATED, not merely
+unstarted.** I described this as "the accessibility work nobody has
+touched" and that was wrong. UI_ROADMAP.md is explicit: the FOCUS-RING
+half is the accessibility floor and is unconditional -- it is done,
+using :focus-visible so a mouse click leaves no ring. Roving focus is
+a POWER-USER feature, and the recorded gate is that "nobody has
+established who uses Elysium daily".
+
+That gate has not been met, so building it would be guessing at a user
+who may not exist. It wants an answer about usage, not a decision about
+scope.
 
 **URL-as-state. DONE for Browse**, which is where a view has parts
 worth sharing: the object type, the search, the sort, the chart

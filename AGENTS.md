@@ -99,6 +99,41 @@ is every time except deliberately adding or upgrading a dependency.
 When a dependency IS being changed, `npm install` is correct and the
 lockfile change belongs in that commit, where a reviewer can see it.
 
+## A mocked callback tests the component and skips the wire
+
+When a test replaces a handler with a mock, it stops at the component
+boundary. Everything inside is checked; the connection to what actually
+happens is not, and a control that breaks the connection passes.
+
+THREE TIMES IN ONE SESSION, each found by a control that did not fire:
+
+  AgentLoop had to pass for_agent=True to get the model's view of the
+  schema. Every test called visible_schema directly, so removing the
+  flag failed nothing -- and the model would have received object
+  types it cannot search.
+
+  visible_schema computed a `readable` flag correctly and FastAPI's
+  response_model stripped it, because no test went over HTTP. Found by
+  a person running the product, after the feature built on it had
+  already shipped.
+
+  Removing one filter pill had to leave the others. Every test mocked
+  onRemove, so replacing the handler with "clear everything" passed --
+  and would have shown far more rows than asked for while looking like
+  it worked.
+
+The shape is always the same: the component is right, the wire is not,
+and the suite is green.
+
+THE CHECK IS CHEAP. For any handler a test mocks, ask what the REAL one
+does, and write one test that drives it end to end -- through the
+route, through the loop, through the panel. One such test per wire is
+enough; it is the existence of the test that matters, not its
+thoroughness.
+
+Related to "Run the feature before committing it", and weaker than it.
+Running the product caught the `readable` bug that no test could.
+
 ## Measure the cost of a fix, not just the size of the problem
 
 A decision not to fix something is a claim about cost, and a claim
