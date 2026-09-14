@@ -272,3 +272,79 @@ describe('a chart does not filter itself', () => {
     )
   })
 })
+
+describe('one chart failing does not destroy the rest', () => {
+  /**
+   * Promise.all rejected the whole batch, so a single unaggregatable
+   * column replaced every chart with an error -- five perfectly good
+   * distributions thrown away because the sixth could not be computed.
+   *
+   * WHAT MUST NOT HAPPEN INSTEAD is a quiet partial. Showing five
+   * charts as though they were all of them is a wrong answer reporting
+   * success, which is the failure this project keeps finding. So the
+   * ones that failed are NAMED, beside the ones that worked.
+   */
+  const TWO_CHARTS: VisibleSchema = {
+    Customer: {
+      fields: {
+        region: { type: 'data', visibility: 'prominent', display_name: 'Region' },
+        tier: { type: 'data', visibility: 'prominent', display_name: 'Tier' },
+      },
+    },
+  }
+
+  function renderCharts(schema: VisibleSchema = TWO_CHARTS) {
+    return render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={schema}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
+    )
+  }
+
+  it('still draws the charts that worked', async () => {
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { 'us-west': 3, 'us-east': 1 } })
+      .mockRejectedValueOnce(new Error('cannot aggregate tier'))
+    renderCharts()
+
+    await waitFor(() => expect(screen.getByText('Region')).toBeInTheDocument())
+  })
+
+  it('names the ones that did not', async () => {
+    // "One chart failed" would not tell a person whether to trust what
+    // they are looking at. WHICH field is missing is the thing that
+    // decides it.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { 'us-west': 3, 'us-east': 1 } })
+      .mockRejectedValueOnce(new Error('cannot aggregate tier'))
+    renderCharts()
+
+    expect(await screen.findByText('Some charts could not be drawn')).toBeInTheDocument()
+    expect(screen.getByText('Tier')).toBeInTheDocument()
+  })
+
+  it('says nothing when every chart worked', async () => {
+    // THE CONTROL. A notice that always appeared would train people to
+    // ignore it, which is worse than not having one.
+    aggregateObjects.mockResolvedValue({ results: { 'us-west': 3, 'us-east': 1 } })
+    renderCharts()
+
+    await waitFor(() => expect(screen.getByText('Region')).toBeInTheDocument())
+    expect(screen.queryByText('Some charts could not be drawn')).toBeNull()
+  })
+
+  it('reports WHY when nothing worked at all', async () => {
+    // Everything failing is not a partial result. Naming the fields
+    // would say what is missing while losing the reason -- and when
+    // nothing worked, the reason is the only useful thing left.
+    aggregateObjects.mockRejectedValue(new Error('the silo is unreachable'))
+    renderCharts()
+
+    expect(await screen.findByText(/the silo is unreachable/)).toBeInTheDocument()
+  })
+})

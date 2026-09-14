@@ -25,6 +25,7 @@ import { useEffect, useState } from 'react'
 import { Callout } from '@blueprintjs/core'
 import Chart from '@elysium/shell-api/components/Chart'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { aggregateObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
@@ -78,6 +79,11 @@ export default function ChartsPanel({
 }: ChartsPanelProps) {
   const [charts, setCharts] = useState<FieldChart[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // WHICH fields could not be aggregated, named rather than counted. A
+  // person deciding whether the picture is complete needs to know
+  // WHAT is missing from it -- "one chart failed" does not tell them
+  // whether to trust what they are looking at.
+  const [failedFields, setFailedFields] = useState<string[]>([])
 
   const fields = chartableFields(objectType, visibleSchema)
   // Serialised so the effect depends on the CONTENT of the filter
@@ -89,8 +95,18 @@ export default function ChartsPanel({
     let cancelled = false
     setCharts(null)
     setError(null)
+    setFailedFields([])
 
-    Promise.all(
+    // ALL-SETTLED, NOT ALL. One field failing used to reject the whole
+    // batch, so a single unaggregatable column replaced every chart
+    // with an error -- five perfectly good distributions thrown away
+    // because the sixth could not be computed.
+    //
+    // WHAT MUST NOT HAPPEN INSTEAD is a quiet partial: showing five
+    // charts as though they were all of them is a wrong answer
+    // reporting success. So the failures are NAMED below, beside the
+    // charts that worked.
+    Promise.allSettled(
       fields.map(async ({ field, label }) => {
         const body = (await aggregateObjects(objectType, {
           // Every OTHER chart's selection, not this one's -- a chart
@@ -103,8 +119,28 @@ export default function ChartsPanel({
         return { field, label, results: body.results }
       }),
     )
-      .then((loaded) => {
+      .then((settled) => {
         if (cancelled) return
+
+        // A rejected session must still log the person out, which a
+        // settled result would otherwise swallow into a failed-field
+        // name.
+        const rejected = settled.filter((entry) => entry.status === 'rejected')
+        for (const entry of rejected) {
+          if (handleIfSessionExpired(entry.reason, onSessionExpired)) return
+        }
+
+        const loaded = settled.filter((entry) => entry.status === 'fulfilled').map((entry) => entry.value)
+        // EVERYTHING FAILING IS NOT A PARTIAL RESULT, and wants a
+        // different message. Naming the fields would say WHAT is
+        // missing while losing WHY -- and when nothing worked, the
+        // reason is the only useful thing left to say.
+        if (loaded.length === 0 && rejected.length > 0) {
+          setError(getErrorMessage(rejected[0]?.reason))
+          return
+        }
+
+        setFailedFields(fields.filter((_, index) => settled[index]?.status === 'rejected').map(({ label }) => label))
         // A field where every object shares one value tells you
         // nothing -- one bar is not a distribution. Dropped rather
         // than drawn, so the tab shows only charts worth looking at.
@@ -123,35 +159,43 @@ export default function ChartsPanel({
   }, [objectType, filterKey, queryText])
 
   return (
-    <AsyncPanel error={error} data={charts}>
-      {(charts) =>
-        // An EMPTY result is not a loading state and not a failure --
-        // every field has one distinct value, which is a true answer
-        // and needs saying rather than showing an empty box.
-        charts.length === 0 ? (
-          <Callout intent="none">
-            No field in this object type has more than one distinct value in the current results, so there is nothing to
-            chart.
-          </Callout>
-        ) : (
-          <div className="charts-panel">
-            {charts.map((chart) => (
-              <section key={chart.field} className="charts-panel__chart">
-                <h4>{chart.label}</h4>
-                <Chart
-                  ariaLabel={`${chart.label} distribution`}
-                  onSelect={(value) => onSelect(chart.field, value)}
-                  option={
-                    suitsAPie(chart.results)
-                      ? pieOption(chart.results)
-                      : valueCountsOption(chart.results, selectionFor(filters, chart.field))
-                  }
-                />
-              </section>
-            ))}
-          </div>
-        )
-      }
-    </AsyncPanel>
+    <>
+      {failedFields.length > 0 && (
+        // BESIDE THE CHARTS, not instead of them. The five that worked
+        // are still worth looking at; what makes them safe to look at
+        // is knowing the sixth is missing.
+        <ErrorState title="Some charts could not be drawn">{failedFields.join(', ')}</ErrorState>
+      )}
+      <AsyncPanel error={error} data={charts}>
+        {(charts) =>
+          // An EMPTY result is not a loading state and not a failure --
+          // every field has one distinct value, which is a true answer
+          // and needs saying rather than showing an empty box.
+          charts.length === 0 ? (
+            <Callout intent="none">
+              No field in this object type has more than one distinct value in the current results, so there is nothing
+              to chart.
+            </Callout>
+          ) : (
+            <div className="charts-panel">
+              {charts.map((chart) => (
+                <section key={chart.field} className="charts-panel__chart">
+                  <h4>{chart.label}</h4>
+                  <Chart
+                    ariaLabel={`${chart.label} distribution`}
+                    onSelect={(value) => onSelect(chart.field, value)}
+                    option={
+                      suitsAPie(chart.results)
+                        ? pieOption(chart.results)
+                        : valueCountsOption(chart.results, selectionFor(filters, chart.field))
+                    }
+                  />
+                </section>
+              ))}
+            </div>
+          )
+        }
+      </AsyncPanel>
+    </>
   )
 }

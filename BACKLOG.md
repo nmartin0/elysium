@@ -106,9 +106,14 @@ component too -- the TREATMENT was already consistent across ten
 panels, but none of them ANNOUNCED: a danger Callout sets no ARIA
 role, so every failure was silent to a screen reader.
 
-STILL OPEN: partial states -- a panel that loaded some of what it
-needed and failed on the rest. No component currently distinguishes
-that from either success or failure.
+PARTIAL IS DONE where it actually occurred: the charts tab loaded six
+aggregates with Promise.all, so one failing column replaced every chart
+with an error. It now draws what worked and NAMES what did not -- a
+quiet partial would be a wrong answer reporting success.
+
+The view-state matrix is complete. No other panel loads more than one
+thing at a time, checked rather than assumed, so there is nowhere else
+for a partial state to arise today.
 
 ---
 
