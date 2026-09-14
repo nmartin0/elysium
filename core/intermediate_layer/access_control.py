@@ -41,7 +41,8 @@ from core.request_context import RequestContext
 
 def check_access(mediator, user_record: UserRecord, roles: dict,
                   object_type: str, object_id, action: str,
-                  context: RequestContext | None = None) -> bool:
+                  context: RequestContext | None = None,
+                  *, part_of_bulk_read: bool = False) -> bool:
     mac_allowed = (
         user_record.security_value is not None
         and mediator._security_allowed(object_type, object_id, user_record.security_value)
@@ -65,8 +66,21 @@ def check_access(mediator, user_record: UserRecord, roles: dict,
     # request -- a login check, a startup validation -- belongs to no
     # request, and inventing an id would tie the entry to one that
     # never existed.
-    mediator.audit_log.log_access(user_record.user_id, object_type, object_id, action,
-                                   mac_allowed, rbac_allowed,
-                                   request_id=context.request_id if context else None)
+    # A GRANT INSIDE A BULK READ IS NOT ITS OWN EVENT. The caller logs
+    # one record for the whole operation instead -- see
+    # AuditLog.log_bulk_read() for the reasoning and the measurements.
+    # NIST SP 800-92 asks for "events that involve a state change or a
+    # security decision", and a bulk read makes one decision and
+    # applies it many times.
+    #
+    # A DENIAL IS ALWAYS ITS OWN EVENT, however it arose. "Sample
+    # strategically for non-security telemetry ONLY" -- so this
+    # suppresses grants and never denials, and the bulk record names
+    # every denied id as well.
+    allowed = mac_allowed and rbac_allowed
+    if not (part_of_bulk_read and allowed):
+        mediator.audit_log.log_access(user_record.user_id, object_type, object_id, action,
+                                       mac_allowed, rbac_allowed,
+                                       request_id=context.request_id if context else None)
 
-    return mac_allowed and rbac_allowed
+    return allowed

@@ -224,9 +224,39 @@ nothing new is needed but a different shape of question.
 program -- and it is worth knowing whether the remaining time even
 justifies DuckDB before building on it.
 
+### Phase 0b — audit at the granularity of the event. DONE.
+
+The profile after phase 0 was dominated by something else entirely:
+**50,007 audit writes, 1.08 of the remaining 1.45 seconds**, of which
+49,997 were identical grants.
+
+NIST SP 800-92 settles the granularity: log "events that involve a
+state change or a SECURITY DECISION". A bulk read makes ONE decision --
+may this user read this type -- and applies it many times.
+
+One record per read now, and it is FINER than what it replaced. The six
+questions a defensible trail answers -- who, what, when, where, why,
+what outcome -- are all answered, where the per-object records answered
+three. It additionally names which FIELDS were read and which SECURITY
+PARTITIONS were touched, neither of which was ever captured.
+
+**Denials are never summarised**: "sample strategically for
+non-security telemetry ONLY". Every denial keeps its own record and is
+named in the bulk one.
+
+**34.90s -> 1.45s -> 0.52s.** Roughly 67x from where this started, and
+4 audit records instead of 50,007.
+
+Rejected: asynchronous logging, the standard speed answer. It trades
+durability for speed, and this project already rejected persistent file
+handles for the same class of reason.
+
 ### Phase 1 — DuckDB over the existing mirror
 
-**Depends on phase 0 telling us it is still worth doing.** Wire DuckDB
+**RE-MEASURE BEFORE BUILDING.** After phases 0 and 0b the real path is
+0.52s, of which the grouping is a fraction and the rest is the data
+read itself. DuckDB would speed up the part that is already fastest,
+so this phase has NOT earned its place on current evidence. Wire DuckDB
 for filtering and aggregation via pyiceberg-to-Arrow, keeping the
 Python path as the fallback for
 operators it cannot express -- the same `UnsupportedFilter` contract

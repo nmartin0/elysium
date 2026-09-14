@@ -949,10 +949,55 @@ class DataMediator:
         # the values already cached instead of reading one at a time.
         self._prefetch_security_values(object_type, candidate_ids)
 
-        return [
-            candidate_id for candidate_id in candidate_ids
-            if check_access(self, user_record, self.roles, object_type, candidate_id, action, context)
-        ]
+        # ONE AUDIT RECORD FOR THE WHOLE READ, not one per object.
+        #
+        # This loop used to write an audit record per candidate, of
+        # which nearly all said the same thing. Measured on the real
+        # path: a read over 50,000 objects wrote 50,007 records and
+        # spent 1.08 of 1.45 seconds doing it.
+        #
+        # Denials still write their own -- check_access() suppresses
+        # only GRANTS when part_of_bulk_read -- and every denied id is
+        # named in the bulk record too. See AuditLog.log_bulk_read().
+        allowed, denied = [], []
+        for candidate_id in candidate_ids:
+            if check_access(self, user_record, self.roles, object_type, candidate_id,
+                            action, context, part_of_bulk_read=True):
+                allowed.append(candidate_id)
+            else:
+                denied.append(candidate_id)
+
+        self.audit_log.log_bulk_read(
+            user_record.user_id, object_type, action,
+            considered=len(candidate_ids),
+            denied_object_ids=denied,
+            fields_read=[],
+            security_values_seen=self._security_values_for(object_type, allowed),
+            request_id=context.request_id if context else None,
+        )
+        return allowed
+
+    def _security_values_for(self, object_type: str, object_ids: list) -> set:
+        """The distinct security partitions a set of objects sits in.
+
+        WHICH PARTITIONS A READ TOUCHED is one of the six questions a
+        defensible trail answers -- "why it was permitted" -- and the
+        per-object records never captured it. Read from the cache the
+        prefetch already filled, so it costs nothing.
+        """
+        # THROUGH THE RESOLVER, not the cache directly. The cache is
+        # keyed by the type the value LIVES ON, which for a via_field
+        # chain is the far side -- Transaction's security value is
+        # cached under Customer. Reading it directly returned an empty
+        # set and would have shipped a silently blank audit field.
+        #
+        # The resolver hits that warm cache anyway, so this stays cheap:
+        # _prefetch_security_values() has already run by the time any
+        # caller reaches here.
+        return {
+            self._get_security_value(object_type, object_id)
+            for object_id in object_ids
+        }
 
     def free_text_searchable_fields(self, user_record: UserRecord, object_type: str,
                                      visible_schema: dict | None = None) -> list[str]:

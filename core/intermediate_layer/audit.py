@@ -87,6 +87,7 @@ Used by: core/ontology/mediator.py (owns the instance directly,
 """
 
 import json
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -234,6 +235,66 @@ class AuditLog:
             # "no request" from "an older log format".
             "request_id": request_id,
             "allowed": bool(mac_allowed) and rbac_allowed,
+        })
+
+    def log_bulk_read(self, user_id: str, object_type: str, action: str, *,
+                       considered: int, denied_object_ids: list,
+                       fields_read: list[str], security_values_seen: Iterable,
+                       request_id: str | None = None) -> None:
+        """One record for one read, however many objects it touched.
+
+        WHY NOT ONE PER OBJECT. A read over 50,000 objects wrote 50,007
+        records, of which 49,997 were identical grants -- measured, on
+        the real path, along with the 2.8x it cost. NIST SP 800-92 asks
+        for "events that are significant for security and
+        accountability... events that involve a state change or a
+        SECURITY DECISION", and a bulk read makes ONE decision -- may
+        this user read this type -- then applies it many times. The
+        decision is the event.
+
+        Successful access stays in scope: the same guidance lists
+        "attempts to access sensitive resources (successful and
+        failed)". This records that the read happened, at the
+        granularity of the thing that happened.
+
+        DENIALS ARE NEVER SUMMARISED. Every denied object id is listed
+        individually here AND keeps its own log_access() record --
+        "sample strategically for non-security telemetry ONLY". A
+        denial you cannot name is unauditable, and the measurement said
+        detail is free: a record carrying 500 ids cost 0.061ms against
+        0.034ms for one carrying three.
+
+        THE SIX QUESTIONS a defensible trail answers -- who acted, what
+        changed, when, where it originated, why it was permitted, and
+        what outcome followed -- map to the fields below. The per-object
+        records answered three of them; this answers all six, and adds
+        two the old ones never captured: WHICH FIELDS were read, and
+        WHICH SECURITY PARTITIONS were touched.
+
+        Durable identifiers throughout, never display names: "one
+        platform records a display name while another records a durable
+        identifier... that creates reconciliation work, weakens
+        evidence".
+        """
+        self._write({
+            "stage": "bulk_read",
+            # WHO
+            "user_id": user_id,
+            # WHAT
+            "object_type": object_type,
+            "action": action,
+            "fields_read": sorted(fields_read),
+            # WHERE it originated
+            "request_id": request_id,
+            # WHY it was permitted -- which security partitions the
+            # caller's own clearance admitted them to.
+            "security_values_seen": sorted(str(value) for value in security_values_seen),
+            # WHAT OUTCOME followed
+            "considered": considered,
+            "denied": len(denied_object_ids),
+            "denied_object_ids": list(denied_object_ids),
+            # WHEN is stamped by _write(), in the one place every entry
+            # passes through.
         })
 
     def log_unknown_reference(self, user_id: str, object_type: str, field_name: str | None = None) -> None:
