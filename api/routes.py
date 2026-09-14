@@ -456,6 +456,20 @@ class SearchAroundResponse(BaseModel):
     total: int
 
 
+class LinkCountResponse(BaseModel):
+    target: str
+    count: int
+    cardinality: str | None = None
+
+
+class LinkCountsResponse(BaseModel):
+    # Keyed by link field name. A response model rather than a bare
+    # dict because an undeclared key is SILENTLY STRIPPED by FastAPI --
+    # the readable flag on visible_schema shipped broken for exactly
+    # that reason, computed correctly and never serialised.
+    links: dict[str, LinkCountResponse]
+
+
 class EditHistoryEntryResponse(BaseModel):
     id: str
     operation: str
@@ -2300,6 +2314,29 @@ def search_around_route(object_type: str, body: SearchAroundRequest, request: Re
     mediator = _generation(request).mediator
     ids = mediator.search_around(current_user, object_type, body.as_conditions(), body.link_field)
     return {"ids": ids, "total": len(ids)}
+
+
+@router.get("/objects/{object_type}/{object_id}/link-counts",
+            response_model=LinkCountsResponse)
+def link_counts_route(object_type: str, object_id: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How many objects each link leads to, before following any.
+
+    COUNTS BEFORE EXPANSION is the whole design of the link explorer: a
+    person deciding whether to follow a link needs to know it leads to
+    four things or four thousand BEFORE they commit. Fan-out should
+    never be a surprise.
+
+    Every count is what THIS caller would actually receive -- MAC and
+    RBAC apply on the far side -- so it cannot disagree with the
+    expansion that follows, and cannot leak the size of data they are
+    not permitted to see.
+
+    A GET, because it is a question rather than a change, and a person
+    sharing a link explorer view should be able to share this too.
+    """
+    mediator = _generation(request).mediator
+    return {"links": mediator.link_counts(current_user, object_type, object_id)}
 
 @router.get("/objects/{object_type}/{object_id}/history", response_model=EditHistoryResponse)
 def object_history_route(object_type: str, object_id: str, request: Request,

@@ -1377,6 +1377,82 @@ class DataMediator:
                 allowed.append(target_id)
         return allowed
 
+    def link_counts(self, user_record: UserRecord, object_type: str,
+                     object_id: Any) -> dict:
+        """How many objects sit on the far side of each link, per link.
+
+        COUNTS BEFORE EXPANSION, which is the whole design of the link
+        explorer. A person deciding whether to follow a link needs to
+        know it leads to four things or four thousand BEFORE they
+        commit -- fan-out should never be a surprise, and an
+        explorer that expands first and apologises later is unusable on
+        real data.
+
+        MAC AND RBAC APPLY, so a count is what THIS caller would
+        actually receive rather than what exists. That matters more
+        than it sounds: a count of what exists would leak the size of
+        data they cannot see, and a count that disagreed with the
+        subsequent expansion would look like a bug in the explorer.
+
+        Only links whose TARGET TYPE is visible are reported. A link to
+        a type the caller cannot discover is not a link they have, and
+        naming it would say the deployment holds something they were
+        not told about.
+        """
+        visible = self.visible_schema(user_record)
+        type_schema = visible.get(object_type)
+        if type_schema is None:
+            return {}
+
+        counts = {}
+        for field_name, field_info in type_schema["fields"].items():
+            if field_info.get("type") != "link":
+                continue
+            target = field_info.get("target")
+            if target not in visible:
+                continue
+            # A field whose VALUE is withheld cannot be counted either
+            # -- the count would be derived from data the caller may
+            # not read. The middle rung of the grant ladder.
+            if field_info.get("readable") is False:
+                continue
+
+            value = self.get_field(user_record, object_type, object_id, field_name)
+            ids = value if isinstance(value, list) else ([] if value is None else [value])
+            # RE-AUTHORISED ON THE FAR SIDE, the same way search_around
+            # does it. An id sitting in a link field is not proof the
+            # caller may see the object it names -- MAC is per object,
+            # so the source row being visible says nothing about the
+            # target row.
+            #
+            # UNTESTABLE IN THIS DEPLOYMENT, and worth saying so: a
+            # Transaction inherits its MAC value VIA customer_id, so
+            # every transaction of a visible customer is necessarily
+            # visible and a control removing this check fails nothing.
+            # It is kept because the ontology does not REQUIRE that
+            # arrangement -- a deployment whose link crosses a MAC
+            # boundary would leak a count of objects the caller cannot
+            # see, which is exactly the disclosure this feature must
+            # not make.
+            #
+            # Prefetched in one batch before the per-id loop, or this
+            # would issue a query per linked object and a customer with
+            # four thousand transactions would make the COUNT slower
+            # than the expansion it exists to avoid.
+            action = f"read:{target}"
+            self._prefetch_security_values(target, list(ids))
+            visible_ids = [
+                target_id for target_id in dict.fromkeys(ids)
+                if check_access(self, user_record, self.roles, target, target_id, action, None)
+            ]
+
+            counts[field_name] = {
+                "target": target,
+                "count": len(visible_ids),
+                "cardinality": field_info.get("cardinality"),
+            }
+        return counts
+
     def edit_history(self, user_record: UserRecord, object_type: str, object_id: Any,
                       limit: int | None = None, offset: int = 0,
                      context: RequestContext | None = None) -> tuple[list[dict], int]:

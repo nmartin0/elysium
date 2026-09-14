@@ -231,3 +231,12 @@ undeclared_fields
 # AwaitingWriteResponse.duplicate_count (api/routes.py) -- serialised by
 # FastAPI from the returned dict, like every other response field.
 duplicate_count
+
+# LinkCountsResponse.links (api/routes.py) -- serialised by FastAPI
+# from the returned dict, like every other response field.
+links
+
+# link_counts_route (api/routes.py) -- registered by its @router.get
+# decorator, which Vulture cannot see. Every route in this file is
+# reached the same way.
+link_counts_route

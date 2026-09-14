@@ -3280,3 +3280,32 @@ def test_a_discover_only_field_reports_itself_unreadable_over_http(client):
 
     assert fields["email"]["readable"] is False
     assert fields["name"]["readable"] is True
+
+
+def test_link_counts_survive_serialisation(client):
+    """The route, not the mediator.
+
+    The `readable` flag shipped broken because every test called the
+    mediator directly and FastAPI's response_model silently strips keys
+    it is not told about. Counting is worth nothing if the number never
+    leaves the process.
+    """
+    client.app.state.user_directory.create_user("alice", "pw", "us-west", "customer_service")
+    _login(client, "alice", "pw")
+
+    response = client.get("/api/objects/Customer/cust_001/link-counts")
+
+    assert response.status_code == 200
+    links = response.json()["links"]
+    assert links["transactions"]["count"] == 2
+    assert links["transactions"]["target"] == "Transaction"
+    assert links["transactions"]["cardinality"] == "many"
+
+
+def test_link_counts_require_authentication(client):
+    # An unauthenticated caller learning that Customer has a
+    # transactions link, and how many, is the same disclosure the
+    # /health silo names were.
+    response = client.get("/api/objects/Customer/cust_001/link-counts")
+
+    assert response.status_code == 401
