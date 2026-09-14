@@ -1550,6 +1550,16 @@ input[type='checkbox'],
   border: 0;
 }
 
+/* Active filters -- a pill row saying what is narrowing this view.
+ * Above the results rather than beside them: it describes what you are
+ * about to read, so it has to be read first. */
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-tight);
+  margin-block-end: var(--space-normal);
+}
+
 /* Explore related -- where each link leads, and how far. A list rather
  * than a canvas: one hop at a time is the whole design, and a layout
  * engine is the "full Vertex" item. */

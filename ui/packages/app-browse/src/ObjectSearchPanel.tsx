@@ -14,6 +14,7 @@ import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/Vie
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
 
+import ActiveFilters from './ActiveFilters'
 import SavedViews from './SavedViews'
 import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
@@ -103,6 +104,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * -- so a click is always undoable by repeating it, which is what
    * makes exploring by clicking safe.
    */
+  function removeCrossFilter(field: string) {
+    setCrossFilter((current) => current.filter((entry) => entry.field !== field))
+  }
+
   function toggleChartValue(field: string, value: string) {
     setCrossFilter((current) => {
       const existing = current.find((entry) => entry.field === field)
@@ -464,6 +469,14 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           onSessionExpired={onSessionExpired}
         />
       )}
+
+      {/* WHAT IS NARROWING THIS VIEW, said out loud. A cross-filter
+          used to render nowhere in table view, so arriving from a link
+          the panel said "Showing 2 of 2 matches" with no sign a filter
+          was in force -- which reads as "there are 2 in the system".
+          Foundry treats this as a first-class concern: Object Views
+          ships a dedicated Active Filters widget for exactly it. */}
+      <ActiveFilters filters={crossFilter} onRemove={removeCrossFilter} />
 
       {loading && <p className="object-search__status">Searching…</p>}
 

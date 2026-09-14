@@ -52,9 +52,13 @@ const CUSTOMER_SCHEMA: VisibleSchema = {
 // unshortened 300ms debounce genuinely elapses) but is what actually,
 // reliably passes -- correctness over speed, matching this project's
 // own established testing discipline elsewhere.
-function renderPanel(visibleSchema: VisibleSchema | null, onSessionExpired: () => void = vi.fn()) {
+function renderPanel(
+  visibleSchema: VisibleSchema | null,
+  onSessionExpired: () => void = vi.fn(),
+  initialUrl = '/browse',
+) {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialUrl]}>
       <ObjectSearchPanel visibleSchema={visibleSchema} username="alice" onSessionExpired={onSessionExpired} />
     </MemoryRouter>,
   )
@@ -1017,5 +1021,51 @@ describe('the row count says which guarantee applies', () => {
     renderPanel(CUSTOMER_SCHEMA)
 
     expect(await screen.findByText(/Showing 1 of 50/)).toBeInTheDocument()
+  })
+})
+
+describe('active filters say what is narrowing the view', () => {
+  /**
+   * THE DEFECT. A cross-filter was applied and rendered nowhere in
+   * table view, so arriving from a link the panel said "Showing 2 of 2
+   * matches" with no sign a filter was in force -- which reads as
+   * "there are 2 transactions in the system".
+   */
+  const twoFilters = encodeURIComponent(
+    JSON.stringify([
+      { field: 'customer_id', values: ['cust_001'], mode: 'keep' },
+      { field: 'category', values: ['refund'], mode: 'keep' },
+    ]),
+  )
+
+  it('shows a pill for each filter in force', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), `/browse?filters=${twoFilters}`)
+
+    expect(await screen.findByText(/cust_001/)).toBeInTheDocument()
+    expect(screen.getByText(/refund/)).toBeInTheDocument()
+  })
+
+  it('removing one leaves the others in place', async () => {
+    /** THE WIRING, which a mocked onRemove cannot see.
+     *
+     * A control replacing the handler with setCrossFilter([]) failed
+     * nothing until this existed -- removing one pill would have
+     * silently cleared every filter, showing far more rows than asked
+     * for and looking like it had worked.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), `/browse?filters=${twoFilters}`)
+
+    await screen.findByText(/cust_001/)
+    // The remove control is Blueprint's own button inside the tag, not
+    // the tag itself -- an aria-label on Tag lands on the span, and
+    // clicking a span does nothing. Selected by the class Blueprint
+    // gives it.
+    const pill = screen.getByText(/cust_001/).closest('.bp6-tag')
+    fireEvent.click(pill!.querySelector('.bp6-tag-remove')!)
+
+    await waitFor(() => expect(screen.queryByText(/cust_001/)).toBeNull())
+    expect(screen.getByText(/refund/)).toBeInTheDocument()
   })
 })
