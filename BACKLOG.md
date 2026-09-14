@@ -113,7 +113,16 @@ deployment can write and be approved for. authorize() is a bare
 set-membership test, so neither produces an error -- it just never
 matches.
 
-STILL TO AUDIT, same shape: action-type parameter kinds.
+FOURTH ONE DONE: field data types, compared across coerce(), the
+Arrow mapping and the filter operators' type restrictions. ADDING a
+type is the risk rather than removing one -- a fifth entry would pass
+every existing test and raise "Unknown field data_type" only when a
+real sync first touched a real row.
+
+THE SURFACES OF THIS SHAPE ARE NOW COVERED: step vocabulary, filter
+operators, sub-app declarations, grant verbs, field data types. Each
+probe also guards ITSELF, because two empty sets agree perfectly and
+two of these shipped with a pattern that had stopped reading.
 
 **An admin view of live performance metrics.**
 
