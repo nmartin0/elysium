@@ -191,10 +191,42 @@ visible when this file was first written:
 - A materialised MAC column NEEDS somewhere to put it, which is the
   transform stage.
 
+### Phase 0 — find out what is actually slow
+
+**MEASURED, AND IT IS NOT THE GROUPING.** Counting 50,000 transactions
+by category through the real `aggregate_by_field` takes **35 seconds**.
+A synthetic benchmark groups 200,000 rows in 0.3s, so the grouping was
+never the problem.
+
+Profiled: **200,023 SQLite connections opened, executed and closed** --
+four per object. 34 of the 41 seconds is connection churn, and
+`_read_field_with_log_check` accounts for 38.7s of cumulative
+time across 50,004 calls.
+
+The cause is per-object write-log consultation. Every field read asks
+the write log two questions -- is this object deleted, does it have a
+pending change -- and each question opens its own connection.
+
+**DuckDB WOULD HAVE OPTIMISED THE 0.24s AND LEFT THE 38.7s ALONE.**
+That is the whole reason this phase exists: the measurement that
+justified phase 1 was real but measured the wrong thing, because it
+measured grouping in isolation rather than the path a query takes.
+
+So phase 0 is: batch the write-log lookups. One query for "which of
+these objects have pending changes", one for "which are deleted",
+instead of two per object. The write log already has the object ids;
+nothing new is needed but a different shape of question.
+
+**Expect this to dwarf everything else in this file.** A change from
+200,023 connections to 2 is not an optimisation, it is a different
+program -- and it is worth knowing whether the remaining time even
+justifies DuckDB before building on it.
+
 ### Phase 1 — DuckDB over the existing mirror
 
-**Depends on nothing.** Wire DuckDB for filtering and aggregation via
-pyiceberg-to-Arrow, keeping the Python path as the fallback for
+**Depends on phase 0 telling us it is still worth doing.** Wire DuckDB
+for filtering and aggregation via pyiceberg-to-Arrow, keeping the
+Python path as the fallback for
 operators it cannot express -- the same `UnsupportedFilter` contract
 the adapters already use.
 
