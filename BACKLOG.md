@@ -105,8 +105,15 @@ with every check passing and rendered a blank page, because the
 workspaces glob satisfies the build and the tests while only a real
 install needs the explicit dependency.
 
-STILL TO AUDIT, same shape: grant verbs (policy_validation, authorize,
-the docs) and action-type parameter kinds.
+THIRD ONE DONE: grant verbs, compared both ways between
+policy_validation.py and every authorize() call site. A verb the code
+asks for and the validator rejects makes a feature unreachable; a verb
+the validator accepts and nothing asks for is dead vocabulary a
+deployment can write and be approved for. authorize() is a bare
+set-membership test, so neither produces an error -- it just never
+matches.
+
+STILL TO AUDIT, same shape: action-type parameter kinds.
 
 **An admin view of live performance metrics.**
 
