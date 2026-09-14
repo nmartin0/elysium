@@ -97,10 +97,16 @@ UnsupportedFilter lets an adapter decline and the mediator then
 evaluates in Python -- but an operator that falls off the end of a
 clause builder without raising produces a query missing its condition.
 
-STILL TO AUDIT, same shape, each declared in more than one place:
-grant verbs (policy_validation, authorize, the docs), action-type
-parameter kinds, and the sub-app list (App.tsx routes, the rail's
-visible-apps, and each package's own exports).
+SECOND ONE DONE: the sub-app list, declared in five places -- the
+package on disk, ui/package.json's dependencies, App.tsx's route, the
+rail's VISIBLE_APPS, and appIcons.ts. The dependency check is the one
+with a demonstrated failure behind it: the approvals sub-app shipped
+with every check passing and rendered a blank page, because the
+workspaces glob satisfies the build and the tests while only a real
+install needs the explicit dependency.
+
+STILL TO AUDIT, same shape: grant verbs (policy_validation, authorize,
+the docs) and action-type parameter kinds.
 
 **An admin view of live performance metrics.**
 
