@@ -171,7 +171,7 @@ Foundry says so for this case: "if the source data does not include
 explicit deletion information, you may need to implement logic to infer
 deletions (for example, by comparing consecutive snapshots)."
 
-STEAL THEIR `>=` RULE: their incremental comparison is "greater than or
+FOLLOW THE `>=` CONVENTION: their incremental comparison is "greater than or
 equal to... so that no data is omitted", accepting that "duplicate
 values may appear", which "should be removed as a first step in the
 data transformation pipeline". Prefer duplicates over omissions, and
@@ -229,6 +229,76 @@ reproduce its measured margin on real queries. After phase 3 if the
 changelog does not stay meaningfully smaller than the table -- which it
 will not, for a source that rewrites every row nightly, and that is
 worth knowing before phase 4 depends on it.
+
+## Gotchas the wider literature warns about
+
+Read AFTER the plan above was drafted, and one of them challenges it
+directly. Recorded here rather than quietly absorbed.
+
+**"START WITH REPLICA BEFORE COMMITTING TO CDC. Let the performance
+pain on the source system drive that conversation rather than trying to
+anticipate it in a room without evidence."**
+
+That is exactly what phases 3 and 4 do -- anticipate. We have no
+evidence of source-system pain: our silos are SQLite files read by a
+nightly sync. The same guidance elsewhere: CDC's "trade-off is
+operational complexity... so for small tables or infrequent loads, a
+simple batch reload is often the better choice."
+
+**We are currently a small table with an infrequent load.** The
+changelog is the right destination and may be the wrong next step.
+
+**"If those layers don't clearly add value, you're not doing medallion
+architecture. You're just stacking complexity."** And: "not all data
+requires three transformation stages, yet the framework encourages
+unnecessary processing." Each layer has to earn itself.
+
+**"Bronze should act as a historical record, not a source of truth."**
+Nothing should read bronze to answer a question. That matches our plan
+and is worth stating so it stays true.
+
+**Bronze bloat is the most commonly cited fixable problem** -- "tackle
+bronze bloat first. Add retention policies, partitioning, and regular
+maintenance." Our two-snapshot rule addresses it, and must be in place
+from the first commit rather than added later.
+
+**Access control across layers is a named pitfall**: "if roles,
+privileges, or access patterns aren't carefully designed, downstream
+layers may encounter failures or unauthorized access." This is phase
+5's risk stated by someone else, independently.
+
+**IDEMPOTENCY is the pattern to design for from the start**: a pipeline
+"produces the same result regardless of how many times it is executed
+with the same input". Achieved with MERGE/upsert on a primary key, and
+the reason it matters here is that a failed sync must be safe to rerun.
+
+**And the classic SCD2 failure**: "setting incorrect unique keys causes
+the most serious problems... the unique key must stay the same over
+time and identify each business entity clearly." Our `id_field` is
+declared per object type and validated, so we are better placed than
+most -- but a source whose primary key is reused would corrupt the
+changelog silently.
+
+**Polyglot persistence supports the DuckDB decision** from the other
+direction: the medallion pattern "assumes technological homogeneity...
+one engine is optimal for real-time streaming, graph traversals,
+full-text search". Using DuckDB for analytics over Iceberg storage is
+the idiomatic answer, not a workaround.
+
+## A correction to the plan, from that reading
+
+**Phases 1 and 2 stand.** DuckDB is justified by a measurement (8.9x),
+and bronze by lineage -- a correctness argument, not a performance one.
+
+**Phase 3 needs evidence it does not yet have.** Building a changelog
+to avoid source load we have never observed is anticipating in a room
+without evidence, which is the named mistake.
+
+So phase 3 gains a precondition: **measure the full-reload cost on a
+realistic table first.** If a nightly full sync is cheap, the
+changelog buys history rather than performance -- still worth having
+for lineage, but a much weaker case, and one that should be argued on
+its own terms rather than smuggled in as an optimisation.
 
 ## What is NOT in this plan, and why
 
