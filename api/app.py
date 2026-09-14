@@ -87,6 +87,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 
 from api.csrf_middleware import csrf_protect
+from api.generation_header_middleware import GenerationHeaderMiddleware
 from api.reload import install_sighup_handler
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.artifact_store import ArtifactStore
@@ -169,6 +170,10 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # class rather than the simpler style csrf_protect/
     # add_security_headers both use.
     app.add_middleware(RequestSizeLimitMiddleware)
+    # Stamps the serving generation on every response, so a client can
+    # notice a configuration reload on its next request rather than
+    # believing what it was told at login. See the module docstring.
+    app.add_middleware(GenerationHeaderMiddleware)
 
     # Security headers, applied to EVERY response -- a real, found gap:
     # this app previously set none at all. Verified directly before

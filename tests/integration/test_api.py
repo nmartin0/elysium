@@ -3309,3 +3309,47 @@ def test_link_counts_require_authentication(client):
     response = client.get("/api/objects/Customer/cust_001/link-counts")
 
     assert response.status_code == 401
+
+
+def test_every_response_says_which_generation_answered(client):
+    """So a client can notice a reload on its next request.
+
+    The UI fetched a user's visible schema ONCE at login and never
+    again, so a configuration reload left the browser believing what it
+    was told. A field moved to `discover:` was correctly withheld by
+    the server and rendered as "not set", because the cached schema
+    still called it readable.
+
+    No polling: every response carries the number, so the client
+    notices on whatever it does next.
+    """
+    response = client.get("/api/health")
+
+    assert response.headers.get("x-elysium-generation") is not None
+
+
+def test_the_number_changes_when_the_configuration_does(client):
+    # A header that never moved would be worse than none: the client
+    # would conclude nothing had changed and stop checking.
+    before = client.get("/api/health").headers["x-elysium-generation"]
+
+    # The REAL reload path, not a hand-built generation. A helper that
+    # only bumped a counter would test the header and not the thing the
+    # header is for.
+    from api.reload import reload_generation
+
+    reload_generation(client.app, requested_by="test")
+
+    after = client.get("/api/health").headers["x-elysium-generation"]
+    assert after != before
+
+
+def test_an_unauthenticated_response_carries_it_too(client):
+    # The header is not a secret -- it is an opaque counter, and it
+    # says nothing about what the configuration CONTAINS. Withholding
+    # it before login would mean the first post-login request looked
+    # like a reload.
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.headers.get("x-elysium-generation") is not None

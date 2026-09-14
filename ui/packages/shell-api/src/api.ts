@@ -143,6 +143,66 @@ function getCsrfCookie(): string | null {
   return match ? decodeURIComponent(match[1]!) : null
 }
 
+/**
+ * Which configuration answered us last, and who to tell when it moves.
+ *
+ * THE PROBLEM. The UI fetches a user's visible schema ONCE, at login,
+ * and never again. A configuration reload changes what the server will
+ * answer, and the browser goes on believing what it was told.
+ *
+ * Found by using it: a field moved to `discover:` was correctly
+ * withheld by the server, arriving as null, and rendered as "not set"
+ * because the cached schema still said it was readable. The right
+ * answer only appeared after a manual browser refresh.
+ *
+ * NO POLLING. Every response carries the serving generation, so the
+ * client notices on its NEXT request -- whatever that request is --
+ * rather than asking on a timer for news that usually has not come.
+ */
+let lastSeenGeneration: string | null = null
+let onGenerationChange: (() => void) | null = null
+
+/** Forgets which generation was last seen.
+ *
+ * FOR TESTS, and it earns its place rather than being a convenience:
+ * the baseline is module state, so one test leaving it at "8" makes
+ * the next test's "7" look like a reload. Without this, these tests
+ * would pass or fail by ORDER, which is the kind of flake that gets
+ * diagnosed as something else entirely.
+ *
+ * Harmless in production -- nothing calls it, and calling it would at
+ * worst cost one extra refetch.
+ */
+export function forgetLastSeenGeneration(): void {
+  lastSeenGeneration = null
+}
+
+/** Registers the callback fired when the server's configuration moves.
+ *  The shell uses it to refetch the schema and the app list. */
+export function setGenerationChangeHandler(handler: () => void): void {
+  onGenerationChange = handler
+}
+
+function noticeGeneration(response: Response): void {
+  // DEFENSIVE ABOUT THE RESPONSE SHAPE, because this runs on EVERY
+  // call and a throw here would fail requests that were otherwise
+  // fine. Test doubles return objects without headers, and a fetch
+  // that rejected mid-flight can too -- neither is a reason to break
+  // the call it was attached to.
+  const current = response?.headers?.get?.('x-elysium-generation') ?? null
+  // AN ABSENT HEADER IS NOT A CHANGE. A static file, or a response
+  // from before this shipped, must not look like a reload -- that
+  // would refetch the schema on every page load forever.
+  if (current === null) return
+
+  const previous = lastSeenGeneration
+  lastSeenGeneration = current
+  // The FIRST response establishes the baseline rather than firing.
+  // Otherwise logging in would immediately refetch what it just
+  // fetched.
+  if (previous !== null && previous !== current) onGenerationChange?.()
+}
+
 async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const headers = {
     'Content-Type': 'application/json',
@@ -171,7 +231,9 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
   // zero-cost, and removes any ambiguity about whether the session
   // cookie actually gets attached, which this entire mechanism now
   // depends on.
-  return fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' })
+  const response = await fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' })
+  noticeGeneration(response)
+  return response
 }
 
 // Throws ApiError on any non-2xx response -- used by calls where the

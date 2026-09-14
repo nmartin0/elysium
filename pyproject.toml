@@ -216,9 +216,15 @@ type = "layers"
 # per-request dependencies routes wires, and neither may import the
 # other. One resolves WHO is asking, the other WHICH configuration
 # answers -- independent questions, deliberately kept that way.
+#
+# generation_header_middleware sits beside them rather than above:
+# it reads the pin that generation_dependency leaves on request.state
+# but does NOT import it, reaching the value through the ASGI scope.
+# Middleware that imported a dependency would make the two orderable,
+# and they are not.
 layers = [
     "app", "routes",
-    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware",
+    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware",
 ]
 containers = ["api"]
 exhaustive = true

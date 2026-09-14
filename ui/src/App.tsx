@@ -8,6 +8,7 @@ import {
   logout,
   getCurrentUser,
   getMyVisibleSchema,
+  setGenerationChangeHandler,
   getVisibleApps,
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
@@ -294,6 +295,26 @@ export default function App() {
   // profile with a generic placeholder, not a crash -- see that
   // component's own comment for why that's the deliberate default.
   useFetchOnLogin(authStatus, () => getCurrentUser() as Promise<CurrentUser>, setCurrentUser, handleSessionExpired)
+
+  // A CONFIGURATION RELOAD CHANGES WHAT THESE ANSWER, and until now
+  // nothing asked again -- useFetchOnLogin is exactly what its name
+  // says. A field moved to `discover:` was correctly withheld by the
+  // server and rendered as "not set", because the cached schema still
+  // called it readable. The right answer only appeared after a manual
+  // browser refresh.
+  //
+  // Every response carries the serving generation, so this fires on
+  // the NEXT request after a reload rather than on a timer.
+  //
+  // THE APP LIST TOO, not only the schema: a reload can grant or
+  // revoke a sub-app, and a rail offering something the server now
+  // refuses is the same staleness wearing different clothes.
+  useEffect(() => {
+    setGenerationChangeHandler(() => {
+      void (getMyVisibleSchema() as Promise<VisibleSchema>).then(setVisibleSchema).catch(() => {})
+      void (getVisibleApps() as Promise<VisibleApp[]>).then(setVisibleApps).catch(() => {})
+    })
+  }, [])
 
   if (authStatus === 'checking') {
     // Brief, unavoidable moment while the real network round-trip
