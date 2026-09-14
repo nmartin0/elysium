@@ -56,10 +56,20 @@ operate on. The UI must not conflate the two.
 Shared explorations, if ever wanted, are a separate feature with a
 permission model rather than a flag on this one.
 
-**Vertex-lite: a read-only link explorer.** The largest remaining
-feature. The schema already declares link types and cardinality, and
-search_around already traverses them, so the backend is mostly there.
-Wants its scope discussed before starting rather than guessed.
+**Vertex-lite: a read-only link explorer. FIRST HALF DONE.**
+link_counts() and its route answer how far each link leads BEFORE
+anything expands, and an "Related" section on the object detail page
+shows them, each linking through to a filtered Browse view.
+
+ONE HOP AT A TIME, deliberately: no canvas, no layout, no automatic
+multi-hop expansion. Those are the "full Vertex" item, and reaching
+them by accident is how a read-only explorer becomes something nobody
+can reason about on a real ontology.
+
+STILL OPEN: following a link should arguably keep the trail visible --
+"Customer cust_001 > its 47 Transactions" -- rather than landing in
+Browse with a filter applied and no memory of how you got there. That
+is a navigation question worth answering before adding more hops.
 
 **Bulk actions**, through the existing propose/confirm flow. Depends on
 saved selections above.

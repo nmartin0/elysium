@@ -1550,6 +1550,38 @@ input[type='checkbox'],
   border: 0;
 }
 
+/* Explore related -- where each link leads, and how far. A list rather
+ * than a canvas: one hop at a time is the whole design, and a layout
+ * engine is the "full Vertex" item. */
+.explore-related {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.explore-related__link {
+  display: flex;
+  gap: var(--space-normal);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.explore-related__label {
+  color: var(--text-secondary);
+}
+
+.explore-related__go {
+  text-decoration: none;
+}
+
+.explore-related__none {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
 /* Saved views -- a popover, because saving is a momentary act and the
  * list is short. A permanent sidebar section would spend space on
  * something most people touch once a week. */

@@ -5,6 +5,7 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ObjectHistory from './ObjectHistory'
+import ExploreRelated from './ExploreRelated'
 import ObjectNotes from './ObjectNotes'
 import {
   getObjectDetail,
@@ -277,6 +278,20 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           </div>
         ))}
       </dl>
+
+      {/* RELATED BEFORE NOTES, and well before history. "What else is
+          attached to this" is a navigational question -- someone
+          asking it is on their way somewhere, and making them scroll
+          past commentary to find the exit is the wrong order. */}
+      <section className="object-detail__related">
+        <h3>Related</h3>
+        <ExploreRelated
+          objectType={objectType}
+          objectId={objectId}
+          visibleSchema={visibleSchema}
+          onSessionExpired={onSessionExpired}
+        />
+      </section>
 
       {/* Notes before history. What people SAID about this object is
           more often what someone came for than what changed about it

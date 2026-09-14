@@ -467,6 +467,28 @@ export async function searchObjects(
   return response.json()
 }
 
+export interface LinkCount {
+  target: string
+  count: number
+  cardinality?: string | null
+}
+
+/** How far each link from this object leads, before following any.
+ *
+ * COUNTS BEFORE EXPANSION: a person deciding whether to follow a link
+ * needs to know it leads to four things or four thousand before they
+ * commit. Every count is what THIS caller would receive, so it cannot
+ * disagree with the expansion that follows.
+ */
+export async function getLinkCounts(objectType: string, objectId: string): Promise<Record<string, LinkCount>> {
+  // encodeURIComponent for the same reason getObjectDetail does it: an
+  // id is DATA, and one containing a literal "/" would otherwise split
+  // the URL path.
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/link-counts`)
+  const body = (await response.json()) as { links?: Record<string, LinkCount> }
+  return body.links ?? {}
+}
+
 export async function getObjectDetail(objectType: string, objectId: string): Promise<unknown> {
   // objectId, unlike objectType, is genuinely DATA-derived (a real
   // customer_id, a real integer transaction id, ...) rather than a
