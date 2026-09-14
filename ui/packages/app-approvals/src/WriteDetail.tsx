@@ -24,6 +24,7 @@ import {
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { formatValue } from '@elysium/shell-api/format'
 
 interface WriteDetailProps {
@@ -53,7 +54,7 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
     }
   }, [writeId, onSessionExpired])
 
-  if (error !== null) return <Callout intent="danger">{error}</Callout>
+  if (error !== null) return <ErrorState>{error}</ErrorState>
   if (detail === null) return <LoadingState inline label="Loading the changes…" />
 
   return (

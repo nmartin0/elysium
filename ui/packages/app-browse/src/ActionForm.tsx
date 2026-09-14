@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Button, Callout, FormGroup, InputGroup, NumericInput } from '@blueprintjs/core'
+import { Button, FormGroup, InputGroup, NumericInput } from '@blueprintjs/core'
 import { proposeAction, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { formatFieldName } from '@elysium/shell-api/format'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
@@ -201,7 +202,7 @@ export default function ActionForm({
           </FormGroup>
         )
       })}
-      {error && <Callout intent="danger">{error}</Callout>}
+      {error && <ErrorState>{error}</ErrorState>}
       <div className="action-form__actions">
         {/* loading, not a separate disabled prop -- same real reasoning
             already established for every other Button conversion this

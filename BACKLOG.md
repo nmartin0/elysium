@@ -101,10 +101,14 @@ designing a schema for view state.
 
 **The view-state matrix's other half.** The two empty states shipped,
 and LOADING is now one shared component -- three treatments across six
-panels, none of which announced to a screen reader. ERROR and PARTIAL
-are still per-panel choices: seven components render their own danger
-Callout, which is at least consistent, and nothing audits that it stays
-so.
+panels, none of which announced to a screen reader. ERROR is now one shared
+component too -- the TREATMENT was already consistent across ten
+panels, but none of them ANNOUNCED: a danger Callout sets no ARIA
+role, so every failure was silent to a screen reader.
+
+STILL OPEN: partial states -- a panel that loaded some of what it
+needed and failed on the rest. No component currently distinguishes
+that from either success or failure.
 
 ---
 

@@ -15,6 +15,7 @@
 import { useState } from 'react'
 import { Button, Callout, HTMLTable, Tag } from '@blueprintjs/core'
 import { getSilos } from '@elysium/shell-api/api'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
@@ -65,9 +66,9 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
               this screen is opened to answer. A table of green rows makes
               you read every one to find that out. */}
             {unreachable.length > 0 ? (
-              <Callout intent="danger" title="Some silos are not answering">
+              <ErrorState title="Some silos are not answering">
                 {unreachable.map((silo) => silo.name).join(', ')}
-              </Callout>
+              </ErrorState>
             ) : (
               <Callout intent="success">All {silos.length} silos are reachable.</Callout>
             )}

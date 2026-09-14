@@ -18,12 +18,33 @@
  * real limitation: this proves STRUCTURE, not that anything renders.
  */
 
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8')
+
+/** Every component source, as [path, text]. For checks about what the
+ *  whole app does rather than what one file does. */
+function readAll(): Array<[string, string]> {
+  const root = resolve(process.cwd(), 'packages')
+  const out: Array<[string, string]> = []
+  for (const pkg of readdirSync(root)) {
+    const dir = resolve(root, pkg, 'src')
+    let entries: string[]
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      continue
+    }
+    for (const name of entries) {
+      if (!name.endsWith('.tsx') || name.includes('.test.')) continue
+      out.push([`${pkg}/src/${name}`, readFileSync(resolve(dir, name), 'utf8')])
+    }
+  }
+  return out
+}
 
 const tokens = read('packages/shell-api/src/tokens.css')
 const stylesheets = ['packages/shell-api/src/index.css', 'packages/app-schema/src/SchemaPanel.css'].map(read)
@@ -272,5 +293,24 @@ describe('one loading treatment, used everywhere', () => {
     expect(shell).toMatch(/\.visually-hidden\s*\{[^}]*clip:\s*rect/s)
     expect(shell).not.toMatch(/\.visually-hidden\s*\{[^}]*display:\s*none/s)
     expect(shell).not.toMatch(/\.visually-hidden\s*\{[^}]*visibility:\s*hidden/s)
+  })
+})
+
+describe('every error is announced, not just shown', () => {
+  /**
+   * A danger Callout sets no ARIA role, so an error rendered directly
+   * with one is silent to a screen reader. Ten components did that
+   * before ErrorState existed.
+   *
+   * This is the guard that keeps an eleventh from being added the same
+   * way -- the loading consolidation showed how quickly a shared
+   * treatment drifts once one component opts out.
+   */
+  const sources = readAll()
+
+  it('no component renders a bare danger Callout', () => {
+    const offenders = sources.filter(([, text]) => text.includes('<Callout intent="danger"')).map(([path]) => path)
+
+    expect(offenders).toEqual([])
   })
 })

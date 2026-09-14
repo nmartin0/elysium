@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Alert, Button, Callout, FormGroup, HTMLTable, InputGroup } from '@blueprintjs/core'
+import { Alert, Button, FormGroup, HTMLTable, InputGroup } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -12,6 +12,7 @@ import {
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import Workspace from '@elysium/shell-api/components/Workspace'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 
@@ -157,7 +158,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
         </>
       }
     >
-      {error && <Callout intent="danger">{error}</Callout>}
+      {error && <ErrorState>{error}</ErrorState>}
 
       {view === 'deployment' && <DeploymentConfig onSessionExpired={onSessionExpired} />}
       {view === 'silos' && <Silos onSessionExpired={onSessionExpired} />}

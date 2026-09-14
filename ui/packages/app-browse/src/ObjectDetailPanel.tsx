@@ -1,7 +1,8 @@
-import { Button, Callout, Tag } from '@blueprintjs/core'
+import { Button, Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ObjectHistory from './ObjectHistory'
@@ -239,7 +240,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   if (error) {
     return (
       <div className="object-detail">
-        <Callout intent="danger">{error}</Callout>
+        <ErrorState>{error}</ErrorState>
       </div>
     )
   }

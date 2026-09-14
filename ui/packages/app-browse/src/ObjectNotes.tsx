@@ -11,8 +11,9 @@
  */
 
 import { useState } from 'react'
-import { Button, Callout, TextArea } from '@blueprintjs/core'
+import { Button, TextArea } from '@blueprintjs/core'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { createObjectNote, getErrorMessage, getObjectNotes } from '@elysium/shell-api/api'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import { formatTimestamp } from '@elysium/shell-api/format'
@@ -83,7 +84,7 @@ export default function ObjectNotes({
             <p className="object-notes__empty">Nothing has been written about this yet.</p>
           )}
 
-          {saveError && <Callout intent="danger">{saveError}</Callout>}
+          {saveError && <ErrorState>{saveError}</ErrorState>}
 
           <TextArea
             aria-label="New note"

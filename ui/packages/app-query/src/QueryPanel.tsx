@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, Callout } from '@blueprintjs/core'
 import { query } from '@elysium/shell-api/api'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 
 import AnswerTrace from './AnswerTrace'
 import type { SubAppProps } from '@elysium/shell-api/types'
@@ -110,7 +111,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
           for; success/danger stays reserved for genuinely binary
           outcomes elsewhere (see PendingWriteCard's own Callout usage
           for that real contrast). */}
-      {error && <Callout intent="danger">{error}</Callout>}
+      {error && <ErrorState>{error}</ErrorState>}
       {answer && <Callout>{answer}</Callout>}
       {/* Under the answer, and only when there IS one. A trace with
           nothing to explain is a control that raises a question the

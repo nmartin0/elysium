@@ -19,11 +19,12 @@
  * see.
  */
 
-import { Callout, Tag } from '@blueprintjs/core'
+import { Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { getErrorMessage, getLinkCounts, type LinkCount } from '@elysium/shell-api/api'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatFieldName } from '@elysium/shell-api/format'
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -87,7 +88,7 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
     }
   }, [objectType, objectId, onSessionExpired])
 
-  if (error !== null) return <Callout intent="danger">{error}</Callout>
+  if (error !== null) return <ErrorState>{error}</ErrorState>
   if (links === null) return <LoadingState inline label="Counting related records…" />
 
   const entries = Object.entries(links)

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
+import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import {
   searchObjects,
@@ -9,6 +9,7 @@ import {
   type DataFreshness,
 } from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
@@ -449,7 +450,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         </>
       }
     >
-      {error && <Callout intent="danger">{error}</Callout>}
+      {error && <ErrorState>{error}</ErrorState>}
       {/* Two views of ONE object set. The filter is shared, so
           switching does not change what is being described -- only
           how. Stacking them, which this first did, made the page a

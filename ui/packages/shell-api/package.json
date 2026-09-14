@@ -9,6 +9,7 @@
     "./browserPreferences": "./src/browserPreferences.ts",
     "./components/AsyncPanel": "./src/components/AsyncPanel.tsx",
     "./components/Chart": "./src/components/Chart.tsx",
+    "./components/ErrorState": "./src/components/ErrorState.tsx",
     "./components/FilterBar": "./src/components/FilterBar.tsx",
     "./components/FilterBox": "./src/components/FilterBox.tsx",
     "./components/LoadingState": "./src/components/LoadingState.tsx",

@@ -12,8 +12,9 @@
  */
 
 import { useState } from 'react'
-import { Button, Callout, HTMLTable, Tag } from '@blueprintjs/core'
+import { Button, HTMLTable, Tag } from '@blueprintjs/core'
 import { getErrorMessage, getRequestTrace, handleIfSessionExpired } from '@elysium/shell-api/api'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 
 interface TraceEntry {
   object_type: string
@@ -62,7 +63,7 @@ export default function AnswerTrace({
         How this answer was found
       </Button>
 
-      {open && error && <Callout intent="danger">{error}</Callout>}
+      {open && error && <ErrorState>{error}</ErrorState>}
 
       {open &&
         entries !== null &&
