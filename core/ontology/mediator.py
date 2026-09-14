@@ -1640,15 +1640,39 @@ class DataMediator:
             list(object_ids), columns, resolved_type_config,
         )
 
+        # THE WRITE LOG, ASKED ONCE INSTEAD OF PER OBJECT PER FIELD.
+        #
+        # This loop used to call _read_field_with_log_check() for every
+        # field of every row, and each call opened its own SQLite
+        # connection -- twice, for "is it deleted" and "does it have a
+        # pending change". Measured: counting 50,000 transactions by
+        # category opened 200,023 connections and took 35 seconds, of
+        # which 34 was connection churn. The grouping everyone assumes
+        # is the cost was 0.24s.
+        #
+        # Both tables hold only PENDING writes, so they are small
+        # whatever the object table's size -- which is why one query
+        # for all of them is affordable and the per-object form never
+        # was.
+        pending_by_id: dict = {}
+        deleted_ids: set = set()
+        if self.write_log is not None:
+            ids = [row[id_column] for row in raw]
+            pending_by_id = self.write_log.pending_changes_for_ids(object_type, ids)
+            deleted_ids = self.write_log.deleted_ids(object_type, ids)
+
         by_id = {}
         for row in raw:
             object_id = row[id_column]
+            # A DELETED OBJECT READS AS ABSENT, field by field, exactly
+            # as the per-object path did.
+            if str(object_id) in deleted_ids:
+                by_id[object_id] = dict.fromkeys(readable)
+                continue
+
+            pending = pending_by_id.get(str(object_id))
             by_id[object_id] = {
-                name: self._read_field_with_log_check(
-                    object_type, object_id, name, adapter, resolved_type_config
-                )
-                if self.write_log is not None
-                else row[column]
+                name: (pending[name] if pending is not None and name in pending else row[column])
                 for name, column in zip(readable, columns, strict=True)
             }
         return by_id

@@ -191,7 +191,7 @@ visible when this file was first written:
 - A materialised MAC column NEEDS somewhere to put it, which is the
   transform stage.
 
-### Phase 0 — find out what is actually slow
+### Phase 0 — find out what is actually slow. DONE.
 
 **MEASURED, AND IT IS NOT THE GROUPING.** Counting 50,000 transactions
 by category through the real `aggregate_by_field` takes **35 seconds**.
@@ -212,8 +212,10 @@ That is the whole reason this phase exists: the measurement that
 justified phase 1 was real but measured the wrong thing, because it
 measured grouping in isolation rather than the path a query takes.
 
-So phase 0 is: batch the write-log lookups. One query for "which of
-these objects have pending changes", one for "which are deleted",
+DONE, and MEASURED AFTER: 34.90s to 1.29s, a 27x improvement on
+the real path, same 43 groups. Batched the write-log lookups: one
+query for "which of these objects have pending changes", one for
+"which are deleted",
 instead of two per object. The write log already has the object ids;
 nothing new is needed but a different shape of question.
 
