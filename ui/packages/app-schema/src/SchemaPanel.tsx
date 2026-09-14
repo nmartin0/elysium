@@ -16,8 +16,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Callout, HTMLTable, Icon, Spinner, Tag } from '@blueprintjs/core'
+import { Button, Callout, HTMLTable, Icon, Tag } from '@blueprintjs/core'
 import { IconNames, type IconName } from '@blueprintjs/icons'
+
+import LoadingState from '@elysium/shell-api/components/LoadingState'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import type { FieldSchema, TypeSchema, VisibleSchema } from '@elysium/shell-api/types'
 import ActionTypes from './ActionTypes'
@@ -351,7 +353,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   // null means the shell has not finished loading it, not that
   // anything failed -- an empty object is the "you can see nothing"
   // case, handled below.
-  if (!schema) return <Spinner />
+  if (!schema) return <LoadingState />
 
   return (
     /* Single-paned. Schema's own navigation is the tab strip -- Object

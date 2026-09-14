@@ -11,6 +11,7 @@
     "./components/Chart": "./src/components/Chart.tsx",
     "./components/FilterBar": "./src/components/FilterBar.tsx",
     "./components/FilterBox": "./src/components/FilterBox.tsx",
+    "./components/LoadingState": "./src/components/LoadingState.tsx",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",
     "./components/UserMenu": "./src/components/UserMenu.tsx",

@@ -1,6 +1,7 @@
 import { Button, Callout, Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import LoadingState from '@elysium/shell-api/components/LoadingState'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ObjectHistory from './ObjectHistory'
@@ -229,7 +230,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   if (loading) {
     return (
       <div className="object-detail">
-        <p>Loading…</p>
+        <LoadingState />
       </div>
     )
   }

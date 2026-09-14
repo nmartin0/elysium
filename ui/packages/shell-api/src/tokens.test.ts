@@ -256,3 +256,21 @@ describe('identifiers are readable as identifiers', () => {
     expect(shell).toMatch(/\.object-detail__subtitle\s*\{[^}]*user-select:\s*all/s)
   })
 })
+
+describe('one loading treatment, used everywhere', () => {
+  /**
+   * Three existed across six components. The consolidation is only
+   * worth anything if it holds, and a seventh hand-rolled one would be
+   * as easy to add as the sixth was.
+   */
+  const shell = read('packages/shell-api/src/index.css')
+
+  it('hides the label from sight without hiding it from a reader', () => {
+    // display:none and visibility:hidden both remove an element from
+    // the accessibility tree. The clip-rect technique does not, which
+    // is the entire reason this class exists rather than either.
+    expect(shell).toMatch(/\.visually-hidden\s*\{[^}]*clip:\s*rect/s)
+    expect(shell).not.toMatch(/\.visually-hidden\s*\{[^}]*display:\s*none/s)
+    expect(shell).not.toMatch(/\.visually-hidden\s*\{[^}]*visibility:\s*hidden/s)
+  })
+})

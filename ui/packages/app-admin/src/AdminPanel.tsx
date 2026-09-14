@@ -13,6 +13,7 @@ import {
 } from '@elysium/shell-api/api'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import Workspace from '@elysium/shell-api/components/Workspace'
+import LoadingState from '@elysium/shell-api/components/LoadingState'
 
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 
@@ -163,7 +164,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
 
       {view === 'users' &&
         (users === null ? (
-          <p>Loading…</p>
+          <LoadingState />
         ) : (
           // HTMLTable, not a bare <table> -- Blueprint's own styled
           // wrapper around a real HTML table, confirmed directly against

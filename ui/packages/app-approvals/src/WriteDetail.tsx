@@ -14,7 +14,7 @@
  * permissions to view that item".
  */
 
-import { Callout, HTMLTable, Spinner, Tag } from '@blueprintjs/core'
+import { Callout, HTMLTable, Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 
 import {
@@ -23,6 +23,7 @@ import {
   getWriteDetail,
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
+import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatValue } from '@elysium/shell-api/format'
 
 interface WriteDetailProps {
@@ -53,7 +54,7 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
   }, [writeId, onSessionExpired])
 
   if (error !== null) return <Callout intent="danger">{error}</Callout>
-  if (detail === null) return <Spinner size={20} />
+  if (detail === null) return <LoadingState inline label="Loading the changes…" />
 
   return (
     <div className="write-detail">

@@ -9,6 +9,7 @@ import {
   type DataFreshness,
 } from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
+import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
@@ -269,7 +270,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   if (objectTypes === null) {
     return (
       <div className="object-search">
-        <p>Loading…</p>
+        <LoadingState />
       </div>
     )
   }

@@ -77,9 +77,12 @@ nobody has touched.
 
 **URL-as-state**, so a view can be shared or bookmarked.
 
-**The view-state matrix's other half.** The two empty states shipped;
-loading, error and partial are still per-panel choices rather than one
-audited set.
+**The view-state matrix's other half.** The two empty states shipped,
+and LOADING is now one shared component -- three treatments across six
+panels, none of which announced to a screen reader. ERROR and PARTIAL
+are still per-panel choices: seven components render their own danger
+Callout, which is at least consistent, and nothing audits that it stays
+so.
 
 ---
 
