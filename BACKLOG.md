@@ -206,10 +206,18 @@ analyzer.
 
 ## 5. The ELT pipeline -- see ELT_ROADMAP.md
 
-Bronze, silver, a materialised MAC column and DuckDB, in five phases
-with the measurements that justify each. The short version: we do ETL
-where we should do ELT, there is no raw layer, and the missing raw
-layer is also what blocks pushing aggregation down to a query engine.
+A GOVERNANCE project, not a performance one -- and it started as the
+latter. Two phases are done and delivered 67x (34.90s to 0.52s) by
+fixing N+1 write-log queries and per-row audit writes, with ZERO
+architectural change.
+
+That dissolved the original premise. DuckDB and the materialised MAC
+column are STRUCK, because the measurements that justified them went
+away when the real path was profiled rather than a benchmark.
+
+What remains stands on lineage, history and re-derivation: bronze,
+silver from bronze, durable storage, a changelog, and a current view.
+Six phases, with the reversibility line named at phase 3.
 
 ## 6. Architectural questions, not tasks
 

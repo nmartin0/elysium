@@ -14,6 +14,61 @@ specific raw file. End-to-end data lineage".
 
 ---
 
+## WHAT THIS IS NOW, after two phases dissolved its original premise
+
+**This started as a performance project and is no longer one.** It
+began because aggregation was slow, and I attributed that to the
+storage architecture: no raw layer, Python grouping, no query engine.
+
+None of that was the problem. 34.90s became 0.52s -- roughly 67x --
+from fixing two implementation bugs, with ZERO architectural change:
+
+  N+1 write-log queries        34.90s -> 1.45s   (phase 0)
+  per-row audit writes          1.45s -> 0.52s   (phase 0b)
+
+Re-profiled afterwards: what remains is four SQLite reads. Grouping
+does not appear in the profile at all, and security resolution is
+0.165s of 0.85s and already cache-backed.
+
+**So the speed argument is spent.** What remains is a CAPABILITY AND
+GOVERNANCE project, and it should be judged on those terms:
+
+  LINEAGE -- "every Ontology property value traces back to a specific
+  row in a specific raw file". We cannot do this, and adding an
+  ontology field currently requires RE-READING THE SOURCE rather than
+  re-transforming what we hold.
+
+  HISTORY -- a source database holds "now". It has no record of what a
+  value used to be. If that matters, only we can keep it.
+
+  RE-DERIVATION -- changing how data is cleaned should not mean asking
+  the customer's database for everything again.
+
+Those are real and unaffected by the measurements. They were also never
+the reasons I originally gave, which is worth being plain about.
+
+## What was struck, and why
+
+**Phase 1, DuckDB over the mirror. STRUCK.** Justified by a synthetic
+benchmark showing 8.9x on grouping. The real path does not group
+measurably -- that benchmark measured a component in isolation rather
+than the path a query takes. If a future workload makes grouping
+visible in a profile, revive it then, with that profile as the
+argument.
+
+**The MAC-column half of phase 3. STRUCK.** I claimed it was "what
+makes MAC pushable" and implied a large win. Measured: security
+resolution is 0.165s of 0.85s and already cached. Materialising it
+might save a fraction of a fraction. The transform stage still stands;
+the security column no longer justifies itself.
+
+**A wider lesson, recorded because it produced both mistakes.** The
+literature warned: "start with replica before committing to CDC. Let
+the performance pain drive that conversation rather than trying to
+anticipate it in a room without evidence." I built a seven-phase plan
+on a benchmark. The fix, both times, was running the real thing on
+realistic data -- which took one probe.
+
 ## What we have today, checked rather than assumed
 
 **Extract and Load are real.** Adapters read silos; `iceberg_sync`
@@ -251,113 +306,105 @@ Rejected: asynchronous logging, the standard speed answer. It trades
 durability for speed, and this project already rejected persistent file
 handles for the same class of reason.
 
-### Phase 1 — DuckDB over the existing mirror
+### ~~Phase 1 — DuckDB over the existing mirror.~~ STRUCK
 
-**RE-MEASURE BEFORE BUILDING.** After phases 0 and 0b the real path is
-0.52s, of which the grouping is a fraction and the rest is the data
-read itself. DuckDB would speed up the part that is already fastest,
-so this phase has NOT earned its place on current evidence. Wire DuckDB
-for filtering and aggregation via pyiceberg-to-Arrow, keeping the
-Python path as the fallback for
-operators it cannot express -- the same `UnsupportedFilter` contract
-the adapters already use.
+See "What was struck, and why". Grouping does not appear in the profile
+of the real path. Revive only with a profile that shows it.
 
-Justified alone: measured 8.9x on grouping 200,000 rows. Everything
-later needs a query engine, so this is the foundation whether or not
-the rest proceeds.
+### Phase 1 — bronze, with two-snapshot retention
 
-**Stop here if** DuckDB does not reproduce its margin on real queries.
+**Depends on nothing. The strongest remaining case.**
 
-### Phase 2 — bronze, with two-snapshot retention
+Sync writes every column the source has, not only the declared ones;
+`columns_present()` already reports them, having been built for drift
+detection.
 
-**Depends on nothing.** Sync writes every column the source has, not
-only declared ones; `columns_present()` already reports them.
+**Justified by lineage, not speed, and always was.** Today a value that
+looks wrong has nothing to compare against except a source that may
+since have changed, and adding an ontology field means re-reading the
+silo rather than re-transforming what we hold.
 
-Retention is part of this phase rather than a follow-up, because
-"bronze bloat" is the most commonly cited failure of this pattern and
-because Iceberg's copy-on-write makes each retained snapshot a full
-copy -- measured, 177KB to 839KB over five syncs.
+Retention belongs in this phase rather than a follow-up: "bronze bloat"
+is the most commonly cited failure of this pattern, and Iceberg's
+copy-on-write makes each retained snapshot a full copy -- measured,
+177KB to 839KB over five syncs of a table where one row changed.
 
-**Nothing reads bronze yet.** Inert on purpose, as the permission
-ladder's first commit was.
+**Nothing reads bronze.** "Bronze should act as a historical record,
+not a source of truth."
 
-### Phase 3 — silver from bronze, and the MAC column
+### Phase 2 — silver derived from bronze
 
-**Depends on 2.** `transform_rows` moves out of `sync_table` and
-becomes a pass from bronze to silver. Re-deriving silver stops touching
-the silo, so adding an ontology field becomes a rebuild rather than a
-re-sync -- the first thing worth measuring afterwards.
+**Depends on 1.** `transform_rows` moves out of `sync_table` and
+becomes a pass from bronze to silver, so re-deriving silver stops
+touching the silo.
 
-**The materialised MAC column belongs HERE, not later.** It was phase 5
-in the first draft, which was wrong: it is a transform, this is the
-transform stage, and deferring it means building the stage twice.
+The payoff is measurable and should be measured: **adding an ontology
+field becomes a rebuild rather than a re-sync.** If that turns out
+cheap either way, this phase has not earned itself and the honest thing
+is to say so.
 
-It is also the phase to be slowest on. Sixteen `check_access` calls
-assume per-object resolution, and a stale security column is a
-disclosure rather than a slow query. It must be rebuilt whenever either
-side changes, and the audit must record when it was computed.
+The MAC column that used to live here is struck -- see above. What
+remains is the transform stage itself, which every later phase needs.
 
-**Still no changelog.** Silver here is a clean CURRENT-STATE table --
-the mirror we already have, derived properly. That keeps every phase so
-far fully derivable from the silos, and therefore cheap to abandon.
+### Phase 3 — durable storage, BEFORE any history exists
 
-### Phase 4 — durable storage, BEFORE any history exists
+**Depends on nothing technically; depends on phase 4 morally.**
 
-**Depends on nothing technically; depends on 5 morally.** MinIO or S3
-replaces the local-filesystem warehouse.
+MinIO or S3 replaces the local-filesystem warehouse. Nothing before
+this needs it -- everything in the mirror is derivable from the silos,
+and the things that are not (write_log.db, credentials.db,
+config_history.db, secrets/) are ordinary files needing ordinary
+backup.
 
-**Moved here from last**, because the next phase creates data that
-cannot be rebuilt. Doing it after would mean a window in which an
-organisation accumulates history on one machine's disk and believes it
-is safe.
+**The next phase creates data that cannot be rebuilt**, and doing this
+after would leave a window in which an organisation accumulates history
+on one machine's disk and believes it is safe.
 
-Nothing before this phase needs it. Everything after it does.
+### Phase 4 — the changelog
 
-### Phase 5 — the changelog
-
-**Depends on 1 (the diff), 2 (two snapshots to diff), and 4 (somewhere
-it can survive).**
+**Depends on 1 (two snapshots to diff), 3 (somewhere it survives), and
+a query engine for the diff itself** -- which is the one thing the
+struck DuckDB phase was genuinely needed for. An anti-join over two
+snapshots measured 76ms for 200,000 rows against 200,000; doing it in
+Python would not be free.
 
 Diff bronze's current snapshot against its previous by primary key, and
 APPEND the result with a change type and an ordering column. Deletions
 must be INFERRED, since our sources do not report them.
 
-**Its precondition is evidence, not readiness.** Measure the
-full-reload cost on a realistic table first. "Start with replica before
-committing to CDC. Let the performance pain on the source system drive
-that conversation." If a nightly full sync is cheap, this buys HISTORY
-rather than performance -- still worth having, but argued on its own
-terms.
+**Its precondition is evidence.** Measure the full-reload cost on a
+realistic table first. If a nightly full sync is cheap, this buys
+HISTORY rather than performance -- which is a real thing to want, and a
+different argument from the one this file originally made.
 
-### Phase 6 — the current view reads from the changelog
+### Phase 5 — the current view reads from the changelog
 
-**Depends on 5.** Latest row per primary key, resolved before the
-deletion column is applied. This is the point at which silver stops
-being a table and starts being a view over history.
+**Depends on 4.** Latest row per primary key, resolved before the
+deletion column is applied.
 
-Separated from phase 5 deliberately: the changelog can exist and be
-verified for weeks before anything reads it, and that is the cheapest
-way to find out whether its growth rate is survivable.
+Separated from phase 4 deliberately: the changelog can exist and be
+verified for weeks before anything reads it, which is the cheapest way
+to learn whether its growth rate is survivable.
 
-### Phase 7 — a REST catalog, if a table outgrows memory
+### Phase 6 — a REST catalog, if a table outgrows memory
 
 **Conditional, not scheduled.** The pyiceberg-to-Arrow path
-materialises a scan before DuckDB sees it. When a table stops fitting,
-`ATTACH` is the answer and it needs REST.
+materialises a scan before anything queries it. When a table stops
+fitting, `ATTACH` is the answer and it needs REST.
 
-Independent of phase 4: catalog type and storage backend are separate
+Independent of phase 3: catalog type and storage backend are separate
 axes.
 
-## The reversibility line is phase 4
+## The reversibility line is phase 3
 
-Everything up to and including phase 3 leaves the mirror fully
+Everything up to and including phase 2 leaves the mirror fully
 derivable from the silos: if it turns out wrong, delete it and re-sync.
-Phases 1 to 3 cost time and nothing else.
+Phases 1 and 2 cost time and nothing else.
 
-From phase 5 onward the changelog holds history no source can return,
-and phase 4 exists precisely to make that survivable.
+From phase 4 onward the changelog holds history no source can return,
+and phase 3 exists precisely to make that survivable.
 
-So the question to ask before phase 4 is not "is this working" but
+So the question to ask before phase 3 is not "is this working" but
 **"are we committing to hold data nobody else holds"**. Everything
 before it is an optimisation. Everything after it is a custodial
 responsibility.
@@ -371,7 +418,7 @@ directly. Recorded here rather than quietly absorbed.
 pain on the source system drive that conversation rather than trying to
 anticipate it in a room without evidence."**
 
-That is exactly what phases 3 and 4 do -- anticipate. We have no
+That is exactly what phases 4 and 5 do -- anticipate. We have no
 evidence of source-system pain: our silos are SQLite files read by a
 nightly sync. The same guidance elsewhere: CDC's "trade-off is
 operational complexity... so for small tables or infrequent loads, a
@@ -419,15 +466,16 @@ the idiomatic answer, not a workaround.
 
 ## A correction to the plan, from that reading
 
-**Phases 1 and 2 stand.** DuckDB is justified by a measurement (8.9x),
-and bronze by lineage -- a correctness argument, not a performance one.
+**BRONZE STANDS; DUCKDB DID NOT.** Bronze is justified by lineage -- a
+correctness argument, not a performance one, which is why the
+measurements that killed phase 1 left it untouched.
 
-**Phase 3 needs evidence it does not yet have.** Building a changelog
+**The changelog needs evidence it does not yet have.** Building it
 to avoid source load we have never observed is anticipating in a room
 without evidence, which is the named mistake.
 
-So phase 3 gains a precondition: **measure the full-reload cost on a
-realistic table first.** If a nightly full sync is cheap, the
+So the changelog gains a precondition: **measure the full-reload cost
+on a realistic table first.** If a nightly full sync is cheap, the
 changelog buys history rather than performance -- still worth having
 for lineage, but a much weaker case, and one that should be argued on
 its own terms rather than smuggled in as an optimisation.
