@@ -204,7 +204,14 @@ analyzer.
 
 ---
 
-## 5. Architectural questions, not tasks
+## 5. The ELT pipeline -- see ELT_ROADMAP.md
+
+Bronze, silver, a materialised MAC column and DuckDB, in five phases
+with the measurements that justify each. The short version: we do ETL
+where we should do ELT, there is no raw layer, and the missing raw
+layer is also what blocks pushing aggregation down to a query engine.
+
+## 6. Architectural questions, not tasks
 
 These want answering before anything is built on them, and neither is
 made easier by delay.
