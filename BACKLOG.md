@@ -91,6 +91,17 @@ so.
 **Calibration probes** -- what else can drift the way the step
 vocabulary did, caught by construction rather than by noticing.
 
+FIRST ONE DONE: filter operators, declared in core/filters.py and
+handled separately by each adapter. They are ALLOWED to differ --
+UnsupportedFilter lets an adapter decline and the mediator then
+evaluates in Python -- but an operator that falls off the end of a
+clause builder without raising produces a query missing its condition.
+
+STILL TO AUDIT, same shape, each declared in more than one place:
+grant verbs (policy_validation, authorize, the docs), action-type
+parameter kinds, and the sub-app list (App.tsx routes, the rail's
+visible-apps, and each package's own exports).
+
 **An admin view of live performance metrics.**
 
 **Host metrics correlated with hops**, explicitly NOT a resource
