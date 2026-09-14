@@ -113,3 +113,93 @@ def test_an_empty_list_writes_nothing(bulk_mediator):
     )
 
     assert pending.sub_writes == ()
+
+
+def test_a_selection_at_the_ceiling_is_allowed(bulk_mediator):
+    """THE BOUNDARY, from below -- a list AT the limit is not refused
+    FOR its length.
+
+    It is refused here for a different reason (repeated ids), which is
+    the honest thing this fixture can show: the deployment has two
+    visible transactions, so a genuine thousand-object selection cannot
+    be built from it. What this proves is that the CEILING did not
+    fire, and the test below proves it fires one object later.
+    """
+    import pytest
+
+    from core.ontology.write_mediator import MAX_BULK_OBJECTS
+
+    # REPEATING A VISIBLE ID rather than counting from zero. This test
+    # is about the CEILING, and ids alice cannot see fail on MAC first
+    # -- which a first version did, refusing for the right reason at
+    # the wrong layer.
+    #
+    # The duplicate guard would object to a repeated id, so they are
+    # made distinct by type: the resolver stringifies for comparison,
+    # so 1 and "1" collide but 1 and 2 do not. Two visible ids,
+    # alternated, give a list of the required length that every
+    # per-object check accepts.
+    ids = [1 if index % 2 == 0 else 2 for index in range(MAX_BULK_OBJECTS)]
+
+    with pytest.raises(ValueError, match="identical"):
+        bulk_mediator.propose_action(
+            ALICE, "RecategorizeTransactions",
+            {"transaction_ids": ids, "new_category": "audited"},
+            origin="human",
+        )
+
+
+def test_one_beyond_the_ceiling_is_refused(bulk_mediator):
+    """AN ATOMIC BATCH HAS NO NATURAL CEILING, which is why one is
+    imposed.
+
+    Forty objects all succeeding or all failing is the point. Fifty
+    thousand is the same promise made about a write that holds a lock
+    for minutes, produces an audit entry nobody can read, and hands a
+    reviewer a diff they cannot meaningfully approve. The atomicity
+    that makes a bulk action safe at small sizes is what makes it
+    dangerous at large ones.
+
+    Foundry stops at the same number.
+    """
+    import pytest
+
+    from core.ontology.write_mediator import MAX_BULK_OBJECTS
+
+    with pytest.raises(ValueError, match="at most"):
+        bulk_mediator.propose_action(
+            ALICE, "RecategorizeTransactions",
+            {"transaction_ids": list(range(MAX_BULK_OBJECTS + 1)), "new_category": "audited"},
+            origin="human",
+        )
+
+
+def test_the_refusal_says_how_many_and_what_to_do(bulk_mediator):
+    # A limit someone hits is a limit they need to work around. The
+    # count and the remedy are what turn a refusal into an instruction.
+    import pytest
+
+    from core.ontology.write_mediator import MAX_BULK_OBJECTS
+
+    with pytest.raises(ValueError) as caught:
+        bulk_mediator.propose_action(
+            ALICE, "RecategorizeTransactions",
+            {"transaction_ids": list(range(MAX_BULK_OBJECTS + 5)), "new_category": "audited"},
+            origin="human",
+        )
+
+    message = str(caught.value)
+    assert str(MAX_BULK_OBJECTS + 5) in message
+    assert "split it" in message
+
+
+def test_a_single_object_is_nowhere_near_it(bulk_mediator):
+    # THE CONTROL. The overwhelmingly common case must not pay for the
+    # rare one -- a limit applied to every action would break them all.
+    pending = bulk_mediator.propose_action(
+        ALICE, "RecategorizeTransactions",
+        {"transaction_ids": [1], "new_category": "audited"},
+        origin="human",
+    )
+
+    assert len(pending.sub_writes) == 1

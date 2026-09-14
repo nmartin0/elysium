@@ -250,6 +250,20 @@ def _describe_action(action_type_name: str, action_def: dict, parameters: dict) 
     return f"{sentence} ({', '.join(parts)})"
 
 
+# THE MOST OBJECTS ONE ACTION MAY WRITE.
+#
+# Matches Foundry, which makes actions "unavailable if the number of
+# selected objects exceeds 1000" -- and the reasoning is the same. An
+# atomic batch has no natural ceiling, so without one a bulk write of
+# fifty thousand would hold a lock for minutes, produce an audit entry
+# nobody can read, and hand a reviewer a diff they cannot meaningfully
+# approve.
+#
+# A deployment that genuinely needs more is describing a data pipeline
+# rather than a user action, and should be pointed at one.
+MAX_BULK_OBJECTS = 1000
+
+
 class WriteMediator:
     def __init__(
         self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict,
@@ -1032,7 +1046,31 @@ class WriteMediator:
             # makes a bulk action safe to approve as a unit -- a
             # half-applied bulk edit is the state nobody can
             # reason about.
-            for object_id in (resolved if isinstance(resolved, list) else [resolved]):
+            object_ids = resolved if isinstance(resolved, list) else [resolved]
+
+            # A CEILING, because an atomic batch has no natural one.
+            #
+            # Forty objects all succeeding or all failing is the point.
+            # Fifty thousand is the same promise made about a write
+            # that will hold a lock for minutes, produce an audit entry
+            # nobody can read, and present a reviewer with a diff they
+            # cannot meaningfully approve. The atomicity that makes a
+            # bulk action safe at small sizes is what makes it
+            # dangerous at large ones.
+            #
+            # Foundry stops at the same number: actions "are
+            # unavailable if the number of selected objects exceeds
+            # 1000". Refused at PROPOSE time rather than at confirm, so
+            # nobody assembles a selection they will not be allowed to
+            # act on.
+            if len(object_ids) > MAX_BULK_OBJECTS:
+                raise ValueError(
+                    f"Action {action_type_name!r} names {len(object_ids)} objects, and at most "
+                    f"{MAX_BULK_OBJECTS} may be written in one action. Narrow the selection, or "
+                    f"split it across several proposals."
+                )
+
+            for object_id in object_ids:
 
                 # The FULL duplicate check, against REAL resolved ids --
                 # the complement to core/ontology/action_types.py's own,

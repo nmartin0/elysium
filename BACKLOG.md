@@ -89,8 +89,9 @@ STILL OPEN, all of it UI:
 - "No selection means the whole filtered set", which is Foundry's
   rule: the current set "or all objects, if none are selected".
 - Select-all across pages means the FILTER, not the page.
-- A ceiling. Foundry stops at 1000 selected objects; we have no limit
-  and a bulk write of 50,000 would be one atomic batch.
+- ~~A ceiling.~~ DONE: MAX_BULK_OBJECTS is 1000, matching Foundry,
+  refused at PROPOSE time so nobody assembles a selection they will
+  not be allowed to act on.
 - No shipped action declares a list parameter yet, so the path is
   exercised only by tests.
 
