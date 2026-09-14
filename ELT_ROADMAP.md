@@ -138,97 +138,165 @@ in the Ontology."
 
 ---
 
+## Durability, and when the mirror stops being derived data
+
+**TODAY THE MIRROR IS DERIVABLE, and that is why MinIO is not urgent
+yet.** Everything in it came from the silos and can be read again. The
+things that genuinely cannot be rebuilt -- write_log.db,
+credentials.db, config_history.db, secrets/ -- are NOT in the mirror.
+They are ordinary files needing ordinary backup, MinIO or no MinIO.
+
+If the Elysium host dies today: reinstall, restore those four, re-sync.
+Nothing is lost that the organisation's own databases do not still
+hold. Object storage would make that faster, not safer.
+
+**AFTER THE CHANGELOG EXISTS, THAT STOPS BEING TRUE.** A source
+database holds "now". It has no record that a customer's region was
+us-west last March. Once we append a changelog, losing it loses
+everything the sources have since overwritten, and no re-sync recovers
+it.
+
+That is the moment the mirror stops being DERIVED DATA and becomes a
+SYSTEM OF RECORD -- and the literature says it in a phrase quoted above
+and not followed through: "bronze should act as a historical record". A
+historical record that cannot be rebuilt is one that must be able to be
+restored.
+
+**SO THE CHANGELOG AND DURABLE STORAGE ARE ONE DECISION, NOT TWO.**
+Shipping a changelog on a single machine's local disk would let an
+organisation accumulate two years of history it believes is safe, lose
+one host, and lose all of it. Either we build the history and make it
+survive, or we do not build it yet.
+
+**A REST CATALOG IS A SEPARATE AXIS AGAIN**, and an earlier draft of
+this file wrongly coupled it to MinIO. pyiceberg's CatalogType is REST,
+HIVE, GLUE, DYNAMODB, SQL, IN_MEMORY, BIGQUERY; storage is chosen
+independently through FileIO. All four combinations are possible, and
+we are SQL-plus-local today.
+
+What a REST catalog unlocks is DuckDB's ATTACH, and its trigger is
+MEMORY rather than deployment: the pyiceberg-to-Arrow-to-DuckDB path
+materialises a scan before DuckDB sees it, which is fine until a table
+does not fit. Different trigger, different phase, neither due yet.
+
 ## The plan
 
-### Phase 1 — DuckDB, over what we already have
+**Re-derived from the dependencies rather than from the original
+guess.** Three constraints drive the order, and none of them was
+visible when this file was first written:
 
-Brought forward, because the changelog diff needs it. Wire DuckDB over
-the existing mirror for filtering and aggregation, keeping the Python
-path as the fallback for operators it cannot express -- the same
-`UnsupportedFilter` contract the adapters already use.
+- The changelog diff NEEDS a query engine. It is an anti-join.
+- The changelog NEEDS durable storage, because it becomes a system of
+  record the moment it exists.
+- A materialised MAC column NEEDS somewhere to put it, which is the
+  transform stage.
 
-Independently worth it: measured 8.9x on grouping 200,000 rows.
+### Phase 1 — DuckDB over the existing mirror
 
-### Phase 2 — bronze, and two-snapshot retention
+**Depends on nothing.** Wire DuckDB for filtering and aggregation via
+pyiceberg-to-Arrow, keeping the Python path as the fallback for
+operators it cannot express -- the same `UnsupportedFilter` contract
+the adapters already use.
 
-Sync writes every column the source has, not only the declared ones.
-`columns_present()` already reports them -- built for drift detection,
-exactly what bronze needs.
+Justified alone: measured 8.9x on grouping 200,000 rows. Everything
+later needs a query engine, so this is the foundation whether or not
+the rest proceeds.
 
-Retention becomes explicit here: keep two snapshots, expire the rest.
-Foundry's primary rule governs: "retention policies will never delete
-transactions that are in the latest view of any branch", and overriding
-it is "very dangerous".
+**Stop here if** DuckDB does not reproduce its margin on real queries.
 
-### Phase 3 — the changelog
+### Phase 2 — bronze, with two-snapshot retention
 
-Diff bronze's current snapshot against its previous, by primary key,
-and APPEND the result to silver with `_change_type` and an ordering
-column.
+**Depends on nothing.** Sync writes every column the source has, not
+only declared ones; `columns_present()` already reports them.
 
-Deletions must be INFERRED, since our sources do not report them --
-Foundry says so for this case: "if the source data does not include
-explicit deletion information, you may need to implement logic to infer
-deletions (for example, by comparing consecutive snapshots)."
+Retention is part of this phase rather than a follow-up, because
+"bronze bloat" is the most commonly cited failure of this pattern and
+because Iceberg's copy-on-write makes each retained snapshot a full
+copy -- measured, 177KB to 839KB over five syncs.
 
-FOLLOW THE `>=` CONVENTION: their incremental comparison is "greater than or
-equal to... so that no data is omitted", accepting that "duplicate
-values may appear", which "should be removed as a first step in the
-data transformation pipeline". Prefer duplicates over omissions, and
-dedupe downstream.
+**Nothing reads bronze yet.** Inert on purpose, as the permission
+ladder's first commit was.
 
-### Phase 4 — the current view
+### Phase 3 — silver from bronze, and the MAC column
 
-Latest row per primary key, with a deletion column. Foundry's ordering:
-"duplicate primary keys are resolved BEFORE the deletion column is used
-to exclude rows. Therefore, only the value of the deletion column in
-the latest row for a given primary key matters."
+**Depends on 2.** `transform_rows` moves out of `sync_table` and
+becomes a pass from bronze to silver. Re-deriving silver stops touching
+the silo, so adding an ontology field becomes a rebuild rather than a
+re-sync -- the first thing worth measuring afterwards.
 
-This is what the ontology reads, and the point at which the pipeline
-replaces today's mirror.
+**The materialised MAC column belongs HERE, not later.** It was phase 5
+in the first draft, which was wrong: it is a transform, this is the
+transform stage, and deferring it means building the stage twice.
 
-### Phase 5 — materialise the security value
+It is also the phase to be slowest on. Sixteen `check_access` calls
+assume per-object resolution, and a stale security column is a
+disclosure rather than a slow query. It must be rebuilt whenever either
+side changes, and the audit must record when it was computed.
 
-Silver or current gains a resolved MAC column for every object type,
-including those whose security is declared `via_field`. The link is
-followed ONCE at transform time rather than per query.
+**Still no changelog.** Silver here is a clean CURRENT-STATE table --
+the mirror we already have, derived properly. That keeps every phase so
+far fully derivable from the silos, and therefore cheap to abandon.
 
-**The load-bearing phase, and the dangerous one.** Sixteen
-`check_access` calls assume per-object resolution. A stale security
-column is a disclosure, not a slow query. It must be rebuilt whenever
-either side changes, and the audit must say when it was computed.
+### Phase 4 — durable storage, BEFORE any history exists
 
-### Phase 6 — MinIO, and only when there is a second process
+**Depends on nothing technically; depends on 5 morally.** MinIO or S3
+replaces the local-filesystem warehouse.
 
-Iceberg uses `SqlCatalog` over SQLite with a local-filesystem
-warehouse: correct for one host, wrong for anything else.
+**Moved here from last**, because the next phase creates data that
+cannot be rebuilt. Doing it after would mean a window in which an
+organisation accumulates history on one machine's disk and believes it
+is safe.
 
-Deliberately last. It buys nothing until more than one process reads
-the mirror, and the `--reload` model assumes one.
+Nothing before this phase needs it. Everything after it does.
 
-## What makes this tractable
+### Phase 5 — the changelog
 
-The mirror is 1,307 lines across five files, and `deployment_loader` is
-the only thing outside `core/mirror/` that wires it. `sync_targets.py`
-already derives what to sync from the ontology alone, so bronze needs
-no new configuration.
+**Depends on 1 (the diff), 2 (two snapshots to diff), and 4 (somewhere
+it can survive).**
 
-## What makes it risky
+Diff bronze's current snapshot against its previous by primary key, and
+APPEND the result with a change type and an ordering column. Deletions
+must be INFERRED, since our sources do not report them.
 
-**Phase 3 touches security.** Sixteen `check_access` calls assume
-per-object resolution today. A materialised MAC column that goes stale
-is a disclosure, not a slow query, and that is the phase to be slowest
-and most suspicious on.
+**Its precondition is evidence, not readiness.** Measure the
+full-reload cost on a realistic table first. "Start with replica before
+committing to CDC. Let the performance pain on the source system drive
+that conversation." If a nightly full sync is cheap, this buys HISTORY
+rather than performance -- still worth having, but argued on its own
+terms.
 
-**Phases 1 and 2 are cheap to reverse; 4 and 5 are not.** Phase 1 is
-additive with a fallback, phase 2 is storage only. Once the ontology
-reads the current view (phase 4) there is no quick way back.
+### Phase 6 — the current view reads from the changelog
 
-**Stop points, deliberately named.** After phase 1 if DuckDB does not
-reproduce its measured margin on real queries. After phase 3 if the
-changelog does not stay meaningfully smaller than the table -- which it
-will not, for a source that rewrites every row nightly, and that is
-worth knowing before phase 4 depends on it.
+**Depends on 5.** Latest row per primary key, resolved before the
+deletion column is applied. This is the point at which silver stops
+being a table and starts being a view over history.
+
+Separated from phase 5 deliberately: the changelog can exist and be
+verified for weeks before anything reads it, and that is the cheapest
+way to find out whether its growth rate is survivable.
+
+### Phase 7 — a REST catalog, if a table outgrows memory
+
+**Conditional, not scheduled.** The pyiceberg-to-Arrow path
+materialises a scan before DuckDB sees it. When a table stops fitting,
+`ATTACH` is the answer and it needs REST.
+
+Independent of phase 4: catalog type and storage backend are separate
+axes.
+
+## The reversibility line is phase 4
+
+Everything up to and including phase 3 leaves the mirror fully
+derivable from the silos: if it turns out wrong, delete it and re-sync.
+Phases 1 to 3 cost time and nothing else.
+
+From phase 5 onward the changelog holds history no source can return,
+and phase 4 exists precisely to make that survivable.
+
+So the question to ask before phase 4 is not "is this working" but
+**"are we committing to hold data nobody else holds"**. Everything
+before it is an optimisation. Everything after it is a custodial
+responsibility.
 
 ## Gotchas the wider literature warns about
 
