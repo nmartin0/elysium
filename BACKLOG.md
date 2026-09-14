@@ -43,8 +43,10 @@ findings.
 
 ## 2. Product work, buildable here
 
-**Saved Explorations.** A search plus its filters, columns and chart
-configuration, persisted and returnable to. Appears independently on
+**Saved Explorations.** A search plus its filters and chart
+configuration, persisted and returnable to. NOW MUCH SMALLER: Browse's
+view state lives in the URL, so an exploration is that URL plus a name,
+not a schema to design. Appears independently on
 two lists, which is usually a sign of a real need. No backend exists;
 ConfigHistory and PendingWriteStore are both precedents for the store.
 Saved SELECTIONS are a distinct thing from saved searches and the UI
@@ -75,7 +77,13 @@ places is wrong for a coordinate and for a count alike.
 **The keyboard model's roving-focus half.** The accessibility work
 nobody has touched.
 
-**URL-as-state**, so a view can be shared or bookmarked.
+**URL-as-state. DONE for Browse**, which is where a view has parts
+worth sharing: the object type, the search, the sort, the chart
+filters and the tab. Column choices deliberately stayed a preference.
+
+THIS SHRINKS SAVED EXPLORATIONS considerably. An exploration IS that
+URL, so persisting one is storing a string and a name rather than
+designing a schema for view state.
 
 **The view-state matrix's other half.** The two empty states shipped,
 and LOADING is now one shared component -- three treatments across six

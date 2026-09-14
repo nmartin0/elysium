@@ -12,6 +12,7 @@ import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/Filte
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
+import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
 import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
@@ -60,8 +61,19 @@ const BROWSE_VIEWS: readonly ViewOption[] = [
 ]
 
 export default function ObjectSearchPanel({ visibleSchema, username, onSessionExpired }: ObjectSearchPanelProps) {
-  const [selectedType, setSelectedType] = useState<string | null>(null)
-  const [queryText, setQueryText] = useState('')
+  // THE VIEW LIVES IN THE URL, so it can be shared, bookmarked and
+  // found again in history. The object type, the search text, the
+  // sort and the chart filters are a property of the QUESTION rather
+  // than of the person asking it.
+  //
+  // Column choices deliberately do NOT move -- those are a preference,
+  // they follow a user across every view, and a shared link that
+  // changed the recipient's columns would be a surprise rather than a
+  // convenience. See useUrlState.ts for the full split.
+  const [urlType, setUrlType] = useUrlValue('type', '')
+  const selectedType = urlType === '' ? null : urlType
+  const setSelectedType = (next: string | null) => setUrlType(next ?? '')
+  const [queryText, setQueryText] = useUrlValue('q', '')
   const [results, setResults] = useState<SearchResult[]>([])
   // Page tokens are OPAQUE and kept as a stack, so Back returns to the
   // exact page you came from. Reconstructing a previous token by
@@ -69,7 +81,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const [pageToken, setPageToken] = useState<string | null>(null)
   const [previousTokens, setPreviousTokens] = useState<string[]>([])
   const [nextPageToken, setNextPageToken] = useState<string | null>(null)
-  const [orderBy, setOrderBy] = useState<string>('')
+  const [orderBy, setOrderBy] = useUrlValue('sort', '')
+  const clearUrlKeys = useClearUrlKeys()
   // Per type, so switching types does not carry one type's chosen
   // columns onto another where those field names mean nothing.
   //
@@ -120,7 +133,11 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * query rather than replacing it, so narrowing by a chart click
    * narrows within a search rather than discarding it.
    */
-  const [crossFilter, setCrossFilter] = useState<ChartFilter[]>([])
+  // JSON-encoded: a list of {field, value} pairs has no natural flat
+  // query-string form, and inventing one would mean writing a parser
+  // for it. A malformed value falls back to no filter rather than
+  // throwing -- see useUrlJson.
+  const [crossFilter, setCrossFilter] = useUrlJson<ChartFilter[]>('filters', [])
 
   // Whether the user narrowed anything, which is what separates "your
   // filters matched nothing" from "there is nothing here". Text search
@@ -141,8 +158,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   }, [])
 
   const clearAllFilters = () => {
-    setQueryText('')
-    setCrossFilter([])
+    // ONE navigation, not two. Each URL setter navigates rather than
+    // queueing, so calling both in sequence made the second discard
+    // the first and only half the filters cleared.
+    clearUrlKeys(['q', 'filters'])
   }
   /**
    * Filters built in the filter bar, kept SEPARATE from the chart
@@ -154,7 +173,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * would be editing the other's state.
    */
   const [barFilters, setBarFilters] = useState<FieldFilter[]>([])
-  const [view, setView] = useState<string>('table')
+  // WHICH TAB, because a link to a chart should open the chart. It is
+  // part of what someone means by "look at this".
+  const [view, setView] = useUrlValue('view', 'table')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
