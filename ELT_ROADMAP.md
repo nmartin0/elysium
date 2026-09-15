@@ -444,6 +444,34 @@ idempotency, which the literature names as a core pipeline pattern --
 "produces the same result regardless of how many times it is executed
 with the same input".
 
+## Why a CHANGING table still costs a full copy, and what would fix it
+
+Measured after the unchanged-sync skip, since that only helps tables
+nobody edited. Three approaches tried, none of which helped:
+
+**TWO SNAPSHOTS PER SYNC, NOT ONE.** pyiceberg's `overwrite()` is a
+delete followed by an append internally -- read in its source, not
+guessed -- so every changing table produces two snapshots per sync.
+Wrapping the call in an explicit transaction does not merge them.
+
+**`upsert()` IS NO CHEAPER.** 20,000 rows with ONE changed: overwrite
+added 111.4 KB, upsert added 116.7 KB, and both produced the same
+snapshot count. It rewrites the whole file regardless, because all the
+rows live in one Parquet file.
+
+**THAT IS THE ACTUAL CAUSE**, and it is not a pyiceberg limitation. A
+table written as a single Parquet file has no smaller unit to rewrite,
+so any change rewrites everything. The documented answer is
+partitioning -- "if updates are localized to specific partitions,
+optimize storage by partitioning effectively" -- which makes a change
+rewrite only the affected partition.
+
+**NOT BUILT HERE.** Partitioning an Iceberg table through pyiceberg
+needs a schema with explicit field ids and a partition spec, and
+choosing the partition key is a per-deployment decision with real
+consequences for read performance. It is the right next lead and a
+bigger piece of work than it first appears.
+
 **EXPIRY IS STILL WANTED**, for tables that genuinely change
 nightly. Either pyiceberg
 gains it, or we reclaim snapshots ourselves under the two rules already
