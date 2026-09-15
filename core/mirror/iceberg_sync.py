@@ -115,7 +115,7 @@ BRONZE_RETENTION = {
 
 class IcebergMirrorSync(MirrorSync):
     def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter],
-                 write_log=None):
+                 write_log=None, storage: dict | None = None):
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
         # customer's own data; see adapters/sqlite_adapter.py's own
@@ -132,11 +132,41 @@ class IcebergMirrorSync(MirrorSync):
         # strength of a check that did not happen.
         self._write_log = write_log
         mirror_dir.mkdir(parents=True, exist_ok=True)
-        (mirror_dir / "warehouse").mkdir(exist_ok=True)
+
+        # WHERE THE WAREHOUSE LIVES, which is a deployment question
+        # rather than a code one.
+        #
+        # LOCAL BY DEFAULT, because that is correct for one host and
+        # every deployment today is one host. Nothing changes for them.
+        #
+        # OBJECT STORAGE WHEN CONFIGURED, and the reason is not
+        # performance. Everything in the mirror is currently DERIVABLE
+        # from the silos: lose the machine, reinstall, re-sync. That
+        # stops being true the moment a changelog exists, because a
+        # source database holds "now" and has no record of what a value
+        # used to be. At that point the mirror becomes a system of
+        # record, and a system of record on one machine's disk is one
+        # power supply away from gone.
+        #
+        # So this lands BEFORE the changelog rather than after --
+        # otherwise there is a window in which an organisation
+        # accumulates history it believes is safe.
+        #
+        # THE CATALOG IS A SEPARATE AXIS and stays local. pyiceberg's
+        # CatalogType is REST, HIVE, GLUE, DYNAMODB, SQL, IN_MEMORY,
+        # BIGQUERY; storage is chosen independently through FileIO, so
+        # moving the warehouse does not require moving the catalog.
+        options = dict(storage or {})
+        warehouse = options.pop("warehouse", None)
+        if warehouse is None:
+            (mirror_dir / "warehouse").mkdir(exist_ok=True)
+            warehouse = f"file://{mirror_dir / 'warehouse'}"
+
         self._catalog = SqlCatalog(
             "elysium_mirror",
             uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
-            warehouse=f"file://{mirror_dir / 'warehouse'}",
+            warehouse=warehouse,
+            **options,
         )
 
     def sync_table(self, silo_name: str, table_name: str, id_column: str,

@@ -21,3 +21,12 @@ pytest          # test suite (tests/unit -- fast; tests/integration -- slow, nee
 httpx2          # test-only -- Starlette's TestClient imports it (as httpx) for
                 # tests/integration/test_api.py. Not a typosquat despite the name:
                 # starlette 1.x does `import httpx2 as httpx` internally.
+
+# S3-compatible storage, to test that the mirror really works over
+# object storage rather than only that the options are passed along.
+# moto[server] specifically: the decorator patches boto3, which
+# pyiceberg does not use -- it goes through PyArrow own S3 client and
+# needs a real endpoint on a port.
+moto[server]
+boto3
+flask-cors

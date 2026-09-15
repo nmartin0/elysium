@@ -378,7 +378,7 @@ question: when is bronze stale enough to re-read. Not answered here.
 The MAC column that used to live here is struck -- see above. What
 remains is the transform stage itself, which every later phase needs.
 
-### Phase 3 — durable storage, BEFORE any history exists
+### Phase 3 — durable storage, BEFORE any history exists. DONE.
 
 **Depends on nothing technically; depends on phase 4 morally.**
 
@@ -391,6 +391,16 @@ backup.
 **The next phase creates data that cannot be rebuilt**, and doing this
 after would leave a window in which an organisation accumulates history
 on one machine's disk and believes it is safe.
+
+WHAT LANDED: the warehouse location and its storage options are
+configurable, local remains the default, and both bronze and silver
+follow the setting. Verified end to end against a real S3 endpoint --
+an Iceberg warehouse written to and read back from object storage, not
+merely options passed along.
+
+THE CATALOG STAYS LOCAL, deliberately: catalog type and storage backend
+are separate axes, and moving the warehouse does not require moving the
+catalog.
 
 ### Phase 4 — the changelog
 
