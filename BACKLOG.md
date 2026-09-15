@@ -98,8 +98,17 @@ it reads "The one silo is reachable" rather than "All 1 silo is".
 
 ### Redundant: a modelling decision
 
-**RecategorizeTransaction and RecategorizeTransactions differ by one
-parameter type.** Foundry keeps single and bulk action types separate
+**~~RecategorizeTransaction and RecategorizeTransactions differ by one
+parameter type.~~ MERGED.** One action taking a list, with
+`default_to_current_object` on the list parameter so a detail page
+contributes a list of one.
+
+What made it possible rather than merely tidy: the write mediator
+expands a list into one sub-write per object, so a list of one and a
+single reference produce the SAME write. Verified both paths against
+the real deployment -- one object gives one sub-write, four give four.
+
+**Original report:** Foundry keeps single and bulk action types separate
 because a "bulk action type" is one "using an object reference list
 parameter" -- but that is a MODELLING constraint, not a user-facing
 one, and shipping both to a person is redundancy they have to think

@@ -68,7 +68,6 @@ roles:
       # action type declared in ontology_schema.yaml is not usable
       # until some role is granted execute: on it by name, the same
       # way a field needs its own read: grant.
-      - execute:RecategorizeTransaction
       # THE BULK SIBLING NEEDS ITS OWN GRANT, by name. Being allowed to
       # recategorise one transaction does not imply being allowed to
       # recategorise a thousand -- that is a different decision with a
@@ -109,7 +108,6 @@ roles:
       - read:Transaction.category
       - read:Transaction.transaction_date
       - read:Transaction.customer_id
-      - execute:RecategorizeTransaction
       - execute:RecategorizeTransactions
 
 users:

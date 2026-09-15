@@ -64,7 +64,12 @@ export interface ActionDef {
 //      just a UX one.
 function isLockedToCurrentObject(paramSpec: ParameterSpec, objectType: string): boolean {
   return (
-    paramSpec.type === 'object_reference' &&
+    // EITHER REFERENCE TYPE. An action that takes a LIST can still be
+    // run from a detail page -- the page just contributes a list of
+    // one. That is what lets a single action serve both places
+    // instead of a deployment declaring near-identical twins and a
+    // person having to choose between them.
+    (paramSpec.type === 'object_reference' || paramSpec.type === 'object_reference_list') &&
     paramSpec.default_to_current_object === true &&
     paramSpec.object_type === objectType
   )
@@ -135,6 +140,14 @@ export default function ActionForm({
       const parameters: Record<string, unknown> = Object.fromEntries(
         Object.entries(actionDef.parameters).map(([paramName, paramSpec]) => {
           const raw = values[paramName]
+          // A LIST PARAMETER GETS A LIST, even from a detail page
+          // where there is exactly one object. The write mediator
+          // expands it into one sub-write, so a list of one and a
+          // single reference produce the same write -- which is
+          // precisely why one action can serve both places.
+          if (paramSpec.type === 'object_reference_list') {
+            return [paramName, raw === '' ? [] : [raw]]
+          }
           return [paramName, paramSpec.type === 'number' && raw !== '' ? Number(raw) : raw]
         }),
       )

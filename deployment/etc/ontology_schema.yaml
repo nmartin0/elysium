@@ -77,48 +77,6 @@ object_types:
 # same way a field needs a read: grant. Until then it stays invisible.
 # ------------------------------------------------------------------
 action_types:
-  RecategorizeTransaction:
-    description: Change which category a transaction is filed under.
-    affected_object_types: [Transaction]
-    parameters:
-      transaction_id:
-        type: object_reference
-        object_type: Transaction
-        required: true
-        # Pre-fills and LOCKS this parameter to whichever Transaction
-        # the form was opened from, so the object being changed is
-        # never retyped by hand. Marked explicitly, by parameter
-        # identity -- never inferred from object_type, since an action
-        # can legitimately reference two objects of the same type.
-        is_current_object: true
-      new_category:
-        type: string
-        required: true
-        display_name: New category
-    sub_writes:
-      - object_type: Transaction
-        object_id: parameter.transaction_id
-        operation: update
-        mutations:
-          - set:
-              property: category
-              value: parameter.new_category
-
-  # THE BULK SIBLING, and the difference is one parameter type.
-  #
-  # Foundry draws the line in the ontology rather than the UI: a "bulk
-  # action type" is one "using an object reference list parameter". So
-  # bulk is a property of the ACTION -- declared, validated and
-  # reviewable before anyone runs it -- rather than a mode an
-  # application switches into.
-  #
-  # The write mediator expands the list into one sub-write per object,
-  # each getting its own authorization check, its own submission
-  # criteria and its own place in the ATOMIC batch. Forty objects means
-  # forty writes that all succeed or all fail.
-  #
-  # Capped at MAX_BULK_OBJECTS (1000), refused at propose time so
-  # nobody assembles a selection they will not be allowed to act on.
   RecategorizeTransactions:
     description: Change which category several transactions are filed under.
     affected_object_types: [Transaction]
@@ -128,6 +86,15 @@ action_types:
         object_type: Transaction
         required: true
         display_name: Transactions
+        # PRE-FILLED ON A DETAIL PAGE, where it becomes a list of one.
+        # That is what lets ONE action serve both places: the write
+        # mediator expands a list into one sub-write per object, so a
+        # list of one and a single reference produce the same write.
+        #
+        # Declaring near-identical twins -- RecategorizeTransaction and
+        # RecategorizeTransactions -- put a choice in front of a person
+        # that only the ontology cared about.
+        default_to_current_object: true
       new_category:
         type: string
         required: true
