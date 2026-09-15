@@ -550,6 +550,18 @@ export async function matchingIds(objectType: string, queryText: string, conditi
   return body.object_ids
 }
 
+/** RED metrics over a recent window, for the admin screen.
+ *
+ * Gated on manage:deployment by the server -- request timings say
+ * which routes are used and how often, which is more than an ordinary
+ * user should see about everyone else.
+ */
+export async function getMetrics(windowSeconds?: number): Promise<unknown> {
+  const params = windowSeconds === undefined ? '' : `?window_seconds=${windowSeconds}`
+  const response = await apiFetchOrThrow(`/admin/metrics${params}`)
+  return response.json()
+}
+
 export interface LinkCount {
   target: string
   count: number

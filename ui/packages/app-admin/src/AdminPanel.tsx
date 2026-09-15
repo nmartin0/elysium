@@ -19,6 +19,7 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 
 import DeploymentConfig from './DeploymentConfig'
+import MetricsPanel from './MetricsPanel'
 import Silos from './Silos'
 
 export interface User {
@@ -44,6 +45,7 @@ const ADMIN_VIEWS: readonly ViewOption[] = [
   { id: 'users', label: 'Users', icon: 'people' },
   { id: 'deployment', label: 'Deployment', icon: 'cog' },
   { id: 'silos', label: 'Silos', icon: 'database' },
+  { id: 'metrics', label: 'Metrics', icon: 'timeline-line-chart' },
 ]
 
 export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
@@ -162,6 +164,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
 
       {view === 'deployment' && <DeploymentConfig onSessionExpired={onSessionExpired} />}
       {view === 'silos' && <Silos onSessionExpired={onSessionExpired} />}
+      {view === 'metrics' && <MetricsPanel onSessionExpired={onSessionExpired} />}
 
       {view === 'users' &&
         (users === null ? (

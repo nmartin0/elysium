@@ -244,8 +244,14 @@ SATURATION IS DELIBERATELY ABSENT -- the fourth golden signal is a
 property of the HOST, and answering it from inside the process would
 mean guessing at limits we do not know.
 
-STILL OPEN: the screen itself, and a retention sweep. forget_older_than
-exists and nothing calls it.
+THE SCREEN IS DONE, as an Admin tab. It names the missing signal
+rather than omitting it -- four numbers with no mention of a fifth
+reads as the whole picture, and naming the gap is the difference
+between an incomplete dashboard and a misleading one.
+
+STILL OPEN: a retention sweep. forget_older_than exists and nothing
+calls it, so the table grows without bound. At 192 KB per 10,000
+requests that is slow, but it is still unbounded.
 
 **Superseded, for anyone revisiting:**
 
