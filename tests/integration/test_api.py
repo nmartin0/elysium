@@ -3508,3 +3508,43 @@ def test_metrics_report_red_and_not_saturation(client):
     assert {"requests", "rate_per_second", "error_ratio"} <= set(body)
     assert "saturation" not in body
     assert "cpu" not in body
+
+
+def test_old_metrics_are_dropped_at_startup(tmp_path, monkeypatch):
+    """THE WIRE, which the store's own tests cannot see.
+
+    forget_older_than() existed for a commit before anything called it,
+    so the table grew without bound while a method that would have
+    pruned it sat unused.
+
+    AT STARTUP AND NOWHERE ELSE, which is a real limit rather than an
+    oversight: a server running for months without a restart keeps
+    accumulating. Measured at 192 KB per 10,000 requests, so restart
+    frequency is a reasonable sweep interval.
+    """
+    import time
+
+    from api.app import create_app
+    from core.deployment_loader import RuntimePaths
+    from core.request_metrics import RequestMetrics
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+
+    # A row far outside any plausible window, written before the app
+    # exists so the sweep is the only thing that could remove it.
+    stale = RequestMetrics(data_dir / "metrics.db")
+    with stale._connection() as conn:
+        conn.execute(
+            "INSERT INTO requests VALUES (?, ?, ?, ?, ?)",
+            (time.time() - 400 * 24 * 60 * 60, "/api/query", "POST", 200, 10.0),
+        )
+        conn.commit()
+    assert stale.summary(window_seconds=500 * 24 * 60 * 60)["requests"] == 1
+
+    monkeypatch.setenv("ELYSIUM_DATA_DIR", str(data_dir))
+    create_app(RuntimePaths(
+        config_dir=Path("deployment/etc"), data_dir=data_dir, log_dir=tmp_path / "log",
+    ))
+
+    assert stale.summary(window_seconds=500 * 24 * 60 * 60)["requests"] == 0

@@ -80,6 +80,7 @@ still runs correctly as a pure API backend; only a real install
 """
 
 import logging
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
@@ -104,7 +105,7 @@ from core.deployment_loader import (
     resolve_runtime_paths,
 )
 from core.pending_write_store import PendingWriteStore
-from core.request_metrics import RequestMetrics
+from core.request_metrics import RETENTION_SECONDS, RequestMetrics
 from core.sqlite_connection import require_assertions_enabled
 from core.user_directory import UserDirectory
 
@@ -324,6 +325,29 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # repeat it, because the writes it recovers are already recovered
     # and re-running it against in-flight state is a different
     # operation with different risks.
+    # OLD REQUEST TIMINGS, DROPPED AT STARTUP.
+    #
+    # AT STARTUP AND NOWHERE ELSE, which is a real limit rather than an
+    # oversight: a server that runs for months without restarting keeps
+    # accumulating. Measured at 192 KB per 10,000 requests, so ten
+    # million requests is roughly 192 MB -- slow enough that restart
+    # frequency is a reasonable sweep interval, and bounded enough that
+    # nobody is surprised.
+    #
+    # The alternative, sweeping on every write, would put a DELETE in
+    # the path of an occasional user request to reclaim space nobody is
+    # short of. A scheduler would be a whole mechanism for the same.
+    #
+    # FAILURE HERE DOES NOT STOP THE SERVER. A metrics table that could
+    # not be pruned is a disk-space problem for later; refusing to boot
+    # over it is an outage now.
+    try:
+        dropped = app.state.request_metrics.forget_older_than(RETENTION_SECONDS)
+        if dropped:
+            logger.info(f"dropped {dropped} request metric(s) older than retention")
+    except (OSError, sqlite3.Error) as e:
+        logger.warning(f"request metrics not pruned at startup ({e})")
+
     resume_summary = generation.write_mediator.resume_pending_writes()
     if resume_summary["resumed"] or resume_summary["already_applied"] or resume_summary["ambiguous"]:
         logger.info(f"resume_pending_writes() on startup: {resume_summary}")

@@ -40,6 +40,20 @@ from typing import Any
 
 from core.sqlite_connection import connection_with_schema
 
+# HOW LONG A REQUEST TIMING IS KEPT.
+#
+# Thirty days, because the questions this table answers are all recent
+# ones -- "is it slow now", "did the reload make it worse", "what
+# changed this week". Nobody asks how fast the server was last spring,
+# and if they did, a row-per-request table is the wrong place to look.
+#
+# SAFE TO DELETE, unlike the changelog. Metrics describe what the
+# server DID, not what the data WAS: nothing references them, and
+# losing an old row costs a graph its left-hand edge rather than a
+# record its history. That is exactly the distinction that made the
+# changelog need durable storage first and lets this expire freely.
+RETENTION_SECONDS = 30 * 24 * 60 * 60
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS requests (
     at REAL NOT NULL,

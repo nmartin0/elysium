@@ -289,7 +289,21 @@ seven rows. The first thing to do when someone hits it is RAISE rather
 than OOM -- a sync that refuses a table it cannot hold is diagnosable,
 one the kernel kills is not. Full reasoning in ELT_ROADMAP.md.
 
-**One unexplained frontend test failure, seen once.** A full run
+**Two unexplained test failures, each seen once and never again.**
+
+A backend run reported `1 failed | 1708 passed` without naming the
+test; three subsequent runs, including one with randomisation
+disabled, were clean. It appeared on the run immediately after a new
+test that calls create_app() with a tmp_path data directory, which is
+the obvious suspect for cross-test leakage -- but suspicion is not
+evidence and the run did not say.
+
+Capture WHICH test if either recurs: `--tb=short` alone was not enough,
+because the summary line does not name a test that passed on retry
+within the same run. `-p no:randomly` fixes the order, which is the
+other half of reproducing it.
+
+**And one unexplained frontend test failure, seen once.** A full run
 reported `1 failed | 701 passed` and did not say which. Six subsequent
 runs -- four of app-browse alone, three of the whole suite -- were
 clean, so it could not be identified.

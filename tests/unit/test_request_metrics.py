@@ -178,3 +178,34 @@ class TestRetention:
 
         assert dropped == 1
         assert metrics.summary()["requests"] == 1
+
+
+class TestTheRetentionWindow:
+    """Thirty days, and why deleting is safe here.
+
+    Metrics describe what the server DID, not what the data WAS.
+    Nothing references them, so losing an old row costs a graph its
+    left-hand edge rather than a record its history -- exactly the
+    distinction that made the changelog need durable storage first and
+    lets this expire freely.
+    """
+
+    def test_the_window_is_long_enough_to_answer_recent_questions(self):
+        from core.request_metrics import RETENTION_SECONDS
+
+        # The questions this table answers are all recent: "is it slow
+        # now", "did the reload make it worse", "what changed this
+        # week". A window under a week could not answer the third.
+        assert RETENTION_SECONDS >= 7 * 24 * 60 * 60
+
+    def test_a_sweep_keeps_what_is_inside_the_window(self, metrics):
+        # THE CONTROL. A sweep that dropped everything would make the
+        # dashboard permanently empty, which looks exactly like an idle
+        # server.
+        from core.request_metrics import RETENTION_SECONDS
+
+        metrics.record("/api/query", "POST", 200, 10.0)
+
+        metrics.forget_older_than(RETENTION_SECONDS)
+
+        assert metrics.summary()["requests"] == 1
