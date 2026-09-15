@@ -1,0 +1,14 @@
+llm:
+  provider: ollama
+  connection:
+    base_url: "http://localhost:11434/api/chat"
+    request_timeout_seconds: 600
+    keep_alive: -1
+    options:
+      num_thread: 2
+      num_ctx: 4096
+  model: "phi4-mini"
+agent:
+  max_hops: 8
+  max_consecutive_duplicates: 2
+  max_consecutive_invalid_steps: 2

@@ -153,7 +153,22 @@ TWO DOCUMENTED PITFALLS, both worth stealing the fix for:
 rather than a defect. Deserves the treatment the ELT work got:
 precedent first, then a plan, then build.
 
-**Is the deployment-specific UI actually portable?** Filters and
+**~~Is the deployment-specific UI actually portable?~~ YES, and now
+proved.** A second fixture deployment sharing NO noun with the first --
+vessels and port calls, a security attribute called `fleet` rather
+than `region`, a role called `fleet_ops` -- plus thirteen tests
+asserting the derived surfaces follow it.
+
+Everything passed first time, which is the answer: nothing hardcodes
+our ontology's nouns. Controls confirm the tests would CATCH
+hardcoding, which matters more than the passes.
+
+The linter taught me two ontology rules while building the fixture,
+which is itself evidence they are enforced rather than conventional:
+security.via_field must name a LINK, and `write:` is not a real grant
+prefix.
+
+**Original question:** Filters and
 columns are supposed to derive from `visibleSchema`, so a different
 ontology should reshape them with no code change. UNVERIFIED -- and
 "mostly right" is not an answer.

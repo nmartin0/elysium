@@ -1326,3 +1326,83 @@ describe('shift-click selects a range in the results', () => {
     expect(screen.getByLabelText('Select Ben Stone')).toBeChecked()
   })
 })
+
+describe('the panel knows no ontology nouns of its own', () => {
+  /**
+   * The backend's half of this is proved in
+   * tests/integration/test_a_different_deployment.py, with a fixture
+   * sharing no noun with ours. This is the front half: given a schema
+   * describing vessels and port calls, the panel must show vessels and
+   * port calls.
+   *
+   * PASSING AGAINST CUSTOMER PROVES NOTHING, because Customer is what
+   * everything here was written against. A hardcoded "name" or
+   * "region" would survive every other test in this file.
+   */
+  const FLEET: VisibleSchema = {
+    Vessel: {
+      title_field: 'vessel_name',
+      fields: {
+        vessel_name: { type: 'data', display_name: 'Vessel name' },
+        fleet: { type: 'data' },
+        gross_tonnage: { type: 'data', decimal_places: 1 },
+      },
+    },
+    PortCall: { fields: { port: { type: 'data' } } },
+  }
+
+  it('offers the object types the schema declares', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(FLEET)
+
+    expect(await screen.findByText('Vessel')).toBeInTheDocument()
+    expect(screen.queryByText('Customer')).toBeNull()
+  })
+
+  it('titles a result with the declared title_field', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'IMO123', fields: { vessel_name: 'Northern Star', fleet: 'atlantic' } }]),
+    )
+    renderPanel(FLEET)
+
+    // THE TITLE ELEMENT specifically. The name also appears inside the
+    // checkbox's own label ("Select Northern Star"), so a bare text
+    // query finds two and says nothing about which is the title.
+    const title = await screen.findByText('Northern Star', {
+      selector: '.object-search__result-title',
+    })
+    expect(title).toBeInTheDocument()
+  })
+
+  it('labels a column with the declared display_name', async () => {
+    // Not the raw column, and not a name this file knows.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'IMO123', fields: { vessel_name: 'Northern Star', fleet: 'atlantic' } }]),
+    )
+    renderPanel(FLEET)
+
+    expect(await screen.findByText('Vessel name')).toBeInTheDocument()
+  })
+
+  it("honours this deployment's precision, not ours", async () => {
+    // decimal_places is per-field ontology metadata. A deployment
+    // declaring one place must not inherit the two our fixture uses.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'IMO123', fields: { vessel_name: 'Northern Star', gross_tonnage: 51234.567 } }]),
+    )
+    renderPanel(FLEET)
+
+    expect(await screen.findByText('51234.6')).toBeInTheDocument()
+  })
+
+  it('selects a vessel by its own title', async () => {
+    // The checkbox label is built from the title field, so a schema
+    // with a different one must still produce a usable control.
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'IMO123', fields: { vessel_name: 'Northern Star' } }]))
+    renderPanel(FLEET)
+
+    fireEvent.click(await screen.findByLabelText('Select Northern Star'))
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+  })
+})

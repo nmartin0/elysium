@@ -1,0 +1,82 @@
+# A DELIBERATELY DIFFERENT ONTOLOGY, sharing no noun with the main
+# fixture. Its whole job is to catch anything that assumed "Customer",
+# "region", or a two-type schema.
+#
+# Same SHAPE, different everything else: a security field, a via_field
+# chain, a link, several data types, one action with a list parameter.
+object_types:
+  Vessel:
+    id_field: imo
+    security:
+      field: fleet
+    storage:
+      table: vessels
+      id_column: imo
+    fields:
+      imo:
+        type: data
+        data_type: string
+      fleet:
+        type: data
+        data_type: string
+      vessel_name:
+        type: data
+        data_type: string
+        display_name: Vessel name
+      gross_tonnage:
+        type: data
+        data_type: number
+        decimal_places: 1
+      port_calls:
+        type: link
+        target: PortCall
+        via_field: imo
+
+  PortCall:
+    id_field: call_id
+    security:
+      # THROUGH A LINK, not a plain column -- the linter taught me that
+      # rule, which is exactly what an alternate deployment is for.
+      via_field: vessel
+    storage:
+      table: port_calls
+      id_column: call_id
+    fields:
+      call_id:
+        type: data
+        data_type: string
+      vessel:
+        type: link
+        target: Vessel
+        via_field: imo
+      port:
+        type: data
+        data_type: string
+      berth_hours:
+        type: data
+        data_type: number
+        decimal_places: 2
+
+action_types:
+  ReassignFleet:
+    description: Move vessels to a different fleet.
+    affected_object_types: [Vessel]
+    parameters:
+      vessel_imos:
+        type: object_reference_list
+        object_type: Vessel
+        required: true
+        display_name: Vessels
+        default_to_current_object: true
+      new_fleet:
+        type: string
+        required: true
+        display_name: New fleet
+    sub_writes:
+      - object_type: Vessel
+        object_id: parameter.vessel_imos
+        operation: update
+        mutations:
+          - set:
+              property: fleet
+              value: parameter.new_fleet

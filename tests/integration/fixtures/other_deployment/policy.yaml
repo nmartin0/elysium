@@ -1,0 +1,25 @@
+security_attribute: fleet
+
+# Roles and users for the alternate deployment. Deliberately different
+# names from the main fixture, so anything that assumed
+# "customer_service" or "us-west" fails here.
+roles:
+  fleet_ops:
+    allowed_actions:
+      - read:Vessel
+      - read:Vessel.imo
+      - read:Vessel.fleet
+      - read:Vessel.vessel_name
+      - read:Vessel.gross_tonnage
+      - read:Vessel.port_calls
+      - read:PortCall
+      - read:PortCall.call_id
+      - read:PortCall.vessel
+      - read:PortCall.port
+      - read:PortCall.berth_hours
+      - execute:ReassignFleet
+
+users:
+  user_pilot:
+    fleet: atlantic
+    role: fleet_ops
