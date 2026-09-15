@@ -46,7 +46,7 @@
 
 import { Tag } from '@blueprintjs/core'
 
-import { formatFieldName } from '@elysium/shell-api/format'
+import { formatFieldName, pluralise } from '@elysium/shell-api/format'
 
 import type { ChartFilter } from './aggregateCharts'
 
@@ -67,7 +67,7 @@ export default function ActiveFilters({ filters, onRemove }: ActiveFiltersProps)
         const values = filter.values
         // Two values read as a list; more would grow the pill past
         // what a glance can take in, so beyond that it counts.
-        const described = values.length <= 2 ? values.join(', ') : `${values.length} values`
+        const described = values.length <= 2 ? values.join(', ') : pluralise(values.length, 'value', 'values')
 
         return (
           <Tag

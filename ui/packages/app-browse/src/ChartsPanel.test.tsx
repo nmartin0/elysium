@@ -348,3 +348,87 @@ describe('one chart failing does not destroy the rest', () => {
     expect(await screen.findByText(/the silo is unreachable/)).toBeInTheDocument()
   })
 })
+
+describe('a field has to have a distribution worth drawing', () => {
+  /**
+   * TWO WAYS TO SAY NOTHING, and they are mirrors of each other:
+   *
+   *   ONE GROUP -- every object shares a value. One bar is not a
+   *   distribution. Already guarded.
+   *
+   *   AS MANY GROUPS AS OBJECTS -- every value is distinct. That is an
+   *   IDENTIFIER, not a category, and a pie chart of `name` draws one
+   *   slice per customer conveying nothing that counting the rows
+   *   would not. This is the half that was missing, and the reason
+   *   Browse -> Customer -> Charts made no sense.
+   */
+  const TWO_FIELDS: VisibleSchema = {
+    Customer: {
+      fields: {
+        name: { type: 'data', visibility: 'prominent', display_name: 'Name' },
+        region: { type: 'data', visibility: 'prominent', display_name: 'Region' },
+      },
+    },
+  }
+
+  function renderCharts() {
+    return render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={TWO_FIELDS}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
+    )
+  }
+
+  it('drops a field whose every value is distinct', async () => {
+    // Three customers, three names, one each. An identifier.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
+      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 1 } })
+    renderCharts()
+
+    await waitFor(() => expect(screen.getByText('Region')).toBeInTheDocument())
+    expect(screen.queryByText('Name')).toBeNull()
+  })
+
+  it('keeps a field with fewer groups than objects', async () => {
+    // THE CONTROL. A guard that dropped everything would empty the tab
+    // and look exactly like an aggregation failure.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
+      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 1 } })
+    renderCharts()
+
+    expect(await screen.findByText('Region')).toBeInTheDocument()
+  })
+
+  it('still drops a field where every object shares one value', async () => {
+    // The original guard, retested because the two now share a
+    // function and a change to one could quietly undo the other.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
+      .mockResolvedValueOnce({ results: { 'us-west': 3 } })
+    renderCharts()
+
+    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Region')).toBeNull()
+    expect(screen.queryByText('Name')).toBeNull()
+  })
+
+  it('keeps a field that is nearly but not entirely distinct', async () => {
+    // NOT A RATIO OR A THRESHOLD. "Drop it if more than 80% of values
+    // are unique" would need a number nobody can justify and would
+    // hide a real distribution that happened to be sparse. Four groups
+    // over five objects is sparse and still real.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { a: 1, b: 1, c: 1, d: 2 } })
+      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 3 } })
+    renderCharts()
+
+    expect(await screen.findByText('Name')).toBeInTheDocument()
+  })
+})

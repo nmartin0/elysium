@@ -69,6 +69,31 @@ export function chartableFields(
   return chosen.map(([name, field]) => ({ field: name, label: field.display_name ?? name }))
 }
 
+/** Whether a field's distribution says anything.
+ *
+ * TWO WAYS TO SAY NOTHING, and they are mirrors:
+ *
+ *   ONE GROUP -- every object shares a value. One bar is not a
+ *   distribution.
+ *
+ *   AS MANY GROUPS AS OBJECTS -- every value is distinct. That is an
+ *   identifier, not a category, and a chart of it has one slice per
+ *   row.
+ *
+ * NOT A RATIO OR A THRESHOLD, deliberately. "Drop it if more than 80%
+ * of values are unique" would need a number nobody can justify, and
+ * would silently hide a real distribution that happened to be sparse.
+ * The two exact cases are the ones that are definitely useless.
+ */
+function isWorthCharting(chart: { results: AggregateResults }): boolean {
+  const groups = Object.keys(chart.results).length
+  const objects = Object.values(chart.results).reduce(
+    (total, count) => total + (typeof count === 'number' ? count : 0),
+    0,
+  )
+  return groups > 1 && groups < objects
+}
+
 export default function ChartsPanel({
   objectType,
   visibleSchema,
@@ -144,7 +169,17 @@ export default function ChartsPanel({
         // A field where every object shares one value tells you
         // nothing -- one bar is not a distribution. Dropped rather
         // than drawn, so the tab shows only charts worth looking at.
-        setCharts(loaded.filter((chart) => Object.keys(chart.results).length > 1))
+        //
+        // AND THE MIRROR OF THAT, which was missing: a field where
+        // every value is DISTINCT is an identifier, not a category. A
+        // pie chart of `name` draws one slice per customer, each
+        // exactly one object, and conveys nothing that counting the
+        // rows would not.
+        //
+        // Both failures are the same mistake from opposite ends -- a
+        // distribution needs fewer groups than objects and more than
+        // one -- so they are tested and refused together.
+        setCharts(loaded.filter(isWorthCharting))
       })
       .catch((err: unknown) => {
         if (cancelled) return

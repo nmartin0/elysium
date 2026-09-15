@@ -70,7 +70,11 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                 {unreachable.map((silo) => silo.name).join(', ')}
               </ErrorState>
             ) : (
-              <Callout intent="success">All {silos.length} silos are reachable.</Callout>
+              <Callout intent="success">
+                {/* "All 1 silos are reachable" -- the verb has to
+                      agree too, not just the noun. */}
+                {silos.length === 1 ? 'The one silo is reachable.' : `All ${silos.length} silos are reachable.`}
+              </Callout>
             )}
 
             <HTMLTable compact striped className="silos__table">

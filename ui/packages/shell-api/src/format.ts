@@ -14,6 +14,21 @@
 // guidance against needless ALL CAPS labels applies equally to
 // needless Title Case; sentence case is the plainer, less templated
 // choice.
+/** A count with its noun, agreeing in number.
+ *
+ * "All 1 silos are reachable" is the kind of thing that makes a
+ * careful product look careless, and it appears wherever a count is
+ * interpolated in front of a hardcoded plural.
+ *
+ * THE PLURAL IS PASSED IN, not derived. English plurals are irregular
+ * -- entity/entities, index/indices -- and a rule that appended "s"
+ * would be wrong often enough to be worse than the bug it replaced.
+ * Callers know their own nouns.
+ */
+export function pluralise(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
 export function formatFieldName(name: string): string {
   const spaced = name.replace(/_/g, ' ')
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)

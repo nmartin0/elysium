@@ -1,3 +1,4 @@
+import { pluralise } from '@elysium/shell-api/format'
 /**
  * SchemaGraph -- the ontology as a picture rather than three lists.
  *
@@ -301,7 +302,7 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
       ariaLabel={
         `Ontology graph: ${model.nodes.filter((n) => n.kind === 'object').length} object types, ` +
         `${model.nodes.filter((n) => n.kind === 'action').length} action types, ` +
-        `${model.links.length} relationships`
+        pluralise(model.links.length, 'relationship', 'relationships')
       }
       onSelect={(name, dataType, data) => {
         if (dataType === 'edge') {

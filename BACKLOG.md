@@ -68,7 +68,16 @@ what else counts.
 
 ### Wrong: small, visible, decided
 
-**Charts draw a slice per row for identifier-like fields.** Browse ->
+**~~Charts draw a slice per row for identifier-like fields.~~ FIXED**,
+as the mirror of the guard that already existed. A distribution needs
+FEWER groups than objects and MORE than one -- both failures are the
+same mistake from opposite ends, so they are now one function.
+
+Not a ratio or a threshold: "drop it if more than 80% of values are
+unique" would need a number nobody can justify and would hide a real
+distribution that happened to be sparse.
+
+**Original report:** Browse ->
 Customer -> Charts plots `name`, which is unique per customer and
 conveys nothing. There is ALREADY a guard for the opposite case -- a
 field where every object shares one value is dropped, because "one bar
@@ -78,8 +87,14 @@ distinct count equals its row count is an IDENTIFIER, not a category.
 Made worse by the fixture declaring no `prominent` fields, so the
 chooser falls back to every non-hidden field.
 
-**"All 1 silos are reachable."** Needs singular handling, and other
-count strings likely have the same problem.
+**~~"All 1 silos are reachable."~~ FIXED**, and the guess that other
+count strings had the same problem was right: three did. A shared
+`pluralise()` helper now takes the plural rather than deriving it,
+because English plurals are irregular and appending "s" would be wrong
+often enough to be worse than the bug.
+
+The silos string needed the VERB to agree too, not just the noun, so
+it reads "The one silo is reachable" rather than "All 1 silo is".
 
 ### Redundant: a modelling decision
 

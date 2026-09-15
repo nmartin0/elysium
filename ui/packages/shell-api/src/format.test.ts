@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from './format'
+import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle, pluralise } from './format'
 
 describe('formatFieldName', () => {
   it('capitalizes a single-word field name', () => {
@@ -265,5 +265,33 @@ describe('decimal places, where the ontology declared them', () => {
 
   it('still withholds null rather than rounding it', () => {
     expect(formatValue(null, 2)).toBe('—')
+  })
+})
+
+describe('counts agree with their nouns', () => {
+  /**
+   * "All 1 silos are reachable" is the kind of thing that makes a
+   * careful product look careless, and it appears wherever a count is
+   * interpolated in front of a hardcoded plural. Three places had it.
+   */
+  it('uses the singular for one', () => {
+    expect(pluralise(1, 'silo', 'silos')).toBe('1 silo')
+  })
+
+  it('uses the plural for more', () => {
+    expect(pluralise(3, 'silo', 'silos')).toBe('3 silos')
+  })
+
+  it('uses the plural for none', () => {
+    // "0 silos", not "0 silo" -- English treats zero as plural, which
+    // is the case a naive `count > 1` check gets wrong.
+    expect(pluralise(0, 'silo', 'silos')).toBe('0 silos')
+  })
+
+  it('takes the plural rather than deriving it', () => {
+    // English plurals are irregular, and a rule appending "s" would be
+    // wrong often enough to be worse than the bug it replaced.
+    expect(pluralise(2, 'entity', 'entities')).toBe('2 entities')
+    expect(pluralise(2, 'index', 'indices')).toBe('2 indices')
   })
 })
