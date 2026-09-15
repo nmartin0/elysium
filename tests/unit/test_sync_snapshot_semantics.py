@@ -138,6 +138,16 @@ def test_a_crash_during_the_write_leaves_the_previous_snapshot_readable(sync, so
     # half-written. Verified directly rather than assumed from the
     # format's reputation.
     _sync(sync)
+
+    # THE SOURCE HAS TO CHANGE, or the second sync writes nothing at
+    # all and overwrite() is never reached -- a sync that finds the
+    # table identical now skips the write entirely, because Iceberg's
+    # copy-on-write makes every snapshot a complete copy.
+    connection = sqlite3.connect(source)
+    connection.execute("UPDATE widgets SET label = 'changed' WHERE widget_id = 'w1'")
+    connection.commit()
+    connection.close()
+
     table = sync._catalog.load_table("primary.widgets")
     original_overwrite = type(table).overwrite
 

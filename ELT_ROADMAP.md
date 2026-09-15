@@ -433,7 +433,19 @@ would working expiry, and expiry is the smaller change. Building a
 changelog to solve a problem that unenforced retention causes would be
 treating the symptom.
 
-**SO THE NEXT STEP IS EXPIRY, NOT THE CHANGELOG.** Either pyiceberg
+**FIRST STEP TAKEN, AND IT WAS NOT EXPIRY.** A sync that finds nothing
+changed now writes nothing -- for both bronze and silver. Measured:
+thirty identical syncs of a 50,000-row table went from 27.2 MB across
+65 snapshots to 0.9 MB across 1.
+
+Not creating a snapshot is both cheaper and SAFER than reclaiming one:
+writing nothing is never wrong, where deleting can be. It is also
+idempotency, which the literature names as a core pipeline pattern --
+"produces the same result regardless of how many times it is executed
+with the same input".
+
+**EXPIRY IS STILL WANTED**, for tables that genuinely change
+nightly. Either pyiceberg
 gains it, or we reclaim snapshots ourselves under the two rules already
 recorded: never delete what is current, and age out the rest beyond a
 margin that exceeds the longest request by an order of magnitude.

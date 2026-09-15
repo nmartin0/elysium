@@ -330,7 +330,34 @@ class IcebergMirrorSync(MirrorSync):
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Delete operation did not match any records")
-            table.overwrite(arrow_table)
+            # NOTHING IS WRITTEN WHEN NOTHING CHANGED.
+            #
+            # Iceberg's copy-on-write makes every snapshot a COMPLETE
+            # copy, so a nightly sync of a table nobody edited was
+            # writing the whole table again to record that it was
+            # identical. Measured: 30 identical syncs of a 50,000-row
+            # table produced 27.2 MB across 65 snapshots, all holding
+            # the same data.
+            #
+            # pyiceberg 0.12 has no snapshot expiry -- checked, not
+            # assumed -- so nothing reclaims those afterwards. The
+            # cheapest fix is not to create them.
+            #
+            # IDEMPOTENCY IS THE PATTERN THIS SATISFIES: a pipeline
+            # "produces the same result regardless of how many times it
+            # is executed with the same input". Re-running a sync
+            # should be free, and now nearly is.
+            #
+            # COMPARED ON CONTENT, not on a source timestamp, because
+            # our sources have none -- verified: `customers` has no
+            # timestamp at all, and `transactions` has only a business
+            # date that does not move when a row is edited.
+            if self._already_current(table, arrow_table):
+                logger.info(
+                    f"{identifier}: source unchanged, no new snapshot written"
+                )
+            else:
+                table.overwrite(arrow_table)
 
         # INVARIANT: the committed snapshot holds exactly what was
         # handed to overwrite(). Checked against the CATALOG rather than
@@ -517,10 +544,16 @@ class IcebergMirrorSync(MirrorSync):
             except NoSuchTableError:
                 table = self._catalog.create_table(identifier, schema=arrow_table.schema)
 
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", message="Delete operation did not match any records")
-                table.overwrite(arrow_table)
+            # THE SAME SKIP AS SILVER, and bronze needs it more: it
+            # stores EVERY column rather than the declared ones, so its
+            # snapshots are the larger ones. Measured with silver
+            # skipping but bronze not: 30 identical syncs still grew to
+            # 13.1 MB, all of it bronze.
+            if not self._already_current(table, arrow_table):
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", message="Delete operation did not match any records")
+                    table.overwrite(arrow_table)
 
             with table.transaction() as tx:
                 tx.set_properties({
@@ -540,6 +573,37 @@ class IcebergMirrorSync(MirrorSync):
             return self._read_source_rows(adapter, table_name, id_column, declared)
 
         return raw_rows
+
+    def _already_current(self, table, arrow_table) -> bool:
+        """True when the committed snapshot already holds exactly this.
+
+        CHEAP CHECKS FIRST. A row count mismatch settles it without
+        reading a single value, and that is the common case when
+        anything has changed at all.
+
+        FALSE ON ANY DOUBT. An error here means "write it", never "skip
+        it" -- a spurious rewrite costs one snapshot, while a spurious
+        skip means the mirror silently stops tracking its source, which
+        is the worse failure by a wide margin.
+        """
+        try:
+            current = table.scan().to_arrow()
+        except Exception:  # noqa: BLE001 - see the docstring: doubt means write
+            return False
+
+        if current.num_rows != arrow_table.num_rows:
+            return False
+        if sorted(current.schema.names) != sorted(arrow_table.schema.names):
+            return False
+
+        # SORTED BY THE FIRST COLUMN before comparing, because Iceberg
+        # does not promise row order across snapshots and an ordering
+        # difference is not a data difference.
+        try:
+            key = arrow_table.schema.names[0]
+            return current.sort_by(key).equals(arrow_table.sort_by(key))
+        except Exception:  # noqa: BLE001 - see the docstring
+            return False
 
     def _read_bronze(self, silo_name: str, table_name: str,
                       columns: list[str]) -> "list[dict] | None":

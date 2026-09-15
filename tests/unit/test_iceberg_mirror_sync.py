@@ -103,13 +103,27 @@ def test_a_real_source_change_is_reflected_by_the_next_sync(sync, source_db):
     assert rows["name"] == ["Ada Lovelace", "Katherine"]
 
 
-def test_snapshot_history_is_preserved_across_syncs(sync):
+def test_snapshot_history_is_preserved_across_syncs(sync, source_db):
     # Real time travel back to an earlier sync is a genuine capability
     # this storage choice buys (see ROADMAP.md) -- proven here rather
     # than assumed from Iceberg's reputation.
+    #
+    # THE SOURCE HAS TO ACTUALLY CHANGE between the two syncs. A sync
+    # that finds the table identical now writes no snapshot at all --
+    # Iceberg's copy-on-write makes every one a complete copy, and 30
+    # identical syncs of a 50,000-row table were measured at 27.2 MB
+    # across 65 snapshots of the same data.
+    #
+    # So this test used to pass on a no-op. Changing a row keeps it
+    # testing time travel rather than the write path's eagerness.
     sync.sync_table("primary", "customers", "customer_id", COLUMNS)
     table = sync._catalog.load_table("primary.customers")
     first_snapshot = table.current_snapshot().snapshot_id
+
+    connection = sqlite3.connect(source_db)
+    connection.execute("UPDATE customers SET name = 'Renamed' WHERE customer_id = 'c1'")
+    connection.commit()
+    connection.close()
 
     sync.sync_table("primary", "customers", "customer_id", COLUMNS)
 
