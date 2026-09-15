@@ -17,6 +17,7 @@ import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/use
 
 import ActiveFilters from './ActiveFilters'
 import SavedViews from './SavedViews'
+import SelectionBar from './SelectionBar'
 import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
@@ -131,6 +132,22 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     writePreference('browseColumns', username, next)
   }
   const [totalMatches, setTotalMatches] = useState(0)
+
+  // WHICH OBJECTS AN ACTION WOULD APPLY TO, by id rather than by row,
+  // so a selection survives paging and re-sorting. Foundry's rule:
+  // "when results span multiple pages, selecting the header checkbox
+  // selects all objects matching the applied filters, not just the
+  // objects on the current page".
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
   /**
    * The cross-filter: one set of conditions driving the table AND
    * every chart.
@@ -482,6 +499,16 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           ships a dedicated Active Filters widget for exactly it. */}
       <ActiveFilters filters={crossFilter} onRemove={removeCrossFilter} />
 
+      {/* WHAT AN ACTION WOULD APPLY TO. Above the results, like the
+          filter pills, because it describes what is about to be read
+          -- and because "no selection" means ALL matches rather than
+          none, which is not guessable. */}
+      <SelectionBar
+        selectedCount={selectedIds.size}
+        matchCount={totalMatches}
+        onClear={() => setSelectedIds(new Set())}
+      />
+
       {loading && <p className="object-search__status">Searching…</p>}
 
       {/*
@@ -577,6 +604,18 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               // makes the WHOLE card clickable/keyboard-focusable, not
               // just interactive's own hover styling on its own.
               <Card key={result.id} interactive className="object-search__result">
+                {/* OUTSIDE THE LINK, and above it. The stretched link
+                    covers the whole card so clicking anywhere
+                    navigates; a checkbox painted underneath would be
+                    visible, unclickable, and would navigate instead of
+                    selecting. .object-search__select gives it its own
+                    stacking context. */}
+                <Checkbox
+                  className="object-search__select"
+                  checked={selectedIds.has(result.id)}
+                  onChange={() => toggleSelected(result.id)}
+                  aria-label={`Select ${String(titleValue)}`}
+                />
                 <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
                   <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
                 </Link>

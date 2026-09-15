@@ -900,6 +900,35 @@ button.danger {
   inset: 0;
 }
 
+/* THE CHECKBOX HAS TO SIT ABOVE THE STRETCHED LINK.
+ *
+ * .object-search__link::after covers the whole card so that clicking
+ * anywhere navigates -- which is what makes a result feel like a
+ * result. A checkbox painted underneath it would be visible and
+ * unclickable, and clicking it would navigate instead of selecting:
+ * the worst of both, and silent.
+ *
+ * A stacking context of its own, rather than a z-index race, so a
+ * later change to the overlay cannot quietly bury it again. */
+.object-search__select {
+  position: relative;
+  z-index: 1;
+  /* Enough room that the cursor does not have to be precise; a
+   * mis-click here navigates away and loses the selection. */
+  padding-inline-end: var(--space-normal);
+}
+
+/* The bar that says what is selected and offers to act on it. Above
+ * the results rather than beside them, like the filter pills: it
+ * describes what an action would apply to, so it has to be read
+ * first. */
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-normal);
+  margin-block-end: var(--space-normal);
+}
+
 .object-search__result-field:last-child {
   border-bottom: none;
 }

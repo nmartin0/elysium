@@ -1069,3 +1069,74 @@ describe('active filters say what is narrowing the view', () => {
     expect(screen.getByText(/refund/)).toBeInTheDocument()
   })
 })
+
+describe('selecting objects to act on', () => {
+  /**
+   * THE WIRE, which SelectionBar's own tests cannot see. Four times
+   * this session a component has been right and the connection to it
+   * missing, so these drive the real panel.
+   */
+  it('offers a checkbox per result', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByLabelText('Select Ada Okafor')).toBeInTheDocument()
+    expect(screen.getByLabelText('Select Ben Stone')).toBeInTheDocument()
+  })
+
+  it('ticking a box changes what an action would apply to', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    // Before: no selection, so an action applies to every match.
+    expect(await screen.findByText(/actions apply to all/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Select Ada Okafor'))
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+  })
+
+  it('the checkbox selects rather than navigating', async () => {
+    /** THE DEFECT THE STACKING CONTEXT PREVENTS.
+     *
+     * .object-search__link::after covers the whole card so clicking
+     * anywhere navigates. A checkbox painted underneath it would be
+     * visible, unclickable, and would navigate instead of selecting --
+     * the worst of both, and silent.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+
+    // Still on the list, with the selection recorded.
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(screen.getByLabelText('Select Ada Okafor')).toBeChecked()
+
+    // HONEST LIMIT: this proves the HANDLER is wired, not that the
+    // checkbox is reachable with a mouse. jsdom computes no layout, so
+    // removing the z-index from .object-search__select breaks nothing
+    // here -- a control confirmed it. The stacking context is the
+    // protection, and only a real browser can verify it.
+  })
+
+  it('clearing returns to acting on every match', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Clear selection'))
+
+    expect(await screen.findByText(/actions apply to all/i)).toBeInTheDocument()
+  })
+})

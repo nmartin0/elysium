@@ -85,7 +85,13 @@ declared and reviewable before anyone runs it, rather than a mode an
 application switches into.
 
 STILL OPEN, all of it UI:
-- Checkboxes on the results table, and an Actions menu fed by them.
+- ~~Checkboxes on the results table~~ DONE, with a selection bar that
+  states what an action would apply to. The checkbox needs its own
+  stacking context: the stretched link covers the whole card, so one
+  painted underneath would be visible, unclickable, and would navigate
+  instead of selecting. UNTESTABLE IN JSDOM -- no layout is computed,
+  so a control removing the z-index broke nothing. Wants a real browser.
+- The Actions menu itself, fed by the selection.
 - "No selection means the whole filtered set", which is Foundry's
   rule: the current set "or all objects, if none are selected".
 - Select-all across pages means the FILTER, not the page.
@@ -218,6 +224,33 @@ away when the real path was profiled rather than a benchmark.
 What remains stands on lineage, history and re-derivation: bronze,
 silver from bronze, durable storage, a changelog, and a current view.
 Six phases, with the reversibility line named at phase 3.
+
+**Sync memory: batching, when a deployment has a big enough table.**
+Measured at roughly 1.2 KB peak per row -- 250,000 rows costs 299 MB, a
+million would cost about 1.2 GB. On a two-vCPU host a million-row table
+is borderline and ten million would fail.
+
+The sync holds a full table at FOUR points (source read, bronze Arrow
+table, bronze read-back, changelog diff), so it is O(table) in memory
+by design. Time is not the constraint anywhere.
+
+The trigger is a real table this size; every table we have is four to
+seven rows. The first thing to do when someone hits it is RAISE rather
+than OOM -- a sync that refuses a table it cannot hold is diagnosable,
+one the kernel kills is not. Full reasoning in ELT_ROADMAP.md.
+
+**One unexplained frontend test failure, seen once.** A full run
+reported `1 failed | 701 passed` and did not say which. Six subsequent
+runs -- four of app-browse alone, three of the whole suite -- were
+clean, so it could not be identified.
+
+Recorded rather than dismissed, because a flaky suite is how the next
+real failure gets called noise. If it recurs, the thing to capture is
+WHICH test: `npx vitest run --reporter=verbose` names them as they go,
+where the default reporter only summarises.
+
+Most likely candidates are the async panel tests, which wait on
+mocked promises and have grown a lot this session.
 
 ## 6. Architectural questions, not tasks
 
