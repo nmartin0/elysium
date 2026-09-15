@@ -585,6 +585,45 @@ fitting, `ATTACH` is the answer and it needs REST.
 Independent of phase 3: catalog type and storage backend are separate
 axes.
 
+## The limit that actually binds: memory, not time
+
+Asked whether choosing Python over DuckDB for the diff would bite
+elsewhere. Measured, and it does -- but not where the question
+expected, and not for that reason.
+
+**A SYNC PEAKS AT ROUGHLY 1.2 KB PER ROW**, linear:
+
+     50,000 rows ->   60 MB
+    250,000 rows ->  299 MB
+  1,000,000 rows -> ~1.2 GB, extrapolated
+
+On a two-vCPU host a million-row table is borderline and ten million
+would fail.
+
+**DUCKDB IS NOT THE FIX.** The diff holds two dicts, but the sync holds
+a full table at FOUR points: the source read, the bronze Arrow table,
+the bronze read-back that silver derives from, and the diff. Swapping
+the diff for a query engine removes one of four.
+
+The real property is that the sync is O(table) IN MEMORY BY DESIGN --
+it reads everything, transforms everything, writes everything. That
+predates the changelog; the changelog made it modestly worse.
+
+**WHAT WOULD FIX IT** is batching: read, transform and write in chunks
+rather than whole tables. That is a real change to sync_table's shape
+and it interacts with the atomic-snapshot guarantee -- a partial write
+must still leave the previous snapshot intact, which is the property
+test_sync_snapshot_semantics.py exists to protect.
+
+**NOT BUILT, and the trigger is a deployment with a table this size.**
+Every table we have is four to seven rows; the largest measured here
+was synthetic. Building chunking now would be anticipating in a room
+without evidence, which is the mistake this file already records twice.
+
+What IS worth doing first, when someone hits this: raise it as an
+error rather than an OOM. A sync that refuses a table it cannot hold
+is diagnosable; one the kernel kills is not.
+
 ## The reversibility line is phase 3
 
 Everything up to and including phase 2 leaves the mirror fully
