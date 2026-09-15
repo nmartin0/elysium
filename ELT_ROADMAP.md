@@ -311,7 +311,7 @@ handles for the same class of reason.
 See "What was struck, and why". Grouping does not appear in the profile
 of the real path. Revive only with a profile that shows it.
 
-### Phase 1 — bronze. DONE, except retention.
+### Phase 1 — bronze, with retention. DONE.
 
 **Depends on nothing. The strongest remaining case.**
 
@@ -324,7 +324,22 @@ looks wrong has nothing to compare against except a source that may
 since have changed, and adding an ontology field means re-reading the
 silo rather than re-transforming what we hold.
 
-**RETENTION IS STILL OUTSTANDING and should be next.** "Bronze bloat"
+**RETENTION IS DECLARED, NOT ENFORCED, and that distinction matters.**
+pyiceberg 0.12 has no snapshot expiry at all -- no expire_snapshots, no
+ExpireSnapshots, and ManageSnapshots offers only branches, tags and
+rollback. So nothing reclaims space today.
+
+What IS declared are the standard Iceberg property names --
+history.expire.min-snapshots-to-keep=2 and
+history.expire.max-snapshot-age-ms=7 days -- so the intent travels with
+the table rather than living in a runbook, and any engine that does
+implement expiry reads them.
+
+The existing snapshot-retention guard fired when this landed, which is
+what it was written for: "this fails the moment expiry appears, which
+is exactly when the decision needs making".
+
+STILL OUTSTANDING, therefore: actual reclamation. "Bronze bloat"
 is the most commonly cited failure of this pattern, and Iceberg's
 copy-on-write makes each retained snapshot a full copy -- measured,
 177KB to 839KB over five syncs of a table where one row changed. Bronze

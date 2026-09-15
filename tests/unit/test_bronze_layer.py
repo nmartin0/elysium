@@ -150,3 +150,70 @@ def test_a_bronze_failure_does_not_fail_the_sync(tmp_path, monkeypatch, caplog):
     # ...and the lost lineage is stated rather than silent.
     assert any("bronze" in record.message for record in caplog.records)
 
+
+
+class TestRetention:
+    """Bronze declares how long it keeps history, even though nothing
+    can yet act on it.
+
+    pyiceberg 0.12 HAS NO SNAPSHOT EXPIRY AT ALL -- checked, not
+    assumed: no expire_snapshots, no ExpireSnapshots, and
+    ManageSnapshots offers only branches, tags and rollback. So these
+    properties reclaim nothing today.
+
+    They are still worth declaring. They are the NAMES Iceberg defines
+    for the policy, so the intent travels with the table rather than
+    living in a runbook, and the day pyiceberg gains expiry -- or a
+    Spark or DuckDB job runs over the same warehouse -- the policy is
+    already there and already correct.
+
+    "Bronze bloat" is the most commonly cited failure of this pattern,
+    and bronze roughly doubles the growth rate because it stores every
+    column rather than the declared ones.
+    """
+
+    def test_bronze_keeps_two_snapshots(self, synced):
+        # TWO, because that is what a diff needs: current and previous.
+        # A third buys nothing while costing a full copy -- Iceberg's
+        # copy-on-write makes every retained snapshot a complete
+        # rewrite.
+        properties = synced._catalog.load_table("bronze_s.t").properties
+
+        assert properties["history.expire.min-snapshots-to-keep"] == "2"
+
+    def test_the_age_bound_exceeds_any_request_by_an_order_of_magnitude(self, synced):
+        """THE RULE test_snapshot_retention_guard.py DEMANDS.
+
+        A pinned generation's snapshot must not be reclaimed while a
+        query is still reading it. A query is bounded by max_hops and
+        the request timeout -- minutes at worst -- so a bound measured
+        in days makes the hazard unreachable rather than unlikely.
+        """
+        from core.mirror.iceberg_sync import RETENTION_MARGIN_MS
+
+        properties = synced._catalog.load_table("bronze_s.t").properties
+        declared = int(properties["history.expire.max-snapshot-age-ms"])
+
+        assert declared == RETENTION_MARGIN_MS
+        assert declared >= 24 * 60 * 60 * 1000, "a bound under a day is not a margin"
+
+    def test_the_minimum_wins_over_the_age_bound(self, synced):
+        """Both rules, and their interaction.
+
+        "Retention policies will never delete transactions that are in
+        the latest view of any branch", with age selecting among the
+        rest. min-snapshots-to-keep must therefore be >= 1, or a quiet
+        week could leave a table with nothing to diff against.
+        """
+        properties = synced._catalog.load_table("bronze_s.t").properties
+
+        assert int(properties["history.expire.min-snapshots-to-keep"]) >= 1
+
+    def test_silver_does_not_inherit_the_bronze_policy(self, synced):
+        # THE CONTROL. Silver's retention is a separate decision -- it
+        # backs live reads through pinned generations, where bronze
+        # backs a diff -- and applying one table's policy to the other
+        # by accident is how a pinned snapshot gets reclaimed.
+        properties = synced._catalog.load_table("s.t").properties
+
+        assert "history.expire.min-snapshots-to-keep" not in properties

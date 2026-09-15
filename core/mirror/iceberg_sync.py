@@ -67,6 +67,52 @@ from core.ontology.interface import ExternalReadAdapter
 logger = logging.getLogger(__name__)
 
 
+# BRONZE RETENTION, declared as standard Iceberg table properties.
+#
+# WHY A DECLARATION RATHER THAN CODE. pyiceberg 0.12 has no snapshot
+# expiry at all -- checked, not assumed: no expire_snapshots, no
+# ExpireSnapshots, and ManageSnapshots offers only branches, tags and
+# rollback. So nothing here can reclaim space today.
+#
+# These are the NAMES Iceberg defines for the policy, which any engine
+# that does implement expiry reads. Declaring them means the intent
+# travels with the table rather than living in a runbook, and the day
+# pyiceberg gains expiry -- or a Spark or DuckDB job runs over the same
+# warehouse -- the policy is already there and correct.
+#
+# TWO SNAPSHOTS, because that is what a diff needs: current and
+# previous. The changelog phase compares them, and a third buys
+# nothing while costing a full copy of the table -- Iceberg's
+# copy-on-write means every retained snapshot is a complete rewrite,
+# measured at 177KB to 839KB over five syncs of a table where one row
+# changed.
+#
+# THE AGE BOUND IS A RETENTION_MARGIN, in the sense
+# tests/unit/test_snapshot_retention_guard.py requires: "an age
+# threshold exceeding the longest possible request by an order of
+# magnitude". A query is bounded by max_hops and the request timeout --
+# minutes at worst on this hardware -- so seven days makes the hazard
+# that guard describes unreachable rather than merely unlikely.
+#
+# That guard fired when this landed, which is exactly what it was
+# written for: "this fails the moment expiry appears, which is exactly
+# when the decision needs making". The decision is recorded here and in
+# HOT_RELOAD_PLAN.md step 5h.
+#
+# SEVEN DAYS as the age bound, and the two rules interact the way the
+# precedent says they should: "retention policies will never delete
+# transactions that are in the latest view of any branch", with age
+# selecting "transactions older than the given duration" among the
+# rest. min-snapshots-to-keep wins over max-age, so a quiet week
+# cannot leave a table with nothing to diff against.
+RETENTION_MARGIN_MS = 7 * 24 * 60 * 60 * 1000
+
+BRONZE_RETENTION = {
+    "history.expire.min-snapshots-to-keep": "2",
+    "history.expire.max-snapshot-age-ms": str(RETENTION_MARGIN_MS),
+}
+
+
 class IcebergMirrorSync(MirrorSync):
     def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter],
                  write_log=None):
@@ -407,6 +453,7 @@ class IcebergMirrorSync(MirrorSync):
                     "elysium.source_silo": silo_name,
                     "elysium.source_table": table_name,
                     "elysium.layer": "bronze",
+                    **BRONZE_RETENTION,
                 })
         except (OSError, ValueError, KeyError, pa.ArrowInvalid) as e:
             logger.warning(
