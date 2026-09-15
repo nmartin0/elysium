@@ -1910,8 +1910,27 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     page_ids = matching_ids[start:start + size]
     next_start = start + size
 
+    # STRINGIFIED AT THE BOUNDARY, because every other endpoint already
+    # says an id is a string and this one did not.
+    #
+    # ObjectDetailResponse declares `id: str` and FastAPI coerces it;
+    # SearchResponse declares `results: list[dict[str, Any]]`, so the
+    # raw value passed straight through. The SAME OBJECT therefore had
+    # a string id on one endpoint and an integer on another.
+    #
+    # WHAT IT BROKE. "Select all N matching" returns ids from
+    # /matching-ids, which stringifies. The selection set then held "1"
+    # while each checkbox asked has(1) -- so the bar said 64 selected
+    # and not one row looked it, with nothing to untick.
+    #
+    # WHY NOBODY NOTICED: Customer ids are already strings, so every
+    # manual check on Customer agreed. Only integer-keyed types --
+    # Transaction here -- diverged.
     results = [
-        {"id": object_id, "fields": mediator.get_object(current_user, object_type, object_id, summary_fields)}
+        {
+            "id": str(object_id),
+            "fields": mediator.get_object(current_user, object_type, object_id, summary_fields),
+        }
         for object_id in page_ids
     ]
     return {

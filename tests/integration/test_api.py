@@ -3548,3 +3548,54 @@ def test_old_metrics_are_dropped_at_startup(tmp_path, monkeypatch):
     ))
 
     assert stale.summary(window_seconds=500 * 24 * 60 * 60)["requests"] == 0
+
+
+# --- object ids are strings everywhere -------------------------------
+#
+# THE SAME OBJECT HAD A STRING ID ON ONE ENDPOINT AND AN INTEGER ON
+# ANOTHER. ObjectDetailResponse declares `id: str` and FastAPI coerces
+# it; SearchResponse declares `results: list[dict[str, Any]]`, so the
+# raw value passed straight through.
+#
+# It broke "select all N matching": the selection set held "1" from
+# /matching-ids while each checkbox asked has(1), so the bar said 64
+# selected and not one row looked it.
+#
+# NOBODY NOTICED BECAUSE CUSTOMER IDS ARE ALREADY STRINGS. Every manual
+# check on Customer agreed. These tests use Transaction, whose ids are
+# integers, because a test on the agreeing type proves nothing.
+
+
+def test_search_returns_string_ids_for_an_integer_keyed_type(client):
+    _selecting_user(client)
+
+    results = client.get("/api/objects/Transaction/search").json()["results"]
+
+    assert results, "the fixture must return something for this to mean anything"
+    assert all(isinstance(row["id"], str) for row in results)
+
+
+def test_search_and_matching_ids_agree_on_representation(client):
+    """THE TEST THAT WOULD HAVE CAUGHT IT.
+
+    My earlier tests used string ids on BOTH sides, so they compared a
+    convention with itself. What matters is that two endpoints
+    describing the same objects can have their answers compared -- a
+    set built from one must contain the ids from the other.
+    """
+    _selecting_user(client)
+
+    page_ids = {row["id"] for row in client.get("/api/objects/Transaction/search").json()["results"]}
+    selectable = set(client.get("/api/objects/Transaction/matching-ids").json()["object_ids"])
+
+    assert page_ids, "the fixture must return something"
+    assert page_ids <= selectable
+
+
+def test_search_and_detail_agree_on_representation(client):
+    _selecting_user(client)
+
+    first = client.get("/api/objects/Transaction/search").json()["results"][0]
+    detail = client.get(f"/api/objects/Transaction/{first['id']}").json()
+
+    assert detail["id"] == first["id"]

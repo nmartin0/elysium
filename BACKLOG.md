@@ -27,7 +27,18 @@ pretend otherwise.
 
 ### Broken: fix first
 
-**Select-all leaves every checkbox unticked.** CONFIRMED, and mine.
+**~~Select-all leaves every checkbox unticked.~~ FIXED.** The root
+cause was wider than select-all: the same object had a STRING id on
+one endpoint and an INTEGER on another, because ObjectDetailResponse
+declares `id: str` and FastAPI coerces it while SearchResponse
+declares `results: list[dict[str, Any]]` and passes the raw value
+through. Search now stringifies at the boundary, where the rest of the
+API already said it did.
+
+Nobody noticed because Customer ids are already strings, so every
+manual check on the type people reach for first agreed.
+
+**Original report, for the record:** CONFIRMED, and mine.
 `/objects/{type}/search` returns `"id": 1` -- an integer for
 Transaction -- while `/objects/{type}/matching-ids` returns
 `str(object_id)`. So after "Select all 64 matching" the selection set
@@ -403,7 +414,22 @@ seven rows. The first thing to do when someone hits it is RAISE rather
 than OOM -- a sync that refuses a table it cannot hold is diagnosable,
 one the kernel kills is not. Full reasoning in ELT_ROADMAP.md.
 
-**Two unexplained test failures, each seen once and never again.**
+**THREE unexplained test failures now -- two frontend, one backend --
+each seen once, none reproducible, none naming the test.**
+
+Three occurrences is past the point where "noise" is a fair
+description. The common signature: a single failure in a full-suite
+run, clean on every retry, and a summary line that does not say which
+test.
+
+WHAT TO DO ABOUT IT, since chasing it after the fact has failed three
+times: make the suite name failures as they happen, not only in a
+summary that the retry erases. `--reporter=verbose` for vitest and
+`-p no:randomly -x` for pytest both do that. Worth wiring into the
+default invocation rather than remembering to add.
+
+The alternative -- continuing to shrug -- has a cost: the next REAL
+intermittent failure will be read as this one.
 
 A backend run reported `1 failed | 1708 passed` without naming the
 test; three subsequent runs, including one with randomisation
