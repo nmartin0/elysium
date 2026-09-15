@@ -168,7 +168,14 @@ class IcebergMirrorSync(MirrorSync):
             if column_types is not None:
                 column_types = {k: v for k, v in column_types.items() if k not in missing}
 
-        raw_rows = self._read_source_rows(adapter, table_name, id_column, columns)
+        # THE SOURCE IS READ ONCE, inside _write_bronze, which needs
+        # every column anyway. A first version read here as well and
+        # made every sync read the silo TWICE -- measured, and worse
+        # than before bronze existed.
+        #
+        # The rows come back so they can serve as silver's fallback
+        # when bronze is unavailable, without a second trip.
+        raw_rows = self._write_bronze(adapter, silo_name, table_name, id_column, columns)
 
         # BRONZE: what the source said, before anything was done to it.
         #
@@ -193,7 +200,6 @@ class IcebergMirrorSync(MirrorSync):
         #
         # NOTHING READS BRONZE. "Bronze should act as a historical
         # record, not a source of truth."
-        self._write_bronze(silo_name, table_name, raw_rows, columns)
 
         # THE raw -> clean stage (Phase 3). Casting lives here, between
         # reading and writing, rather than inside _to_arrow() where it
@@ -209,7 +215,30 @@ class IcebergMirrorSync(MirrorSync):
         # offending value, so scripts/run_sync.py's own per-table
         # handling turns it into a genuinely diagnosable failure rather
         # than a stack trace.
-        transformed = transform_rows(raw_rows, columns, column_types)
+        # SILVER IS DERIVED FROM BRONZE, not from the rows in memory.
+        #
+        # THE POINT OF THE INDIRECTION. Reading from bronze means
+        # re-deriving silver never touches the silo again: changing how
+        # a column is cast, or adding a field the ontology did not
+        # declare last week, becomes a rebuild of data we already hold
+        # rather than another full read of the customer's database.
+        #
+        # It also makes the bronze copy LOAD-BEARING rather than an
+        # archive nobody reads. A bronze that only ever gets written is
+        # a bronze whose failures nobody notices; this way a broken
+        # bronze breaks the sync loudly, at the moment it breaks.
+        #
+        # FALLS BACK TO THE ROWS IN MEMORY if bronze is unavailable --
+        # which it will be for the first sync after this ships, since
+        # no bronze table exists yet, and whenever a bronze write failed
+        # for the reasons _write_bronze() tolerates. Silver stays
+        # correct either way; only the re-derivability is lost, and the
+        # warning says so.
+        source_rows = self._read_bronze(silo_name, table_name, columns)
+        if source_rows is None:
+            source_rows = raw_rows
+
+        transformed = transform_rows(source_rows, columns, column_types)
         if transformed.has_drift:
             # THROUGH THE POLICY, not straight to a raise. The outcome
             # is the same -- refuse -- but it now comes from a module
@@ -392,8 +421,8 @@ class IcebergMirrorSync(MirrorSync):
         type_config = {"storage": {"table": table_name, "id_column": id_column}}
         return adapter.read_all_rows(table_name, columns, type_config)
 
-    def _write_bronze(self, silo_name: str, table_name: str,
-                       raw_rows: list[dict], columns: list[str]) -> None:
+    def _write_bronze(self, adapter, silo_name: str, table_name: str,
+                       id_column: str, declared: list[str]) -> list[dict]:
         """Stores the source rows unaltered, with provenance in metadata.
 
         EVERY VALUE AS A STRING, deliberately. Bronze must not decide
@@ -427,6 +456,21 @@ class IcebergMirrorSync(MirrorSync):
         """
         identifier = f"bronze_{silo_name}.{table_name}"
         try:
+            # EVERY COLUMN THE SOURCE HAS, not the declared ones.
+            #
+            # A first version stored only what the ontology declared,
+            # which quietly defeated the point: adding a field still
+            # required re-reading the silo, because bronze had never
+            # seen the column either. Measured before fixing it -- the
+            # source read count did not drop at all.
+            #
+            # columns_present() already reports them, having been built
+            # for drift detection. An adapter that cannot answer falls
+            # back to the declared set, which is no worse than before.
+            present = adapter.columns_present(table_name)
+            columns = sorted(present) if present else list(declared)
+            raw_rows = self._read_source_rows(adapter, table_name, id_column, columns)
+
             arrow_table = pa.table({
                 column: pa.array(
                     [None if row.get(column) is None else str(row.get(column))
@@ -461,6 +505,44 @@ class IcebergMirrorSync(MirrorSync):
                 f"continues and the mirror is correct, but this read leaves no "
                 f"raw record to trace values back to."
             )
+            # The declared columns only -- enough for silver, which is
+            # what the caller needs to carry on.
+            return self._read_source_rows(adapter, table_name, id_column, declared)
+
+        return raw_rows
+
+    def _read_bronze(self, silo_name: str, table_name: str,
+                      columns: list[str]) -> "list[dict] | None":
+        """The raw rows as bronze recorded them, or None if it has none.
+
+        None rather than an exception, because a missing bronze table is
+        an ORDINARY state: the first sync after this shipped, a table
+        added since, or a bronze write that failed for the reasons
+        _write_bronze() tolerates. The caller falls back to the rows it
+        already read.
+
+        COLUMNS THE ONTOLOGY WANTS BUT BRONZE LACKS mean bronze predates
+        the declaration -- exactly the case this layer is meant to
+        remove, and it cannot remove it retroactively. Falling back is
+        the honest answer; pretending would produce silver rows with
+        missing fields and no explanation.
+        """
+        try:
+            table = self._catalog.load_table(f"bronze_{silo_name}.{table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return None
+
+        stored = set(table.schema().column_names)
+        missing = [column for column in columns if column not in stored]
+        if missing:
+            logger.warning(
+                f"bronze copy of {silo_name}.{table_name} predates {sorted(missing)}; "
+                f"reading the source directly for this sync. The next sync will have "
+                f"them, since bronze stores every column the source has."
+            )
+            return None
+
+        return table.scan(selected_fields=tuple(columns)).to_arrow().to_pylist()
 
     def _to_arrow(self, rows: list[dict], columns: list[str],
                    column_types: dict[str, str] | None = None) -> pa.Table:

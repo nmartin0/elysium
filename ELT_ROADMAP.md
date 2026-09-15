@@ -355,16 +355,25 @@ data.
 **Nothing reads bronze.** "Bronze should act as a historical record,
 not a source of truth."
 
-### Phase 2 — silver derived from bronze
+### Phase 2 — silver derived from bronze. DONE.
 
 **Depends on 1.** `transform_rows` moves out of `sync_table` and
 becomes a pass from bronze to silver, so re-deriving silver stops
 touching the silo.
 
-The payoff is measurable and should be measured: **adding an ontology
-field becomes a rebuild rather than a re-sync.** If that turns out
-cheap either way, this phase has not earned itself and the honest thing
-is to say so.
+**MEASURED, AND THE FIRST ANSWER WAS NO.** Bronze was storing only the
+DECLARED columns, so adding a field still required re-reading the silo
+-- the source-read count did not drop at all. Fixed: bronze now stores
+every column `columns_present()` reports.
+
+**THE HONEST RESULT.** A normal sync still reads the source exactly
+once, because sync_table refreshes bronze every run. What changed is
+that the data needed to REBUILD silver is held locally -- proved by
+renaming the source away and re-deriving a column the ontology never
+declared.
+
+Making a rebuild SKIP the refresh is a separate change with its own
+question: when is bronze stale enough to re-read. Not answered here.
 
 The MAC column that used to live here is struck -- see above. What
 remains is the transform stage itself, which every later phase needs.

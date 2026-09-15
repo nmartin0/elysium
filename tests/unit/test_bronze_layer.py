@@ -217,3 +217,121 @@ class TestRetention:
         properties = synced._catalog.load_table("s.t").properties
 
         assert "history.expire.min-snapshots-to-keep" not in properties
+
+
+class TestSilverDerivedFromBronze:
+    """Silver is built from bronze, not from the rows in memory.
+
+    THE POINT OF THE INDIRECTION. Re-deriving silver never has to touch
+    the silo again: changing how a column is cast, or adding a field
+    the ontology did not declare last week, becomes a rebuild of data
+    already held rather than another full read of the customer's
+    database.
+
+    It also makes bronze LOAD-BEARING rather than an archive nobody
+    reads. A bronze that is only ever written is one whose failures
+    nobody notices.
+
+    A CONTROL THAT CANNOT FIRE, said plainly. Making silver ignore
+    bronze and use the rows in memory breaks nothing: in a normal sync
+    the two hold the same data, so silver is identical either way. The
+    value is architectural rather than behavioural, and the test that
+    proves it is the one that renames the source away.
+
+    HONEST LIMIT, stated because the measurement said so. sync_table
+    still refreshes bronze from the source on every run, so a normal
+    sync reads the silo exactly once -- as it always did. What has
+    changed is that the data needed to REBUILD silver is now held
+    locally, proved by the test below that renames the source away.
+    Making a rebuild skip the refresh is a separate change with its own
+    decision: when is bronze stale enough to re-read.
+    """
+
+    def test_bronze_holds_columns_the_ontology_never_declared(self, tmp_path):
+        """THE MEASUREMENT THAT CAUGHT A FLAW IN MY OWN DESIGN.
+
+        A first version stored only the DECLARED columns, which quietly
+        defeated the purpose: adding a field still meant re-reading the
+        silo, because bronze had never seen the column either. The
+        source-read count did not drop at all.
+        """
+        source = tmp_path / "source.db"
+        connection = sqlite3.connect(source)
+        connection.execute("CREATE TABLE t (id TEXT PRIMARY KEY, a TEXT, undeclared TEXT)")
+        connection.execute("INSERT INTO t VALUES ('1', 'x', 'kept anyway')")
+        connection.commit()
+        connection.close()
+
+        sync = IcebergMirrorSync(tmp_path / "mirror", {"s": SQLiteReadAdapter({"path": source})})
+        sync.sync_table("s", "t", "id", ["id", "a"], {"id": "string", "a": "string"})
+
+        bronze = sync._catalog.load_table("bronze_s.t").scan().to_arrow().to_pydict()
+        assert bronze["undeclared"] == ["kept anyway"]
+
+    def test_silver_can_be_rebuilt_with_the_source_gone(self, tmp_path):
+        """THE CLAIM THIS PHASE EXISTS TO MAKE, tested directly.
+
+        The source file is renamed away, and bronze still supplies a
+        column the ontology never declared when the sync ran.
+        """
+        source = tmp_path / "source.db"
+        connection = sqlite3.connect(source)
+        connection.execute("CREATE TABLE t (id TEXT PRIMARY KEY, a TEXT, b TEXT)")
+        connection.execute("INSERT INTO t VALUES ('1', 'x', 'y')")
+        connection.commit()
+        connection.close()
+
+        sync = IcebergMirrorSync(tmp_path / "mirror", {"s": SQLiteReadAdapter({"path": source})})
+        sync.sync_table("s", "t", "id", ["id", "a"], {"id": "string", "a": "string"})
+
+        source.rename(tmp_path / "gone.db")
+
+        rows = sync._read_bronze("s", "t", ["id", "a", "b"])
+        assert rows is not None
+        assert rows[0]["b"] == "y"
+
+    def test_the_source_is_read_once_per_sync(self, tmp_path):
+        """A CONTROL ON MY OWN REGRESSION.
+
+        Making bronze read every column briefly made every sync read
+        the silo TWICE -- once for bronze, once for silver -- which is
+        worse than before bronze existed. The writer returns its rows
+        so the caller needs no second trip.
+        """
+        source = tmp_path / "source.db"
+        connection = sqlite3.connect(source)
+        connection.execute("CREATE TABLE t (id TEXT PRIMARY KEY, a TEXT)")
+        connection.execute("INSERT INTO t VALUES ('1', 'x')")
+        connection.commit()
+        connection.close()
+
+        adapter = SQLiteReadAdapter({"path": source})
+        reads = []
+        original = type(adapter).read_all_rows
+        type(adapter).read_all_rows = lambda self, *a, **k: (
+            reads.append(1) or original(self, *a, **k)
+        )
+        try:
+            sync = IcebergMirrorSync(tmp_path / "mirror", {"s": adapter})
+            sync.sync_table("s", "t", "id", ["id", "a"], {"id": "string", "a": "string"})
+        finally:
+            type(adapter).read_all_rows = original
+
+        assert len(reads) == 1
+
+    def test_a_missing_bronze_falls_back_rather_than_failing(self, tmp_path):
+        # The first sync after this ships has no bronze table, and a
+        # bronze write can fail for reasons _write_bronze tolerates.
+        # Silver stays correct; only re-derivability is lost.
+        source = tmp_path / "source.db"
+        connection = sqlite3.connect(source)
+        connection.execute("CREATE TABLE t (id TEXT PRIMARY KEY, a TEXT)")
+        connection.execute("INSERT INTO t VALUES ('1', 'x')")
+        connection.commit()
+        connection.close()
+
+        sync = IcebergMirrorSync(tmp_path / "mirror", {"s": SQLiteReadAdapter({"path": source})})
+        assert sync._read_bronze("s", "t", ["id", "a"]) is None
+
+        result = sync.sync_table("s", "t", "id", ["id", "a"], {"id": "string", "a": "string"})
+        assert result.row_count == 1
