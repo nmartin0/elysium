@@ -6,6 +6,7 @@ import {
   getErrorMessage,
   getVisibleActionTypesCached,
   handleIfSessionExpired,
+  matchingIds,
   searchObjects,
   type DataFreshness,
 } from '@elysium/shell-api/api'
@@ -147,6 +148,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // so several panels asking costs one request.
   const [actionTypes, setActionTypes] = useState<BulkAction[]>([])
   const [bulkAction, setBulkAction] = useState<BulkAction | null>(null)
+  const [selectingAll, setSelectingAll] = useState(false)
 
   useEffect(() => {
     void (getVisibleActionTypesCached() as Promise<Record<string, Omit<BulkAction, 'name'>>>)
@@ -534,6 +536,23 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           selectedCount={selectedIds.size}
           matchCount={totalMatches}
           pageCount={results.length}
+          selectingAll={selectingAll}
+          onSelectAllMatching={
+            totalMatches > results.length
+              ? () => {
+                  // RESOLVED BY THE SERVER, at the moment of selection.
+                  // What travels onward is the id list, never the
+                  // filter -- a reviewer approves specific changes, and
+                  // a filter that outlived the selection would let an
+                  // approval of 500 quietly become 520 overnight.
+                  setSelectingAll(true)
+                  void matchingIds(currentType, queryText, crossFilter)
+                    .then((ids) => setSelectedIds(new Set(ids)))
+                    .catch((err: unknown) => setError(getErrorMessage(err)))
+                    .finally(() => setSelectingAll(false))
+                }
+              : undefined
+          }
           onClear={() => setSelectedIds(new Set())}
         />
         {/* ONLY ACTIONS THE ONTOLOGY MADE BULK-CAPABLE. The menu

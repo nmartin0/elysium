@@ -529,6 +529,27 @@ export async function searchObjects(
   return response.json()
 }
 
+/** Every id the current filter matches, for "select all matching".
+ *
+ * IDS, NOT A FILTER PASSED ONWARD. Foundry's approvals model settles
+ * the design: "a task is an individual change in Foundry. All tasks
+ * associated with a request must be approved for the request to be
+ * invoked." A reviewer approves specific changes, never a rule to be
+ * resolved later -- so the filter is resolved at SELECTION time and
+ * what travels onward is the list it produced.
+ *
+ * Refused by the server above its bulk ceiling rather than truncated,
+ * so a caller never receives a selection that silently omits part of
+ * what it asked for.
+ */
+export async function matchingIds(objectType: string, queryText: string, conditions?: unknown[]): Promise<string[]> {
+  const params = new URLSearchParams({ q: queryText })
+  if (conditions?.length) params.set('conditions', JSON.stringify(conditions))
+  const response = await apiFetchOrThrow(`/objects/${objectType}/matching-ids?${params}`)
+  const body = (await response.json()) as { object_ids: string[] }
+  return body.object_ids
+}
+
 export interface LinkCount {
   target: string
   count: number

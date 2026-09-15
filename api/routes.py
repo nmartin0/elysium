@@ -139,7 +139,7 @@ from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.ontology.schema import get_field_column, sort_key
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
-from core.ontology.write_mediator import WriteMediator
+from core.ontology.write_mediator import MAX_BULK_OBJECTS, WriteMediator
 from core.pending_write_store import PendingWriteStore
 from core.request_context import RequestContext
 
@@ -361,6 +361,14 @@ class UserSummaryResponse(BaseModel):
 class CreateUserResponse(BaseModel):
     status: str
     username: str
+
+
+class MatchingIdsResponse(BaseModel):
+    """Ids only, deliberately. A caller asking "what would select-all
+    select" needs identity and nothing else, and returning whole
+    objects would make an already-large response larger for no use."""
+
+    object_ids: list[str]
 
 
 class SearchResponse(BaseModel):
@@ -1725,6 +1733,60 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
         key=lambda object_id: (sort_key(values[object_id]), sort_key(object_id)),
         reverse=descending,
     )
+
+
+@router.get("/objects/{object_type}/matching-ids",
+         response_model=MatchingIdsResponse, response_model_exclude_none=True)
+def matching_ids_route(object_type: str, request: Request, q: str = "",
+                        conditions: str | None = None,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Every id the current filter matches, for "select all matching".
+
+    WHY IDS AND NOT A FILTER PASSED ONWARD. Foundry's approvals model
+    settles this: "a task is an individual change in Foundry. All tasks
+    associated with a request must be approved for the request to be
+    invoked." What a reviewer approves is a set of SPECIFIC CHANGES,
+    never a rule to be resolved later. Their bulk action types take an
+    object reference list for the same reason.
+
+    So the filter is resolved HERE, at the moment of selection, and
+    what travels onward is the list it produced. A filter that outlived
+    the selection would mean a reviewer approving a count that could
+    change before they looked -- overnight, twenty more rows match, and
+    an approval of 500 quietly becomes 520.
+
+    CAPPED AT THE SAME CEILING THE WRITE MEDIATOR ENFORCES, and refused
+    rather than truncated. Returning the first 1000 of 1500 would hand
+    back a selection that silently omits a third of what was asked for,
+    and nothing downstream could tell.
+
+    MAC APPLIES AS IT DOES EVERYWHERE: this returns what the CALLER can
+    see, so two users selecting "all matching" get different sets from
+    the same filter, which is correct.
+    """
+    mediator = _generation(request).mediator
+    try:
+        parsed = parse_filters(json.loads(conditions)) if conditions else None
+    except (json.JSONDecodeError, TypeError) as e:
+        raise HTTPException(status_code=400, detail="conditions must be a JSON list") from e
+
+    try:
+        matching_ids = mediator.search_object_free_text(
+            current_user, object_type, q, conditions=parsed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if len(matching_ids) > MAX_BULK_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{len(matching_ids)} objects match, and at most {MAX_BULK_OBJECTS} "
+                f"can be selected at once. Narrow the filter."
+            ),
+        )
+
+    return {"object_ids": [str(object_id) for object_id in matching_ids]}
 
 
 @router.get("/objects/{object_type}/search", response_model=SearchResponse)

@@ -155,3 +155,96 @@ describe('paging, where the promise could quietly overstate', () => {
     expect(screen.queryByText(/over the 1000 limit/i)).toBeNull()
   })
 })
+
+describe('selecting everything the filter matches', () => {
+  /**
+   * AN EXPLICIT CONTROL, not an overloaded checkbox. The guidance is to
+   * "make it explicit (e.g. 'Select all 3,200 matching items')" -- a
+   * header checkbox that sometimes means the page and sometimes means
+   * the filter is a control whose meaning depends on state nobody can
+   * see.
+   */
+  it('offers it when more match than are shown', () => {
+    render(
+      <SelectionBar
+        selectedCount={0}
+        matchCount={500}
+        pageCount={20}
+        onSelectAllMatching={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(/Select all 500 matching/i)).toBeInTheDocument()
+  })
+
+  it('puts the count in the label', () => {
+    // This is the click that turns 20 into 500, and it should say so
+    // before it is pressed rather than after.
+    render(
+      <SelectionBar
+        selectedCount={0}
+        matchCount={500}
+        pageCount={20}
+        onSelectAllMatching={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /Select all 500 matching/i })).toBeInTheDocument()
+  })
+
+  it('does NOT offer it when everything already fits on the page', () => {
+    // THE CONTROL. "Select all 4 matching" beside 4 visible rows is a
+    // button that does nothing, and a button that does nothing teaches
+    // people to distrust the ones that do.
+    render(
+      <SelectionBar selectedCount={0} matchCount={4} pageCount={4} onSelectAllMatching={vi.fn()} onClear={vi.fn()} />,
+    )
+
+    expect(screen.queryByText(/Select all/i)).toBeNull()
+  })
+
+  it('does not offer it once an explicit selection exists', () => {
+    // A selection is exact, so the paging caveat no longer applies and
+    // neither does the escape from it.
+    render(
+      <SelectionBar
+        selectedCount={7}
+        matchCount={500}
+        pageCount={20}
+        onSelectAllMatching={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText(/Select all/i)).toBeNull()
+  })
+
+  it('reports the click', () => {
+    const onSelectAllMatching = vi.fn()
+    render(
+      <SelectionBar
+        selectedCount={0}
+        matchCount={500}
+        pageCount={20}
+        onSelectAllMatching={onSelectAllMatching}
+        onClear={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Select all 500 matching/i }))
+
+    expect(onSelectAllMatching).toHaveBeenCalled()
+  })
+
+  it('stays silent when the caller offers no handler', () => {
+    // The panel omits it when there is nothing beyond the page, so the
+    // bar must not invent a control it cannot wire.
+    render(<SelectionBar selectedCount={0} matchCount={500} pageCount={20} onClear={vi.fn()} />)
+
+    expect(screen.queryByText(/Select all/i)).toBeNull()
+    // ...but still says how many are out of reach.
+    expect(screen.getByText(/480 more match the filter/i)).toBeInTheDocument()
+  })
+})

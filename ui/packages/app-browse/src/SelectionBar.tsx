@@ -36,6 +36,11 @@ interface SelectionBarProps {
   selectedCount: number
   /** How many the current filter matches, selected or not. */
   matchCount: number
+  /** Selects every object the filter matches, not only those shown.
+   *  Absent when there is nothing beyond the page to select. */
+  onSelectAllMatching?: () => void
+  /** True while that selection is being resolved by the server. */
+  selectingAll?: boolean
   /** How many are on screen right now. Differs from matchCount as soon
    *  as results are paged, and an action with no selection reaches
    *  only these -- so this is the number the bar must promise. */
@@ -43,7 +48,14 @@ interface SelectionBarProps {
   onClear: () => void
 }
 
-export default function SelectionBar({ selectedCount, matchCount, pageCount, onClear }: SelectionBarProps) {
+export default function SelectionBar({
+  selectedCount,
+  matchCount,
+  pageCount,
+  onClear,
+  onSelectAllMatching,
+  selectingAll,
+}: SelectionBarProps) {
   // NOTHING SELECTED AND NOTHING MATCHED means there is no set to
   // describe, and a bar saying so would be noise.
   if (matchCount === 0) return null
@@ -68,7 +80,23 @@ export default function SelectionBar({ selectedCount, matchCount, pageCount, onC
         // SAID OUT LOUD, because the gap is invisible otherwise: the
         // count says 20 and the filter matched 500, and nothing on
         // screen connects the two.
-        <Tag minimal>{matchCount - pageCount} more match the filter — select them to include them</Tag>
+        <>
+          <Tag minimal>{matchCount - pageCount} more match the filter</Tag>
+          {onSelectAllMatching !== undefined && (
+            // AN EXPLICIT CONTROL, not an overloaded checkbox. The
+            // guidance is to "make it explicit (e.g. 'Select all 3,200
+            // matching items')" -- a header checkbox that sometimes
+            // means the page and sometimes means the filter is a
+            // control whose meaning depends on state nobody can see.
+            //
+            // THE COUNT IS IN THE LABEL for the same reason: this is
+            // the click that turns 20 into 500, and it should say so
+            // before it is pressed rather than after.
+            <Button minimal small loading={selectingAll} onClick={onSelectAllMatching}>
+              Select all {matchCount} matching
+            </Button>
+          )}
+        </>
       )}
 
       {overCeiling && (

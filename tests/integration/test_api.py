@@ -3358,3 +3358,84 @@ def test_an_unauthenticated_response_carries_it_too(client):
 
     assert response.status_code == 200
     assert response.headers.get("x-elysium-generation") is not None
+
+
+# --- "select all matching" ---------------------------------------------
+#
+# WHY IDS AND NOT A FILTER PASSED ONWARD. Foundry's approvals model
+# settles it: "a task is an individual change in Foundry. All tasks
+# associated with a request must be approved for the request to be
+# invoked." A reviewer approves specific changes, never a rule resolved
+# later -- and a filter that outlived the selection would let an
+# approval of 500 quietly become 520 once more rows matched overnight.
+#
+# So the filter is resolved at SELECTION time and what travels onward is
+# the list it produced.
+
+
+def _selecting_user(client):
+    """A user with a region, because MAC is per object.
+
+    Created with mac_value=None, a user sees NOTHING -- which is
+    correct, and makes every assertion here pass vacuously.
+    """
+    client.app.state.user_directory.create_user(
+        "selector", "correct-pw", "us-west", "customer_service")
+    _login(client, "selector", "correct-pw")
+
+
+def test_matching_ids_returns_every_match_not_a_page(client):
+    _selecting_user(client)
+
+    page = client.get("/api/objects/Customer/search?page_size=1").json()
+    ids = client.get("/api/objects/Customer/matching-ids").json()["object_ids"]
+
+    assert len(page["results"]) == 1, "the page must be smaller than the whole"
+    assert len(ids) == page["total_matches"]
+
+
+def test_matching_ids_shows_only_what_the_caller_can_see(client):
+    # MAC applies as everywhere else, so two users selecting "all
+    # matching" get different sets from the same filter. That is
+    # correct; a shared set would be a leak.
+    _selecting_user(client)
+
+    ids = client.get("/api/objects/Transaction/matching-ids").json()["object_ids"]
+    visible = client.get("/api/objects/Transaction/search").json()["total_matches"]
+
+    assert len(ids) == visible
+
+
+def test_matching_ids_honours_the_filter(client):
+    _selecting_user(client)
+
+    conditions = json.dumps([{"field": "name", "operator": "equals", "value": "Ada Okafor"}])
+    filtered = client.get(f"/api/objects/Customer/matching-ids?conditions={conditions}").json()
+    everything = client.get("/api/objects/Customer/matching-ids").json()
+
+    assert len(filtered["object_ids"]) < len(everything["object_ids"])
+
+
+def test_matching_ids_refuses_rather_than_truncating(client, monkeypatch):
+    """ABOVE THE CEILING IT REFUSES, and does not return the first N.
+
+    Handing back 1000 of 1500 would be a selection that silently omits
+    a third of what was asked for, and nothing downstream could tell --
+    the form would say "1000 objects" and be wrong about which.
+    """
+    from api import routes
+
+    monkeypatch.setattr(routes, "MAX_BULK_OBJECTS", 1)
+    _selecting_user(client)
+
+    response = client.get("/api/objects/Customer/matching-ids")
+
+    assert response.status_code == 400
+    assert "at most 1" in response.json()["detail"]
+    assert "Narrow the filter" in response.json()["detail"]
+
+
+def test_matching_ids_needs_a_session(client):
+    response = client.get("/api/objects/Customer/matching-ids")
+
+    assert response.status_code == 401

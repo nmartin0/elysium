@@ -101,7 +101,20 @@ STILL OPEN, all of it UI:
 - ~~"No selection means the whole filtered set"~~ DONE, resolved in the
   panel so the rule lives in one place. Foundry's
   rule: the current set "or all objects, if none are selected".
-- Select-all across pages means the FILTER, not the page. STILL OPEN,
+- ~~Select-all across pages~~ DONE, and the precedent reshaped it.
+  Foundry's approvals model settles the design: "a task is an
+  individual change in Foundry. All tasks associated with a request
+  must be approved for the request to be invoked." A reviewer approves
+  SPECIFIC CHANGES, never a rule resolved later -- so the filter is
+  resolved at SELECTION time by a server endpoint returning ids, and
+  what travels onward is the list. No change to the action contract.
+
+  An explicit "Select all N matching" button rather than an overloaded
+  header checkbox, because a checkbox that sometimes means the page
+  and sometimes the filter has a meaning nobody can see.
+
+  ~~Old framing, kept because the reasoning still holds for anyone who
+  revisits it:~~ Select-all across pages means the FILTER, not the page.
   and now stated honestly rather than falsely: the bar promises "the N
   shown" and says how many more match, because the panel holds one
   PAGE and an action with no selection reaches only that. Foundry's
