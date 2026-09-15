@@ -149,8 +149,16 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const [bulkAction, setBulkAction] = useState<BulkAction | null>(null)
 
   useEffect(() => {
-    void (getVisibleActionTypesCached() as Promise<BulkAction[]>)
-      .then(setActionTypes)
+    void (getVisibleActionTypesCached() as Promise<Record<string, Omit<BulkAction, 'name'>>>)
+      // A DICT KEYED BY NAME, not an array -- the route's response
+      // model is dict[str, VisibleActionTypeResponse], and an entry
+      // does NOT carry its own name. Calling .filter() on it threw and
+      // blanked the whole page.
+      //
+      // My tests mocked it as an array, so they never saw the real
+      // shape; ObjectDetailPanel.tsx already casts it correctly and I
+      // did not look. Found by running the product.
+      .then((byName) => setActionTypes(Object.entries(byName ?? {}).map(([name, spec]) => ({ ...spec, name }))))
       // SILENT ON FAILURE, and the menu simply does not appear. An
       // error banner about actions would be noise on a page whose job
       // is showing objects, and the actions are an addition to it

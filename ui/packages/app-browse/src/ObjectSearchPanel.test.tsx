@@ -84,7 +84,7 @@ beforeEach(() => {
   // it the mock returns undefined and the effect has nothing to chain
   // onto -- which broke all 57 existing tests at once and is exactly
   // what a shared mock should prevent.
-  mockedGetVisibleActionTypesCached.mockResolvedValue([])
+  mockedGetVisibleActionTypesCached.mockResolvedValue({})
   // Column choices persist in localStorage now, which is what they are
   // FOR in a browser and exactly what makes tests interfere.
   window.localStorage.clear()
@@ -1165,16 +1165,26 @@ describe('acting on a selection', () => {
    * it in one place -- the form is told the ids and does not know how
    * they were chosen.
    */
-  const BULK = {
-    name: 'RecategorizeTransactions',
-    parameters: {
-      customer_ids: { type: 'object_reference_list', object_type: 'Customer' },
-      new_category: { type: 'string', required: true },
+  /** THE REAL SHAPE THE API RETURNS: a dict keyed by action name, and
+   *  an entry does NOT carry its own name.
+   *
+   *  The route's response model is dict[str, VisibleActionTypeResponse]
+   *  -- checked, after an earlier version of these tests mocked an
+   *  ARRAY. Calling .filter() on the real object threw and blanked the
+   *  entire page, and nothing here noticed because the mock was the
+   *  wrong shape. ObjectDetailPanel.tsx had it right all along.
+   */
+  const BULK_BY_NAME = {
+    RecategorizeTransactions: {
+      parameters: {
+        customer_ids: { type: 'object_reference_list', object_type: 'Customer' },
+        new_category: { type: 'string', required: true },
+      },
     },
   }
 
   it('offers the Actions menu when a bulk action exists for the type', async () => {
-    mockedGetVisibleActionTypesCached.mockResolvedValue([BULK])
+    mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
     mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
     renderPanel(CUSTOMER_SCHEMA)
 
@@ -1189,7 +1199,7 @@ describe('acting on a selection', () => {
      * an empty selection send an empty list failed nothing until this
      * existed.
      */
-    mockedGetVisibleActionTypesCached.mockResolvedValue([BULK])
+    mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
     mockedSearchObjects.mockResolvedValue(
       searchResult([
         { id: 'cust_001', fields: { name: 'Ada Okafor' } },
@@ -1207,7 +1217,7 @@ describe('acting on a selection', () => {
   })
 
   it('a selection narrows what the action touches', async () => {
-    mockedGetVisibleActionTypesCached.mockResolvedValue([BULK])
+    mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
     mockedSearchObjects.mockResolvedValue(
       searchResult([
         { id: 'cust_001', fields: { name: 'Ada Okafor' } },
