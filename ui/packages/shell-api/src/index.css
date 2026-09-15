@@ -910,9 +910,41 @@ button.danger {
  *
  * A stacking context of its own, rather than a z-index race, so a
  * later change to the overlay cannot quietly bury it again. */
+/* THE CARD'S CONTENT, LAID OUT BESIDE ITS CHECKBOX.
+ *
+ * The card itself stays `display: block` -- that is deliberate and
+ * load-bearing, because Blueprint's CardList gives a direct child Card
+ * `display: flex; align-items: center`, which laid this card's
+ * multi-line content (title, subtitle, a whole fields table) out
+ * side-by-side instead of stacked.
+ *
+ * So the row goes INSIDE the card rather than being the card. A
+ * checkbox in a block container takes its own line above everything,
+ * which is what put every box above the row it belonged to.
+ *
+ * align-items: start, not center: the content is several lines tall
+ * and a checkbox floating at its vertical middle reads as belonging to
+ * whichever line it happens to land beside. */
+.object-search__row {
+  display: flex;
+  align-items: start;
+  gap: var(--space-snug);
+}
+
+/* The content takes the rest, so long titles wrap rather than pushing
+ * the checkbox off the edge. */
+.object-search__row > .object-search__link,
+.object-search__row > :not(.object-search__select) {
+  min-width: 0;
+}
+
 .object-search__select {
   position: relative;
   z-index: 1;
+  /* Nudged down to sit on the title's own line rather than above its
+   * cap height -- Blueprint's checkbox has its own internal padding
+   * that a bare flex row does not account for. */
+  margin-block-start: 2px;
   /* Enough room that the cursor does not have to be precise; a
    * mis-click here navigates away and loses the selection. */
   padding-inline-end: var(--space-normal);

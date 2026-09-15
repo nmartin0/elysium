@@ -49,11 +49,22 @@ The tests missed it because they used string ids on both sides. The
 fix is to agree on one representation at the boundary and test the
 DISAGREEMENT, not the agreement.
 
-**Checkboxes sit above their rows, not beside them.** CONFIRMED.
-`.object-search__result` is `display: block` and Blueprint's Checkbox
-is a block-level label, so it takes its own line. Reported as happening
-throughout the UI, which suggests the same pattern elsewhere -- worth a
-sweep rather than a one-line fix.
+**~~Checkboxes sit above their rows~~ FIXED in Browse, and the sweep
+found only one instance.** The card is `display: block` deliberately --
+Blueprint's CardList gives a direct child Card
+`display: flex; align-items: center`, which laid the card's
+multi-line content side-by-side instead of stacked -- so the fix is a
+flex ROW INSIDE the card rather than flexing the card.
+
+SEARCHED THE WHOLE UI: exactly two Checkbox elements exist, and the
+other (the Columns filter) uses Blueprint's own `label` prop and
+renders correctly. So either the report was about the Browse one
+specifically, or it is about a control I have not recognised as the
+same problem.
+
+STILL OPEN: which OTHER screens show it. Worth naming them, because a
+sweep for "<Checkbox" found nothing further and I would be guessing at
+what else counts.
 
 ### Wrong: small, visible, decided
 

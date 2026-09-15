@@ -1233,3 +1233,45 @@ describe('acting on a selection', () => {
     expect(await screen.findByText(/1 Customer\b/)).toBeInTheDocument()
   })
 })
+
+describe('a result card lays its checkbox beside its content', () => {
+  /**
+   * THE DEFECT. Every checkbox rendered ABOVE the row it belonged to.
+   * The card is `display: block` -- deliberately and load-bearingly,
+   * because Blueprint's CardList gives a direct child Card
+   * `display: flex; align-items: center`, which laid the card's
+   * multi-line content out side-by-side instead of stacked -- and a
+   * checkbox in a block container takes its own line.
+   *
+   * WHAT JSDOM CAN AND CANNOT SEE. It computes no layout, so nothing
+   * here proves the box LOOKS beside the title. What it does prove is
+   * the STRUCTURE the fix depends on: the checkbox and the link are
+   * siblings in a row element, rather than the checkbox being a direct
+   * child of the block card. Remove the wrapper and this fails;
+   * change the flex-direction and it does not.
+   */
+  it('puts the checkbox and the link in the same row', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const checkbox = await screen.findByLabelText('Select Ada Okafor')
+    const row = checkbox.closest('.object-search__row')
+
+    expect(row).not.toBeNull()
+    expect(row!.querySelector('.object-search__link')).not.toBeNull()
+  })
+
+  it('the checkbox is not a direct child of the card', async () => {
+    // THE CONTROL on the fix itself. A checkbox sitting directly in
+    // the block card is exactly the arrangement that stacked it above
+    // the row.
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const checkbox = await screen.findByLabelText('Select Ada Okafor')
+    const card = checkbox.closest('.object-search__result')
+
+    expect(card).not.toBeNull()
+    expect(checkbox.parentElement).not.toBe(card)
+  })
+})

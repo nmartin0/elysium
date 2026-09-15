@@ -701,26 +701,28 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                     visible, unclickable, and would navigate instead of
                     selecting. .object-search__select gives it its own
                     stacking context. */}
-                <Checkbox
-                  className="object-search__select"
-                  checked={selectedIds.has(result.id)}
-                  onChange={() => toggleSelected(result.id)}
-                  aria-label={`Select ${String(titleValue)}`}
-                />
-                <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
-                  <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
-                </Link>
-                {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
-                <dl className="object-search__result-fields">
-                  {visibleColumns(Object.keys(result.fields))
-                    .map((field) => [field, result.fields[field]] as const)
-                    .map(([field, value]) => (
-                      <div key={field} className="object-search__result-field">
-                        <dt>{formatFieldName(field)}</dt>
-                        <dd>{formatValue(value, typeSchemaFields?.[field]?.decimal_places)}</dd>
-                      </div>
-                    ))}
-                </dl>
+                <div className="object-search__row">
+                  <Checkbox
+                    className="object-search__select"
+                    checked={selectedIds.has(result.id)}
+                    onChange={() => toggleSelected(result.id)}
+                    aria-label={`Select ${String(titleValue)}`}
+                  />
+                  <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
+                    <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
+                  </Link>
+                  {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
+                  <dl className="object-search__result-fields">
+                    {visibleColumns(Object.keys(result.fields))
+                      .map((field) => [field, result.fields[field]] as const)
+                      .map(([field, value]) => (
+                        <div key={field} className="object-search__result-field">
+                          <dt>{formatFieldName(field)}</dt>
+                          <dd>{formatValue(value, typeSchemaFields?.[field]?.decimal_places)}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                </div>
               </Card>
             )
           })}
