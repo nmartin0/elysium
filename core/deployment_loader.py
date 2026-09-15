@@ -127,6 +127,17 @@ class DeploymentConfig:
     silo_configs: dict          # silo name -> {"adapter": ..., "connection": {...}}
     enabled_tools: list[str]      # from config.yaml tools.enabled -- GENUINELY optional,
                                    # unlike everything else here (see load_deployment())
+    mirror_storage: dict          # Where the Iceberg warehouse lives, and how to reach it.
+                                   # EMPTY MEANS LOCAL, which is correct for one host and what
+                                   # every deployment does today. A `warehouse` key moves it --
+                                   # to an s3:// URI for object storage -- and any other keys
+                                   # are passed to pyiceberg verbatim (s3.endpoint,
+                                   # s3.access-key-id and so on), deliberately: this layer
+                                   # should not invent its own vocabulary for someone else's
+                                   # options.
+                                   #
+                                   # Matters once a changelog exists, since the mirror then
+                                   # holds history no source can return. See ELT_ROADMAP.md.
     read_from_mirror: bool        # Phase 4 of the read-only mirror architecture -- serve
                                    # READS from the local Iceberg mirror rather than querying
                                    # the customer's own databases live. Writes are unaffected
@@ -452,7 +463,14 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # must stay completely valid, and the live path stays the
             # default until a deployment explicitly opts in. Phase 4 of
             # the read-only mirror architecture; see ROADMAP.md.
-            read_from_mirror=config.get("mirror", {}).get("read_from_mirror", False),
+            # `or {}` AS WELL AS A DEFAULT, because a YAML section whose
+            # every line is a comment parses as None rather than an empty
+            # mapping -- and a commented-out example is exactly what a
+            # deployment ships with. get("mirror", {}) returns None there,
+            # and None has no .get(). Found by the deployment linter the
+            # moment the example was written.
+            mirror_storage=deep_freeze((config.get("mirror") or {}).get("storage") or {}),
+            read_from_mirror=(config.get("mirror") or {}).get("read_from_mirror", False),
         )
     except KeyError as e:
         raise ValueError(f"Missing expected key {e} in config.yaml/ontology_schema.yaml/policy.yaml.") from e

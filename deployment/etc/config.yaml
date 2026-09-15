@@ -48,3 +48,27 @@ agent:
 tools:
   enabled:
     - linear_regression
+
+# WHERE THE MIRROR LIVES, and whether reads come from it.
+#
+# Both keys are optional and both default to the conservative answer:
+# a local warehouse, and reads going to the customer's own databases.
+mirror:
+  # read_from_mirror: true      # serve reads from the local Iceberg mirror
+  #
+  # storage: WHERE THE ICEBERG WAREHOUSE LIVES. Absent means a local
+  # directory under var/lib/mirror, which is correct for one host.
+  #
+  # Point it at object storage once the mirror holds anything the
+  # source cannot return -- a changelog, when one exists. Until then
+  # everything here is derivable by re-syncing, so local is not a risk.
+  #
+  # Keys other than `warehouse` are passed to pyiceberg verbatim rather
+  # than translated, so its own documentation is the reference:
+  #
+  # storage:
+  #   warehouse: "s3://elysium/warehouse"
+  #   s3.endpoint: "http://minio.internal:9000"
+  #   s3.access-key-id: "..."
+  #   s3.secret-access-key: "..."
+  #   s3.region: "us-east-1"

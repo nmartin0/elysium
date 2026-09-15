@@ -132,6 +132,15 @@ def run_sync(runtime_paths=None) -> int:
         sync = IcebergMirrorSync(
             runtime_paths.data_dir / "mirror", mediator.adapters,
             write_log=mediator.write_log,
+            # WHERE THE WAREHOUSE LIVES, from config.yaml's mirror.storage.
+            # Empty means local, which is what every deployment does today.
+            #
+            # Wired HERE and not only in the class, because a capability the
+            # class supports and no caller passes is one a deployment cannot
+            # use. That gap existed for a commit: the storage parameter was
+            # built and tested end to end against a real S3 endpoint while
+            # nothing passed it.
+            storage=dict(config.mirror_storage),
         )
 
         failures = 0

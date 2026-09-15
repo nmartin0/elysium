@@ -27,6 +27,7 @@ moving the catalog, and an earlier draft of the roadmap wrongly coupled
 them.
 """
 
+import pathlib
 import sqlite3
 
 import pytest
@@ -167,3 +168,105 @@ def test_bronze_goes_to_object_storage_too(tmp_path, source):
         assert bronze.metadata_location.startswith("s3://")
     finally:
         server.stop()
+
+
+class TestReachableFromConfig:
+    """A deployment can actually set this, not just the class.
+
+    THE GAP THIS CLOSES. The storage parameter was built and verified
+    end to end against a real S3 endpoint -- and nothing passed it.
+    run_sync.py and deployment_loader.py both constructed the sync
+    without it, so a deployment wanting its mirror in object storage
+    had no way to say so.
+
+    The same shape as the `readable` flag FastAPI silently stripped:
+    built correctly, never wired. And the same lesson as the rule in
+    AGENTS.md about mocked callbacks -- I tested the constructor, not
+    the path a deployment takes to reach it.
+
+    THROUGH load_deployment() AND REAL FILES, not a helper. The whole
+    failure was a gap between a class and the path to it, so a test
+    that skipped the path would repeat the mistake.
+    """
+
+    @staticmethod
+    def _deployment(tmp_path, mirror_section):
+        """A copy of the shipped deployment with config.yaml edited."""
+        import shutil
+
+        source = pathlib.Path(__file__).resolve().parents[2] / "deployment" / "etc"
+        target = tmp_path / "etc"
+        shutil.copytree(source, target)
+
+        config = (target / "config.yaml").read_text()
+        config = config[:config.index("\nmirror:")] + "\n" + mirror_section
+        (target / "config.yaml").write_text(config)
+        return target
+
+    def test_no_mirror_section_means_local(self, tmp_path):
+        from core.deployment_loader import load_deployment
+
+        config = load_deployment(self._deployment(tmp_path, ""))
+
+        assert config.mirror_storage == {}
+
+    def test_an_all_comment_mirror_section_is_not_a_crash(self, tmp_path):
+        """YAML parses a section whose every line is a comment as None.
+
+        Not hypothetical: a commented-out example is exactly what the
+        shipped config.yaml contains, and `config.get("mirror", {})`
+        returns None there rather than {}. Found by the deployment
+        linter the moment the example was written, which is what it is
+        for.
+        """
+        from core.deployment_loader import load_deployment
+
+        config = load_deployment(self._deployment(tmp_path, "mirror:\n  # nothing but comments\n"))
+
+        assert config.mirror_storage == {}
+        assert config.read_from_mirror is False
+
+    def test_storage_settings_reach_the_config(self, tmp_path):
+        from core.deployment_loader import load_deployment
+
+        section = (
+            "mirror:\n"
+            "  storage:\n"
+            '    warehouse: "s3://bucket/w"\n'
+            '    s3.region: "eu-west-2"\n'
+        )
+        config = load_deployment(self._deployment(tmp_path, section))
+
+        assert config.mirror_storage["warehouse"] == "s3://bucket/w"
+        assert config.mirror_storage["s3.region"] == "eu-west-2"
+
+
+def test_run_sync_passes_the_storage_setting_to_the_mirror(tmp_path, monkeypatch):
+    """THE LAST LINK, and a control caught it missing.
+
+    The config now carries the setting and the class now accepts it --
+    and for one commit nothing connected them. A control removing the
+    argument from run_sync.py failed NOTHING, because every test either
+    built the config or built the sync, and none followed the path
+    between.
+
+    That is the third instance of this shape recorded in AGENTS.md, and
+    the second time I have introduced it while fixing an earlier one.
+    """
+    import scripts.run_sync as run_sync
+
+    seen = {}
+
+    class Recording:
+        def __init__(self, *args, **kwargs):
+            seen.update(kwargs)
+
+        def sync_table(self, *args, **kwargs):
+            raise AssertionError("not reached: the constructor is what is under test")
+
+    monkeypatch.setattr(run_sync, "IcebergMirrorSync", Recording)
+    monkeypatch.setattr(run_sync, "resolve_sync_targets", lambda schema: [])
+
+    run_sync.run_sync()
+
+    assert "storage" in seen, "run_sync must pass the deployment's storage setting"
