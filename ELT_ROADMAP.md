@@ -311,7 +311,7 @@ handles for the same class of reason.
 See "What was struck, and why". Grouping does not appear in the profile
 of the real path. Revive only with a profile that shows it.
 
-### Phase 1 — bronze, with two-snapshot retention
+### Phase 1 — bronze. DONE, except retention.
 
 **Depends on nothing. The strongest remaining case.**
 
@@ -324,10 +324,18 @@ looks wrong has nothing to compare against except a source that may
 since have changed, and adding an ontology field means re-reading the
 silo rather than re-transforming what we hold.
 
-Retention belongs in this phase rather than a follow-up: "bronze bloat"
+**RETENTION IS STILL OUTSTANDING and should be next.** "Bronze bloat"
 is the most commonly cited failure of this pattern, and Iceberg's
 copy-on-write makes each retained snapshot a full copy -- measured,
-177KB to 839KB over five syncs of a table where one row changed.
+177KB to 839KB over five syncs of a table where one row changed. Bronze
+now doubles that rate, since it stores every column rather than the
+declared ones.
+
+WHAT LANDED: every column stored as a string, unaltered; provenance in
+table properties (silo, table, layer) and the snapshot's own timestamp;
+and a bronze failure that warns without failing the sync -- losing
+lineage costs explicability, losing the sync costs the deployment its
+data.
 
 **Nothing reads bronze.** "Bronze should act as a historical record,
 not a source of truth."

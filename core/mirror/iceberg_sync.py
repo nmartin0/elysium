@@ -124,6 +124,31 @@ class IcebergMirrorSync(MirrorSync):
 
         raw_rows = self._read_source_rows(adapter, table_name, id_column, columns)
 
+        # BRONZE: what the source said, before anything was done to it.
+        #
+        # WHY THIS EXISTS, and it is not performance. Until now the raw
+        # rows lived only in memory: they were read, cast, written, and
+        # forgotten. So a value that looked wrong had nothing to
+        # compare against except a source that may since have changed,
+        # and adding an ontology field meant RE-READING THE SILO rather
+        # than re-transforming what we already held.
+        #
+        # Foundry's reason for ingesting "as-is from its most raw
+        # source, with no external preprocessing" is exactly this:
+        # "every Ontology property value traces back to a specific row
+        # in a specific raw file".
+        #
+        # AS-IS MEANS AS-IS. No casting, no renaming, no provenance
+        # COLUMNS -- adding those would make bronze a third
+        # transformation of the data it exists to preserve unaltered.
+        # Provenance lives in metadata instead: the silo and table on
+        # the table's own properties, and the read time in the
+        # snapshot's timestamp, both of which Iceberg already carries.
+        #
+        # NOTHING READS BRONZE. "Bronze should act as a historical
+        # record, not a source of truth."
+        self._write_bronze(silo_name, table_name, raw_rows, columns)
+
         # THE raw -> clean stage (Phase 3). Casting lives here, between
         # reading and writing, rather than inside _to_arrow() where it
         # used to be -- see core/mirror/transform.py for why that
@@ -320,6 +345,75 @@ class IcebergMirrorSync(MirrorSync):
         # interface into raw SQL.
         type_config = {"storage": {"table": table_name, "id_column": id_column}}
         return adapter.read_all_rows(table_name, columns, type_config)
+
+    def _write_bronze(self, silo_name: str, table_name: str,
+                       raw_rows: list[dict], columns: list[str]) -> None:
+        """Stores the source rows unaltered, with provenance in metadata.
+
+        EVERY VALUE AS A STRING, deliberately. Bronze must not decide
+        what a column means -- that is silver's job, and deciding it
+        twice is how the two disagree. A string is the one
+        representation that cannot lose information it was given.
+
+        PROVENANCE LIVES IN TABLE PROPERTIES AND SNAPSHOT TIMESTAMPS,
+        not in columns. "Where did this come from" is answered by the
+        silo and table stamped on the table; "when was it read" by the
+        snapshot's own timestamp_ms, which Iceberg records anyway.
+        Adding columns would make bronze a transformation of the data
+        it exists to preserve.
+
+        FAILURE HERE DOES NOT FAIL THE SYNC. Bronze is a record for
+        later, and losing it costs lineage; losing the sync costs the
+        deployment its data. A deployment whose disk filled should
+        serve stale-but-correct data rather than none, and the warning
+        says what was lost.
+
+        NAMED EXCEPTIONS, NOT `Exception`. A bare catch here swallowed
+        two of my own mistakes while writing this -- a misremembered
+        method name and a wrong argument shape -- and reported them as
+        a bronze failure the sync shrugged off. A programming error
+        should crash loudly; a full disk should not.
+
+        pyiceberg exports no common base error, checked rather than
+        assumed, so the named set is what actually goes wrong here: a
+        full or unwritable disk, and Arrow refusing data it cannot
+        represent.
+        """
+        identifier = f"bronze_{silo_name}.{table_name}"
+        try:
+            arrow_table = pa.table({
+                column: pa.array(
+                    [None if row.get(column) is None else str(row.get(column))
+                     for row in raw_rows],
+                    type=pa.string(),
+                )
+                for column in columns
+            })
+
+            if not self._catalog.namespace_exists(f"bronze_{silo_name}"):
+                self._catalog.create_namespace(f"bronze_{silo_name}")
+            try:
+                table = self._catalog.load_table(identifier)
+            except NoSuchTableError:
+                table = self._catalog.create_table(identifier, schema=arrow_table.schema)
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", message="Delete operation did not match any records")
+                table.overwrite(arrow_table)
+
+            with table.transaction() as tx:
+                tx.set_properties({
+                    "elysium.source_silo": silo_name,
+                    "elysium.source_table": table_name,
+                    "elysium.layer": "bronze",
+                })
+        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as e:
+            logger.warning(
+                f"bronze copy of {silo_name}.{table_name} failed ({e}); the sync "
+                f"continues and the mirror is correct, but this read leaves no "
+                f"raw record to trace values back to."
+            )
 
     def _to_arrow(self, rows: list[dict], columns: list[str],
                    column_types: dict[str, str] | None = None) -> pa.Table:
