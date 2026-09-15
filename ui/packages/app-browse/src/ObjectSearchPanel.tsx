@@ -22,6 +22,7 @@ import BulkActionForm from './BulkActionForm'
 import BulkActionsMenu, { type BulkAction } from './BulkActionsMenu'
 import SavedViews from './SavedViews'
 import SelectionBar from './SelectionBar'
+import { applyClick } from './rangeSelection'
 import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
@@ -168,13 +169,19 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
       .catch(() => {})
   }, [])
 
-  function toggleSelected(id: string) {
-    setSelectedIds((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  // THE ANCHOR FOR SHIFT-CLICK, held as an ID rather than a position.
+  // An index would break the moment the list is sorted, filtered or
+  // paged -- and this list is all three.
+  const [anchorId, setAnchorId] = useState<string | null>(null)
+
+  function toggleSelected(id: string, withShift = false) {
+    // THE ORDER ON SCREEN, which is what a person means by "everything
+    // between these two". Not the underlying order, and not an index
+    // stored when the row was first clicked.
+    const displayed = results.map((result) => result.id)
+    const outcome = applyClick(id, displayed, selectedIds, anchorId, withShift)
+    setSelectedIds(outcome.selected)
+    setAnchorId(outcome.anchor)
   }
   /**
    * The cross-filter: one set of conditions driving the table AND
@@ -705,7 +712,12 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   <Checkbox
                     className="object-search__select"
                     checked={selectedIds.has(result.id)}
-                    onChange={() => toggleSelected(result.id)}
+                    onChange={(event) =>
+                      // THE MODIFIER OFF THE EVENT, because a checkbox
+                      // has no other way to know. React's change event
+                      // carries the native one, which carries shiftKey.
+                      toggleSelected(result.id, (event.nativeEvent as MouseEvent | undefined)?.shiftKey === true)
+                    }
                     aria-label={`Select ${String(titleValue)}`}
                   />
                   <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">

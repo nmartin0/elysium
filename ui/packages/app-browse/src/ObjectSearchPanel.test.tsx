@@ -1275,3 +1275,54 @@ describe('a result card lays its checkbox beside its content', () => {
     expect(checkbox.parentElement).not.toBe(card)
   })
 })
+
+describe('shift-click selects a range in the results', () => {
+  /**
+   * THE WIRE, which rangeSelection's own tests cannot see: that the
+   * panel passes the DISPLAYED order and reads the modifier off the
+   * event.
+   *
+   * A checkbox has no other way to know a modifier was held -- React's
+   * change event carries the native one, which carries shiftKey.
+   */
+  const THREE = [
+    { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+    { id: 'cust_002', fields: { name: 'Ben Stone' } },
+    { id: 'cust_003', fields: { name: 'Cara Diaz' } },
+  ]
+
+  it('selects everything between two clicks', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Select Cara Diaz'), { shiftKey: true })
+
+    expect(await screen.findByText('3 selected')).toBeInTheDocument()
+  })
+
+  it('a click without shift still selects one', async () => {
+    // THE CONTROL. A panel that ranged on every click would make the
+    // modifier meaningless and the ordinary case surprising.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('2 selected')).toBeInTheDocument()
+  })
+
+  it('ticks every box in the range, not just the ends', async () => {
+    // The count could be right while the boxes were wrong -- that was
+    // exactly the select-all bug, where the bar said 64 and no row
+    // looked it.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Select Cara Diaz'), { shiftKey: true })
+
+    expect(screen.getByLabelText('Select Ben Stone')).toBeChecked()
+  })
+})

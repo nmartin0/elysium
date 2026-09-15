@@ -118,7 +118,20 @@ Proposed: ONE action taking a list, with the single-object form
 sending a list of one. `object_reference` becomes an optimisation for
 detail pages rather than a separate action.
 
-### Missing: shift-click range selection
+### ~~Missing: shift-click range selection~~ DONE
+
+Anchor-based, in its own module so the rules are testable apart from
+the panel. Both documented pitfalls avoided deliberately: the anchor
+clears when the selection empties (Sentry's ghost-anchor bug), and the
+anchor is an ID with the range computed over the DISPLAYED order,
+because this list is sorted, filtered and paged and an index would
+break under all three.
+
+An anchor that has left the page falls back to a plain toggle, which
+is the honest answer -- there is no defensible range between a row you
+can see and one you cannot.
+
+**Original report:**
 
 **Anchor-based, which is the established pattern**: the first clicked
 row is the anchor; Shift and a second click set every row between them
