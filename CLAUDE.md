@@ -148,10 +148,19 @@ Recovery:
 - `scripts/create_debug_user.py` — `debug` / `a`, role `debug`.
 - `scripts/create_colleague_user.py` — adds `colleague` / `a` in the
   same role, for testing that shared things are shared.
-There is **no volume seeder**. `seed_dev_silos.py` builds the fixture
-schemas, which hold four customers — enough to exercise every screen
-and not enough to exercise paging, the "and N more" link cutoff, or a
-chart with many distinct values. If a feature needs volume, say so
+**For volume, `seed_dev_silos.py --bulk N`.** Without it the fixture
+schemas hold four customers and seven transactions — enough to
+exercise every screen, and not enough to exercise paging, the "and N
+more" link cutoff, or a chart with many distinct values. A visual
+check of paging was literally unaskable until this existed.
+
+`--bulk 60` adds synthetic transactions on customers the `alice`
+development user can see, which takes her past the server's default
+page size of 50. The default of 0 leaves the databases identical to
+what the tests build, which is deliberate: several tests assert exact
+counts, and a seeder that quietly added rows would break them in a
+file nobody reads while debugging them. If a feature needs volume,
+say so
 rather than assuming a script exists; one would have to be written.
 
 Pointing `ELYSIUM_DATA_DIR` somewhere under `$HOME` would end this.
