@@ -402,6 +402,48 @@ THE CATALOG STAYS LOCAL, deliberately: catalog type and storage backend
 are separate axes, and moving the warehouse does not require moving the
 catalog.
 
+### The precondition, measured. THE CHANGELOG IS NOT NEXT.
+
+The roadmap demanded evidence before phase 4: "measure the full-reload
+cost on a realistic table first". Measured:
+
+    10,000 rows   full reload 0.19s
+    100,000 rows  full reload 0.68s
+
+A nightly sync of a million rows would take under ten seconds. **There
+is no performance pain**, which is precisely the condition the
+literature warned about: "let the performance pain on the source system
+drive that conversation rather than trying to anticipate it in a room
+without evidence".
+
+**THE REAL COST IS STORAGE, AND IT IS NOT WHAT THE CHANGELOG FIXES.**
+Thirty nightly syncs of a 50,000-row table, one row changed per night:
+
+    after  1 sync    1.0 MB
+    after 10 syncs  10.1 MB
+    after 30 syncs  31.6 MB
+
+Linear at full table size, because Iceberg's copy-on-write makes every
+snapshot a complete copy and NOTHING EXPIRES THEM. pyiceberg 0.12 has
+no expiry, so the retention policy declared in phase 1 is a statement
+of intent that nothing enforces.
+
+A changelog would store 30 rows instead of 30 full copies -- but so
+would working expiry, and expiry is the smaller change. Building a
+changelog to solve a problem that unenforced retention causes would be
+treating the symptom.
+
+**SO THE NEXT STEP IS EXPIRY, NOT THE CHANGELOG.** Either pyiceberg
+gains it, or we reclaim snapshots ourselves under the two rules already
+recorded: never delete what is current, and age out the rest beyond a
+margin that exceeds the longest request by an order of magnitude.
+
+The changelog's remaining justification is HISTORY -- a source holds
+"now" and cannot tell you what a value used to be. That is a real thing
+to want and a different argument from storage or speed. It should be
+made on its own terms, by someone who wants the history, rather than
+inferred from a plan.
+
 ### Phase 4 — the changelog
 
 **Depends on 1 (two snapshots to diff), 3 (somewhere it survives), and
