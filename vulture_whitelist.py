@@ -245,3 +245,15 @@ matching_ids_route
 # SchemaFieldResponse.decimal_places (api/routes.py) -- serialised by
 # FastAPI from the returned dict, like every other response field.
 decimal_places
+
+# MetricsResponse / SlowRouteResponse fields (api/routes.py) --
+# serialised by FastAPI from the returned dict, like every other
+# response model here.
+p99_ms
+p50_ms
+rate_per_second
+error_ratio
+slowest_routes
+window_seconds
+admin_metrics_route
+forget_older_than

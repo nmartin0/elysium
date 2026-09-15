@@ -89,6 +89,7 @@ from fastapi import FastAPI, Request
 from api.csrf_middleware import csrf_protect
 from api.generation_header_middleware import GenerationHeaderMiddleware
 from api.reload import install_sighup_handler
+from api.request_metrics_middleware import RequestMetricsMiddleware
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.artifact_store import ArtifactStore
 from core.auth.credential_store import CredentialStore
@@ -103,6 +104,7 @@ from core.deployment_loader import (
     resolve_runtime_paths,
 )
 from core.pending_write_store import PendingWriteStore
+from core.request_metrics import RequestMetrics
 from core.sqlite_connection import require_assertions_enabled
 from core.user_directory import UserDirectory
 
@@ -174,6 +176,18 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # notice a configuration reload on its next request rather than
     # believing what it was told at login. See the module docstring.
     app.add_middleware(GenerationHeaderMiddleware)
+    # Times every request for the RED metrics. Added AFTER the others
+    # so it wraps them: a request rejected for being too large is still
+    # a request, and a dashboard that only counted the ones that got
+    # through would understate the load.
+    #
+    # IT READS THE STORE OFF app.state AT REQUEST TIME, not at
+    # registration. Middleware is registered before runtime_paths is
+    # even resolved, so passing the store here would mean passing None
+    # forever -- and a metrics middleware that silently recorded
+    # nothing is worse than none, because the dashboard would show an
+    # idle server.
+    app.add_middleware(RequestMetricsMiddleware)
 
     # Security headers, applied to EVERY response -- a real, found gap:
     # this app previously set none at all. Verified directly before
@@ -259,6 +273,9 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # and mixing them means a restore or a purge cannot treat them
     # differently.
     app.state.artifact_store = ArtifactStore(runtime_paths.data_dir / "artifacts.db")
+    # RED metrics: one row per request, written by
+    # RequestMetricsMiddleware, read by the admin metrics route.
+    app.state.request_metrics = RequestMetrics(runtime_paths.data_dir / "metrics.db")
     # A real, explicit schema-creation step, run here, once, before ANY
     # internal store below is constructed -- a real, necessary addition,
     # not previously needed: every store here used to lazily create its

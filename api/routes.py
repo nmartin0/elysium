@@ -1041,6 +1041,32 @@ class GenerationSummary(BaseModel):
     source_digest: str
 
 
+class SlowRouteResponse(BaseModel):
+    route: str
+    requests: int
+    # NULL WHEN NOTHING SUCCEEDED in the window. Zero would read as
+    # "instantaneous", which is the opposite of "we do not know".
+    p99_ms: float | None = None
+
+
+class MetricsResponse(BaseModel):
+    """RED over a window: Rate, Errors, Duration.
+
+    Saturation -- the fourth golden signal -- is deliberately absent:
+    it is a property of the host, not of this process.
+    """
+
+    window_seconds: int
+    requests: int
+    rate_per_second: float
+    # A RATIO, NOT A COUNT: ten failures means nothing without knowing
+    # whether there were twelve requests or twelve thousand.
+    error_ratio: float
+    p50_ms: float | None = None
+    p99_ms: float | None = None
+    slowest_routes: list[SlowRouteResponse]
+
+
 class ConfigHistoryResponse(BaseModel):
     """Which configurations this deployment has run.
 
@@ -1052,6 +1078,41 @@ class ConfigHistoryResponse(BaseModel):
 
     current_generation: int
     generations: list[GenerationSummary]
+
+
+@router.get("/admin/metrics", dependencies=[Depends(_no_store)],
+            response_model=MetricsResponse)
+def admin_metrics_route(request: Request, window_seconds: int = 3600,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Rate, errors and duration over a recent window.
+
+    THE RED METHOD, which is the canonical starting point for a
+    request-driven service because a single request-duration record
+    yields all three.
+
+    SATURATION IS ABSENT ON PURPOSE. It is the fourth golden signal and
+    a property of the HOST -- CPU, memory, queue depth -- so answering
+    it from inside the process would mean guessing at limits we do not
+    know. It belongs to whatever watches the machine, and a made-up
+    number here would be worse than the gap.
+
+    GATED ON manage:deployment, the same grant that can reload. Request
+    timings say which routes are used and how often, which is a shape
+    of the deployment's activity rather than of its data -- but it is
+    still more than an ordinary user should see about everyone else.
+
+    NO-STORE, because a cached metrics response is a lie that looks
+    like a measurement.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not permitted")
+
+    metrics = request.app.state.request_metrics
+    return {
+        **metrics.summary(window_seconds),
+        "slowest_routes": metrics.slowest_routes(window_seconds),
+    }
 
 
 @router.get("/admin/config-history", response_model=ConfigHistoryResponse)

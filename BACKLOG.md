@@ -230,7 +230,24 @@ operators, sub-app declarations, grant verbs, field data types. Each
 probe also guards ITSELF, because two empty sets agree perfectly and
 two of these shipped with a pattern that had stopped reading.
 
-**An admin view of live performance metrics.**
+**An admin view of live performance metrics. BACKEND DONE.**
+
+RED -- Rate, Errors, Duration -- at GET /api/admin/metrics, gated on
+manage:deployment. One row per request, persisted to SQLite rather than
+counted in memory, because in-memory counters reset on every restart
+and uvicorn --reload restarts on any file change.
+
+Measured before choosing: one committed row is 0.105 ms against a query
+path of several hundred, and ten thousand rows are 192 KB.
+
+SATURATION IS DELIBERATELY ABSENT -- the fourth golden signal is a
+property of the HOST, and answering it from inside the process would
+mean guessing at limits we do not know.
+
+STILL OPEN: the screen itself, and a retention sweep. forget_older_than
+exists and nothing calls it.
+
+**Superseded, for anyone revisiting:**
 
 **Host metrics correlated with hops**, explicitly NOT a resource
 analyzer.

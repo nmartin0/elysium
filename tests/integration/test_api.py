@@ -3439,3 +3439,72 @@ def test_matching_ids_needs_a_session(client):
     response = client.get("/api/objects/Customer/matching-ids")
 
     assert response.status_code == 401
+
+
+# --- RED metrics -------------------------------------------------------
+
+
+def test_a_real_request_is_recorded(client):
+    """THE WIRE, which the store's own tests cannot see.
+
+    The middleware reads the store off app.state at REQUEST time, not
+    at registration -- middleware is registered before runtime_paths is
+    resolved, so a store handed over then would be None forever, and a
+    middleware that silently recorded nothing is worse than none: the
+    dashboard would show an idle server.
+    """
+    client.get("/api/health")
+
+    summary = client.app.state.request_metrics.summary()
+    assert summary["requests"] >= 1
+
+
+def test_the_route_template_is_recorded_not_the_path(client):
+    # `/objects/{object_type}` and not `/objects/Customer`. A
+    # per-value row would make the table unbounded in cardinality
+    # while answering no question anyone asks.
+    _selecting_user(client)
+    client.get("/api/objects/Customer/search")
+
+    routes = {row["route"] for row in client.app.state.request_metrics.slowest_routes()}
+    assert any("{object_type}" in route for route in routes)
+
+
+def test_a_failed_request_is_recorded_too(client):
+    # An unauthenticated call is exactly the kind of thing a dashboard
+    # exists to show, and recording only the happy path would hide it.
+    client.get("/api/objects/Customer/matching-ids")
+
+    assert client.app.state.request_metrics.summary()["error_ratio"] > 0
+
+
+def test_metrics_need_manage_deployment(client):
+    # Request timings say which routes are used and how often -- a
+    # shape of the deployment's activity, and more than an ordinary
+    # user should see about everyone else.
+    _selecting_user(client)
+
+    response = client.get("/api/admin/metrics")
+
+    assert response.status_code == 403
+
+
+def test_metrics_report_red_and_not_saturation(client):
+    """Saturation is the fourth golden signal and deliberately absent.
+
+    It is a property of the HOST, so answering it from inside the
+    process would mean guessing at limits we do not know. A made-up
+    number would be worse than the gap.
+    """
+    # A ROLE HOLDING manage:deployment, built for this test. There is
+    # no standing admin account in the fixtures, deliberately -- every
+    # test says which grants it needs.
+    with_roles(client.app, operator={"allowed_actions": frozenset(["manage:deployment"])})
+    client.app.state.user_directory.create_user("operator", "pw", "us-west", "operator")
+    _login(client, "operator", "pw")
+
+    body = client.get("/api/admin/metrics").json()
+
+    assert {"requests", "rate_per_second", "error_ratio"} <= set(body)
+    assert "saturation" not in body
+    assert "cpu" not in body

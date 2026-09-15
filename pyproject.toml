@@ -168,6 +168,11 @@ layers = [
     # config_history, a leaf like artifact_store: its own SQLite store,
     # importing nothing from core but the shared connection helper.
     "config_history",
+    # request_metrics, the same shape again: one SQLite table of request
+    # timings, importing only the shared connection helper. It knows
+    # what a route and a duration are and nothing else -- not what an
+    # object is, not what a role is -- so any layer may reach it.
+    "request_metrics",
     # The artifact store, also a leaf. It persists and scopes saved
     # things -- searches, selections, pending writes -- and knows
     # nothing about what is inside one: `body` is opaque JSON.
@@ -224,7 +229,7 @@ type = "layers"
 # and they are not.
 layers = [
     "app", "routes",
-    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware",
+    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware",
 ]
 containers = ["api"]
 exhaustive = true
