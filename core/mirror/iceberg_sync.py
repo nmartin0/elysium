@@ -54,6 +54,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
 )
 
+from core.mirror.changelog import MAX_DELETED_FRACTION, diff_snapshots
 from core.mirror.drift_policy import (
     DriftVerdict,
     verdict_for_removed_column,
@@ -550,6 +551,15 @@ class IcebergMirrorSync(MirrorSync):
             # skipping but bronze not: 30 identical syncs still grew to
             # 13.1 MB, all of it bronze.
             if not self._already_current(table, arrow_table):
+                # WHAT CHANGED, recorded BEFORE the overwrite replaces
+                # the evidence. Once overwrite() commits, the previous
+                # rows are only reachable through an older snapshot,
+                # and comparing them here while both are in hand is
+                # both simpler and immune to a snapshot expiring
+                # between the two reads.
+                self._record_changes(
+                    silo_name, table_name, id_column, table, raw_rows, columns)
+
                 with warnings.catch_warnings():
                     warnings.filterwarnings(
                         "ignore", message="Delete operation did not match any records")
@@ -604,6 +614,89 @@ class IcebergMirrorSync(MirrorSync):
             return current.sort_by(key).equals(arrow_table.sort_by(key))
         except Exception:  # noqa: BLE001 - see the docstring
             return False
+
+    def _record_changes(self, silo_name: str, table_name: str, id_column: str,
+                         bronze_table, current_rows: list[dict], columns: list[str]) -> None:
+        """Appends what changed since the last sync, if anything.
+
+        APPEND, NOT OVERWRITE, and this is the one table in the mirror
+        where that is true. Every other table answers "what is there
+        now" and is rebuilt; this one answers "what happened" and can
+        only grow. It is also the only table a re-sync cannot rebuild,
+        which is why ELT_ROADMAP.md calls it the reversibility line.
+
+        SILENT ON THE FIRST RUN. A table with no previous snapshot
+        would otherwise record every existing row as newly inserted --
+        a lie, and an expensive one. Nothing is written until there is
+        a real before and after to compare.
+
+        FAILURE HERE DOES NOT FAIL THE SYNC, for the same reason bronze
+        works that way: losing a changelog entry costs history, and
+        failing the sync costs the deployment its data. But it is
+        WARNED loudly, because unlike bronze this gap can never be
+        filled in afterwards -- the source has already moved on.
+        """
+        try:
+            if bronze_table.current_snapshot() is None:
+                return
+
+            previous = bronze_table.scan(selected_fields=tuple(columns)).to_arrow().to_pylist()
+            changes = diff_snapshots(previous, current_rows, id_column)
+
+            if changes.suspected_partial_read:
+                logger.warning(
+                    f"changelog for {silo_name}.{table_name}: more than "
+                    f"{int(MAX_DELETED_FRACTION * 100)}% of rows vanished in one sync. "
+                    f"Recording nothing, because a partially-failed read looks exactly "
+                    f"like a mass deletion and a changelog cannot be un-written."
+                )
+                return
+            if changes.is_empty:
+                return
+
+            self._append_changelog(silo_name, table_name, changes.rows, columns)
+        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as e:
+            logger.warning(
+                f"changelog for {silo_name}.{table_name} failed ({e}); the sync "
+                f"continues and the mirror is correct, but this change is lost "
+                f"permanently -- the source has already moved on."
+            )
+
+    def _append_changelog(self, silo_name: str, table_name: str,
+                           rows: list[dict], columns: list[str]) -> None:
+        """Writes the change rows, creating the table on first use.
+
+        EVERY VALUE A STRING, as bronze does, and for the same reason:
+        a changelog must not decide what a column means. `_change` and
+        `_recorded_at` join them so one schema covers every table.
+        """
+        recorded_at = datetime.now(UTC).isoformat()
+        namespace = f"changelog_{silo_name}"
+        identifier = f"{namespace}.{table_name}"
+
+        arrow_table = pa.table({
+            **{
+                column: pa.array(
+                    [None if row.get(column) is None else str(row.get(column)) for row in rows],
+                    type=pa.string(),
+                )
+                for column in columns
+            },
+            "_change": pa.array([row["_change"] for row in rows], type=pa.string()),
+            # WHEN WE NOTICED, not when it happened -- the source does
+            # not tell us the latter and inventing it would be worse
+            # than admitting the difference.
+            "_recorded_at": pa.array([recorded_at] * len(rows), type=pa.string()),
+        })
+
+        if not self._catalog.namespace_exists(namespace):
+            self._catalog.create_namespace(namespace)
+        try:
+            table = self._catalog.load_table(identifier)
+        except NoSuchTableError:
+            table = self._catalog.create_table(identifier, schema=arrow_table.schema)
+
+        table.append(arrow_table)
 
     def _read_bronze(self, silo_name: str, table_name: str,
                       columns: list[str]) -> "list[dict] | None":

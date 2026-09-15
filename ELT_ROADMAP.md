@@ -544,7 +544,25 @@ Diff bronze's current snapshot against its previous by primary key, and
 APPEND the result with a change type and an ordering column. Deletions
 must be INFERRED, since our sources do not report them.
 
-**Its precondition is evidence.** Measure the full-reload cost on a
+WHAT LANDED: a diff between bronze's stored rows and the incoming ones,
+appended as INSERT/UPDATE/DELETE with the time we noticed. Identifier
+mode, which we qualify for since every object type declares an
+id_field, so an edit reads as one UPDATE rather than an unconnected
+delete and insert.
+
+PLAIN PYTHON, NOT DUCKDB. Measured: 0.984s against 0.050s for 200,000
+rows a side. At our scale that is under a second in a nightly job, and
+a dependency saving under a second is not worth its failure modes.
+
+A PARTIAL-READ GUARD, because deletions are INFERRED -- a sync that
+returned half the rows would otherwise record half the table as
+deleted, and the changelog is the one thing a re-sync cannot repair.
+
+STILL OPEN: nothing READS it. The current view that would resolve
+latest-row-per-key is deliberately separate, so the changelog can be
+verified for weeks before anything depends on its growth rate.
+
+**Its precondition was evidence.** Measure the full-reload cost on a
 realistic table first. If a nightly full sync is cheap, this buys
 HISTORY rather than performance -- which is a real thing to want, and a
 different argument from the one this file originally made.

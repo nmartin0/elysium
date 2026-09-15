@@ -41,7 +41,12 @@ def source_db(tmp_path):
 @pytest.fixture
 def synced(tmp_path, source_db):
     sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": source_db})})
-    sync.sync_table("primary", "customers", ["customer_id", "name"], {"customer_id": "string", "name": "string"})
+    # THE ID COLUMN IS THE THIRD ARGUMENT, not the column list. These
+    # calls were one argument short since they were written, and
+    # nothing noticed because no code read id_column until the
+    # changelog needed it to pair rows between snapshots.
+    sync.sync_table("primary", "customers", "customer_id",
+                    ["customer_id", "name"], {"customer_id": "string", "name": "string"})
     return sync, source_db
 
 
@@ -50,8 +55,8 @@ def _resync(sync, source_db, name):
     conn.execute("UPDATE customers SET name = ? WHERE customer_id = 'c1'", (name,))
     conn.commit()
     conn.close()
-    sync.sync_table("primary", "customers", ["customer_id", "name"],
-                    {"customer_id": "string", "name": "string"})
+    sync.sync_table("primary", "customers", "customer_id",
+                    ["customer_id", "name"], {"customer_id": "string", "name": "string"})
 
 
 def _names(adapter):
