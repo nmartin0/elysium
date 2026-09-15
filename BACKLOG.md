@@ -18,6 +18,120 @@ wearing the clothes of a finding.
 
 ---
 
+## 0. Found by using the UI, September 15
+
+Raised after a session exploring the running product. Ordered by
+whether the thing is BROKEN, merely WRONG, or a DESIGN QUESTION --
+because those want different amounts of care and the list should not
+pretend otherwise.
+
+### Broken: fix first
+
+**Select-all leaves every checkbox unticked.** CONFIRMED, and mine.
+`/objects/{type}/search` returns `"id": 1` -- an integer for
+Transaction -- while `/objects/{type}/matching-ids` returns
+`str(object_id)`. So after "Select all 64 matching" the selection set
+holds `"1"` and each checkbox asks `has(1)`: the bar says 64 selected
+and not one row looks it, so there is nothing to untick.
+
+The tests missed it because they used string ids on both sides. The
+fix is to agree on one representation at the boundary and test the
+DISAGREEMENT, not the agreement.
+
+**Checkboxes sit above their rows, not beside them.** CONFIRMED.
+`.object-search__result` is `display: block` and Blueprint's Checkbox
+is a block-level label, so it takes its own line. Reported as happening
+throughout the UI, which suggests the same pattern elsewhere -- worth a
+sweep rather than a one-line fix.
+
+### Wrong: small, visible, decided
+
+**Charts draw a slice per row for identifier-like fields.** Browse ->
+Customer -> Charts plots `name`, which is unique per customer and
+conveys nothing. There is ALREADY a guard for the opposite case -- a
+field where every object shares one value is dropped, because "one bar
+is not a distribution" -- and this is its mirror: a field whose
+distinct count equals its row count is an IDENTIFIER, not a category.
+
+Made worse by the fixture declaring no `prominent` fields, so the
+chooser falls back to every non-hidden field.
+
+**"All 1 silos are reachable."** Needs singular handling, and other
+count strings likely have the same problem.
+
+### Redundant: a modelling decision
+
+**RecategorizeTransaction and RecategorizeTransactions differ by one
+parameter type.** Foundry keeps single and bulk action types separate
+because a "bulk action type" is one "using an object reference list
+parameter" -- but that is a MODELLING constraint, not a user-facing
+one, and shipping both to a person is redundancy they have to think
+about.
+
+Proposed: ONE action taking a list, with the single-object form
+sending a list of one. `object_reference` becomes an optimisation for
+detail pages rather than a separate action.
+
+### Missing: shift-click range selection
+
+**Anchor-based, which is the established pattern**: the first clicked
+row is the anchor; Shift and a second click set every row between them
+to the second row's state; the second click becomes the new anchor.
+
+TWO DOCUMENTED PITFALLS, both worth stealing the fix for:
+
+- A STALE ANCHOR. Sentry shipped a bug where deselecting everything
+  left the anchor on a ghost row, so the next shift-click extended
+  from nowhere. Their fix: clear the anchor when the selection empties.
+- INDICES VERSUS IDENTITY. An Angular thread is explicit that `$index`
+  breaks under sorting, filtering and paging -- and OUR LIST IS ALL
+  THREE. The range must be computed over the currently displayed
+  order, never a stored index.
+
+### Needs research before building
+
+**Query is barren.** The one item here that is a design question
+rather than a defect. Deserves the treatment the ELT work got:
+precedent first, then a plan, then build.
+
+**Is the deployment-specific UI actually portable?** Filters and
+columns are supposed to derive from `visibleSchema`, so a different
+ontology should reshape them with no code change. UNVERIFIED -- and
+"mostly right" is not an answer.
+
+The honest test is a SECOND deployment fixture with different object
+types and field names, and assertions that the UI follows it. The same
+shape as the calibration probes, which exist because this class of
+drift is invisible until someone loads a different deployment.
+
+**A plugin API, server and client.** The largest item here and
+probably its own design session. The shape: third-party sub-apps and
+server-side compute that load INTO Elysium without modifying it, so a
+vanilla install can become something domain-specific -- the worked
+example being a quantitative trading analysis engine -- while base
+Elysium stays untouched and upgradeable.
+
+Both halves have strong precedent and neither should be improvised.
+
+### Visual sweep, not yet run
+
+Everything below was built and unit-tested but has not been seen
+working. Each step builds on the last:
+
+1. `python -m scripts.seed_dev_silos --force --bulk 60`
+2. Restart `uvicorn` WITHOUT `--reload` -- the pending-write store is
+   in-process memory, so a reload empties it mid-test and proposals
+   vanish between steps looking like a queue bug.
+3. Browse -> Transaction: fixed precision, checkboxes, the selection
+   bar, "Select all 64 matching".
+4. Actions (64) -> RecategorizeTransactions: propose it.
+5. Approvals: confirm it lists all 64.
+6. Admin -> Metrics: the five figures, the saturation callout, the
+   slowest-routes table.
+
+Step 6 last on purpose: by then there is enough traffic for the
+numbers to be non-trivial.
+
 ## 1. Needs a machine with a model
 
 **The prompt-quality measurement session.** Four questions sharing one
@@ -329,7 +443,7 @@ question here, and adjacent to the measurement session above.
 
 ---
 
-## 6. Optional
+## 7. Optional
 
 **HOT_RELOAD_PLAN.md step 5c**, sync to a branch and validate there.
 Optional by design: the generation-swap approach makes branch
