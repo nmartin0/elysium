@@ -444,6 +444,25 @@ idempotency, which the literature names as a core pipeline pattern --
 "produces the same result regardless of how many times it is executed
 with the same input".
 
+## The storage thread ends here, and the reason is scale
+
+Three commits chased the cost of a changing table: the unchanged-sync
+skip (which worked, 27.2 MB to 0.9 MB), then transactions and upsert
+(which did not), then partitioning.
+
+Partitioning is the documented answer and we should NOT do it. A
+million-row table is 4.9 MB of Parquet; the guidance targets 128 MB to
+1 GB per partition. We are two orders of magnitude below the point
+where the technique starts helping, and applying it anyway would create
+the small-files problem the same sources call the worst outcome.
+
+**THE HONEST SUMMARY: the remaining storage cost is not worth
+engineering against at our scale.** Thirty nightly syncs of a changing
+50,000-row table cost 31.6 MB. The cheap, safe win is taken; everything
+further is a technique for tables a hundred times larger.
+
+What follows is kept for the deployment that eventually has one.
+
 ## Why a CHANGING table still costs a full copy, and what would fix it
 
 Measured after the unchanged-sync skip, since that only helps tables
@@ -466,11 +485,40 @@ partitioning -- "if updates are localized to specific partitions,
 optimize storage by partitioning effectively" -- which makes a change
 rewrite only the affected partition.
 
-**NOT BUILT HERE.** Partitioning an Iceberg table through pyiceberg
-needs a schema with explicit field ids and a partition spec, and
-choosing the partition key is a per-deployment decision with real
-consequences for read performance. It is the right next lead and a
-bigger piece of work than it first appears.
+**AND WE SHOULD NOT DO IT, at our scale.** Researched and then
+measured, in that order, which reversed the conclusion.
+
+The guidance is consistent about sizing: target "128 MB - 1 GB per
+partition", with a minimum of "1GB - 10GB" and a warning that files
+"< 100MB in size will cause all query engines to experience
+performance problems at scale".
+
+Measured against that:
+
+    50,000 rows    ->  0.72 MB of Parquet
+    1,000,000 rows ->  4.90 MB of Parquet
+
+**A MILLION-ROW TABLE IS FIVE MEGABYTES.** Partitioning it into three
+regions would give three 1.6 MB partitions -- two orders of magnitude
+below the smallest recommended size. That is textbook over-partitioning:
+creating the small-files problem, which the same sources call "the
+worst-case outcome", to solve a problem we do not have.
+
+The storage arithmetic says the same thing. Thirty nightly syncs of a
+changing 50,000-row table cost 31.6 MB. That is not a problem worth
+risking a partition layout for.
+
+**WHEN IT WOULD BECOME RIGHT**, recorded so the decision is not
+re-litigated from scratch: a table whose Parquet exceeds a few hundred
+megabytes, which is roughly a hundred million rows at the widths we
+see. The partition key should then come from "the columns that appear
+in WHERE clauses most frequently" -- and for us that is the SECURITY
+field, since MAC filters every read by it. Low cardinality, in every
+query, and already declared in the ontology.
+
+Partition evolution is metadata-only -- "existing data retains its
+original layout; new writes use the new spec" -- so choosing later
+costs nothing that choosing now would save.
 
 **EXPIRY IS STILL WANTED**, for tables that genuinely change
 nightly. Either pyiceberg
