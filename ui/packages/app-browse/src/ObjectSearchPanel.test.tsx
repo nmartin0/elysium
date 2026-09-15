@@ -1115,7 +1115,7 @@ describe('selecting objects to act on', () => {
     renderPanel(CUSTOMER_SCHEMA)
 
     // Before: no selection, so an action applies to every match.
-    expect(await screen.findByText(/actions apply to all/i)).toBeInTheDocument()
+    expect(await screen.findByText(/actions apply to the/i)).toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText('Select Ada Okafor'))
 
@@ -1153,7 +1153,7 @@ describe('selecting objects to act on', () => {
     fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
     fireEvent.click(screen.getByLabelText('Clear selection'))
 
-    expect(await screen.findByText(/actions apply to all/i)).toBeInTheDocument()
+    expect(await screen.findByText(/actions apply to the/i)).toBeInTheDocument()
   })
 })
 

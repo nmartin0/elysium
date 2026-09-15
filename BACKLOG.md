@@ -101,7 +101,14 @@ STILL OPEN, all of it UI:
 - ~~"No selection means the whole filtered set"~~ DONE, resolved in the
   panel so the rule lives in one place. Foundry's
   rule: the current set "or all objects, if none are selected".
-- Select-all across pages means the FILTER, not the page.
+- Select-all across pages means the FILTER, not the page. STILL OPEN,
+  and now stated honestly rather than falsely: the bar promises "the N
+  shown" and says how many more match, because the panel holds one
+  PAGE and an action with no selection reaches only that. Foundry's
+  select-all "selects all objects matching the applied filters, not
+  just the objects on the current page" -- honouring that needs the
+  SERVER to accept a filter instead of an id list, which is a real
+  change to the action contract.
 - ~~A ceiling.~~ DONE: MAX_BULK_OBJECTS is 1000, matching Foundry,
   refused at PROPOSE time so nobody assembles a selection they will
   not be allowed to act on.

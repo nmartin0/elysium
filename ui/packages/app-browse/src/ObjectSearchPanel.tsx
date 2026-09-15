@@ -533,6 +533,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         <SelectionBar
           selectedCount={selectedIds.size}
           matchCount={totalMatches}
+          pageCount={results.length}
           onClear={() => setSelectedIds(new Set())}
         />
         {/* ONLY ACTIONS THE ONTOLOGY MADE BULK-CAPABLE. The menu
@@ -558,6 +559,20 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           // -- and it is resolved HERE rather than in the form, so the
           // rule lives in one place. The form is told the ids and does
           // not know how they were chosen.
+          // THE PAGE, NOT EVERY MATCH, and the selection bar says so.
+          //
+          // Foundry's rule is that an action applies to "all objects,
+          // if none are selected", and their select-all "selects all
+          // objects matching the applied filters, not just the objects
+          // on the current page". We cannot honour that half: the
+          // panel holds one PAGE of results, and total_matches counts
+          // every match.
+          //
+          // So the promise is narrowed rather than the behaviour
+          // faked. Sending results.map() while the bar claimed N
+          // matches would touch fewer objects than a person was just
+          // told -- a quiet under-application, which is worse than a
+          // refusal because nothing looks wrong afterwards.
           objectIds={selectedIds.size > 0 ? [...selectedIds] : results.map((result) => result.id)}
           onDone={() => {
             setBulkAction(null)

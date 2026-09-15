@@ -36,22 +36,40 @@ interface SelectionBarProps {
   selectedCount: number
   /** How many the current filter matches, selected or not. */
   matchCount: number
+  /** How many are on screen right now. Differs from matchCount as soon
+   *  as results are paged, and an action with no selection reaches
+   *  only these -- so this is the number the bar must promise. */
+  pageCount: number
   onClear: () => void
 }
 
-export default function SelectionBar({ selectedCount, matchCount, onClear }: SelectionBarProps) {
+export default function SelectionBar({ selectedCount, matchCount, pageCount, onClear }: SelectionBarProps) {
   // NOTHING SELECTED AND NOTHING MATCHED means there is no set to
   // describe, and a bar saying so would be noise.
   if (matchCount === 0) return null
 
-  const acting = selectedCount > 0 ? selectedCount : matchCount
+  // WHAT AN ACTION WOULD ACTUALLY REACH, which is the page rather than
+  // every match when nothing is selected. Foundry's select-all "selects
+  // all objects matching the applied filters, not just the objects on
+  // the current page"; we hold one page, so promising every match would
+  // be a quiet under-application -- fewer objects touched than the
+  // person was just told, with nothing looking wrong afterwards.
+  const acting = selectedCount > 0 ? selectedCount : pageCount
+  const pagedBeyondView = selectedCount === 0 && matchCount > pageCount
   const overCeiling = acting > MAX_BULK_OBJECTS
 
   return (
     <div className="selection-bar" aria-live="polite">
       <Tag minimal intent={overCeiling ? 'warning' : 'none'}>
-        {selectedCount > 0 ? `${selectedCount} selected` : `No selection — actions apply to all ${matchCount} matches`}
+        {selectedCount > 0 ? `${selectedCount} selected` : `No selection — actions apply to the ${pageCount} shown`}
       </Tag>
+
+      {pagedBeyondView && (
+        // SAID OUT LOUD, because the gap is invisible otherwise: the
+        // count says 20 and the filter matched 500, and nothing on
+        // screen connects the two.
+        <Tag minimal>{matchCount - pageCount} more match the filter — select them to include them</Tag>
+      )}
 
       {overCeiling && (
         // NAMED BEFORE THE FORM, not refused after it. The server
