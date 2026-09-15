@@ -2,10 +2,11 @@ import { Fragment, useEffect, useState } from 'react'
 import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import {
-  searchObjects,
   getDataFreshness,
   getErrorMessage,
+  getVisibleActionTypesCached,
   handleIfSessionExpired,
+  searchObjects,
   type DataFreshness,
 } from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
@@ -16,6 +17,8 @@ import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Worksp
 import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
 
 import ActiveFilters from './ActiveFilters'
+import BulkActionForm from './BulkActionForm'
+import BulkActionsMenu, { type BulkAction } from './BulkActionsMenu'
 import SavedViews from './SavedViews'
 import SelectionBar from './SelectionBar'
 import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
@@ -139,6 +142,21 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // selects all objects matching the applied filters, not just the
   // objects on the current page".
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // WHICH ACTIONS EXIST, for the bulk menu. Cached at the shell level,
+  // so several panels asking costs one request.
+  const [actionTypes, setActionTypes] = useState<BulkAction[]>([])
+  const [bulkAction, setBulkAction] = useState<BulkAction | null>(null)
+
+  useEffect(() => {
+    void (getVisibleActionTypesCached() as Promise<BulkAction[]>)
+      .then(setActionTypes)
+      // SILENT ON FAILURE, and the menu simply does not appear. An
+      // error banner about actions would be noise on a page whose job
+      // is showing objects, and the actions are an addition to it
+      // rather than the point of it.
+      .catch(() => {})
+  }, [])
 
   function toggleSelected(id: string) {
     setSelectedIds((current) => {
@@ -503,11 +521,42 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           filter pills, because it describes what is about to be read
           -- and because "no selection" means ALL matches rather than
           none, which is not guessable. */}
-      <SelectionBar
-        selectedCount={selectedIds.size}
-        matchCount={totalMatches}
-        onClear={() => setSelectedIds(new Set())}
-      />
+      <div className="selection-row">
+        <SelectionBar
+          selectedCount={selectedIds.size}
+          matchCount={totalMatches}
+          onClear={() => setSelectedIds(new Set())}
+        />
+        {/* ONLY ACTIONS THE ONTOLOGY MADE BULK-CAPABLE. The menu
+            filters on an object_reference_list parameter of THIS
+            object type; anything else would be accepted by the form
+            and refused at the far end, after a whole form was
+            filled. */}
+        {selectedType !== null && results.length > 0 && (
+          <BulkActionsMenu
+            actions={actionTypes}
+            objectType={currentType}
+            count={selectedIds.size > 0 ? selectedIds.size : totalMatches}
+            onChoose={setBulkAction}
+          />
+        )}
+      </div>
+
+      {bulkAction !== null && (
+        <BulkActionForm
+          action={bulkAction}
+          objectType={currentType}
+          // NO SELECTION MEANS THE WHOLE FILTERED SET -- Foundry's rule
+          // -- and it is resolved HERE rather than in the form, so the
+          // rule lives in one place. The form is told the ids and does
+          // not know how they were chosen.
+          objectIds={selectedIds.size > 0 ? [...selectedIds] : results.map((result) => result.id)}
+          onDone={() => {
+            setBulkAction(null)
+            setSelectedIds(new Set())
+          }}
+        />
+      )}
 
       {loading && <p className="object-search__status">Searching…</p>}
 

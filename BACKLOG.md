@@ -91,8 +91,15 @@ STILL OPEN, all of it UI:
   painted underneath would be visible, unclickable, and would navigate
   instead of selecting. UNTESTABLE IN JSDOM -- no layout is computed,
   so a control removing the z-index broke nothing. Wants a real browser.
-- The Actions menu itself, fed by the selection.
-- "No selection means the whole filtered set", which is Foundry's
+- ~~The Actions menu itself~~ DONE, plus a bulk form. The menu offers
+  only actions with an object_reference_list parameter of the CURRENT
+  object type -- Foundry's rule that "only actions that accept object
+  list parameters of the correct type will be shown". Absent rather
+  than disabled when nothing qualifies.
+- RecategorizeTransactions is declared in the shipped ontology, so the
+  path is exercised by a real deployment rather than only by tests.
+- ~~"No selection means the whole filtered set"~~ DONE, resolved in the
+  panel so the rule lives in one place. Foundry's
   rule: the current set "or all objects, if none are selected".
 - Select-all across pages means the FILTER, not the page.
 - ~~A ceiling.~~ DONE: MAX_BULK_OBJECTS is 1000, matching Foundry,

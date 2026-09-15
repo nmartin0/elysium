@@ -926,7 +926,28 @@ button.danger {
   display: flex;
   align-items: center;
   gap: var(--space-normal);
+}
+
+/* The selection bar and the actions it enables, on one line. They
+ * describe the same thing -- what is selected, and what can be done
+ * with it -- so separating them would make a person look in two
+ * places to answer one question. */
+.selection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-normal);
   margin-block-end: var(--space-normal);
+}
+
+/* The bulk form appears below the row that opened it, above the
+ * results it will change, so the objects are still in view while the
+ * form is filled in. */
+.bulk-action-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-normal);
+  margin-block-end: var(--space-loose);
 }
 
 .object-search__result-field:last-child {

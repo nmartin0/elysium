@@ -9,6 +9,10 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     searchObjects: vi.fn(),
+    // The panel now asks which actions exist, for the bulk menu.
+    // Unmocked, every test here would hit a real fetch and the menu
+    // would never appear.
+    getVisibleActionTypesCached: vi.fn(),
     // The panel now renders ChartsPanel, which aggregates. Unmocked,
     // every test here would hit a real fetch and the charts would show
     // an error instead of bars.
@@ -19,7 +23,13 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   }
 })
 
-import { ApiError, aggregateObjects, getDataFreshness, searchObjects } from '@elysium/shell-api/api'
+import {
+  ApiError,
+  aggregateObjects,
+  getDataFreshness,
+  getVisibleActionTypesCached,
+  searchObjects,
+} from '@elysium/shell-api/api'
 import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
@@ -33,6 +43,7 @@ vi.mock('@elysium/shell-api/components/Chart', () => ({
 }))
 
 const mockedSearchObjects = vi.mocked(searchObjects)
+const mockedGetVisibleActionTypesCached = vi.mocked(getVisibleActionTypesCached)
 const mockedGetDataFreshness = vi.mocked(getDataFreshness)
 const mockedAggregate = vi.mocked(aggregateObjects)
 
@@ -69,6 +80,11 @@ function searchResult(results: SearchResult[], totalMatches?: number) {
 }
 
 beforeEach(() => {
+  // A DEFAULT FOR EVERY TEST, not just the ones about actions. Without
+  // it the mock returns undefined and the effect has nothing to chain
+  // onto -- which broke all 57 existing tests at once and is exactly
+  // what a shared mock should prevent.
+  mockedGetVisibleActionTypesCached.mockResolvedValue([])
   // Column choices persist in localStorage now, which is what they are
   // FOR in a browser and exactly what makes tests interfere.
   window.localStorage.clear()
@@ -1138,5 +1154,72 @@ describe('selecting objects to act on', () => {
     fireEvent.click(screen.getByLabelText('Clear selection'))
 
     expect(await screen.findByText(/actions apply to all/i)).toBeInTheDocument()
+  })
+})
+
+describe('acting on a selection', () => {
+  /**
+   * FOUNDRY'S RULE LIVES IN THE PANEL, not the form: an action
+   * receives "the current set of selected objects in your exploration
+   * (or all objects, if none are selected)". Resolving it here keeps
+   * it in one place -- the form is told the ids and does not know how
+   * they were chosen.
+   */
+  const BULK = {
+    name: 'RecategorizeTransactions',
+    parameters: {
+      customer_ids: { type: 'object_reference_list', object_type: 'Customer' },
+      new_category: { type: 'string', required: true },
+    },
+  }
+
+  it('offers the Actions menu when a bulk action exists for the type', async () => {
+    mockedGetVisibleActionTypesCached.mockResolvedValue([BULK])
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText(/Actions \(/)).toBeInTheDocument()
+  })
+
+  it('no selection means EVERY match, not none', async () => {
+    /** THE RULE THAT IS NOT GUESSABLE.
+     *
+     * Someone who clears a selection intending to cancel would, on
+     * pressing an action, hit the whole result set. A control making
+     * an empty selection send an empty list failed nothing until this
+     * existed.
+     */
+    mockedGetVisibleActionTypesCached.mockResolvedValue([BULK])
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByText(/Actions \(/))
+    fireEvent.click(await screen.findByText('RecategorizeTransactions'))
+
+    // The form states what it will touch, and with nothing selected
+    // that is both matches.
+    expect(await screen.findByText(/2 Customer objects/)).toBeInTheDocument()
+  })
+
+  it('a selection narrows what the action touches', async () => {
+    mockedGetVisibleActionTypesCached.mockResolvedValue([BULK])
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByText(/Actions \(/))
+    fireEvent.click(await screen.findByText('RecategorizeTransactions'))
+
+    expect(await screen.findByText(/1 Customer\b/)).toBeInTheDocument()
   })
 })

@@ -69,6 +69,12 @@ roles:
       # until some role is granted execute: on it by name, the same
       # way a field needs its own read: grant.
       - execute:RecategorizeTransaction
+      # THE BULK SIBLING NEEDS ITS OWN GRANT, by name. Being allowed to
+      # recategorise one transaction does not imply being allowed to
+      # recategorise a thousand -- that is a different decision with a
+      # different blast radius, and the grant vocabulary says so rather
+      # than inferring it.
+      - execute:RecategorizeTransactions
 
   # DEVELOPMENT ONLY. One login that reaches every sub-app and reads
   # every object type, so checking a layout does not mean switching
@@ -104,6 +110,7 @@ roles:
       - read:Transaction.transaction_date
       - read:Transaction.customer_id
       - execute:RecategorizeTransaction
+      - execute:RecategorizeTransactions
 
 users:
   user_alice:
