@@ -116,6 +116,22 @@ click a diamond" beats "the graph now supports actions". And when they
 paste output, read it closely — the bug is often in a detail they did
 not flag.
 
+**jsdom computes NO LAYOUT, and that is the biggest gap in what this
+project can verify.** No stacking contexts, no hit-testing, no cascade
+resolution, no idea whether one element covers another. A whole
+session went by shipping UI fixes that passed 786 tests and did not
+work, every one found by a person clicking.
+
+`ui/e2e/` holds Playwright tests that CAN see those things --
+`npm run e2e` from `ui/`, after `npm run e2e:install` once. They need
+a real backend and dev server; `ui/e2e/shell.spec.ts` documents the
+setup in full.
+
+DELIBERATELY NOT PART OF `npm test`, which stays fast and mocked. But
+a UI change that is about LAYOUT, HIT-TESTING or the CASCADE has not
+been verified until these run. If a fix is for something a person
+reported seeing, assume jsdom cannot see it either.
+
 **Backend changes need `uvicorn` restarted.** Frontend changes do not
 — Vite hot-reloads. A new route returning 404 is almost always a stale
 server, and this has caused confusion more than once. Say so when a

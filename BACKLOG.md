@@ -583,10 +583,22 @@ session rather than to a decision.
 
 ### Browser-based tests, as their own item
 
-**THE SINGLE BIGGEST GAP IN WHAT THIS PROJECT CAN VERIFY.** Vitest
-supports a browser runner, which would allow asserting COMPUTED
-STYLES -- the thing that was missing every time this session shipped a
-UI fix that did not work.
+**STARTED, and the foundation already existed.** `ui/e2e/` holds
+Playwright tests with a config and four shell tests -- but NO npm
+script, nothing in CLAUDE.md, and so no part in anyone's routine.
+Added `npm run e2e`, `npm run e2e:install`, and a CLAUDE.md section
+saying plainly that jsdom computes no layout.
+
+`ui/e2e/layout.spec.ts` is new: computed geometry, hit-testing and
+repeated real clicks -- the three things that would have caught this
+session's failures.
+
+**UNRUN, AND THAT IS STATED IN THE FILE.** The container cannot
+download a browser (cdn.playwright.dev is not in its network
+allowlist), so every assertion is a claim awaiting its first
+execution. Expect selector fixes on the first run.
+
+**STILL OPEN:** running them, then layering the CSS behind them.
 
 It would have caught the checkbox layout, the labels stacked above
 their text, and probably the stretched-link problem. Six attempts at
