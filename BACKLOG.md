@@ -354,10 +354,33 @@ it is lost, the lake is a directory of Parquet nobody can interpret.
 
 2. **Decide what the lake holds**, along the split above.
 
-3. **A teardown-and-rebuild test**, which is the only honest proof.
-   Stand a deployment up, write to it, destroy everything outside the
-   lake, stand a fresh one up, and assert it can read and explain what
-   it finds.
+3. ~~**A teardown-and-rebuild test.**~~ DONE, and THE ANSWER IS NO.
+
+   **THE LAKE IS NOT PORTABLE.** An Iceberg lake written by
+   pyiceberg's SqlCatalog bakes absolute paths in at three depths: the
+   catalog row's metadata_location, the metadata JSON's own `location`
+   and every `manifest-list`, and the manifests' references to their
+   data files. Copy it anywhere and every read fails with
+   FileNotFoundError naming a directory that no longer exists.
+
+   Verified at each depth rather than inferred from the first --
+   rewriting the catalog alone leaves three tests failing, and
+   rewriting the JSON as well STILL fails, because the manifests are
+   Avro and hold their own.
+
+   So the fix cannot be a path-rewriting migration bolted on
+   afterwards. It is either RELATIVE LOCATIONS AT WRITE TIME, or a
+   CATALOG REBUILT FROM THE WAREHOUSE on load. That is its own piece
+   of work and the next thing to do here.
+
+   The tests assert the FAILURE, so fixing it turns them red rather
+   than letting the fix land unnoticed.
+
+   What DOES survive, checked in place: the data, bronze, the
+   changelog, and provenance stamped on each table. What does not: the
+   write log, credentials, config history, metrics -- and the ontology,
+   policy and silos, which by the control-plane standard belong in the
+   lake and are not there.
 
 4. **Name what deliberately does NOT survive**, because a rebuild that
    silently loses the write log is worse than one that refuses to
