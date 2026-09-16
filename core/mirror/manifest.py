@@ -132,14 +132,36 @@ def publish(catalog, generation: int, loaded_at: str, source_digest: str,
     reader an explanation; a failed sync costs the deployment its data.
     The same trade bronze makes, and it is warned for the same reason.
     """
-    manifest = build_manifest(generation, loaded_at, source_digest, files, tables)
-    location = f"{_warehouse_root(catalog)}/{MANIFEST_PREFIX}/manifest-{generation}.json"
-
+    # INSIDE THE TRY, ALL OF IT. Resolving the warehouse sat outside
+    # and raised KeyError straight past a docstring promising this
+    # never fails the caller -- found by an audit narrowing the catch,
+    # which made an escape visible that `except Exception` had been
+    # hiding by accident rather than by design.
+    location = None
     try:
+        manifest = build_manifest(generation, loaded_at, source_digest, files, tables)
+        location = f"{_warehouse_root(catalog)}/{MANIFEST_PREFIX}/manifest-{generation}.json"
+
         output = _file_io(catalog).new_output(location)
         with output.create(overwrite=True) as stream:
             stream.write(json.dumps(manifest, indent=2, sort_keys=True).encode())
-    except Exception as e:  # noqa: BLE001 - see the docstring
+    except (OSError, ValueError, KeyError) as e:
+        # NAMED, NOT `except Exception`, and this file was inconsistent
+        # with the project's own recorded position until an audit
+        # caught it. iceberg_sync.py carries the lesson: a bare catch
+        # there "swallowed every real failure too (a permissions
+        # problem, a full disk, a corrupt catalog)".
+        #
+        # It had already happened here. A bare catch turned a
+        # misremembered method name -- catalog._fs_io(), which does not
+        # exist -- into a warning about the manifest rather than the
+        # AttributeError it was. The bug surfaced anyway, but as the
+        # wrong diagnosis.
+        #
+        # THESE THREE, verified by making each happen rather than
+        # guessed: an unwritable path raises FileNotFoundError (an
+        # OSError), a bad scheme raises ValueError, and a catalog with
+        # no warehouse property raises KeyError.
         logger.warning(
             f"manifest for generation {generation} not published ({e}); the lake "
             f"holds its data but cannot explain it to a fresh install."
@@ -183,12 +205,36 @@ def read_manifests(catalog) -> list[dict[str, Any]]:
             location = f"{root}/manifest-{generation}.json"
             try:
                 with io.new_input(location).open() as stream:
-                    found.append(json.loads(stream.read()))
-                missing_run = 0
-            except Exception:  # noqa: BLE001 - absence is the normal case
+                    raw = stream.read()
+            except (OSError, ValueError, KeyError):
+                # ABSENT, which is the normal case: manifests are
+                # written only when configuration changes, so gaps are
+                # expected and a missing one is not news.
                 missing_run += 1
+                generation += 1
+                continue
+
+            try:
+                found.append(json.loads(raw))
+                missing_run = 0
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                # PRESENT BUT UNREADABLE, which is NOT the same thing
+                # and was being counted as absent. A corrupt manifest
+                # is a finding -- it is the file someone would reach
+                # for during an incident -- and silently skipping it
+                # would make a damaged lake look like an undescribed
+                # one.
+                logger.warning(
+                    f"manifest at {location} could not be parsed and was skipped; "
+                    f"the lake describes itself less completely than it appears to."
+                )
+                missing_run = 0
             generation += 1
-    except Exception as e:  # noqa: BLE001 - a lake with no manifests is normal
+    except (OSError, ValueError, KeyError) as e:
+        # The same three, for the same reasons. A lake with no
+        # manifests at all is normal -- every one written before this
+        # existed has none -- but "normal" is the EMPTY LIST below,
+        # reached without an exception. This is the failure path.
         logger.debug(f"no manifests read ({e})")
         return []
 
@@ -259,7 +305,12 @@ def publish_manifest(sync, config) -> None:
             dict(config.source_text),
             tables,
         )
-    except Exception as e:  # noqa: BLE001 - see the docstring
+    except (OSError, ValueError, KeyError, AttributeError) as e:
+        # AttributeError as well, here only: this reaches into the sync
+        # for its catalog, so a shape change upstream is a real and
+        # likely failure. Naming it keeps the warning honest about what
+        # went wrong instead of reporting every fault as "the manifest
+        # failed".
         logging.getLogger(__name__).warning(
             f"could not publish manifest for generation {config.generation}: {e}"
         )

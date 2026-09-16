@@ -131,7 +131,17 @@ def _partition_tables(catalog) -> tuple[set[str], set[str]]:
 def _row_count(catalog, identifier: str) -> "int | None":
     try:
         return catalog.load_table(identifier).scan().to_arrow().num_rows
-    except Exception:  # noqa: BLE001 - an unreadable table IS the finding
+    except Exception:  # noqa: BLE001 - see below
+        # BROAD ON PURPOSE, and differently from manifest.py, which an
+        # audit narrowed. The distinction is what the caller does with
+        # it: there, a swallowed error became a warning that
+        # MISDIAGNOSED the fault. Here, whatever went wrong, the true
+        # statement is "this table could not be read" -- which is
+        # exactly what gets reported.
+        #
+        # A programming error still surfaces, as a problem in the
+        # report rather than a crash. That is acceptable for a check
+        # whose whole job is to list what is wrong.
         return None
 
 

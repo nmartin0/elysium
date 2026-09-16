@@ -156,3 +156,63 @@ class TestTheRoundTrip:
         found = read_manifests(synced._catalog)
 
         assert [m["generation"] for m in found] == [5, 1]
+
+
+class TestAuditFindings:
+    """Behaviours an audit of this module added, each for a real gap.
+
+    Grouped rather than scattered so the reason they exist stays
+    visible: none was in the original design, and each came from
+    comparing this file against the project's own recorded positions.
+    """
+
+    def test_a_corrupt_manifest_is_reported_not_skipped(self, synced, caplog):
+        """PRESENT BUT UNREADABLE IS NOT THE SAME AS ABSENT.
+
+        The read loop counted a parse failure as a missing generation,
+        so a damaged manifest made the lake look undescribed rather
+        than damaged -- and a damaged one is the file someone would
+        reach for during an incident.
+        """
+        from core.mirror.manifest import MANIFEST_PREFIX, _file_io, _warehouse_root
+
+        publish(synced._catalog, 1, "2026-01-01T00:00:00Z", "d1", FILES, ["s.t"])
+        location = f"{_warehouse_root(synced._catalog)}/{MANIFEST_PREFIX}/manifest-2.json"
+        with _file_io(synced._catalog).new_output(location).create(overwrite=True) as stream:
+            stream.write(b"{ this is not json")
+
+        found = read_manifests(synced._catalog)
+
+        assert [m["generation"] for m in found] == [1]
+        assert any("could not be parsed" in record.message for record in caplog.records)
+
+    def test_a_corrupt_manifest_does_not_hide_later_ones(self, synced):
+        # Counted as a MISS, a corrupt file at generation 2 would
+        # contribute to the run of absences that ends the search --
+        # so a readable generation 3 could be lost behind a damaged 2.
+        from core.mirror.manifest import MANIFEST_PREFIX, _file_io, _warehouse_root
+
+        publish(synced._catalog, 1, "2026-01-01T00:00:00Z", "d1", FILES, ["s.t"])
+        location = f"{_warehouse_root(synced._catalog)}/{MANIFEST_PREFIX}/manifest-2.json"
+        with _file_io(synced._catalog).new_output(location).create(overwrite=True) as stream:
+            stream.write(b"not json")
+        publish(synced._catalog, 3, "2026-01-03T00:00:00Z", "d3", FILES, ["s.t"])
+
+        found = read_manifests(synced._catalog)
+
+        assert [m["generation"] for m in found] == [3, 1]
+
+    def test_publishing_to_an_impossible_location_warns_and_returns_none(
+        self, synced, caplog,
+    ):
+        """NAMED EXCEPTIONS, NOT `except Exception`.
+
+        A bare catch here turned a misremembered method name into a
+        warning about the manifest rather than the AttributeError it
+        was -- the same mistake iceberg_sync.py records having made
+        with a bare catch that "swallowed every real failure too".
+        """
+        broken = type("NoWarehouse", (), {"properties": {}})()
+
+        assert publish(broken, 1, "2026-01-01T00:00:00Z", "d1", FILES, ["s.t"]) is None
+        assert any("not published" in record.message for record in caplog.records)
