@@ -174,45 +174,16 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // paged -- and this list is all three.
   const [anchorId, setAnchorId] = useState<string | null>(null)
 
-  // WHETHER SHIFT IS HELD, tracked on the WINDOW rather than captured
-  // from any particular element's event.
-  //
-  // THIRD ATTEMPT, and the first two failed for the same underlying
-  // reason: they depended on WHICH element received an event and in
-  // what order. Reading it from React's onChange missed it because a
-  // click on a <label> synthesises a modifier-less click on the input.
-  // Moving to onMouseDown on the row missed it too, for a reason I
-  // never established -- which is exactly the problem. A mechanism I
-  // cannot reason about reliably is one I should not be using.
-  //
-  // The key's state is a property of the KEYBOARD, not of any click.
-  // Tracking it where it actually lives removes every question about
-  // event targets, delegation, label forwarding and bubbling at once.
-  const shiftHeld = useRef(false)
+  // WHETHER A FORWARDED CLICK IS EXPECTED. Clicking a label produces
+  // two events -- the label's, then a synthesised one on the input --
+  // and only the first carries the modifier. This skips the second.
+  const forwardedClick = useRef(false)
 
-  useEffect(() => {
-    // `event.shiftKey` rather than `event.key === 'Shift'`, so the
-    // state is right even when focus arrives mid-press or another
-    // modifier is involved.
-    const track = (event: KeyboardEvent) => {
-      shiftHeld.current = event.shiftKey
-    }
-    // AND ON BLUR: releasing the key while another window has focus
-    // would otherwise leave this stuck true, and the next plain click
-    // would silently select a range.
-    const clear = () => {
-      shiftHeld.current = false
-    }
-
-    window.addEventListener('keydown', track)
-    window.addEventListener('keyup', track)
-    window.addEventListener('blur', clear)
-    return () => {
-      window.removeEventListener('keydown', track)
-      window.removeEventListener('keyup', track)
-      window.removeEventListener('blur', clear)
-    }
-  }, [])
+  // NO MODIFIER TRACKING HERE ANY MORE. A window-level keydown/keyup
+  // pair used to hold the shift state for the checkbox to read, and it
+  // was dead weight: the click handler carries event.shiftKey itself,
+  // which is the same fact without the bookkeeping or the risk of the
+  // flag sticking true after a blur.
 
   function toggleSelected(id: string, withShift = false) {
     // THE ORDER ON SCREEN, which is what a person means by "everything
@@ -778,34 +749,77 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   // mousedown bubbles here before the click that
                   // produces the change.
                 >
-                  <Checkbox
+                  {/* THE CLICK, NOT THE CHANGE, and the reason is a
+                      Firefox bug rather than anything about React.
+
+                      Mozilla #559506: shift-clicking a <label> does not
+                      check the input it labels, so NO CHANGE EVENT
+                      FIRES AT ALL. Shopify's Polaris hit exactly this
+                      in their ResourceList and documented it.
+
+                      Blueprint's Checkbox IS a label, so every earlier
+                      version of this hung off onChange and could not
+                      work in Firefox however the modifier was
+                      obtained. Three fixes aimed at the modifier while
+                      the handler was never running.
+
+                      NO preventDefault(), which a first version had.
+                      It stopped the browser toggling the input, and
+                      React's controlled-checkbox bookkeeping then left
+                      the box UNCHECKED while the count said one was
+                      selected -- a test caught that. Letting the
+                      native toggle happen and re-rendering from state
+                      keeps the DOM and the count agreeing.
+
+                      No double-toggle results: the click updates state
+                      once, and the native change is inert because the
+                      box is controlled. */}
+                  <span
                     className="object-search__select"
-                    checked={selectedIds.has(result.id)}
-                    // CAPTURED ON mousedown, NOT READ FROM onChange.
-                    //
-                    // Blueprint's Checkbox is a <label> wrapping an
-                    // <input>, and clicking a label makes the browser
-                    // SYNTHESISE a click on the control it labels --
-                    // a synthetic click that carries no modifier keys.
-                    // So onChange saw shiftKey false however the key
-                    // was held, and shift-click silently behaved as a
-                    // plain click.
-                    //
-                    // It passed every test, because fireEvent
-                    // dispatches the event straight at the input with
-                    // the modifier attached and never goes through a
-                    // label at all. Found by a person holding shift.
-                    //
-                    // mousedown is a real gesture, always carries the
-                    // true modifier state, and always precedes the
-                    // click that produces the change.
-                    // THE KEYBOARD PATH TOO: space on a focused
-                    // checkbox produces a change with no mouse event
-                    // at all, and shift-space is how a keyboard user
-                    // extends a range.
-                    onChange={() => toggleSelected(result.id, shiftHeld.current)}
-                    aria-label={`Select ${String(titleValue)}`}
-                  />
+                    onClick={(event) => {
+                      // ONCE PER GESTURE. Clicking a label fires a
+                      // click on the label AND forwards a synthesised
+                      // one to the input; both bubble here, so acting
+                      // on each toggles twice and nothing happens. A
+                      // test caught exactly that.
+                      //
+                      // The forwarded click on the input is the one
+                      // event both paths share -- clicking the box
+                      // itself produces only that one -- so it is the
+                      // one to act on.
+                      // THE LABEL'S CLICK CARRIES THE MODIFIER; the
+                      // forwarded one does not. Verified by rendering a
+                      // label and counting: a click on it yields LABEL
+                      // then INPUT, and only the first has shiftKey.
+                      // That is the same asymmetry Mozilla #559506
+                      // describes, and acting on the input's click
+                      // silently dropped every shift.
+                      //
+                      // So the FIRST event of the gesture is the one to
+                      // act on, and the forwarded one that follows is
+                      // skipped. Clicking the box itself produces only
+                      // the input event, so that path still works.
+                      const target = event.target as HTMLElement
+                      if (target.tagName === 'LABEL') {
+                        forwardedClick.current = true
+                        toggleSelected(result.id, event.shiftKey)
+                        return
+                      }
+                      if (forwardedClick.current) {
+                        forwardedClick.current = false
+                        return
+                      }
+                      toggleSelected(result.id, event.shiftKey)
+                    }}
+                  >
+                    <Checkbox
+                      checked={selectedIds.has(result.id)}
+                      // Controlled and deliberately inert: the span
+                      // above owns the interaction.
+                      onChange={() => {}}
+                      aria-label={`Select ${String(titleValue)}`}
+                    />
+                  </span>
                   <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
                     <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
                   </Link>

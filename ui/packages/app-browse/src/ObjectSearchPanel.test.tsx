@@ -1311,38 +1311,40 @@ describe('a result card lays its checkbox beside its content', () => {
  *
  *  Firing mousedown first is what makes the test resemble the gesture.
  */
-/** Holding shift, then clicking -- as a keyboard and mouse do it.
+/** A shift-click, as a browser delivers one.
  *
- * THE MODIFIER IS TRACKED ON THE WINDOW now, because two earlier
- * mechanisms both depended on which element received an event, and
- * both failed in a real browser while passing here. A keydown on the
- * window is what actually happens when a person holds shift, whatever
- * they go on to click.
+ * THE CLICK CARRIES THE MODIFIER. Earlier versions fired keyboard
+ * events at the window because the component tracked shift state
+ * there; it no longer does, because `event.shiftKey` on the click is
+ * the same fact without the bookkeeping.
+ *
+ * AND THE CLICK IS WHAT MATTERS, not the change: Firefox does not
+ * fire a change event when a label is shift-clicked (Mozilla #559506),
+ * which is why every version of this built on onChange failed there
+ * while passing here.
  */
 function shiftClick(element: HTMLElement) {
-  fireEvent.keyDown(window, { key: 'Shift', shiftKey: true })
-  fireEvent.click(element)
-  fireEvent.keyUp(window, { key: 'Shift', shiftKey: false })
+  fireEvent.click(element, { shiftKey: true })
 }
 
-/** A shift-click landing on the LABEL rather than the input.
+/** The same gesture landing on the label, which is where a person's
+ *  pointer actually goes.
  *
- * THE PATH THAT WAS ACTUALLY BROKEN, and the one both earlier versions
- * of these tests missed. Blueprint hands extra props to the <input>
- * and not to the <label> wrapping it, so a handler passed to Checkbox
- * only fires when the pointer lands on the input itself -- while most
- * of the control's visible area is the label.
+ *  BOTH EVENTS, because that is what a browser produces: a click on
+ *  the label, and a synthesised one forwarded to the input it labels.
+ *  `fireEvent.click(label)` alone dispatches only the first, which is
+ *  not a gesture any browser generates -- and a component correctly
+ *  ignoring the label's own click looks broken under it.
  *
- * Firing at the input proved the logic and never touched the bug.
- */
+ *  The component acts on the input's click precisely because it is the
+ *  one event both paths share. */
 function shiftClickLabel(input: HTMLElement) {
-  const label = input.closest('label')!
-  fireEvent.keyDown(window, { key: 'Shift', shiftKey: true })
-  // ONLY THE LABEL. jsdom implements label activation, so this
-  // forwards to the input exactly as a browser does -- clicking both
-  // would fire the change twice and toggle back.
-  fireEvent.click(label)
-  fireEvent.keyUp(window, { key: 'Shift', shiftKey: false })
+  // ONE CALL. jsdom implements label activation, so this alone
+  // produces both events -- verified by rendering a label and counting
+  // handler calls: a click on the label yields LABEL then INPUT.
+  // Adding an explicit input click made three, which toggled the range
+  // back off.
+  fireEvent.click(input.closest('label')!, { shiftKey: true })
 }
 
 describe('shift-click selects a range in the results', () => {
