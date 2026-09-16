@@ -447,6 +447,72 @@ it is lost, the lake is a directory of Parquet nobody can interpret.
    STILL OPEN: bootstrapping a new deployment FROM a manifest.
    Deliberately deferred -- see LAKE_METADATA_NOTE.md.
 
+## 0d. Is our Blueprint usage idiomatic? -- investigated
+
+Asked after two checkbox bugs in a row whether we had accreted our own
+functionality onto Blueprint instead of using it as intended.
+
+**THE ANSWER IS MOSTLY NO, AND THE REAL PROBLEM IS NARROWER AND
+SHARPER THAN THAT.**
+
+### What is actually well done
+
+Blueprint IS imported, via an `@import ... layer(vendor)` in
+ui/src/layers.css -- and that file's reasoning is careful. It declares
+a seven-layer cascade order so that "sitting beside Blueprint stops
+requiring ever-more-specific selectors, and `!important` stops being
+the escape hatch". There are ZERO `!important` declarations in this
+UI.
+
+It even names the trap it was avoiding: importing Blueprint unlayered
+would let it beat everything, and "nothing in this repository can catch
+that: there are no computed-style assertions and no screenshot tests".
+
+Only 12 rules reach into Blueprint's own classes at all, across ~1,900
+lines. That is not accretion.
+
+### The actual defect
+
+**NONE OF OUR OWN STYLESHEETS ARE IN A LAYER.** index.css, tokens.css
+and SchemaPanel.css declare no `@layer` at all, so they are
+UNLAYERED -- and unlayered styles beat every layer.
+
+The intended outcome (our styles win) happens, but by the wrong
+mechanism, and with a consequence nobody chose: a BARE ELEMENT
+SELECTOR in our CSS now beats Blueprint's component classes regardless
+of specificity. `label` outranks `.bp6-control`.
+
+That is exactly how
+`label { display: flex; flex-direction: column }` stacked every
+checkbox in the app above its own text, and why a sweep for
+`<Checkbox` found nothing: no component was at fault.
+
+The seven declared layers are also inert -- nothing is in them.
+
+### Is it feasibly fixable
+
+YES, AND IT IS SMALL: wrap each stylesheet's contents in the layer it
+belongs to. But it MUST NOT be done blind. Moving our CSS from
+unlayered into `components` changes which rules win against Blueprint
+everywhere at once, and layers.css says plainly that this repository
+cannot detect the result -- no computed styles, no screenshots.
+
+So the order is: a way to SEE the change first, then the change.
+Options, cheapest first:
+
+- A handful of computed-style assertions at the known-fragile points
+  (a checkbox, a menu item, a card in a card list). jsdom cannot do
+  this; it needs a real browser.
+- Or accept the current state and keep the tripwire below, which is
+  where this landed for now.
+
+### Shipped instead, as the proportionate step
+
+A test listing every bare element selector in index.css, so that
+ADDING one is a decision someone makes deliberately rather than a
+change that silently outranks a vendor component. Five are currently
+allowed, each reviewed.
+
 ## 1. Needs a machine with a model
 
 **The prompt-quality measurement session.** Four questions sharing one

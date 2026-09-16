@@ -370,3 +370,46 @@ describe("a descendant selector must not claim other components' elements", () =
     expect(shell).not.toMatch(/^label \{/m)
   })
 })
+
+describe('bare element selectors, which silently outrank Blueprint', () => {
+  /**
+   * THE MECHANISM, and it is not specificity. `.bp6-control` is more
+   * specific than `label` and still loses: Blueprint sits in the
+   * `vendor` layer (ui/src/layers.css) while our stylesheets are
+   * UNLAYERED, and unlayered styles beat every layer.
+   *
+   * So any bare element selector we write overrides Blueprint's own
+   * component styling however carefully Blueprint wrote it -- and it
+   * does so invisibly, because nothing in this repository computes
+   * styles or takes screenshots.
+   *
+   * That is how `label { display: flex; flex-direction: column }`
+   * stacked every checkbox above its own text, app-wide, and why a
+   * sweep for `<Checkbox` found nothing.
+   *
+   * THIS TEST IS A TRIPWIRE, not a prohibition. Bare element selectors
+   * are legitimate for genuine defaults. The list is explicit so that
+   * ADDING one is a decision someone makes on purpose, with this
+   * comment in front of them.
+   */
+  const shell = read('packages/shell-api/src/index.css')
+
+  const ALLOWED = new Set(['body', 'form', 'label:not(.bp6-control)', 'label.bp6-control', 'button.danger'])
+
+  it('only the reviewed ones exist', () => {
+    const found = [...shell.matchAll(/^([a-z][a-z0-9]*[a-z0-9:().,#_ -]*)\{/gm)]
+      .map((match) => match[1]!.trim())
+      .filter((selector) => !selector.includes('@'))
+
+    const unreviewed = found.filter((selector) => !ALLOWED.has(selector))
+
+    expect(unreviewed).toEqual([])
+  })
+
+  it('a rule that reaches into Blueprint says which class', () => {
+    // Every .bp6- rule is a deliberate reach into a vendor component.
+    // Requiring the class to be named rather than matched by prefix
+    // keeps them greppable when Blueprint's next major renames them.
+    expect(shell).not.toMatch(/\[class\^=["']bp6/)
+  })
+})

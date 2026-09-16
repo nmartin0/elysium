@@ -644,6 +644,18 @@ form {
  * I first blamed `.workspace__filter > label`, which was wrong: that
  * rule only set typography. This is the one that laid them out.
  *
+ * AND THE REASON IT BEAT BLUEPRINT IS THE CASCADE LAYERS, not
+ * specificity. `.bp6-control` is more specific than `label` and still
+ * loses, because Blueprint sits in the `vendor` layer (see
+ * ui/src/layers.css) while this file is UNLAYERED -- and unlayered
+ * styles beat every layer. So any bare element selector here silently
+ * overrides Blueprint's own component styling, however carefully
+ * Blueprint wrote it.
+ *
+ * A correction: an earlier version of this comment said Blueprint's
+ * stylesheet was never imported. It is, via an @import in layers.css,
+ * which is the only way to assign a layer.
+ *
  * The comment directly below records someone hitting exactly this
  * class of problem with a bare `input` selector "fighting their own
  * geometry". The same mistake, one element over. */
@@ -654,9 +666,13 @@ label:not(.bp6-control) {
   font-size: 0.9rem;
 }
 
-/* Blueprint's controls, which it would style itself if its stylesheet
- * were imported. It is not -- this project styles Blueprint's classes
- * directly -- so the inline layout has to be stated. */
+/* Blueprint's controls, restored to the layout Blueprint gives them.
+ *
+ * Needed because the rule above excludes them and this file is
+ * unlayered: without something here they would fall back to
+ * Blueprint's `vendor`-layer styling, which is correct -- but stating
+ * it makes the intent explicit rather than depending on a cascade
+ * subtlety a reader would have to work out. */
 label.bp6-control {
   display: flex;
   align-items: center;
