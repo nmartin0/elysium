@@ -174,10 +174,45 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // paged -- and this list is all three.
   const [anchorId, setAnchorId] = useState<string | null>(null)
 
-  // WHETHER SHIFT WAS HELD, captured from the real gesture. A ref
-  // rather than state: it is read once in the change that follows
-  // and must not cause a render of its own.
+  // WHETHER SHIFT IS HELD, tracked on the WINDOW rather than captured
+  // from any particular element's event.
+  //
+  // THIRD ATTEMPT, and the first two failed for the same underlying
+  // reason: they depended on WHICH element received an event and in
+  // what order. Reading it from React's onChange missed it because a
+  // click on a <label> synthesises a modifier-less click on the input.
+  // Moving to onMouseDown on the row missed it too, for a reason I
+  // never established -- which is exactly the problem. A mechanism I
+  // cannot reason about reliably is one I should not be using.
+  //
+  // The key's state is a property of the KEYBOARD, not of any click.
+  // Tracking it where it actually lives removes every question about
+  // event targets, delegation, label forwarding and bubbling at once.
   const shiftHeld = useRef(false)
+
+  useEffect(() => {
+    // `event.shiftKey` rather than `event.key === 'Shift'`, so the
+    // state is right even when focus arrives mid-press or another
+    // modifier is involved.
+    const track = (event: KeyboardEvent) => {
+      shiftHeld.current = event.shiftKey
+    }
+    // AND ON BLUR: releasing the key while another window has focus
+    // would otherwise leave this stuck true, and the next plain click
+    // would silently select a range.
+    const clear = () => {
+      shiftHeld.current = false
+    }
+
+    window.addEventListener('keydown', track)
+    window.addEventListener('keyup', track)
+    window.addEventListener('blur', clear)
+    return () => {
+      window.removeEventListener('keydown', track)
+      window.removeEventListener('keyup', track)
+      window.removeEventListener('blur', clear)
+    }
+  }, [])
 
   function toggleSelected(id: string, withShift = false) {
     // THE ORDER ON SCREEN, which is what a person means by "everything
@@ -576,7 +611,18 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           <BulkActionsMenu
             actions={actionTypes}
             objectType={currentType}
-            count={selectedIds.size > 0 ? selectedIds.size : totalMatches}
+            // THE PAGE, NOT EVERY MATCH, matching the selection bar
+            // and matching what the action will actually reach.
+            //
+            // This said totalMatches while the bar said the page, so
+            // with 64 matches shown 50 at a time the button offered
+            // "Actions (64)" above a bar reading "the 50 shown" -- two
+            // numbers for one thing, and the larger one was the lie.
+            //
+            // Missed when the bar was corrected: I fixed the component
+            // that displayed the count and not the sibling that
+            // displayed it too.
+            count={selectedIds.size > 0 ? selectedIds.size : results.length}
             onChoose={setBulkAction}
           />
         )}
@@ -730,9 +776,6 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   // input. Capture-phase ordering is not needed:
                   // mousedown bubbles here before the click that
                   // produces the change.
-                  onMouseDown={(event) => {
-                    shiftHeld.current = event.shiftKey
-                  }}
                 >
                   <Checkbox
                     className="object-search__select"
@@ -759,9 +802,6 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                     // checkbox produces a change with no mouse event
                     // at all, and shift-space is how a keyboard user
                     // extends a range.
-                    onKeyDown={(event) => {
-                      shiftHeld.current = event.shiftKey
-                    }}
                     onChange={() => toggleSelected(result.id, shiftHeld.current)}
                     aria-label={`Select ${String(titleValue)}`}
                   />

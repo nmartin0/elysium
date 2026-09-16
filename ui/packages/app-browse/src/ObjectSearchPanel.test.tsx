@@ -1183,6 +1183,29 @@ describe('acting on a selection', () => {
     },
   }
 
+  it('the Actions count agrees with the selection bar', async () => {
+    /** TWO NUMBERS FOR ONE THING, and the larger one was the lie.
+     *
+     * The button said `totalMatches` while the bar said the page, so
+     * 64 matches shown 50 at a time gave "Actions (64)" above "the 50
+     * shown". Missed when the bar was corrected: I fixed the component
+     * that displayed the count and not the sibling displaying it too.
+     */
+    mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+      total_matches: 64,
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    // Two on the page, 64 matching. The button must say 2.
+    expect(await screen.findByText(/Actions \(2\)/)).toBeInTheDocument()
+    expect(screen.queryByText(/Actions \(64\)/)).toBeNull()
+  })
+
   it('offers the Actions menu when a bulk action exists for the type', async () => {
     mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
     mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
@@ -1288,9 +1311,18 @@ describe('a result card lays its checkbox beside its content', () => {
  *
  *  Firing mousedown first is what makes the test resemble the gesture.
  */
+/** Holding shift, then clicking -- as a keyboard and mouse do it.
+ *
+ * THE MODIFIER IS TRACKED ON THE WINDOW now, because two earlier
+ * mechanisms both depended on which element received an event, and
+ * both failed in a real browser while passing here. A keydown on the
+ * window is what actually happens when a person holds shift, whatever
+ * they go on to click.
+ */
 function shiftClick(element: HTMLElement) {
-  fireEvent.mouseDown(element, { shiftKey: true })
+  fireEvent.keyDown(window, { key: 'Shift', shiftKey: true })
   fireEvent.click(element)
+  fireEvent.keyUp(window, { key: 'Shift', shiftKey: false })
 }
 
 /** A shift-click landing on the LABEL rather than the input.
@@ -1305,8 +1337,12 @@ function shiftClick(element: HTMLElement) {
  */
 function shiftClickLabel(input: HTMLElement) {
   const label = input.closest('label')!
-  fireEvent.mouseDown(label, { shiftKey: true })
-  fireEvent.click(input)
+  fireEvent.keyDown(window, { key: 'Shift', shiftKey: true })
+  // ONLY THE LABEL. jsdom implements label activation, so this
+  // forwards to the input exactly as a browser does -- clicking both
+  // would fire the change twice and toggle back.
+  fireEvent.click(label)
+  fireEvent.keyUp(window, { key: 'Shift', shiftKey: false })
 }
 
 describe('shift-click selects a range in the results', () => {
@@ -1357,6 +1393,38 @@ describe('shift-click selects a range in the results', () => {
     shiftClickLabel(screen.getByLabelText('Select Cara Diaz'))
 
     expect(await screen.findByText('3 selected')).toBeInTheDocument()
+  })
+
+  it('a released shift key stops extending', async () => {
+    // THE STUCK-MODIFIER CASE. Tracking the key on the window means
+    // tracking its RELEASE too -- otherwise the next plain click
+    // silently selects a range, which is the worse failure of the two
+    // because nothing looks wrong until objects are acted on.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.keyDown(window, { key: 'Shift', shiftKey: true })
+    fireEvent.keyUp(window, { key: 'Shift', shiftKey: false })
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('2 selected')).toBeInTheDocument()
+  })
+
+  it('leaving the window clears a held shift', async () => {
+    // Releasing the key while another window has focus produces no
+    // keyup here at all, so blur has to do it.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.keyDown(window, { key: 'Shift', shiftKey: true })
+    fireEvent.blur(window)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('2 selected')).toBeInTheDocument()
   })
 
   it('ticks every box in the range, not just the ends', async () => {
