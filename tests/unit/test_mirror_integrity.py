@@ -173,3 +173,70 @@ def test_it_reports_everything_rather_than_stopping_at_the_first(mirror):
     report = check_mirror(mirror._catalog, schema)
 
     assert len(report.problems) >= 2
+
+
+class TestAMissingCatalog:
+    """Two very different situations that look identical from outside.
+
+    FOUND BY A PERSON RUNNING THE SCRIPT on a machine that had never
+    synced. The first version reported both as the alarming case, and
+    told someone with a fresh checkout that their backup strategy had
+    failed.
+
+    NO CATALOG AND NO DATA means nobody has synced yet -- an ordinary
+    state, and not an error.
+
+    NO CATALOG BUT DATA ON DISK is the serious one: the Parquet is
+    there and nothing can interpret it. Our catalog is a SQLite file
+    beside the warehouse, so this is the shape that losing it takes.
+    """
+
+    @staticmethod
+    def _run(mirror_dir):
+        import subprocess
+
+        return subprocess.run(
+            ["python", "-m", "scripts.check_mirror", "--mirror", str(mirror_dir)],
+            capture_output=True, text=True, check=False,
+        )
+
+    def test_never_synced_is_not_an_error(self, tmp_path):
+        result = self._run(tmp_path / "absent")
+
+        assert result.returncode == 0
+        assert "Nothing has been synced yet" in result.stdout
+
+    def test_never_synced_says_what_to_do(self, tmp_path):
+        # A person seeing this has a next step, not a diagnosis.
+        result = self._run(tmp_path / "absent")
+
+        assert "run_sync" in result.stdout
+
+    def test_data_without_a_catalog_is_an_error(self, mirror):
+        (mirror.mirror_path / "catalog.db").unlink()
+
+        result = self._run(mirror.mirror_path)
+
+        assert result.returncode == 1
+        assert "DATA WITHOUT A CATALOG" in result.stderr
+
+    def test_data_without_a_catalog_explains_the_consequence(self, mirror):
+        # THE CONTROL on the wording. "Missing catalog" alone would not
+        # tell someone why it matters, and this is the one failure
+        # where the consequence is not obvious from the symptom.
+        (mirror.mirror_path / "catalog.db").unlink()
+
+        result = self._run(mirror.mirror_path)
+
+        assert "nothing can interpret them" in result.stderr
+        assert "part of any backup" in result.stderr
+
+    def test_the_two_cases_do_not_share_a_message(self, tmp_path, mirror):
+        # The original defect, stated as a test: a fresh checkout and a
+        # lost catalog must not read the same.
+        fresh = self._run(tmp_path / "absent")
+        (mirror.mirror_path / "catalog.db").unlink()
+        lost = self._run(mirror.mirror_path)
+
+        assert fresh.returncode != lost.returncode
+        assert "part of any backup" not in fresh.stdout

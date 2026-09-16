@@ -47,13 +47,32 @@ def main() -> int:
     mirror_dir = args.mirror if args.mirror is not None else paths.data_dir / "mirror"
 
     if not (mirror_dir / "catalog.db").exists():
-        # THE CATALOG IS THE THING THAT MAKES A WAREHOUSE READABLE, so
-        # its absence is the most serious finding available and is
-        # reported as such rather than as an empty result.
-        print(f"No catalog at {mirror_dir / 'catalog.db'}.", file=sys.stderr)
+        # TWO VERY DIFFERENT SITUATIONS LOOK IDENTICAL HERE, and a
+        # first version reported both as the alarming one.
+        #
+        # A catalog missing with NO warehouse beside it means nobody
+        # has ever synced -- an ordinary state on a fresh checkout, and
+        # telling that person their backup strategy has failed is both
+        # wrong and frightening.
+        #
+        # A catalog missing while the warehouse HOLDS DATA is the
+        # serious case: the Parquet is there and nothing can interpret
+        # it. Found by running the script on a machine that had never
+        # synced, which is exactly the person the wrong message would
+        # have reached.
+        warehouse = mirror_dir / "warehouse"
+        has_data = warehouse.is_dir() and any(warehouse.rglob("*.parquet"))
+
+        if not has_data:
+            print(f"No mirror at {mirror_dir}.")
+            print("Nothing has been synced yet. Run: python -m scripts.run_sync")
+            return 0
+
+        print(f"DATA WITHOUT A CATALOG at {mirror_dir}.", file=sys.stderr)
         print(
-            "Without it the warehouse is a directory of Parquet nobody can "
-            "interpret -- the catalog must be part of any backup.",
+            f"{warehouse} holds Parquet files, but {mirror_dir / 'catalog.db'} "
+            f"is missing -- so nothing can interpret them. The catalog must be "
+            f"part of any backup that includes the warehouse.",
             file=sys.stderr,
         )
         return 1
