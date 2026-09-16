@@ -352,7 +352,31 @@ it is lost, the lake is a directory of Parquet nobody can interpret.
    deliberately matches nothing, so it needs its own reasoning rather
    than an extension of these rules.
 
-2. **Decide what the lake holds**, along the split above.
+2. ~~**Decide what the lake holds.**~~ RESEARCHED -- see
+   LAKE_METADATA_NOTE.md, which CORRECTS the split above.
+
+   I reasoned from the control-plane argument and concluded the
+   ontology, policy and silos BELONG in the lake. That over-read it: a
+   catalog's control plane governs TABLES -- schemas, locations,
+   snapshots, column access. Our ontology is a SEMANTIC MODEL, and
+   those have their own precedent pointing elsewhere: dbt and Cube
+   both keep them in version control, for governance reasons rather
+   than convenience.
+
+   But core/config_history.py already found the limit of that, and its
+   reasoning is better than mine: "this project's own configuration
+   happens to live in a repository; a DEPLOYED Elysium has
+   /etc/elysium on an operator's machine and no relationship to any
+   repository."
+
+   THE SHAPE IS THREE ROLES, not two: AUTHORED in version control,
+   LOADED from /etc/elysium, and PUBLISHED alongside the data as a
+   COPY. The copy is not a source of truth -- it records what was true
+   when those tables were written, which is exactly what bronze is for
+   rows.
+
+   Secrets stay out absolutely: a lake reader must not become a
+   credential reader.
 
 3. ~~**A teardown-and-rebuild test.**~~ DONE, and THE ANSWER IS NO.
 
