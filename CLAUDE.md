@@ -122,10 +122,18 @@ resolution, no idea whether one element covers another. A whole
 session went by shipping UI fixes that passed 786 tests and did not
 work, every one found by a person clicking.
 
-`ui/e2e/` holds Playwright tests that CAN see those things --
-`npm run e2e` from `ui/`, after `npm run e2e:install` once. They need
-a real backend and dev server; `ui/e2e/shell.spec.ts` documents the
-setup in full.
+`ui/e2e/` holds Playwright tests that CAN see those things:
+
+    cd ui && npm run e2e:install    (once)
+    cd ui && npm run build          (they test the BUILT bundle)
+    python -m scripts.create_debug_user
+    uvicorn api.app:app             (serves the UI and the API)
+    cd ui && npm run e2e
+
+NO DEV SERVER. uvicorn serves both, so the only process needed is the
+one already running. The config pointed at Vite's :5173 until every
+test failed with ERR_CONNECTION_REFUSED on its first run -- a test
+nobody can start is a test nobody runs.
 
 DELIBERATELY NOT PART OF `npm test`, which stays fast and mocked. But
 a UI change that is about LAYOUT, HIT-TESTING or the CASCADE has not

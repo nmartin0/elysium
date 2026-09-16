@@ -14,21 +14,38 @@
 // faster and in more detail. This file is for facts only a browser
 // knows.
 //
-// SETUP is the same as shell.spec.ts, which documents it in full: a
-// real backend and a real dev server, then `npx playwright test` from
-// ui/. Deliberately NOT part of `npm test`, which stays fast and
-// mocked.
+// SETUP, in full, because a test nobody can start is a test nobody
+// runs:
+//
+//   cd ui && npm run build     (these test the BUILT bundle)
+//   python -m scripts.create_debug_user
+//   uvicorn api.app:app        (serves the UI and the API together)
+//   cd ui && npm run e2e
+//
+// No dev server. uvicorn serves both, so the only process needed is
+// the one already running.
+//
+// Deliberately NOT part of `npm test`, which stays fast and mocked.
 //
 // A NOTE ON PROVENANCE, since it matters for trust: this file was
-// written without being run. The container it was authored in cannot
-// download a browser -- cdn.playwright.dev is not in its network
-// allowlist -- so every assertion here is a claim awaiting its first
-// execution. Expect to fix selectors on the first run.
+// written in a container that cannot download a browser
+// (cdn.playwright.dev is not in its network allowlist), so it is
+// authored blind and its assertions have never been seen to pass.
+//
+// Their first run failed eleven for eleven with
+// ERR_CONNECTION_REFUSED -- no server on the port the config named --
+// which proved only that the config was wrong. That is fixed here;
+// the assertions themselves remain unverified, and selectors may
+// still need correcting.
 
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-const PLAIN_USER = { username: 'plainuser', password: 'plainpass123' }
+// THE DEVELOPMENT USER scripts/create_debug_user.py creates, so these
+// run against the deployment a developer already has rather than
+// needing fixture users made first. shell.spec.ts predates that script
+// and still builds its own; worth reconciling, not worth blocking on.
+const DEV_USER = { username: 'debug', password: 'a' }
 
 async function login(page: Page, user: { username: string; password: string }) {
   await page.goto('/')
@@ -40,7 +57,7 @@ async function login(page: Page, user: { username: string; password: string }) {
 
 test.describe('the selection checkbox', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page, PLAIN_USER)
+    await login(page, DEV_USER)
     await page.goto('/browse?type=Customer')
     await expect(page.locator('.object-search__result').first()).toBeVisible()
   })
@@ -113,7 +130,7 @@ test.describe('the selection checkbox', () => {
 
 test.describe('Blueprint controls keep their own layout', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page, PLAIN_USER)
+    await login(page, DEV_USER)
     await page.goto('/browse?type=Customer')
     await expect(page.locator('.object-search__result').first()).toBeVisible()
   })
