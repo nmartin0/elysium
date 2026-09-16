@@ -1439,6 +1439,45 @@ describe('shift-click selects a range in the results', () => {
     expect(input).toBeChecked()
   })
 
+  it('a keyboard press still selects after a shift-click', async () => {
+    /** THE FIREFOX RESIDUE, and a bare flag could not survive it.
+     *
+     * In Firefox a shift-click produces no forwarded click at all
+     * (#559506), so an expectation recorded as a boolean stayed armed
+     * and swallowed the NEXT direct input click -- which is space on a
+     * focused checkbox, the keyboard path.
+     *
+     * Recording WHEN the forward became expected lets an unmet
+     * expectation expire instead.
+     *
+     * AND THIS TEST CANNOT PROVE THAT. jsdom ALWAYS forwards a click
+     * from inside a label, so Firefox's MISSING forward -- the thing
+     * that strands the expectation -- cannot be simulated with
+     * fireEvent at all. A control restoring the bare flag still
+     * passes.
+     *
+     * What this does hold is the shape: a direct click on an input,
+     * well after any plausible forward, selects. The residue itself is
+     * reasoned from the documented bug and confirmed only by a person
+     * in Firefox.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    // A shift-click on the indicator, with no forwarded click after it.
+    const ada = await screen.findByLabelText('Select Ada Okafor')
+    fireEvent.click(ada.closest('label')!.querySelector('.bp6-control-indicator')!, {
+      shiftKey: true,
+    })
+
+    // Then space on another checkbox, which arrives straight at the
+    // input and must not be mistaken for a forward.
+    const ben = screen.getByLabelText('Select Ben Stone')
+    fireEvent.click(ben, { timeStamp: 10_000 })
+
+    expect(ben).toBeChecked()
+  })
+
   it('works when the click lands on the label, not the input', async () => {
     // THE REGRESSION TEST for the bug a person found by holding shift.
     // Everything here passed while the feature did not, because the

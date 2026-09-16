@@ -174,10 +174,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // paged -- and this list is all three.
   const [anchorId, setAnchorId] = useState<string | null>(null)
 
-  // WHETHER A FORWARDED CLICK IS EXPECTED. Clicking a label produces
-  // two events -- the label's, then a synthesised one on the input --
-  // and only the first carries the modifier. This skips the second.
-  const forwardedClick = useRef(false)
+  // WHEN a forwarded click became expected. Clicking anything inside
+  // the label -- the label itself, or Blueprint's indicator span,
+  // which is the box people actually see -- triggers label activation,
+  // which forwards a second click to the input. Only the first carries
+  // the modifier, so the second is skipped.
+  //
+  // A TIME RATHER THAN A FLAG, because in Firefox a shift-click
+  // produces no forward at all and a flag would stay armed.
+  const forwardedAfter = useRef(0)
 
   // NO MODIFIER TRACKING HERE ANY MORE. A window-level keydown/keyup
   // pair used to hold the shift state for the checkbox to read, and it
@@ -808,17 +813,30 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                       // -- triggers label activation, which forwards a
                       // second click to the input. Handling both
                       // toggles twice and nothing changes.
-                      if (target.tagName === 'INPUT' && forwardedClick.current) {
-                        forwardedClick.current = false
+                      // WITHIN THE SAME GESTURE, not just "at some
+                      // point after". A forwarded click follows its
+                      // origin in the same tick, so a few milliseconds
+                      // is generous and anything later is a new
+                      // gesture.
+                      //
+                      // A BARE FLAG WAS WRONG, and its own comment
+                      // claimed otherwise. In Firefox a shift-click
+                      // produces NO forward (#559506), so the flag
+                      // stayed armed and swallowed the next direct
+                      // input click -- which is SPACE ON A FOCUSED
+                      // CHECKBOX, the keyboard path. Found by checking
+                      // whether the fix held in Chrome.
+                      const forwarded = target.tagName === 'INPUT' && event.timeStamp - forwardedAfter.current < 50
+                      if (forwarded) {
+                        forwardedAfter.current = 0
                         return
                       }
 
                       // A NON-INPUT TARGET MEANS A FORWARD IS COMING,
-                      // except in Firefox when shift is held: #559506
-                      // suppresses the activation entirely. The flag is
-                      // cleared by the next input click if one arrives
-                      // and harmlessly reset by the next gesture if not.
-                      forwardedClick.current = target.tagName !== 'INPUT'
+                      // except in Firefox when shift is held. Recording
+                      // WHEN rather than WHETHER means an expected
+                      // forward that never arrives simply expires.
+                      forwardedAfter.current = target.tagName === 'INPUT' ? 0 : event.timeStamp
                       toggleSelected(result.id, event.shiftKey)
                     }}
                   >
