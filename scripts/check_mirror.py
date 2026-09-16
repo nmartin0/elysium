@@ -32,6 +32,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 
 from core.deployment_loader import load_deployment, resolve_runtime_paths
 from core.mirror.integrity import check_mirror
+from core.mirror.manifest import read_manifests
 
 
 def main() -> int:
@@ -92,6 +93,33 @@ def main() -> int:
                   f"checks only.", file=sys.stderr)
 
     report = check_mirror(catalog, schema, mirror_dir / "warehouse")
+
+    # WHAT THE LAKE SAYS ABOUT ITSELF, reported rather than loaded.
+    #
+    # A manifest describing types the running ontology does not have is
+    # exactly the mismatch someone needs told about -- but LOADING it
+    # would turn a stale copy into a second source of truth, and
+    # refusing to start over it would turn one into an outage.
+    manifests = read_manifests(catalog)
+    if manifests:
+        newest = manifests[0]
+        described = sorted(newest.get("files", {}))
+        print(
+            f"Manifest: generation {newest.get('generation')} from "
+            f"{newest.get('loaded_at', 'an unknown time')}, describing "
+            f"{len(newest.get('tables', []))} table(s).",
+        )
+        print(f"  Published: {', '.join(described) or 'nothing'}")
+        if newest.get("withheld"):
+            # NAMED RATHER THAN SILENTLY ABSENT, so a reader finding
+            # three files where the deployment had four knows that was
+            # deliberate.
+            print(f"  Withheld:  {', '.join(newest['withheld'])}")
+    else:
+        print(
+            "No manifest. This lake holds data it cannot explain -- a fresh "
+            "install would find tables and no ontology. Run a sync to publish one.",
+        )
 
     print(f"Checked {report.tables_checked} table(s) in {mirror_dir}.")
     if report.ok:

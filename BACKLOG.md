@@ -420,10 +420,25 @@ it is lost, the lake is a directory of Parquet nobody can interpret.
    policy and silos, which by the control-plane standard belong in the
    lake and are not there.
 
-4. **Name what deliberately does NOT survive**, because a rebuild that
-   silently loses the write log is worse than one that refuses to
-   start. `config_history.db` already records which configurations
-   have run -- a first step toward this that predates the question.
+4. ~~**Name what deliberately does NOT survive.**~~ DONE, in two
+   places: the teardown tests assert what is gone, and every published
+   manifest carries a `withheld` list so a reader finding three files
+   where the deployment had four knows that was deliberate.
+
+   THE MANIFEST IS BUILT. `scripts/run_sync` publishes one per
+   configuration generation to `_elysium/manifest-N.json` beside the
+   data, and `scripts/check_mirror` reports it. An ALLOW-LIST decides
+   what goes: the ontology, the silos and the policy. The LLM settings
+   and every secret are withheld, and an unknown file is withheld by
+   DEFAULT -- an exclusion list fails open the day someone adds one.
+
+   READ AND REPORTED, never loaded. A manifest describing types the
+   running ontology lacks is a mismatch worth telling someone about;
+   loading it would make a copy into a second source of truth, and
+   refusing to start over it would turn a stale copy into an outage.
+
+   STILL OPEN: bootstrapping a new deployment FROM a manifest.
+   Deliberately deferred -- see LAKE_METADATA_NOTE.md.
 
 ## 1. Needs a machine with a model
 

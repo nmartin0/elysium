@@ -54,6 +54,7 @@ from pathlib import Path
 
 from core.deployment_loader import load_deployment_bundle, resolve_runtime_paths
 from core.mirror.iceberg_sync import IcebergMirrorSync
+from core.mirror.manifest import publish_manifest
 from core.mirror.sync_targets import resolve_sync_targets
 from core.sqlite_connection import require_assertions_enabled
 
@@ -142,6 +143,12 @@ def run_sync(runtime_paths=None) -> int:
             # nothing passed it.
             storage=dict(config.mirror_storage),
         )
+
+        # WHAT THE LAKE SAYS ABOUT ITSELF, published beside the data.
+        # A lake in object storage already survives its installation
+        # being deleted; without this it cannot say what any of the
+        # data MEANS to whatever comes next.
+        publish_manifest(sync, config)
 
         failures = 0
         for target in targets:
