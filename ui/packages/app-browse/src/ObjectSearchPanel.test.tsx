@@ -1311,40 +1311,18 @@ describe('a result card lays its checkbox beside its content', () => {
  *
  *  Firing mousedown first is what makes the test resemble the gesture.
  */
-/** A shift-click, as a browser delivers one.
+/** A shift-click.
  *
- * THE CLICK CARRIES THE MODIFIER. Earlier versions fired keyboard
- * events at the window because the component tracked shift state
- * there; it no longer does, because `event.shiftKey` on the click is
- * the same fact without the bookkeeping.
+ * ONE EVENT, because the checkbox is now a plain <input> rather than
+ * Blueprint's Checkbox. That component wrapped the input in a <label>,
+ * and any click inside a label forwards a second click to the input --
+ * which is what four commits tried and failed to tell apart.
  *
- * AND THE CLICK IS WHAT MATTERS, not the change: Firefox does not
- * fire a change event when a label is shift-clicked (Mozilla #559506),
- * which is why every version of this built on onChange failed there
- * while passing here.
+ * With no label there is no activation, no forward, and nothing to
+ * disambiguate.
  */
 function shiftClick(element: HTMLElement) {
   fireEvent.click(element, { shiftKey: true })
-}
-
-/** The same gesture landing on the label, which is where a person's
- *  pointer actually goes.
- *
- *  BOTH EVENTS, because that is what a browser produces: a click on
- *  the label, and a synthesised one forwarded to the input it labels.
- *  `fireEvent.click(label)` alone dispatches only the first, which is
- *  not a gesture any browser generates -- and a component correctly
- *  ignoring the label's own click looks broken under it.
- *
- *  The component acts on the input's click precisely because it is the
- *  one event both paths share. */
-function shiftClickLabel(input: HTMLElement) {
-  // ONE CALL. jsdom implements label activation, so this alone
-  // produces both events -- verified by rendering a label and counting
-  // handler calls: a click on the label yields LABEL then INPUT.
-  // Adding an explicit input click made three, which toggled the range
-  // back off.
-  fireEvent.click(input.closest('label')!, { shiftKey: true })
 }
 
 describe('shift-click selects a range in the results', () => {
@@ -1404,10 +1382,8 @@ describe('shift-click selects a range in the results', () => {
     renderPanel(CUSTOMER_SCHEMA)
 
     const input = await screen.findByLabelText('Select Ada Okafor')
-    const indicator = input.closest('label')!.querySelector('.bp6-control-indicator')
 
-    expect(indicator).not.toBeNull()
-    fireEvent.click(indicator as Element)
+    fireEvent.click(input)
 
     expect(await screen.findByText('1 selected')).toBeInTheDocument()
   })
@@ -1432,9 +1408,8 @@ describe('shift-click selects a range in the results', () => {
     renderPanel(CUSTOMER_SCHEMA)
 
     const input = await screen.findByLabelText('Select Ada Okafor')
-    const indicator = input.closest('label')!.querySelector('.bp6-control-indicator')!
 
-    fireEvent.click(indicator)
+    fireEvent.click(input)
 
     expect(input).toBeChecked()
   })
@@ -1466,9 +1441,7 @@ describe('shift-click selects a range in the results', () => {
 
     // A shift-click on the indicator, with no forwarded click after it.
     const ada = await screen.findByLabelText('Select Ada Okafor')
-    fireEvent.click(ada.closest('label')!.querySelector('.bp6-control-indicator')!, {
-      shiftKey: true,
-    })
+    fireEvent.click(ada, { shiftKey: true })
 
     // Then space on another checkbox, which arrives straight at the
     // input and must not be mistaken for a forward.
@@ -1486,7 +1459,7 @@ describe('shift-click selects a range in the results', () => {
     renderPanel(CUSTOMER_SCHEMA)
 
     fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
-    shiftClickLabel(screen.getByLabelText('Select Cara Diaz'))
+    shiftClick(screen.getByLabelText('Select Cara Diaz'))
 
     expect(await screen.findByText('3 selected')).toBeInTheDocument()
   })

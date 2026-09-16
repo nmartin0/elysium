@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import {
@@ -174,15 +174,11 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // paged -- and this list is all three.
   const [anchorId, setAnchorId] = useState<string | null>(null)
 
-  // WHEN a forwarded click became expected. Clicking anything inside
-  // the label -- the label itself, or Blueprint's indicator span,
-  // which is the box people actually see -- triggers label activation,
-  // which forwards a second click to the input. Only the first carries
-  // the modifier, so the second is skipped.
-  //
-  // A TIME RATHER THAN A FLAG, because in Firefox a shift-click
-  // produces no forward at all and a flag would stay armed.
-  const forwardedAfter = useRef(0)
+  // NO FORWARDED-CLICK BOOKKEEPING ANY MORE. It existed to tell one
+  // gesture's two events apart, which a plain <input> does not
+  // produce -- see the checkbox below. Four commits of increasingly
+  // careful disambiguation, deleted by removing the thing that needed
+  // disambiguating.
 
   // NO MODIFIER TRACKING HERE ANY MORE. A window-level keydown/keyup
   // pair used to hold the shift state for the checkbox to read, and it
@@ -754,100 +750,38 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   // mousedown bubbles here before the click that
                   // produces the change.
                 >
-                  {/* THE CLICK, NOT THE CHANGE, and the reason is a
-                      Firefox bug rather than anything about React.
+                  {/* A PLAIN INPUT, NOT Blueprint's Checkbox, and
+                      that is the fix rather than a simplification.
 
-                      Mozilla #559506: shift-clicking a <label> does not
-                      check the input it labels, so NO CHANGE EVENT
-                      FIRES AT ALL. Shopify's Polaris hit exactly this
-                      in their ResourceList and documented it.
+                      Blueprint renders a Checkbox as a <label> wrapping
+                      a hidden input and a visible <span> indicator. Any
+                      click inside that label triggers label activation,
+                      which forwards a SECOND click to the input -- so
+                      one gesture produced two events and the selection
+                      toggled twice.
 
-                      Blueprint's Checkbox IS a label, so every earlier
-                      version of this hung off onChange and could not
-                      work in Firefox however the modifier was
-                      obtained. Three fixes aimed at the modifier while
-                      the handler was never running.
+                      Four commits tried to tell the two apart: by
+                      target, then by target plus a flag, then by a
+                      50ms window. The window is why clicks
+                      intermittently did nothing -- a real click landing
+                      inside it was mistaken for a forward. Timing
+                      cannot distinguish a fast user from a browser.
 
-                      NO preventDefault(), which a first version had.
-                      It stopped the browser toggling the input, and
-                      React's controlled-checkbox bookkeeping then left
-                      the box UNCHECKED while the count said one was
-                      selected -- a test caught that. Letting the
-                      native toggle happen and re-rendering from state
-                      keeps the DOM and the count agreeing.
+                      A bare input has ONE click target. No label, no
+                      activation, no forward, nothing to disambiguate.
+                      The aria-label sits on the input itself, which is
+                      also where a screen reader expects it.
 
-                      No double-toggle results: the click updates state
-                      once, and the native change is inert because the
-                      box is controlled. */}
-                  <span
+                      onChange is safe here BECAUSE there is no label:
+                      Mozilla #559506 only suppresses the change event
+                      when a LABEL is shift-clicked. */}
+                  <input
+                    type="checkbox"
                     className="object-search__select"
-                    onClick={(event) => {
-                      // ONCE PER GESTURE. Clicking a label fires a
-                      // click on the label AND forwards a synthesised
-                      // one to the input; both bubble here, so acting
-                      // on each toggles twice and nothing happens. A
-                      // test caught exactly that.
-                      //
-                      // The forwarded click on the input is the one
-                      // event both paths share -- clicking the box
-                      // itself produces only that one -- so it is the
-                      // one to act on.
-                      // THE LABEL'S CLICK CARRIES THE MODIFIER; the
-                      // forwarded one does not. Verified by rendering a
-                      // label and counting: a click on it yields LABEL
-                      // then INPUT, and only the first has shiftKey.
-                      // That is the same asymmetry Mozilla #559506
-                      // describes, and acting on the input's click
-                      // silently dropped every shift.
-                      //
-                      // So the FIRST event of the gesture is the one to
-                      // act on, and the forwarded one that follows is
-                      // skipped. Clicking the box itself produces only
-                      // the input event, so that path still works.
-                      const target = event.target as HTMLElement
-
-                      // SKIP A CLICK WE ALREADY HANDLED VIA ITS
-                      // ORIGIN. Anything inside the label -- the
-                      // label, or Blueprint's indicator <span>, which
-                      // is the box a person actually sees and clicks
-                      // -- triggers label activation, which forwards a
-                      // second click to the input. Handling both
-                      // toggles twice and nothing changes.
-                      // WITHIN THE SAME GESTURE, not just "at some
-                      // point after". A forwarded click follows its
-                      // origin in the same tick, so a few milliseconds
-                      // is generous and anything later is a new
-                      // gesture.
-                      //
-                      // A BARE FLAG WAS WRONG, and its own comment
-                      // claimed otherwise. In Firefox a shift-click
-                      // produces NO forward (#559506), so the flag
-                      // stayed armed and swallowed the next direct
-                      // input click -- which is SPACE ON A FOCUSED
-                      // CHECKBOX, the keyboard path. Found by checking
-                      // whether the fix held in Chrome.
-                      const forwarded = target.tagName === 'INPUT' && event.timeStamp - forwardedAfter.current < 50
-                      if (forwarded) {
-                        forwardedAfter.current = 0
-                        return
-                      }
-
-                      // A NON-INPUT TARGET MEANS A FORWARD IS COMING,
-                      // except in Firefox when shift is held. Recording
-                      // WHEN rather than WHETHER means an expected
-                      // forward that never arrives simply expires.
-                      forwardedAfter.current = target.tagName === 'INPUT' ? 0 : event.timeStamp
-                      toggleSelected(result.id, event.shiftKey)
-                    }}
-                  >
-                    <Checkbox
-                      checked={selectedIds.has(result.id)}
-                      // Controlled and deliberately inert: the span
-                      // above owns the interaction.
-                      onChange={() => {}}
-                      aria-label={`Select ${String(titleValue)}`}
-                    />
-                  </span>
+                    checked={selectedIds.has(result.id)}
+                    aria-label={`Select ${String(titleValue)}`}
+                    onChange={(event) => toggleSelected(result.id, (event.nativeEvent as MouseEvent).shiftKey === true)}
+                  />
                   <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
                     <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
                   </Link>

@@ -449,3 +449,39 @@ describe('a card holding a control must not stretch its link', () => {
     expect(block).not.toMatch(/^\s*z-index:/m)
   })
 })
+
+describe('the selection checkbox is a plain input', () => {
+  /**
+   * NOT Blueprint's Checkbox, and this guards the reason rather than
+   * the symptom.
+   *
+   * Blueprint renders a Checkbox as a <label> wrapping a hidden input
+   * and a visible indicator span. Any click inside that label forwards
+   * a SECOND click to the input, so one gesture produced two events
+   * and the selection toggled twice.
+   *
+   * Four commits tried to tell them apart -- by target, by target plus
+   * a flag, then by a 50ms window. The window made clicks
+   * intermittently do nothing, because a real click landing inside it
+   * was mistaken for a forward. Timing cannot distinguish a fast user
+   * from a browser.
+   *
+   * A bare input has one click target and needs none of it.
+   */
+  const panel = read('packages/app-browse/src/ObjectSearchPanel.tsx')
+
+  it('does not render Blueprint Checkbox for a result row', () => {
+    // The Columns filter still uses one, and should: it has a visible
+    // text label and no competing click target.
+    // `<input type="checkbox"` immediately before the row's own
+    // class, which is the order the file has and a <Checkbox> could
+    // never produce.
+    expect(panel).toMatch(/<input\s+type="checkbox"\s+className="object-search__select"/)
+  })
+
+  it('keeps no forwarded-click bookkeeping', () => {
+    // A guard against the mechanism creeping back in alongside the
+    // input, which would reintroduce the intermittency it caused.
+    expect(panel).not.toMatch(/forwardedClick|forwardedAfter/)
+  })
+})
