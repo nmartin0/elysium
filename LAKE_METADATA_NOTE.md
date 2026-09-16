@@ -111,6 +111,58 @@ That is the bronze pattern applied to configuration, and the parallel
 is exact: bronze does not replace the silo, it records what the silo
 said at a moment.
 
+## Precedent for the mechanism
+
+Researched separately from the "should it be there at all" question,
+because they have different answers.
+
+**MICROSOFT'S COMMON DATA MODEL IS ALMOST A DESCRIPTION OF THE
+REQUIREMENT.** It defines "self-describing data in an Azure Data Lake"
+with a manifest alongside the data, and states the goal in the terms
+this note has been groping toward: **"the format of a shared folder
+helps each consumer avoid having to 'relearn' the meaning of the data
+in the lake."**
+
+That is exactly a fresh Elysium on a preserved bucket. The precedent
+is a MANIFEST IN THE STORAGE, not an entry in a catalog.
+
+**THE SIDECAR CONVENTION** is the general form: "a simple, universal
+convention for keeping metadata and assets alongside a primary
+document", for "metadata that can't easily be stored in a document
+itself, due to size or because it is updated more often". Our
+configuration is both.
+
+**AND THE CATALOG-NATIVE OPTION EXISTS TOO.** pyiceberg's
+`create_namespace` takes arbitrary properties, so the ontology could
+live there. Checked rather than assumed.
+
+## Which of the two, and why
+
+**A manifest in storage, not namespace properties.** Three reasons,
+in order of weight:
+
+**IT SURVIVES CATALOG LOSS.** The catalog is a SQLite file, and losing
+it is the failure `scripts/check_mirror` exists to warn about. A
+manifest in the bucket is readable when the catalog is gone -- and
+that is precisely the moment someone most needs to know what the
+tables were. Namespace properties die with the catalog they live in.
+
+**IT IS READABLE WITHOUT PYICEBERG.** A manifest is a file in a
+bucket; an operator with `aws s3 cp` can read it during an incident.
+Namespace properties require a working catalog connection and a
+library, which is a lot of preconditions for "what is this data".
+
+**IT MATCHES WHAT BRONZE ALREADY DOES.** Provenance is stamped on
+tables as properties because it describes ONE table. Configuration
+describes the WHOLE deployment, so it belongs at the deployment's
+level -- the bucket -- rather than repeated per namespace.
+
+The counter-argument, stated fairly: namespace properties are atomic
+with catalog operations, and a manifest can drift from the tables it
+describes. That is real, and the answer is that the manifest records
+WHAT WAS TRUE AT A SYNC rather than claiming to be current -- the same
+guarantee bronze gives, with the same honest limit.
+
 ## What it would mean concretely
 
 Not designed here, deliberately — this note is about the shape. But
@@ -129,6 +181,35 @@ the obvious questions to answer next:
   suggestion, or something it will refuse to start without? The first
   is safer and probably right; the second turns a corrupt copy into an
   outage.
+
+## The four open questions, now answerable
+
+**WHERE.** A manifest object in the warehouse root -- reasoning above.
+Something like `_elysium/manifest-<generation>.json`, one per
+configuration generation rather than one overwritten file, because
+"what was the ontology when this snapshot was written" is the question
+it exists to answer and a single current file cannot answer it.
+
+**WHEN.** On configuration change, not on every sync. config_history
+already detects that by digest and already stores the content, so the
+work is publishing what it holds rather than computing anything new.
+A sync that changed no configuration writes no manifest.
+
+**WHAT A FRESH ELYSIUM DOES WITH IT.** Reads it and REPORTS, never
+loads it silently. `scripts/check_mirror` is the natural home: a lake
+whose manifest describes types the running ontology does not have is
+exactly the mismatch someone needs told about, and refusing to start
+over it would turn a stale copy into an outage.
+
+The stronger version -- bootstrapping a new deployment FROM the
+manifest -- is tempting and should wait. A copy that can become a
+source of truth is a copy that can disagree with one, and the whole
+reason this is a copy is to avoid that.
+
+**SECRETS.** Never published, and better than a rule: publish an
+explicit ALLOW-LIST of files rather than an exclusion list. An
+exclusion list fails open the day someone adds a file, and the file
+they add will be the one with the credentials in it.
 
 ## What this does NOT change
 
