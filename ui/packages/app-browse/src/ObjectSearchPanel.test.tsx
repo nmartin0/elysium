@@ -1384,6 +1384,61 @@ describe('shift-click selects a range in the results', () => {
     expect(await screen.findByText('2 selected')).toBeInTheDocument()
   })
 
+  it('works when the click lands on the INDICATOR, which is what people click', async () => {
+    /** THE PATH NOBODY TESTED AND EVERYBODY USES.
+     *
+     * Blueprint draws the visible box as a <span class="bp6-control-
+     * indicator"> inside the label. The <input> itself is visually
+     * hidden. So a person's pointer lands on the SPAN -- not the
+     * input, and not the label's text area.
+     *
+     * That span triggers label activation, forwarding a second click
+     * to the input. Handling both toggled twice and left the box
+     * unchanged, which is exactly what was reported: "clicking a check
+     * only highlights its border".
+     *
+     * Shift appeared to work only because Mozilla #559506 suppresses
+     * the forward when shift is held, leaving a single toggle.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const input = await screen.findByLabelText('Select Ada Okafor')
+    const indicator = input.closest('label')!.querySelector('.bp6-control-indicator')
+
+    expect(indicator).not.toBeNull()
+    fireEvent.click(indicator as Element)
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+  })
+
+  it('a plain click on the indicator toggles once, not twice', async () => {
+    /** WHAT THIS CAN AND CANNOT PROVE, stated because I was about to
+     *  claim more than it does.
+     *
+     *  jsdom DOES forward a span click to the input -- verified: the
+     *  handler sees SPAN then INPUT. But both toggles run inside one
+     *  React batch and read the SAME value of selectedIds from the
+     *  closure, so they compute the same result and are idempotent
+     *  here. In a browser they land in separate ticks, the second sees
+     *  the first's result, and they cancel.
+     *
+     *  So this asserts the shape -- a click on the visible box selects
+     *  -- and a control removing the dedupe still passes it. The
+     *  double-toggle itself is not reproducible in this environment,
+     *  and only a person clicking can confirm the fix.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const input = await screen.findByLabelText('Select Ada Okafor')
+    const indicator = input.closest('label')!.querySelector('.bp6-control-indicator')!
+
+    fireEvent.click(indicator)
+
+    expect(input).toBeChecked()
+  })
+
   it('works when the click lands on the label, not the input', async () => {
     // THE REGRESSION TEST for the bug a person found by holding shift.
     // Everything here passed while the feature did not, because the

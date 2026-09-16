@@ -800,15 +800,25 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                       // skipped. Clicking the box itself produces only
                       // the input event, so that path still works.
                       const target = event.target as HTMLElement
-                      if (target.tagName === 'LABEL') {
-                        forwardedClick.current = true
-                        toggleSelected(result.id, event.shiftKey)
-                        return
-                      }
-                      if (forwardedClick.current) {
+
+                      // SKIP A CLICK WE ALREADY HANDLED VIA ITS
+                      // ORIGIN. Anything inside the label -- the
+                      // label, or Blueprint's indicator <span>, which
+                      // is the box a person actually sees and clicks
+                      // -- triggers label activation, which forwards a
+                      // second click to the input. Handling both
+                      // toggles twice and nothing changes.
+                      if (target.tagName === 'INPUT' && forwardedClick.current) {
                         forwardedClick.current = false
                         return
                       }
+
+                      // A NON-INPUT TARGET MEANS A FORWARD IS COMING,
+                      // except in Firefox when shift is held: #559506
+                      // suppresses the activation entirely. The flag is
+                      // cleared by the next input click if one arrives
+                      // and harmlessly reset by the next gesture if not.
+                      forwardedClick.current = target.tagName !== 'INPUT'
                       toggleSelected(result.id, event.shiftKey)
                     }}
                   >
