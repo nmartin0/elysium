@@ -334,6 +334,29 @@ describe("a descendant selector must not claim other components' elements", () =
    */
   const shell = read('packages/shell-api/src/index.css')
 
+  it('the global label rule excludes Blueprint controls', () => {
+    /** THE RULE THAT ACTUALLY CAUSED IT, and I guarded the wrong one
+     *  first.
+     *
+     *  A bare `label { display: flex; flex-direction: column }` styled
+     *  EVERY label in the app -- and Blueprint renders a Checkbox as a
+     *  label wrapping an input, so the box was stacked above its own
+     *  text everywhere. Blueprint's own stylesheet is never imported
+     *  here, so nothing put it back.
+     *
+     *  My first fix scoped `.workspace__filter > label`, which only
+     *  set typography. It changed nothing a person could see.
+     */
+    expect(shell).toMatch(/^label:not\(\.bp6-control\) \{/m)
+  })
+
+  it('Blueprint controls get an inline layout of their own', () => {
+    // Because Blueprint's stylesheet is not imported, excluding them
+    // from the stacking rule leaves them with NO layout at all. The
+    // replacement has to be stated rather than assumed.
+    expect(shell).toMatch(/label\.bp6-control \{/)
+  })
+
   it('the filter heading style excludes Blueprint controls', () => {
     expect(shell).toContain('.workspace__filter > label:not(.bp6-control)')
   })
@@ -343,5 +366,7 @@ describe("a descendant selector must not claim other components' elements", () =
     // reintroduce the bug while the test above still passed, because
     // both rules could coexist.
     expect(shell).not.toMatch(/\.workspace__filter > label\s*\{/)
+    // AND THE GLOBAL ONE, which is the rule that mattered.
+    expect(shell).not.toMatch(/^label \{/m)
   })
 })

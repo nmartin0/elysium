@@ -630,10 +630,37 @@ form {
   gap: 0.75rem;
 }
 
-label {
+/* A FORM FIELD'S OWN LABEL: its text above its control.
+ *
+ * SCOPED AWAY FROM BLUEPRINT'S CONTROLS, which are labels too.
+ * Blueprint renders a Checkbox as
+ * `<label class="bp6-control bp6-checkbox"><input><span
+ * class="bp6-control-indicator"></span>Text</label>` -- so as a bare
+ * element selector this stacked the box ABOVE its own text, everywhere
+ * in the app, and Blueprint's own stylesheet is never imported here to
+ * put it back.
+ *
+ * That was the "checkboxes above their text throughout the UI" report.
+ * I first blamed `.workspace__filter > label`, which was wrong: that
+ * rule only set typography. This is the one that laid them out.
+ *
+ * The comment directly below records someone hitting exactly this
+ * class of problem with a bare `input` selector "fighting their own
+ * geometry". The same mistake, one element over. */
+label:not(.bp6-control) {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+/* Blueprint's controls, which it would style itself if its stylesheet
+ * were imported. It is not -- this project styles Blueprint's classes
+ * directly -- so the inline layout has to be stated. */
+label.bp6-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
   font-size: 0.9rem;
 }
 

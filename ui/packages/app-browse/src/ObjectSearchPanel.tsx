@@ -713,7 +713,27 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                     visible, unclickable, and would navigate instead of
                     selecting. .object-search__select gives it its own
                     stacking context. */}
-                <div className="object-search__row">
+                <div
+                  className="object-search__row"
+                  // ON THE WRAPPER, because Blueprint hands extra props
+                  // to the <input> and not to the <label> that wraps it
+                  // -- verified by rendering one and firing at each.
+                  //
+                  // So a handler passed to Checkbox only fires when the
+                  // pointer lands on the input ITSELF. Clicking the
+                  // label anywhere else, which is most of the control's
+                  // visible area, produced no mousedown at all and the
+                  // modifier was never captured.
+                  //
+                  // mousedown here catches every path, because the
+                  // wrapper contains the label, which contains the
+                  // input. Capture-phase ordering is not needed:
+                  // mousedown bubbles here before the click that
+                  // produces the change.
+                  onMouseDown={(event) => {
+                    shiftHeld.current = event.shiftKey
+                  }}
+                >
                   <Checkbox
                     className="object-search__select"
                     checked={selectedIds.has(result.id)}
@@ -735,9 +755,6 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                     // mousedown is a real gesture, always carries the
                     // true modifier state, and always precedes the
                     // click that produces the change.
-                    onMouseDown={(event) => {
-                      shiftHeld.current = event.shiftKey
-                    }}
                     // THE KEYBOARD PATH TOO: space on a focused
                     // checkbox produces a change with no mouse event
                     // at all, and shift-space is how a keyboard user

@@ -1293,6 +1293,22 @@ function shiftClick(element: HTMLElement) {
   fireEvent.click(element)
 }
 
+/** A shift-click landing on the LABEL rather than the input.
+ *
+ * THE PATH THAT WAS ACTUALLY BROKEN, and the one both earlier versions
+ * of these tests missed. Blueprint hands extra props to the <input>
+ * and not to the <label> wrapping it, so a handler passed to Checkbox
+ * only fires when the pointer lands on the input itself -- while most
+ * of the control's visible area is the label.
+ *
+ * Firing at the input proved the logic and never touched the bug.
+ */
+function shiftClickLabel(input: HTMLElement) {
+  const label = input.closest('label')!
+  fireEvent.mouseDown(label, { shiftKey: true })
+  fireEvent.click(input)
+}
+
 describe('shift-click selects a range in the results', () => {
   /**
    * THE WIRE, which rangeSelection's own tests cannot see: that the
@@ -1328,6 +1344,19 @@ describe('shift-click selects a range in the results', () => {
     fireEvent.click(screen.getByLabelText('Select Cara Diaz'))
 
     expect(await screen.findByText('2 selected')).toBeInTheDocument()
+  })
+
+  it('works when the click lands on the label, not the input', async () => {
+    // THE REGRESSION TEST for the bug a person found by holding shift.
+    // Everything here passed while the feature did not, because the
+    // tests fired at the input and people click the label.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    shiftClickLabel(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('3 selected')).toBeInTheDocument()
   })
 
   it('ticks every box in the range, not just the ends', async () => {
