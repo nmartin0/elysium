@@ -950,22 +950,31 @@ button.danger {
   text-decoration: none;
 }
 
-.object-search__link::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
+/* THE STRETCHED LINK IS GONE, and this records why rather than
+ * leaving a reader to wonder where it went.
+ *
+ * `::after { inset: 0 }` made the whole card a link target, which is a
+ * good pattern for a card that is ONLY a link. This card is not: it
+ * holds a checkbox, and the two are fundamentally incompatible. An
+ * overlay covering the card either swallows the control's clicks or
+ * has to be out-stacked by it, and every interaction that is not a
+ * plain left-click then has to be reasoned about separately.
+ *
+ * It cost three failed fixes. Shift-clicking a checkbox NAVIGATED --
+ * proved by a server log showing GET /objects/Transaction/4 during a
+ * selection test -- while plain clicks selected correctly, because
+ * z-index resolved that case and only that case.
+ *
+ * So the title is the link and the card is not. Clicking the card body
+ * no longer navigates, which is a real loss and a smaller one than a
+ * selection control that works for some clicks and not others. */
 
-/* THE CHECKBOX HAS TO SIT ABOVE THE STRETCHED LINK.
+/* The checkbox, beside the content rather than beneath an overlay.
  *
- * .object-search__link::after covers the whole card so that clicking
- * anywhere navigates -- which is what makes a result feel like a
- * result. A checkbox painted underneath it would be visible and
- * unclickable, and clicking it would navigate instead of selecting:
- * the worst of both, and silent.
- *
- * A stacking context of its own, rather than a z-index race, so a
- * later change to the overlay cannot quietly bury it again. */
+ * This block used to explain why it needed its own stacking
+ * context to sit above a stretched link. That link is gone -- see
+ * the comment above -- so the reasoning is gone with it rather
+ * than left behind to mislead. */
 /* THE CARD'S CONTENT, LAID OUT BESIDE ITS CHECKBOX.
  *
  * The card itself stays `display: block` -- that is deliberate and
@@ -995,8 +1004,10 @@ button.danger {
 }
 
 .object-search__select {
-  position: relative;
-  z-index: 1;
+  /* NO z-index HERE ANY MORE. It existed to out-stack the stretched
+   * link, which is gone -- and keeping a stacking context that guards
+   * against nothing is how the next reader concludes it is load-
+   * bearing and works around it. */
   /* Nudged down to sit on the title's own line rather than above its
    * cap height -- Blueprint's checkbox has its own internal padding
    * that a bare flex row does not account for. */

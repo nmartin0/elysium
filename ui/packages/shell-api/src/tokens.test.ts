@@ -413,3 +413,39 @@ describe('bare element selectors, which silently outrank Blueprint', () => {
     expect(shell).not.toMatch(/\[class\^=["']bp6/)
   })
 })
+
+describe('a card holding a control must not stretch its link', () => {
+  /**
+   * `::after { inset: 0 }` makes a whole card a link target. That is a
+   * good pattern for a card that is ONLY a link, and incompatible with
+   * one holding a checkbox: the overlay either swallows the control's
+   * clicks or must be out-stacked by it, and every interaction that is
+   * not a plain left-click then needs reasoning about separately.
+   *
+   * IT COST THREE FAILED FIXES. Plain clicks selected correctly
+   * because z-index resolved that case; shift-clicking the checkbox
+   * NAVIGATED, which only a server log revealed -- GET
+   * /objects/Transaction/4 arriving during a selection test.
+   *
+   * Nothing in this repository computes layout or hit-testing, so this
+   * guards the CAUSE rather than the symptom.
+   */
+  const shell = read('packages/shell-api/src/index.css')
+
+  it('the result card has no stretched link overlay', () => {
+    expect(shell).not.toMatch(/\.object-search__link::after/)
+  })
+
+  it('and the checkbox no longer needs its own stacking context', () => {
+    // Keeping one that guards against nothing is how the next reader
+    // concludes it is load-bearing and works around it.
+    // A DECLARATION, not the word. The block's own comment explains
+    // why the z-index went, so matching the bare word finds the
+    // explanation and calls it the thing it explains.
+    const block = shell.slice(
+      shell.indexOf('.object-search__select {'),
+      shell.indexOf('}', shell.indexOf('.object-search__select {')),
+    )
+    expect(block).not.toMatch(/^\s*z-index:/m)
+  })
+})

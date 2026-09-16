@@ -753,12 +753,13 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               // makes the WHOLE card clickable/keyboard-focusable, not
               // just interactive's own hover styling on its own.
               <Card key={result.id} interactive className="object-search__result">
-                {/* OUTSIDE THE LINK, and above it. The stretched link
-                    covers the whole card so clicking anywhere
-                    navigates; a checkbox painted underneath would be
-                    visible, unclickable, and would navigate instead of
-                    selecting. .object-search__select gives it its own
-                    stacking context. */}
+                {/* BESIDE THE LINK, not beneath an overlay. The card
+                    used to stretch its link across the whole surface,
+                    which is a good pattern for a card that is ONLY a
+                    link and a bad one for a card holding a checkbox:
+                    shift-clicking the box NAVIGATED, proved by a
+                    server log during a selection test. The overlay is
+                    gone and the title is the link. */}
                 <div
                   className="object-search__row"
                   // ON THE WRAPPER, because Blueprint hands extra props
