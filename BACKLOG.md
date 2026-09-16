@@ -56,15 +56,22 @@ Blueprint's CardList gives a direct child Card
 multi-line content side-by-side instead of stacked -- so the fix is a
 flex ROW INSIDE the card rather than flexing the card.
 
-SEARCHED THE WHOLE UI: exactly two Checkbox elements exist, and the
-other (the Columns filter) uses Blueprint's own `label` prop and
-renders correctly. So either the report was about the Browse one
-specifically, or it is about a control I have not recognised as the
-same problem.
+~~SEARCHED THE WHOLE UI and found one instance.~~ WRONG, and I looked
+in the wrong place. The cause was in SHARED CSS, not in any component:
+`.workspace__filter > label` matched every direct child label, and
+Blueprint's Checkbox IS a label -- so every checkbox in the Columns
+filter got the filter-heading treatment, stacked with the box above
+its own text. A sweep for "<Checkbox" could never have found it.
 
-STILL OPEN: which OTHER screens show it. Worth naming them, because a
-sweep for "<Checkbox" found nothing further and I would be guessing at
-what else counts.
+~~STILL OPEN: which OTHER screens show it.~~ FOUND, and it was not a
+component at all: `.workspace__filter > label` styled EVERY direct
+child label, and Blueprint's Checkbox IS a label. So every checkbox in
+a filter pane got the heading treatment -- uppercase, bold, stacked
+above its own text.
+
+That is why a sweep for `<Checkbox` found nothing: the fault was in
+shared CSS, and the selector was written before any filter contained a
+control that happened to be a label.
 
 ### Wrong: small, visible, decided
 

@@ -1276,6 +1276,23 @@ describe('a result card lays its checkbox beside its content', () => {
   })
 })
 
+/** A shift-click as a BROWSER produces one: mousedown carrying the
+ *  modifier, then the click.
+ *
+ *  THE OLD TESTS PASSED WHILE THE FEATURE DID NOT, and this is why.
+ *  `fireEvent.click(box, { shiftKey: true })` dispatches a click
+ *  straight at the input with the modifier attached -- which no real
+ *  interaction does. A person clicking Blueprint's Checkbox clicks its
+ *  <label>, and the browser SYNTHESISES a click on the input that
+ *  carries no modifiers at all.
+ *
+ *  Firing mousedown first is what makes the test resemble the gesture.
+ */
+function shiftClick(element: HTMLElement) {
+  fireEvent.mouseDown(element, { shiftKey: true })
+  fireEvent.click(element)
+}
+
 describe('shift-click selects a range in the results', () => {
   /**
    * THE WIRE, which rangeSelection's own tests cannot see: that the
@@ -1296,7 +1313,7 @@ describe('shift-click selects a range in the results', () => {
     renderPanel(CUSTOMER_SCHEMA)
 
     fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
-    fireEvent.click(screen.getByLabelText('Select Cara Diaz'), { shiftKey: true })
+    shiftClick(screen.getByLabelText('Select Cara Diaz'))
 
     expect(await screen.findByText('3 selected')).toBeInTheDocument()
   })
@@ -1321,7 +1338,7 @@ describe('shift-click selects a range in the results', () => {
     renderPanel(CUSTOMER_SCHEMA)
 
     fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
-    fireEvent.click(screen.getByLabelText('Select Cara Diaz'), { shiftKey: true })
+    shiftClick(screen.getByLabelText('Select Cara Diaz'))
 
     expect(screen.getByLabelText('Select Ben Stone')).toBeChecked()
   })

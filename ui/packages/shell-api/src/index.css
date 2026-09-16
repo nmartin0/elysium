@@ -514,7 +514,20 @@ body {
   gap: var(--space-hair);
 }
 
-.workspace__filter > label {
+/* THE FILTER'S OWN HEADING, and only that.
+ *
+ * `> label` matched EVERY direct child label -- and Blueprint's
+ * Checkbox IS a label. So each checkbox in the Columns filter was
+ * given the heading treatment: uppercase, bold, and laid out as its
+ * own column item with the box above its text.
+ *
+ * That was the "checkboxes above their text throughout the UI" report,
+ * and it was in shared CSS rather than in Browse, which is why a sweep
+ * for `<Checkbox` found nothing.
+ *
+ * :not(.bp6-control) excludes Blueprint's own controls, which bring
+ * their own layout and should keep it. */
+.workspace__filter > label:not(.bp6-control) {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);

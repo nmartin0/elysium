@@ -314,3 +314,34 @@ describe('every error is announced, not just shown', () => {
     expect(offenders).toEqual([])
   })
 })
+
+describe("a descendant selector must not claim other components' elements", () => {
+  /**
+   * `.workspace__filter > label` matched EVERY direct child label --
+   * and Blueprint's Checkbox IS a label. So each checkbox in the
+   * Columns filter was given the filter-heading treatment: uppercase,
+   * bold, and stacked so the box sat above its own text.
+   *
+   * That was reported as "checkboxes above their text throughout the
+   * UI", and a sweep for `<Checkbox` found nothing because the cause
+   * was in shared CSS rather than in any component.
+   *
+   * WHAT THIS CAN AND CANNOT CHECK. jsdom computes no layout, so
+   * nothing here proves anything LOOKS right. What it checks is that a
+   * broad element selector carries an exclusion -- the specific
+   * mistake that made a shared style reach into a component that
+   * brings its own.
+   */
+  const shell = read('packages/shell-api/src/index.css')
+
+  it('the filter heading style excludes Blueprint controls', () => {
+    expect(shell).toContain('.workspace__filter > label:not(.bp6-control)')
+  })
+
+  it('no bare `> label` rule remains under workspace__filter', () => {
+    // THE CONTROL on the fix. Re-adding the unqualified rule would
+    // reintroduce the bug while the test above still passed, because
+    // both rules could coexist.
+    expect(shell).not.toMatch(/\.workspace__filter > label\s*\{/)
+  })
+})

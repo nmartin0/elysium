@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 import {
@@ -173,6 +173,11 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // An index would break the moment the list is sorted, filtered or
   // paged -- and this list is all three.
   const [anchorId, setAnchorId] = useState<string | null>(null)
+
+  // WHETHER SHIFT WAS HELD, captured from the real gesture. A ref
+  // rather than state: it is read once in the change that follows
+  // and must not cause a render of its own.
+  const shiftHeld = useRef(false)
 
   function toggleSelected(id: string, withShift = false) {
     // THE ORDER ON SCREEN, which is what a person means by "everything
@@ -712,12 +717,35 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   <Checkbox
                     className="object-search__select"
                     checked={selectedIds.has(result.id)}
-                    onChange={(event) =>
-                      // THE MODIFIER OFF THE EVENT, because a checkbox
-                      // has no other way to know. React's change event
-                      // carries the native one, which carries shiftKey.
-                      toggleSelected(result.id, (event.nativeEvent as MouseEvent | undefined)?.shiftKey === true)
-                    }
+                    // CAPTURED ON mousedown, NOT READ FROM onChange.
+                    //
+                    // Blueprint's Checkbox is a <label> wrapping an
+                    // <input>, and clicking a label makes the browser
+                    // SYNTHESISE a click on the control it labels --
+                    // a synthetic click that carries no modifier keys.
+                    // So onChange saw shiftKey false however the key
+                    // was held, and shift-click silently behaved as a
+                    // plain click.
+                    //
+                    // It passed every test, because fireEvent
+                    // dispatches the event straight at the input with
+                    // the modifier attached and never goes through a
+                    // label at all. Found by a person holding shift.
+                    //
+                    // mousedown is a real gesture, always carries the
+                    // true modifier state, and always precedes the
+                    // click that produces the change.
+                    onMouseDown={(event) => {
+                      shiftHeld.current = event.shiftKey
+                    }}
+                    // THE KEYBOARD PATH TOO: space on a focused
+                    // checkbox produces a change with no mouse event
+                    // at all, and shift-space is how a keyboard user
+                    // extends a range.
+                    onKeyDown={(event) => {
+                      shiftHeld.current = event.shiftKey
+                    }}
+                    onChange={() => toggleSelected(result.id, shiftHeld.current)}
                     aria-label={`Select ${String(titleValue)}`}
                   />
                   <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
