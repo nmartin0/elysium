@@ -368,10 +368,24 @@ it is lost, the lake is a directory of Parquet nobody can interpret.
    rewriting the JSON as well STILL fails, because the manifests are
    Avro and hold their own.
 
-   So the fix cannot be a path-rewriting migration bolted on
-   afterwards. It is either RELATIVE LOCATIONS AT WRITE TIME, or a
-   CATALOG REBUILT FROM THE WAREHOUSE on load. That is its own piece
-   of work and the next thing to do here.
+   **AND THE FIX ALREADY EXISTS.** The problem was never that Iceberg
+   bakes in absolute paths -- it is that `file:///var/lib/mirror/...`
+   is HOST-SPECIFIC while `s3://elysium/warehouse/...` is not. The
+   same string resolves from any machine, container or mount, so
+   nothing needs rewriting when the lake moves: as far as the lake is
+   concerned it has not moved.
+
+   Proved end to end: sync into object storage, DELETE THE ENTIRE
+   INSTALLATION, preserve only the catalog, read the data from
+   somewhere else. Passes. The identical teardown against a file://
+   warehouse fails, which is the control.
+
+   THAT REFRAMES THE DURABLE-STORAGE PHASE. It was justified as "the
+   mirror should survive the machine" -- true, and incomplete. Object
+   storage is also what makes a preserved lake REBUILDABLE ON.
+
+   THE CATALOG MUST STILL BE PRESERVED. Its contents are now portable,
+   but losing the file still leaves a bucket nobody can interpret.
 
    The tests assert the FAILURE, so fixing it turns them red rather
    than letting the fix land unnoticed.

@@ -260,3 +260,94 @@ class TestWhatTheLakeCannotExplain:
 
         assert not any(key.startswith("elysium.ontology") for key in properties)
         assert not any(key.startswith("elysium.policy") for key in properties)
+
+
+class TestObjectStorageMakesItPortable:
+    """The fix, and it turns out to already exist.
+
+    THE PROBLEM WAS NEVER "ICEBERG BAKES IN ABSOLUTE PATHS". It is that
+    `file:///var/lib/mirror/...` is HOST-SPECIFIC while
+    `s3://elysium/warehouse/...` is not. The same string resolves from
+    any machine, any container, any mount -- so nothing needs
+    rewriting when the lake moves, because as far as the lake is
+    concerned it has not moved.
+
+    That reframes the durable-storage phase. It was justified as "the
+    mirror should survive the machine", which is true and incomplete:
+    object storage is also what makes a preserved lake REBUILDABLE ON,
+    and that is the requirement.
+
+    THE CATALOG MUST STILL BE PRESERVED. It is a SQLite file listing
+    where each table's metadata lives, and its CONTENTS are now
+    portable -- but losing the file still leaves a bucket nobody can
+    interpret, which is the mistake scripts/check_mirror warns about.
+    """
+
+    def test_a_lake_in_object_storage_survives_the_install_being_deleted(self, tmp_path):
+        """THE REQUIREMENT, end to end.
+
+        Sync into object storage, delete the entire installation,
+        preserve only the catalog, read the data from somewhere else.
+        """
+        pytest.importorskip("moto.server")
+        boto3 = pytest.importorskip("boto3")
+        from moto.server import ThreadedMotoServer
+
+        server = ThreadedMotoServer(port=0)
+        server.start()
+        try:
+            host, port = server.get_host_and_port()
+            endpoint = f"http://{host}:{port}"
+            boto3.client(
+                "s3", endpoint_url=endpoint, region_name="us-east-1",
+                aws_access_key_id="testing", aws_secret_access_key="testing",
+            ).create_bucket(Bucket="elysium")
+
+            source = tmp_path / "source.db"
+            connection = sqlite3.connect(source)
+            connection.execute("CREATE TABLE t (id TEXT PRIMARY KEY, a TEXT)")
+            connection.executemany(
+                "INSERT INTO t VALUES (?, ?)", [("1", "x"), ("2", "y")])
+            connection.commit()
+            connection.close()
+
+            storage = {
+                "warehouse": "s3://elysium/warehouse",
+                "s3.endpoint": endpoint,
+                "s3.access-key-id": "testing",
+                "s3.secret-access-key": "testing",
+                "s3.region": "us-east-1",
+            }
+            install = tmp_path / "install"
+            sync = IcebergMirrorSync(
+                install, {"s": SQLiteReadAdapter({"path": source})}, storage=dict(storage),
+            )
+            sync.sync_table("s", "t", "id", COLUMNS, TYPES)
+
+            # LOCATION-INDEPENDENT, which is the whole point.
+            assert sync._catalog.load_table("s.t").metadata_location.startswith("s3://")
+
+            # Preserve the catalog; destroy everything else.
+            preserved = tmp_path / "preserved"
+            preserved.mkdir()
+            shutil.copy(install / "catalog.db", preserved / "catalog.db")
+            shutil.rmtree(install)
+
+            fresh = SqlCatalog(
+                "elysium_mirror", uri=f"sqlite:///{preserved / 'catalog.db'}", **storage,
+            )
+            rows = fresh.load_table("s.t").scan().to_arrow().to_pydict()
+
+            assert sorted(rows["id"]) == ["1", "2"]
+        finally:
+            server.stop()
+
+    def test_a_local_lake_still_is_not(self, lived_in_deployment):
+        # THE CONTROL, and the contrast that makes the point. The same
+        # teardown against a file:// warehouse fails, which is why the
+        # storage setting is the fix rather than a performance option.
+        data_dir, mirror_dir = lived_in_deployment
+        preserved = _tear_down_keeping_the_lake(data_dir, mirror_dir)
+
+        with pytest.raises(FileNotFoundError):
+            _catalog_for(preserved / "mirror").load_table("s.t").scan().to_arrow()
