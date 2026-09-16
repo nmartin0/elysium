@@ -250,11 +250,13 @@ quantitative trading engine -- while base Elysium stays upgradeable.
 
 ### Needs a decision from a person
 
-**Per-task approval eligibility.** Foundry scopes a reviewer's action
-to the tasks they can review; we approve whole requests.
+~~**Per-task approval eligibility.**~~ SETTLED -- see section 0e for
+the design and the four-step build order. Partial APPROVAL with atomic
+EXECUTION, which is how Foundry separates the two.
 
-**Host metrics correlated with hops.** Explicitly not a resource
-dashboard. What is worth showing has never been settled.
+~~**Host metrics correlated with hops.**~~ SETTLED -- see section 0e.
+Three specific questions replace the vague goal, and all three need
+agent traces, so they belong to the measurement session.
 
 **The keyboard model's roving-focus half.** GATED rather than
 unstarted: the recorded condition is that "nobody has established who
@@ -512,6 +514,111 @@ A test listing every bare element selector in index.css, so that
 ADDING one is a decision someone makes deliberately rather than a
 change that silently outranks a vendor component. Five are currently
 allowed, each reviewed.
+
+## 0e. Decided September 15, and what each needs
+
+### Approvals: per-task approval, atomic invocation
+
+**FOUNDRY HAS BOTH, AT DIFFERENT LAYERS, and that dissolves the
+trade-off I posed.** Approval is per task and partial by eligibility:
+"an eligible reviewer can either Approve or Reject the task...
+alternatively, use the Approve all or Reject all button... to approve
+or reject all tasks in the request THAT YOU ARE ELIGIBLE TO REVIEW."
+
+Invocation is not: "all tasks associated with a request must be
+approved for the request to be invoked and requested changes to be
+applied."
+
+So a reviewer approves the 47 they can; the other 3 wait; nothing
+applies until every task is approved, and then everything applies
+together. Partial APPROVAL, atomic EXECUTION.
+
+**THE GROUPING INTO A REQUEST IS THE DEPENDENCY DECLARATION.** A
+delivery that requires a warehouse shipment to make space is two tasks
+in ONE request -- both approved or neither happens. Genuinely
+independent work is two requests, each invoking as soon as it is
+approved. No per-action flag is needed; how work is bundled says it.
+
+**WE CANNOT EXPRESS ANY OF THIS TODAY.** PendingWrite holds the
+proposer, the sub-writes and when it was proposed. There is NO
+approval state: confirm_and_execute() is one person saying yes or no,
+once, and there is nowhere to record that Alice approved while Bob has
+not. Three roles each signing off is not partially supported -- it is
+absent.
+
+What the submission-criteria vocabulary CAN already say is "the
+approver must not be the proposer", which is four-eyes. What it cannot
+say is "these three roles must each sign off".
+
+Build order, with the atomic batch untouched at the end:
+
+1. Per-task approval records -- who approved which task, and when.
+2. A request that knows whether it is fully approved, and invokes only
+   then.
+3. Eligibility: which tasks a given reviewer may act on, derived from
+   the same grants that already decide who may execute an action.
+4. An inbox showing a reviewer their eligible tasks, with Approve all
+   scoped to those.
+
+Foundry backs the same guarantee at the storage layer -- their Iceberg
+catalog "extends standard Iceberg with all-or-nothing transaction
+semantics... all writes either succeed together or are fully
+discarded" -- which is what our atomic batch already does.
+
+### Host metrics: three questions, not a dashboard
+
+The old entry said "correlated with hops", which is not a well-formed
+goal. Replaced with what would actually be worth knowing:
+
+1. **Which queries fail, and at which hop.** An agent dying on hop 5
+   of 8 is a different problem from one returning a bad answer.
+2. **Hops per query, as a distribution.** If most take 2 and some take
+   9, the 9s hold the cost and the failures.
+3. **Time per hop, split by model call versus ontology read.** Whether
+   a slow query is a slow model or a slow silo -- completely different
+   fixes.
+
+All three need agent traces, so all three belong to the measurement
+session rather than to a decision.
+
+### Browser-based tests, as their own item
+
+**THE SINGLE BIGGEST GAP IN WHAT THIS PROJECT CAN VERIFY.** Vitest
+supports a browser runner, which would allow asserting COMPUTED
+STYLES -- the thing that was missing every time this session shipped a
+UI fix that did not work.
+
+It would have caught the checkbox layout, the labels stacked above
+their text, and probably the stretched-link problem. Six attempts at
+one checkbox, none caught by 786 tests, all found by a person
+clicking.
+
+Worth doing for itself. And once it exists, moving our stylesheets
+into the declared cascade layers -- currently unlayered, so every bare
+element selector silently outranks Blueprint -- becomes a safe, small
+change instead of an unverifiable one.
+
+### An audit for workarounds
+
+**A WORKAROUND THAT WORKS IS STILL THE WRONG ANSWER**, and this
+session produced several before landing on the right one each time: a
+timing window to tell a real click from a browser-forwarded one, a
+tripwire listing bare element selectors instead of layering the CSS, a
+path-rewriting helper for a lake that simply needed a different URI
+scheme.
+
+Each was plausible, each passed its tests, and each was a way of
+living with a problem rather than removing it. The pattern to look for
+is code that compensates for a structure rather than changing it.
+
+Known candidates, to start from rather than to limit the search:
+
+- The bare-element-selector tripwire, superseded by layering the CSS.
+- Anything reaching into Blueprint's internals by class name.
+- `_warehouse_root()` and `_file_io()` reaching into pyiceberg
+  privates -- possibly unavoidable, worth confirming.
+- The manifest probe loop, which guesses generation numbers because
+  FileIO has no list operation.
 
 ## 1. Needs a machine with a model
 
