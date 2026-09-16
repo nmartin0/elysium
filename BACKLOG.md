@@ -336,10 +336,21 @@ it is lost, the lake is a directory of Parquet nobody can interpret.
 
 ### What would need doing
 
-1. **An integrity check that can be run.** Does every silver row trace
-   to a bronze row? Does every changelog entry name an object that
-   existed? Does the catalog list every table the warehouse holds?
-   None of this is verifiable today.
+1. ~~**An integrity check that can be run.**~~ DONE:
+   `python -m scripts.check_mirror`. Checks that every silver table has
+   a bronze counterpart, that their row counts agree, that every
+   declared field has a column, and that the catalog lists every table
+   the warehouse holds on disk.
+
+   RUNS WITHOUT AN ONTOLOGY, which is the case it exists for: a lake
+   preserved through a teardown, inspected before a new Elysium is
+   configured on it. Structural checks still run; ontology-aware ones
+   are skipped rather than guessed at.
+
+   STILL UNCHECKED: whether every changelog entry names an object that
+   existed. The changelog is append-only history whose row count
+   deliberately matches nothing, so it needs its own reasoning rather
+   than an extension of these rules.
 
 2. **Decide what the lake holds**, along the split above.
 
