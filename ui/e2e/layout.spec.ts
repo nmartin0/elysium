@@ -18,7 +18,9 @@
 // runs:
 //
 //   cd ui && npm run build     (these test the BUILT bundle)
-//   python -m scripts.create_debug_user
+//   python -m scripts.create_debug_user --yes-this-is-development
+//       (once. It refuses without the flag, and should: the account
+//        it makes has every grant the deployment defines.)
 //   uvicorn api.app:app        (serves the UI and the API together)
 //   cd ui && npm run e2e
 //

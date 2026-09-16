@@ -126,8 +126,14 @@ work, every one found by a person clicking.
 
     cd ui && npm run e2e:install    (once)
     cd ui && npm run build          (they test the BUILT bundle)
-    python -m scripts.create_debug_user
+    python -m scripts.create_debug_user --yes-this-is-development
+                                    (once; it refuses without the flag,
+                                     deliberately -- it is a back door)
     uvicorn api.app:app             (serves the UI and the API)
+                                    If one is already running, leave it:
+                                    static files are read from disk per
+                                    request, so a fresh build is picked
+                                    up without a restart.
     cd ui && npm run e2e
 
 NO DEV SERVER. uvicorn serves both, so the only process needed is the
