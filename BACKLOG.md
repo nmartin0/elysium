@@ -206,6 +206,153 @@ working. Each step builds on the last:
 Step 6 last on purpose: by then there is enough traffic for the
 numbers to be non-trivial.
 
+## 0b. Open, as of September 15 -- the consolidated picture
+
+Everything genuinely outstanding, in one place, because the list had
+grown long enough that things were being lost in it.
+
+### Can I do it alone, right now
+
+**Make the test suites NAME their failures.** Three unexplained single
+-test failures so far -- two frontend, one backend -- none
+reproducible, none named. The summary line the retry erases is what
+has defeated every attempt to chase them.
+
+`--reporter=verbose` for vitest and `-p no:randomly` for pytest both
+name tests as they run. Worth wiring into the default invocation
+rather than remembering to add. Small, unglamorous, and the most
+valuable thing left that needs nothing from anyone -- because the next
+REAL intermittent failure will be read as this one.
+
+**Which other screens show the checkbox-above-the-row problem.** The
+sweep found exactly two Checkbox elements and the other renders
+correctly, so either the report was about Browse specifically or it is
+a control I have not recognised as the same problem.
+
+### Needs research, then a plan, then building
+
+**What Query should contain.** Barren today. The one item that is a
+design question rather than a defect, and it deserves the treatment the
+ELT work got.
+
+**A plugin API, server and client.** The largest item here and
+probably its own session. Third-party sub-apps and server-side compute
+that load INTO Elysium without modifying it, so a vanilla install can
+become something domain-specific -- the worked example being a
+quantitative trading engine -- while base Elysium stays upgradeable.
+
+### Needs a decision from a person
+
+**Per-task approval eligibility.** Foundry scopes a reviewer's action
+to the tasks they can review; we approve whole requests.
+
+**Host metrics correlated with hops.** Explicitly not a resource
+dashboard. What is worth showing has never been settled.
+
+**The keyboard model's roving-focus half.** GATED rather than
+unstarted: the recorded condition is that "nobody has established who
+uses Elysium daily", and the precedent sharpens it -- our results are
+cards with links, not a grid, so `role="grid"` without the full
+keyboard contract would be worse than native semantics.
+
+### Needs a machine with a model
+
+**The prompt-quality measurement session.** Four questions, one
+harness, about an hour. Still the highest-value item and the only one
+that cannot be done here at all.
+
+### Deferred with the trigger named
+
+**Sync memory batching** -- when a deployment has a table big enough.
+Measured at roughly 1.2 KB peak per row.
+
+**The ELT changelog's later phases** -- a current view reading through
+the changelog, and a REST catalog if a table outgrows memory.
+
+**Partitioning** -- at a few hundred megabytes of Parquet, which is
+roughly a hundred million rows at our widths.
+
+## 0c. Data integrity, and surviving a teardown
+
+Raised September 15. Two related questions, and the second has a
+subtlety worth separating out before anyone builds.
+
+### The requirement
+
+Tear Elysium down, preserve the data lake, stand a fresh Elysium up on
+top of it, and continue running. Nothing lost that matters.
+
+**THIS IS NOT YET TRUE, and the gap is knowable rather than
+mysterious.** What lives in the lake today: bronze, silver, the
+changelog, and their Iceberg metadata. What lives OUTSIDE it and would
+not survive: `deployment/etc` (the ontology, the policy, the silos,
+the LLM settings), `write_log.db`, `credentials.db`,
+`config_history.db`, `secrets/`, and `metrics.db`.
+
+A fresh install on a preserved lake would come up with data and no
+idea what any of it means.
+
+### Is it idiomatic to put Elysium's metadata in the lake?
+
+**PARTLY, AND THE SPLIT IS THE INTERESTING PART.** The industry
+distinction is between a CONTROL PLANE and a DATA PLANE, and the
+catalog is the control plane: "the catalog must be the control plane
+where security and data quality rules are defined and enforced.
+Access control policies should be linked directly to tables, views, or
+columns within the catalog itself."
+
+By that standard, some of our config belongs there and some does not:
+
+**BELONGS (it describes the data):**
+- `ontology_schema.yaml` -- this IS table metadata. Types, fields,
+  links, security declarations. The catalog's own job.
+- `data_silos.yaml` -- where each table came from. That is lineage,
+  and lineage is canonically catalog-resident.
+- `policy.yaml` -- access control, which the guidance puts explicitly
+  in the catalog.
+
+**DOES NOT (it describes the application):**
+- `config.yaml`'s LLM block -- a model name and a timeout say nothing
+  about the data. A second Elysium on the same lake might reasonably
+  use a different model.
+- `credentials.db` and `secrets/` -- secrets belong in a secret store,
+  never in a data lake, and putting them there would make every reader
+  of the lake a reader of the credentials.
+- `write_log.db` -- transactional state, not description.
+- `metrics.db` -- describes the SERVER, not the data. Already
+  documented as safe to lose.
+
+**THE GUIDANCE TREATS THESE AS THREE THINGS, not two**: "regularly
+backup data, metadata, and configuration settings". So the answer is
+not "put everything in the lake" but "put the metadata in the lake,
+and have a deliberate story for configuration and secrets".
+
+And the metastore point is the one that makes this urgent: "the data
+in a Hive Metastore is just as significant as the data in the data
+lake and must be treated as such... its metadata must be kept
+permanent, highly accessible, and included in any disaster recovery
+configuration." Our catalog is a SQLite file beside the warehouse. If
+it is lost, the lake is a directory of Parquet nobody can interpret.
+
+### What would need doing
+
+1. **An integrity check that can be run.** Does every silver row trace
+   to a bronze row? Does every changelog entry name an object that
+   existed? Does the catalog list every table the warehouse holds?
+   None of this is verifiable today.
+
+2. **Decide what the lake holds**, along the split above.
+
+3. **A teardown-and-rebuild test**, which is the only honest proof.
+   Stand a deployment up, write to it, destroy everything outside the
+   lake, stand a fresh one up, and assert it can read and explain what
+   it finds.
+
+4. **Name what deliberately does NOT survive**, because a rebuild that
+   silently loses the write log is worse than one that refuses to
+   start. `config_history.db` already records which configurations
+   have run -- a first step toward this that predates the question.
+
 ## 1. Needs a machine with a model
 
 **The prompt-quality measurement session.** Four questions sharing one
