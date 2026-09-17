@@ -713,6 +713,52 @@ mine to make alone.
 STILL TO AUDIT, since suppressions are only where workarounds ADMIT
 themselves:
 
+**THE RULE:** a broad catch is acceptable where any failure means the
+same thing to the caller, and only when it REPORTS. One that stays
+quiet is a workaround.
+
+DEFERRED BY THE USER, not forgotten: replacing the write log's
+chunked `IN (?,?,?)` with SQLite's `json_each`, which removes two
+`S608`, the chunking and the variable limit, in exchange for a minimum
+SQLite version of 3.38. Verified working.
+
+## A CATALOG COMMIT AND ITS METADATA WRITE ARE NOT ATOMIC
+
+Found by scripts/check_mirror during this audit, on a real mirror, and
+it is the most serious thing the audit turned up.
+
+The disk filled during this session. A sync running then updated the
+catalog row to point at metadata file 00008 and never wrote it -- only
+00007 exists. Every read of that table then failed with
+FileNotFoundError.
+
+**RE-SYNCING DOES NOT REPAIR IT.** 0 of 2 tables synced: every write
+begins by reading the current snapshot, and the current snapshot is
+the file that is missing. The only recovery found was deleting the
+mirror and rebuilding from source -- which works only because bronze
+and silver are derivable. THE CHANGELOG IS NOT. A deployment losing a
+changelog table this way loses history no re-sync can rebuild.
+
+Not decided here:
+
+- pyiceberg's SqlCatalog commits the row and writes the metadata
+  separately. Whether that can be made atomic, or whether a REST
+  catalog would be, needs checking rather than assuming.
+- A cheaper mitigation: check_mirror already detects it, so running it
+  after every sync makes the window short and loud instead of long and
+  silent.
+- Cheaper still and worth doing regardless: fail the SYNC when the
+  catalog and warehouse disagree, rather than reporting 0/2 with no
+  explanation.
+
+ALSO FIXED: check_mirror named the SILVER identifier whichever of the
+pair could not be read, so a broken bronze table was reported as a
+broken silver one -- and the first thing anyone does with that message
+is look at the wrong table.
+
+
+STILL TO AUDIT, since four candidates were only a starting point:
+
 Known candidates, to start from rather than to limit the search:
 
 - The bare-element-selector tripwire, superseded by layering the CSS.

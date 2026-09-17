@@ -367,6 +367,12 @@ configuration was in force for any entry.
       yet.
   2c. Add a FastAPI dependency that pins `app.state.generation` once
       and puts it on `request.state`. One read, at entry.
+  **2a-2e ARE DONE.** Verified against api/app.py: none of the five
+  attributes named in 2e is assigned anywhere, and the pinned
+  generation is the only reference. The steps are left below as
+  written, because the ORDER was the hard part and is worth
+  keeping; a reader needs to know they happened.
+
   2d. Migrate routes to the pinned generation, in batches small enough
       to review. mypy finds every site. Behaviour is identical
       throughout, because there is still exactly one generation.

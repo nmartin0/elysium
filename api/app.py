@@ -226,11 +226,11 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # and the individual names below are VIEWS onto it rather than
     # independently constructed objects.
     #
-    # The five attributes are kept for now so routes stay unchanged;
-    # HOT_RELOAD_PLAN.md step 2d migrates them to the pinned
-    # generation and 2e deletes them. Deleting them is the point --
-    # while they exist a route can reach past the pin and reintroduce
-    # the torn read this exists to remove.
+    # (The five convenience attributes this once described are gone --
+    # see THE ONLY REFERENCE below. This paragraph said they were
+    # "kept for now" long after the migration that removed them, which
+    # is a comment describing a hazard that no longer exists: the same
+    # failure as a workaround, arriving from the documentation side.)
     generation = build_generation(
         runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
     )

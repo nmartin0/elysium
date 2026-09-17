@@ -200,6 +200,17 @@ def read_manifests(catalog) -> list[dict[str, Any]]:
                 with io.new_input(f"{root}/{entry.path.rsplit('/', 1)[-1]}").open() as stream:
                     raw = stream.read()
             except (OSError, ValueError, KeyError):
+                # LISTED BUT UNREADABLE, which is a fault rather than
+                # an absence: the directory listing just said this file
+                # is there. Under the old probe loop a failed read WAS
+                # ordinary -- most generations do not exist -- and this
+                # `continue` carried that meaning over unchanged. It no
+                # longer applies, and a manifest vanishing in silence is
+                # the opposite of what this module is for.
+                logger.warning(
+                    f"manifest at {entry.path} is listed but could not be read; "
+                    f"the lake describes itself less completely than it appears to."
+                )
                 continue
 
             try:

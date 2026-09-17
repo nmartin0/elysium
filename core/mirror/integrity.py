@@ -90,8 +90,16 @@ def check_mirror(catalog, schema: dict | None = None,
 
         silver_rows = _row_count(catalog, identifier)
         bronze_rows = _row_count(catalog, bronze_identifier)
-        if silver_rows is None or bronze_rows is None:
+        # NAME THE TABLE THAT FAILED, not the pair. A first version
+        # reported the silver identifier whichever of the two could not
+        # be read, so a broken BRONZE table was reported as a broken
+        # silver one -- and the first thing anyone does with that
+        # message is look at the wrong table.
+        if silver_rows is None:
             report.note(f"{identifier}: could not be read")
+        if bronze_rows is None:
+            report.note(f"{bronze_identifier}: could not be read")
+        if silver_rows is None or bronze_rows is None:
             continue
 
         if silver_rows != bronze_rows:
