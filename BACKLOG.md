@@ -329,9 +329,30 @@ fixture has four, and the limit would never have been hit. Worth
 re-running both ways: a rejection path that only appears on seeded
 data is a different finding from one that appears normally.
 
-**STILL OPEN:** whether aggregates get chosen (the question timed
-out), whether the pre-flight verdicts earn their keep, and whether a
-small model can work without the schema.
+**AGGREGATES ARE CHOSEN CORRECTLY -- question 2 ANSWERED.** The
+aggregate question ran in 6 hops, 395 seconds, ZERO rejections, not
+capped, and `aggregate_object` appears in the step mix. The agent
+does not fetch every row and count them itself.
+
+**AND THE ONE-HOP FAILURE WAS NOT THE ID LIMIT.** Re-run against the
+fixture's own four transactions -- where the limit cannot be hit --
+it still burned 9 hops and ran out. The agent had asked for
+`field_names: ["*"]`.
+
+There is no wildcard. get_field returns None for an unknown field,
+so the step SUCCEEDED and returned `{"*": None}`, indistinguishable
+from a field that is genuinely empty. The agent asked again until
+the duplicate guard stopped it.
+
+Now refused by the loop, naming the fields that do exist. NOT in the
+mediator: get_field returns None for both "no such field" and "not
+authorised" deliberately, so an unauthorised caller cannot map the
+schema by guessing. The loop can say it safely because
+visible_schema is already MAC-filtered.
+
+**STILL OPEN:** whether the pre-flight verdicts earn their keep, and
+whether a small model can work without the schema. Both need a
+re-run; neither was reached.
 
 **A HARNESS BUG THE RUN EXPOSED:** it reported "answered 3/3" for runs
 that had stopped on consecutive duplicates. A duplicate-stop breaks

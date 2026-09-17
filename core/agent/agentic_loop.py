@@ -385,6 +385,50 @@ class AgentLoop:
             context=context,
         )
 
+    @staticmethod
+    def _reject_unknown_fields(step: dict, visible_schema: dict) -> None:
+        """Refuses a field name this type does not have, saying which.
+
+        MEASURED, NOT IMAGINED. Asked for one customer's transactions,
+        a real model asked for `field_names: ["*"]` -- a wildcard that
+        does not exist here and that it had no way to know was wrong.
+        get_field returns None for an unknown field, so the step
+        SUCCEEDED and returned `{"*": None}`: indistinguishable from a
+        field that is genuinely empty. The agent asked again, and again,
+        until the duplicate guard stopped it nine hops later.
+
+        THE MEDIATOR MUST NOT CHANGE. get_field returns None for both
+        "no such field" and "not authorised", deliberately, so that an
+        unauthorised caller cannot map the schema by guessing names.
+        Raising there would leak exactly what that hides.
+
+        THE LOOP CAN SAY IT SAFELY, because visible_schema is already
+        filtered to what THIS user may see. Naming a field that is
+        absent from it tells them nothing they were not already given.
+
+        NAMES THE FIELDS THAT DO EXIST, because "unknown field" alone
+        leaves the model guessing again -- which is how this started.
+        """
+        object_type = step.get("object_type")
+        type_def = visible_schema.get(object_type) if object_type else None
+        if not type_def:
+            # NOT OUR FAULT TO REPORT. An unknown object_type has its
+            # own handling further in; duplicating it here would give
+            # two different messages for one mistake.
+            return
+
+        known = set(type_def.get("fields") or {})
+        unknown = [name for name in step.get("field_names") or [] if name not in known]
+        if not unknown:
+            return
+
+        raise ValueError(
+            f"get_object: {object_type} has no field(s) "
+            f"{', '.join(repr(name) for name in unknown)}. "
+            f"There is no wildcard -- name the fields you want from: "
+            f"{', '.join(sorted(known))}."
+        )
+
     def _step_get_object(self, step: dict, user_record: UserRecord,
                          visible_schema: dict, gathered: list[dict],
                          context: RequestContext | None = None) -> Any:
@@ -433,6 +477,7 @@ class AgentLoop:
         precisely to prevent leakage between users. Not worth it for a
         loop that reads a handful of objects.
         """
+        self._reject_unknown_fields(step, visible_schema)
         object_ids = self._object_ids_for(step)
         for object_id in object_ids:
             field_values = self.mediator.get_object(
