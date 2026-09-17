@@ -739,17 +739,41 @@ mirror and rebuilding from source -- which works only because bronze
 and silver are derivable. THE CHANGELOG IS NOT. A deployment losing a
 changelog table this way loses history no re-sync can rebuild.
 
-Not decided here:
+RESEARCHED, AND THE MECHANISM IS KNOWN.
 
-- pyiceberg's SqlCatalog commits the row and writes the metadata
-  separately. Whether that can be made atomic, or whether a REST
-  catalog would be, needs checking rather than assuming.
-- A cheaper mitigation: check_mirror already detects it, so running it
-  after every sync makes the window short and loud instead of long and
-  silent.
-- Cheaper still and worth doing regardless: fail the SYNC when the
-  catalog and warehouse disagree, rather than reporting 0/2 with no
-  explanation.
+**THE ORDER IS CORRECT.** pyiceberg's SqlCatalog.commit_table calls
+_write_metadata BEFORE opening its database session -- read directly,
+not assumed -- which matches the spec's guarantee that a crash "costs
+orphan data files rather than a broken table".
+
+**THE GAP IS DURABILITY, NOT ORDER.** The metadata is written through
+`filesystem.open_output_stream(...)` and closed. There is NO fsync
+anywhere in that path -- checked. A close() flushes to the operating
+system; it does not force data to disk. On a full disk or a power
+loss, the kernel can fail the writeback AFTER close() returned, so the
+catalog commits a pointer to content that never landed.
+
+A REST catalog would NOT fix this. It moves the pointer swap to a
+server with real CAS, which solves concurrent writers -- a different
+problem. The metadata file is still written by the client, through the
+same unsynced path.
+
+**IT IS REPAIRABLE, WHICH CHANGES THE SEVERITY.** Pointing the catalog
+at the newest surviving metadata file restores the table, losing only
+the commits recorded in the missing file. `scripts/repair_catalog`
+does this: reports by default, repairs with --write.
+
+That matters because deleting and re-syncing -- the obvious recovery
+-- destroys THE CHANGELOG, the one layer nothing can rebuild.
+
+STILL OPEN:
+
+- Fail the SYNC when the catalog and warehouse disagree, rather than
+  reporting 0/2 with no explanation.
+- Whether to fsync metadata before the pointer swap. pyiceberg offers
+  no hook, so this would mean a custom FileIO or a post-write sync of
+  the metadata directory, and it costs a real fsync per commit.
+
 
 ALSO FIXED: check_mirror named the SILVER identifier whichever of the
 pair could not be read, so a broken bronze table was reported as a

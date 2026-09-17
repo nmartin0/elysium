@@ -188,6 +188,10 @@ Recovery:
   these, every silo reads unreachable, which is CORRECT and the Silos
   screen will tell them so.
 - `scripts/create_debug_user.py` — `debug` / `a`, role `debug`.
+- `scripts/repair_catalog.py` — repoints a catalog whose metadata
+  file was lost to a full disk or a power cut. Reports by default;
+  repairs with `--write`. Needed because re-syncing CANNOT fix it, and
+  deleting the mirror destroys the changelog.
 - `scripts/create_e2e_users.py` — `plainuser` and `adminuser`, the
   two the browser tests log in as. Two, because the nav is supposed
   to show Admin to one and not the other.
