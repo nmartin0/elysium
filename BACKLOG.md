@@ -294,7 +294,17 @@ keyboard contract would be worse than native semantics.
 
 ### Needs a machine with a model
 
-**The prompt-quality measurement session.** Four questions, one
+**The prompt-quality measurement session.** THE HARNESS IS BUILT --
+`python -m scripts.measure_prompts --runs 3`, from the repository
+root with a model serving. It reports hops, distinct objects, step
+mix, answered-count and seconds, as a median and a RANGE.
+
+UNRUN: there is no model where it was written, so every assertion
+about the agent's behaviour is still open. The counting itself is
+tested, because a harness that miscounts does not fail -- it
+reports a plausible number and someone changes a prompt on it.
+
+**The four questions it exists to answer:**
 harness, about an hour. Still the highest-value item and the only one
 that cannot be done here at all.
 
