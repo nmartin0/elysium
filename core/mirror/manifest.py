@@ -44,6 +44,8 @@ import json
 import logging
 from typing import Any
 
+from pyarrow.fs import FileSelector
+
 logger = logging.getLogger(__name__)
 
 # WHERE MANIFESTS LIVE, under a name no ontology could collide with:
@@ -59,19 +61,9 @@ MANIFEST_PREFIX = "_elysium"
 # be edited deliberately to grow, which is the point.
 PUBLISHABLE = ("ontology_schema.yaml", "data_silos.yaml", "policy.yaml")
 
-# HOW MANY CONSECUTIVE ABSENT GENERATIONS END THE SEARCH.
-#
-# Manifests are written only when configuration CHANGES, so gaps are
-# normal: generations 1, 2 and 5 may exist while 3 and 4 do not. A gap
-# of ten is far larger than any run of unchanged-configuration reloads
-# a real deployment produces, and the cost of being wrong is a manifest
-# nobody sees rather than data nobody can read.
-_PROBE_GAP = 10
-
-# THE MOST GENERATIONS EVER PROBED FOR. A deployment reloading its
-# configuration ten thousand times has other problems; this guards
-# against never terminating rather than imposing a real limit.
-_MAX_GENERATIONS = 10_000
+# NO PROBE CONSTANTS ANY MORE. A gap size and an upper bound existed
+# only to make a guessing loop terminate; listing the directory needs
+# neither.
 
 # DELIBERATELY ABSENT, recorded so the omission reads as a decision
 # rather than an oversight:
@@ -183,53 +175,44 @@ def read_manifests(catalog) -> list[dict[str, Any]]:
 
     try:
         io = _file_io(catalog)
-        # BY ASKING FOR EACH GENERATION rather than listing a
-        # directory. FileIO has no list operation -- it is an interface
-        # for reading and writing named objects, and object stores have
-        # no directories to list anyway. Generations are consecutive
-        # integers from 1, so probing upward from 1 until several in a
-        # row are absent finds them all without a listing API.
-        missing_run = 0
-        generation = 1
-        # AN UPPER BOUND AS WELL AS A GAP, because the gap alone
-        # terminates only while each probe names a DIFFERENT file. A
-        # control that made publish() write one fixed name turned this
-        # into an infinite loop that exhausted memory -- the probe kept
-        # finding the same manifest and never counted a miss.
+
+        # LISTED, NOT PROBED. An earlier version asked for
+        # manifest-1.json, manifest-2.json and so on until several in a
+        # row were absent, because I concluded FileIO had no list
+        # operation. It does not -- but it exposes the FILESYSTEM, and
+        # that does.
         #
-        # That mutation is contrived; the fragility is not. A loop
-        # whose termination depends on a filename template matching a
-        # writer's is one refactor away from not terminating, and a
-        # bound costs nothing.
-        while missing_run < _PROBE_GAP and generation <= _MAX_GENERATIONS:
-            location = f"{root}/manifest-{generation}.json"
+        # parse_location splits the URI the way pyiceberg itself does,
+        # and fs_by_scheme returns the pyarrow filesystem for it, so
+        # this works against a local warehouse and an S3 bucket alike
+        # without this module knowing which.
+        #
+        # The probe worked. It also guessed, needed a gap constant and
+        # an upper bound to terminate, and would have silently missed a
+        # manifest after a long enough run of unchanged configuration.
+        scheme, netloc, path = io.parse_location(root)
+        filesystem = io.fs_by_scheme(scheme, netloc)
+
+        for entry in filesystem.get_file_info(FileSelector(path, allow_not_found=True)):
+            if not entry.path.endswith(".json"):
+                continue
             try:
-                with io.new_input(location).open() as stream:
+                with io.new_input(f"{root}/{entry.path.rsplit('/', 1)[-1]}").open() as stream:
                     raw = stream.read()
             except (OSError, ValueError, KeyError):
-                # ABSENT, which is the normal case: manifests are
-                # written only when configuration changes, so gaps are
-                # expected and a missing one is not news.
-                missing_run += 1
-                generation += 1
                 continue
 
             try:
                 found.append(json.loads(raw))
-                missing_run = 0
             except (json.JSONDecodeError, UnicodeDecodeError):
-                # PRESENT BUT UNREADABLE, which is NOT the same thing
-                # and was being counted as absent. A corrupt manifest
-                # is a finding -- it is the file someone would reach
-                # for during an incident -- and silently skipping it
-                # would make a damaged lake look like an undescribed
-                # one.
+                # PRESENT BUT UNREADABLE is not the same as absent. A
+                # corrupt manifest is the file someone reaches for
+                # during an incident, so skipping it silently would
+                # make a damaged lake look like an undescribed one.
                 logger.warning(
-                    f"manifest at {location} could not be parsed and was skipped; "
+                    f"manifest at {entry.path} could not be parsed and was skipped; "
                     f"the lake describes itself less completely than it appears to."
                 )
-                missing_run = 0
-            generation += 1
     except (OSError, ValueError, KeyError) as e:
         # The same three, for the same reasons. A lake with no
         # manifests at all is normal -- every one written before this
@@ -243,6 +226,9 @@ def read_manifests(catalog) -> list[dict[str, Any]]:
 
 def _file_io(catalog):
     """The catalog's own FileIO, built from its own properties.
+
+    `load_file_io` is pyiceberg's own documented entry point, not a
+    reach into its internals.
 
     SO S3 CREDENTIALS AND ENDPOINTS APPLY HERE TOO, without this module
     knowing what they are. Building a filesystem independently would
@@ -258,10 +244,15 @@ def _file_io(catalog):
 def _warehouse_root(catalog) -> str:
     """The warehouse URI, however the catalog was configured.
 
-    PRIVATE ACCESS, DELIBERATELY. pyiceberg exposes no public accessor
-    for a catalog's warehouse or its FileIO, and the alternative --
-    passing them in alongside the catalog everywhere -- would let the
-    two diverge, which is the failure this whole note is about.
+    PUBLIC API, and an earlier version of this comment said otherwise.
+    `catalog.properties` is a documented instance attribute, not a
+    private one -- checked on a real catalog rather than inferred from
+    the class, which is where the mistake came from: `properties` is
+    set in __init__ and so does not appear on the class.
+
+    Reading it from the catalog rather than accepting it as an
+    argument is deliberate: the two could otherwise diverge, and a
+    manifest written beside the wrong warehouse is worse than none.
     """
     return str(catalog.properties["warehouse"]).rstrip("/")
 
@@ -294,11 +285,11 @@ def publish_manifest(sync, config) -> None:
     try:
         tables = [
             ".".join(identifier)
-            for namespace in sync._catalog.list_namespaces()  # noqa: SLF001
-            for identifier in sync._catalog.list_tables(namespace)  # noqa: SLF001
+            for namespace in sync.catalog.list_namespaces()
+            for identifier in sync.catalog.list_tables(namespace)
         ]
         publish(
-            sync._catalog,  # noqa: SLF001 - the sync owns its catalog
+            sync.catalog,
             config.generation,
             config.loaded_at.isoformat(),
             config.source_digest,

@@ -649,6 +649,30 @@ Each was plausible, each passed its tests, and each was a way of
 living with a problem rather than removing it. The pattern to look for
 is code that compensates for a structure rather than changing it.
 
+FIRST PASS DONE, over the four recorded candidates. Two were real
+workarounds and are gone; one was never a workaround; one is still
+load-bearing and now says so.
+
+- ~~pyiceberg privates~~ NOT A WORKAROUND. `catalog.properties` is a
+  public instance attribute and `load_file_io` a documented function.
+  My comment claiming "private access, deliberately" was wrong --
+  inferred from the CLASS, where `properties` does not appear because
+  it is set in __init__. Corrected.
+- ~~The manifest probe loop~~ REPLACED BY LISTING. FileIO has no list
+  operation, which is why I guessed generation numbers -- but it
+  exposes the FILESYSTEM through parse_location and fs_by_scheme, and
+  that lists fine. Verified against both a local warehouse and S3. The
+  gap constant and upper bound the guessing needed are gone with it.
+- ~~Three `noqa: SLF001` on `sync._catalog`~~ FIXED by adding the
+  accessor that was missing. A suppression repeated three times is not
+  three exceptions.
+- **The bare-element-selector tripwire STAYS.** Layering the CSS did
+  not supersede it: `components` beats `vendor` regardless of
+  specificity, so a bare `label` still outranks `.bp6-control`. The
+  entry that called it superseded was wrong.
+
+STILL TO AUDIT, since four candidates were only a starting point:
+
 Known candidates, to start from rather than to limit the search:
 
 - The bare-element-selector tripwire, superseded by layering the CSS.

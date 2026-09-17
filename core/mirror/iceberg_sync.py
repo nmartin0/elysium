@@ -170,6 +170,22 @@ class IcebergMirrorSync(MirrorSync):
             **options,
         )
 
+    @property
+    def catalog(self):
+        """The Iceberg catalog this sync writes through.
+
+        EXPOSED BECAUSE CALLERS ALREADY NEEDED IT. manifest.py reached
+        past the underscore three times with a `noqa` on each line, and
+        a suppression repeated three times is a missing accessor rather
+        than three exceptions.
+
+        READ-ONLY BY CONSTRUCTION: a property with no setter, so a
+        caller can list tables or write beside the warehouse without
+        being able to swap the catalog out from under a sync in
+        progress.
+        """
+        return self._catalog
+
     def sync_table(self, silo_name: str, table_name: str, id_column: str,
                     columns: list[str], column_types: dict[str, str] | None = None,
                     fields_by_column: dict[str, str] | None = None) -> SyncResult:
