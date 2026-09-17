@@ -53,6 +53,29 @@ than through `npm run lint`, read the count, not the exit code.
 Integration tests marked `test_real_model_*` need a live Ollama. They
 fail in sandboxes without one. That is environmental, not a regression.
 
+## One patch per commit, in the order they were made
+
+Never combine commits into one patch file, however convenient. If a
+patch fails to apply, produce the SAME commits again as separate
+patches rather than a single squashed one.
+
+WHY: a combined patch is all-or-nothing. When it fails -- and it has,
+repeatedly, on a stale `.git/rebase-apply` or a file that moved --
+every commit in it is blocked, including the ones that would have
+applied cleanly. Separate patches fail one at a time and the rest
+still land.
+
+It also keeps the applier's history matching the author's. A squashed
+patch silently rewrites four commits into one, and the reasoning for
+each is then buried in a single message.
+
+    197-...kp.patch   one commit
+    198-...kq.patch   the next
+    199-...kr.patch   the next
+
+Numbered in order, applied in order, checked with
+`git log --oneline -1` after each.
+
 ## You do not push
 
 You have no write access to the remote. Produce a patch and hand it
