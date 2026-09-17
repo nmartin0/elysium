@@ -264,3 +264,9 @@ forget_older_than
 # and when" is one question, and adding the field later would mean
 # every decision taken before then has no answer.
 decided_at
+
+# AwaitingWriteResponse's task counts (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field here.
+tasks_total
+tasks_you_may_decide
+tasks_approved

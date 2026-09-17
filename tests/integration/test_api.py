@@ -431,10 +431,16 @@ def test_visible_schema_never_leaks_per_field_internals(client):
             # they exist so a UI can render a readable label. Everything
             # else a field definition carries is internal.
             leaked = set(field_info) - {
-                "type", "target", "cardinality", "display_name", "description",
+                "type",
+                "target",
+                "cardinality",
+                "display_name",
+                "description",
                 # UI rendering hints, deliberately exposed. Cosmetic --
                 # "hidden" does not withhold anything, RBAC does.
-                "visibility", "status", "link_type",
+                "visibility",
+                "status",
+                "link_type",
                 # data_type, added deliberately and NOT physical layout
                 # despite having been grouped with it. "number" says
                 # nothing about where a column lives; it is what the
@@ -622,9 +628,7 @@ def test_search_objects_finds_a_partial_match_with_real_field_values(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": "ada"}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": "ada"})
 
     assert response.status_code == 200
     body = response.json()
@@ -642,9 +646,7 @@ def test_search_objects_empty_query_returns_every_visible_result(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": ""}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": ""})
 
     assert response.status_code == 200
     body = response.json()
@@ -673,9 +675,7 @@ def test_search_objects_blocks_cross_region_mac(client):
     client.app.state.user_directory.create_user("bob", "correct-pw", "us-east", "customer_service")
     _login(client, "bob", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": "ada"}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": "ada"})
 
     assert response.status_code == 200
     assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
@@ -685,9 +685,7 @@ def test_search_objects_no_match_returns_empty_results(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": "zzz_nonexistent"}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": "zzz_nonexistent"})
 
     assert response.status_code == 200
     assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
@@ -697,9 +695,7 @@ def test_search_objects_unknown_type_returns_empty_results_not_error(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/TotallyFakeType/search", params={"q": "ada"}
-    )
+    response = client.get("/api/objects/TotallyFakeType/search", params={"q": "ada"})
 
     assert response.status_code == 200
     assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
@@ -779,9 +775,7 @@ def test_object_detail_and_search_routes_do_not_collide(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": "ada"}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": "ada"})
 
     assert response.status_code == 200
     assert "results" in response.json()
@@ -871,8 +865,10 @@ def test_propose_action_succeeds_and_returns_a_real_pending_write(client):
     assert body["action_type_name"] == "UpdateCustomerName"
     assert body["sub_writes"] == [
         {
-            "object_type": "Customer", "object_id": "cust_001",
-            "changes": {"name": "Ada Lovelace"}, "expected_current_values": {"name": "Ada Okafor"},
+            "object_type": "Customer",
+            "object_id": "cust_001",
+            "changes": {"name": "Ada Lovelace"},
+            "expected_current_values": {"name": "Ada Okafor"},
         }
     ]
 
@@ -914,9 +910,7 @@ def test_propose_action_rejected_leaves_the_database_unchanged(client):
     )
     write_id = propose_response.json()["pending_write"]["id"]
 
-    client.post(
-        f"/api/writes/{write_id}/confirm", json={"approved": False}, headers=_csrf_headers(client)
-    )
+    client.post(f"/api/writes/{write_id}/confirm", json={"approved": False}, headers=_csrf_headers(client))
 
     detail_response = client.get("/api/objects/Customer/cust_001")
     assert detail_response.json()["fields"]["name"] == "Ada Okafor"
@@ -933,15 +927,17 @@ def test_propose_action_unknown_action_and_real_but_unauthorized_action_are_iden
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
     _login(client, "alice", "correct-pw")
 
-    unknown = client.post(
-        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client)
-    )
+    unknown = client.post("/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client))
     unauthorized = client.post(
         "/api/actions/TransferFunds",
-        json={"parameters": {
-            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
-            "new_from_balance": 1, "new_to_balance": 1,
-        }},
+        json={
+            "parameters": {
+                "from_account_id": "acc_checking",
+                "to_account_id": "acc_savings",
+                "new_from_balance": 1,
+                "new_to_balance": 1,
+            }
+        },
         headers=_csrf_headers(client),
     )
 
@@ -1051,9 +1047,7 @@ def test_propose_action_unknown_action_shows_the_real_message_for_a_discover_hol
     client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
     _login(client, "carol", "correct-pw")
 
-    response = client.post(
-        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client)
-    )
+    response = client.post("/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client))
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Unknown action_type: 'TotallyFakeAction'"
@@ -1069,10 +1063,14 @@ def test_propose_action_real_but_unauthorized_shows_403_for_a_discover_holder(cl
 
     response = client.post(
         "/api/actions/TransferFunds",
-        json={"parameters": {
-            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
-            "new_from_balance": 1, "new_to_balance": 1,
-        }},
+        json={
+            "parameters": {
+                "from_account_id": "acc_checking",
+                "to_account_id": "acc_savings",
+                "new_from_balance": 1,
+                "new_to_balance": 1,
+            }
+        },
         headers=_csrf_headers(client),
     )
 
@@ -1090,15 +1088,17 @@ def test_propose_action_unknown_vs_unauthorized_are_no_longer_identical_for_a_di
     client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
     _login(client, "carol", "correct-pw")
 
-    unknown = client.post(
-        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client)
-    )
+    unknown = client.post("/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client))
     unauthorized = client.post(
         "/api/actions/TransferFunds",
-        json={"parameters": {
-            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
-            "new_from_balance": 1, "new_to_balance": 1,
-        }},
+        json={
+            "parameters": {
+                "from_account_id": "acc_checking",
+                "to_account_id": "acc_savings",
+                "new_from_balance": 1,
+                "new_to_balance": 1,
+            }
+        },
         headers=_csrf_headers(client),
     )
 
@@ -1111,7 +1111,8 @@ def test_create_user_without_manage_users_grant_is_rejected(client):
     _login(client, "alice", "correct-pw")
 
     response = client.post(
-        "/api/users", json={"username": "bob", "password": "pw", "role_name": "customer_service"},
+        "/api/users",
+        json={"username": "bob", "password": "pw", "role_name": "customer_service"},
         headers=_csrf_headers(client),
     )
     assert response.status_code == 403
@@ -1123,8 +1124,12 @@ def test_create_user_with_manage_users_grant_succeeds_and_new_user_can_log_in(cl
 
     create_response = client.post(
         "/api/users",
-        json={"username": "newperson", "password": "newpass123",
-              "mac_value": "us-west", "role_name": "customer_service"},
+        json={
+            "username": "newperson",
+            "password": "newpass123",
+            "mac_value": "us-west",
+            "role_name": "customer_service",
+        },
         headers=_csrf_headers(client),
     )
     assert create_response.status_code == 201
@@ -1259,8 +1264,10 @@ def test_query_refuses_if_permissions_changed_during_processing(client):
     # than what the request actually authenticated with.
     changed_record = UserRecord(user_id="alice", security_value="us-west", role_name=None)
 
-    with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post), \
-         patch("core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]):
+    with (
+        patch("adapters.ollama_adapter.requests.post", side_effect=fake_post),
+        patch("core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]),
+    ):
         response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
 
     assert response.status_code == 409
@@ -1284,10 +1291,17 @@ def _propose_action(client, session=None, new_name="Updated Name"):
     # helper's own comment for why this is occasionally necessary.
     def fake_post(*args, **kwargs):
         response = MagicMock()
-        response.json.return_value = {"message": {"content": json.dumps({
-            "step": "propose_action", "action_type": "UpdateCustomerName",
-            "parameters": {"customer_id": "cust_001", "new_name": new_name},
-        })}}
+        response.json.return_value = {
+            "message": {
+                "content": json.dumps(
+                    {
+                        "step": "propose_action",
+                        "action_type": "UpdateCustomerName",
+                        "parameters": {"customer_id": "cust_001", "new_name": new_name},
+                    }
+                )
+            }
+        }
         response.raise_for_status.return_value = None
         return response
 
@@ -1311,7 +1325,9 @@ def test_query_proposing_an_action_returns_202_with_a_reference(client):
     assert body["pending_write"]["action_type_name"] == "UpdateCustomerName"
     assert body["pending_write"]["sub_writes"] == [
         {
-            "object_type": "Customer", "object_id": "cust_001", "changes": {"name": "Updated Name"},
+            "object_type": "Customer",
+            "object_id": "cust_001",
+            "changes": {"name": "Updated Name"},
             "expected_current_values": {"name": "Ada Okafor"},
         }
     ]
@@ -1324,7 +1340,8 @@ def test_confirming_an_approved_action_actually_changes_the_database(client):
     write_id = _propose_action(client).json()["pending_write"]["id"]
 
     confirm_response = client.post(
-        f"/api/writes/{write_id}/confirm", json={"approved": True},
+        f"/api/writes/{write_id}/confirm",
+        json={"approved": True},
         headers=_csrf_headers(client),
     )
     assert confirm_response.status_code == 200
@@ -1346,7 +1363,8 @@ def test_confirming_a_rejected_action_does_not_change_the_database(client):
     write_id = _propose_action(client).json()["pending_write"]["id"]
 
     confirm_response = client.post(
-        f"/api/writes/{write_id}/confirm", json={"approved": False},
+        f"/api/writes/{write_id}/confirm",
+        json={"approved": False},
         headers=_csrf_headers(client),
     )
     assert confirm_response.status_code == 200
@@ -1370,11 +1388,13 @@ def test_confirm_with_wrong_user_and_unknown_id_are_identical(client):
 
     _use_session(client, eve_session)
     wrong_user_response = client.post(
-        f"/api/writes/{write_id}/confirm", json={"approved": True},
+        f"/api/writes/{write_id}/confirm",
+        json={"approved": True},
         headers=_csrf_header_for(eve_session),
     )
     unknown_id_response = client.post(
-        "/api/writes/totally-fake-id/confirm", json={"approved": True},
+        "/api/writes/totally-fake-id/confirm",
+        json={"approved": True},
         headers=_csrf_header_for(eve_session),
     )
 
@@ -1434,7 +1454,8 @@ def test_logout_all_revokes_every_session_for_the_caller(client):
     for session in (session1, session2):
         _use_session(client, session)
         result = client.post(
-            "/api/query", json={"query": "test"},
+            "/api/query",
+            json={"query": "test"},
             headers=_csrf_header_for(session),
         )
         assert result.status_code == 401
@@ -1461,16 +1482,24 @@ def test_admin_logout_all_for_a_target_user_works(client):
 
     _use_session(client, alice_session)
     result = client.post(
-        "/api/query", json={"query": "test"},
+        "/api/query",
+        json={"query": "test"},
         headers=_csrf_header_for(alice_session),
     )
     assert result.status_code == 401
 
 
 def test_visible_schema_debug_view_shows_what_the_target_user_can_see(client):
-    with_roles(client.app, customer_service={"allowed_actions": [
-        "read:Customer", "read:Customer.customer_id", "read:Customer.name",
-    ]})
+    with_roles(
+        client.app,
+        customer_service={
+            "allowed_actions": [
+                "read:Customer",
+                "read:Customer.customer_id",
+                "read:Customer.name",
+            ]
+        },
+    )
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _make_admin(client)
 
@@ -1491,9 +1520,7 @@ def test_visible_schema_debug_view_requires_manage_users(client):
 
 def test_visible_schema_debug_view_for_unknown_user_is_404(client):
     _make_admin(client)
-    response = client.get(
-        "/api/users/totally_fake_user/visible-schema"
-    )
+    response = client.get("/api/users/totally_fake_user/visible-schema")
     assert response.status_code == 404
 
 
@@ -1510,7 +1537,8 @@ def test_disable_user_blocks_new_logins_and_kills_existing_sessions(client):
     # Existing session immediately rejected -- not just future logins.
     _use_session(client, alice_session)
     existing_session_result = client.post(
-        "/api/query", json={"query": "test"},
+        "/api/query",
+        json={"query": "test"},
         headers=_csrf_header_for(alice_session),
     )
     assert existing_session_result.status_code == 401
@@ -1550,7 +1578,8 @@ def test_delete_user_removes_credential_and_kills_sessions(client):
 
     _use_session(client, alice_session)
     existing_session_result = client.post(
-        "/api/query", json={"query": "test"},
+        "/api/query",
+        json={"query": "test"},
         headers=_csrf_header_for(alice_session),
     )
     assert existing_session_result.status_code == 401
@@ -1576,6 +1605,7 @@ def test_delete_nonexistent_user_is_404(client):
 # uglier and length-limited. They are reads despite the verb, which
 # does mean they are CSRF-gated like any other POST -- asserted below
 # rather than assumed.
+
 
 def _post(client, path, body):
     return client.post(path, json=body, headers=_csrf_headers(client))
@@ -1626,7 +1656,8 @@ def test_aggregate_groups_and_sums(client):
     _login(client, "alice", "correct-pw")
 
     response = _post(
-        client, "/api/objects/Transaction/aggregate",
+        client,
+        "/api/objects/Transaction/aggregate",
         {"criteria": {}, "aggregate": "sum", "field": "amount", "group_by": "category"},
     )
 
@@ -1642,9 +1673,7 @@ def test_aggregate_with_no_group_by_returns_one_result_under_an_empty_key(client
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = _post(
-        client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "count"}
-    )
+    response = _post(client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "count"})
 
     assert response.json()["results"] == {"": 4}
 
@@ -1656,7 +1685,8 @@ def test_an_unknown_aggregate_is_a_400_not_a_500(client):
     _login(client, "alice", "correct-pw")
 
     response = _post(
-        client, "/api/objects/Transaction/aggregate",
+        client,
+        "/api/objects/Transaction/aggregate",
         {"criteria": {}, "aggregate": "median", "field": "amount"},
     )
 
@@ -1668,9 +1698,7 @@ def test_an_aggregate_missing_its_field_is_a_400(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = _post(
-        client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "sum"}
-    )
+    response = _post(client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "sum"})
 
     assert response.status_code == 400
     assert "field_name" in response.json()["detail"]
@@ -1680,9 +1708,7 @@ def test_invalid_criteria_is_a_400(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = _post(
-        client, "/api/objects/Customer/count", {"criteria": {"not_a_real_field": "x"}}
-    )
+    response = _post(client, "/api/objects/Customer/count", {"criteria": {"not_a_real_field": "x"}})
 
     assert response.status_code == 400
 
@@ -1692,7 +1718,8 @@ def test_search_around_traverses_a_link(client):
     _login(client, "alice", "correct-pw")
 
     response = _post(
-        client, "/api/objects/Customer/search-around",
+        client,
+        "/api/objects/Customer/search-around",
         {"criteria": {"region": "us-west"}, "link_field": "transactions"},
     )
 
@@ -1708,7 +1735,8 @@ def test_search_around_returns_only_ids_the_caller_could_read_directly(client):
     _login(client, "alice", "correct-pw")
 
     ids = _post(
-        client, "/api/objects/Customer/search-around",
+        client,
+        "/api/objects/Customer/search-around",
         {"criteria": {}, "link_field": "transactions"},
     ).json()["ids"]
 
@@ -1727,7 +1755,8 @@ def test_search_around_on_an_ungranted_field_returns_empty_not_an_error(client):
     _login(client, "alice", "correct-pw")
 
     response = _post(
-        client, "/api/objects/Customer/search-around",
+        client,
+        "/api/objects/Customer/search-around",
         {"criteria": {}, "link_field": "not_a_real_field"},
     )
 
@@ -1867,9 +1896,7 @@ def test_a_malformed_page_token_returns_the_first_page(client):
     # into an error page. Starting over is recoverable and obvious.
     _many_customers(client, count=30)
 
-    body = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=3&page_token=not-a-number"
-    ).json()
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=3&page_token=not-a-number").json()
 
     assert len(body["results"]) == 3
     assert body["results"][0]["id"] == "c0000"
@@ -1878,9 +1905,7 @@ def test_a_malformed_page_token_returns_the_first_page(client):
 def test_an_out_of_range_page_token_returns_the_first_page(client):
     _many_customers(client, count=10)
 
-    body = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=3&page_token=99999"
-    ).json()
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=3&page_token=99999").json()
 
     assert body["results"][0]["id"] == "c0000"
 
@@ -1888,12 +1913,8 @@ def test_an_out_of_range_page_token_returns_the_first_page(client):
 def test_results_are_ordered_by_a_requested_field(client):
     _many_customers(client, count=20)
 
-    ascending = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=4&order_by=name"
-    ).json()
-    descending = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=4&order_by=name:desc"
-    ).json()
+    ascending = client.get("/api/objects/Customer/search?q=Person&page_size=4&order_by=name").json()
+    descending = client.get("/api/objects/Customer/search?q=Person&page_size=4&order_by=name:desc").json()
 
     ascending_names = [r["fields"]["name"] for r in ascending["results"]]
     descending_names = [r["fields"]["name"] for r in descending["results"]]
@@ -1909,14 +1930,10 @@ def test_an_unknown_order_by_field_is_ignored_rather_than_scrambling(client):
     # -- silently scrambling results while looking successful.
     _many_customers(client, count=10)
 
-    unsorted_ids = [
-        r["id"] for r in client.get("/api/objects/Customer/search?q=Person&page_size=5").json()["results"]
-    ]
+    unsorted_ids = [r["id"] for r in client.get("/api/objects/Customer/search?q=Person&page_size=5").json()["results"]]
     bogus_ids = [
         r["id"]
-        for r in client.get(
-            "/api/objects/Customer/search?q=Person&page_size=5&order_by=not_a_field"
-        ).json()["results"]
+        for r in client.get("/api/objects/Customer/search?q=Person&page_size=5&order_by=not_a_field").json()["results"]
     ]
 
     assert bogus_ids == unsorted_ids
@@ -1968,17 +1985,12 @@ def test_ordering_stays_consistent_across_pages(client):
     # continue where page one left off, not re-sort a different subset.
     _many_customers(client, count=20)
 
-    first = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=5&order_by=name"
-    ).json()
+    first = client.get("/api/objects/Customer/search?q=Person&page_size=5&order_by=name").json()
     second = client.get(
-        f"/api/objects/Customer/search?q=Person&page_size=5&order_by=name"
-        f"&page_token={first['next_page_token']}"
+        f"/api/objects/Customer/search?q=Person&page_size=5&order_by=name&page_token={first['next_page_token']}"
     ).json()
 
-    names = [r["fields"]["name"] for r in first["results"]] + [
-        r["fields"]["name"] for r in second["results"]
-    ]
+    names = [r["fields"]["name"] for r in first["results"]] + [r["fields"]["name"] for r in second["results"]]
     assert names == sorted(names)
 
 
@@ -1996,11 +2008,7 @@ def _record_edit(client, changes, description, user_id="alice"):
     from core.ontology.write_log import WriteLogWriter
 
     writer = WriteLogWriter(mediator_of(client.app).write_log.db_path)
-    writer.mark_applied(
-        writer.log_pending_update(
-            "Customer", "cust_001", changes, {}, user_id, description
-        )
-    )
+    writer.mark_applied(writer.log_pending_update("Customer", "cust_001", changes, {}, user_id, description))
 
 
 def test_object_history_is_empty_for_an_unedited_object(client):
@@ -2055,8 +2063,7 @@ def test_object_history_pages(client):
 
     first = client.get("/api/objects/Customer/cust_001/history?page_size=5").json()
     second = client.get(
-        f"/api/objects/Customer/cust_001/history?page_size=5"
-        f"&page_token={first['next_page_token']}"
+        f"/api/objects/Customer/cust_001/history?page_size=5&page_token={first['next_page_token']}"
     ).json()
 
     assert first["total"] == 12
@@ -2099,9 +2106,7 @@ def test_a_bare_offset_is_no_longer_accepted(client):
     # working until the encoding changes again.
     _many_customers(client, count=30)
 
-    body = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=3&page_token=5"
-    ).json()
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=3&page_token=5").json()
 
     assert body["results"][0]["id"] == "c0000", "a bare offset should not resolve"
 
@@ -2113,9 +2118,7 @@ def test_every_malformed_token_shape_falls_back_to_the_first_page(client):
     _many_customers(client, count=30)
 
     for bad in ("garbage", "v2.abc", "v1.", "v1.!!!", "v1.bm90YW51bQ=="):
-        body = client.get(
-            f"/api/objects/Customer/search?q=Person&page_size=3&page_token={bad}"
-        ).json()
+        body = client.get(f"/api/objects/Customer/search?q=Person&page_size=3&page_token={bad}").json()
         assert body["results"][0]["id"] == "c0000", f"{bad!r} did not fall back"
 
 
@@ -2349,9 +2352,7 @@ def test_count_accepts_the_full_condition_vocabulary(client):
     """
     _filter_user(client, "filteruser")
 
-    everything = _post(
-        client, "/api/objects/Customer/count", {"criteria": {}}
-    ).json()["count"]
+    everything = _post(client, "/api/objects/Customer/count", {"criteria": {}}).json()["count"]
 
     # Two ids this caller can see. MAC scopes them to us-west, and the
     # fixture puts exactly cust_001 and cust_002 there -- asserted
@@ -2361,14 +2362,14 @@ def test_count_accepts_the_full_condition_vocabulary(client):
     assert everything >= 2, "need two visible customers, or this proves nothing"
 
     one = _post(
-        client, "/api/objects/Customer/count",
-        {"conditions": [{"field": "customer_id", "operator": "in",
-                         "value": first_two[:1]}]},
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "customer_id", "operator": "in", "value": first_two[:1]}]},
     ).json()["count"]
     both = _post(
-        client, "/api/objects/Customer/count",
-        {"conditions": [{"field": "customer_id", "operator": "in",
-                         "value": first_two}]},
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "customer_id", "operator": "in", "value": first_two}]},
     ).json()["count"]
 
     assert one >= 1, "the fixture should match something, or this proves nothing"
@@ -2382,13 +2383,11 @@ def test_the_dict_form_still_works(client):
     # expressiveness.
     _filter_user(client, "filteruser2")
 
-    from_dict = _post(
-        client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"}}
-    ).json()["count"]
+    from_dict = _post(client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"}}).json()["count"]
     from_conditions = _post(
-        client, "/api/objects/Customer/count",
-        {"conditions": [{"field": "region", "operator": "equals",
-                         "value": "us-west"}]},
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "region", "operator": "equals", "value": "us-west"}]},
     ).json()["count"]
 
     assert from_dict == from_conditions
@@ -2402,9 +2401,12 @@ def test_sending_both_forms_is_rejected_rather_than_merged(client):
     _filter_user(client, "filteruser3")
 
     response = _post(
-        client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"},
-              "conditions": [{"field": "region", "operator": "equals",
-                              "value": "us-east"}]}
+        client,
+        "/api/objects/Customer/count",
+        {
+            "criteria": {"region": "us-west"},
+            "conditions": [{"field": "region", "operator": "equals", "value": "us-east"}],
+        },
     )
 
     assert response.status_code == 400
@@ -2414,8 +2416,9 @@ def test_a_malformed_condition_is_a_400_not_a_500(client):
     _filter_user(client, "filteruser4")
 
     response = _post(
-        client, "/api/objects/Customer/count", {"conditions": [{"field": "region", "operator": "nonsense",
-                              "value": "x"}]}
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "region", "operator": "nonsense", "value": "x"}]},
     )
 
     assert response.status_code == 400
@@ -2427,12 +2430,14 @@ def test_a_condition_on_an_unreadable_field_is_a_400(client):
     _filter_user(client, "filteruser5")
 
     unknown = _post(
-        client, "/api/objects/Customer/count", {"conditions": [{"field": "no_such_field", "operator": "equals",
-                              "value": "x"}]}
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "no_such_field", "operator": "equals", "value": "x"}]},
     )
     unreadable = _post(
-        client, "/api/objects/Customer/count", {"conditions": [{"field": "internal_notes", "operator": "equals",
-                              "value": "x"}]}
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "internal_notes", "operator": "equals", "value": "x"}]},
     )
 
     assert unknown.status_code == unreadable.status_code == 400
@@ -2450,12 +2455,8 @@ def test_text_and_conditions_narrow_together(client):
     _filter_user(client, "textcond")
 
     text_only = client.get("/api/objects/Customer/search?q=a").json()["total_matches"]
-    conditions = json.dumps(
-        [{"field": "customer_id", "operator": "in", "value": ["cust_001"]}]
-    )
-    both = client.get(
-        f"/api/objects/Customer/search?q=a&conditions={conditions}"
-    ).json()["total_matches"]
+    conditions = json.dumps([{"field": "customer_id", "operator": "in", "value": ["cust_001"]}])
+    both = client.get(f"/api/objects/Customer/search?q=a&conditions={conditions}").json()["total_matches"]
 
     assert text_only > 1, "the text alone should match several, or this proves nothing"
     assert both == 1
@@ -2464,13 +2465,9 @@ def test_text_and_conditions_narrow_together(client):
 def test_conditions_alone_work_without_any_text(client):
     # The chart-click case: no search term, just a filter.
     _filter_user(client, "condonly")
-    conditions = json.dumps(
-        [{"field": "customer_id", "operator": "in", "value": ["cust_001", "cust_002"]}]
-    )
+    conditions = json.dumps([{"field": "customer_id", "operator": "in", "value": ["cust_001", "cust_002"]}])
 
-    body = client.get(
-        f"/api/objects/Customer/search?conditions={conditions}"
-    ).json()
+    body = client.get(f"/api/objects/Customer/search?conditions={conditions}").json()
 
     assert body["total_matches"] == 2
 
@@ -2495,9 +2492,7 @@ def test_a_condition_on_an_unreadable_field_is_rejected_by_search_too(client):
 def test_malformed_conditions_are_a_400(client):
     _filter_user(client, "condbad")
 
-    assert client.get(
-        "/api/objects/Customer/search?conditions=not-json"
-    ).status_code == 400
+    assert client.get("/api/objects/Customer/search?conditions=not-json").status_code == 400
 
 
 def _admin_user(client, username):
@@ -2707,8 +2702,7 @@ def test_silos_route_shows_the_join_key_and_its_renaming(client):
     assert identifier["column"] == "cust_ref"
 
     primary = next(silo for silo in body if silo["name"] == "primary_sql")
-    same_type = next(f for f in primary["fields"]
-                     if f["is_identifier"] and f["object_type"] == "Customer")
+    same_type = next(f for f in primary["fields"] if f["is_identifier"] and f["object_type"] == "Customer")
     assert same_type["column"] == "customer_id", "the two silos key differently"
 
 
@@ -2721,8 +2715,7 @@ def test_silos_route_lists_an_identifier_once_per_storage(client):
     body = client.get("/api/silos").json()
 
     primary = next(silo for silo in body if silo["name"] == "primary_sql")
-    customer_ids = [f for f in primary["fields"]
-                    if f["is_identifier"] and f["object_type"] == "Customer"]
+    customer_ids = [f for f in primary["fields"] if f["is_identifier"] and f["object_type"] == "Customer"]
     assert len(customer_ids) == 1
 
 
@@ -2744,8 +2737,7 @@ def test_silos_route_sorts_the_identifier_first_within_a_type(client):
 def test_a_note_can_be_written_and_read_back(client):
     _filter_user(client, "notewriter")
 
-    created = _post(client, "/api/objects/Customer/cust_001/notes",
-                    {"text": "Fee waived after the March flood."})
+    created = _post(client, "/api/objects/Customer/cust_001/notes", {"text": "Fee waived after the March flood."})
     assert created.status_code == 201
 
     listed = client.get("/api/objects/Customer/cust_001/notes").json()
@@ -2785,8 +2777,7 @@ def test_an_empty_note_is_rejected(client):
     # read and nobody meant to write.
     _filter_user(client, "noteempty")
 
-    assert _post(client, "/api/objects/Customer/cust_001/notes",
-                 {"text": "   "}).status_code == 400
+    assert _post(client, "/api/objects/Customer/cust_001/notes", {"text": "   "}).status_code == 400
 
 
 def test_writing_a_note_on_an_unreadable_object_is_a_404(client):
@@ -2981,10 +2972,30 @@ def test_awaiting_writes_never_returns_the_changed_values(client):
     declared = set(AwaitingWriteResponse.model_fields)
 
     assert declared == {
-        "write_id", "action_type_name", "description", "proposed_by",
-        "proposed_at", "object_count", "expires_at",
-        "awaiting_your_review", "proposed_by_you", "undeclared_fields",
+        "write_id",
+        "action_type_name",
+        "description",
+        "proposed_by",
+        "proposed_at",
+        "object_count",
+        "expires_at",
+        "awaiting_your_review",
+        "proposed_by_you",
+        "undeclared_fields",
         "duplicate_count",
+        # THE TASK COUNTS ARE COUNTS. They say how many tasks a request
+        # has, how many this reviewer may decide, and how many are
+        # approved -- never WHICH objects or what would change.
+        #
+        # A count of eligible tasks does reveal how many of a request's
+        # objects fall in the reviewer's own partition, which they could
+        # learn by listing those objects anyway.
+        #
+        # Added to this set deliberately rather than around it: the
+        # failure was this test doing its job.
+        "tasks_total",
+        "tasks_you_may_decide",
+        "tasks_approved",
     }
     for leaky in ("changes", "sub_writes", "object_id", "object_ids", "parameters"):
         assert leaky not in declared
@@ -3015,6 +3026,7 @@ def test_the_pending_write_store_uses_the_configured_ttl(client):
 
 
 # --- the redacting diff: what a reviewer actually sees ---
+
 
 def test_a_reviewer_sees_the_values_they_may_read(client):
     write_id = _propose_as(client, "alice")
@@ -3048,9 +3060,17 @@ def test_a_field_the_reviewer_cannot_read_is_REDACTED_not_omitted(client):
     # Strip the reviewer's read grant on the field, keeping everything
     # else: they may still execute the action, so they remain an
     # eligible reviewer with no way to read what they are approving.
-    with_roles(client.app, editor={"allowed_actions": frozenset([
-        "read:Customer", "execute:UpdateCustomerName",
-    ])})
+    with_roles(
+        client.app,
+        editor={
+            "allowed_actions": frozenset(
+                [
+                    "read:Customer",
+                    "execute:UpdateCustomerName",
+                ]
+            )
+        },
+    )
 
     body = client.get(f"/api/writes/{write_id}").json()
     [changed] = body["objects"][0]["changes"]
@@ -3068,9 +3088,17 @@ def test_the_proposed_value_is_gated_as_tightly_as_the_current_one(client):
     # about to be told: a caller with execute but not read could read
     # back their own proposal's values through this endpoint.
     write_id = _propose_as(client, "alice")
-    with_roles(client.app, editor={"allowed_actions": frozenset([
-        "read:Customer", "execute:UpdateCustomerName",
-    ])})
+    with_roles(
+        client.app,
+        editor={
+            "allowed_actions": frozenset(
+                [
+                    "read:Customer",
+                    "execute:UpdateCustomerName",
+                ]
+            )
+        },
+    )
 
     body = client.get(f"/api/writes/{write_id}").json()
 
@@ -3237,9 +3265,7 @@ def test_the_listing_reports_a_write_the_ontology_has_outrun(client):
     finally:
         type(write_mediator)._fields_no_longer_declared = original
 
-    assert [e["undeclared_fields"] for e in after if e["write_id"] == write_id] == [
-        ["Customer.name"]
-    ]
+    assert [e["undeclared_fields"] for e in after if e["write_id"] == write_id] == [["Customer.name"]]
 
 
 def test_the_readable_flag_survives_serialisation(client):
@@ -3277,9 +3303,14 @@ def test_a_discover_only_field_reports_itself_unreadable_over_http(client):
     _login(client, "alice", "correct-pw")
 
     granted = set(mediator_of(client.app).roles["customer_service"]["allowed_actions"])
-    with_roles(client.app, customer_service={"allowed_actions": frozenset(
-        (granted - {"read:Customer.email"}) | {"discover:Customer.email"},
-    )})
+    with_roles(
+        client.app,
+        customer_service={
+            "allowed_actions": frozenset(
+                (granted - {"read:Customer.email"}) | {"discover:Customer.email"},
+            )
+        },
+    )
 
     fields = client.get("/api/me/visible-schema").json()["Customer"]["fields"]
 
@@ -3379,8 +3410,7 @@ def _selecting_user(client):
     Created with mac_value=None, a user sees NOTHING -- which is
     correct, and makes every assertion here pass vacuously.
     """
-    client.app.state.user_directory.create_user(
-        "selector", "correct-pw", "us-west", "customer_service")
+    client.app.state.user_directory.create_user("selector", "correct-pw", "us-west", "customer_service")
     _login(client, "selector", "correct-pw")
 
 
@@ -3543,9 +3573,13 @@ def test_old_metrics_are_dropped_at_startup(tmp_path, monkeypatch):
     assert stale.summary(window_seconds=500 * 24 * 60 * 60)["requests"] == 1
 
     monkeypatch.setenv("ELYSIUM_DATA_DIR", str(data_dir))
-    create_app(RuntimePaths(
-        config_dir=Path("deployment/etc"), data_dir=data_dir, log_dir=tmp_path / "log",
-    ))
+    create_app(
+        RuntimePaths(
+            config_dir=Path("deployment/etc"),
+            data_dir=data_dir,
+            log_dir=tmp_path / "log",
+        )
+    )
 
     assert stale.summary(window_seconds=500 * 24 * 60 * 60)["requests"] == 0
 
@@ -3599,3 +3633,58 @@ def test_search_and_detail_agree_on_representation(client):
     detail = client.get(f"/api/objects/Transaction/{first['id']}").json()
 
     assert detail["id"] == first["id"]
+
+
+def test_the_inbox_says_what_a_reviewer_may_decide(client):
+    """Step 4: a reviewer's inbox scopes itself to them.
+
+    Foundry's rule is "approve or reject all tasks in the request THAT
+    YOU ARE ELIGIBLE TO REVIEW", and a listing that did not say which
+    those were would make Approve look like it runs the write -- which
+    for a request spanning security partitions it does not.
+
+    ONE TASK HERE, because this fixture's actions take a single object
+    reference. That is enough to prove the WIRING and no more: with one
+    task and a reviewer who can see it, eligible equals total either
+    way, so a control replacing eligible_task_indexes() with a plain
+    count still passes this.
+
+    The multi-task and multi-reviewer logic -- where those two numbers
+    differ -- is covered in tests/unit/test_task_approvals.py, where
+    the controls do fire.
+    """
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    proposed = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_002", "new_name": "Bram F."}},
+        headers=_csrf_headers(client),
+    )
+    assert proposed.status_code == 202, proposed.text
+
+    entry = client.get("/api/writes/awaiting").json()[0]
+
+    assert entry["tasks_total"] == 1
+    assert entry["tasks_you_may_decide"] == 1
+    assert entry["tasks_approved"] == 0
+
+
+def test_the_inbox_counts_approvals_not_decisions(client):
+    # APPROVED, not decided: a rejected task is not progress toward
+    # invocation, and counting it as such would show a request as
+    # nearly ready when it is permanently blocked.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_002", "new_name": "Bram F."}},
+        headers=_csrf_headers(client),
+    )
+    write_id = client.get("/api/writes/awaiting").json()[0]["write_id"]
+
+    client.app.state.pending_writes.record_task_decision(write_id, 0, "alice", approved=False)
+
+    entry = client.get("/api/writes/awaiting").json()[0]
+    assert entry["tasks_approved"] == 0

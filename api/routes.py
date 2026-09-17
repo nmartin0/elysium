@@ -633,6 +633,17 @@ class AwaitingWriteResponse(BaseModel):
     # that showed an Approve button here would let a reviewer make a
     # decision, learn it was refused, and have gained nothing.
     undeclared_fields: list[str]
+    # THE INBOX FIELDS. A reviewer needs to know what they can act on
+    # and what the request is still waiting for -- otherwise "approve"
+    # looks like it will run the write, and for a request spanning
+    # security partitions it will not.
+    #
+    # COUNTS, NOT THE TASKS THEMSELVES. A listing showing fifty task
+    # rows per request would bury the requests, and the detail view
+    # already loads a single write in full.
+    tasks_total: int
+    tasks_you_may_decide: int
+    tasks_approved: int
     # How many OTHER pending writes propose exactly this change.
     #
     # SURFACED, NOT PREVENTED. A second identical proposal might be a
@@ -698,6 +709,17 @@ def awaiting_writes_route(request: Request,
             # do. Computing it separately here is how a queue ends up
             # offering a button that always fails.
             "undeclared_fields": write_mediator.fields_no_longer_declared(pending),
+            "tasks_total": len(pending.sub_writes),
+            "tasks_you_may_decide": len(
+                write_mediator.eligible_task_indexes(pending, current_user, roles)
+            ),
+            # APPROVED, not decided: a rejected task is not progress
+            # toward invocation, and counting it as such would show a
+            # request as nearly ready when it is permanently blocked.
+            "tasks_approved": sum(
+                1 for decision in store.task_decisions(write_id).values()
+                if decision.approved
+            ),
             "duplicate_count": store.duplicates_of(write_id),
         }
         # OLDEST FIRST. A reviewer works through a queue, and the write

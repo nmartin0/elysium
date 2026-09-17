@@ -593,8 +593,21 @@ Build order, with the atomic batch untouched at the end:
    The awaiting-other-reviewers response is now REACHABLE: a
    reviewer who can see part of a request approves their part and is
    told the rest is still waiting.
-4. An inbox showing a reviewer their eligible tasks, with Approve all
-   scoped to those.
+4. ~~An inbox showing a reviewer their eligible tasks.~~ THE DATA IS
+   DONE: /writes/awaiting now returns tasks_total,
+   tasks_you_may_decide and tasks_approved per request.
+
+   COUNTS, NOT THE TASKS THEMSELVES. A listing showing fifty task
+   rows per request would bury the requests, and the response model
+   is the security guard -- a test pins its exact field set so that
+   widening it is a deliberate act. Counts carry no object values.
+
+   APPROVED, NOT DECIDED: a rejected task is not progress toward
+   invocation, and counting it as such would show a request as
+   nearly ready when it is permanently blocked.
+
+   STILL OPEN: the UI. ApprovalsPanel does not show these numbers
+   yet, and Approve is not yet scoped to the eligible subset.
 
 Foundry backs the same guarantee at the storage layer -- their Iceberg
 catalog "extends standard Iceberg with all-or-nothing transaction
