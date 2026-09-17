@@ -15,13 +15,15 @@ that have gone wrong repeatedly.
    carry their own and they drifted apart; the entry marked "blocking
    everything below it" had been fixed weeks earlier and no list said
    so.
-4. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
+4. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
+   precedent behind each part, and which parts wait for a model.
+5. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
    besides data, and why the ontology is a COPY there rather than a
    home. Corrects an earlier conclusion in BACKLOG.md.
-5. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
+6. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
-6. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
+7. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
    `IDEAS.md` — the REASONING, not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written
    so a fresh session starts with the decisions made, not

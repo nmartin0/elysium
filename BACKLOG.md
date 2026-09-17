@@ -245,9 +245,30 @@ a control I have not recognised as the same problem.
 
 ### Needs research, then a plan, then building
 
-**What Query should contain.** Barren today. The one item that is a
-design question rather than a defect, and it deserves the treatment the
-ELT work got.
+~~**What Query should contain.**~~ RESEARCHED AND PLANNED -- see
+QUERY_PLAN.md. Four parts, ordered by what they depend on.
+
+INPUT DISCOVERABILITY IS THE NAMED PROBLEM: "a long standing
+challenge for NLIs", answered by contextual suggestions beside the
+results rather than a help page.
+
+AND THE DEPLOYMENT ALREADY STATES GOOD QUESTIONS --
+example_queries.yaml -- which NOTHING IN THE WEB UI READS. It is
+loaded only by scripts/run_deployment.py, and its entries are
+user-paired for that runner, so it needs a display-safe subset
+rather than straight reuse.
+
+BUILDABLE NOW: deployment-stated examples, and keeping the last
+question in the box so refining one clause is the default.
+
+WAITS FOR THE MEASUREMENT SESSION: reading the question back as the
+agent understood it, and generated follow-on suggestions. Both need
+a model to design against.
+
+DELIBERATELY NOT BUILDING: clarifying questions before answering
+(an extra model call per question for a problem nobody has
+reported), and a conversation thread (Elysium answers questions
+about an ontology; the trace beats a transcript).
 
 **A plugin API, server and client.** The largest item here and
 probably its own session. Third-party sub-apps and server-side compute
