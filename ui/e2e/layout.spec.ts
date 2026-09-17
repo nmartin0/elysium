@@ -14,15 +14,13 @@
 // faster and in more detail. This file is for facts only a browser
 // knows.
 //
-// SETUP, in full, because a test nobody can start is a test nobody
-// runs:
+// SETUP, EVERY LINE FROM THE REPOSITORY ROOT:
 //
-//   cd ui && npm run build     (these test the BUILT bundle)
-//   python -m scripts.create_debug_user --yes-this-is-development
-//       (once. It refuses without the flag, and should: the account
-//        it makes has every grant the deployment defines.)
-//   uvicorn api.app:app        (serves the UI and the API together)
-//   cd ui && npm run e2e
+//   cd ~/elysium/ui && npm run build   (tests the BUILT bundle)
+//   cd ~/elysium && python -m scripts.create_e2e_users \
+//                       --yes-this-is-development
+//   cd ~/elysium && uvicorn api.app:app  (leave a running one alone)
+//   cd ~/elysium/ui && npm run e2e
 //
 // No dev server. uvicorn serves both, so the only process needed is
 // the one already running.
@@ -54,7 +52,19 @@ async function login(page: Page, user: { username: string; password: string }) {
   await page.getByLabel(/username/i).fill(user.username)
   await page.getByLabel(/password/i).fill(user.password)
   await page.getByRole('button', { name: /log in/i }).click()
-  await expect(page.getByRole('link', { name: /browse/i })).toBeVisible()
+
+  // FAIL ON THE LOGIN, NOT ON SOMETHING DOWNSTREAM. A first version
+  // waited for a nav item, so a failed login and a wrong selector
+  // produced the identical message -- and both were happening at once,
+  // which cost a whole run to untangle.
+  //
+  // The nav is a Blueprint Menu, so its items are role="menuitem", not
+  // role="link". That was the wrong selector.
+  await expect(
+    page.locator('.app__nav'),
+    'login did not complete -- does this user exist on the server under test?',
+  ).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: /browse/i })).toBeVisible()
 }
 
 test.describe('the selection checkbox', () => {

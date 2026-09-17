@@ -124,17 +124,26 @@ work, every one found by a person clicking.
 
 `ui/e2e/` holds Playwright tests that CAN see those things:
 
-    cd ui && npm run e2e:install    (once)
-    cd ui && npm run build          (they test the BUILT bundle)
-    python -m scripts.create_debug_user --yes-this-is-development
-                                    (once; it refuses without the flag,
-                                     deliberately -- it is a back door)
-    uvicorn api.app:app             (serves the UI and the API)
-                                    If one is already running, leave it:
-                                    static files are read from disk per
-                                    request, so a fresh build is picked
-                                    up without a restart.
-    cd ui && npm run e2e
+EVERY LINE STARTS FROM THE REPOSITORY ROOT, and says so. A list
+mixing `cd ui && ...` with root-relative commands leaves a reader in
+the wrong directory -- which it did, producing "No module named
+'scripts'" from a step that looked fine.
+
+    cd ~/elysium/ui && npm run e2e:install     (once)
+    cd ~/elysium/ui && npm run build           (tests the BUILT bundle)
+
+    cd ~/elysium && python -m scripts.create_e2e_users \
+                        --yes-this-is-development      (once)
+        Refuses without the flag, deliberately: known passwords are a
+        back door. Creates plainuser and adminuser -- TWO, because the
+        nav is supposed to show Admin to one and not the other.
+
+    cd ~/elysium && uvicorn api.app:app
+        Serves the UI and the API together. LEAVE A RUNNING ONE ALONE:
+        static files are read from disk per request, so a fresh build
+        is picked up without a restart.
+
+    cd ~/elysium/ui && npm run e2e
 
 NO DEV SERVER. uvicorn serves both, so the only process needed is the
 one already running. The config pointed at Vite's :5173 until every
@@ -179,6 +188,9 @@ Recovery:
   these, every silo reads unreachable, which is CORRECT and the Silos
   screen will tell them so.
 - `scripts/create_debug_user.py` — `debug` / `a`, role `debug`.
+- `scripts/create_e2e_users.py` — `plainuser` and `adminuser`, the
+  two the browser tests log in as. Two, because the nav is supposed
+  to show Admin to one and not the other.
 - `scripts/create_colleague_user.py` — adds `colleague` / `a` in the
   same role, for testing that shared things are shared.
 **For volume, `seed_dev_silos.py --bulk N`.** Without it the fixture
