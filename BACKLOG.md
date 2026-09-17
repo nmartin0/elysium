@@ -220,10 +220,17 @@ grown long enough that things were being lost in it.
 
 ### Can I do it alone, right now
 
-**Make the test suites NAME their failures.** Three unexplained single
--test failures so far -- two frontend, one backend -- none
-reproducible, none named. The summary line the retry erases is what
-has defeated every attempt to chase them.
+~~**Make the test suites NAME their failures.**~~ THEY ALREADY DO,
+and this entry was the mistake rather than the tooling.
+
+pytest prints `FAILED path::test - AssertionError...` and vitest
+prints `FAIL file > describe > it`. Verified by forcing a failure in
+each. The three flakes were unidentifiable because I read the output
+through `tail -1` and `grep -oE "Tests .*"`, which discard exactly
+that line.
+
+The rule is in AGENTS.md: do not truncate the output you are
+diagnosing from.
 
 `--reporter=verbose` for vitest and `-p no:randomly` for pytest both
 name tests as they run. Worth wiring into the default invocation
@@ -1063,22 +1070,17 @@ seven rows. The first thing to do when someone hits it is RAISE rather
 than OOM -- a sync that refuses a table it cannot hold is diagnosable,
 one the kernel kills is not. Full reasoning in ELT_ROADMAP.md.
 
-**THREE unexplained test failures now -- two frontend, one backend --
-each seen once, none reproducible, none naming the test.**
+**THREE SINGLE-TEST FAILURES, none of them reproduced -- and the
+reason they were never identified was how I read the output.**
 
-Three occurrences is past the point where "noise" is a fair
-description. The common signature: a single failure in a full-suite
-run, clean on every retry, and a summary line that does not say which
-test.
+Both suites name a failing test. I read their output through
+`tail -1`, which prints only the count. Each time I concluded the
+name had not been written, recorded the flake as unidentifiable, and
+twice proposed adding a verbose reporter that already exists.
 
-WHAT TO DO ABOUT IT, since chasing it after the fact has failed three
-times: make the suite name failures as they happen, not only in a
-summary that the retry erases. `--reporter=verbose` for vitest and
-`-p no:randomly -x` for pytest both do that. Worth wiring into the
-default invocation rather than remembering to add.
-
-The alternative -- continuing to shrug -- has a cost: the next REAL
-intermittent failure will be read as this one.
+STILL OPEN, but a much smaller thing: the failures themselves were
+real and are still unexplained. If one recurs, the name will be in
+the output -- read it without a pipe.
 
 A backend run reported `1 failed | 1708 passed` without naming the
 test; three subsequent runs, including one with randomisation

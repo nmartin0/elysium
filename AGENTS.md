@@ -244,6 +244,33 @@ history to hide it. Those fix commits are often the most useful
 documentation in the repository, because they record the trap and how
 it was found.
 
+## Do not truncate the output you are diagnosing from
+
+`tail -1` and `grep -oE "Tests .*"` discard exactly the line that names
+what failed. Both test suites already print it:
+
+    FAILED tests/unit/test_x.py::test_y - AssertionError...
+    FAIL packages/a/src/b.test.ts > describe > it
+
+THREE "UNEXPLAINED" FLAKES IN ONE SESSION WERE NOT UNEXPLAINED. Each
+was recorded as unidentifiable -- twice in BACKLOG.md, escalated once
+as needing a verbose reporter -- and each time the name had been
+printed and thrown away by the pipe used to read it.
+
+THE SAME MISTAKE TWICE MORE, on other commands. `run_sync` prints
+`FAILED <table>: <error>` to stderr before its count, and I recorded
+"reports 0/2 with no explanation" as a defect after reading it with
+`tail -2`. A patch's own failure message was read the same way.
+
+SO: when something fails unexpectedly, RE-RUN IT WITHOUT THE PIPE
+before concluding anything about the failure. A diagnosis truncated by
+the command used to read it looks exactly like a diagnosis that was
+never written -- and the second conclusion leads to building tooling
+for a problem that does not exist.
+
+Piping is fine for a result you EXPECT. It is not fine for one you are
+investigating.
+
 ## Verification that actually verifies
 
 When you write a test for a bug you fixed, **break the fix and confirm
