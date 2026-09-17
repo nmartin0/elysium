@@ -257,3 +257,10 @@ slowest_routes
 window_seconds
 admin_metrics_route
 forget_older_than
+
+# TaskApproval.decided_at (core/pending_write_store.py) -- recorded
+# now, read by the approvals inbox in step 4. An approval record
+# without a timestamp is not an approval record: "who approved this
+# and when" is one question, and adding the field later would mean
+# every decision taken before then has no answer.
+decided_at

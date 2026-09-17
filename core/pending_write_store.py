@@ -59,13 +59,32 @@ import threading
 import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 from core.intermediate_layer.audit import AuditLog
 from core.ontology.write_mediator import PendingWrite
 
 DEFAULT_TTL = timedelta(minutes=15)
+
+
+@dataclass(frozen=True)
+class TaskApproval:
+    """One reviewer's decision about one task.
+
+    A TASK IS ONE SUB-WRITE, which is Foundry's own unit: "a task is an
+    individual change". A bulk action naming fifty objects is fifty
+    tasks, and a reviewer may be eligible for some and not others.
+
+    IDENTIFIED BY POSITION, not by object. A create has no object_id
+    yet, and nothing forbids two sub-writes touching one object, so
+    (type, id) is not a key. The sub_writes tuple is fixed when the
+    write is proposed, so an index cannot collide or drift.
+    """
+
+    approver_user_id: str
+    approved: bool
+    decided_at: datetime
 
 
 @dataclass
@@ -77,6 +96,18 @@ class _StoredWrite:
     # confirm request, so a second reviewer cannot reserve it and a
     # listing does not offer it. Cleared if the decision fails.
     reserved: bool = False
+    # WHO HAS DECIDED WHICH TASK, keyed by index into pending.sub_writes.
+    #
+    # ON THE STORE RATHER THAN ON PendingWrite, because a PendingWrite
+    # is frozen and describes what was PROPOSED. Who has since approved
+    # part of it is mutable state about that proposal, which is what
+    # this class already holds -- expiry and reservation live here for
+    # the same reason.
+    #
+    # ABSENT MEANS UNDECIDED. A missing key is not a rejection: three
+    # reviewers signing off in turn means the dict fills up over time,
+    # and treating "not yet" as "no" would invoke nothing.
+    task_decisions: dict[int, TaskApproval] = field(default_factory=dict)
 
 
 def _fingerprint(pending) -> tuple:
@@ -149,6 +180,80 @@ class PendingWriteStore:
             self._expire_stale_locked()
             self._writes[write_id] = _StoredWrite(pending, pending.user_id, expires_at)
         return write_id
+
+    def record_task_decision(self, write_id: str, task_index: int,
+                              approver_user_id: str, approved: bool) -> bool:
+        """Records one reviewer's decision about one task.
+
+        RETURNS FALSE FOR A WRITE THAT IS NOT THERE, rather than
+        raising. A write can expire between a reviewer opening their
+        inbox and deciding, and that is an ordinary race rather than an
+        error -- the caller reports it as "no longer available", which
+        is what happened.
+
+        LAST DECISION WINS for the same reviewer on the same task. A
+        reviewer changing their mind before the request is invoked is
+        allowed; forbidding it would mean a misclick is permanent.
+
+        REJECTING IS RECORDED, NOT ACTED ON HERE. A rejected task
+        blocks invocation because the request is not fully approved --
+        the same mechanism as one nobody has looked at yet. Deleting
+        the write on a rejection would throw away the record of who
+        rejected it and why it never ran.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            if stored is None:
+                return False
+            if not 0 <= task_index < len(stored.pending.sub_writes):
+                # OUT OF RANGE IS A CALLER BUG, not a race, so it is
+                # loud. A reviewer cannot produce this; only code
+                # miscounting tasks can.
+                raise IndexError(
+                    f"write {write_id} has {len(stored.pending.sub_writes)} task(s); "
+                    f"no task {task_index}"
+                )
+            stored.task_decisions[task_index] = TaskApproval(
+                approver_user_id=approver_user_id,
+                approved=approved,
+                decided_at=datetime.now(UTC),
+            )
+            return True
+
+    def task_decisions(self, write_id: str) -> dict[int, TaskApproval]:
+        """Every decision recorded against a write, by task index.
+
+        A COPY, so a caller iterating it cannot be surprised by another
+        reviewer deciding mid-loop -- and cannot mutate the store by
+        accident either.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            return dict(stored.task_decisions) if stored else {}
+
+    def is_fully_approved(self, write_id: str) -> bool:
+        """Whether every task has been approved.
+
+        THIS IS THE INVOCATION GATE, and it is deliberately strict:
+        Foundry's rule is that "all tasks associated with a request
+        must be approved for the request to be invoked". One task
+        undecided or rejected means the whole request waits.
+
+        AN UNKNOWN WRITE IS NOT APPROVED. A write that expired between
+        the last approval and this check must not read as ready.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            if stored is None:
+                return False
+            decisions = stored.task_decisions
+            return all(
+                index in decisions and decisions[index].approved
+                for index in range(len(stored.pending.sub_writes))
+            )
 
     def awaiting(self, may_claim) -> list[tuple[str, PendingWrite]]:
         """Every unexpired write the caller may act on, id and all.

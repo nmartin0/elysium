@@ -559,7 +559,12 @@ say is "these three roles must each sign off".
 
 Build order, with the atomic batch untouched at the end:
 
-1. Per-task approval records -- who approved which task, and when.
+1. ~~Per-task approval records~~ DONE. PendingWriteStore holds a
+   TaskApproval per sub-write index: who decided, what, and when.
+   `is_fully_approved()` is the invocation gate and is strict --
+   undecided and rejected both mean not ready. NOTHING CALLS IT
+   YET; confirm_and_execute still takes one decision from one
+   person, which is step 2.
 2. A request that knows whether it is fully approved, and invokes only
    then.
 3. Eligibility: which tasks a given reviewer may act on, derived from
