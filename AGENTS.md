@@ -244,6 +244,62 @@ history to hide it. Those fix commits are often the most useful
 documentation in the repository, because they record the trap and how
 it was found.
 
+## Read the signature before you call it
+
+Every invented name in this session was caught by a tool, which means
+every one cost a round trip that reading would have saved:
+
+    _expire_locked          was  _expire_stale_locked
+    store.add               was  store.store
+    catalog._fs_io()        does not exist at all
+    PendingWrite(...)       missing two required fields
+    getByRole('link')       the nav uses role="menuitem"
+    `.workspace__filter`    was not the rule that caused the bug
+
+A plausible name is not a name. `grep -n "def "` on the file, or
+reading the dataclass, takes seconds and is the difference between
+writing code once and writing it three times.
+
+THE SAME APPLIES TO FILES. Three exact-match edits in one session
+failed against text that was not there -- twice because a formatter
+had reshaped it, once because an earlier edit had already changed it.
+When an edit asserts a match count and fails, READ THE FILE rather
+than adjusting the pattern. Twice in a row on one file means the file
+is not what you think it is.
+
+WHAT WORKS, demonstrated on the per-task approval gate: read
+confirm_and_execute, the route, and the store's public methods first,
+then write. No invented names, nothing caught by mypy, and faster than
+the guess-and-fix loop that preceded it.
+
+## What has actually worked
+
+Habits worth keeping, each earned the expensive way in this project:
+
+**A control that cannot fail is a test that proves nothing.** Break
+the code deliberately; if the test still passes, it was never testing
+that. This has caught more real gaps than any other practice here.
+
+**Verify against the real thing, not a description of it.** The API
+returns a dict keyed by name, not a list. Blueprint attaches props to
+the input, not the label. jsdom forwards a label click. Each was found
+by rendering or calling it and looking -- and each had a plausible
+wrong answer that would have survived a whole commit.
+
+**When a fix does not work twice, change the approach rather than the
+fix.** Four attempts at telling one click from another ended with
+removing the component that produced two. The fifth idea was not
+better than the fourth; it was a different kind of idea.
+
+**Write the limit down where the next person will hit it.** "jsdom
+computes no layout." "This test cannot fire and here is why." "The
+assertions in this file have never been run." A known gap stated is
+worth more than a gap someone rediscovers.
+
+**Ask for the fact rather than guessing at it.** Which browser. The
+server log. The full output. Every one of those ended a debugging loop
+that had already cost several attempts.
+
 ## Do not truncate the output you are diagnosing from
 
 `tail -1` and `grep -oE "Tests .*"` discard exactly the line that names
