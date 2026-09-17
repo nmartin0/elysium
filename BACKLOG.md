@@ -923,7 +923,14 @@ STILL OPEN: following a link should arguably keep the trail visible --
 Browse with a filter applied and no memory of how you got there. That
 is a navigation question worth answering before adding more hops.
 
-**Bulk actions. THE MECHANISM IS DONE**; the UI is not.
+~~**Bulk actions.**~~ DONE, mechanism AND interface: checkboxes
+with shift-ranges,
+a selection bar stating what an action would reach, an Actions menu offering
+only list-capable actions, a bulk form, and "Select all N matching" resolved
+to ids at selection time. Verified in a browser end to end -- 50 ids reached
+the approvals queue.
+
+**Original entry:** the mechanism was done; the UI was not.
 
 `object_reference_list` is a parameter type, and a sub_write whose
 object_id resolves to a list expands into one sub-write per object --
