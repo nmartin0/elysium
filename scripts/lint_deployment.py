@@ -347,6 +347,32 @@ def lint_deployment(config_dir: Path | None = None) -> bool:
         f"  {len(config_obj.schema)} object type(s), {len(config_obj.action_types)} action type(s), "
         f"{len(config_obj.roles)} role(s), {len(config_obj.users)} user(s)"
     )
+
+    # NOT AN ERROR, BUT WORTH SAYING. An object type without a
+    # title_field shows its raw id on every result card -- `cust_001`
+    # rather than `Ada Okafor`. That is correct behaviour for an
+    # ontology that never said which field names the thing, and an
+    # unhelpful screen.
+    #
+    # A WARNING RATHER THAN A FAILURE because it is sometimes right: a
+    # transaction has no name and its id IS its honest title. A
+    # deployment that means it can ignore this line; one that forgot
+    # gets told.
+    #
+    # The shipped deployment had forgotten for every type, while the
+    # test fixture declared one -- so every test passed and every real
+    # screen showed ids. Found by a browser test clicking a customer by
+    # name.
+    untitled = [
+        name for name, type_def in config_obj.schema.items()
+        if not type_def.get("title_field")
+    ]
+    if untitled:
+        print(
+            f"\n  Note: no title_field on {', '.join(sorted(untitled))}. "
+            f"Result cards will show raw ids for these."
+        )
+
     return True
 
 

@@ -22,6 +22,16 @@ object_types:
       table: customers
       id_column: customer_id
     id_field: customer_id
+    # WHAT A RESULT CARD CALLS THIS OBJECT. Without it every card in
+    # Browse reads `cust_001` rather than `Ada Okafor`, because
+    # getDisplayTitle falls back to the id -- which is correct
+    # behaviour for an ontology that never said, and an unhelpful
+    # screen.
+    #
+    # Found by a browser test that clicked a customer by name and
+    # waited thirty seconds. The test was right and the deployment was
+    # wrong; no object type here declared one.
+    title_field: name
     security:
       field: region
     fields:
@@ -38,6 +48,8 @@ object_types:
         via_table: transactions
         via_column: customer_id
   Transaction:
+    # A transaction has no name, so its id IS the honest title. Stated
+    # rather than omitted, so the absence reads as a decision.
     storage:
       silo: primary_sql
       table: transactions
