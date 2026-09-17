@@ -615,6 +615,17 @@ class IcebergMirrorSync(MirrorSync):
         try:
             current = table.scan().to_arrow()
         except Exception:  # noqa: BLE001 - see the docstring: doubt means write
+            # LOGGED, THOUGH THE ANSWER STAYS "WRITE IT". Returning
+            # False is the safe direction and was already right; saying
+            # nothing was not. A persistent fault here makes every sync
+            # rewrite an unchanged table forever -- silently defeating
+            # the skip that took 27.2 MB down to 0.9 -- and looks
+            # exactly like normal operation from outside.
+            #
+            # debug rather than warning: one failure is unremarkable,
+            # and a warning per table per sync would train someone to
+            # ignore the log.
+            logger.debug("could not read the current snapshot; writing anyway", exc_info=True)
             return False
 
         if current.num_rows != arrow_table.num_rows:

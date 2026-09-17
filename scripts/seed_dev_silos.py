@@ -19,9 +19,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from core.deployment_loader import resolve_runtime_paths  # noqa: E402
+from core.deployment_loader import resolve_runtime_paths
 
 FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "integration" / "fixtures"
 

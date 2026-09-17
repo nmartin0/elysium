@@ -671,7 +671,47 @@ load-bearing and now says so.
   specificity, so a bare `label` still outranks `.bp6-control`. The
   entry that called it superseded was wrong.
 
-STILL TO AUDIT, since four candidates were only a starting point:
+SECOND PASS DONE, over every `noqa` in the codebase -- sixteen of
+them, which is the whole population rather than a sample.
+
+- ~~Five `E402` from `sys.path` inserts~~ REMOVED. Three scripts
+  manipulated sys.path so they could run as `python scripts/foo.py`,
+  and every documented invocation is `python -m scripts.foo`, which
+  needs no such thing. A workaround for a usage nobody is told to use.
+  All four scripts verified still working.
+- ~~One `BLE001` in create_e2e_users~~ NARROWED. An absent user raises
+  ValueError specifically; the broad catch would have swallowed a
+  permissions error and still printed "created".
+- **Two `B024` STAY, and nearly did not.** `ABC` with no abstract
+  methods looks like it enforces nothing -- but it supplies the
+  ABCMeta that makes TWELVE `@abstractmethod`s in a subclass actually
+  enforced. Verified directly: a plain base leaves them unenforced and
+  an incomplete subclass instantiates silently. The comment now says
+  so.
+- **Two `S608` STAY** -- generated placeholders, every value
+  parameterised. But see the open item below.
+- **The remaining `BLE001` stay, on one condition each: they must
+  REPORT.** api/reload.py uses logger.exception, the metrics
+  middleware warns, integrity.py records a finding. Two in
+  iceberg_sync.py returned False -- the safe direction -- and said
+  NOTHING, so a persistent fault would rewrite every unchanged table
+  forever, silently defeating the skip that took 27.2 MB to 0.9, and
+  look like normal operation. Now logged at debug.
+
+**A RULE WORTH KEEPING:** a broad catch is acceptable where any
+failure means the same thing to the caller, and only when it reports.
+A broad catch that stays quiet is a workaround.
+
+STILL OPEN, AND A JUDGEMENT CALL RATHER THAN A DEFECT: the write log
+chunks id lists into batches of 500 and builds an `IN (?,?,?)` clause,
+which is why the two `S608` exist. SQLite's `json_each` takes the whole
+list as ONE parameter -- no dynamic SQL, no chunking, no variable
+limit. Verified working. It trades two suppressions and a constant for
+a minimum SQLite version (3.38, 2022), which is a real trade and not
+mine to make alone.
+
+STILL TO AUDIT, since suppressions are only where workarounds ADMIT
+themselves:
 
 Known candidates, to start from rather than to limit the search:
 

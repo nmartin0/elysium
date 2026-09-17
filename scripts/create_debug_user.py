@@ -13,12 +13,9 @@ account like this has no place in one.
 """
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from core.deployment_loader import load_deployment, resolve_runtime_paths  # noqa: E402
-from core.user_directory import UserDirectory  # noqa: E402
+from core.deployment_loader import load_deployment, resolve_runtime_paths
+from core.user_directory import UserDirectory
 
 USERNAME = "debug"
 PASSWORD = "a"

@@ -83,7 +83,12 @@ def main() -> int:
         try:
             directory.delete_user(username)
             print(f"  replaced {username} ({role})")
-        except Exception:  # noqa: BLE001 - absent is the normal case
+        except ValueError:
+            # NAMED, because that is what an absent user raises --
+            # checked rather than assumed. A broad catch here would
+            # swallow a permissions error or a corrupt database and
+            # still print "created", which is the exact shape of lie
+            # this audit is looking for.
             print(f"  created {username} ({role})")
 
         directory.create_user(username, password, region, role)
