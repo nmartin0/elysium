@@ -81,6 +81,51 @@ work and start the next task on a tree missing it. That happened here;
 the commit was recoverable from the reflog only because it was
 noticed within a few minutes.
 
+## Never `git reset --hard` without checking what it discards
+
+    git log --oneline origin/dev..HEAD
+
+RUN THAT FIRST, EVERY TIME. If it prints anything, a reset destroys
+it, and the reset is silent -- no warning, no prompt, no trace except
+the reflog.
+
+This cost work three times in one session. The last time it orphaned
+three commits, noticed only because a finding recorded twice was
+missing from BACKLOG.md both times. Recovering them meant reading the
+reflog and cherry-picking across a branch point.
+
+Resetting is the right way to guarantee a clean base and should stay.
+The rule is the check before it, not the avoidance of it.
+
+## A failed `git am` blocks every later one, silently
+
+    fatal: previous rebase directory .git/rebase-apply still exists
+
+WHEN A PATCH FAILS TO APPLY, git leaves `.git/rebase-apply` behind,
+and EVERY subsequent `git am` refuses with that message rather than
+doing anything. The refusal reads as a new failure of the new patch.
+
+    rm -rf .git/rebase-apply
+
+That is the fix, and it has to happen before the next attempt. Three
+patches in a row appeared to fail in one session; the first failed for
+a real reason and the other two never ran at all.
+
+SO A `git am` IS NOT DONE UNTIL `git log --oneline -1` HAS CHANGED.
+That check catches both this and a patch applied to the wrong base,
+and the commands in this repository's own instructions already print
+it twice for exactly that reason. Nobody was reading the second one.
+
+## A patch cannot delete a file that changes on its own
+
+`git am` verifies the content of every file it deletes. So a patch
+that untracks generated state -- a mirror, a database, a build output
+-- applies only on a machine where that state has not moved since the
+patch was written, which is no machine at all.
+
+Change `.gitignore` in the patch and leave `git rm -r --cached` to a
+person, with the command written beside the rule.
+
 ## `npm ci`, not `npm install`
 
 `npm install` REWRITES package-lock.json whenever a `^` range resolves
