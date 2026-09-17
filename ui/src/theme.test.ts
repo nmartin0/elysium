@@ -237,7 +237,7 @@ describe('the breakpoint is one number', () => {
 
     // EVERY media query, not the first: there were three different
     // widths in this file, which is how they drifted apart.
-    const cssWidths = [...CSS.matchAll(/^@media \(max-width: (\d+)px\)/gm)].map((m) => m[1])
+    const cssWidths = [...CSS.matchAll(/^\s*@media \(max-width: (\d+)px\)/gm)].map((m) => m[1])
     // Two media queries, one width -- distinct VALUES is the property.
     expect([...new Set(cssWidths)]).toHaveLength(1)
     const cssWidth = cssWidths[0]

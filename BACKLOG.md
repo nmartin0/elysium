@@ -612,7 +612,19 @@ download a browser (cdn.playwright.dev is not in its network
 allowlist), so every assertion is a claim awaiting its first
 execution. Expect selector fixes on the first run.
 
-**STILL OPEN:** running them, then layering the CSS behind them.
+**BOTH DONE.** Eleven of eleven browser tests pass, and the last
+failure turned out to be a real defect -- no object type declared a
+title_field, so every result card showed a raw id.
+
+The stylesheets are now in their declared layers. **THIS DOES NOT MAKE
+BARE ELEMENT SELECTORS SAFE**, and it would be easy to read it as
+though it did: `components` beats `vendor` REGARDLESS of specificity,
+exactly as unlayered did. The `:not(.bp6-control)` guards and the
+tripwire test remain load-bearing.
+
+What it buys is smaller and real: the declared order is now the actual
+order, so `utilities` and `overrides` will work when something needs
+them, and nothing silently outranks a layer added later.
 
 It would have caught the checkbox layout, the labels stacked above
 their text, and probably the stretched-link problem. Six attempts at

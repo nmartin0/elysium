@@ -193,7 +193,7 @@ describe('layout responds to the canvas, not the viewport', () => {
     // would work at most viewport widths and fail precisely when the
     // sidebar is open -- the case nobody tests by hand, because the
     // window looks plenty wide.
-    const mediaBlocks = [...shell.matchAll(/@media[^{]*\{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? '')
+    const mediaBlocks = [...shell.matchAll(/@media[^{]*\{([\s\S]*?)\n\s*\}/g)].map((m) => m[1] ?? '')
 
     expect(mediaBlocks.filter((body) => body.includes('.workspace'))).toEqual([])
   })
@@ -347,7 +347,7 @@ describe("a descendant selector must not claim other components' elements", () =
      *  My first fix scoped `.workspace__filter > label`, which only
      *  set typography. It changed nothing a person could see.
      */
-    expect(shell).toMatch(/^label:not\(\.bp6-control\) \{/m)
+    expect(shell).toMatch(/^\s*label:not\(\.bp6-control\) \{/m)
   })
 
   it('Blueprint controls get an inline layout of their own', () => {
@@ -367,7 +367,7 @@ describe("a descendant selector must not claim other components' elements", () =
     // both rules could coexist.
     expect(shell).not.toMatch(/\.workspace__filter > label\s*\{/)
     // AND THE GLOBAL ONE, which is the rule that mattered.
-    expect(shell).not.toMatch(/^label \{/m)
+    expect(shell).not.toMatch(/^\s*label \{/m)
   })
 })
 
@@ -397,7 +397,7 @@ describe('bare element selectors, which silently outrank Blueprint', () => {
   const ALLOWED = new Set(['body', 'form', 'label:not(.bp6-control)', 'label.bp6-control', 'button.danger'])
 
   it('only the reviewed ones exist', () => {
-    const found = [...shell.matchAll(/^([a-z][a-z0-9]*[a-z0-9:().,#_ -]*)\{/gm)]
+    const found = [...shell.matchAll(/^\s*([a-z][a-z0-9]*[a-z0-9:().,#_ -]*)\{/gm)]
       .map((match) => match[1]!.trim())
       .filter((selector) => !selector.includes('@'))
 
