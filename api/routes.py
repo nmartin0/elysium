@@ -2379,6 +2379,42 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
     # executor call already has four, and a fifth that silently lands
     # in the wrong slot is the kind of mistake this file has made
     # before.
+    # RECORD THE DECISION PER TASK, THEN ASK WHETHER THE REQUEST IS
+    # WHOLE.
+    #
+    # Foundry separates the two: approval is per task, invocation is
+    # not -- "all tasks associated with a request must be approved for
+    # the request to be invoked". A reviewer approves what they can and
+    # the request waits for the rest.
+    #
+    # EVERY TASK, FOR NOW, because eligibility does not exist yet. With
+    # one reviewer able to decide everything, this records N approvals
+    # and the gate opens immediately, so behaviour is unchanged. What
+    # changes is that the MECHANISM is real: when eligibility lands, a
+    # reviewer will approve their subset and this same gate will hold
+    # the request until the others have.
+    store: PendingWriteStore = request.app.state.pending_writes
+    for task_index in range(len(pending.sub_writes)):
+        store.record_task_decision(write_id, task_index, current_user.user_id, approved)
+
+    if approved and not store.is_fully_approved(write_id):
+        # NOT AN ERROR, AND NOT A REFUSAL EITHER. The request is
+        # waiting for reviewers who have not decided yet, which is the
+        # normal state of a multi-reviewer request rather than a fault.
+        #
+        # Reached only once eligibility exists -- today the loop above
+        # decides every task, so this cannot fire. Written now because
+        # the alternative is a gate that silently passes and a step 3
+        # that has to remember to add it.
+        undecided = len(pending.sub_writes) - sum(
+            1 for decision in store.task_decisions(write_id).values() if decision.approved
+        )
+        return {
+            "status": "awaiting_other_reviewers",
+            "write_id": write_id,
+            "tasks_outstanding": undecided,
+        }
+
     try:
         outcome = await event_loop.run_in_executor(
             executor,

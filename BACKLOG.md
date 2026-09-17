@@ -565,8 +565,19 @@ Build order, with the atomic batch untouched at the end:
    undecided and rejected both mean not ready. NOTHING CALLS IT
    YET; confirm_and_execute still takes one decision from one
    person, which is step 2.
-2. A request that knows whether it is fully approved, and invokes only
-   then.
+2. ~~A request that knows whether it is fully approved, and invokes
+   only then.~~ DONE. The confirm route records a decision per task
+   and asks `is_fully_approved()` before executing.
+
+   EVERY TASK, FOR NOW, because eligibility does not exist yet: one
+   reviewer decides all of them and the gate opens immediately, so
+   behaviour is unchanged and the integration suite confirms it. The
+   mechanism is real -- when eligibility lands, a reviewer approves
+   their subset and this same gate holds the request.
+
+   The awaiting-other-reviewers branch is written but unreachable
+   today, deliberately: a gate that silently passes is one step 3
+   has to remember to add.
 3. Eligibility: which tasks a given reviewer may act on, derived from
    the same grants that already decide who may execute an action.
 4. An inbox showing a reviewer their eligible tasks, with Approve all

@@ -163,3 +163,57 @@ def test_decisions_are_a_copy(store):
     snapshot[1] = snapshot[0]
 
     assert list(store.task_decisions(write_id)) == [0]
+
+
+class TestTheGateHoldsARequestOpen:
+    """What the gate does once eligibility exists.
+
+    Today every reviewer can decide every task, so a single confirm
+    records all of them and the gate opens immediately -- behaviour is
+    unchanged, which the integration suite confirms. These tests drive
+    the store directly to show the gate holding a request that is only
+    PARTLY approved, which is the state step 3 will make reachable.
+    """
+
+    def test_a_request_waits_for_the_tasks_nobody_has_decided(self, store):
+        write_id = store.store(_pending(3))
+        store.record_task_decision(write_id, 0, "alice", approved=True)
+
+        assert store.is_fully_approved(write_id) is False
+
+    def test_it_opens_when_the_last_reviewer_decides(self, store):
+        """THE MULTI-APPROVER CASE, which is the whole point: three
+        roles each signing off, and nothing running until all three
+        have."""
+        write_id = store.store(_pending(3))
+
+        store.record_task_decision(write_id, 0, "alice", approved=True)
+        assert store.is_fully_approved(write_id) is False
+
+        store.record_task_decision(write_id, 1, "bob", approved=True)
+        assert store.is_fully_approved(write_id) is False
+
+        store.record_task_decision(write_id, 2, "carol", approved=True)
+        assert store.is_fully_approved(write_id) is True
+
+    def test_one_rejection_holds_the_request_shut_permanently(self, store):
+        # Not "until someone else approves": the rejection stays
+        # recorded, so the request never becomes whole unless that
+        # reviewer changes their own decision.
+        write_id = store.store(_pending(2))
+        store.record_task_decision(write_id, 0, "alice", approved=True)
+        store.record_task_decision(write_id, 1, "bob", approved=False)
+
+        assert store.is_fully_approved(write_id) is False
+
+        store.record_task_decision(write_id, 1, "bob", approved=True)
+        assert store.is_fully_approved(write_id) is True
+
+    def test_a_single_task_request_needs_exactly_one_decision(self, store):
+        # THE COMMON CASE, and the one that must not regress: most
+        # writes are one task and should behave exactly as before.
+        write_id = store.store(_pending(1))
+
+        assert store.is_fully_approved(write_id) is False
+        store.record_task_decision(write_id, 0, "alice", approved=True)
+        assert store.is_fully_approved(write_id) is True
