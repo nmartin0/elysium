@@ -578,8 +578,21 @@ Build order, with the atomic batch untouched at the end:
    The awaiting-other-reviewers branch is written but unreachable
    today, deliberately: a gate that silently passes is one step 3
    has to remember to add.
-3. Eligibility: which tasks a given reviewer may act on, derived from
-   the same grants that already decide who may execute an action.
+3. ~~Eligibility: which tasks a given reviewer may act on.~~ DONE.
+   `eligible_task_indexes()` on WriteMediator, built on the existing
+   `check_access()` so it cannot drift from eligibility elsewhere.
+
+   WHAT DIFFERS BETWEEN TASKS IS THE OBJECT. Every task shares the
+   request's action type, so the execute: grant is identical across
+   all of them; MAC separates them. A reviewer in one security
+   partition decides the tasks touching it and leaves the rest.
+
+   A create has no object to check, so it falls back to the action
+   grant alone -- the same answer the request-level check gives.
+
+   The awaiting-other-reviewers response is now REACHABLE: a
+   reviewer who can see part of a request approves their part and is
+   told the rest is still waiting.
 4. An inbox showing a reviewer their eligible tasks, with Approve all
    scoped to those.
 

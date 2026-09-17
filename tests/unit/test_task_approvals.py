@@ -217,3 +217,150 @@ class TestTheGateHoldsARequestOpen:
         assert store.is_fully_approved(write_id) is False
         store.record_task_decision(write_id, 0, "alice", approved=True)
         assert store.is_fully_approved(write_id) is True
+
+
+class TestEligibility:
+    """Which tasks a reviewer may decide.
+
+    FOUNDRY SCOPES THE ACTION: "approve or reject all tasks in the
+    request THAT YOU ARE ELIGIBLE TO REVIEW".
+
+    WHAT DIFFERS BETWEEN TASKS IS THE OBJECT, not the action. Every
+    task in one request shares an action type, so the execute: grant is
+    identical across all of them -- it decides whether a reviewer may
+    act on the REQUEST at all. MAC is what separates the tasks.
+    """
+
+    @staticmethod
+    def _mediator_allowing(*allowed_ids):
+        """A stand-in mediator that permits only the given objects.
+
+        A FAKE RATHER THAN A FIXTURE DEPLOYMENT, because the question
+        here is what eligible_task_indexes does with a yes and a no --
+        not whether MAC itself works, which has its own tests.
+        """
+        class _Audit:
+            # check_access() records a grant or a denial for every
+            # object it considers. Swallowing those here keeps the fake
+            # honest -- it must be CALLED, not merely tolerated -- while
+            # what gets written is audit.py's own business and has its
+            # own tests.
+            def log_access(self, *args, **kwargs):
+                pass
+
+            def log_security_resolution_failed(self, *args, **kwargs):
+                pass
+
+        class _Mediator:
+            audit_log = _Audit()
+
+            def _security_allowed(self, object_type, object_id, security_value):
+                return object_id in allowed_ids
+
+            def _get_security_value(self, object_type, object_id):
+                # NOT None, because check_access treats an unresolvable
+                # value as a resolution FAILURE rather than a denial,
+                # and that is a different finding from "not allowed".
+                return "us-west" if object_id in allowed_ids else "us-east"
+
+        return _Mediator()
+
+    @staticmethod
+    def _write_mediator(mediator):
+        from core.ontology.write_mediator import WriteMediator
+
+        stub = WriteMediator.__new__(WriteMediator)
+        stub.mediator = mediator
+        return stub
+
+    def test_a_reviewer_gets_only_the_tasks_they_can_see(self):
+        pending = _pending(3)
+        roles = {"reviewer": {"allowed_actions": frozenset(["execute:DoThing"])}}
+        approver = UserRecord("carol", "us-west", "reviewer")
+
+        eligible = self._write_mediator(
+            self._mediator_allowing("0", "2")
+        ).eligible_task_indexes(pending, approver, roles)
+
+        assert eligible == {0, 2}
+
+    def test_no_execute_grant_means_no_tasks(self):
+        # THE REQUEST-LEVEL CHECK STILL APPLIES. MAC on the object does
+        # not make someone a reviewer of an action they may not run.
+        pending = _pending(2)
+        roles = {"reviewer": {"allowed_actions": frozenset()}}
+        approver = UserRecord("carol", "us-west", "reviewer")
+
+        eligible = self._write_mediator(
+            self._mediator_allowing("0", "1")
+        ).eligible_task_indexes(pending, approver, roles)
+
+        assert eligible == set()
+
+    def test_seeing_everything_means_every_task(self):
+        # THE CONTROL, and the common case: one reviewer, one
+        # partition, whole request. This must keep working exactly as
+        # it did before eligibility existed.
+        pending = _pending(3)
+        roles = {"reviewer": {"allowed_actions": frozenset(["execute:DoThing"])}}
+        approver = UserRecord("carol", "us-west", "reviewer")
+
+        eligible = self._write_mediator(
+            self._mediator_allowing("0", "1", "2")
+        ).eligible_task_indexes(pending, approver, roles)
+
+        assert eligible == {0, 1, 2}
+
+    def test_two_reviewers_between_them_complete_a_request(self):
+        """THE POINT OF ALL FOUR STEPS.
+
+        Neither reviewer can approve the whole request. Together they
+        can, and nothing runs until they have.
+        """
+        pending = _pending(3)
+        roles = {"reviewer": {"allowed_actions": frozenset(["execute:DoThing"])}}
+        store = PendingWriteStore()
+        write_id = store.store(pending)
+
+        west = self._write_mediator(self._mediator_allowing("0", "1"))
+        east = self._write_mediator(self._mediator_allowing("2"))
+
+        for index in west.eligible_task_indexes(
+            pending, UserRecord("alice", "us-west", "reviewer"), roles,
+        ):
+            store.record_task_decision(write_id, index, "alice", approved=True)
+        assert store.is_fully_approved(write_id) is False
+
+        for index in east.eligible_task_indexes(
+            pending, UserRecord("bob", "us-east", "reviewer"), roles,
+        ):
+            store.record_task_decision(write_id, index, "bob", approved=True)
+        assert store.is_fully_approved(write_id) is True
+
+    def test_a_create_falls_back_to_the_action_grant(self):
+        """A CREATE HAS NO OBJECT TO CHECK.
+
+        There is nothing yet to read a security value from, so MAC
+        cannot answer. Eligibility falls back to the action grant
+        alone -- the same answer the request-level check already gives.
+
+        This branch went untested at first, and a control removing the
+        grant check passed because every fixture used `update`.
+        """
+        from core.ontology.write_mediator import SubWrite
+
+        pending = _pending(1)
+        pending = type(pending)(
+            **{**pending.__dict__,
+               "sub_writes": (SubWrite(object_type="Thing", object_id=None,
+                                       operation="create", changes={"a": 1}),)},
+        )
+        approver = UserRecord("carol", "us-west", "reviewer")
+
+        # Nothing is MAC-visible, so only the grant can allow it.
+        allowed = self._write_mediator(self._mediator_allowing())
+        granted = {"reviewer": {"allowed_actions": frozenset(["execute:DoThing"])}}
+        ungranted = {"reviewer": {"allowed_actions": frozenset()}}
+
+        assert allowed.eligible_task_indexes(pending, approver, granted) == {0}
+        assert allowed.eligible_task_indexes(pending, approver, ungranted) == set()

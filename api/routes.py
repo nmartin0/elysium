@@ -2387,14 +2387,20 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
     # the request to be invoked". A reviewer approves what they can and
     # the request waits for the rest.
     #
-    # EVERY TASK, FOR NOW, because eligibility does not exist yet. With
-    # one reviewer able to decide everything, this records N approvals
-    # and the gate opens immediately, so behaviour is unchanged. What
-    # changes is that the MECHANISM is real: when eligibility lands, a
-    # reviewer will approve their subset and this same gate will hold
-    # the request until the others have.
+    # ONLY THE TASKS THIS REVIEWER MAY DECIDE. Foundry scopes the
+    # action to what the reviewer is eligible for: "approve or reject
+    # all tasks in the request THAT YOU ARE ELIGIBLE TO REVIEW".
+    #
+    # What differs between tasks is the OBJECT. Every task shares the
+    # request's action type, so the execute: grant is the same for all
+    # of them; MAC is what separates them, and a reviewer in one
+    # security partition decides the tasks touching it and leaves the
+    # rest for someone who can see them.
     store: PendingWriteStore = request.app.state.pending_writes
-    for task_index in range(len(pending.sub_writes)):
+    eligible = write_mediator.eligible_task_indexes(
+        pending, current_user, _generation(request).config.roles,
+    )
+    for task_index in sorted(eligible):
         store.record_task_decision(write_id, task_index, current_user.user_id, approved)
 
     if approved and not store.is_fully_approved(write_id):
@@ -2402,10 +2408,10 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
         # waiting for reviewers who have not decided yet, which is the
         # normal state of a multi-reviewer request rather than a fault.
         #
-        # Reached only once eligibility exists -- today the loop above
-        # decides every task, so this cannot fire. Written now because
-        # the alternative is a gate that silently passes and a step 3
-        # that has to remember to add it.
+        # REACHABLE NOW that eligibility exists. A reviewer who can see
+        # only part of a request approves their part and gets told the
+        # rest is still waiting, rather than a success that did not
+        # happen or an error that misdescribes an ordinary state.
         undecided = len(pending.sub_writes) - sum(
             1 for decision in store.task_decisions(write_id).values() if decision.approved
         )

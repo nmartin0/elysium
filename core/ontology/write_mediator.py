@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
@@ -1157,6 +1158,43 @@ class WriteMediator:
             (sub_write.object_type, sub_write.object_id, (sw_def or {}).get("submission_criteria") or [])
             for sub_write, sw_def in zip(pending.sub_writes, declared, strict=False)
         ]
+
+    def eligible_task_indexes(self, pending: PendingWrite, approver: UserRecord,
+                               roles: dict) -> set[int]:
+        """Which of a request's tasks this reviewer may decide.
+
+        FOUNDRY SCOPES A REVIEWER TO WHAT THEY CAN REVIEW: "approve or
+        reject all tasks in the request THAT YOU ARE ELIGIBLE TO
+        REVIEW". This is that set.
+
+        WHAT DIFFERS BETWEEN TASKS IS THE OBJECT, not the action. Every
+        task in one request shares an action type, so the
+        `execute:<ActionType>` grant is identical across all of them --
+        it decides whether a reviewer may act on the REQUEST at all.
+        MAC is what differs: a reviewer in one security partition may
+        decide the tasks touching objects in it and not the others.
+
+        check_access() is the existing primitive for exactly that
+        question, combining MAC on the object with RBAC on the action,
+        and reusing it means eligibility here cannot drift from
+        eligibility anywhere else.
+
+        A CREATE HAS NO OBJECT TO CHECK. There is nothing to read a
+        security value from, so it falls back to the action grant
+        alone -- the same answer the request-level check already gives.
+        """
+        eligible = set()
+        for index, sub_write in enumerate(pending.sub_writes):
+            if sub_write.operation == "create":
+                if authorize(approver, roles, f"execute:{pending.action_type_name}"):
+                    eligible.add(index)
+                continue
+            if check_access(
+                self.mediator, approver, roles, sub_write.object_type,
+                sub_write.object_id, f"execute:{pending.action_type_name}",
+            ):
+                eligible.add(index)
+        return eligible
 
     def _check_approver_criteria(self, pending: PendingWrite, approver: UserRecord) -> None:
         """Re-evaluates submission criteria with the APPROVER acting.
