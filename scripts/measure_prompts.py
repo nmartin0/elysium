@@ -21,8 +21,18 @@ the wall clock -- no new instrumentation and no judgement calls:
   hops          how many steps the agent took
   objects       how many distinct objects it fetched
   step mix      which kinds of step, so aggregate use is visible
-  answered      whether it reached an answer at all
+  rejected      steps the loop refused: invalid, duplicate, or against
+                a business rule
+  capped        whether it ran out of hops
   seconds       wall time, which is what a person feels
+
+NO "ANSWERED" COLUMN, and a first version had one. It read
+`not hit_max_hops and not cancelled`, and reported 3/3 for runs that
+had stopped on consecutive duplicates -- because a duplicate-stop just
+breaks the loop and sets no flag, exactly as a deliberate finish does.
+The two are indistinguishable from the result, so claiming to tell
+them apart was worse than not reporting it. The rejection counts say
+what actually happened.
 
 RUN FROM THE REPOSITORY ROOT, with a model serving:
 
@@ -78,7 +88,7 @@ class Observation:
     hops: int
     objects: int
     steps: dict[str, int] = field(default_factory=dict)
-    answered: bool = False
+    capped: bool = False
     seconds: float = 0.0
 
 
@@ -94,7 +104,7 @@ def observe(loop, user: UserRecord, question: str) -> Observation:
     try:
         result = loop.run(user, question)
         gathered = result.gathered
-        answered = not result.hit_max_hops and not result.cancelled
+        capped = result.hit_max_hops
     except LLMUnavailable:
         # NOT AN OBSERVATION. Every question will fail the same way, so
         # continuing would print the same connection error twelve times
@@ -103,7 +113,7 @@ def observe(loop, user: UserRecord, question: str) -> Observation:
     except Exception as e:  # noqa: BLE001 - see the docstring
         print(f"    (run failed: {type(e).__name__}: {e})", file=sys.stderr)
         gathered = []
-        answered = False
+        capped = False
 
     steps: dict[str, int] = {}
     object_ids = set()
@@ -118,7 +128,7 @@ def observe(loop, user: UserRecord, question: str) -> Observation:
         hops=len(gathered),
         objects=len(object_ids),
         steps=steps,
-        answered=answered,
+        capped=capped,
         seconds=time.monotonic() - started,
     )
 
@@ -132,13 +142,21 @@ def _summarise(runs: list[Observation]) -> str:
     """
     hops = sorted(run.hops for run in runs)
     seconds = sorted(run.seconds for run in runs)
-    answered = sum(1 for run in runs if run.answered)
+    capped = sum(1 for run in runs if run.capped)
     step_names = sorted({name for run in runs for name in run.steps})
+    # REJECTIONS ARE THE HEADLINE, not a footnote. A run that spends
+    # half its hops being told "no" is the finding, and burying it in
+    # the step mix hides how much of the work was wasted.
+    rejected = sorted(
+        statistics.median([run.steps.get(name, 0) for run in runs])
+        for name in step_names if name.startswith("rejected_")
+    )
     return (
-        f"    hops    median {statistics.median(hops):.0f}  range {hops[0]}-{hops[-1]}\n"
-        f"    seconds median {statistics.median(seconds):.1f}  "
+        f"    hops     median {statistics.median(hops):.0f}  range {hops[0]}-{hops[-1]}\n"
+        f"    seconds  median {statistics.median(seconds):.1f}  "
         f"range {seconds[0]:.1f}-{seconds[-1]:.1f}\n"
-        f"    answered {answered}/{len(runs)}\n"
+        f"    rejected median {sum(rejected):.0f} step(s) per run\n"
+        f"    capped   {capped}/{len(runs)} ran out of hops\n"
         f"    steps used: {', '.join(step_names) or 'none'}"
     )
 

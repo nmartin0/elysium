@@ -294,15 +294,51 @@ keyboard contract would be worse than native semantics.
 
 ### Needs a machine with a model
 
-**The prompt-quality measurement session.** THE HARNESS IS BUILT --
-`python -m scripts.measure_prompts --runs 3`, from the repository
-root with a model serving. It reports hops, distinct objects, step
-mix, answered-count and seconds, as a median and a RANGE.
+**The prompt-quality measurement session.** FIRST REAL RUN DONE, on
+phi4-mini. Findings below; three of the four questions are still open
+because the run did not reach them.
 
-UNRUN: there is no model where it was written, so every assertion
-about the agent's behaviour is still open. The counting itself is
-tested, because a harness that miscounts does not fail -- it
-reports a plausible number and someone changes a prompt on it.
+**IT IS FAR SLOWER THAN ANYTHING ELSE HERE.** 245 seconds median for
+ONE FIELD on ONE OBJECT -- range 240-557. The one-hop question took
+1,900 seconds and the aggregate question exceeded the 600-second
+read timeout without returning. Every other measurement in this
+project is in milliseconds.
+
+That reframes the prompt questions: on this model, a wasted hop costs
+four minutes. Over-fetching is not an efficiency concern, it is the
+difference between an answer and a timeout.
+
+**THE FLOOR IS RIGHT.** single_field took exactly 2 hops, three times
+out of three, with no spread: search_object then get_field. The agent
+does not over-fetch when the task is small.
+
+**RECOVERY FROM A REJECTED STEP IS THE REAL DEFECT.** Asked for
+cust_001's transactions, the agent requested 32 object_ids, was told
+the limit is 20, and came back asking for TWO. It then fetched one
+object at a time until the duplicate guard stopped it -- 20 hops, most
+of them rejections.
+
+"Ask for fewer at a time" is a direction, not a quantity. The message
+now names the batch and the remainder: "Ask for the first 20 now, and
+the remaining 12 in a later step." UNMEASURED -- this needs a re-run
+to know whether it helps.
+
+**THE DATASET MATTERS AND WAS NOT THE FIXTURE'S.** cust_001 has 32
+transactions because of `seed_dev_silos --bulk 60`. The original
+fixture has four, and the limit would never have been hit. Worth
+re-running both ways: a rejection path that only appears on seeded
+data is a different finding from one that appears normally.
+
+**STILL OPEN:** whether aggregates get chosen (the question timed
+out), whether the pre-flight verdicts earn their keep, and whether a
+small model can work without the schema.
+
+**A HARNESS BUG THE RUN EXPOSED:** it reported "answered 3/3" for runs
+that had stopped on consecutive duplicates. A duplicate-stop breaks
+the loop and sets no flag, exactly as a deliberate finish does, so the
+two are indistinguishable from the result. The harness now reports
+REJECTION COUNTS and whether hops ran out, and claims nothing about
+intent.
 
 **The four questions it exists to answer:**
 harness, about an hour. Still the highest-value item and the only one

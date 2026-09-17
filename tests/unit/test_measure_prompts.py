@@ -85,10 +85,31 @@ class TestCounting:
 
 
 class TestOutcomes:
-    def test_running_out_of_hops_is_not_answered(self):
+    def test_running_out_of_hops_is_recorded(self):
         loop = _Loop(_Result([{"step": "get_object", "object_id": "1"}], hit_max_hops=True))
 
-        assert observe(loop, None, "q").answered is False
+        assert observe(loop, None, "q").capped is True
+
+    def test_a_duplicate_stop_is_not_mistaken_for_finishing(self):
+        """THE BUG A REAL RUN EXPOSED.
+
+        A first version reported "answered 3/3" for runs that had
+        stopped on consecutive duplicates, because a duplicate-stop
+        just breaks the loop and sets no flag -- exactly as a
+        deliberate finish does. The two are indistinguishable from the
+        result, so the harness now reports the REJECTIONS instead of
+        guessing at intent.
+        """
+        loop = _Loop(_Result([
+            {"step": "get_field", "object_type": "T", "object_id": "3"},
+            {"step": "rejected_duplicate", "note": "..."},
+            {"step": "rejected_duplicate", "note": "..."},
+        ]))
+
+        observation = observe(loop, None, "q")
+
+        assert observation.capped is False
+        assert observation.steps["rejected_duplicate"] == 2
 
     def test_an_ordinary_failure_is_recorded_not_raised(self):
         """A prompt variant that breaks the agent is a FINDING. Losing
@@ -98,7 +119,7 @@ class TestOutcomes:
 
         observation = observe(loop, None, "q")
 
-        assert observation.answered is False
+        assert observation.capped is False
         assert observation.hops == 0
 
     def test_an_unreachable_model_stops_everything(self):
@@ -117,9 +138,9 @@ class TestReporting:
         nine hops where the others take two is the finding, and
         averaging it into 4.3 loses both facts."""
         runs = [
-            Observation("q", hops=2, objects=1, answered=True, seconds=1.0),
-            Observation("q", hops=2, objects=1, answered=True, seconds=1.0),
-            Observation("q", hops=9, objects=1, answered=True, seconds=5.0),
+            Observation("q", hops=2, objects=1, seconds=1.0),
+            Observation("q", hops=2, objects=1, seconds=1.0),
+            Observation("q", hops=9, objects=1, seconds=5.0),
         ]
 
         report = _summarise(runs)
@@ -127,10 +148,19 @@ class TestReporting:
         assert "median 2" in report
         assert "range 2-9" in report
 
-    def test_it_says_how_many_runs_answered(self):
+    def test_it_says_how_many_runs_ran_out_of_hops(self):
         runs = [
-            Observation("q", hops=1, objects=1, answered=True),
-            Observation("q", hops=1, objects=1, answered=False),
+            Observation("q", hops=1, objects=1, capped=False),
+            Observation("q", hops=20, objects=1, capped=True),
         ]
 
-        assert "answered 1/2" in _summarise(runs)
+        assert "capped   1/2" in _summarise(runs)
+
+    def test_rejections_are_reported_as_a_headline(self):
+        # A run spending half its hops being told "no" is the finding.
+        runs = [
+            Observation("q", hops=4, objects=1,
+                        steps={"get_field": 2, "rejected_duplicate": 2}),
+        ]
+
+        assert "rejected median 2 step(s)" in _summarise(runs)

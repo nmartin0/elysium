@@ -465,9 +465,21 @@ class AgentLoop:
             # query can read, and an uncapped list would let one hop
             # read arbitrarily much. Same reasoning as MAX_SUB_WRITES
             # in core/ontology/action_types.py.
+            # SAY WHAT TO DO, NOT JUST WHAT IS WRONG. "Ask for fewer at
+            # a time" was measured against a real model and produced a
+            # catastrophic over-correction: given 32 ids and told the
+            # limit was 20, it came back asking for TWO, then spent the
+            # rest of its hops fetching one object at a time until the
+            # duplicate guard stopped it.
+            #
+            # "Fewer" is a direction, not a quantity. Naming the batch
+            # and the remainder gives the model a step it can take
+            # rather than a bound it has to guess under.
             raise ValueError(
                 f"get_object: {len(object_ids)} object_ids exceeds the "
-                f"limit of {MAX_OBJECT_IDS}. Ask for fewer at a time."
+                f"limit of {MAX_OBJECT_IDS}. Ask for the first "
+                f"{MAX_OBJECT_IDS} now, and the remaining "
+                f"{len(object_ids) - MAX_OBJECT_IDS} in a later step."
             )
         return object_ids
 
