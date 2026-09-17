@@ -71,14 +71,22 @@ def main() -> int:
     directory = UserDirectory(paths.data_dir / "credentials.db", config.roles)
 
     for username, password, region, role in USERS:
+        # REPLACED, NOT SKIPPED. "Already exists" was reported as
+        # harmless and was not: an account left from an earlier run
+        # can carry a different password or role, so the script said
+        # everything was fine and the browser got a 401. That is worse
+        # than failing, because the error surfaces two steps away as a
+        # missing nav item.
+        #
+        # These are known-password development accounts, so recreating
+        # them costs nothing anyone could miss.
         try:
-            directory.create_user(username, password, region, role)
+            directory.delete_user(username)
+            print(f"  replaced {username} ({role})")
+        except Exception:  # noqa: BLE001 - absent is the normal case
             print(f"  created {username} ({role})")
-        except Exception as e:  # noqa: BLE001 - an existing user is normal
-            # ALREADY PRESENT IS NOT A FAILURE. Re-running this before a
-            # test run should be free, so "did I create the users?" is
-            # never a question worth stopping to answer.
-            print(f"  {username}: {e}")
+
+        directory.create_user(username, password, region, role)
 
     print("\nNow, from ui/: npm run e2e")
     return 0

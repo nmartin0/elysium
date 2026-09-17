@@ -102,7 +102,13 @@ test.describe('the selection checkbox', () => {
     // Mozilla #559506 suppresses the change event when a LABEL is
     // shift-clicked, which is why this worked in no browser while
     // passing in jsdom.
+    // TRANSACTION, NOT CUSTOMER. A range needs at least three rows and
+    // the fixture has two customers, so nth(2) waited thirty seconds
+    // for a row that does not exist -- my arithmetic, not a fault.
+    await page.goto('/browse?type=Transaction')
     const boxes = page.locator('.object-search__select')
+    await expect(boxes.nth(2)).toBeVisible()
+
     await boxes.nth(0).click()
     await boxes.nth(2).click({ modifiers: ['Shift'] })
 

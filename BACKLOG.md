@@ -593,7 +593,21 @@ saying plainly that jsdom computes no layout.
 repeated real clicks -- the three things that would have caught this
 session's failures.
 
-**UNRUN, AND THAT IS STATED IN THE FILE.** The container cannot
+**RUN, AND SEVEN OF ELEVEN PASS.** The browser has now confirmed what
+nothing here could see: the checkbox sits beside its row rather than
+above it, nothing covers it, a plain click selects without navigating,
+ten clicks in a row all toggle, and Blueprint's controls keep their
+own inline layout.
+
+Remaining failures, none of them assertions about layout:
+
+- `shift-click selects the range` -- fixed here; it clicked the third
+  row of a two-row fixture.
+- Three in shell.spec.ts, which predate this work: an Admin nav item,
+  a click-through to a detail page, and a logout. The first two now
+  have usable accounts; whether they pass is unknown.
+
+**SUPERSEDED NOTE:** The container cannot
 download a browser (cdn.playwright.dev is not in its network
 allowlist), so every assertion is a claim awaiting its first
 execution. Expect selector fixes on the first run.
