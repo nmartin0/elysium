@@ -169,6 +169,11 @@ def main() -> int:
     parser.add_argument("--user", default="debug",
                         help="who asks. Their grants and MAC value bound what "
                              "the agent can reach, so this changes the answer.")
+    parser.add_argument("--only", action="append", metavar="LABEL",
+                        help="run just these questions, by label. Repeatable. "
+                             "On a slow model the full sweep is 40 minutes and "
+                             "one question is five, so a single variable is "
+                             "worth isolating.")
     parser.add_argument("--region", default="us-west")
     parser.add_argument("--role", default="debug")
     args = parser.parse_args()
@@ -193,7 +198,21 @@ def main() -> int:
     print(f"Asking as: {args.user} ({args.role}, {args.region})")
     print(f"{args.runs} run(s) per question\n")
 
-    for label, question in QUESTIONS:
+    questions = QUESTIONS
+    if args.only:
+        wanted = set(args.only)
+        unknown = wanted - {label for label, _ in QUESTIONS}
+        if unknown:
+            # LOUD, because a typo would otherwise silently measure
+            # nothing and look like a model that answered instantly.
+            print(f"No such question(s): {', '.join(sorted(unknown))}.",
+                  file=sys.stderr)
+            print(f"Known: {', '.join(label for label, _ in QUESTIONS)}",
+                  file=sys.stderr)
+            return 1
+        questions = [(label, q) for label, q in QUESTIONS if label in wanted]
+
+    for label, question in questions:
         print(f"{label}: {question}")
         try:
             runs = [observe(generation.loop, user, question) for _ in range(args.runs)]

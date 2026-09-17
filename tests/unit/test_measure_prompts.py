@@ -164,3 +164,31 @@ class TestReporting:
         ]
 
         assert "rejected median 2 step(s)" in _summarise(runs)
+
+
+class TestQuestionSelection:
+    """Running one question rather than four.
+
+    ON A SLOW MODEL THIS IS THE DIFFERENCE BETWEEN FIVE MINUTES AND
+    FORTY. The first real run took 245 seconds for the simplest
+    question and timed out on the third, so isolating one variable has
+    to be cheap or it will not be done.
+    """
+
+    def test_every_question_has_a_unique_label(self):
+        # The labels are the interface --only presents, so a duplicate
+        # would make one of them unreachable.
+        from scripts.measure_prompts import QUESTIONS
+
+        labels = [label for label, _ in QUESTIONS]
+        assert len(labels) == len(set(labels))
+
+    def test_the_labels_are_the_ones_documented(self):
+        # Pinned because they appear in BACKLOG.md's findings and in
+        # the instructions a person follows. Renaming one silently
+        # would make a recorded result unreproducible.
+        from scripts.measure_prompts import QUESTIONS
+
+        assert [label for label, _ in QUESTIONS] == [
+            "single_field", "one_hop", "aggregate", "multi_object",
+        ]
