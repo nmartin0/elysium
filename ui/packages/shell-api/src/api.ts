@@ -339,6 +339,24 @@ export interface AwaitingWrite {
    *  wrong was identical rows being indistinguishable.
    */
   duplicate_count: number
+  /** How many individual changes this request makes.
+   *
+   *  A bulk action naming fifty objects is fifty tasks, and a
+   *  reviewer may be eligible for some and not others. */
+  tasks_total: number
+  /** How many of them THIS reviewer may decide.
+   *
+   *  Fewer than tasks_total when a request spans security
+   *  partitions: approving then covers this reviewer's share and
+   *  leaves the rest for someone who can see them. Without this
+   *  number, Approve looks like it runs the whole write. */
+  tasks_you_may_decide: number
+  /** How many have been approved, by anyone.
+   *
+   *  APPROVED, not decided: a rejected task is not progress toward
+   *  invocation, so showing it as such would make a permanently
+   *  blocked request look nearly ready. */
+  tasks_approved: number
 }
 
 /** Proposals this user may decide on, oldest first.

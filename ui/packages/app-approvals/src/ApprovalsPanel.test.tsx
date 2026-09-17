@@ -32,6 +32,9 @@ function write(overrides = {}) {
     proposed_by_you: false,
     undeclared_fields: [],
     duplicate_count: 0,
+    tasks_total: 1,
+    tasks_you_may_decide: 1,
+    tasks_approved: 0,
     ...overrides,
   }
 }
@@ -217,5 +220,52 @@ describe('identical proposals', () => {
 
     await screen.findByText(/Change which category/)
     expect(screen.queryByText(/identical proposal/)).toBeNull()
+  })
+})
+
+describe('a request a reviewer can only partly decide', () => {
+  /**
+   * Foundry scopes the action to what a reviewer is eligible for:
+   * "approve or reject all tasks in the request THAT YOU ARE ELIGIBLE
+   * TO REVIEW". A request spanning security partitions is approved in
+   * parts.
+   *
+   * WITHOUT SAYING SO, APPROVE LOOKS LIKE IT RUNS THE WRITE. For these
+   * requests it does not -- it covers this reviewer's share and leaves
+   * the rest waiting.
+   */
+  it('says how many tasks are this reviewer to decide', async () => {
+    mockedList.mockResolvedValue([write({ tasks_total: 50, tasks_you_may_decide: 12, tasks_approved: 0 })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/12 of 50 tasks are yours to decide/)).toBeInTheDocument()
+  })
+
+  it('says nothing when the whole request is theirs', async () => {
+    // THE CONTROL, and the ordinary case. Most requests are one task
+    // and wholly this reviewer's; a count on every row would be noise
+    // and ignored by the time it mattered.
+    mockedList.mockResolvedValue([write({ tasks_total: 3, tasks_you_may_decide: 3, tasks_approved: 0 })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText(/Awaiting your review/)
+    expect(screen.queryByText(/tasks are yours to decide/)).toBeNull()
+  })
+
+  it('shows progress when others have approved part of it', async () => {
+    mockedList.mockResolvedValue([write({ tasks_total: 50, tasks_you_may_decide: 12, tasks_approved: 38 })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/38 of 50 approved so far/)).toBeInTheDocument()
+  })
+
+  it('shows no progress line once every task is approved', async () => {
+    // At that point the request invokes, so "50 of 50 approved" would
+    // describe a state nobody sees.
+    mockedList.mockResolvedValue([write({ tasks_total: 50, tasks_you_may_decide: 50, tasks_approved: 50 })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText(/Awaiting your review/)
+    expect(screen.queryByText(/approved so far/)).toBeNull()
   })
 })

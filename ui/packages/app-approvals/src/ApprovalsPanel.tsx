@@ -131,6 +131,33 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                       write.awaiting_your_review && <Tag intent="primary">Awaiting your review</Tag>
                     )}
                     {write.proposed_by_you && <Tag minimal>Proposed by you</Tag>}
+                    {/* WHAT THIS REVIEWER CAN ACTUALLY DECIDE, shown only when
+                        it differs from the whole request.
+
+                        A request spanning security partitions is approved in
+                        parts: this reviewer covers the tasks touching objects
+                        they can see, and the rest waits for someone who can see
+                        the others. Without saying so, Approve looks like it runs
+                        the write -- and for these requests it does not.
+
+                        HIDDEN IN THE ORDINARY CASE. Most requests are one task
+                        and wholly this reviewer's; a count that always appeared
+                        would be noise on every row and ignored by the time it
+                        mattered. */}
+                    {write.tasks_you_may_decide < write.tasks_total && (
+                      <Tag minimal intent="primary">
+                        {write.tasks_you_may_decide} of {write.tasks_total} tasks are yours to decide
+                      </Tag>
+                    )}
+                    {/* PROGRESS, so a reviewer can tell a request waiting on
+                        others from one nobody has touched. Approved rather than
+                        decided: a rejected task is not progress, and counting it
+                        would show a blocked request as nearly ready. */}
+                    {write.tasks_approved > 0 && write.tasks_approved < write.tasks_total && (
+                      <Tag minimal>
+                        {write.tasks_approved} of {write.tasks_total} approved so far
+                      </Tag>
+                    )}
                     {/* SAID PLAINLY, because the reviewer is the one
                         who can tell a double-click from a deliberate
                         re-request. Without it, identical rows look

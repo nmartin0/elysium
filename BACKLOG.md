@@ -606,8 +606,16 @@ Build order, with the atomic batch untouched at the end:
    invocation, and counting it as such would show a request as
    nearly ready when it is permanently blocked.
 
-   STILL OPEN: the UI. ApprovalsPanel does not show these numbers
-   yet, and Approve is not yet scoped to the eligible subset.
+   THE UI SHOWS THEM. ApprovalsPanel renders "12 of 50 tasks are
+   yours to decide" when a reviewer's share differs from the whole
+   request, and "38 of 50 approved so far" while others are still
+   deciding. Both hidden in the ordinary case -- one task, wholly
+   this reviewer's -- because a count on every row is noise by the
+   time it matters.
+
+   Approve was ALREADY scoped: the route records decisions only for
+   eligible tasks (step 3), so the button covers this reviewer's
+   share and the gate holds the rest. What was missing was saying so.
 
 Foundry backs the same guarantee at the storage layer -- their Iceberg
 catalog "extends standard Iceberg with all-or-nothing transaction
