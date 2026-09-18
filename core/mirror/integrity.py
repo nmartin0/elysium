@@ -103,12 +103,28 @@ def check_mirror(catalog, schema: dict | None = None,
             continue
 
         if silver_rows != bronze_rows:
-            # Only the TYPES differ between the layers, never the rows,
-            # so a count mismatch means a transform dropped rows and
-            # said nothing.
+            # THE DIRECTION SAYS WHICH FAULT IT IS, and a first version
+            # reported both as "a transform dropped rows silently".
+            # That is right for one of them and misleading for the
+            # other -- seen on a real deployment reporting 67 served
+            # against 7 fetched, where nothing had been dropped and
+            # silver was simply months out of date.
+            #
+            # FEWER SERVED THAN FETCHED: bronze took rows silver
+            # refused to interpret, so the last sync was rejected.
+            #
+            # MORE SERVED THAN FETCHED: bronze is current and silver is
+            # not, which happens when the source SHRANK and the sync
+            # that would have shrunk silver was refused.
+            #
+            # Either way the last successful sync is older than the
+            # last attempt, which is the fact worth reporting.
+            behind = "refused to accept what bronze fetched" \
+                if silver_rows < bronze_rows \
+                else "is older than bronze, which has since shrunk"
             report.note(
-                f"{identifier}: {silver_rows} rows but bronze holds {bronze_rows} -- "
-                f"a transform dropped rows silently"
+                f"{identifier}: serving {silver_rows} rows against "
+                f"{bronze_rows} fetched -- silver {behind}"
             )
 
     if schema is not None:

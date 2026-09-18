@@ -93,7 +93,11 @@ def test_a_row_count_mismatch_is_reported(mirror):
 
     report = check_mirror(mirror._catalog)
 
-    assert any("dropped rows silently" in problem for problem in report.problems)
+    # THE WORDING NOW NAMES THE DIRECTION. This test shrinks BRONZE,
+    # leaving silver serving more than was last fetched -- which is
+    # not a dropped row, it is a silver older than the bronze beside
+    # it. The old message called both cases "dropped rows silently".
+    assert any("older than bronze" in problem for problem in report.problems)
 
 
 def test_a_declared_column_missing_from_silver_is_reported(mirror):
@@ -240,3 +244,48 @@ class TestAMissingCatalog:
 
         assert fresh.returncode != lost.returncode
         assert "part of any backup" not in fresh.stdout
+
+
+class TestACountMismatchNamesItsDirection:
+    """Which way the counts differ says which fault it is.
+
+    A FIRST VERSION REPORTED BOTH as "a transform dropped rows
+    silently", which is right for one and misleading for the other.
+    Seen on a real deployment reporting 67 served against 7 fetched,
+    where nothing had been dropped and silver was simply out of date.
+    """
+
+    @staticmethod
+    def _note_for(silver, bronze, monkeypatch):
+        from core.mirror import integrity
+
+        counts = {"s.t": silver, "bronze_s.t": bronze}
+        monkeypatch.setattr(
+            integrity, "_row_count", lambda catalog, identifier: counts.get(identifier),
+        )
+        monkeypatch.setattr(
+            integrity, "_partition_tables",
+            lambda catalog: ({"s.t"}, {"bronze_s.t"}),
+        )
+        report = integrity.check_mirror(object())
+        return " ".join(report.problems)
+
+    def test_fewer_served_means_the_sync_was_refused(self, monkeypatch):
+        note = self._note_for(silver=2, bronze=4, monkeypatch=monkeypatch)
+
+        assert "refused to accept what bronze fetched" in note
+
+    def test_more_served_means_silver_is_stale(self, monkeypatch):
+        # The case a real deployment showed: bronze current, silver
+        # from before the source shrank.
+        note = self._note_for(silver=67, bronze=7, monkeypatch=monkeypatch)
+
+        assert "older than bronze" in note
+        assert "dropped" not in note
+
+    def test_equal_counts_say_nothing(self, monkeypatch):
+        # THE CONTROL. A note on every table would be ignored by the
+        # time one mattered.
+        note = self._note_for(silver=7, bronze=7, monkeypatch=monkeypatch)
+
+        assert note == ""

@@ -82,6 +82,26 @@ describe('a refused sync', () => {
     expect(await screen.findByText(/was refused/)).toBeInTheDocument()
   })
 
+  it('says the OTHER thing when silver is simply out of date', async () => {
+    /** THE DIRECTION SAYS WHICH FAULT IT IS, and a first version said
+     *  "fetched but not served" for both.
+     *
+     *  Seen on a real deployment: 67 served against 7 fetched, where
+     *  nothing had been dropped. Bronze held the current source and
+     *  silver held a snapshot from before it shrank -- because the
+     *  sync that would have shrunk silver had been refused.
+     */
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table({ silver_rows: 67, bronze_rows: 7 })],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/out of date/)).toBeInTheDocument()
+    expect(screen.queryByText(/fetched but not served/)).toBeNull()
+  })
+
   it('shows integrity problems when the check found some', async () => {
     mocked.mockResolvedValue({
       reading_from_mirror: true,

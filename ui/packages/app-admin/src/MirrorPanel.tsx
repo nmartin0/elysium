@@ -105,7 +105,16 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                        reader to spot the difference and guess what it
                        meant. */
                     <Tag minimal intent="warning" style={{ marginInlineStart: '0.5rem' }}>
-                      fetched but not served — the last sync was refused
+                      {/* THE DIRECTION SAYS WHICH FAULT IT IS. A first
+                          version said "fetched but not served" for
+                          both, which is right when bronze has MORE and
+                          wrong when it has fewer -- seen on a real
+                          deployment serving 67 against 7 fetched,
+                          where nothing had been dropped and silver was
+                          simply out of date. */}
+                      {table.bronze_rows! > table.silver_rows!
+                        ? 'fetched but not served — the last sync was refused'
+                        : 'serving more than was last fetched — silver is out of date'}
                     </Tag>
                   )}
                 </td>
