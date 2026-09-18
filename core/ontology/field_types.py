@@ -52,15 +52,45 @@ Used by: core/ontology/object_type_validation.py (validating what's
          typed Arrow schema from it)
 """
 
+import decimal
+
 import pyarrow as pa
 
 # The declared name -> the real Arrow type the mirror stores it as.
 # The ONE place this mapping exists.
+# DECIMAL'S PRECISION AND SCALE, fixed rather than declared per field.
+#
+# 38 digits is decimal128's maximum and the widest any of our layers
+# offers; 9 decimal places covers currency (2), currency with
+# fractional cents (4), and unit prices that carry more. Choosing once
+# means a deployment never has to answer "how many digits does this
+# need" for every money column, and a value that does not fit fails
+# loudly rather than rounding.
+#
+# PER-FIELD PRECISION IS THE ALTERNATIVE, and it is what PostgreSQL and
+# Iceberg both allow. It is not obviously better: it makes every
+# ontology longer, it makes changing a field's precision a schema
+# migration, and it lets two fields holding the same currency disagree.
+# Worth revisiting if a real deployment needs more than 38/9.
+DECIMAL_PRECISION = 38
+DECIMAL_SCALE = 9
+
 FIELD_DATA_TYPES = {
     "string": pa.string(),
     "integer": pa.int64(),
     "number": pa.float64(),
     "boolean": pa.bool_(),
+    # EXACT, WHERE `number` IS APPROXIMATE. `number` goes through
+    # float(), which turns '1234.56789012345678901' into
+    # 1234.567890123457 -- money silently becoming a different amount,
+    # measured rather than feared.
+    #
+    # Separate from `number` rather than replacing it, which is what
+    # every layer below us does: Foundry has Double and Decimal,
+    # Iceberg has double and decimal(P,S), PostgreSQL has double
+    # precision and numeric. They answer different questions. Floats
+    # for measurement, decimals for money.
+    "decimal": pa.decimal128(DECIMAL_PRECISION, DECIMAL_SCALE),
 }
 
 DEFAULT_FIELD_DATA_TYPE = "string"
@@ -98,6 +128,53 @@ def coerce(value, data_type: str):
         return int(value)
     if data_type == "number":
         return float(value)
+    if data_type == "decimal":
+        # THROUGH str(), ALWAYS. Decimal(float) inherits the float's
+        # error -- Decimal(0.1) is 0.1000000000000000055511151231... --
+        # so a value that arrived as a float must be rendered as text
+        # first. Bronze stores strings, so the normal path is already
+        # text; this guards the case where it is not.
+        converted = decimal.Decimal(str(value))
+        if not converted.is_finite():
+            # NaN AND INFINITY ARE NOT AMOUNTS. Decimal accepts both,
+            # and either would reach the mirror as a value no
+            # arithmetic can use. Found by mypy: as_tuple().exponent is
+            # a letter rather than a number for these, so the precision
+            # check below cannot even be applied to them.
+            raise ValueError(
+                f"{value!r} is not a finite number, so it cannot be stored "
+                f"as a `decimal`."
+            )
+        # TOTAL DIGITS TOO, not just decimal places. Arrow refuses a
+        # value that will not fit decimal128 -- verified -- but it
+        # refuses at write time with "the string '1E+400' cannot be
+        # represented", naming neither the column nor the row. Caught
+        # here, the drift report says which field disagreed.
+        # adjusted() RATHER THAN len(digits), which a first version used
+        # and which is wrong for anything written in exponent form:
+        # Decimal('1e400').as_tuple().digits is just (1,), because the
+        # magnitude lives in the exponent. adjusted() gives the exponent
+        # of the most significant digit, so the integer part occupies
+        # adjusted() + 1 places.
+        if converted.adjusted() + 1 > DECIMAL_PRECISION - DECIMAL_SCALE:
+            raise ValueError(
+                f"{value!r} is too large for this deployment's `decimal` "
+                f"type, which holds "
+                f"{DECIMAL_PRECISION - DECIMAL_SCALE} digits before the "
+                f"decimal point."
+            )
+        exponent = converted.as_tuple().exponent
+        if -int(exponent) > DECIMAL_SCALE:
+            # REFUSED RATHER THAN ROUNDED. Rounding here would be the
+            # silent loss this type exists to prevent, and a value too
+            # precise to store is a real disagreement between the
+            # ontology and the source.
+            raise ValueError(
+                f"{value!r} has more than {DECIMAL_SCALE} decimal places, "
+                f"which this deployment's `decimal` type cannot store "
+                f"without rounding."
+            )
+        return converted
     if data_type == "boolean":
         # SQLite has no real boolean -- it stores 0/1 -- so a plain
         # bool() on the string "0" would be WRONG (non-empty strings

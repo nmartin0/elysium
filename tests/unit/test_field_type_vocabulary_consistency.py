@@ -38,6 +38,9 @@ SAMPLE = {
     "integer": "42",
     "number": "1.5",
     "boolean": "1",
+    # A MONEY-SHAPED VALUE, with a trailing zero that float would
+    # discard and decimal must keep.
+    "decimal": "10.50",
 }
 
 
