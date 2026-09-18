@@ -203,6 +203,55 @@ describe('a deployment reading live', () => {
   })
 })
 
+describe('while the page is open', () => {
+  it('refreshes without a reload', async () => {
+    /** AN ADMINISTRATOR WATCHING DURING AN INCIDENT should see the
+     *  screen change rather than wonder whether to reload.
+     *
+     *  This is the EASY case. The hard one is nobody looking at all,
+     *  which polling cannot fix and notification can -- see
+     *  TRIGGERS_AND_PLUGINS.md.
+     */
+    vi.useFakeTimers()
+    try {
+      mocked.mockResolvedValue({
+        reading_from_mirror: true,
+        tables: [table()],
+        problems: [],
+      })
+      render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+      await vi.advanceTimersByTimeAsync(31_000)
+
+      expect(mocked.mock.calls.length).toBeGreaterThan(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops when the panel goes away', async () => {
+    // A TIMER THAT OUTLIVES ITS COMPONENT keeps requesting forever and
+    // sets state on something unmounted.
+    vi.useFakeTimers()
+    try {
+      mocked.mockResolvedValue({
+        reading_from_mirror: true,
+        tables: [table()],
+        problems: [],
+      })
+      const { unmount } = render(<MirrorPanel onSessionExpired={vi.fn()} />)
+      unmount()
+      const after = mocked.mock.calls.length
+
+      await vi.advanceTimersByTimeAsync(90_000)
+
+      expect(mocked.mock.calls.length).toBe(after)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('when the request fails', () => {
   it('reports rather than rendering nothing', async () => {
     mocked.mockRejectedValue(new Error('mirror unreachable'))

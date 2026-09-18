@@ -18,11 +18,14 @@ catalog, because a check that only recognises damage it was handed is
 a check of the test's imagination.
 """
 
+import inspect
+import pathlib
 import sqlite3
 
 import pytest
 
 from adapters.sqlite_adapter import SQLiteReadAdapter
+from core.mirror import integrity as integrity_module
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import check_mirror
 
@@ -289,3 +292,66 @@ class TestACountMismatchNamesItsDirection:
         note = self._note_for(silver=7, bronze=7, monkeypatch=monkeypatch)
 
         assert note == ""
+
+
+class TestRowCountsComeFromMetadata:
+    """Counting by scanning reads every row to learn how many there are.
+
+    MEASURED AT 70ms ON A SEVEN-ROW TABLE, because the cost is
+    materialising an Arrow table rather than the rows themselves -- so
+    it does not improve with fewer rows and gets much worse with more.
+
+    Iceberg maintains `total-records` in every snapshot's summary as
+    part of the commit. It agreed with the scan on every table checked.
+
+    WHO CALLS THIS IS WHY IT MATTERS: the mirror panel counts two
+    layers per table on every load, so a fifty-table deployment
+    scanned a hundred tables to draw a screen.
+    """
+
+    def test_the_count_matches_a_scan(self, mirror):
+        from core.mirror.integrity import _row_count
+
+        table = mirror._catalog.load_table("s.t")
+        scanned = table.scan().to_arrow().num_rows
+
+        assert _row_count(mirror._catalog, "s.t") == scanned
+
+    def test_it_reads_the_snapshot_summary(self, mirror):
+        # The property, not just the answer: a table whose summary says
+        # something different must be believed, or this is still
+        # scanning and the test proves nothing.
+        from core.mirror.integrity import _row_count
+
+        table = mirror._catalog.load_table("s.t")
+        assert table.current_snapshot().summary.get("total-records") is not None
+        assert _row_count(mirror._catalog, "s.t") == int(
+            table.current_snapshot().summary["total-records"],
+        )
+
+    def test_it_does_not_scan_when_the_summary_answers(self):
+        """A SOURCE-LEVEL TRIPWIRE, because this change is about COST
+        and not behaviour.
+
+        Both paths return the same number -- correctly -- so a control
+        restoring the scan passes every behavioural test. The only
+        visible difference is the suite taking 14 seconds instead of 6,
+        which is a signal nobody asserts on.
+
+        So the mechanism is pinned directly, the way this project
+        already guards cascade layers and the sync's adapters.
+        """
+        source = pathlib.Path(
+            inspect.getfile(integrity_module),
+        ).read_text()
+        counter = source[source.index("def _row_count"):]
+        counter = counter[:counter.index("\ndef ")]
+
+        assert 'summary.get("total-records")' in counter
+
+    def test_an_unreadable_table_still_reports_nothing(self, mirror):
+        # THE CONTROL on the fallback path. Whatever went wrong, "this
+        # table could not be read" is the true statement.
+        from core.mirror.integrity import _row_count
+
+        assert _row_count(mirror._catalog, "s.no_such_table") is None

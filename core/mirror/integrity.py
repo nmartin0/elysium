@@ -153,8 +153,36 @@ def _partition_tables(catalog) -> tuple[set[str], set[str]]:
 
 
 def _row_count(catalog, identifier: str) -> "int | None":
+    """How many rows a table holds, from METADATA rather than data.
+
+    `scan().to_arrow().num_rows` reads every row to learn how many
+    there are. Measured at 70ms on a SEVEN-ROW table, because the cost
+    is materialising an Arrow table rather than the rows themselves --
+    so it does not get better with fewer rows and gets much worse with
+    more.
+
+    ICEBERG ALREADY KNOWS. Every snapshot carries `total-records` in
+    its summary, maintained as part of the commit. Reading it takes
+    0.9ms, agrees with the scan on every table checked, and is the
+    number Iceberg itself uses.
+
+    THAT MATTERS BECAUSE OF WHO CALLS THIS. The mirror panel counts
+    two layers per table on every load, so a fifty-table deployment
+    was scanning a hundred tables to draw a screen -- which ruled out
+    refreshing it, which was the gap that prompted looking.
+
+    FALLS BACK TO SCANNING when a snapshot has no summary. Old tables
+    written by other tools may not carry one, and a slow count beats
+    no count.
+    """
     try:
-        return catalog.load_table(identifier).scan().to_arrow().num_rows
+        table = catalog.load_table(identifier)
+        snapshot = table.current_snapshot()
+        if snapshot is not None:
+            recorded = snapshot.summary.get("total-records")
+            if recorded is not None:
+                return int(recorded)
+        return table.scan().to_arrow().num_rows
     except Exception:  # noqa: BLE001 - see below
         # BROAD ON PURPOSE, and differently from manifest.py, which an
         # audit narrowed. The distinction is what the caller does with

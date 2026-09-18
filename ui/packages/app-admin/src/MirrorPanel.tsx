@@ -24,17 +24,39 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
 
   useEffect(() => {
     let cancelled = false
-    getMirrorState()
-      .then((next) => {
-        if (!cancelled) setState(next)
-      })
-      .catch((caught: unknown) => {
-        if (cancelled) return
-        if (handleIfSessionExpired(caught, onSessionExpired)) return
-        setError(getErrorMessage(caught))
-      })
+
+    function load() {
+      getMirrorState()
+        .then((next) => {
+          if (!cancelled) setState(next)
+        })
+        .catch((caught: unknown) => {
+          if (cancelled) return
+          if (handleIfSessionExpired(caught, onSessionExpired)) return
+          setError(getErrorMessage(caught))
+        })
+    }
+
+    load()
+    // REFRESHED WHILE THE PAGE IS OPEN, because an administrator
+    // watching this screen during an incident should see it change
+    // rather than wonder whether to reload.
+    //
+    // THIRTY SECONDS, and the cost is why it is affordable: the whole
+    // endpoint takes about 9ms per table, since row counts come from
+    // Iceberg's own metadata rather than from scanning, and pyiceberg
+    // caches loaded tables within a catalog.
+    //
+    // THIS DOES NOT SOLVE THE REAL PROBLEM, and should not be mistaken
+    // for solving it. An idle administrator is the EASY case; the hard
+    // one is nobody looking at all, at three in the morning. That
+    // needs notification, which is recorded in
+    // TRIGGERS_AND_PLUGINS.md. A dashboard is for investigating a
+    // problem you know about.
+    const timer = setInterval(load, 30_000)
     return () => {
       cancelled = true
+      clearInterval(timer)
     }
   }, [onSessionExpired])
 

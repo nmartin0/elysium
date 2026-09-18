@@ -109,8 +109,52 @@ That ties triggers to the sync and gives a natural, already-scheduled
 moment — no new scheduler, which keeps `api/reload.py`'s decision
 intact.
 
+## THE MIRROR'S OWN HEALTH IS A CONDITION, and was missing here
+
+Everything above is a condition on ONTOLOGY DATA -- objects added,
+removed, modified. That is Foundry's vocabulary and it leaves out the
+thing an administrator most needs told.
+
+**THE QUESTION THAT EXPOSED IT:** an administrator idle on the mirror
+panel learns nothing until they reload -- and worse, one who is not
+looking at all learns nothing ever. A sync refused at three in the
+morning is discovered on Tuesday.
+
+Polling the panel makes it fresher for somebody already watching. It
+does nothing for the case that matters, and mistaking it for a fix
+would leave the real gap open.
+
+**A DASHBOARD IS FOR INVESTIGATING A PROBLEM YOU KNOW ABOUT.
+NOTIFICATION IS FOR LEARNING ONE YOU DO NOT.**
+
+So the condition vocabulary needs a second kind:
+
+    a sync was REFUSED
+    a table has not synced successfully for longer than N
+    the integrity check found a problem
+
+Each is already computed. `sync_attempts` records every refusal with
+its full drift report; `check_mirror` returns its problems; the
+snapshot carries the last change. Nothing needs measuring that is not
+already measured -- what is missing is something that WATCHES.
+
+**AND THE EFFECT SIDE NEEDS NO CHANGE.** These are notifications, and
+notifications already evaluate per recipient. A mirror failure is not
+MAC-sensitive in itself, but who should hear about it is a grants
+question, and routing it through the same machinery keeps that answer
+in one place.
+
+**EVALUATED AFTER A SYNC,** which is where the data changes and where
+the cadence argument above already put it. A refused sync is exactly
+the moment to decide whether somebody should be told.
+
 ## Sketch, in build order
 
+0. MIRROR HEALTH FIRST, because it is the smallest and the most
+   clearly needed: a sync refused, or a table stale beyond a
+   threshold. The facts are already recorded; nothing watches them.
+   It also exercises the whole path -- condition, effect, recipient --
+   without needing object sets to exist first.
 1. A condition: a saved exploration plus a check (gained rows, lost
    rows, crossed a count). Evaluated after a successful sync.
 2. A notification effect, evaluated PER RECIPIENT. In-product first;
