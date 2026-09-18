@@ -122,7 +122,20 @@ maintain.
 
 ## Build order, with the reasoning
 
-### 1. A request-scoped trace id
+### 1. ~~A request-scoped trace id~~ MOSTLY DONE
+
+**THE MECHANISM ALREADY EXISTED AND REACHED ALMOST NOTHING.**
+`RequestContext` carries a `request_id`, `check_access()` stamps it on
+every audit line, `entries_for_request()` reads them back -- and ONE
+ROUTE OUT OF THIRTY-NINE created one. Browse did not, so twelve
+object-reading call sites wrote untracked lines.
+
+`get_object` also dropped it: a per-field loop around `get_field`,
+which accepted a context all along.
+
+Search and object-detail now carry one. **STILL OPEN:** the other
+object-reading routes, and a way to ASK -- `entries_for_request`
+exists with no endpoint in front of it.
 
 **SMALLEST, AND IT MAKES EVERYTHING BELOW OBSERVABLE.**
 `check_access()` already sees every object access and already writes an

@@ -2015,9 +2015,16 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
         parsed = parse_filters(json.loads(conditions)) if conditions else None
     except (json.JSONDecodeError, TypeError) as e:
         raise HTTPException(status_code=400, detail="conditions must be a JSON list") from e
+
+    # ONE CONTEXT FOR THE WHOLE REQUEST, created before the first read
+    # so the search and every per-object read that follows share an id.
+    # A search returning fifty objects writes fifty-one audit lines,
+    # and without this they were fifty-one unrelated facts.
+    request_context = RequestContext.new()
     try:
         matching_ids = mediator.search_object_free_text(
-            current_user, object_type, q, conditions=parsed
+            current_user, object_type, q, conditions=parsed,
+            context=request_context,
         )
     except ValueError as e:
         # A bad filter is the caller's mistake, not a server fault. The
@@ -2061,7 +2068,10 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     results = [
         {
             "id": str(object_id),
-            "fields": mediator.get_object(current_user, object_type, object_id, summary_fields),
+            "fields": mediator.get_object(
+                current_user, object_type, object_id, summary_fields,
+                context=request_context,
+            ),
         }
         for object_id in page_ids
     ]
@@ -2117,7 +2127,17 @@ def get_object_detail_route(object_type: str, object_id: str, request: Request,
         return {"id": object_id, "fields": {}}
 
     field_names = list(type_def["fields"].keys())
-    fields = mediator.get_object(current_user, object_type, object_id, field_names)
+    # ONE CONTEXT PER REQUEST, so every access decision made while
+    # serving it carries the same id. RequestContext and the audit
+    # field both already existed -- only the Query route created one,
+    # so twelve object-reading call sites wrote UNTRACKED audit lines
+    # and "what did this request touch" was unanswerable for all of
+    # them.
+    request_context = RequestContext.new()
+    fields = mediator.get_object(
+        current_user, object_type, object_id, field_names,
+        context=request_context,
+    )
     return {"id": object_id, "fields": fields}
 
 

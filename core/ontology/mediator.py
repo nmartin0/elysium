@@ -1788,7 +1788,9 @@ class DataMediator:
         adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
         return self._read_field_with_log_check(object_type, object_id, field_name, adapter, resolved_type_config)
 
-    def get_object(self, user_record: UserRecord, object_type: str, object_id: Any, field_names: list[str]) -> dict:
+    def get_object(self, user_record: UserRecord, object_type: str, object_id: Any,
+                   field_names: list[str],
+                   context: RequestContext | None = None) -> dict:
         # A thin, per-field loop around get_field() above -- reuses its
         # ENTIRE RBAC/MAC/audit/MDO-storage-resolution/write-log-
         # reconciliation logic exactly, unchanged, once per field. This
@@ -1838,6 +1840,11 @@ class DataMediator:
             self._prefetch_security_values(object_type, [object_id])
 
         return {
-            field_name: self.get_field(user_record, object_type, object_id, field_name)
+            # THE CONTEXT TRAVELS WITH THE LOOP, so one call reading
+            # six fields writes six audit lines sharing one id rather
+            # than six unrelated ones. get_field already accepted it;
+            # only this wrapper dropped it on the floor.
+            field_name: self.get_field(user_record, object_type, object_id, field_name,
+                                       context=context)
             for field_name in field_names
         }
