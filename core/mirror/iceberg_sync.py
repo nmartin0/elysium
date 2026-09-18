@@ -297,7 +297,10 @@ class IcebergMirrorSync(MirrorSync):
             # from an if-statement that happens to raise. The detailed
             # per-column report follows, because the policy says WHAT
             # and describe_drift says WHICH VALUES.
-            verdict = verdict_for_type_change(silo_name, table_name, transformed.drift[0].column)
+            verdict = verdict_for_type_change(
+                silo_name, table_name, transformed.drift[0].column,
+                also_affected=len(transformed.drift) - 1,
+            )
             raise ValueError(
                 f"{verdict.detail}\n\n"
                 f"{describe_drift(silo_name, table_name, transformed.drift)}"

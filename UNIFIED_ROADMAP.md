@@ -304,12 +304,21 @@ requiring a terminal on the host -- check_mirror, repair_catalog,
 run_sync, measure_prompts. For a commercial product that is a support
 burden, and the workaround audit should have caught it.
 
-### 0.5.5 Report every drifted column at once
+### 0.5.5 ~~Report every drifted column at once~~ IT ALREADY DID
 
-The sync raises on the FIRST drifted column only. Five bad columns
-means five syncs to discover them, each a full read of the customer's
-database. Collecting them into one message is small and saves real
-time.
+**THE ENTRY WAS WRONG.** It was written from reading `drift[0]` in the
+raise, without checking what `describe_drift` does with the rest --
+which is name every one, with the offending value and the rows
+checked. Measured with three bad columns: all three reported.
+
+What was actually wrong was smaller. The HEADLINE named one column
+when several were affected, inviting someone to fix that column,
+re-run, and discover the next a full read of the source later. It now
+says how many others, with the verb agreeing.
+
+**A reminder that a roadmap entry is a claim like any other.** This one
+had been recorded twice and would have cost an afternoon building
+something that existed.
 
 ### 0.5.6 Pin one mirror snapshot per request — OPEN QUESTION
 

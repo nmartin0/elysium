@@ -126,7 +126,8 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
     )
 
 
-def verdict_for_type_change(silo: str, table: str, column: str) -> DriftVerdict:
+def verdict_for_type_change(silo: str, table: str, column: str,
+                            also_affected: int = 0) -> DriftVerdict:
     """A column's values no longer match its declared type.
 
     ALWAYS REFUSED, and unlike a removal this does not soften when
@@ -139,7 +140,14 @@ def verdict_for_type_change(silo: str, table: str, column: str) -> DriftVerdict:
         absorbed=False,
         shape=DriftShape.TYPE_CHANGED,
         detail=(
-            f"{silo}.{table}: column {column!r} no longer holds the type the "
+            f"{silo}.{table}: column {column!r}"
+            # AND HOW MANY OTHERS. The per-column detail below already
+            # names every one, but a headline naming a single column
+            # invites fixing that column and re-running -- discovering
+            # the next one a full read of the source later. Saying the
+            # count here costs nothing and sets the expectation.
+            + (f" and {also_affected} other column(s)" if also_affected else "")
+            + f" no longer hold{'' if also_affected else 's'} the type the "
             f"ontology declares. The mirror is unchanged. Correct the declared "
             f"type in ontology_schema.yaml or fix the source; Elysium will not "
             f"cast between them silently."
