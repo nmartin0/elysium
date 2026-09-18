@@ -356,6 +356,63 @@ exactly this reason; the data equivalent may not be.
 
 ---
 
+## Recorded for later: what a snapshot sync cannot recover
+
+**CURRENT STATE IS NEVER MISSED.** Elysium is snapshot-only, so a sync
+after any amount of downtime picks up whatever the source holds now.
+Measured: offline while a row changed twice and two rows were added --
+all three rows present afterwards.
+
+**INTERMEDIATE STATES ARE LOST.** A row that went new -> in_progress
+-> done while Elysium was away is recorded as new -> done. The
+changelog records what the mirror OBSERVED, not what happened.
+
+**AND THAT IS NOT ELYSIUM DISCARDING SOMETHING RECOVERABLE.** A normal
+SQL table does not keep its own history either; `in_progress` is gone
+from the source too. Retrieving it needs the source's WAL or binlog,
+which is what CDC exists for -- the same conclusion the schema-drift
+work reached from the other direction.
+
+**SO "ELYSIUM IS IN SYNC" IS TRUE OF STATE AND FALSE OF HISTORY**, and
+nothing says so. Worth stating before a customer assumes otherwise.
+
+### And the measured case for snapshot has a gap in the measurement
+
+ROADMAP.md closed incremental syncs with numbers -- 500,000 rows in
+2.46 seconds, linear, ten million about a minute -- and with the
+better argument that SNAPSHOT propagates deletes while APPEND cannot
+see a deleted row at all.
+
+**THOSE NUMBERS MEASURE ELYSIUM'S TIME, NOT THE SOURCE'S LOAD.** They
+were taken against local SQLite. Reading 500,000 rows from a
+customer's production database every five minutes is a real cost to
+THEM, and nothing here has measured it.
+
+That does not make APPEND correct. It makes the honest position:
+snapshot is right, its true cost is borne by the source, and CDC is
+the answer that is both incremental and delete-aware.
+
+## Recorded for later: a diagnostic sweep
+
+**THE PIECES EXIST AND ARE SCATTERED.** Adapter reachability is in the
+Silos panel, bronze and silver in check_mirror, integrity in
+check_mirror and repair_catalog, subsystem liveness in /health,
+provenance in read_manifests.
+
+**WHAT IS MISSING IS TRACING ONE ROW END TO END** -- silo, bronze,
+silver, mirror, ontology -- and asserting it is the same row. That is
+a different check from "each layer looks fine", and it is the one that
+catches a pipeline whose layers are individually healthy and
+collectively wrong.
+
+**SHOWN AS THE PIPELINE ITSELF**, each stage lighting up as it is
+checked, rather than as a list. A break between two ticks says where
+to look without reading anything. The progress matters too: a sweep
+that shows what it is doing is a sweep people run.
+
+**AND THE HELP ASSISTANT CLOSES IT.** "bronze holds 7, silver holds
+67" is only useful to somebody who already knows what that means.
+
 ## Recorded for later: read-through with background refresh
 
 Not for now, and worth not losing. A read could trigger a fresh source

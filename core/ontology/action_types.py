@@ -132,6 +132,70 @@ def validate_action_types(action_types: dict, object_types: dict) -> None:
         _validate_sub_writes_action(action_type_name, action_def, object_types)
         _validate_auto_execute(action_type_name, action_def)
         _validate_parameters_are_used(action_type_name, action_def)
+        _validate_effects_are_reachable(action_type_name, action_def, object_types)
+
+
+def _validate_effects_are_reachable(action_type_name: str, action_def: dict,
+                                     object_types: dict) -> None:
+    """An action may only mutate types its parameters can reach.
+
+    THE EFFECT SIGNATURE, written as a check rather than a type system.
+    An action is not a function from one type to another -- it takes
+    several parameters and mutates several types -- so the honest shape
+    is closer to `action : (A, B, ...) -> Effect[C, D, ...]`, and both
+    halves are already declared: parameters name their `object_type`,
+    and every sub-write names the `object_type` it writes.
+
+    WHAT WAS MISSING IS THE ARROW BETWEEN THEM. Nothing checked that
+    the effects stay within what the parameters reach, so a
+    TransferFunds taking two Accounts could quietly mutate a Customer
+    and pass validation.
+
+    REACHABLE MEANS NAMED OR LINKED-TO. A parameter's own type counts,
+    and so does anything that type links to -- an action on a Customer
+    may legitimately write the Transactions hanging off it, which is
+    what `object_reference_list` and link traversal exist for. One hop,
+    deliberately: a transitive closure over links would reach most of
+    an ontology and stop being a constraint at all.
+
+    NO DEPENDENT TYPES REQUIRED, and none available -- refinement and
+    dependent types for Python are academic, and the ecosystem offers
+    runtime schema validation instead. This is that: a check over YAML
+    at config load, in the one place this project already enforces
+    every other shape.
+    """
+    parameters = action_def.get("parameters") or {}
+    reachable = set()
+    for parameter in parameters.values():
+        if not isinstance(parameter, dict):
+            continue
+        named = parameter.get("object_type")
+        if named is None:
+            continue
+        reachable.add(named)
+        # ONE HOP, through declared links only.
+        for field in (object_types.get(named, {}).get("fields") or {}).values():
+            if isinstance(field, dict) and field.get("type") == "link":
+                target = field.get("target")
+                if target:
+                    reachable.add(target)
+
+    if not reachable:
+        # NOTHING TO CHECK AGAINST. An action with no object_reference
+        # parameter creates rather than mutates, and what it may create
+        # is a different question from what it may reach.
+        return
+
+    for index, sub_write in enumerate(action_def.get("sub_writes") or []):
+        written = sub_write.get("object_type")
+        if written is not None and written not in reachable:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub-write {index} writes "
+                f"{written!r}, which none of its parameters reaches. "
+                f"Reachable from its parameters: {', '.join(sorted(reachable))}. "
+                f"An action may only mutate what it was given or what that "
+                f"links to."
+            )
 
 
 def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_types: dict) -> None:
