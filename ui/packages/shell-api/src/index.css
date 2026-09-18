@@ -1902,4 +1902,14 @@
    * columns comparable at a glance. */
     font-variant-numeric: tabular-nums;
   }
+
+  /* A REFUSAL'S DETAIL, which is a multi-line drift report naming the
+   column and the offending value. Preformatted because the line
+   breaks carry meaning -- one line per drifted column -- and wrapped
+   because a long value should not scroll the page sideways. */
+  .mirror__refusal {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin-block: 0 var(--space-snug);
+  }
 }

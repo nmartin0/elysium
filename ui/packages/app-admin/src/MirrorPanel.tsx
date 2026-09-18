@@ -55,6 +55,25 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
 
   return (
     <>
+      {/* WHY IT WAS REFUSED, above the table, because it is the thing
+          somebody opened this screen to find out. The full detail
+          rather than a category: a reader who sees a refusal wants the
+          column and the offending value, which is exactly what the
+          drift report already contains and what stderr was keeping to
+          itself. */}
+      {state.tables
+        .filter((each) => each.last_attempt_outcome === 'refused')
+        .map((each) => (
+          <Callout
+            key={`${each.silo}.${each.table}`}
+            intent="warning"
+            title={`Last sync of ${each.silo}.${each.table} was refused`}
+          >
+            <pre className="mirror__refusal">{each.last_attempt_detail}</pre>
+            Elysium is still serving the snapshot from before it.
+          </Callout>
+        ))}
+
       {state.problems.length > 0 && (
         <Callout intent="warning" title="Integrity check found problems">
           <ul>
@@ -84,6 +103,12 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
             {/* BOTH LAYERS, SIDE BY SIDE, because their DIVERGENCE is
                 the finding. Showing only what Elysium reads would hide
                 the case this panel exists for. */}
+            {/* LAST ATTEMPT, beside last CHANGE, because they are
+                different facts and the gap between them is the
+                whole point: a table refusing every sync since
+                Tuesday looks identical to one whose source has not
+                changed since Tuesday, from snapshots alone. */}
+            <th>Last attempt</th>
             <th>Rows served</th>
             <th>Rows fetched</th>
           </tr>
@@ -103,6 +128,21 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                     <Tag minimal intent="warning">
                       never synced
                     </Tag>
+                  )}
+                </td>
+                <td>
+                  {table.last_attempt_outcome === 'refused' ? (
+                    <Tag intent="warning" minimal>
+                      refused{table.last_attempt_at ? ` ${formatTimestamp(table.last_attempt_at)}` : ''}
+                    </Tag>
+                  ) : table.last_attempt_at ? (
+                    formatTimestamp(table.last_attempt_at)
+                  ) : (
+                    /* NOTHING RECORDED is not a failure. An
+                         existing deployment has no attempts until
+                         its next sync, and saying "refused" or
+                         "never" there would both be wrong. */
+                    <span className="bp6-text-muted">not recorded</span>
                   )}
                 </td>
                 <td>{table.silver_rows ?? '—'}</td>

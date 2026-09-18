@@ -587,6 +587,20 @@ export interface MirrorTableState {
    *  new rows, silver refused to interpret them, and the gap is what a
    *  refused sync looks like from outside. */
   bronze_rows: number | null
+  /** When the last sync ATTEMPT ran, as distinct from when the data
+   *  last changed.
+   *
+   *  Snapshots record change, so a sync that ran and was REFUSED
+   *  leaves exactly what a sync that ran and found nothing leaves.
+   *  One is an incident; the other is Tuesday. */
+  last_attempt_at: string | null
+  /** 'synced' or 'refused'. Null when nothing has been recorded --
+   *  which on an existing deployment means no sync has run since
+   *  attempts began being kept. */
+  last_attempt_outcome: string | null
+  /** Why it was refused, in full. A reader who sees a refusal wants
+   *  the column and the value, not a category. */
+  last_attempt_detail: string | null
 }
 
 export interface MirrorState {

@@ -34,6 +34,9 @@ function table(overrides = {}) {
     last_synced_at: new Date().toISOString(),
     silver_rows: 7,
     bronze_rows: 7,
+    last_attempt_at: new Date().toISOString(),
+    last_attempt_outcome: 'synced',
+    last_attempt_detail: null,
     ...overrides,
   }
 }
@@ -100,6 +103,64 @@ describe('a refused sync', () => {
 
     expect(await screen.findByText(/out of date/)).toBeInTheDocument()
     expect(screen.queryByText(/fetched but not served/)).toBeNull()
+  })
+
+  it('says WHY the last sync was refused', async () => {
+    /** THE THING SOMEBODY OPENED THIS SCREEN TO FIND OUT.
+     *
+     * A refused sync leaves the previous snapshot, so from the
+     * mirror's own timestamps it is indistinguishable from a source
+     * that has not changed. The reason was only ever on stderr.
+     */
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [
+        table({
+          last_attempt_outcome: 'refused',
+          last_attempt_detail: "column 'transaction_date' is declared 'date' but contains 'not-a-date'",
+        }),
+      ],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/not-a-date/)).toBeInTheDocument()
+    expect(screen.getByText(/serving the snapshot from before it/)).toBeInTheDocument()
+  })
+
+  it('says nothing about a refusal when the last attempt succeeded', async () => {
+    // THE CONTROL. A warning banner on a healthy mirror is one nobody
+    // reads by the time it matters.
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table()],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText('primary_sql.transactions')
+    expect(screen.queryByText(/was refused/)).toBeNull()
+  })
+
+  it('does not claim a refusal when nothing was recorded', async () => {
+    /** NOTHING RECORDED IS NOT A FAILURE. An existing deployment has
+     *  no attempts until its next sync, and both "refused" and
+     *  "never" would be wrong there. */
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [
+        table({
+          last_attempt_at: null,
+          last_attempt_outcome: null,
+          last_attempt_detail: null,
+        }),
+      ],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('not recorded')).toBeInTheDocument()
+    expect(screen.queryByText(/was refused/)).toBeNull()
   })
 
   it('shows integrity problems when the check found some', async () => {

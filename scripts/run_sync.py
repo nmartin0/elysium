@@ -59,6 +59,7 @@ from core.deployment_loader import (
 )
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
+from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
 from core.sqlite_connection import require_assertions_enabled
 
@@ -165,6 +166,13 @@ def run_sync(runtime_paths=None) -> int:
         publish_manifest(sync, config)
 
         failures = 0
+        attempts = SyncAttempts(
+            runtime_paths.data_dir / "mirror" / "sync_attempts.db")
+        # SWEPT AT THE START, not on a timer. A sync is the only
+        # thing that writes here, so it is the only place a sweep
+        # can happen without inventing a scheduler -- the same
+        # argument api/reload.py makes about keeping one out.
+        attempts.forget_older_than()
         for target in targets:
             label = f"{target.silo_name}.{target.table_name}"
             try:
@@ -180,7 +188,18 @@ def run_sync(runtime_paths=None) -> int:
                 # tool, and the real cause is what an operator needs.
                 failures += 1
                 print(f"FAILED  {label}: {exc}", file=sys.stderr)
+                # RECORDED BEFORE IT IS PRINTED, because stderr is
+                # the thing nobody sees. A refused sync leaves the
+                # previous snapshot in place, so from the mirror's
+                # own timestamps it is indistinguishable from a
+                # source that has not changed -- and the first is an
+                # incident while the second is Tuesday.
+                attempts.record(
+                    target.silo_name, target.table_name, "refused",
+                    str(exc),
+                )
                 continue
+            attempts.record(target.silo_name, target.table_name, "synced")
             print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")

@@ -140,6 +140,7 @@ from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import _row_count, check_mirror
+from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
 from core.ontology.schema import get_field_column, sort_key
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
@@ -1112,6 +1113,13 @@ class MirrorTableState(BaseModel):
     last_synced_at: str | None
     silver_rows: int | None
     bronze_rows: int | None
+    # THE LAST ATTEMPT, as distinct from the last CHANGE. Snapshots
+    # record when data changed, so a sync that ran and was refused
+    # leaves exactly what a sync that ran and found nothing leaves.
+    # One is an incident; the other is Tuesday.
+    last_attempt_at: str | None
+    last_attempt_outcome: str | None
+    last_attempt_detail: str | None
 
 
 class MirrorStateResponse(BaseModel):
@@ -1175,9 +1183,11 @@ def admin_mirror_route(request: Request,
         warehouse=f"file://{mirror_dir / 'warehouse'}",
     )
     sync = IcebergMirrorSync(mirror_dir, {})
+    attempts = SyncAttempts(mirror_dir / "sync_attempts.db")
     tables = []
     for target in resolve_sync_targets({"object_types": generation.config.schema}):
         synced_at = sync.last_synced_at(target.silo_name, target.table_name)
+        attempt = attempts.last_for(target.silo_name, target.table_name)
         tables.append({
             "silo": target.silo_name,
             "table": target.table_name,
@@ -1186,6 +1196,9 @@ def admin_mirror_route(request: Request,
             "bronze_rows": _row_count(
                 catalog, f"bronze_{target.silo_name}.{target.table_name}",
             ),
+            "last_attempt_at": attempt.at.isoformat() if attempt else None,
+            "last_attempt_outcome": attempt.outcome if attempt else None,
+            "last_attempt_detail": attempt.detail if attempt else None,
         })
 
     report = check_mirror(

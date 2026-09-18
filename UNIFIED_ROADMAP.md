@@ -305,6 +305,17 @@ than left as two numbers to compare -- "fetched but not served, the
 last sync was refused". Integrity problems from check_mirror above the
 table. A live deployment says so rather than showing a blank page.
 
+**AND THE LAST ATTEMPT, which the panel's own first run demanded.**
+Snapshots record when data CHANGED, so a sync that ran and was refused
+leaves exactly what a sync that ran and found nothing leaves. A table
+refusing every sync since Tuesday looked identical to one whose source
+had not changed since Tuesday.
+
+`core/mirror/sync_attempts.py` records one row per table per attempt
+-- synced or refused, with the full drift report on a refusal -- and
+the panel shows it beside the change date, with the reason above the
+table.
+
 **STILL OPEN:** snapshot history and roll-back, and a Sync now button.
 Both need endpoints that DO something rather than report, which is a
 larger security question than reading.

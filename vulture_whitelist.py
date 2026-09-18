@@ -276,3 +276,9 @@ tasks_approved
 # field name, like every other endpoint in that file.
 reading_from_mirror
 admin_mirror_route
+
+# MirrorTableState's attempt fields (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field.
+last_attempt_at
+last_attempt_outcome
+last_attempt_detail
