@@ -427,9 +427,48 @@ small, each verifiable now that browser tests exist.
 
 ## Phase 3 — Needs research, then a plan, then building
 
+### 3.0 Triggers -- a condition on data, an effect when it is met
+
+**DESIGNED, NOT BUILT** -- see TRIGGERS_AND_PLUGINS.md.
+
+Elysium has none. Foundry's Automate is condition + effect, and the
+conditions are ontology-shaped: objects added to, removed from, or
+modified in a SET. A set is a saved search, and Elysium already has
+saved explorations.
+
+**THE PERMISSION SPLIT IS THE PART TO COPY EXACTLY.** Conditions
+evaluate as the owner; action effects execute as the owner;
+NOTIFICATION EFFECTS USE EACH RECIPIENT'S OWN PERMISSIONS. With MAC
+that is not a nicety -- a notification counting matching rows must
+count differently for someone who can see less.
+
+**NOT A FLAW WE HAVE:** an earlier framing asked whether proposing
+rather than executing weakens us against Foundry. `auto_execute`
+already exists per action type, defaulting to confirmation, enforced
+in Python. An automation uses the action's own setting.
+
+**THE REAL RISKS ARE VOLUME:** MAX_SUB_WRITES is 20 and the queue TTL
+is 15 minutes, so an automation across a thousand objects floods or
+expires. And four-eyes means an owner cannot approve their own
+automation's proposal.
+
 ### 3.1 The plugin API
 
 The largest item. Research done; no plan written.
+
+**DESIGNED -- see TRIGGERS_AND_PLUGINS.md.** The UI boundary already
+exists: five sub-apps importing only from `@elysium/shell-api`, 113
+imports across three modules, each lazy-loaded. The work is hardening
+a boundary rather than inventing one.
+
+**DECLARE THE CURRENT BOUNDARY THE API, THEN FIND WHERE THE SUB-APPS
+CHEAT.** That list is discoverable today; building first and
+converting afterwards finds the same list later and more expensively.
+
+**A PLUGIN MUST NOT GET A PRIVATE CHANNEL TO THE AGENT.** It extends
+the ONTOLOGY through existing mechanisms -- object types, actions,
+functions -- so agent awareness comes free and MAC, submission
+criteria, approvals and audit all keep applying.
 
 **THE HONEST SMALL VERSION FIRST:** the adapter registry already IS a
 plugin point, loading implementations by name. Formalising THAT —
