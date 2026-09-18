@@ -70,10 +70,15 @@ def test_two_builds_are_independent_objects(generation, tmp_path):
     assert second.write_mediator is not generation.write_mediator
 
 
-def test_mirror_snapshots_is_empty_when_not_reading_from_the_mirror(generation):
-    # Nothing to pin when the mirror is not being read. Empty rather
-    # than absent, so callers need no special case.
-    assert generation.config.read_from_mirror is False
+def test_mirror_snapshots_is_empty_when_nothing_has_synced(generation):
+    # RENAMED: the shipped deployment now READS from the mirror by
+    # default, and this fixture builds against a fresh data
+    # directory. The property is still worth pinning and is now the
+    # more useful one -- a deployment that has never synced pins no
+    # snapshots, which is what makes an empty mirror a correct state
+    # rather than a half-built one. Empty rather than absent, so
+    # callers need no special case.
+    assert generation.config.read_from_mirror is True
     assert generation.mirror_snapshots == {}
 
 

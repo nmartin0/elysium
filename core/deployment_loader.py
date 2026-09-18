@@ -470,7 +470,19 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # and None has no .get(). Found by the deployment linter the
             # moment the example was written.
             mirror_storage=deep_freeze((config.get("mirror") or {}).get("storage") or {}),
-            read_from_mirror=(config.get("mirror") or {}).get("read_from_mirror", False),
+            # DEFAULTS TO TRUE. The mirror was always meant to be the
+            # read path -- it is what makes reads independent of a
+            # source's availability and latency, and it is the layer
+            # where types are enforced. It shipped opt-in and
+            # commented out, which made a plain Elysium the opposite
+            # of its own design.
+            #
+            # A DEPLOYMENT MAY STILL TURN IT OFF, and the direct-read
+            # path stays for now: see UNIFIED_ROADMAP phase 0.5. It is
+            # a secondary option on the way to deprecation, and its
+            # likely future is as the refresh mechanism behind a
+            # read-through cache rather than as a serving path.
+            read_from_mirror=(config.get("mirror") or {}).get("read_from_mirror", True),
         )
     except KeyError as e:
         raise ValueError(f"Missing expected key {e} in config.yaml/ontology_schema.yaml/policy.yaml.") from e
@@ -573,6 +585,18 @@ def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
     # mirror, and each silo maps to its own Iceberg namespace, matching
     # exactly what core/mirror/iceberg_sync.py writes.
     mirror_dir = data_dir / "mirror"
+    # CREATED ON DEMAND, because reading from the mirror is now the
+    # default and a fresh deployment has never synced. SqlCatalog opens
+    # a SQLite file, and SQLite will not create one in a directory that
+    # does not exist -- so without this, every deployment that has not
+    # yet run a sync fails at startup with "unable to open database
+    # file", which says nothing about mirrors.
+    #
+    # An empty catalog is the CORRECT state for a fresh deployment. The
+    # adapter returns no rows, data-freshness reports a mirror with no
+    # last_synced_at, and Browse says so rather than claiming the data
+    # is empty.
+    mirror_dir.mkdir(parents=True, exist_ok=True)
     catalog = SqlCatalog(
         "elysium_mirror",
         uri=f"sqlite:///{mirror_dir / 'catalog.db'}",

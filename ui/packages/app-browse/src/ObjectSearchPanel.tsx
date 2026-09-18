@@ -215,7 +215,6 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // filters matched nothing" from "there is nothing here". Text search
   // and chart cross-filters both count: either one can empty a result
   // set that would otherwise have rows.
-  const hasFilters = queryText.trim() !== '' || crossFilter.length > 0
 
   // Fetched once for the panel, not per search: freshness is a
   // deployment-wide fact and does not change between queries. A
@@ -223,6 +222,13 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // is not worth failing a search over, which is the same call
   // PendingWriteCard already makes.
   const [freshness, setFreshness] = useState<DataFreshness | null>(null)
+  const hasFilters = queryText.trim() !== '' || crossFilter.length > 0
+  // READING FROM A MIRROR THAT HAS NEVER BEEN FILLED. The server
+  // distinguishes this from an empty one -- source 'mirror' with no
+  // last_synced_at -- and without it "no records available" reads as
+  // "your data is empty" on a deployment that simply has not fetched
+  // anything yet.
+  const neverSynced = freshness?.source === 'mirror' && !freshness.last_synced_at
   useEffect(() => {
     getDataFreshness()
       .then(setFreshness)
@@ -650,6 +656,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
        * a decision point, not continuous reading, and someone about to
        * approve a write against stale values should be interrupted.
        */}
+      {/* NEVER SYNCED, as distinct from synced-and-empty. The server
+          already distinguishes them -- source 'mirror' with a null
+          last_synced_at -- and only the freshness line used it. */}
       {freshness?.source === 'mirror' && (
         <p className="object-search__freshness">
           {freshness.last_synced_at
@@ -696,12 +705,22 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           />
         ) : (
           <NonIdealState
-            icon={hasFilters ? 'filter-remove' : 'search'}
-            title={hasFilters ? 'No matches' : 'Nothing here yet'}
+            icon={hasFilters ? 'filter-remove' : neverSynced ? 'refresh' : 'search'}
+            title={hasFilters ? 'No matches' : neverSynced ? 'Not synced yet' : 'Nothing here yet'}
             description={
               hasFilters
                 ? `No ${currentType} matches the filters you have applied.`
-                : `No ${currentType} records are available to show.`
+                : neverSynced
+                  ? /* A NEVER-SYNCED MIRROR IS NOT AN EMPTY ONE, and
+                     "no records are available" reads as the first.
+                     A deployment reading from the mirror shows
+                     nothing at all until its first sync, which is
+                     correct and is a bad first five minutes unless
+                     somebody says why. */
+                    `Elysium reads from its local mirror, and nothing has been ` +
+                    `copied into it yet. Run scripts/run_sync to fetch from ` +
+                    `the configured silos.`
+                  : `No ${currentType} records are available to show.`
             }
             action={
               hasFilters ? (

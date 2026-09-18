@@ -33,3 +33,20 @@ agent:
 tools:
   enabled:
     - linear_regression
+
+# THE LIVE PATH, EXPLICITLY. read_from_mirror now defaults to TRUE, and
+# these fixtures test the ontology against real silo databases without
+# a sync -- so an empty mirror would make almost every one of them
+# assert against no rows.
+#
+# STATED RATHER THAN INHERITED, because that is the point: the live
+# path is a secondary option on the way to deprecation, and the tests
+# that depend on it should say so rather than quietly benefit from a
+# default. When it goes, this line is the list of what has to change.
+#
+# The mirror path has its own coverage -- tests/unit/test_mirror_*,
+# test_iceberg_sync, the teardown and portability suites -- which
+# exercise it directly rather than through the API.
+mirror:
+  read_from_mirror: false
+

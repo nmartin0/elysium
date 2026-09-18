@@ -482,9 +482,13 @@ def test_a_generations_snapshots_and_its_sync_time_come_from_one_load(tmp_path):
     app = _app(tmp_path)
     generation = app.state.generation
 
-    # A live deployment has neither, and says so consistently: no
-    # snapshots to pin and no sync time to report.
-    assert generation.config.read_from_mirror is False
+    # A deployment that has NOT SYNCED has neither, and says so
+    # consistently: no snapshots to pin and no sync time to report.
+    # (This read `is False` when mirror reads were opt-in. The
+    # default is now True, and a fresh data directory makes the
+    # emptiness come from never having synced rather than from not
+    # looking.)
+    assert generation.config.read_from_mirror is True
     assert generation.mirror_snapshots == {}
     assert generation.mediator.mirror_synced_at is None
 

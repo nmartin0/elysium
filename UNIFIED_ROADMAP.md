@@ -98,12 +98,22 @@ That matches the medallion pattern exactly: bronze preserves
 everything and transforms nothing, silver is where type casting
 happens, and each boundary is a contract that should be explicit.
 
-### 0.5.1 Flip the default, and say what an empty mirror means
+### 0.5.1 ~~Flip the default, and say what an empty mirror means~~ DONE
 
-A fresh deployment with mirror-default shows nothing until the first
-sync. That is correct and it is a bad first five minutes, so the empty
-state must say "no data yet -- run scripts/run_sync" rather than
-render an empty table.
+`read_from_mirror` defaults to TRUE. Browse distinguishes a
+never-synced mirror from an empty one -- "Not synced yet", naming
+run_sync -- using a signal the server already sent and only the
+freshness line used.
+
+**WHAT THE FLIP BROKE, all one cause:** 279 errors, every test
+deployment failing with "unable to open database file". The read path
+builds a SqlCatalog against a directory that may not exist, which was
+harmless when mirror reads were opt-in. Created on demand now.
+
+The integration fixture declares `read_from_mirror: false` EXPLICITLY:
+those tests predate the mirror and assert against real silo data
+without syncing. When the live path is deprecated, that line is the
+list of what has to change.
 
 ### 0.5.2 A `decimal` type, alongside `number`
 

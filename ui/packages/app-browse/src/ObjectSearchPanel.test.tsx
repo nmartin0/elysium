@@ -265,6 +265,41 @@ describe('ObjectSearchPanel -- results rendering', () => {
      * which is worse than none because it looks like the system is
      * saying something.
      */
+    it('tells a never-synced deployment to run the sync', async () => {
+      /** A NEVER-SYNCED MIRROR IS NOT AN EMPTY ONE.
+       *
+       * With mirror reads as the default, a fresh deployment shows
+       * nothing until its first sync -- which is correct, and reads
+       * as "your data is empty" unless somebody says otherwise. The
+       * server already distinguishes the two: source 'mirror' with a
+       * null last_synced_at.
+       */
+      mockedGetDataFreshness.mockResolvedValue({
+        source: 'mirror',
+        last_synced_at: null,
+      })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      expect(await screen.findByText('Not synced yet')).toBeInTheDocument()
+      expect(screen.getByText(/run_sync/)).toBeInTheDocument()
+    })
+
+    it('says the ordinary thing when a synced mirror is simply empty', async () => {
+      // THE CONTROL. A mirror that HAS been synced and holds nothing
+      // is a different fact, and telling that deployment to run the
+      // sync would send them somewhere useless.
+      mockedGetDataFreshness.mockResolvedValue({
+        source: 'mirror',
+        last_synced_at: new Date().toISOString(),
+      })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      expect(await screen.findByText('Nothing here yet')).toBeInTheDocument()
+      expect(screen.queryByText(/run_sync/)).toBeNull()
+    })
+
     it('says nothing at all when reading live', async () => {
       // THE PROPERTY THAT KEEPS IT HONEST. A live deployment is not
       // stale and must not be told it is, or the indicator means

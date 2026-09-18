@@ -54,7 +54,21 @@ tools:
 # Both keys are optional and both default to the conservative answer:
 # a local warehouse, and reads going to the customer's own databases.
 mirror:
-  # read_from_mirror: true      # serve reads from the local Iceberg mirror
+  # read_from_mirror: false     # serve reads DIRECTLY from the silos
+  #
+  # THE DEFAULT IS NOW true -- reads come from the local Iceberg
+  # mirror. That is what makes reads independent of a source's
+  # availability and latency, and it is the layer where declared types
+  # are enforced.
+  #
+  # A FRESH DEPLOYMENT SHOWS NOTHING until its first
+  # `python -m scripts.run_sync`. Browse says so rather than claiming
+  # the data is empty.
+  #
+  # Setting this to false restores direct silo reads. That path is a
+  # secondary option on the way to deprecation -- see UNIFIED_ROADMAP
+  # phase 0.5 -- and its likely future is as the refresh mechanism
+  # behind a read-through cache rather than as a serving path.
   #
   # storage: WHERE THE ICEBERG WAREHOUSE LIVES. Absent means a local
   # directory under var/lib/mirror, which is correct for one host.

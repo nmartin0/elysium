@@ -224,7 +224,11 @@ class TestReachableFromConfig:
         config = load_deployment(self._deployment(tmp_path, "mirror:\n  # nothing but comments\n"))
 
         assert config.mirror_storage == {}
-        assert config.read_from_mirror is False
+        # TRUE, because that is the default now. This test is about a
+        # commented-out section not crashing the loader; the flag's
+        # value is incidental to it and is asserted so the two cannot
+        # drift apart silently.
+        assert config.read_from_mirror is True
 
     def test_storage_settings_reach_the_config(self, tmp_path):
         from core.deployment_loader import load_deployment
