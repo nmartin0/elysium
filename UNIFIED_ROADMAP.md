@@ -203,6 +203,69 @@ cannot accidentally convert a birthday.
 **DISPLAY CONVERSION BELONGS IN THE UI, NOT THE MIRROR.** If the
 mirror converted, what is stored would depend on who is looking.
 
+### 0.5.35 Record what the SOURCE said its types were
+
+**A GAP FOUND BY ASKING, then measured.** Coercion asks only "can this
+value become the declared type?" -- never "is the source still saying
+what it used to say?". So a source change that still coerces passes
+silently. Three, measured:
+
+    timestamptz -> timestamp    '...14:30:00+00:00' becomes
+                                '...14:30:00'. The offset vanishes and
+                                both coerce as strings. A DIFFERENT
+                                KIND OF FACT, not a different value.
+    numeric -> float            '10.50' becomes '10.5'. Both are valid
+                                decimals; the scale changed.
+    integer -> text             ' 42' still passes int(). Formatting
+                                changed invisibly.
+
+What we ARE protected against is a change that makes values
+UNCOERCIBLE -- that fails loudly, silver holds, bronze keeps the
+evidence. That covers most schema accidents. These three are the
+remainder.
+
+**THE PRECEDENT IS DEBEZIUM'S SCHEMA HISTORY.** It keeps "a log of
+every DDL statement it has observed" and "for each change event...
+records the schema version that was active when that event was
+captured", so "consumers can reconstruct the exact schema for any
+event by replaying the schema history".
+
+The problem has a name and a reputation: "undetected schema drift is
+one of the top causes of pipeline failures and silent data corruption
+-- a column type change can cause data truncation or loss without any
+error". The standard remedy is to compare "current schemas against
+baselines" and alert.
+
+**AND ELYSIUM ALREADY HAS THIS PATTERN, ON ONE SIDE ONLY.**
+`config_history` exists precisely because a generation recorded WHICH
+load it was and not WHAT IT SAID -- so "what did generation 7 contain"
+had no answer. That is the same question, asked of our ontology.
+Nothing asks it of the source.
+
+**PER COLUMN, PER SYNC -- NOT PER VALUE.** Per-value type tags double
+bronze's size to record a property of the COLUMN, and a row that
+disagrees with its column is the drift already caught. Column types
+belong beside `elysium.source_silo` and `elysium.source_table` in
+bronze's table properties, which already exist for provenance.
+
+**IT NEEDS AN ADAPTER METHOD THAT DOES NOT EXIST.** `columns_present`
+returns names only. So this lands with the PostgreSQL work, where the
+driver exposes types cleanly and a second implementation proves the
+interface is not SQLite-shaped.
+
+**SQLITE CAN ONLY ANSWER WEAKLY**, and that is honest rather than
+disqualifying. `PRAGMA table_info` gives the DECLARED type, which
+SQLite treats as advisory -- a column declared INTEGER can hold
+'banana'. Recording "the source said INTEGER" still detects someone
+altering the table, which is the case being caught.
+
+**A NOTE ON POSTGRESQL**, from the same research: Debezium cannot get
+DDL events from PostgreSQL's logical decoding at all -- "schema change
+events are not separately published. Instead, any schema modifications
+are only reflected as part of the data change events themselves". So
+polling the catalog at sync time is not a shortcut; it is what the
+established tool has to do too.
+
 ### 0.5.4 A mirror administration surface
 
 **WE BUILT AN INTEGRITY GUARANTEE AND LEFT IT INVISIBLE.** Proven

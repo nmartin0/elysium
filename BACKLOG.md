@@ -625,6 +625,13 @@ the ordering are in UNIFIED_ROADMAP.md phase 0.5.
   and invisible.
 - Report every drifted column at once, not the first.
 - OPEN: whether one request pins one mirror snapshot.
+- Record what the SOURCE said its column types were, per sync. A
+  source change that still COERCES passes silently today -- an instant
+  losing its offset, an exact amount losing scale, a number gaining
+  whitespace. All three measured. Debezium'''s schema history is the
+  precedent, and config_history is the same pattern already applied to
+  our own ontology rather than to the source. Lands with the
+  PostgreSQL work: no adapter can report column types today.
 
 ## 0e. Decided September 15, and what each needs
 
