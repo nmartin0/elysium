@@ -792,7 +792,13 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                       .map(([field, value]) => (
                         <div key={field} className="object-search__result-field">
                           <dt>{formatFieldName(field)}</dt>
-                          <dd>{formatValue(value, typeSchemaFields?.[field]?.decimal_places)}</dd>
+                          <dd>
+                            {formatValue(
+                              value,
+                              typeSchemaFields?.[field]?.decimal_places,
+                              typeSchemaFields?.[field]?.data_type,
+                            )}
+                          </dd>
                         </div>
                       ))}
                   </dl>

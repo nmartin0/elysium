@@ -76,9 +76,18 @@ export interface FieldSchema {
   description?: string | null
   cardinality?: string | null
   link_type?: string | null
-  /** The SEMANTIC type -- number, string -- which is what the filter
-   *  vocabulary validates against. Absent means the author declared
-   *  none, and the server then accepts any operator. */
+  /** The SEMANTIC type the ontology declares -- string, integer,
+   *  number, decimal, boolean, date, timestamp, timestamptz.
+   *
+   *  TWO CONSUMERS NOW. The filter vocabulary validates against it,
+   *  which is why it was added. And FORMATTING needs it: the UI
+   *  cannot infer that '2026-03-12' is a date when
+   *  'ACME-2026-03-12' is also a string, so without this a date
+   *  renders as text and a timestamp is never converted to the
+   *  reader's zone.
+   *
+   *  Absent means the author declared none; the server then accepts
+   *  any operator and the UI shows the value as it arrived. */
   data_type?: string
   visibility?: string
   status?: string

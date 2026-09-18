@@ -47,6 +47,22 @@ export default defineConfig({
   // per-package test runs.
   test: {
     environment: 'jsdom',
+    // A TIMEZONE THAT IS NOT UTC, deliberately.
+    //
+    // The container runs in UTC, where every timezone bug is
+    // invisible: `new Date('2026-01-01')` renders as 1 January, and a
+    // formatter that wrongly converts a date looks correct. In New
+    // York the same expression renders as 31 DECEMBER 2025 --
+    // somebody's birthday, moved a day.
+    //
+    // Two controls on formatTemporal failed to fire because of this,
+    // which is the "a control that cannot fail proves nothing"
+    // problem arriving through the environment rather than the test.
+    //
+    // New York specifically: it is behind UTC, so date slippage shows
+    // up, and it observes daylight saving, so a fixed-offset mistake
+    // shows up too.
+    env: { TZ: 'America/New_York' },
     globals: true,
     setupFiles: './src/setupTests.ts',
     include: ['src/**/*.test.{js,jsx,ts,tsx}', 'packages/*/src/**/*.test.{js,jsx,ts,tsx}'],
