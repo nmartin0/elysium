@@ -559,6 +559,45 @@ def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | No
     return min(timestamps) if timestamps else None
 
 
+def build_live_read_adapters(config_dir: Path | None = None) -> dict:
+    """Read adapters that always talk to the SOURCE, never the mirror.
+
+    THE SYNC NEEDS THESE AND CANNOT USE THE MEDIATOR'S. When
+    read_from_mirror is on -- which is now the default -- the
+    mediator's adapters are MirrorReadAdapters, so a sync built from
+    them reads the mirror to build the mirror. The source is never
+    touched.
+
+    That is not a subtle failure. Found within an hour of flipping the
+    default, on a real deployment, where dropping silver and
+    re-syncing reported a source column "gone" -- because the thing
+    being read was the empty silver table rather than the database.
+
+    SEPARATE FROM THE MEDIATOR'S, not a flag on it, because the two
+    answer different questions. The mediator serves reads and should
+    obey the deployment's choice; the sync FILLS what those reads come
+    from and has no choice to obey.
+    """
+    paths = resolve_runtime_paths()
+    config = load_deployment(config_dir or paths.config_dir)
+
+    # THE SAME RESOLUTION build_generation() DOES, which is inline
+    # there rather than a function. A relative silo path is relative to
+    # the DATA directory, and an adapter built without that resolution
+    # opens a file that is not there.
+    resolved = {}
+    for silo_name, silo_config in config.silo_configs.items():
+        connection = dict(silo_config["connection"])
+        if "path" in connection:
+            connection["path"] = paths.data_dir / connection["path"]
+        resolved[silo_name] = {**silo_config, "connection": connection}
+
+    return cast(
+        "dict[str, ExternalReadAdapter]",
+        _build_adapters(resolved, _READ_ADAPTER_REGISTRY),
+    )
+
+
 def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
                           data_dir: Path) -> dict[str, ExternalReadAdapter]:
     # THE Phase 4 cutover, and deliberately the whole of it: which

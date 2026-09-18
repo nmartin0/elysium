@@ -52,7 +52,11 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-from core.deployment_loader import load_deployment_bundle, resolve_runtime_paths
+from core.deployment_loader import (
+    build_live_read_adapters,
+    load_deployment_bundle,
+    resolve_runtime_paths,
+)
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
 from core.mirror.sync_targets import resolve_sync_targets
@@ -131,7 +135,17 @@ def run_sync(runtime_paths=None) -> int:
         # this costs nothing and is the difference between "nothing
         # depends on this column" and "I did not look".
         sync = IcebergMirrorSync(
-            runtime_paths.data_dir / "mirror", mediator.adapters,
+            # LIVE ADAPTERS, NEVER THE MEDIATOR'S. With
+            # read_from_mirror on -- the default now -- the mediator's
+            # adapters are MirrorReadAdapters, so a sync built from
+            # them would read the mirror to build the mirror and never
+            # touch the source at all.
+            #
+            # Found on a real deployment within an hour of the default
+            # flipping: dropping silver and re-syncing reported a
+            # source column "gone", because the thing being read was
+            # the empty silver table.
+            runtime_paths.data_dir / "mirror", build_live_read_adapters(),
             write_log=mediator.write_log,
             # WHERE THE WAREHOUSE LIVES, from config.yaml's mirror.storage.
             # Empty means local, which is what every deployment does today.
