@@ -69,7 +69,18 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
         <thead>
           <tr>
             <th>Table</th>
-            <th>Last synced</th>
+            {/* LAST CHANGED, NOT LAST ATTEMPTED, and the header has
+                to say which. The timestamp comes from the newest
+                Iceberg snapshot, and a sync finding the source
+                unchanged writes NO snapshot -- correctly, since
+                rewriting identical data costs real bytes for no
+                gain.
+
+                So a table synced successfully two minutes ago can
+                show a date from last week. That is TRUE, and it
+                reads as a failure under a header saying "last
+                synced". Seen immediately on a real deployment. */}
+            <th>Data last changed</th>
             {/* BOTH LAYERS, SIDE BY SIDE, because their DIVERGENCE is
                 the finding. Showing only what Elysium reads would hide
                 the case this panel exists for. */}
@@ -90,7 +101,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                     formatTimestamp(table.last_synced_at)
                   ) : (
                     <Tag minimal intent="warning">
-                      never
+                      never synced
                     </Tag>
                   )}
                 </td>

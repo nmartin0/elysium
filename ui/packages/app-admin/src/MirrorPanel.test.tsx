@@ -123,7 +123,7 @@ describe('a table that has never synced', () => {
     })
     render(<MirrorPanel onSessionExpired={vi.fn()} />)
 
-    expect(await screen.findByText('never')).toBeInTheDocument()
+    expect(await screen.findByText('never synced')).toBeInTheDocument()
   })
 })
 
