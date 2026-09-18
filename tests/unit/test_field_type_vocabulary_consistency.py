@@ -41,6 +41,14 @@ SAMPLE = {
     # A MONEY-SHAPED VALUE, with a trailing zero that float would
     # discard and decimal must keep.
     "decimal": "10.50",
+    # EACH TEMPORAL SAMPLE IS THE SHAPE ITS TYPE ACCEPTS AND NO OTHER.
+    # A date with a time is refused; a naive timestamp with an offset
+    # is refused; an instant without one is refused. The samples are
+    # therefore not interchangeable, which is the point of having three
+    # types rather than one.
+    "date": "2026-03-12",
+    "timestamp": "2026-03-12 14:30:00",
+    "timestamptz": "2026-03-12T14:30:00Z",
 }
 
 
