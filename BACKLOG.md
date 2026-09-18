@@ -610,6 +610,22 @@ ADDING one is a decision someone makes deliberately rather than a
 change that silently outranks a vendor component. Five are currently
 allowed, each reviewed.
 
+## 0d2. The mirror, decided September 18
+
+Recorded here because BACKLOG.md is the ONE list; the reasoning and
+the ordering are in UNIFIED_ROADMAP.md phase 0.5.
+
+- `read_from_mirror` becomes the DEFAULT. Direct silo reads become
+  secondary, then deprecated.
+- A `decimal` type alongside `number`. `float()` silently loses
+  digits on money; bronze holds the string so silver can be rebuilt.
+- Dates are strings and range filters on them are WRONG for any format
+  but padded ISO-8601. Measured.
+- A mirror administration surface. The integrity guarantee is proven
+  and invisible.
+- Report every drifted column at once, not the first.
+- OPEN: whether one request pins one mirror snapshot.
+
 ## 0e. Decided September 15, and what each needs
 
 ### Approvals: per-task approval, atomic invocation

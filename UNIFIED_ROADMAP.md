@@ -78,6 +78,146 @@ network database routinely does.
 
 ---
 
+## Phase 0.5 — The mirror becomes the read path
+
+**DECIDED:** `read_from_mirror` defaults to TRUE, and direct silo reads
+become a secondary option on the way to deprecation. The mirror was
+always meant to be the default; it shipped as opt-in and commented out.
+
+This phase sits here because a PostgreSQL adapter that feeds an
+opt-out mirror is a different piece of work from one that feeds the
+only read path.
+
+**WHAT THE PIPELINE IS**, verified rather than assumed: the sync reads
+the source and writes BRONZE as strings, unaltered -- "the one
+representation that cannot lose information it was given". SILVER
+reads BRONZE, not the source, and coerces to the declared types.
+Elysium reads silver.
+
+That matches the medallion pattern exactly: bronze preserves
+everything and transforms nothing, silver is where type casting
+happens, and each boundary is a contract that should be explicit.
+
+### 0.5.1 Flip the default, and say what an empty mirror means
+
+A fresh deployment with mirror-default shows nothing until the first
+sync. That is correct and it is a bad first five minutes, so the empty
+state must say "no data yet -- run scripts/run_sync" rather than
+render an empty table.
+
+### 0.5.2 A `decimal` type, alongside `number`
+
+**MEASURED LOSS.** `coerce()` sends `number` through `float()`, so
+`'1234.56789012345678901'` becomes `1234.567890123457`. Money silently
+becomes a different amount.
+
+Bronze holds the string, so a corrected silver can be rebuilt WITHOUT
+re-reading the customer's database -- which is what bronze is for. The
+loss is recoverable, not permanent, and that is the only reason this
+is not an emergency.
+
+ALONGSIDE, NOT INSTEAD, following every layer we touch: Foundry has
+Double and Decimal as separate base types, Iceberg has `double` and
+`decimal(P,S)`, PostgreSQL has `double precision` and `numeric`. They
+answer different questions -- a decimal needs a declared precision and
+scale, a float does not. Floats for measurement, decimals for money.
+
+`pyarrow.decimal128(P, S)` round-trips exactly; verified.
+
+**AND A LINTER NOTE**, in the spirit of the `title_field` one: warn
+when a field named like money -- amount, price, total, balance -- is
+declared `number`. The mistake is cheap to make and expensive to find.
+
+### 0.5.3 Dates are strings, and range filters on them are wrong
+
+**A BUG, NOT A MISSING FEATURE.** The ontology has no date type;
+`field_types.py` defers it deliberately and names the reasons
+(timezone handling, parse-failure behaviour, format declaration). The
+reasons are good. The consequence is not.
+
+Dates stored as strings compare lexically. ISO-8601 sorts correctly BY
+LUCK. Everything else does not, measured:
+
+    '2026-1-5'  sorts AFTER '2026-02-03'   (unpadded month)
+    '01/05/2026' sorts before '02/03/2026' (year ignored entirely)
+
+So a `date_range` filter for "after February" returns a January row
+and nobody is told.
+
+`core/filters.py` already has a `date_range` operator restricted to
+strings, with a validator -- but it validates the FILTER's bounds with
+`fromisoformat`, never the STORED data. A well-formed filter still
+compares against malformed values.
+
+What a real type needs to answer, which is why it was deferred: what
+timezone a naive timestamp means, what a parse failure does (drift, on
+this project's own precedent), and whether a format is declared or
+inferred.
+
+### 0.5.4 A mirror administration surface
+
+**WE BUILT AN INTEGRITY GUARANTEE AND LEFT IT INVISIBLE.** Proven
+behaviour: a value that cannot be coerced fails the whole table's
+sync, silver keeps its previous snapshot untouched, and bronze accepts
+the bad value anyway so it can be diagnosed. Exactly right.
+
+The only trace is stderr on whatever ran the sync. A user sees data
+three days stale and an administrator cannot find out why from inside
+the product.
+
+Admin has Users, Silos, Deployment Config and Metrics. Nothing shows
+the mirror. What it should show:
+
+- Per table: last successful sync, bronze and silver row counts. A
+  divergence between those two IS the drift state.
+- The last failure, with the offending column and value -- already
+  computed and currently discarded.
+- Snapshot history, which Iceberg records anyway, making "roll back to
+  yesterday" a visible option rather than surgery.
+- Sync now, so recovery does not need shell access.
+- `check_mirror` and `repair_catalog` results.
+
+**THE GENERAL POINT:** operational tooling here is all scripts
+requiring a terminal on the host -- check_mirror, repair_catalog,
+run_sync, measure_prompts. For a commercial product that is a support
+burden, and the workaround audit should have caught it.
+
+### 0.5.5 Report every drifted column at once
+
+The sync raises on the FIRST drifted column only. Five bad columns
+means five syncs to discover them, each a full read of the customer's
+database. Collecting them into one message is small and saves real
+time.
+
+### 0.5.6 Pin one mirror snapshot per request — OPEN QUESTION
+
+Iceberg gives snapshot isolation and Elysium gets it free: verified
+that a reader holding an old scan keeps seeing its own version while a
+new reader sees the sync's result. Both served correctly, at once.
+
+**UNVERIFIED:** whether one HTTP request pins ONE snapshot for its
+whole duration. A request reading Customer then Transaction, with a
+sync landing between, could see two generations of the mirror.
+Elysium already pins the CONFIGURATION generation per request for
+exactly this reason; the data equivalent may not be.
+
+---
+
+## Recorded for later: read-through with background refresh
+
+Not for now, and worth not losing. A read could trigger a fresh source
+read so data is never stale -- but done naively it makes read latency
+depend on SOURCE latency, which is the property the mirror exists to
+remove. One slow source and every reader waits.
+
+The established shape: serve the mirror immediately, trigger the
+refresh in the BACKGROUND, let the next read get the newer data. Fast
+reads and catch-up both.
+
+This is where the live-read path earns its keep after deprecation as a
+primary mode -- as the refresh mechanism rather than the serving one.
+
+
 ## Phase 1 — A deployment that survives its own operation
 
 ### 1.1 Persist the pending write store
@@ -251,5 +391,18 @@ guessing at a shape the data has not yet taken.
 Phase 0 is four items, none of them interesting, all of them blocking.
 Elysium's ontology, security model, approvals, audit and lake work are
 substantially ahead of its ability to read anything a customer owns.
+
+Phase 0.5 is the other half of the same gap. The mirror is the right
+architecture, it is built, it is PROVEN correct on the two properties
+that matter -- an unsafe value cannot reach a reader, and a sync
+cannot disturb one in progress -- and it ships turned off with no way
+to see it working.
+
+**THE PATTERN ACROSS BOTH:** what Elysium reasons about is ahead of
+what it can reach and what it can show. The ontology, the approvals,
+the audit trail and the lake are the hard parts and they are largely
+done. Connecting to a database, bounding a query, typing a date, and
+letting an administrator see any of it are the ordinary parts, and
+they are where the work is.
 
 That gap is the roadmap.
