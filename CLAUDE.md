@@ -182,9 +182,24 @@ The mirror administration surface (UNIFIED_ROADMAP 0.5.4) should offer
 this as a button; today it needs a person with a Python prompt.
 
 **Backend changes need `uvicorn` restarted.** Frontend changes do not
-— Vite hot-reloads. A new route returning 404 is almost always a stale
-server, and this has caused confusion more than once. Say so when a
-patch touches Python.
+— Vite hot-reloads. Say so when a patch touches Python.
+
+THE SYMPTOM IS NOT ALWAYS A 404, which is what made this recur after
+the rule was written. A stale server also shows as:
+
+- a new ROUTE returning 404, the obvious one
+- a new response FIELD arriving as `undefined`, which the UI renders
+  as its own empty state — so the screen looks like a frontend bug, or
+  worse, like the feature working and finding nothing
+
+The second cost a diagnosis: a new "last attempt" column read "not
+recorded" on a deployment that had recorded attempts perfectly well,
+because the endpoint serving it predated the field. The empty state
+was correct, the data was correct, and the server was old.
+
+**SO: if a patch touches `api/` or `core/`, the restart goes in the
+instructions with the `git am`, not as something to remember
+afterwards.**
 
 ## Give a synopsis before working
 

@@ -53,6 +53,26 @@ than through `npm run lint`, read the count, not the exit code.
 Integration tests marked `test_real_model_*` need a live Ollama. They
 fail in sandboxes without one. That is environmental, not a regression.
 
+## Hand over the restart with the patch, not after it
+
+A patch touching `api/` or `core/` needs `uvicorn` restarted before
+its effect is visible. That belongs in the same block as the
+`git am`, every time, rather than in a sentence afterwards.
+
+    cd ~/elysium
+    git am ~/Downloads/NNN-....patch
+    git push
+    cd ~/elysium/ui && npm run build     # if the patch touched ui/
+    # restart uvicorn                     # if it touched api/ or core/
+
+WHY IT KEEPS BEING FORGOTTEN: the frontend hot-reloads, so a
+UI-and-backend patch LOOKS applied. The new panel appears, the new
+column renders, and only the data behind it is stale.
+
+AND THE SYMPTOM IS NOT ALWAYS A 404. A new response field arriving as
+`undefined` renders as the UI's own empty state -- so a working
+feature looks like it found nothing. That one cost a real diagnosis.
+
 ## One patch per commit, in the order they were made
 
 Never combine commits into one patch file, however convenient. If a
