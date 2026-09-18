@@ -154,6 +154,55 @@ timezone a naive timestamp means, what a parse failure does (drift, on
 this project's own precedent), and whether a format is declared or
 inferred.
 
+**DECIDED: THREE TYPES, MIRRORING ICEBERG.**
+
+- `date` -- no time, no zone, NEVER converted. A birthday is not an
+  instant, and "converting" it is the classic bug where someone's
+  birthday moves a day for users in Auckland. Arrow `date32`.
+- `timestamp` -- a wall-clock reading with no zone, stored exactly as
+  given. The literature calls these "local observations of time
+  recorded in an unspecified time zone", and disambiguating them "a
+  common data cleaning problem".
+- `timestamptz` -- a true instant, stored UTC. Iceberg's spec:
+  "values are stored as UTC and do not retain a source time zone".
+  PostgreSQL's reason for timestamptz is the same -- it "guarantees
+  that the precise moment in time is stored... in UTC", which
+  "eliminates many time arithmetic problems, and ensures portability".
+
+**A NAIVE TIMESTAMP IS NOT PROMOTED BY GUESSING.** Assuming UTC is a
+guess; assuming the server's zone is worse, because it makes the same
+data mean different things on two machines -- the exact coupling
+storing UTC is meant to remove. A field may OPTIONALLY declare its
+source zone (`timezone: "America/New_York"`) to be promoted to an
+instant. Declared, never inferred.
+
+**THE CHAIN ALREADY SUPPORTS THIS**, verified rather than assumed:
+
+- All 22 `datetime.now()` calls in core/, api/ and scripts/ pass UTC.
+  Not one naive timestamp.
+- The sync's timestamp is `fromtimestamp(..., tz=UTC)`, explicit.
+- `isoformat()` puts the offset on the wire: `...+00:00`.
+- Bronze stringifies with `str()`, which PRESERVES the distinction:
+  a date has no time, a naive timestamp has no offset, an instant
+  carries one. Measured.
+
+**AND THE SOURCES DIFFER IN A WAY THE ONTOLOGY ALREADY HANDLES.**
+SQLite has no date type and returns strings for all three shapes,
+indistinguishable. psycopg returns `date`, naive `datetime`, and
+UTC-aware `datetime` respectively. The ontology's declaration is the
+authority either way, which is what it was designed to be.
+
+**THE UI NEEDS TWO FORMATTERS, and has neither.** `formatTimestamp`
+renders RELATIVE time ("3 minutes ago"), which is timezone-independent
+by construction and sidesteps conversion entirely. The moment an
+absolute date is shown -- a transaction date, a contract start -- a
+`date` must render as-is and a `timestamptz` must convert to the
+viewer's zone. Two formatters, built when the types land, so the UI
+cannot accidentally convert a birthday.
+
+**DISPLAY CONVERSION BELONGS IN THE UI, NOT THE MIRROR.** If the
+mirror converted, what is stored would depend on who is looking.
+
 ### 0.5.4 A mirror administration surface
 
 **WE BUILT AN INTEGRITY GUARANTEE AND LEFT IT INVISIBLE.** Proven
