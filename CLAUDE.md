@@ -164,6 +164,23 @@ a UI change that is about LAYOUT, HIT-TESTING or the CASCADE has not
 been verified until these run. If a fix is for something a person
 reported seeing, assume jsdom cannot see it either.
 
+**CHANGING A FIELD'S `data_type` NEEDS SILVER DROPPED.** Iceberg
+refuses an incompatible column change -- "Cannot change column type:
+amount: string -> decimal(38, 9)" -- because it is not a widening, and
+it is right to.
+
+BRONZE MAKES THE RECOVERY FREE, which is what bronze is for:
+
+    python -c "..."   # drop the silver table
+    python -m scripts.run_sync
+
+Silver rebuilds FROM BRONZE, without re-reading the customer's
+database. Verified on the live mirror when `amount` became `decimal`
+and `transaction_date` became `date`.
+
+The mirror administration surface (UNIFIED_ROADMAP 0.5.4) should offer
+this as a button; today it needs a person with a Python prompt.
+
 **Backend changes need `uvicorn` restarted.** Frontend changes do not
 — Vite hot-reloads. A new route returning 404 is almost always a stale
 server, and this has caused confusion more than once. Say so when a

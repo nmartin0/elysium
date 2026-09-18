@@ -66,12 +66,22 @@ object_types:
         # different answer. Display only; the stored value, what an
         # action writes and what a filter compares are untouched.
         decimal_places: 2
+        # DECIMAL, NOT NUMBER, because this is money. `number` goes
+        # through float() and loses digits on values a float cannot
+        # hold exactly -- measured, and the reason the type exists.
+        data_type: decimal
       currency:
         type: data
       category:
         type: data
       transaction_date:
         type: data
+        # A DATE, NOT A STRING, and not a timestamp: the source
+        # holds '2026-05-01' with no time. As text this sorted
+        # lexically, correct for padded ISO-8601 and silently wrong
+        # for anything else -- a date_range for "after February"
+        # returned a January row.
+        data_type: date
       customer_id:
         type: link
         target: Customer

@@ -199,7 +199,12 @@ def _validate_decimal_places(owner: str, field_info: dict) -> None:
     # it -- saying so at load is kinder than leaving them to notice the
     # field renders unchanged.
     data_type = field_info.get("data_type")
-    if data_type is not None and data_type not in ("number", "integer"):
+    # `decimal` BELONGS HERE TOO, and was missed when that type was
+    # added -- caught by declaring a real money field and watching the
+    # linter refuse it. Two places showing "10.5" and "10.50" for the
+    # same column is exactly the inconsistency decimal_places exists to
+    # prevent, and a decimal field is the one most likely to need it.
+    if data_type is not None and data_type not in ("number", "integer", "decimal"):
         raise ValueError(
             f"{owner}: decimal_places is only meaningful on a numeric field, "
             f"but this one is {data_type!r}"
