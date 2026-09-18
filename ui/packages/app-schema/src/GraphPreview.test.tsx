@@ -66,10 +66,7 @@ describe('GraphPreview -- an object type', () => {
 
   it('offers a way out without taking it for you', () => {
     const onOpenFull = vi.fn()
-    render(
-      <GraphPreview {...props} onOpenFull={onOpenFull}
-        selection={{ kind: 'object', name: 'Customer' }} />,
-    )
+    render(<GraphPreview {...props} onOpenFull={onOpenFull} selection={{ kind: 'object', name: 'Customer' }} />)
 
     fireEvent.click(screen.getByRole('button', { name: /Open in Object types/ }))
 
@@ -79,9 +76,7 @@ describe('GraphPreview -- an object type', () => {
 
 describe('GraphPreview -- an action type', () => {
   it('describes the action and what it touches', () => {
-    render(
-      <GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
-    )
+    render(<GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />)
 
     expect(screen.getByText('Update name')).toBeInTheDocument()
     // getAllByText: the parameter list also names Customer now, so a
@@ -92,8 +87,7 @@ describe('GraphPreview -- an action type', () => {
   it('opens Action types, not Object types', () => {
     const onOpenFull = vi.fn()
     render(
-      <GraphPreview {...props} onOpenFull={onOpenFull}
-        selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
+      <GraphPreview {...props} onOpenFull={onOpenFull} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: /Open in Action types/ }))
@@ -110,10 +104,16 @@ describe('GraphPreview -- a link type', () => {
      * to show the type of links between the object types".
      */
     render(
-      <GraphPreview {...props} selection={{
-        kind: 'link', name: 'CustomerTransactions',
-        source: 'Customer', target: 'Transaction', label: '1:M',
-      }} />,
+      <GraphPreview
+        {...props}
+        selection={{
+          kind: 'link',
+          name: 'CustomerTransactions',
+          source: 'Customer',
+          target: 'Transaction',
+          label: '1:M',
+        }}
+      />,
     )
 
     expect(screen.getByText('CustomerTransactions')).toBeInTheDocument()
@@ -122,10 +122,8 @@ describe('GraphPreview -- a link type', () => {
 })
 
 describe('GraphPreview -- what each kind actually shows', () => {
-  it('lists an action\'s parameters', () => {
-    render(
-      <GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
-    )
+  it("lists an action's parameters", () => {
+    render(<GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />)
 
     expect(screen.getByText('Parameters')).toBeInTheDocument()
     expect(screen.getByText(/New name/)).toBeInTheDocument()
@@ -134,9 +132,7 @@ describe('GraphPreview -- what each kind actually shows', () => {
   it('marks a required parameter', () => {
     // Which arguments an action DEMANDS is the first thing you need
     // before running one.
-    render(
-      <GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
-    )
+    render(<GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />)
 
     expect(screen.getByText('required')).toBeInTheDocument()
   })
@@ -150,9 +146,7 @@ describe('GraphPreview -- what each kind actually shows', () => {
      * removed, because "Affects: Customer" is on the same panel.
      * Proven by a control.
      */
-    render(
-      <GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />,
-    )
+    render(<GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />)
 
     const row = screen.getByText(/Customer id/).closest('li')
     expect(row?.textContent).toContain('Customer')
@@ -167,9 +161,16 @@ describe('GraphPreview -- what each kind actually shows', () => {
      * across.
      */
     render(
-      <GraphPreview {...props} selection={{
-        kind: 'link', name: 'CT', source: 'Customer', target: 'Transaction', label: '1:M',
-      }} />,
+      <GraphPreview
+        {...props}
+        selection={{
+          kind: 'link',
+          name: 'CT',
+          source: 'Customer',
+          target: 'Transaction',
+          label: '1:M',
+        }}
+      />,
     )
 
     expect(screen.getByText(/Customer\.transactions/)).toBeInTheDocument()
@@ -179,9 +180,17 @@ describe('GraphPreview -- what each kind actually shows', () => {
     // A link was the one thing you could select and not open.
     const onOpenFull = vi.fn()
     render(
-      <GraphPreview {...props} onOpenFull={onOpenFull} selection={{
-        kind: 'link', name: 'CT', source: 'Customer', target: 'Transaction', label: '1:M',
-      }} />,
+      <GraphPreview
+        {...props}
+        onOpenFull={onOpenFull}
+        selection={{
+          kind: 'link',
+          name: 'CT',
+          source: 'Customer',
+          target: 'Transaction',
+          label: '1:M',
+        }}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: /Open in Link types/ }))
@@ -198,14 +207,15 @@ describe('GraphPreview -- closing it', () => {
       { kind: 'object' as const, name: 'Customer' },
       { kind: 'action' as const, name: 'UpdateCustomerName' },
       {
-        kind: 'link' as const, name: 'CT',
-        source: 'Customer', target: 'Transaction', label: '1:M',
+        kind: 'link' as const,
+        name: 'CT',
+        source: 'Customer',
+        target: 'Transaction',
+        label: '1:M',
       },
     ]) {
       const onClose = vi.fn()
-      const { unmount } = render(
-        <GraphPreview {...props} onClose={onClose} selection={selection} />,
-      )
+      const { unmount } = render(<GraphPreview {...props} onClose={onClose} selection={selection} />)
 
       fireEvent.click(screen.getByRole('button', { name: 'Close preview' }))
 
@@ -231,8 +241,7 @@ describe('selecting the same thing twice closes it', () => {
   it('switches when a DIFFERENT node is clicked', () => {
     const first: GraphSelection = { kind: 'object', name: 'Customer' }
 
-    expect(toggle(first, { kind: 'object', name: 'Transaction' }))
-      .toEqual({ kind: 'object', name: 'Transaction' })
+    expect(toggle(first, { kind: 'object', name: 'Transaction' })).toEqual({ kind: 'object', name: 'Transaction' })
   })
 
   it('distinguishes an action from an object of the same name', () => {
@@ -241,7 +250,6 @@ describe('selecting the same thing twice closes it', () => {
     // happen to share one.
     const first: GraphSelection = { kind: 'object', name: 'Transfer' }
 
-    expect(toggle(first, { kind: 'action', name: 'Transfer' }))
-      .toEqual({ kind: 'action', name: 'Transfer' })
+    expect(toggle(first, { kind: 'action', name: 'Transfer' })).toEqual({ kind: 'action', name: 'Transfer' })
   })
 })

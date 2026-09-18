@@ -424,3 +424,101 @@ describe('ActionForm -- cancel', () => {
     expect(mockedProposeAction).not.toHaveBeenCalled()
   })
 })
+
+describe('one action serves a detail page and a selection', () => {
+  /**
+   * TWO ACTIONS DIFFERING BY ONE PARAMETER TYPE put a choice in front
+   * of a person that only the ontology cared about.
+   * RecategorizeTransaction and RecategorizeTransactions did exactly
+   * that, and Foundry's reason for separating them -- a "bulk action
+   * type" is one "using an object reference list parameter" -- is a
+   * MODELLING constraint, not a user-facing one.
+   *
+   * The write mediator expands a list into one sub-write per object,
+   * so a list of one and a single reference produce the same write.
+   * That is what makes the merge possible rather than merely tidy.
+   */
+  // NO `name` FIELD: ActionDef does not carry one, because the API
+  // returns action types as a dict keyed by name. renderForm takes the
+  // name separately for exactly that reason.
+  const LIST_ACTION: ActionDef = {
+    affected_object_types: ['Transaction'],
+    executable: true,
+    parameters: {
+      transaction_ids: {
+        type: 'object_reference_list',
+        object_type: 'Transaction',
+        default_to_current_object: true,
+      },
+      new_category: { type: 'string', required: true },
+    },
+  }
+
+  it('sends the current object as a list of one', async () => {
+    renderForm({
+      actionName: 'RecategorizeTransactions',
+      actionDef: LIST_ACTION,
+      objectType: 'Transaction',
+      objectId: '7',
+    })
+
+    // THE ENABLED ONE. The locked list field is shown and disabled, so
+    // there are two textboxes and only one is typeable.
+    const category = screen.getAllByRole('textbox').find((box) => !(box as HTMLInputElement).disabled)
+    fireEvent.change(category!, { target: { value: 'audited' } })
+    fireEvent.click(screen.getByText('Propose'))
+
+    await waitFor(() =>
+      expect(mockedProposeAction).toHaveBeenCalledWith('RecategorizeTransactions', {
+        transaction_ids: ['7'],
+        new_category: 'audited',
+      }),
+    )
+  })
+
+  it('locks the list parameter to the current object', async () => {
+    // The same lock a single object_reference gets: the field is shown
+    // and DISABLED rather than hidden, so a person can see what the
+    // action will touch without being able to retarget it.
+    //
+    // A first version asserted the field was absent, which is what a
+    // hidden field would look like. Shown-and-disabled is the existing
+    // behaviour for single references and the merge should not change
+    // it.
+    renderForm({
+      actionName: 'RecategorizeTransactions',
+      actionDef: LIST_ACTION,
+      objectType: 'Transaction',
+      objectId: '7',
+    })
+
+    const boxes = screen.getAllByRole('textbox')
+    expect(boxes).toHaveLength(2)
+    expect(boxes.filter((box) => (box as HTMLInputElement).disabled)).toHaveLength(1)
+  })
+
+  it('sends an empty list rather than an empty string', async () => {
+    // THE CONTROL on the coercion. Sending '' where a list is expected
+    // would be refused by the server with a type error rather than the
+    // clearer "names 0 objects".
+    renderForm({
+      actionDef: {
+        ...LIST_ACTION,
+        parameters: {
+          ...LIST_ACTION.parameters,
+          transaction_ids: { type: 'object_reference_list', object_type: 'Other' },
+        },
+      },
+      objectType: 'Transaction',
+      objectId: '7',
+    })
+
+    fireEvent.change(screen.getAllByRole('textbox')[1]!, { target: { value: 'audited' } })
+    fireEvent.click(screen.getByText('Propose'))
+
+    await waitFor(() => {
+      const sent = mockedProposeAction.mock.calls.at(-1)?.[1] as Record<string, unknown>
+      expect(sent.transaction_ids).toEqual([])
+    })
+  })
+})

@@ -1,11 +1,19 @@
-import { Button, Callout, Tag } from '@blueprintjs/core'
+import { Button, Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import LoadingState from '@elysium/shell-api/components/LoadingState'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ObjectHistory from './ObjectHistory'
+import ExploreRelated from './ExploreRelated'
 import ObjectNotes from './ObjectNotes'
-import { getObjectDetail, getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import {
+  getObjectDetail,
+  getVisibleActionTypesCached,
+  getErrorMessage,
+  handleIfSessionExpired,
+} from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
@@ -140,9 +148,30 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 
   function renderFieldValue(fieldName: string, value: unknown): React.ReactNode {
     const fieldSchema = typeSchema?.fields?.[fieldName]
+
+    // WITHHELD, NOT ABSENT. The caller holds discover: and not read:
+    // on this field, so they may know it exists and not what it holds.
+    //
+    // Checked FIRST, before the link handling below: a link field the
+    // caller cannot read must not render its targets either, and a
+    // value that never arrived would otherwise fall through to the
+    // em dash and read as "not set" -- which is a different fact and a
+    // misleading one.
+    //
+    // The same treatment the approvals diff gives a redacted field,
+    // deliberately: two surfaces showing the same state differently is
+    // what the ladder exists to end.
+    if (fieldSchema?.readable === false) {
+      return (
+        <Tag minimal intent="warning">
+          Hidden by your permissions
+        </Tag>
+      )
+    }
+
     const isLink = fieldSchema?.type === 'link'
 
-    if (!isLink) return formatValue(value)
+    if (!isLink) return formatValue(value, fieldSchema?.decimal_places, fieldSchema?.data_type)
     if (value === null || value === undefined) return formatValue(value)
 
     const targetType = fieldSchema.target
@@ -151,7 +180,13 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
     // resolves both shapes correctly; this only decides how to RENDER
     // whichever shape arrived.
     const linkedIds = Array.isArray(value) ? value : [value]
-    if (linkedIds.length === 0) return formatValue(null)
+    // THE EMPTY ARRAY, not null. This passed null and so rendered as
+    // absence -- but a link that was FOLLOWED and found nothing is not
+    // an unset field. "A customer with no transactions" and "we do not
+    // know this customer's transactions" are different answers to the
+    // same question, and this call site predated formatValue learning
+    // to tell them apart.
+    if (linkedIds.length === 0) return formatValue([])
 
     /**
      * The COUNT first, then a bounded sample.
@@ -188,9 +223,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           </span>
         ))}
         {linkedIds.length > shown.length && (
-          <span className="object-detail__link-more">
-            {' '}and {linkedIds.length - shown.length} more
-          </span>
+          <span className="object-detail__link-more"> and {linkedIds.length - shown.length} more</span>
         )}
       </span>
     )
@@ -199,7 +232,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   if (loading) {
     return (
       <div className="object-detail">
-        <p>Loading…</p>
+        <LoadingState />
       </div>
     )
   }
@@ -207,7 +240,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   if (error) {
     return (
       <div className="object-detail">
-        <Callout intent="danger">{error}</Callout>
+        <ErrorState>{error}</ErrorState>
       </div>
     )
   }
@@ -247,16 +280,26 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
         ))}
       </dl>
 
+      {/* RELATED BEFORE NOTES, and well before history. "What else is
+          attached to this" is a navigational question -- someone
+          asking it is on their way somewhere, and making them scroll
+          past commentary to find the exit is the wrong order. */}
+      <section className="object-detail__related">
+        <h3>Related</h3>
+        <ExploreRelated
+          objectType={objectType}
+          objectId={objectId}
+          visibleSchema={visibleSchema}
+          onSessionExpired={onSessionExpired}
+        />
+      </section>
+
       {/* Notes before history. What people SAID about this object is
           more often what someone came for than what changed about it
           -- history answers "what happened", notes answer "why". */}
       <section className="object-detail__notes">
         <h3>Notes</h3>
-        <ObjectNotes
-          objectType={objectType}
-          objectId={objectId}
-          onSessionExpired={onSessionExpired}
-        />
+        <ObjectNotes objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
       </section>
 
       {/* History under the fields, not beside them. What an object IS
@@ -265,11 +308,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           follow-up. */}
       <section className="object-detail__history">
         <h3>History</h3>
-        <ObjectHistory
-          objectType={objectType}
-          objectId={objectId}
-          onSessionExpired={onSessionExpired}
-        />
+        <ObjectHistory objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
       </section>
 
       {availableActions.length > 0 && !activeAction && (

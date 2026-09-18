@@ -610,16 +610,36 @@ class DataMediator:
         security_value = self._get_security_value(object_type, object_id)
         return security_value is not None and security_value == requesting_user_security_value
 
-    def visible_schema(self, user_record: UserRecord) -> dict:
+    def visible_schema(self, user_record: UserRecord, *, for_agent: bool = False) -> dict:
         # THE single source of truth for "what does this user get to
-        # know exists." A type is included whenever read:{object_type}
-        # is granted -- even with zero visible DATA fields (discovery-
-        # only access is a real, legitimate state). id_field requires
-        # its own explicit read:{object_type}.{id_field} grant, same as
-        # any other field -- no special case.
+        # know exists." A type is included whenever discover:{type} is
+        # granted -- and `read:` implies `discover:`, so the ordinary
+        # grant still admits one. id_field requires its own explicit
+        # grant, same as any other field -- no special case.
+        #
+        # "Discovery-only access" USED TO MEAN read:{type} with no
+        # field grants, which the old comment here called a real and
+        # legitimate state. It was, but it was not discovery: read:
+        # gates search_object, so such a role could still enumerate
+        # every object and get ids back, and an id is data. The genuine
+        # middle rung is discover:{type}, which yields none.
+        #
+        # THE AGENT AND THE UI ARE DIFFERENT AUDIENCES, which for_agent
+        # selects between. A discover-only type is worth showing a
+        # PERSON -- it says the deployment holds something they cannot
+        # see, a fact about their own access. To the MODEL the schema
+        # is a menu of what it can DO, and a type it cannot search is
+        # an item it can only fail on: prompt tokens every hop, and
+        # steps the mediator then denies.
         visible = {}
         for object_type, type_def in self.schema.items():
-            if not authorize(user_record, self.roles, f"read:{object_type}"):
+            if not authorize(user_record, self.roles, f"discover:{object_type}"):
+                continue
+
+            # READABLE IS A SEPARATE QUESTION, and only it permits
+            # search. A discover-only type yields no ids at all.
+            readable = authorize(user_record, self.roles, f"read:{object_type}")
+            if for_agent and not readable:
                 continue
 
             visible_fields = {
@@ -628,10 +648,30 @@ class DataMediator:
                     "display_name": get_display_name(field_info, field_name),
                     "visibility": field_info.get("visibility", "normal"),
                     "status": field_info.get("status", "active"),
+                    # HOW MANY DECIMAL PLACES this field is worth
+                    # showing, if the ontology says. Absent means the
+                    # UI shows the value as it arrived -- there is no
+                    # sensible default, which is the whole reason this
+                    # is declared rather than guessed.
+                    "decimal_places": field_info.get("decimal_places"),
+                    # NAMED BUT WITHHELD. False means the caller may
+                    # know this field exists and not what it holds --
+                    # the middle rung, and what the approvals diff
+                    # already renders as "Hidden by your permissions".
+                    "readable": authorize(
+                        user_record, self.roles, f"read:{object_type}.{field_name}"
+                    ),
                 }
                 for field_name, field_info in type_def["fields"].items()
-                if authorize(user_record, self.roles, f"read:{object_type}.{field_name}")
+                if authorize(user_record, self.roles, f"discover:{object_type}.{field_name}")
             }
+
+            if for_agent:
+                # A field the model cannot read is one it cannot use,
+                # for the same reason as the type above.
+                visible_fields = {
+                    name: info for name, info in visible_fields.items() if info["readable"]
+                }
 
             id_field = type_def["id_field"]
             id_field_visible = authorize(user_record, self.roles, f"read:{object_type}.{id_field}")
@@ -678,6 +718,10 @@ class DataMediator:
             # keys below are ever included now.
             visible[object_type] = {
                 "fields": visible_fields,
+                # Whether this type can be SEARCHED, so a UI can decide
+                # whether to offer a search box at all rather than one
+                # that returns nothing.
+                "readable": readable,
                 "id_field": id_field if id_field_visible else None,
                 "title_field": title_field if title_field_visible else None,
                 # Display metadata, resolved here rather than in the
@@ -905,10 +949,55 @@ class DataMediator:
         # the values already cached instead of reading one at a time.
         self._prefetch_security_values(object_type, candidate_ids)
 
-        return [
-            candidate_id for candidate_id in candidate_ids
-            if check_access(self, user_record, self.roles, object_type, candidate_id, action, context)
-        ]
+        # ONE AUDIT RECORD FOR THE WHOLE READ, not one per object.
+        #
+        # This loop used to write an audit record per candidate, of
+        # which nearly all said the same thing. Measured on the real
+        # path: a read over 50,000 objects wrote 50,007 records and
+        # spent 1.08 of 1.45 seconds doing it.
+        #
+        # Denials still write their own -- check_access() suppresses
+        # only GRANTS when part_of_bulk_read -- and every denied id is
+        # named in the bulk record too. See AuditLog.log_bulk_read().
+        allowed, denied = [], []
+        for candidate_id in candidate_ids:
+            if check_access(self, user_record, self.roles, object_type, candidate_id,
+                            action, context, part_of_bulk_read=True):
+                allowed.append(candidate_id)
+            else:
+                denied.append(candidate_id)
+
+        self.audit_log.log_bulk_read(
+            user_record.user_id, object_type, action,
+            considered=len(candidate_ids),
+            denied_object_ids=denied,
+            fields_read=[],
+            security_values_seen=self._security_values_for(object_type, allowed),
+            request_id=context.request_id if context else None,
+        )
+        return allowed
+
+    def _security_values_for(self, object_type: str, object_ids: list) -> set:
+        """The distinct security partitions a set of objects sits in.
+
+        WHICH PARTITIONS A READ TOUCHED is one of the six questions a
+        defensible trail answers -- "why it was permitted" -- and the
+        per-object records never captured it. Read from the cache the
+        prefetch already filled, so it costs nothing.
+        """
+        # THROUGH THE RESOLVER, not the cache directly. The cache is
+        # keyed by the type the value LIVES ON, which for a via_field
+        # chain is the far side -- Transaction's security value is
+        # cached under Customer. Reading it directly returned an empty
+        # set and would have shipped a silently blank audit field.
+        #
+        # The resolver hits that warm cache anyway, so this stays cheap:
+        # _prefetch_security_values() has already run by the time any
+        # caller reaches here.
+        return {
+            self._get_security_value(object_type, object_id)
+            for object_id in object_ids
+        }
 
     def free_text_searchable_fields(self, user_record: UserRecord, object_type: str,
                                      visible_schema: dict | None = None) -> list[str]:
@@ -1339,6 +1428,82 @@ class DataMediator:
                 allowed.append(target_id)
         return allowed
 
+    def link_counts(self, user_record: UserRecord, object_type: str,
+                     object_id: Any) -> dict:
+        """How many objects sit on the far side of each link, per link.
+
+        COUNTS BEFORE EXPANSION, which is the whole design of the link
+        explorer. A person deciding whether to follow a link needs to
+        know it leads to four things or four thousand BEFORE they
+        commit -- fan-out should never be a surprise, and an
+        explorer that expands first and apologises later is unusable on
+        real data.
+
+        MAC AND RBAC APPLY, so a count is what THIS caller would
+        actually receive rather than what exists. That matters more
+        than it sounds: a count of what exists would leak the size of
+        data they cannot see, and a count that disagreed with the
+        subsequent expansion would look like a bug in the explorer.
+
+        Only links whose TARGET TYPE is visible are reported. A link to
+        a type the caller cannot discover is not a link they have, and
+        naming it would say the deployment holds something they were
+        not told about.
+        """
+        visible = self.visible_schema(user_record)
+        type_schema = visible.get(object_type)
+        if type_schema is None:
+            return {}
+
+        counts = {}
+        for field_name, field_info in type_schema["fields"].items():
+            if field_info.get("type") != "link":
+                continue
+            target = field_info.get("target")
+            if target not in visible:
+                continue
+            # A field whose VALUE is withheld cannot be counted either
+            # -- the count would be derived from data the caller may
+            # not read. The middle rung of the grant ladder.
+            if field_info.get("readable") is False:
+                continue
+
+            value = self.get_field(user_record, object_type, object_id, field_name)
+            ids = value if isinstance(value, list) else ([] if value is None else [value])
+            # RE-AUTHORISED ON THE FAR SIDE, the same way search_around
+            # does it. An id sitting in a link field is not proof the
+            # caller may see the object it names -- MAC is per object,
+            # so the source row being visible says nothing about the
+            # target row.
+            #
+            # UNTESTABLE IN THIS DEPLOYMENT, and worth saying so: a
+            # Transaction inherits its MAC value VIA customer_id, so
+            # every transaction of a visible customer is necessarily
+            # visible and a control removing this check fails nothing.
+            # It is kept because the ontology does not REQUIRE that
+            # arrangement -- a deployment whose link crosses a MAC
+            # boundary would leak a count of objects the caller cannot
+            # see, which is exactly the disclosure this feature must
+            # not make.
+            #
+            # Prefetched in one batch before the per-id loop, or this
+            # would issue a query per linked object and a customer with
+            # four thousand transactions would make the COUNT slower
+            # than the expansion it exists to avoid.
+            action = f"read:{target}"
+            self._prefetch_security_values(target, list(ids))
+            visible_ids = [
+                target_id for target_id in dict.fromkeys(ids)
+                if check_access(self, user_record, self.roles, target, target_id, action, None)
+            ]
+
+            counts[field_name] = {
+                "target": target,
+                "count": len(visible_ids),
+                "cardinality": field_info.get("cardinality"),
+            }
+        return counts
+
     def edit_history(self, user_record: UserRecord, object_type: str, object_id: Any,
                       limit: int | None = None, offset: int = 0,
                      context: RequestContext | None = None) -> tuple[list[dict], int]:
@@ -1431,6 +1596,34 @@ class DataMediator:
         if aggregate != "count" and field_name is None:
             raise ValueError(f"aggregate {aggregate!r} requires a field_name")
 
+        # NEITHER group_by NOR field_name MAY NAME A LINK. A link is
+        # not a column -- it is resolved through the link machinery --
+        # so passing one here reaches the adapter as a column name and
+        # fails in SQL rather than as a usable error:
+        #
+        #   sqlite3.OperationalError: no such column: transactions
+        #
+        # Observed on a real query, once aggregate_object became
+        # reachable from the agent loop: the model asked to aggregate
+        # over "transactions", which is a link field on Customer and
+        # does have a read: grant, so it passed authorization and then
+        # failed at the database.
+        #
+        # Checked HERE rather than in next_step()'s validation because
+        # this is the enforcing side: the agent is one caller among
+        # several, and a link is not aggregatable for anyone.
+        type_config = self.schema.get(object_type) or {}
+        for argument_name, candidate in (("group_by", group_by), ("field_name", field_name)):
+            if candidate is None:
+                continue
+            field_info = (type_config.get("fields") or {}).get(candidate)
+            if field_info and is_link_field(field_info):
+                raise ValueError(
+                    f"{argument_name} {candidate!r} is a link on {object_type}, not an "
+                    f"aggregatable field. Follow the link with search_around first, then "
+                    f"aggregate over the objects on the far side."
+                )
+
         visible_ids = set(self.search_object(user_record, object_type, conditions))
         if not visible_ids:
             return {}
@@ -1492,15 +1685,39 @@ class DataMediator:
             list(object_ids), columns, resolved_type_config,
         )
 
+        # THE WRITE LOG, ASKED ONCE INSTEAD OF PER OBJECT PER FIELD.
+        #
+        # This loop used to call _read_field_with_log_check() for every
+        # field of every row, and each call opened its own SQLite
+        # connection -- twice, for "is it deleted" and "does it have a
+        # pending change". Measured: counting 50,000 transactions by
+        # category opened 200,023 connections and took 35 seconds, of
+        # which 34 was connection churn. The grouping everyone assumes
+        # is the cost was 0.24s.
+        #
+        # Both tables hold only PENDING writes, so they are small
+        # whatever the object table's size -- which is why one query
+        # for all of them is affordable and the per-object form never
+        # was.
+        pending_by_id: dict = {}
+        deleted_ids: set = set()
+        if self.write_log is not None:
+            ids = [row[id_column] for row in raw]
+            pending_by_id = self.write_log.pending_changes_for_ids(object_type, ids)
+            deleted_ids = self.write_log.deleted_ids(object_type, ids)
+
         by_id = {}
         for row in raw:
             object_id = row[id_column]
+            # A DELETED OBJECT READS AS ABSENT, field by field, exactly
+            # as the per-object path did.
+            if str(object_id) in deleted_ids:
+                by_id[object_id] = dict.fromkeys(readable)
+                continue
+
+            pending = pending_by_id.get(str(object_id))
             by_id[object_id] = {
-                name: self._read_field_with_log_check(
-                    object_type, object_id, name, adapter, resolved_type_config
-                )
-                if self.write_log is not None
-                else row[column]
+                name: (pending[name] if pending is not None and name in pending else row[column])
                 for name, column in zip(readable, columns, strict=True)
             }
         return by_id

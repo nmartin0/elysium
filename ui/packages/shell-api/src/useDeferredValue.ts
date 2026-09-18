@@ -61,9 +61,12 @@ export function useDeferredWrite(
   }, [])
 
   // A pending write must not fire after unmount.
-  useEffect(() => () => {
-    if (timer.current !== null) clearTimeout(timer.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (timer.current !== null) clearTimeout(timer.current)
+    },
+    [],
+  )
 
   return [value, set, adopt]
 }

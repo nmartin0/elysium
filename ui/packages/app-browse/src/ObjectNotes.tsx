@@ -11,8 +11,9 @@
  */
 
 import { useState } from 'react'
-import { Button, Callout, TextArea } from '@blueprintjs/core'
+import { Button, TextArea } from '@blueprintjs/core'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { createObjectNote, getErrorMessage, getObjectNotes } from '@elysium/shell-api/api'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import { formatTimestamp } from '@elysium/shell-api/format'
@@ -24,15 +25,16 @@ interface Note {
   created_at: string
 }
 
-export default function ObjectNotes({ objectType, objectId, onSessionExpired }: {
+export default function ObjectNotes({
+  objectType,
+  objectId,
+  onSessionExpired,
+}: {
   objectType: string
   objectId: string
   onSessionExpired: () => void
 }) {
-  const { data, error } = useFetchOnce<Note[]>(
-    () => getObjectNotes(objectType, objectId),
-    onSessionExpired,
-  )
+  const { data, error } = useFetchOnce<Note[]>(() => getObjectNotes(objectType, objectId), onSessionExpired)
   /**
    * Notes added since load, held separately from the fetched list.
    *
@@ -51,7 +53,7 @@ export default function ObjectNotes({ objectType, objectId, onSessionExpired }: 
     setSaving(true)
     setSaveError(null)
     try {
-      const created = await createObjectNote(objectType, objectId, text) as Note
+      const created = (await createObjectNote(objectType, objectId, text)) as Note
       setAdded([...added, created])
       setText('')
     } catch (err: unknown) {
@@ -82,7 +84,7 @@ export default function ObjectNotes({ objectType, objectId, onSessionExpired }: 
             <p className="object-notes__empty">Nothing has been written about this yet.</p>
           )}
 
-          {saveError && <Callout intent="danger">{saveError}</Callout>}
+          {saveError && <ErrorState>{saveError}</ErrorState>}
 
           <TextArea
             aria-label="New note"

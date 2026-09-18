@@ -132,6 +132,70 @@ def validate_action_types(action_types: dict, object_types: dict) -> None:
         _validate_sub_writes_action(action_type_name, action_def, object_types)
         _validate_auto_execute(action_type_name, action_def)
         _validate_parameters_are_used(action_type_name, action_def)
+        _validate_effects_are_reachable(action_type_name, action_def, object_types)
+
+
+def _validate_effects_are_reachable(action_type_name: str, action_def: dict,
+                                     object_types: dict) -> None:
+    """An action may only mutate types its parameters can reach.
+
+    THE EFFECT SIGNATURE, written as a check rather than a type system.
+    An action is not a function from one type to another -- it takes
+    several parameters and mutates several types -- so the honest shape
+    is closer to `action : (A, B, ...) -> Effect[C, D, ...]`, and both
+    halves are already declared: parameters name their `object_type`,
+    and every sub-write names the `object_type` it writes.
+
+    WHAT WAS MISSING IS THE ARROW BETWEEN THEM. Nothing checked that
+    the effects stay within what the parameters reach, so a
+    TransferFunds taking two Accounts could quietly mutate a Customer
+    and pass validation.
+
+    REACHABLE MEANS NAMED OR LINKED-TO. A parameter's own type counts,
+    and so does anything that type links to -- an action on a Customer
+    may legitimately write the Transactions hanging off it, which is
+    what `object_reference_list` and link traversal exist for. One hop,
+    deliberately: a transitive closure over links would reach most of
+    an ontology and stop being a constraint at all.
+
+    NO DEPENDENT TYPES REQUIRED, and none available -- refinement and
+    dependent types for Python are academic, and the ecosystem offers
+    runtime schema validation instead. This is that: a check over YAML
+    at config load, in the one place this project already enforces
+    every other shape.
+    """
+    parameters = action_def.get("parameters") or {}
+    reachable = set()
+    for parameter in parameters.values():
+        if not isinstance(parameter, dict):
+            continue
+        named = parameter.get("object_type")
+        if named is None:
+            continue
+        reachable.add(named)
+        # ONE HOP, through declared links only.
+        for field in (object_types.get(named, {}).get("fields") or {}).values():
+            if isinstance(field, dict) and field.get("type") == "link":
+                target = field.get("target")
+                if target:
+                    reachable.add(target)
+
+    if not reachable:
+        # NOTHING TO CHECK AGAINST. An action with no object_reference
+        # parameter creates rather than mutates, and what it may create
+        # is a different question from what it may reach.
+        return
+
+    for index, sub_write in enumerate(action_def.get("sub_writes") or []):
+        written = sub_write.get("object_type")
+        if written is not None and written not in reachable:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub-write {index} writes "
+                f"{written!r}, which none of its parameters reaches. "
+                f"Reachable from its parameters: {', '.join(sorted(reachable))}. "
+                f"An action may only mutate what it was given or what that "
+                f"links to."
+            )
 
 
 def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_types: dict) -> None:
@@ -205,7 +269,7 @@ def _validate_object_reference_parameters(action_type_name: str, declared_params
     # "does this object_type actually exist" scrutiny either way.
     default_to_current_object_params = []
     for param_name, param_spec in declared_params.items():
-        if param_spec.get("type") != "object_reference":
+        if param_spec.get("type") not in OBJECT_REFERENCE_TYPES:
             if "default_to_current_object" in param_spec:
                 # A real, previously-possible mistake -- this flag
                 # only makes sense on an object_reference parameter
@@ -325,6 +389,19 @@ def _validate_parameter_display_metadata(action_type_name: str, declared_params:
 
 PARAMETER_PREFIX = "parameter."
 
+# THE TWO WAYS A PARAMETER CAN NAME OBJECTS. `object_reference` names
+# one; `object_reference_list` names many, and the write mediator
+# expands the list into one sub-write per object -- each with its own
+# authorization check, its own submission criteria, and its own place
+# in the atomic batch.
+#
+# Foundry draws the line identically: a "bulk action type" is one
+# "using an object reference list parameter". Bulk is a property of the
+# ACTION, declared in the ontology, rather than a mode an application
+# switches into -- which is what makes it reviewable before anyone runs
+# it.
+OBJECT_REFERENCE_TYPES = ("object_reference", "object_reference_list")
+
 
 def _collect_parameter_references(action_def: dict) -> set[str]:
     """Every parameter an action actually USES.
@@ -344,6 +421,24 @@ def _collect_parameter_references(action_def: dict) -> set[str]:
         note(sub_write.get("object_id"))
         for mutation in sub_write.get("mutations") or []:
             note((mutation.get("set") or {}).get("value"))
+        # CRITERIA LIVE ON THE SUB_WRITE, which is where
+        # WriteMediator reads them (sw_def["submission_criteria"]).
+        # This loop previously read action_def["submission_criteria"]
+        # instead, one level too high, and found nothing at all --
+        # harmless while every criterion value is a literal, and
+        # silently wrong the moment one is not.
+        #
+        # The failure it would have caused is the bad kind: a parameter
+        # used ONLY by a criterion would be reported as declared-but-
+        # unused, so an author would delete the declaration and break
+        # the criterion, with the validator having told them to.
+        for criterion in sub_write.get("submission_criteria") or []:
+            for value in (criterion or {}).values():
+                note(value)
+
+    # The action level is still read, because nothing forbids a
+    # deployment putting criteria there and a validator that quietly
+    # ignored half the file would be its own version of this bug.
     for criterion in action_def.get("submission_criteria") or []:
         for value in (criterion or {}).values():
             note(value)
@@ -471,6 +566,53 @@ def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:
             f"Action type {action_type_name!r}: auto_execute must be true or false, "
             f"got {value!r}."
         )
+    if value is not True:
+        return
+
+    # UNATTENDED WRITES MAY NOT TAKE MODEL-SUPPLIED VALUES.
+    #
+    # Ontology data flows into `gathered`, and `gathered` flows into the
+    # prompt, so a field value containing instructions reaches the model
+    # as text. Three gates normally sit between a model's decision and a
+    # write: the execute grant, MAC per sub_write per object, and a
+    # human at confirm. auto_execute removes the third.
+    #
+    # What remains is bounded by the acting user's own grants, so this
+    # is not privilege escalation. It is action without consent, which
+    # is a different property and one this project takes seriously.
+    #
+    # THE DISTINCTION THAT IS STATICALLY DETECTABLE, and it is the one
+    # that matters: a mutation whose value is `parameter.<name>` is
+    # chosen BY THE MODEL. Combined with auto_execute, injected text
+    # decides both WHETHER to write and WHAT to write. A mutation whose
+    # value is a literal, or `user.<attribute>`, lets it decide only
+    # whether -- a far smaller blast radius, and one a deployment can
+    # reason about.
+    #
+    # Refused at load rather than warned about. An action type is
+    # authored once and read forever; a warning at startup is seen by
+    # whoever deployed it and by nobody afterwards.
+    #
+    # The narrower rule from ROADMAP.md -- "no field the model has
+    # read" -- is not knowable here: what a model has read is a
+    # property of a running query, not of a schema.
+    model_supplied = [
+        mutation["set"]["property"]
+        for sub_write in action_def.get("sub_writes") or []
+        for mutation in sub_write.get("mutations") or []
+        if isinstance((mutation.get("set") or {}).get("value"), str)
+        and mutation["set"]["value"].startswith(PARAMETER_PREFIX)
+    ]
+    if model_supplied:
+        raise ValueError(
+            f"Action type {action_type_name!r}: auto_execute cannot be combined with "
+            f"model-supplied values. Field(s) {sorted(set(model_supplied))} are set "
+            f"from action parameters, so an unattended write would let the model "
+            f"choose both whether to write and what to write -- and ontology data "
+            f"reaches the model as text, so that text can be attacker-influenced. "
+            f"Either set these fields from literals, or leave auto_execute off so a "
+            f"human confirms."
+        )
 
 
 def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, object_types: dict,
@@ -547,10 +689,20 @@ def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, 
                 f"Action type {action_type_name!r}: sub_writes[{index}].object_id references "
                 f"undeclared parameter {param_name!r}."
             )
-        if param_spec.get("type") != "object_reference":
+        # EITHER FORM. object_reference names one object;
+        # object_reference_list names many, and the write mediator
+        # expands the list into one sub-write per object -- each
+        # getting its own authorization check, its own submission
+        # criteria and its own place in the atomic batch.
+        #
+        # Foundry draws the line here too: a "bulk action type" is one
+        # "using an object reference list parameter", a property of the
+        # ACTION rather than a mode the UI switches into.
+        if param_spec.get("type") not in OBJECT_REFERENCE_TYPES:
             raise ValueError(
                 f"Action type {action_type_name!r}: sub_writes[{index}].object_id's parameter "
-                f"{param_name!r} must be type 'object_reference', got {param_spec.get('type')!r}."
+                f"{param_name!r} must be type 'object_reference' or 'object_reference_list', "
+                f"got {param_spec.get('type')!r}."
             )
         if param_spec.get("object_type") != object_type:
             raise ValueError(

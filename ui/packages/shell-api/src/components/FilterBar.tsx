@@ -37,9 +37,7 @@ export interface FieldFilter {
  * dropdown may contain, and the server still validates -- this only
  * decides what to OFFER.
  */
-export const ALL_OPERATORS = [
-  'equals', 'range', 'contains', 'date_range', 'relative_date',
-]
+export const ALL_OPERATORS = ['equals', 'range', 'contains', 'date_range', 'relative_date']
 
 export function operatorsFor(type: string | undefined): string[] {
   // NO declared type means NO restriction, which is the server's own
@@ -97,14 +95,17 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
 
   function add() {
     if (!field || value === '') return
-    onChange([...filters, {
-      field,
-      operator,
-      // A two-part operator takes a pair; everything else takes one
-      // value. Sending a bare string for a range is the shape error
-      // the server would reject, so it is not constructible here.
-      value: needsTwo ? [value, upper] : value,
-    }])
+    onChange([
+      ...filters,
+      {
+        field,
+        operator,
+        // A two-part operator takes a pair; everything else takes one
+        // value. Sending a bare string for a range is the shape error
+        // the server would reject, so it is not constructible here.
+        value: needsTwo ? [value, upper] : value,
+      },
+    ])
     setValue('')
     setUpper('')
   }
@@ -124,11 +125,7 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
               {describeFilter(filter)}
             </Tag>
           ))}
-          <Button
-            minimal
-            small
-            onClick={() => onChange([])}
-          >
+          <Button minimal small onClick={() => onChange([])}>
             Clear all
           </Button>
         </div>
@@ -149,19 +146,19 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
         >
           <option value="">Add a filter…</option>
           {filterable.map(([name, f]) => (
-            <option key={name} value={name}>{f.display_name ?? name}</option>
+            <option key={name} value={name}>
+              {f.display_name ?? name}
+            </option>
           ))}
         </HTMLSelect>
 
         {field && (
           <>
-            <HTMLSelect
-              aria-label="Operator"
-              value={operator}
-              onChange={(e) => setOperator(e.currentTarget.value)}
-            >
+            <HTMLSelect aria-label="Operator" value={operator} onChange={(e) => setOperator(e.currentTarget.value)}>
               {operators.map((op) => (
-                <option key={op} value={op}>{op.replace(/_/g, ' ')}</option>
+                <option key={op} value={op}>
+                  {op.replace(/_/g, ' ')}
+                </option>
               ))}
             </HTMLSelect>
 
@@ -180,7 +177,9 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
               />
             )}
 
-            <Button icon="add" onClick={add} disabled={value === ''}>Add</Button>
+            <Button icon="add" onClick={add} disabled={value === ''}>
+              Add
+            </Button>
           </>
         )}
       </div>

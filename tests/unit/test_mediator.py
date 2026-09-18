@@ -327,6 +327,12 @@ def test_visible_schema_never_leaks_internal_storage_or_security_config(mediator
         "display_name", "plural_display_name", "description",
         # UI rendering hints for the ontology browser.
         "icon", "color", "status", "group",
+        # Whether this type can be SEARCHED, as opposed to merely
+        # known about. A permission OUTCOME rather than infrastructure
+        # -- the opposite of storage/security, which describe how the
+        # deployment is wired and are what this test exists to keep
+        # out. A UI needs it to decide whether to offer a search box.
+        "readable",
     }
     assert "storage" not in visible["Author"]
     assert "additional_storage" not in visible["Author"]

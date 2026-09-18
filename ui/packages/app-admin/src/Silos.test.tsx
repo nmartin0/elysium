@@ -12,16 +12,22 @@ const { default: Silos } = await import('./Silos')
 
 const HEALTHY = [
   {
-    name: 'primary_sql', adapter: 'sqlite', object_types: ['Customer'],
-    reachable: true, failure: null,
+    name: 'primary_sql',
+    adapter: 'sqlite',
+    object_types: ['Customer'],
+    reachable: true,
+    failure: null,
     fields: [
       { object_type: 'Customer', field: 'name', column: 'name', table: 'customers', is_identifier: false },
       { object_type: 'Customer', field: 'customer_id', column: 'customer_id', table: 'customers', is_identifier: true },
     ],
   },
   {
-    name: 'support_crm', adapter: 'sqlite', object_types: ['Ticket'],
-    reachable: true, failure: null,
+    name: 'support_crm',
+    adapter: 'sqlite',
+    object_types: ['Ticket'],
+    reachable: true,
+    failure: null,
     fields: [
       { object_type: 'Ticket', field: 'risk_score', column: 'score_val', table: 'customer_risk', is_identifier: false },
       { object_type: 'Ticket', field: 'customer_id', column: 'cust_ref', table: 'customer_risk', is_identifier: true },
@@ -43,10 +49,7 @@ describe('Silos', () => {
   })
 
   it('names what is not answering', async () => {
-    getSilos.mockResolvedValue([
-      HEALTHY[0],
-      { ...HEALTHY[1], reachable: false, failure: 'FileNotFoundError' },
-    ])
+    getSilos.mockResolvedValue([HEALTHY[0], { ...HEALTHY[1], reachable: false, failure: 'FileNotFoundError' }])
 
     render(<Silos onSessionExpired={() => {}} />)
 

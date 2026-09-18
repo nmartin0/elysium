@@ -55,7 +55,7 @@ def mediator_and_write_mediator(test_db_path, test_schema, tmp_path):
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
     write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES, write_log=write_log)
-    write_mediator = WriteMediator(mediator, {"test_silo": adapter}, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, {"test_silo": adapter}, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     return mediator, write_mediator
 
 

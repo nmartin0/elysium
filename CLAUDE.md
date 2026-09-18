@@ -11,11 +11,30 @@ that have gone wrong repeatedly.
 2. **`PRINCIPLES.md`** — eleven principles, each learned from a real
    failure. Principle 2 (negative controls) is the one that catches
    the most.
-3. **`UI_ROADMAP.md`** — the backlog, the build order, the sub-app
-   plan, and per-feature design records. Written so a fresh session
-   starts with the decisions made, not rediscovered.
-4. `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md` — architecture and the
-   Object Explorer plan.
+3. **`BACKLOG.md`** — the ONE list of what is open. Five files used to
+   carry their own and they drifted apart; the entry marked "blocking
+   everything below it" had been fixed weeks earlier and no list said
+   so.
+4. **`UNIFIED_ROADMAP.md`** — START HERE for what to do next. Nine
+   planning documents hold ~8,500 lines between them; each is right
+   about its own area and none can say what comes first. This one is
+   the ordering, by dependency, and points at the others for detail.
+5. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
+   before building, because both touch the security model and both
+   are hard to retrofit. Neither is built.
+6. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
+   precedent behind each part, and which parts wait for a model.
+7. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
+   besides data, and why the ontology is a COPY there rather than a
+   home. Corrects an earlier conclusion in BACKLOG.md.
+8. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
+   a materialised MAC column, DuckDB, MinIO. Phased, with the
+   measurements behind each phase.
+9. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
+   `IDEAS.md` — the REASONING, not the backlog. Why a thing was
+   decided, rejected or measured, and what a precedent said. Written
+   so a fresh session starts with the decisions made, not
+   rediscovered. Read these when BACKLOG.md sends you to one.
 
 **The commit log is documentation.** `git log` carries the reasoning
 for every decision, including the ones that were reversed and why.
@@ -106,10 +125,81 @@ click a diamond" beats "the graph now supports actions". And when they
 paste output, read it closely — the bug is often in a detail they did
 not flag.
 
+**jsdom computes NO LAYOUT, and that is the biggest gap in what this
+project can verify.** No stacking contexts, no hit-testing, no cascade
+resolution, no idea whether one element covers another. A whole
+session went by shipping UI fixes that passed 786 tests and did not
+work, every one found by a person clicking.
+
+`ui/e2e/` holds Playwright tests that CAN see those things:
+
+EVERY LINE STARTS FROM THE REPOSITORY ROOT, and says so. A list
+mixing `cd ui && ...` with root-relative commands leaves a reader in
+the wrong directory -- which it did, producing "No module named
+'scripts'" from a step that looked fine.
+
+    cd ~/elysium/ui && npm run e2e:install     (once)
+    cd ~/elysium/ui && npm run build           (tests the BUILT bundle)
+
+    cd ~/elysium && python -m scripts.create_e2e_users \
+                        --yes-this-is-development      (once)
+        Refuses without the flag, deliberately: known passwords are a
+        back door. Creates plainuser and adminuser -- TWO, because the
+        nav is supposed to show Admin to one and not the other.
+
+    cd ~/elysium && uvicorn api.app:app
+        Serves the UI and the API together. LEAVE A RUNNING ONE ALONE:
+        static files are read from disk per request, so a fresh build
+        is picked up without a restart.
+
+    cd ~/elysium/ui && npm run e2e
+
+NO DEV SERVER. uvicorn serves both, so the only process needed is the
+one already running. The config pointed at Vite's :5173 until every
+test failed with ERR_CONNECTION_REFUSED on its first run -- a test
+nobody can start is a test nobody runs.
+
+DELIBERATELY NOT PART OF `npm test`, which stays fast and mocked. But
+a UI change that is about LAYOUT, HIT-TESTING or the CASCADE has not
+been verified until these run. If a fix is for something a person
+reported seeing, assume jsdom cannot see it either.
+
+**CHANGING A FIELD'S `data_type` NEEDS SILVER DROPPED.** Iceberg
+refuses an incompatible column change -- "Cannot change column type:
+amount: string -> decimal(38, 9)" -- because it is not a widening, and
+it is right to.
+
+BRONZE MAKES THE RECOVERY FREE, which is what bronze is for:
+
+    python -c "..."   # drop the silver table
+    python -m scripts.run_sync
+
+Silver rebuilds FROM BRONZE, without re-reading the customer's
+database. Verified on the live mirror when `amount` became `decimal`
+and `transaction_date` became `date`.
+
+The mirror administration surface (UNIFIED_ROADMAP 0.5.4) should offer
+this as a button; today it needs a person with a Python prompt.
+
 **Backend changes need `uvicorn` restarted.** Frontend changes do not
-— Vite hot-reloads. A new route returning 404 is almost always a stale
-server, and this has caused confusion more than once. Say so when a
-patch touches Python.
+— Vite hot-reloads. Say so when a patch touches Python.
+
+THE SYMPTOM IS NOT ALWAYS A 404, which is what made this recur after
+the rule was written. A stale server also shows as:
+
+- a new ROUTE returning 404, the obvious one
+- a new response FIELD arriving as `undefined`, which the UI renders
+  as its own empty state — so the screen looks like a frontend bug, or
+  worse, like the feature working and finding nothing
+
+The second cost a diagnosis: a new "last attempt" column read "not
+recorded" on a deployment that had recorded attempts perfectly well,
+because the endpoint serving it predated the field. The empty state
+was correct, the data was correct, and the server was old.
+
+**SO: if a patch touches `api/` or `core/`, the restart goes in the
+instructions with the `git am`, not as something to remember
+afterwards.**
 
 ## Give a synopsis before working
 
@@ -139,15 +229,39 @@ Recovery:
   these, every silo reads unreachable, which is CORRECT and the Silos
   screen will tell them so.
 - `scripts/create_debug_user.py` — `debug` / `a`, role `debug`.
+- `scripts/repair_catalog.py` — repoints a catalog whose metadata
+  file was lost to a full disk or a power cut. Reports by default;
+  repairs with `--write`. Needed because re-syncing CANNOT fix it, and
+  deleting the mirror destroys the changelog.
+- `scripts/create_e2e_users.py` — `plainuser` and `adminuser`, the
+  two the browser tests log in as. Two, because the nav is supposed
+  to show Admin to one and not the other.
 - `scripts/create_colleague_user.py` — adds `colleague` / `a` in the
   same role, for testing that shared things are shared.
-There is **no volume seeder**. `seed_dev_silos.py` builds the fixture
-schemas, which hold four customers — enough to exercise every screen
-and not enough to exercise paging, the "and N more" link cutoff, or a
-chart with many distinct values. If a feature needs volume, say so
+**For volume, `seed_dev_silos.py --bulk N`.** Without it the fixture
+schemas hold four customers and seven transactions — enough to
+exercise every screen, and not enough to exercise paging, the "and N
+more" link cutoff, or a chart with many distinct values. A visual
+check of paging was literally unaskable until this existed.
+
+`--bulk 60` adds synthetic transactions on customers the `alice`
+development user can see, which takes her past the server's default
+page size of 50. The default of 0 leaves the databases identical to
+what the tests build, which is deliberate: several tests assert exact
+counts, and a seeder that quietly added rows would break them in a
+file nobody reads while debugging them. If a feature needs volume,
+say so
 rather than assuming a script exists; one would have to be written.
 
 Pointing `ELYSIUM_DATA_DIR` somewhere under `$HOME` would end this.
+
+**Do not run uvicorn with `--reload` while testing writes.** The
+pending-write store is in-process memory, so a restart empties it —
+and `--reload` restarts on any watched file change, including the
+`policy.yaml` edit someone makes to exercise an approvals flow.
+Proposals then vanish between steps and look like a bug in the queue.
+Configuration needs no restart anyway: `POST /api/admin/reload`
+applies it and deliberately preserves pending writes.
 It has been suggested and not done; suggest it again if it bites.
 
 ## The loop, every change
@@ -175,8 +289,19 @@ is how the mistakes below happen.
    ./lint.sh
    python -m pytest tests/ -q -m "not integration"
    python -m pytest tests/integration/test_api.py -q    # if api/ changed
-   cd ui && npx vitest run && npx tsc --noEmit && npm run lint
+   cd ui && npx vitest run && npm run lint
    ```
+
+   `npm run lint` is now all four frontend tools -- oxlint (with
+   `--deny-warnings`), tsc, oxfmt, knip -- stopping at the first
+   failure, so it no longer needs a second line beside it. If you run
+   `npx oxlint` directly it still exits 0 on warnings; read the count.
+
+   One limit worth knowing rather than rediscovering: knip does not
+   report unused exports in a file that is a declared entry point in
+   its package's `exports` map, because those are public API to it. A
+   new unused export in `shell-api/src/format.ts` passes; the same
+   export in `app-schema/src/SchemaGraph.tsx` fails.
 
 7. **Verify each factual claim** the commit message makes, with a
    command, before writing it. This has caught wrong claims about

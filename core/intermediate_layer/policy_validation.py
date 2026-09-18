@@ -77,12 +77,74 @@ def validate_roles(roles: dict, object_types: dict, action_types: dict, enabled_
             _validate_one_grant(role_name, grant, object_types, action_types, enabled_tools)
 
 
+def validate_role_coherence(roles: dict) -> None:
+    """Checks that hold BETWEEN a role's grants, not within one.
+
+    SEPARATE FROM validate_roles() BY NECESSITY, not taste.
+    scripts/lint_deployment.py calls that function once per GRANT --
+    handing it a role holding exactly one -- so that one bad grant
+    never stops the next from being reported. A cross-grant rule placed
+    inside it would see a single grant every time and call every field
+    grant orphaned.
+
+    That per-grant call is documented there as safe because the checks
+    "are already entirely self-contained per role (verified directly:
+    neither compares across different entries)". This is the first rule
+    that is not, so it lives outside rather than quietly invalidating
+    the observation.
+    """
+    for role_name, role_def in roles.items():
+        _validate_field_grants_have_their_type(
+            role_name, set(role_def.get("allowed_actions", [])),
+        )
+
+
+def _validate_field_grants_have_their_type(role_name: str, granted: set) -> None:
+    """A field grant is meaningless without a grant on its type.
+
+    Grants were independent strings, so `read:Customer.email` could be
+    held WITHOUT any grant on Customer -- a role authorised to read a
+    field of a type it cannot even discover. Verified against
+    authorize() before this was written: it returned True for the field
+    and False for the type.
+
+    Nothing enforced it because nothing looked at two grants together;
+    every other check in this module reads one string at a time.
+
+    ANY RUNG SATISFIES IT. read:Customer.email needs Customer to be
+    discoverable, not readable -- and `read:` implies `discover:`, so a
+    deployment writing the ordinary form is already covered. Verified
+    that all three shipped policies pass unchanged.
+    """
+    for grant in sorted(granted):
+        prefix, _, target = grant.partition(":")
+        if prefix not in ("read", "discover") or "." not in target:
+            continue
+        object_type = target.split(".", 1)[0]
+        if f"read:{object_type}" in granted or f"discover:{object_type}" in granted:
+            continue
+        raise ValueError(
+            f"Role {role_name!r}: grant {grant!r} names a field of {object_type!r}, but "
+            f"the role has no grant on {object_type!r} itself. A field cannot be read "
+            f"or discovered on a type the role cannot see -- add "
+            f"'discover:{object_type}' or 'read:{object_type}'."
+        )
+
+
 def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_types: dict,
                          enabled_tools: list[str]) -> None:
     if grant == "manage:users":
         return
 
     if grant == "discover:action_types":
+        return
+
+    if grant == "manage:deployment":
+        # Reloading configuration while running. A SEPARATE grant from
+        # manage:users, deliberately: creating an account and replacing
+        # the ontology, the grants and the silo wiring are different
+        # powers, and a deployment should be able to hand out one
+        # without the other.
         return
 
     if grant.startswith("execute:"):
@@ -113,6 +175,18 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
         )
 
     if grant.startswith("read:"):
+        _validate_type_or_field_grant(role_name, grant, object_types)
+        return
+
+    if grant.startswith("discover:"):
+        # THE MIDDLE RUNG. "You may know this exists, and not what it
+        # holds." On a TYPE: it appears in the schema, but it cannot be
+        # searched and yields no ids. On a FIELD: the field is named,
+        # and its value is withheld.
+        #
+        # Validated identically to read:, because it names the same
+        # things -- a grant referencing an object type or field that
+        # does not exist is the same mistake whichever rung it is on.
         _validate_type_or_field_grant(role_name, grant, object_types)
         return
 

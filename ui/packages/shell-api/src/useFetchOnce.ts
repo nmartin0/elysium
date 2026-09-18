@@ -39,10 +39,7 @@ export interface FetchOnceResult<T> {
   error: string | null
 }
 
-export function useFetchOnce<T>(
-  fetcher: () => Promise<unknown>,
-  onSessionExpired: () => void,
-): FetchOnceResult<T> {
+export function useFetchOnce<T>(fetcher: () => Promise<unknown>, onSessionExpired: () => void): FetchOnceResult<T> {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -60,7 +57,8 @@ export function useFetchOnce<T>(
 
   useEffect(() => {
     let cancelled = false
-    latest.current.fetcher()
+    latest.current
+      .fetcher()
       .then((body) => {
         if (!cancelled) setData(body as T)
       })

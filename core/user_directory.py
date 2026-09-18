@@ -76,6 +76,7 @@ Used by: api/routes.py (root-only routes, gated by the caller checking
 """
 
 import sqlite3
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from core.auth.credential_store import insert_credential_using_connection
@@ -85,12 +86,43 @@ from core.intermediate_layer.auth import UserRecord
 
 
 class UserDirectory:
-    def __init__(self, db_path: Path, roles: dict):
+    def __init__(self, db_path: Path, roles: dict | Callable[[], Mapping]):
+        """`roles` may be a mapping or a callable returning one.
+
+        A CALLABLE IS THE POINT, and the mapping form is kept only for
+        the scripts. This module's own docstring above says roles
+        "comes from the same static, per-deployment policy.yaml that
+        never changes across this instance's lifetime" -- which was
+        true when written and stopped being true when configuration
+        became reloadable (HOT_RELOAD_PLAN.md step 3).
+
+        This object is RUNTIME STATE: it owns credentials.db and must
+        SURVIVE a reload, so it is not rebuilt when configuration
+        changes. But it carries a slice of CONFIGURATION, and a
+        surviving object holding a snapshot of replaced config is
+        stale by construction. Found by a test: after a reload added a
+        role, creating a user with it failed with "Unknown role" until
+        the process restarted.
+
+        Reading through a callable means it always sees the roles in
+        force NOW, without this object having to be rebuilt -- which it
+        must not be, because rebuilding it would mean reopening
+        credentials.db and discarding nothing useful.
+
+        The mapping form stays for scripts/bootstrap_root.py and
+        friends: a one-shot script has no reload to be stale across,
+        and requiring them to wrap a dict in a lambda would be
+        ceremony without a reason.
+        """
         self._db_path = db_path
         self._roles = roles
 
+    @property
+    def roles(self) -> Mapping:
+        return self._roles() if callable(self._roles) else self._roles
+
     def create_user(self, username: str, password: str, mac_value: str | None, role_name: str) -> None:
-        if role_name not in self._roles:
+        if role_name not in self.roles:
             # Fails loudly at creation time, not silently later as a user
             # with a role name that matches nothing in policy.yaml -- such
             # a user would authorize() as if they had NO role at all

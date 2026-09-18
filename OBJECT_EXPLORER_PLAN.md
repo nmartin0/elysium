@@ -116,7 +116,14 @@ add it, and we will know what it is for.
 
 ---
 
-## Build order
+## Build order -- SEE BACKLOG.md
+
+> **The open items from this file now live in BACKLOG.md**, which is
+> the one list. What stays here is the REASONING -- why a thing was
+> decided, rejected or measured -- because that has been needed
+> repeatedly and a backlog entry is the wrong place for it.
+
+### The original phases, kept for their reasoning
 
 ### Phase 1 — the filter model (backend) — DONE
 
@@ -188,9 +195,23 @@ screen uses any of them. Page tokens stay opaque.
 hidden fields absent — the rendering rule the schema browser already
 follows.
 
-**10. Do not present the row count as authoritative while paging a live
-set.** Default paging is documented as possibly duplicating or missing
-rows.
+**10. Do not present the row count as authoritative while paging a LIVE
+set.** The qualifier matters and this entry predated the distinction.
+
+On a MIRROR deployment paging is consistent: a generation pins each
+table's Iceberg snapshot id when it is built, and every read in that
+generation uses it, so page one and page two see the same immutable
+data even if a sync commits between them. The count is authoritative
+there.
+
+On a LIVE deployment it is not -- reads go straight to the customer's
+database and rows can move between pages.
+
+A caller can already tell which: GET /api/data-freshness reports
+`source: mirror` or `source: live`. What is NOT done is the UI acting
+on it. Browse renders "Showing N of M matches" unconditionally, which
+overstates the count on a live deployment and understates the
+guarantee on a mirror.
 
 ### Phase 4 — the charts (frontend)
 

@@ -14,6 +14,21 @@
 // guidance against needless ALL CAPS labels applies equally to
 // needless Title Case; sentence case is the plainer, less templated
 // choice.
+/** A count with its noun, agreeing in number.
+ *
+ * "All 1 silos are reachable" is the kind of thing that makes a
+ * careful product look careless, and it appears wherever a count is
+ * interpolated in front of a hardcoded plural.
+ *
+ * THE PLURAL IS PASSED IN, not derived. English plurals are irregular
+ * -- entity/entities, index/indices -- and a rule that appended "s"
+ * would be wrong often enough to be worse than the bug it replaced.
+ * Callers know their own nouns.
+ */
+export function pluralise(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
 export function formatFieldName(name: string): string {
   const spaced = name.replace(/_/g, ' ')
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
@@ -26,8 +41,131 @@ export function formatFieldName(name: string): string {
 // literal null -- honestly unknown at this boundary, not a lie this
 // function's own signature should tell just because String() happens
 // to accept anything.
-export function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return '(not set)'
+/** A date, a wall-clock reading, or an instant -- rendered as each
+ *  actually means.
+ *
+ *  A DATE IS NEVER CONVERTED. A birthday, an invoice date, a contract
+ *  start have no time and no timezone. Passing '2026-03-12' through
+ *  `new Date()` makes it MIDNIGHT UTC, and rendering that locally
+ *  moves it to the 11th for every reader west of Greenwich. That is
+ *  the exact bug this function exists to prevent, so a `date` is
+ *  formatted from its own text.
+ *
+ *  AN INSTANT IS ALWAYS CONVERTED, because it names a moment and the
+ *  reader is somewhere. The server sends UTC with the offset on the
+ *  wire, and the browser already knows the reader's zone without
+ *  being told.
+ *
+ *  A WALL-CLOCK READING IS SHOWN AS GIVEN. It has no zone, so there
+ *  is nothing to convert from; converting it would invent a precision
+ *  the source never had.
+ */
+export function formatTemporal(value: unknown, dataType: string): string {
+  if (typeof value !== 'string' || value.trim() === '') return String(value ?? '')
+
+  if (dataType === 'date') {
+    // FROM THE TEXT, not through Date. The parts are already what a
+    // reader should see, and the only work is making them legible.
+    const [year, month, day] = value.split('-')
+    if (!year || !month || !day) return value
+    const named = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+    if (Number.isNaN(named.getTime())) return value
+    return named.toLocaleDateString(undefined, {
+      // UTC, DELIBERATELY, and it is not a conversion: the date was
+      // constructed in UTC from its own parts, so reading it back in
+      // UTC returns those same parts. Any other zone would shift them.
+      //
+      // THIS AND THE Date.UTC CONSTRUCTION ABOVE OVERLAP for ISO
+      // input -- measured, either alone passes the tests and removing
+      // BOTH fails them. They are kept together because they guard
+      // different halves: the construction stops a non-ISO string
+      // being parsed in local time, and this stops a correctly-built
+      // instant being READ in local time. Neither is redundant for
+      // input that is not exactly 'YYYY-MM-DD'.
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  }
+
+  if (dataType === 'timestamptz') {
+    const instant = new Date(value)
+    if (Number.isNaN(instant.getTime())) return value
+    // No timeZone option: the browser uses the reader's own.
+    return instant.toLocaleString()
+  }
+
+  if (dataType === 'timestamp') {
+    // Shown as given. A naive reading has no zone to convert from,
+    // and inventing one would be the guess the backend refuses to
+    // make.
+    return value.replace('T', ' ')
+  }
+
+  return value
+}
+
+export function formatValue(value: unknown, decimalPlaces?: number | null, dataType?: string | null): string {
+  // A BLANK CELL IS AMBIGUOUS, and this exists to stop producing one.
+  // Rendered blank, a reader cannot tell an empty string from a field
+  // that was never fetched, a failed render, or -- the case
+  // UI_ROADMAP.md raised -- something their permissions withheld.
+  //
+  // The last of those turned out NOT to happen: a field the caller may
+  // not read is OMITTED from the response entirely rather than nulled,
+  // verified directly against the mediator. So it never reaches this
+  // function. The other three do.
+  //
+  // AN EM DASH, not "(not set)". Four places already render an absent
+  // value as a dash -- AdminPanel's mac_value, DeploymentConfig's silo
+  // and role lists, Silos' object types -- so the app had two
+  // conventions before this function gained a third. A dash is also
+  // the better one in a dense table: "(not set)" repeated down a
+  // column is noise competing with the values beside it, where a dash
+  // reads as absence at a glance.
+  if (value === null || value === undefined) return '—'
+  // TEMPORAL FIRST, before the empty-string and number branches, so a
+  // date reaches its own formatter rather than String(value). Nulls
+  // still come first: a missing date is missing, not midnight.
+  if (dataType === 'date' || dataType === 'timestamp' || dataType === 'timestamptz') {
+    return formatTemporal(value, dataType)
+  }
+
+  // EMPTY AND WHITESPACE-ONLY STRINGS, which String() renders as
+  // nothing at all. "" and "   " are real values a source can hold,
+  // and both are indistinguishable from an absent cell once painted.
+  if (typeof value === 'string' && value.trim() === '') {
+    return value === '' ? '(empty)' : '(whitespace)'
+  }
+
+  // AN EMPTY ARRAY is a link that resolved to nothing -- a customer
+  // with no transactions. String([]) is "", so this read as blank too,
+  // and "no linked records" is a different fact from "not set": one
+  // says the link was followed and found nothing.
+  if (Array.isArray(value) && value.length === 0) return '(none)'
+
+  // DECIMAL PLACES, WHERE THE ONTOLOGY DECLARED THEM. The UI cannot
+  // know how precise a number is worth showing -- two places is wrong
+  // for a coordinate and for a count alike -- so this only rounds when
+  // an author said so, and shows the value as it arrived otherwise.
+  //
+  // DISPLAY ONLY. The stored value, the value an action writes and the
+  // value a filter compares against are all untouched. Rounding for
+  // display and then filtering on the rounded figure would be a
+  // different and much worse feature.
+  //
+  // Number.isFinite rather than typeof: NaN and Infinity are numbers
+  // and toFixed on them produces "NaN" and "Infinity", which read as
+  // data rather than as the absence of it.
+  if (decimalPlaces !== undefined && decimalPlaces !== null && typeof value === 'number' && Number.isFinite(value)) {
+    return value.toFixed(decimalPlaces)
+  }
+
+  // ZERO AND FALSE ARE LEFT ALONE, deliberately. Both are genuine
+  // values and String() already renders them distinctly; a guard that
+  // treated them as empty would be the classic falsy bug, and in a
+  // financial or count field it would hide the answer.
   return String(value)
 }
 

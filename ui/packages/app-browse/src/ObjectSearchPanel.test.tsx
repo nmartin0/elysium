@@ -9,14 +9,27 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     searchObjects: vi.fn(),
+    // The panel now asks which actions exist, for the bulk menu.
+    // Unmocked, every test here would hit a real fetch and the menu
+    // would never appear.
+    getVisibleActionTypesCached: vi.fn(),
     // The panel now renders ChartsPanel, which aggregates. Unmocked,
     // every test here would hit a real fetch and the charts would show
     // an error instead of bars.
     aggregateObjects: vi.fn(),
+    // The panel reports whether it is reading mirrored data. Unmocked,
+    // every test here would hit a real fetch for it.
+    getDataFreshness: vi.fn(),
   }
 })
 
-import { aggregateObjects, searchObjects, ApiError } from '@elysium/shell-api/api'
+import {
+  ApiError,
+  aggregateObjects,
+  getDataFreshness,
+  getVisibleActionTypesCached,
+  searchObjects,
+} from '@elysium/shell-api/api'
 import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
@@ -24,14 +37,14 @@ vi.mock('@elysium/shell-api/components/Chart', () => ({
   default: ({ ariaLabel, onSelect }: { ariaLabel: string; onSelect?: (v: string) => void }) => (
     <div>
       <span>{ariaLabel}</span>
-      {onSelect && (
-        <button onClick={() => onSelect('us-west')}>select:region:us-west</button>
-      )}
+      {onSelect && <button onClick={() => onSelect('us-west')}>select:region:us-west</button>}
     </div>
   ),
 }))
 
 const mockedSearchObjects = vi.mocked(searchObjects)
+const mockedGetVisibleActionTypesCached = vi.mocked(getVisibleActionTypesCached)
+const mockedGetDataFreshness = vi.mocked(getDataFreshness)
 const mockedAggregate = vi.mocked(aggregateObjects)
 
 const CUSTOMER_SCHEMA: VisibleSchema = {
@@ -50,14 +63,14 @@ const CUSTOMER_SCHEMA: VisibleSchema = {
 // unshortened 300ms debounce genuinely elapses) but is what actually,
 // reliably passes -- correctness over speed, matching this project's
 // own established testing discipline elsewhere.
-function renderPanel(visibleSchema: VisibleSchema | null, onSessionExpired: () => void = vi.fn()) {
+function renderPanel(
+  visibleSchema: VisibleSchema | null,
+  onSessionExpired: () => void = vi.fn(),
+  initialUrl = '/browse',
+) {
   return render(
-    <MemoryRouter>
-      <ObjectSearchPanel
-        visibleSchema={visibleSchema}
-        username="alice"
-        onSessionExpired={onSessionExpired}
-      />
+    <MemoryRouter initialEntries={[initialUrl]}>
+      <ObjectSearchPanel visibleSchema={visibleSchema} username="alice" onSessionExpired={onSessionExpired} />
     </MemoryRouter>,
   )
 }
@@ -67,10 +80,19 @@ function searchResult(results: SearchResult[], totalMatches?: number) {
 }
 
 beforeEach(() => {
+  // A DEFAULT FOR EVERY TEST, not just the ones about actions. Without
+  // it the mock returns undefined and the effect has nothing to chain
+  // onto -- which broke all 57 existing tests at once and is exactly
+  // what a shared mock should prevent.
+  mockedGetVisibleActionTypesCached.mockResolvedValue({})
   // Column choices persist in localStorage now, which is what they are
   // FOR in a browser and exactly what makes tests interfere.
   window.localStorage.clear()
   mockedAggregate.mockResolvedValue({ results: { 'us-west': 3, 'us-east': 1 } })
+  // A default, because every test renders the panel and the panel asks.
+  // Live rather than mirror, so the freshness note is absent unless a
+  // test deliberately asks for it.
+  mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
   vi.clearAllMocks()
 })
 
@@ -226,11 +248,162 @@ describe('ObjectSearchPanel -- results rendering', () => {
     await waitFor(() => expect(screen.getByRole('link')).toHaveAttribute('href', '/objects/Customer/weird%2Fid'))
   })
 
-  it('shows "No results." only once loading has finished and nothing came back', async () => {
+  it('shows an empty state only once loading has finished and nothing came back', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() => expect(screen.getByText('No results.')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+  })
+
+  describe('data freshness', () => {
+    /**
+     * WHEN the data was current, stated rather than warned about.
+     *
+     * read_from_mirror is deployment-wide: when on, EVERY read comes
+     * from the mirror, so a warning Callout would be permanently
+     * present -- and a permanent warning is one people stop seeing,
+     * which is worse than none because it looks like the system is
+     * saying something.
+     */
+    it('tells a never-synced deployment to run the sync', async () => {
+      /** A NEVER-SYNCED MIRROR IS NOT AN EMPTY ONE.
+       *
+       * With mirror reads as the default, a fresh deployment shows
+       * nothing until its first sync -- which is correct, and reads
+       * as "your data is empty" unless somebody says otherwise. The
+       * server already distinguishes the two: source 'mirror' with a
+       * null last_synced_at.
+       */
+      mockedGetDataFreshness.mockResolvedValue({
+        source: 'mirror',
+        last_synced_at: null,
+      })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      expect(await screen.findByText('Not synced yet')).toBeInTheDocument()
+      expect(screen.getByText(/run_sync/)).toBeInTheDocument()
+    })
+
+    it('says the ordinary thing when a synced mirror is simply empty', async () => {
+      // THE CONTROL. A mirror that HAS been synced and holds nothing
+      // is a different fact, and telling that deployment to run the
+      // sync would send them somewhere useless.
+      mockedGetDataFreshness.mockResolvedValue({
+        source: 'mirror',
+        last_synced_at: new Date().toISOString(),
+      })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      expect(await screen.findByText('Nothing here yet')).toBeInTheDocument()
+      expect(screen.queryByText(/run_sync/)).toBeNull()
+    })
+
+    it('says nothing at all when reading live', async () => {
+      // THE PROPERTY THAT KEEPS IT HONEST. A live deployment is not
+      // stale and must not be told it is, or the indicator means
+      // nothing wherever it appears.
+      mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+      expect(screen.queryByText(/mirrored data/i)).toBeNull()
+    })
+
+    it('reports when the mirror was last synced', async () => {
+      mockedGetDataFreshness.mockResolvedValue({
+        source: 'mirror',
+        last_synced_at: new Date(Date.now() - 4 * 60_000).toISOString(),
+      })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText(/4 minutes ago/)).toBeInTheDocument())
+    })
+
+    it('says so when the mirror has never synced', async () => {
+      // Distinct from "synced a long time ago": never-synced data is
+      // not old, it is absent, and an empty result set means something
+      // different in each case.
+      mockedGetDataFreshness.mockResolvedValue({ source: 'mirror', last_synced_at: null })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText(/not been synced yet/i)).toBeInTheDocument())
+    })
+
+    it('still shows results when the freshness check fails', async () => {
+      /**
+       * The freshness call and the search are INDEPENDENT: a failure
+       * in one must not blank the other.
+       *
+       * HONEST LIMIT, stated because a control exposed it. The
+       * component's `.catch` is good hygiene and is NOT observable
+       * here: without it the promise rejects, the browser logs it, and
+       * the UI behaves identically. An attempt to assert it via the
+       * unhandledrejection event did not fire under jsdom, and a test
+       * that cannot fail is worse than none.
+       *
+       * So this guards the real property -- the two are not coupled --
+       * which is what a future change would actually break.
+       */
+      mockedGetDataFreshness.mockRejectedValue(new Error('unreachable'))
+      mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada' } }]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      // getAllByText: "Ada" is in the result title AND the charts
+      // panel's labels. The point is that results rendered at all.
+      await waitFor(() => expect(screen.getAllByText('Ada').length).toBeGreaterThan(0))
+      expect(screen.queryByText(/mirrored data/i)).toBeNull()
+    })
+  })
+
+  describe('the two empty states', () => {
+    /**
+     * "Your filters matched nothing" and "this type has no rows" are
+     * different facts leading to different next actions -- clear the
+     * filters, or go and look somewhere else. They used to share one
+     * grey "No results.", which made an analyst guess which.
+     *
+     * A THIRD STATE IS DELIBERATELY ABSENT. The spec these came from
+     * also wants "results exist but are not visible to you". Elysium's
+     * uniform denial means the response never distinguishes "no rows"
+     * from "not allowed" -- saying hidden rows exist would leak the
+     * existence of data the caller cannot see.
+     */
+    it('says nothing exists when no filter has been applied', async () => {
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+      expect(screen.queryByRole('button', { name: /clear filters/i })).toBeNull()
+    })
+
+    it('says the filters matched nothing, and offers to clear them', async () => {
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+      await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+
+      fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'zzz' } })
+
+      await waitFor(() => expect(screen.getByText('No matches')).toBeInTheDocument())
+      expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument()
+    })
+
+    it('clearing the filters returns to the unfiltered empty state', async () => {
+      // The action has to WORK, not merely appear. A button that
+      // offers a way out and does not take it is worse than no button.
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+      fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'zzz' } })
+      await waitFor(() => expect(screen.getByText('No matches')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: /clear filters/i }))
+
+      await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
+    })
   })
 
   it('offers paging instead of telling the user to narrow their search', async () => {
@@ -276,7 +449,9 @@ describe('ObjectSearchPanel -- results rendering', () => {
 
     await waitFor(() =>
       expect(mockedSearchObjects).toHaveBeenCalledWith(
-        'Customer', '', expect.objectContaining({ pageToken: 'v1.opaque-token' }),
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: 'v1.opaque-token' }),
       ),
     )
   })
@@ -292,7 +467,9 @@ describe('ObjectSearchPanel -- results rendering', () => {
 
     await waitFor(() =>
       expect(mockedSearchObjects).toHaveBeenCalledWith(
-        'Customer', '', expect.objectContaining({ orderBy: 'name:desc' }),
+        'Customer',
+        '',
+        expect.objectContaining({ orderBy: 'name:desc' }),
       ),
     )
   })
@@ -309,7 +486,9 @@ describe('ObjectSearchPanel -- results rendering', () => {
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
     await waitFor(() =>
       expect(mockedSearchObjects).toHaveBeenCalledWith(
-        'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: 'v1.page2' }),
       ),
     )
 
@@ -320,7 +499,9 @@ describe('ObjectSearchPanel -- results rendering', () => {
 
     await waitFor(() =>
       expect(mockedSearchObjects).toHaveBeenCalledWith(
-        'Customer', 'ada', expect.objectContaining({ pageToken: undefined }),
+        'Customer',
+        'ada',
+        expect.objectContaining({ pageToken: undefined }),
       ),
     )
   })
@@ -445,9 +626,7 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
   }
 
   const RESULT = {
-    ...searchResult([
-      { id: 'cust_001', fields: { name: 'Ada', region: 'us-west', internal: 'note' } },
-    ]),
+    ...searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west', internal: 'note' } }]),
   }
 
   it('defaults to the fields the ontology declares prominent', async () => {
@@ -517,9 +696,7 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
     // The server decides which fields a search summary includes.
     // Offering one it never returns would be a checkbox that does
     // nothing.
-    mockedSearchObjects.mockResolvedValue(
-      searchResult([{ id: 'cust_001', fields: { region: 'us-west' } }]),
-    )
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { region: 'us-west' } }]))
     renderPanel(WITH_VISIBILITY)
 
     await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
@@ -538,9 +715,7 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
     Account: { fields: { balance: { type: 'data' } } },
   }
 
-  const RESULT = searchResult([
-    { id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } },
-  ])
+  const RESULT = searchResult([{ id: 'cust_001', fields: { name: 'Ada', region: 'us-west' } }])
 
   it('remembers a column choice across an unmount', async () => {
     // THE bug this file's tests missed. Browse and the object detail
@@ -634,12 +809,15 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     openCharts()
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '',
-      expect.objectContaining({
-        conditions: [{ field: 'region', operator: 'in', value: ['us-west'] }],
-      }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({
+          conditions: [{ field: 'region', operator: 'in', value: ['us-west'] }],
+        }),
+      ),
+    )
   })
 
   it('a chart click ANDs with the text query rather than replacing it', async () => {
@@ -653,19 +831,20 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     fireEvent.change(screen.getByPlaceholderText(/Search Customer/), {
       target: { value: 'ada' },
     })
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', 'ada', expect.anything(),
-    ))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', 'ada', expect.anything()))
     mockedSearchObjects.mockClear()
 
     openCharts()
 
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', 'ada',
-      expect.objectContaining({ conditions: expect.arrayContaining([expect.anything()]) }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        'ada',
+        expect.objectContaining({ conditions: expect.arrayContaining([expect.anything()]) }),
+      ),
+    )
   })
 
   it('clicking the same value again undoes it', async () => {
@@ -677,18 +856,22 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     renderPanel(SCHEMA)
     openCharts()
     fireEvent.click(await screen.findByText('select:region:us-west'))
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ conditions: expect.any(Array) }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ conditions: expect.any(Array) }),
+      ),
+    )
     mockedSearchObjects.mockClear()
 
     openCharts()
 
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ conditions: [] }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', '', expect.objectContaining({ conditions: [] })),
+    )
   })
 
   it('returns to the first page when a chart filter changes', async () => {
@@ -701,18 +884,26 @@ describe('ObjectSearchPanel -- cross-filtering', () => {
     renderPanel(SCHEMA)
     await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: 'v1.page2' }),
+      ),
+    )
     mockedSearchObjects.mockClear()
 
     openCharts()
 
     fireEvent.click(await screen.findByText('select:region:us-west'))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ pageToken: undefined }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: undefined }),
+      ),
+    )
   })
 })
 
@@ -739,12 +930,15 @@ describe('ObjectSearchPanel -- typed filters', () => {
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '99999' } })
     fireEvent.click(screen.getByRole('button', { name: /Add/ }))
 
-    return waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '',
-      expect.objectContaining({
-        conditions: [{ field: 'balance', operator: 'range', value: ['10000', '99999'] }],
-      }),
-    ))
+    return waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({
+          conditions: [{ field: 'balance', operator: 'range', value: ['10000', '99999'] }],
+        }),
+      ),
+    )
   })
 
   // NO test here for a typed filter AND a chart selection together.
@@ -767,17 +961,666 @@ describe('ObjectSearchPanel -- typed filters', () => {
     renderPanel(SCHEMA)
     await waitFor(() => expect(screen.getByRole('button', { name: /Next/ })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ pageToken: 'v1.page2' }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: 'v1.page2' }),
+      ),
+    )
     mockedSearchObjects.mockClear()
 
     fireEvent.change(screen.getByLabelText('Field to filter'), { target: { value: 'name' } })
     fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'Ada' } })
     fireEvent.click(screen.getByRole('button', { name: /Add/ }))
 
-    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledWith(
-      'Customer', '', expect.objectContaining({ pageToken: undefined }),
-    ))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ pageToken: undefined }),
+      ),
+    )
+  })
+})
+
+describe('a type on the middle rung of the grant ladder', () => {
+  /**
+   * `readable: false` means the caller holds `discover:Type` and not
+   * `read:Type` -- the type exists and yields no ids at all.
+   *
+   * Searching it returns an empty result set, which renders as "no
+   * matches" -- a claim about the DATA when the truth is about their
+   * ACCESS. Those are answers to different questions.
+   *
+   * NOT THE STATE THE PANEL REFUSES. It still refuses "results exist
+   * but are hidden from you", which leaks the existence of data. This
+   * reports the caller's own GRANT, known before any query runs, and
+   * leaks nothing.
+   */
+  it('says so rather than reporting an empty result', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel({ Customer: { readable: false, fields: { name: { type: 'string' } } } })
+
+    expect(await screen.findByText('You cannot search this type')).toBeInTheDocument()
+    expect(screen.queryByText('Nothing here yet')).toBeNull()
+  })
+
+  it('still shows the ordinary empty state for a searchable type', async () => {
+    // THE CONTROL. `readable` is absent on any deployment that has not
+    // adopted discover:, so a panel treating undefined as false would
+    // tell every user they cannot search anything.
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText('Nothing here yet')).toBeInTheDocument()
+    expect(screen.queryByText('You cannot search this type')).toBeNull()
+  })
+})
+
+describe('the row count says which guarantee applies', () => {
+  /**
+   * A LIVE deployment reads the customer's database directly, and
+   * default paging there may duplicate or miss rows as data changes
+   * underneath. "of 4,312" is a number that was true when the query
+   * ran, and presenting it flatly invites someone to reconcile it
+   * against a report and find a discrepancy that is not one.
+   *
+   * A MIRROR pins each table's snapshot per generation, so every page
+   * of one query reads the same immutable data. The count is exact,
+   * and hedging it would understate what the deployment guarantees.
+   */
+  it('qualifies the count on a live deployment', async () => {
+    mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+    // A next_page_token, because the count lives inside the PAGER and
+    // a single-page result never renders it.
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 50),
+      next_page_token: 'p2',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText(/at the time of this query/)).toBeInTheDocument()
+  })
+
+  it('does NOT qualify it on a mirror', async () => {
+    // THE PAIR. Hedging everywhere would be as wrong as hedging
+    // nowhere -- it would tell a mirror deployment its exact count is
+    // approximate.
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'mirror',
+      last_synced_at: new Date().toISOString(),
+    })
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 50),
+      next_page_token: 'p2',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    await screen.findByText(/Showing 1 of/)
+    expect(screen.queryByText(/at the time of this query/)).toBeNull()
+  })
+
+  it('still shows the count itself either way', async () => {
+    // THE CONTROL. A change that dropped the number while adding the
+    // caveat would pass both tests above.
+    mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 50),
+      next_page_token: 'p2',
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText(/Showing 1 of 50/)).toBeInTheDocument()
+  })
+})
+
+describe('active filters say what is narrowing the view', () => {
+  /**
+   * THE DEFECT. A cross-filter was applied and rendered nowhere in
+   * table view, so arriving from a link the panel said "Showing 2 of 2
+   * matches" with no sign a filter was in force -- which reads as
+   * "there are 2 transactions in the system".
+   */
+  const twoFilters = encodeURIComponent(
+    JSON.stringify([
+      { field: 'customer_id', values: ['cust_001'], mode: 'keep' },
+      { field: 'category', values: ['refund'], mode: 'keep' },
+    ]),
+  )
+
+  it('shows a pill for each filter in force', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), `/browse?filters=${twoFilters}`)
+
+    expect(await screen.findByText(/cust_001/)).toBeInTheDocument()
+    expect(screen.getByText(/refund/)).toBeInTheDocument()
+  })
+
+  it('removing one leaves the others in place', async () => {
+    /** THE WIRING, which a mocked onRemove cannot see.
+     *
+     * A control replacing the handler with setCrossFilter([]) failed
+     * nothing until this existed -- removing one pill would have
+     * silently cleared every filter, showing far more rows than asked
+     * for and looking like it had worked.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), `/browse?filters=${twoFilters}`)
+
+    await screen.findByText(/cust_001/)
+    // The remove control is Blueprint's own button inside the tag, not
+    // the tag itself -- an aria-label on Tag lands on the span, and
+    // clicking a span does nothing. Selected by the class Blueprint
+    // gives it.
+    const pill = screen.getByText(/cust_001/).closest('.bp6-tag')
+    fireEvent.click(pill!.querySelector('.bp6-tag-remove')!)
+
+    await waitFor(() => expect(screen.queryByText(/cust_001/)).toBeNull())
+    expect(screen.getByText(/refund/)).toBeInTheDocument()
+  })
+})
+
+describe('selecting objects to act on', () => {
+  /**
+   * THE WIRE, which SelectionBar's own tests cannot see. Four times
+   * this session a component has been right and the connection to it
+   * missing, so these drive the real panel.
+   */
+  it('offers a checkbox per result', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByLabelText('Select Ada Okafor')).toBeInTheDocument()
+    expect(screen.getByLabelText('Select Ben Stone')).toBeInTheDocument()
+  })
+
+  it('ticking a box changes what an action would apply to', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    // Before: no selection, so an action applies to every match.
+    expect(await screen.findByText(/actions apply to the/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Select Ada Okafor'))
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+  })
+
+  it('the checkbox selects rather than navigating', async () => {
+    /** THE DEFECT THE STACKING CONTEXT PREVENTS.
+     *
+     * .object-search__link::after covers the whole card so clicking
+     * anywhere navigates. A checkbox painted underneath it would be
+     * visible, unclickable, and would navigate instead of selecting --
+     * the worst of both, and silent.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+
+    // Still on the list, with the selection recorded.
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(screen.getByLabelText('Select Ada Okafor')).toBeChecked()
+
+    // HONEST LIMIT: this proves the HANDLER is wired, not that the
+    // checkbox is reachable with a mouse. jsdom computes no layout, so
+    // removing the z-index from .object-search__select breaks nothing
+    // here -- a control confirmed it. The stacking context is the
+    // protection, and only a real browser can verify it.
+  })
+
+  it('clearing returns to acting on every match', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Clear selection'))
+
+    expect(await screen.findByText(/actions apply to the/i)).toBeInTheDocument()
+  })
+})
+
+describe('acting on a selection', () => {
+  /**
+   * FOUNDRY'S RULE LIVES IN THE PANEL, not the form: an action
+   * receives "the current set of selected objects in your exploration
+   * (or all objects, if none are selected)". Resolving it here keeps
+   * it in one place -- the form is told the ids and does not know how
+   * they were chosen.
+   */
+  /** THE REAL SHAPE THE API RETURNS: a dict keyed by action name, and
+   *  an entry does NOT carry its own name.
+   *
+   *  The route's response model is dict[str, VisibleActionTypeResponse]
+   *  -- checked, after an earlier version of these tests mocked an
+   *  ARRAY. Calling .filter() on the real object threw and blanked the
+   *  entire page, and nothing here noticed because the mock was the
+   *  wrong shape. ObjectDetailPanel.tsx had it right all along.
+   */
+  const BULK_BY_NAME = {
+    RecategorizeTransactions: {
+      parameters: {
+        customer_ids: { type: 'object_reference_list', object_type: 'Customer' },
+        new_category: { type: 'string', required: true },
+      },
+    },
+  }
+
+  it('the Actions count agrees with the selection bar', async () => {
+    /** TWO NUMBERS FOR ONE THING, and the larger one was the lie.
+     *
+     * The button said `totalMatches` while the bar said the page, so
+     * 64 matches shown 50 at a time gave "Actions (64)" above "the 50
+     * shown". Missed when the bar was corrected: I fixed the component
+     * that displayed the count and not the sibling displaying it too.
+     */
+    mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
+    mockedSearchObjects.mockResolvedValue({
+      ...searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+      total_matches: 64,
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    // Two on the page, 64 matching. The button must say 2.
+    expect(await screen.findByText(/Actions \(2\)/)).toBeInTheDocument()
+    expect(screen.queryByText(/Actions \(64\)/)).toBeNull()
+  })
+
+  it('offers the Actions menu when a bulk action exists for the type', async () => {
+    mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText(/Actions \(/)).toBeInTheDocument()
+  })
+
+  it('no selection means EVERY match, not none', async () => {
+    /** THE RULE THAT IS NOT GUESSABLE.
+     *
+     * Someone who clears a selection intending to cancel would, on
+     * pressing an action, hit the whole result set. A control making
+     * an empty selection send an empty list failed nothing until this
+     * existed.
+     */
+    mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByText(/Actions \(/))
+    fireEvent.click(await screen.findByText('RecategorizeTransactions'))
+
+    // The form states what it will touch, and with nothing selected
+    // that is both matches.
+    expect(await screen.findByText(/2 Customer objects/)).toBeInTheDocument()
+  })
+
+  it('a selection narrows what the action touches', async () => {
+    mockedGetVisibleActionTypesCached.mockResolvedValue(BULK_BY_NAME)
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+        { id: 'cust_002', fields: { name: 'Ben Stone' } },
+      ]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByText(/Actions \(/))
+    fireEvent.click(await screen.findByText('RecategorizeTransactions'))
+
+    expect(await screen.findByText(/1 Customer\b/)).toBeInTheDocument()
+  })
+})
+
+describe('a result card lays its checkbox beside its content', () => {
+  /**
+   * THE DEFECT. Every checkbox rendered ABOVE the row it belonged to.
+   * The card is `display: block` -- deliberately and load-bearingly,
+   * because Blueprint's CardList gives a direct child Card
+   * `display: flex; align-items: center`, which laid the card's
+   * multi-line content out side-by-side instead of stacked -- and a
+   * checkbox in a block container takes its own line.
+   *
+   * WHAT JSDOM CAN AND CANNOT SEE. It computes no layout, so nothing
+   * here proves the box LOOKS beside the title. What it does prove is
+   * the STRUCTURE the fix depends on: the checkbox and the link are
+   * siblings in a row element, rather than the checkbox being a direct
+   * child of the block card. Remove the wrapper and this fails;
+   * change the flex-direction and it does not.
+   */
+  it('puts the checkbox and the link in the same row', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const checkbox = await screen.findByLabelText('Select Ada Okafor')
+    const row = checkbox.closest('.object-search__row')
+
+    expect(row).not.toBeNull()
+    expect(row!.querySelector('.object-search__link')).not.toBeNull()
+  })
+
+  it('the checkbox is not a direct child of the card', async () => {
+    // THE CONTROL on the fix itself. A checkbox sitting directly in
+    // the block card is exactly the arrangement that stacked it above
+    // the row.
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const checkbox = await screen.findByLabelText('Select Ada Okafor')
+    const card = checkbox.closest('.object-search__result')
+
+    expect(card).not.toBeNull()
+    expect(checkbox.parentElement).not.toBe(card)
+  })
+})
+
+/** A shift-click as a BROWSER produces one: mousedown carrying the
+ *  modifier, then the click.
+ *
+ *  THE OLD TESTS PASSED WHILE THE FEATURE DID NOT, and this is why.
+ *  `fireEvent.click(box, { shiftKey: true })` dispatches a click
+ *  straight at the input with the modifier attached -- which no real
+ *  interaction does. A person clicking Blueprint's Checkbox clicks its
+ *  <label>, and the browser SYNTHESISES a click on the input that
+ *  carries no modifiers at all.
+ *
+ *  Firing mousedown first is what makes the test resemble the gesture.
+ */
+/** A shift-click.
+ *
+ * ONE EVENT, because the checkbox is now a plain <input> rather than
+ * Blueprint's Checkbox. That component wrapped the input in a <label>,
+ * and any click inside a label forwards a second click to the input --
+ * which is what four commits tried and failed to tell apart.
+ *
+ * With no label there is no activation, no forward, and nothing to
+ * disambiguate.
+ */
+function shiftClick(element: HTMLElement) {
+  fireEvent.click(element, { shiftKey: true })
+}
+
+describe('shift-click selects a range in the results', () => {
+  /**
+   * THE WIRE, which rangeSelection's own tests cannot see: that the
+   * panel passes the DISPLAYED order and reads the modifier off the
+   * event.
+   *
+   * A checkbox has no other way to know a modifier was held -- React's
+   * change event carries the native one, which carries shiftKey.
+   */
+  const THREE = [
+    { id: 'cust_001', fields: { name: 'Ada Okafor' } },
+    { id: 'cust_002', fields: { name: 'Ben Stone' } },
+    { id: 'cust_003', fields: { name: 'Cara Diaz' } },
+  ]
+
+  it('selects everything between two clicks', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    shiftClick(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('3 selected')).toBeInTheDocument()
+  })
+
+  it('a click without shift still selects one', async () => {
+    // THE CONTROL. A panel that ranged on every click would make the
+    // modifier meaningless and the ordinary case surprising.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('2 selected')).toBeInTheDocument()
+  })
+
+  it('works when the click lands on the INDICATOR, which is what people click', async () => {
+    /** THE PATH NOBODY TESTED AND EVERYBODY USES.
+     *
+     * Blueprint draws the visible box as a <span class="bp6-control-
+     * indicator"> inside the label. The <input> itself is visually
+     * hidden. So a person's pointer lands on the SPAN -- not the
+     * input, and not the label's text area.
+     *
+     * That span triggers label activation, forwarding a second click
+     * to the input. Handling both toggled twice and left the box
+     * unchanged, which is exactly what was reported: "clicking a check
+     * only highlights its border".
+     *
+     * Shift appeared to work only because Mozilla #559506 suppresses
+     * the forward when shift is held, leaving a single toggle.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const input = await screen.findByLabelText('Select Ada Okafor')
+
+    fireEvent.click(input)
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+  })
+
+  it('a plain click on the indicator toggles once, not twice', async () => {
+    /** WHAT THIS CAN AND CANNOT PROVE, stated because I was about to
+     *  claim more than it does.
+     *
+     *  jsdom DOES forward a span click to the input -- verified: the
+     *  handler sees SPAN then INPUT. But both toggles run inside one
+     *  React batch and read the SAME value of selectedIds from the
+     *  closure, so they compute the same result and are idempotent
+     *  here. In a browser they land in separate ticks, the second sees
+     *  the first's result, and they cancel.
+     *
+     *  So this asserts the shape -- a click on the visible box selects
+     *  -- and a control removing the dedupe still passes it. The
+     *  double-toggle itself is not reproducible in this environment,
+     *  and only a person clicking can confirm the fix.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const input = await screen.findByLabelText('Select Ada Okafor')
+
+    fireEvent.click(input)
+
+    expect(input).toBeChecked()
+  })
+
+  it('a keyboard press still selects after a shift-click', async () => {
+    /** THE FIREFOX RESIDUE, and a bare flag could not survive it.
+     *
+     * In Firefox a shift-click produces no forwarded click at all
+     * (#559506), so an expectation recorded as a boolean stayed armed
+     * and swallowed the NEXT direct input click -- which is space on a
+     * focused checkbox, the keyboard path.
+     *
+     * Recording WHEN the forward became expected lets an unmet
+     * expectation expire instead.
+     *
+     * AND THIS TEST CANNOT PROVE THAT. jsdom ALWAYS forwards a click
+     * from inside a label, so Firefox's MISSING forward -- the thing
+     * that strands the expectation -- cannot be simulated with
+     * fireEvent at all. A control restoring the bare flag still
+     * passes.
+     *
+     * What this does hold is the shape: a direct click on an input,
+     * well after any plausible forward, selects. The residue itself is
+     * reasoned from the documented bug and confirmed only by a person
+     * in Firefox.
+     */
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    // A shift-click on the indicator, with no forwarded click after it.
+    const ada = await screen.findByLabelText('Select Ada Okafor')
+    fireEvent.click(ada, { shiftKey: true })
+
+    // Then space on another checkbox, which arrives straight at the
+    // input and must not be mistaken for a forward.
+    const ben = screen.getByLabelText('Select Ben Stone')
+    fireEvent.click(ben, { timeStamp: 10_000 })
+
+    expect(ben).toBeChecked()
+  })
+
+  it('works when the click lands on the label, not the input', async () => {
+    // THE REGRESSION TEST for the bug a person found by holding shift.
+    // Everything here passed while the feature did not, because the
+    // tests fired at the input and people click the label.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    shiftClick(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('3 selected')).toBeInTheDocument()
+  })
+
+  it('a released shift key stops extending', async () => {
+    // THE STUCK-MODIFIER CASE. Tracking the key on the window means
+    // tracking its RELEASE too -- otherwise the next plain click
+    // silently selects a range, which is the worse failure of the two
+    // because nothing looks wrong until objects are acted on.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.keyDown(window, { key: 'Shift', shiftKey: true })
+    fireEvent.keyUp(window, { key: 'Shift', shiftKey: false })
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('2 selected')).toBeInTheDocument()
+  })
+
+  it('leaving the window clears a held shift', async () => {
+    // Releasing the key while another window has focus produces no
+    // keyup here at all, so blur has to do it.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.keyDown(window, { key: 'Shift', shiftKey: true })
+    fireEvent.blur(window)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    fireEvent.click(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(await screen.findByText('2 selected')).toBeInTheDocument()
+  })
+
+  it('ticks every box in the range, not just the ends', async () => {
+    // The count could be right while the boxes were wrong -- that was
+    // exactly the select-all bug, where the bar said 64 and no row
+    // looked it.
+    mockedSearchObjects.mockResolvedValue(searchResult(THREE))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    fireEvent.click(await screen.findByLabelText('Select Ada Okafor'))
+    shiftClick(screen.getByLabelText('Select Cara Diaz'))
+
+    expect(screen.getByLabelText('Select Ben Stone')).toBeChecked()
+  })
+})
+
+describe('the panel knows no ontology nouns of its own', () => {
+  /**
+   * The backend's half of this is proved in
+   * tests/integration/test_a_different_deployment.py, with a fixture
+   * sharing no noun with ours. This is the front half: given a schema
+   * describing vessels and port calls, the panel must show vessels and
+   * port calls.
+   *
+   * PASSING AGAINST CUSTOMER PROVES NOTHING, because Customer is what
+   * everything here was written against. A hardcoded "name" or
+   * "region" would survive every other test in this file.
+   */
+  const FLEET: VisibleSchema = {
+    Vessel: {
+      title_field: 'vessel_name',
+      fields: {
+        vessel_name: { type: 'data', display_name: 'Vessel name' },
+        fleet: { type: 'data' },
+        gross_tonnage: { type: 'data', decimal_places: 1 },
+      },
+    },
+    PortCall: { fields: { port: { type: 'data' } } },
+  }
+
+  it('offers the object types the schema declares', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(FLEET)
+
+    expect(await screen.findByText('Vessel')).toBeInTheDocument()
+    expect(screen.queryByText('Customer')).toBeNull()
+  })
+
+  it('titles a result with the declared title_field', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'IMO123', fields: { vessel_name: 'Northern Star', fleet: 'atlantic' } }]),
+    )
+    renderPanel(FLEET)
+
+    // THE TITLE ELEMENT specifically. The name also appears inside the
+    // checkbox's own label ("Select Northern Star"), so a bare text
+    // query finds two and says nothing about which is the title.
+    const title = await screen.findByText('Northern Star', {
+      selector: '.object-search__result-title',
+    })
+    expect(title).toBeInTheDocument()
+  })
+
+  it('labels a column with the declared display_name', async () => {
+    // Not the raw column, and not a name this file knows.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'IMO123', fields: { vessel_name: 'Northern Star', fleet: 'atlantic' } }]),
+    )
+    renderPanel(FLEET)
+
+    expect(await screen.findByText('Vessel name')).toBeInTheDocument()
+  })
+
+  it("honours this deployment's precision, not ours", async () => {
+    // decimal_places is per-field ontology metadata. A deployment
+    // declaring one place must not inherit the two our fixture uses.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'IMO123', fields: { vessel_name: 'Northern Star', gross_tonnage: 51234.567 } }]),
+    )
+    renderPanel(FLEET)
+
+    expect(await screen.findByText('51234.6')).toBeInTheDocument()
+  })
+
+  it('selects a vessel by its own title', async () => {
+    // The checkbox label is built from the title field, so a schema
+    // with a different one must still produce a usable control.
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'IMO123', fields: { vessel_name: 'Northern Star' } }]))
+    renderPanel(FLEET)
+
+    fireEvent.click(await screen.findByLabelText('Select Northern Star'))
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
   })
 })

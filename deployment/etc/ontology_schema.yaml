@@ -22,6 +22,16 @@ object_types:
       table: customers
       id_column: customer_id
     id_field: customer_id
+    # WHAT A RESULT CARD CALLS THIS OBJECT. Without it every card in
+    # Browse reads `cust_001` rather than `Ada Okafor`, because
+    # getDisplayTitle falls back to the id -- which is correct
+    # behaviour for an ontology that never said, and an unhelpful
+    # screen.
+    #
+    # Found by a browser test that clicked a customer by name and
+    # waited thirty seconds. The test was right and the deployment was
+    # wrong; no object type here declared one.
+    title_field: name
     security:
       field: region
     fields:
@@ -38,6 +48,8 @@ object_types:
         via_table: transactions
         via_column: customer_id
   Transaction:
+    # A transaction has no name, so its id IS the honest title. Stated
+    # rather than omitted, so the absence reads as a decision.
     storage:
       silo: primary_sql
       table: transactions
@@ -48,13 +60,72 @@ object_types:
     fields:
       amount:
         type: data
+        # Money, so two places -- and the ontology is the only thing
+        # that knows that. A UI cannot infer it: the same `number` type
+        # carries a coordinate, a count and a ratio, each wanting a
+        # different answer. Display only; the stored value, what an
+        # action writes and what a filter compares are untouched.
+        decimal_places: 2
+        # DECIMAL, NOT NUMBER, because this is money. `number` goes
+        # through float() and loses digits on values a float cannot
+        # hold exactly -- measured, and the reason the type exists.
+        data_type: decimal
       currency:
         type: data
       category:
         type: data
       transaction_date:
         type: data
+        # A DATE, NOT A STRING, and not a timestamp: the source
+        # holds '2026-05-01' with no time. As text this sorted
+        # lexically, correct for padded ISO-8601 and silently wrong
+        # for anything else -- a date_range for "after February"
+        # returned a January row.
+        data_type: date
       customer_id:
         type: link
         target: Customer
         cardinality: one
+
+# ------------------------------------------------------------------
+# Action types -- the ONLY way data in this deployment is ever
+# changed. Every write is a NAMED, independently-governed operation
+# with its own execute: grant, its own declared parameters and its own
+# declared mutations, matching Palantir Foundry's action-type model.
+# There is deliberately no generic "update this field" verb.
+#
+# Declaring an action type here is NOT enough to make it usable: it
+# also needs an execute:<ActionName> grant in policy.yaml, exactly the
+# same way a field needs a read: grant. Until then it stays invisible.
+# ------------------------------------------------------------------
+action_types:
+  RecategorizeTransactions:
+    description: Change which category several transactions are filed under.
+    affected_object_types: [Transaction]
+    parameters:
+      transaction_ids:
+        type: object_reference_list
+        object_type: Transaction
+        required: true
+        display_name: Transactions
+        # PRE-FILLED ON A DETAIL PAGE, where it becomes a list of one.
+        # That is what lets ONE action serve both places: the write
+        # mediator expands a list into one sub-write per object, so a
+        # list of one and a single reference produce the same write.
+        #
+        # Declaring near-identical twins -- RecategorizeTransaction and
+        # RecategorizeTransactions -- put a choice in front of a person
+        # that only the ontology cared about.
+        default_to_current_object: true
+      new_category:
+        type: string
+        required: true
+        display_name: New category
+    sub_writes:
+      - object_type: Transaction
+        object_id: parameter.transaction_ids
+        operation: update
+        mutations:
+          - set:
+              property: category
+              value: parameter.new_category

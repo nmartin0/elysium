@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from './format'
+import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle, pluralise } from './format'
 
 describe('formatFieldName', () => {
   it('capitalizes a single-word field name', () => {
@@ -23,12 +23,12 @@ describe('formatFieldName', () => {
 })
 
 describe('formatValue', () => {
-  it('renders null as (not set)', () => {
-    expect(formatValue(null)).toBe('(not set)')
+  it('renders null as —', () => {
+    expect(formatValue(null)).toBe('—')
   })
 
-  it('renders undefined as (not set)', () => {
-    expect(formatValue(undefined)).toBe('(not set)')
+  it('renders undefined as —', () => {
+    expect(formatValue(undefined)).toBe('—')
   })
 
   it('stringifies a number', () => {
@@ -127,8 +127,12 @@ describe('formatTimestamp', () => {
      */
     const older = formatTimestamp('2026-07-22T13:00:00Z', now)
     const withoutZone = new Date('2026-07-22T13:00:00Z').toLocaleString(undefined, {
-      weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     })
 
     expect(older.startsWith(withoutZone)).toBe(true)
@@ -161,5 +165,133 @@ describe('formatTimestamp', () => {
     // Better to show something odd than to render "Invalid Date",
     // which tells the user nothing and hides what arrived.
     expect(formatTimestamp('not a date', now)).toBe('not a date')
+  })
+})
+
+describe('a blank cell is never produced', () => {
+  /**
+   * UI_ROADMAP.md item 8 asks for null, zero and unknown to be
+   * VISUALLY DISTINCT, on the grounds that "a blank cell in Elysium
+   * could mean no value, or could mean MAC hid it".
+   *
+   * THE MAC CASE TURNED OUT NOT TO HAPPEN, verified against the
+   * mediator rather than assumed: a field the caller may not read is
+   * OMITTED from the response entirely rather than returned as null,
+   * so it never reaches a formatter. The other ambiguities are real.
+   */
+  it('renders an empty string as something, not nothing', () => {
+    // "" is a real value a source can hold, and String('') paints
+    // exactly as wide as a cell that was never filled.
+    expect(formatValue('')).toBe('(empty)')
+  })
+
+  it('distinguishes whitespace from empty', () => {
+    // A field holding "   " is a data-quality fact worth seeing. Both
+    // render blank otherwise, and they are not the same problem.
+    expect(formatValue('   ')).toBe('(whitespace)')
+  })
+
+  it('renders an empty array as "(none)", not as "not set"', () => {
+    // A link that resolved to nothing -- a customer with no
+    // transactions -- is a DIFFERENT fact from a field never set: it
+    // says the link was followed and found nothing.
+    expect(formatValue([])).toBe('(none)')
+  })
+
+  it('leaves zero alone', () => {
+    // THE CONTROL, and the classic falsy bug. A guard treating 0 as
+    // empty would hide the answer in any count or balance field.
+    expect(formatValue(0)).toBe('0')
+  })
+
+  it('leaves false alone', () => {
+    expect(formatValue(false)).toBe('false')
+  })
+
+  it('uses one convention for absence across the app', () => {
+    // Four places already rendered an absent value as a dash --
+    // AdminPanel's mac_value, DeploymentConfig's lists, Silos' object
+    // types -- so this function having its own was a third convention.
+    expect(formatValue(null)).toBe('—')
+    expect(formatValue(undefined)).toBe('—')
+  })
+})
+
+describe('decimal places, where the ontology declared them', () => {
+  /**
+   * The UI cannot know how precise a number is worth showing. The same
+   * `number` type carries a coordinate, a count and a ratio, and two
+   * places is wrong for at least two of them -- so this only rounds
+   * when an ontology author said so.
+   *
+   * DISPLAY ONLY. The stored value, the value an action writes and the
+   * value a filter compares against are all untouched. Rounding for
+   * display and then filtering on the rounded figure would be a
+   * different and much worse feature.
+   */
+  it('rounds to the declared places', () => {
+    expect(formatValue(49.9876, 2)).toBe('49.99')
+  })
+
+  it('pads to them as well', () => {
+    // "49.9" under a column of "49.99" is harder to compare than
+    // "49.90", which is the whole point of a declared precision.
+    expect(formatValue(49.9, 2)).toBe('49.90')
+  })
+
+  it('zero places is a real answer, not an absent one', () => {
+    expect(formatValue(1234.56, 0)).toBe('1235')
+  })
+
+  it('leaves the number alone when nothing was declared', () => {
+    // THE CONTROL, and the overwhelmingly common case. A default would
+    // silently reformat every number in every deployment.
+    expect(formatValue(49.9876)).toBe('49.9876')
+    expect(formatValue(49.9876, null)).toBe('49.9876')
+  })
+
+  it('does not touch a string that looks like a number', () => {
+    // toFixed on a string throws. A value arriving as text is text,
+    // whatever the ontology says the column holds.
+    expect(formatValue('49.9876', 2)).toBe('49.9876')
+  })
+
+  it('does not turn NaN into the word NaN', () => {
+    // NaN and Infinity are numbers, and toFixed renders them as words
+    // that read like data rather than like the absence of it.
+    expect(formatValue(Number.NaN, 2)).toBe('NaN')
+    expect(formatValue(Number.POSITIVE_INFINITY, 2)).toBe('Infinity')
+  })
+
+  it('still withholds null rather than rounding it', () => {
+    expect(formatValue(null, 2)).toBe('—')
+  })
+})
+
+describe('counts agree with their nouns', () => {
+  /**
+   * "All 1 silos are reachable" is the kind of thing that makes a
+   * careful product look careless, and it appears wherever a count is
+   * interpolated in front of a hardcoded plural. Three places had it.
+   */
+  it('uses the singular for one', () => {
+    expect(pluralise(1, 'silo', 'silos')).toBe('1 silo')
+  })
+
+  it('uses the plural for more', () => {
+    expect(pluralise(3, 'silo', 'silos')).toBe('3 silos')
+  })
+
+  it('uses the plural for none', () => {
+    // "0 silos", not "0 silo" -- English treats zero as plural, which
+    // is the case a naive `count > 1` check gets wrong.
+    expect(pluralise(0, 'silo', 'silos')).toBe('0 silos')
+  })
+
+  it('takes the plural rather than deriving it', () => {
+    // English plurals are irregular, and a rule appending "s" would be
+    // wrong often enough to be worse than the bug it replaced.
+    expect(pluralise(2, 'entity', 'entities')).toBe('2 entities')
+    expect(pluralise(2, 'index', 'indices')).toBe('2 indices')
   })
 })

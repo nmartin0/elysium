@@ -80,23 +80,32 @@ still runs correctly as a pure API backend; only a real install
 """
 
 import logging
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 
 from api.csrf_middleware import csrf_protect
+from api.generation_header_middleware import GenerationHeaderMiddleware
+from api.reload import install_sighup_handler
+from api.request_metrics_middleware import RequestMetricsMiddleware
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
-from core.agent.agentic_loop import AgentLoop
 from core.artifact_store import ArtifactStore
 from core.auth.credential_store import CredentialStore
 from core.auth.database import connection
 from core.auth.login_attempt_tracker import LoginAttemptTracker
 from core.auth.query_rate_limiter import QueryRateLimiter
 from core.auth.session_store import SessionStore
-from core.deployment_loader import RuntimePaths, build_llm_adapter, load_deployment_bundle, resolve_runtime_paths
-from core.ontology.write_mediator import WriteMediator
+from core.config_history import ConfigHistory, record_generation
+from core.deployment_loader import (
+    RuntimePaths,
+    build_generation,
+    resolve_runtime_paths,
+)
 from core.pending_write_store import PendingWriteStore
+from core.request_metrics import RETENTION_SECONDS, RequestMetrics
 from core.sqlite_connection import require_assertions_enabled
 from core.user_directory import UserDirectory
 
@@ -164,6 +173,22 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # class rather than the simpler style csrf_protect/
     # add_security_headers both use.
     app.add_middleware(RequestSizeLimitMiddleware)
+    # Stamps the serving generation on every response, so a client can
+    # notice a configuration reload on its next request rather than
+    # believing what it was told at login. See the module docstring.
+    app.add_middleware(GenerationHeaderMiddleware)
+    # Times every request for the RED metrics. Added AFTER the others
+    # so it wraps them: a request rejected for being too large is still
+    # a request, and a dashboard that only counted the ones that got
+    # through would understate the load.
+    #
+    # IT READS THE STORE OFF app.state AT REQUEST TIME, not at
+    # registration. Middleware is registered before runtime_paths is
+    # even resolved, so passing the store here would mean passing None
+    # forever -- and a metrics middleware that silently recorded
+    # nothing is worse than none, because the dashboard would show an
+    # idle server.
+    app.add_middleware(RequestMetricsMiddleware)
 
     # Security headers, applied to EVERY response -- a real, found gap:
     # this app previously set none at all. Verified directly before
@@ -196,12 +221,42 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
-    config, mediator, write_adapters = load_deployment_bundle(
+    # ONE construction path. Everything derived from the configuration
+    # files is built together, as an immutable DeploymentGeneration,
+    # and the individual names below are VIEWS onto it rather than
+    # independently constructed objects.
+    #
+    # (The five convenience attributes this once described are gone --
+    # see THE ONLY REFERENCE below. This paragraph said they were
+    # "kept for now" long after the migration that removed them, which
+    # is a comment describing a hazard that no longer exists: the same
+    # failure as a workaround, arriving from the documentation side.)
+    generation = build_generation(
         runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
     )
-
-    app.state.config = config
-    app.state.mediator = mediator
+    # THE ONLY REFERENCE. The five configuration-derived objects are
+    # reachable through this and nowhere else -- there is deliberately
+    # no app.state.config, no app.state.mediator and so on.
+    #
+    # Their absence is the point, not tidiness. While they existed, a
+    # route could read app.state.mediator directly and get a DIFFERENT
+    # generation from the one its request pinned -- schema and grants
+    # disagreeing inside one request, silently, with nothing about the
+    # call site looking wrong. Deleting them makes the pin structural
+    # rather than advisory.
+    app.state.runtime_paths = runtime_paths
+    # WHAT each generation contained, not merely which one it was.
+    # Without this a reload leaves an audit line saying 7 became 8 and
+    # no way to see what either WAS -- see core/config_history.py.
+    #
+    # Its own database, beside write_log.db and artifacts.db rather
+    # than inside credentials.db: configuration history has a different
+    # retention story from credentials, and mixing them means a restore
+    # or a purge cannot treat them differently.
+    app.state.config_history = ConfigHistory(runtime_paths.data_dir / "config_history.db")
+    record_generation(app.state.config_history, generation)
+    app.state.generation = generation
+    config = generation.config
     # Kept alongside the three stores below for tests/integration/
     # test_api.py's own direct, HTTP-bypassing test-setup DB access --
     # a genuinely different, legitimate need from route handlers, which
@@ -219,6 +274,9 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # and mixing them means a restore or a purge cannot treat them
     # differently.
     app.state.artifact_store = ArtifactStore(runtime_paths.data_dir / "artifacts.db")
+    # RED metrics: one row per request, written by
+    # RequestMetricsMiddleware, read by the admin metrics route.
+    app.state.request_metrics = RequestMetrics(runtime_paths.data_dir / "metrics.db")
     # A real, explicit schema-creation step, run here, once, before ANY
     # internal store below is constructed -- a real, necessary addition,
     # not previously needed: every store here used to lazily create its
@@ -249,15 +307,48 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.session_store = SessionStore(app.state.credentials_db_path)
     app.state.login_attempt_tracker = LoginAttemptTracker(app.state.credentials_db_path)
     app.state.query_rate_limiter = QueryRateLimiter(app.state.credentials_db_path)
-    app.state.user_directory = UserDirectory(app.state.credentials_db_path, config.roles)
+    # A CALLABLE, not config.roles: this object survives a reload (it
+    # owns credentials.db) while the configuration it validates against
+    # is replaced. A snapshot taken here would be stale the moment
+    # anything reloaded -- see UserDirectory.__init__.
+    app.state.user_directory = UserDirectory(
+        app.state.credentials_db_path, lambda: app.state.generation.config.roles,
+    )
     # Built ONCE -- see module docstring for why this must not be
     # reconstructed per request. Reads its own write_log directly from
     # mediator (see WriteMediator's own write_log property) -- nothing
     # to pass or verify matches here; load_deployment_bundle() always
     # constructs mediator with a real write_log, and WriteMediator's
     # own __init__ raises a clear error if that were ever not true.
-    app.state.write_mediator = WriteMediator(mediator, write_adapters, config.roles, config.action_types)
-    resume_summary = app.state.write_mediator.resume_pending_writes()
+    # STARTUP ONLY, and deliberately not part of build_generation().
+    # This recovers writes interrupted by a crash; a RELOAD must not
+    # repeat it, because the writes it recovers are already recovered
+    # and re-running it against in-flight state is a different
+    # operation with different risks.
+    # OLD REQUEST TIMINGS, DROPPED AT STARTUP.
+    #
+    # AT STARTUP AND NOWHERE ELSE, which is a real limit rather than an
+    # oversight: a server that runs for months without restarting keeps
+    # accumulating. Measured at 192 KB per 10,000 requests, so ten
+    # million requests is roughly 192 MB -- slow enough that restart
+    # frequency is a reasonable sweep interval, and bounded enough that
+    # nobody is surprised.
+    #
+    # The alternative, sweeping on every write, would put a DELETE in
+    # the path of an occasional user request to reclaim space nobody is
+    # short of. A scheduler would be a whole mechanism for the same.
+    #
+    # FAILURE HERE DOES NOT STOP THE SERVER. A metrics table that could
+    # not be pruned is a disk-space problem for later; refusing to boot
+    # over it is an outage now.
+    try:
+        dropped = app.state.request_metrics.forget_older_than(RETENTION_SECONDS)
+        if dropped:
+            logger.info(f"dropped {dropped} request metric(s) older than retention")
+    except (OSError, sqlite3.Error) as e:
+        logger.warning(f"request metrics not pruned at startup ({e})")
+
+    resume_summary = generation.write_mediator.resume_pending_writes()
     if resume_summary["resumed"] or resume_summary["already_applied"] or resume_summary["ambiguous"]:
         logger.info(f"resume_pending_writes() on startup: {resume_summary}")
     if resume_summary["ambiguous"]:
@@ -265,15 +356,30 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             f"{resume_summary['ambiguous']} write(s) left ambiguous after resume -- "
             f"see audit.log's write_resume_ambiguous entries for detail; these need manual review."
         )
-    app.state.loop = AgentLoop.from_deployment(config, mediator, write_mediator=app.state.write_mediator)
-    app.state.synthesis_client = build_llm_adapter(config, config.synthesis_model)
+    # NOT REBUILT BY A RELOAD, and unfixable by the callable pattern
+    # the other runtime-state holders use. A ThreadPoolExecutor's size
+    # is fixed at construction, and rebuilding it would abandon
+    # in-flight work -- so max_concurrent_requests is configuration
+    # that is unreloadable by NATURE rather than by oversight.
+    # templates/config.yaml says so where a deployer will read it.
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
     # Shares the SAME AuditLog instance mediator itself holds -- not a
     # second, separately-constructed one that happens to point at the
     # same file, matching the "one shared instance" discipline this
     # whole app.state build already uses for write_log/credential_store/
     # session_store/user_directory.
-    app.state.pending_writes = PendingWriteStore(audit_log=mediator.audit_log)
+    # A CALLABLE: this store survives a reload while each generation
+    # builds its own AuditLog. Holding an instance would stamp entries
+    # with the STARTUP generation -- see PendingWriteStore.__init__.
+    # THE TTL IS RUNTIME STATE, read once at startup and not rebuilt by
+    # a reload -- the store survives a reload deliberately, and
+    # rebuilding it to pick up a new TTL would discard every proposal
+    # waiting for a decision. A changed TTL takes effect at the next
+    # restart, which templates/config.yaml says.
+    app.state.pending_writes = PendingWriteStore(
+        ttl=timedelta(minutes=config.pending_write_ttl_minutes),
+        audit_log=lambda: app.state.generation.mediator.audit_log,
+    )
 
     from api.routes import router
     # ALL real API routes live under /api -- a real, structural
@@ -287,6 +393,10 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # header, instead of ever loading this app at all). Every existing
     # frontend/backend caller already updated to match -- see that
     # same AI-notes entry for the full list.
+    # LAST, after everything is wired: a SIGHUP arriving mid-startup
+    # would otherwise reload against a half-built app.state.
+    install_sighup_handler(app)
+
     app.include_router(router, prefix="/api")
 
     if UI_DIST_DIR.is_dir():

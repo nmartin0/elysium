@@ -1,11 +1,29 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, Tab, Tabs } from '@blueprintjs/core'
+import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
-import { searchObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import {
+  getDataFreshness,
+  getErrorMessage,
+  getVisibleActionTypesCached,
+  handleIfSessionExpired,
+  matchingIds,
+  searchObjects,
+  type DataFreshness,
+} from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
+import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
-import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
+
+import ActiveFilters from './ActiveFilters'
+import BulkActionForm from './BulkActionForm'
+import BulkActionsMenu, { type BulkAction } from './BulkActionsMenu'
+import SavedViews from './SavedViews'
+import SelectionBar from './SelectionBar'
+import { applyClick } from './rangeSelection'
+import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -53,8 +71,19 @@ const BROWSE_VIEWS: readonly ViewOption[] = [
 ]
 
 export default function ObjectSearchPanel({ visibleSchema, username, onSessionExpired }: ObjectSearchPanelProps) {
-  const [selectedType, setSelectedType] = useState<string | null>(null)
-  const [queryText, setQueryText] = useState('')
+  // THE VIEW LIVES IN THE URL, so it can be shared, bookmarked and
+  // found again in history. The object type, the search text, the
+  // sort and the chart filters are a property of the QUESTION rather
+  // than of the person asking it.
+  //
+  // Column choices deliberately do NOT move -- those are a preference,
+  // they follow a user across every view, and a shared link that
+  // changed the recipient's columns would be a surprise rather than a
+  // convenience. See useUrlState.ts for the full split.
+  const [urlType, setUrlType] = useUrlValue('type', '')
+  const selectedType = urlType === '' ? null : urlType
+  const setSelectedType = (next: string | null) => setUrlType(next ?? '')
+  const [queryText, setQueryText] = useUrlValue('q', '')
   const [results, setResults] = useState<SearchResult[]>([])
   // Page tokens are OPAQUE and kept as a stack, so Back returns to the
   // exact page you came from. Reconstructing a previous token by
@@ -62,7 +91,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const [pageToken, setPageToken] = useState<string | null>(null)
   const [previousTokens, setPreviousTokens] = useState<string[]>([])
   const [nextPageToken, setNextPageToken] = useState<string | null>(null)
-  const [orderBy, setOrderBy] = useState<string>("")
+  const [orderBy, setOrderBy] = useUrlValue('sort', '')
+  const clearUrlKeys = useClearUrlKeys()
   // Per type, so switching types does not carry one type's chosen
   // columns onto another where those field names mean nothing.
   //
@@ -70,8 +100,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // coming back reset the choice silently. Found by using it, not by a
   // test -- the tests checked per-type isolation and never navigated
   // away.
-  const [chosenColumns, setChosenColumnsState] = useState<Record<string, string[]>>(
-    () => readPreference("browseColumns", username, {}),
+  const [chosenColumns, setChosenColumnsState] = useState<Record<string, string[]>>(() =>
+    readPreference('browseColumns', username, {}),
   )
 
   /**
@@ -81,11 +111,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * -- so a click is always undoable by repeating it, which is what
    * makes exploring by clicking safe.
    */
+  function removeCrossFilter(field: string) {
+    setCrossFilter((current) => current.filter((entry) => entry.field !== field))
+  }
+
   function toggleChartValue(field: string, value: string) {
     setCrossFilter((current) => {
       const existing = current.find((entry) => entry.field === field)
       if (existing === undefined) {
-        return [...current, { field, values: [value], mode: "keep" }]
+        return [...current, { field, values: [value], mode: 'keep' }]
       }
       const values = existing.values.includes(value)
         ? existing.values.filter((existingValue: string) => existingValue !== value)
@@ -100,9 +134,67 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
 
   function setChosenColumns(next: Record<string, string[]>) {
     setChosenColumnsState(next)
-    writePreference("browseColumns", username, next)
+    writePreference('browseColumns', username, next)
   }
   const [totalMatches, setTotalMatches] = useState(0)
+
+  // WHICH OBJECTS AN ACTION WOULD APPLY TO, by id rather than by row,
+  // so a selection survives paging and re-sorting. Foundry's rule:
+  // "when results span multiple pages, selecting the header checkbox
+  // selects all objects matching the applied filters, not just the
+  // objects on the current page".
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // WHICH ACTIONS EXIST, for the bulk menu. Cached at the shell level,
+  // so several panels asking costs one request.
+  const [actionTypes, setActionTypes] = useState<BulkAction[]>([])
+  const [bulkAction, setBulkAction] = useState<BulkAction | null>(null)
+  const [selectingAll, setSelectingAll] = useState(false)
+
+  useEffect(() => {
+    void (getVisibleActionTypesCached() as Promise<Record<string, Omit<BulkAction, 'name'>>>)
+      // A DICT KEYED BY NAME, not an array -- the route's response
+      // model is dict[str, VisibleActionTypeResponse], and an entry
+      // does NOT carry its own name. Calling .filter() on it threw and
+      // blanked the whole page.
+      //
+      // My tests mocked it as an array, so they never saw the real
+      // shape; ObjectDetailPanel.tsx already casts it correctly and I
+      // did not look. Found by running the product.
+      .then((byName) => setActionTypes(Object.entries(byName ?? {}).map(([name, spec]) => ({ ...spec, name }))))
+      // SILENT ON FAILURE, and the menu simply does not appear. An
+      // error banner about actions would be noise on a page whose job
+      // is showing objects, and the actions are an addition to it
+      // rather than the point of it.
+      .catch(() => {})
+  }, [])
+
+  // THE ANCHOR FOR SHIFT-CLICK, held as an ID rather than a position.
+  // An index would break the moment the list is sorted, filtered or
+  // paged -- and this list is all three.
+  const [anchorId, setAnchorId] = useState<string | null>(null)
+
+  // NO FORWARDED-CLICK BOOKKEEPING ANY MORE. It existed to tell one
+  // gesture's two events apart, which a plain <input> does not
+  // produce -- see the checkbox below. Four commits of increasingly
+  // careful disambiguation, deleted by removing the thing that needed
+  // disambiguating.
+
+  // NO MODIFIER TRACKING HERE ANY MORE. A window-level keydown/keyup
+  // pair used to hold the shift state for the checkbox to read, and it
+  // was dead weight: the click handler carries event.shiftKey itself,
+  // which is the same fact without the bookkeeping or the risk of the
+  // flag sticking true after a blur.
+
+  function toggleSelected(id: string, withShift = false) {
+    // THE ORDER ON SCREEN, which is what a person means by "everything
+    // between these two". Not the underlying order, and not an index
+    // stored when the row was first clicked.
+    const displayed = results.map((result) => result.id)
+    const outcome = applyClick(id, displayed, selectedIds, anchorId, withShift)
+    setSelectedIds(outcome.selected)
+    setAnchorId(outcome.anchor)
+  }
   /**
    * The cross-filter: one set of conditions driving the table AND
    * every chart.
@@ -113,7 +205,42 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * query rather than replacing it, so narrowing by a chart click
    * narrows within a search rather than discarding it.
    */
-  const [crossFilter, setCrossFilter] = useState<ChartFilter[]>([])
+  // JSON-encoded: a list of {field, value} pairs has no natural flat
+  // query-string form, and inventing one would mean writing a parser
+  // for it. A malformed value falls back to no filter rather than
+  // throwing -- see useUrlJson.
+  const [crossFilter, setCrossFilter] = useUrlJson<ChartFilter[]>('filters', [])
+
+  // Whether the user narrowed anything, which is what separates "your
+  // filters matched nothing" from "there is nothing here". Text search
+  // and chart cross-filters both count: either one can empty a result
+  // set that would otherwise have rows.
+
+  // Fetched once for the panel, not per search: freshness is a
+  // deployment-wide fact and does not change between queries. A
+  // failure is swallowed to null -- the indicator is worth having and
+  // is not worth failing a search over, which is the same call
+  // PendingWriteCard already makes.
+  const [freshness, setFreshness] = useState<DataFreshness | null>(null)
+  const hasFilters = queryText.trim() !== '' || crossFilter.length > 0
+  // READING FROM A MIRROR THAT HAS NEVER BEEN FILLED. The server
+  // distinguishes this from an empty one -- source 'mirror' with no
+  // last_synced_at -- and without it "no records available" reads as
+  // "your data is empty" on a deployment that simply has not fetched
+  // anything yet.
+  const neverSynced = freshness?.source === 'mirror' && !freshness.last_synced_at
+  useEffect(() => {
+    getDataFreshness()
+      .then(setFreshness)
+      .catch(() => setFreshness(null))
+  }, [])
+
+  const clearAllFilters = () => {
+    // ONE navigation, not two. Each URL setter navigates rather than
+    // queueing, so calling both in sequence made the second discard
+    // the first and only half the filters cleared.
+    clearUrlKeys(['q', 'filters'])
+  }
   /**
    * Filters built in the filter bar, kept SEPARATE from the chart
    * cross-filter and combined only when a query is sent.
@@ -124,7 +251,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * would be editing the other's state.
    */
   const [barFilters, setBarFilters] = useState<FieldFilter[]>([])
-  const [view, setView] = useState<string>("table")
+  // WHICH TAB, because a link to a chart should open the chart. It is
+  // part of what someone means by "look at this".
+  const [view, setView] = useUrlValue('view', 'table')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -166,18 +295,17 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     const chosen = chosenColumns[selectedType]
     if (chosen) return returned.filter((field) => chosen.includes(field))
     const schemaFields = visibleSchema?.[selectedType]?.fields ?? {}
-    const prominent = returned.filter(
-      (field) => schemaFields[field]?.visibility === "prominent",
-    )
+    const prominent = returned.filter((field) => schemaFields[field]?.visibility === 'prominent')
     if (prominent.length > 0) return prominent
-    return returned.filter((field) => schemaFields[field]?.visibility !== "hidden")
+    return returned.filter((field) => schemaFields[field]?.visibility !== 'hidden')
   }
 
-  const sortableFields = selectedType && visibleSchema
-    ? Object.entries(visibleSchema[selectedType]?.fields ?? {})
-        .filter(([, field]) => field.type !== "link")
-        .map(([name, field]) => ({ name, label: field.display_name ?? name }))
-    : []
+  const sortableFields =
+    selectedType && visibleSchema
+      ? Object.entries(visibleSchema[selectedType]?.fields ?? {})
+          .filter(([, field]) => field.type !== 'link')
+          .map(([name, field]) => ({ name, label: field.display_name ?? name }))
+      : []
 
   useEffect(() => {
     if (selectedType === null && objectTypes && objectTypes.length > 0) {
@@ -241,7 +369,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   if (objectTypes === null) {
     return (
       <div className="object-search">
-        <p>Loading…</p>
+        <LoadingState />
       </div>
     )
   }
@@ -265,6 +393,18 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // relied on before this file had any types to make explicit.
   const currentType = selectedType ?? objectTypes[0]!
 
+  // A TYPE ON THE MIDDLE RUNG. The caller holds discover: and not
+  // read:, so they may know it exists and it yields no ids at all.
+  //
+  // Searching it would return an empty result set, which reads as "no
+  // matches" -- a claim about the DATA when the truth is about their
+  // access. Saying so is the difference between "there are none" and
+  // "you may not see them".
+  const searchable = visibleSchema?.[currentType]?.readable !== false
+  // The current type's field metadata, for rendering hints the
+  // ontology declares -- decimal places today.
+  const typeSchemaFields = visibleSchema?.[currentType]?.fields
+
   return (
     // Workspace supplies the two-pane shape; this passes what goes in
     // each. The structure used to be three CSS class names nested by
@@ -279,14 +419,16 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               throughout. */}
           <ViewSelector views={BROWSE_VIEWS} selected={view} onSelect={setView} />
 
-        <WorkspaceFilter label="Object type" htmlFor="object-type">
-          <select
-            id="object-type"
-            aria-label="Object type"
-            value={currentType}
-            onChange={(event) => setSelectedType(event.target.value)}
-          >
-          {/* selectedType itself still starts as null -- the effect
+          <SavedViews username={username} />
+
+          <WorkspaceFilter label="Object type" htmlFor="object-type">
+            <select
+              id="object-type"
+              aria-label="Object type"
+              value={currentType}
+              onChange={(event) => setSelectedType(event.target.value)}
+            >
+              {/* selectedType itself still starts as null -- the effect
               below sets it to a real value once objectTypes is known,
               and the search effect further down correctly waits for
               that real value before firing (gated on `if
@@ -299,91 +441,89 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               all, objectTypes is already confirmed non-null and non-
               empty (see the two early returns above), so
               objectTypes[0] is always safe here. */}
-            {objectTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </WorkspaceFilter>
+              {objectTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </WorkspaceFilter>
 
-        {/* currentType, not selectedType: selectedType is null until
+          {/* currentType, not selectedType: selectedType is null until
             someone picks one, while the panel already SHOWS the first
             type -- guarding on it would hide the filter bar on the
             very screen a user lands on. */}
-        {visibleSchema?.[currentType] && (
-          <WorkspaceFilter label="Filters">
-            <FilterBar
-              fields={visibleSchema[currentType]?.fields ?? {}}
-              filters={barFilters}
-              onChange={(next) => {
-                setBarFilters(next)
-                // A filter change is a new result set, so a page token
-                // from the old one means nothing.
-                setPageToken(null)
-              }}
+          {visibleSchema?.[currentType] && (
+            <WorkspaceFilter label="Filters">
+              <FilterBar
+                fields={visibleSchema[currentType]?.fields ?? {}}
+                filters={barFilters}
+                onChange={(next) => {
+                  setBarFilters(next)
+                  // A filter change is a new result set, so a page token
+                  // from the old one means nothing.
+                  setPageToken(null)
+                }}
+              />
+            </WorkspaceFilter>
+          )}
+          <WorkspaceFilter label="Search" htmlFor="object-search-text">
+            <input
+              id="object-search-text"
+              type="text"
+              value={queryText}
+              onChange={(event) => setQueryText(event.target.value)}
+              placeholder={`Search ${currentType}…`}
             />
           </WorkspaceFilter>
-        )}
-        <WorkspaceFilter label="Search" htmlFor="object-search-text">
-          <input
-            id="object-search-text"
-            type="text"
-            value={queryText}
-            onChange={(event) => setQueryText(event.target.value)}
-            placeholder={`Search ${currentType}…`}
-          />
-        </WorkspaceFilter>
 
-        {sortableFields.length > 0 && (
-          <WorkspaceFilter label="Sort by" htmlFor="object-search-sort">
-            <HTMLSelect
-              id="object-search-sort"
-              aria-label="Sort by"
-              value={orderBy}
-              onChange={(event) => setOrderBy(event.currentTarget.value)}
-            >
-              <option value="">Default</option>
-              {sortableFields.map((field) => (
-                <Fragment key={field.name}>
-                  <option value={field.name}>{field.label} (A-Z)</option>
-                  <option value={`${field.name}:desc`}>{field.label} (Z-A)</option>
-                </Fragment>
-              ))}
-            </HTMLSelect>
-          </WorkspaceFilter>
-        )}
+          {sortableFields.length > 0 && (
+            <WorkspaceFilter label="Sort by" htmlFor="object-search-sort">
+              <HTMLSelect
+                id="object-search-sort"
+                aria-label="Sort by"
+                value={orderBy}
+                onChange={(event) => setOrderBy(event.currentTarget.value)}
+              >
+                <option value="">Default</option>
+                {sortableFields.map((field) => (
+                  <Fragment key={field.name}>
+                    <option value={field.name}>{field.label} (A-Z)</option>
+                    <option value={`${field.name}:desc`}>{field.label} (Z-A)</option>
+                  </Fragment>
+                ))}
+              </HTMLSelect>
+            </WorkspaceFilter>
+          )}
 
-        {/* Columns live with the other controls now, not in a
+          {/* Columns live with the other controls now, not in a
             disclosure above the results -- a configuration column is
             where configuration belongs, and it no longer has to hide
             to avoid pushing the results down the page. */}
-        {selectedType && results.length > 0 && (
-          <WorkspaceFilter label="Columns">
-            {Object.keys(results[0]?.fields ?? {}).map((field) => {
-              const shown = visibleColumns(Object.keys(results[0]?.fields ?? {})).includes(field)
-              return (
-                <Checkbox
-                  key={field}
-                  checked={shown}
-                  label={formatFieldName(field)}
-                  onChange={() => {
-                    const all = Object.keys(results[0]?.fields ?? {})
-                    const current = chosenColumns[selectedType] ?? visibleColumns(all)
-                    const next = shown
-                      ? current.filter((name) => name !== field)
-                      : [...current, field]
-                    setChosenColumns({ ...chosenColumns, [selectedType]: next })
-                  }}
-                />
-              )
-            })}
-          </WorkspaceFilter>
-        )}
+          {selectedType && results.length > 0 && (
+            <WorkspaceFilter label="Columns">
+              {Object.keys(results[0]?.fields ?? {}).map((field) => {
+                const shown = visibleColumns(Object.keys(results[0]?.fields ?? {})).includes(field)
+                return (
+                  <Checkbox
+                    key={field}
+                    checked={shown}
+                    label={formatFieldName(field)}
+                    onChange={() => {
+                      const all = Object.keys(results[0]?.fields ?? {})
+                      const current = chosenColumns[selectedType] ?? visibleColumns(all)
+                      const next = shown ? current.filter((name) => name !== field) : [...current, field]
+                      setChosenColumns({ ...chosenColumns, [selectedType]: next })
+                    }}
+                  />
+                )
+              })}
+            </WorkspaceFilter>
+          )}
         </>
       }
     >
-      {error && <Callout intent="danger">{error}</Callout>}
+      {error && <ErrorState>{error}</ErrorState>}
       {/* Two views of ONE object set. The filter is shared, so
           switching does not change what is being described -- only
           how. Stacking them, which this first did, made the page a
@@ -395,52 +535,300 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           other two read left to right. */}
       {view === 'charts' && selectedType && (
         <ChartsPanel
-                        objectType={selectedType}
-                        visibleSchema={visibleSchema}
-                        queryText={queryText}
-                        filters={crossFilter}
-                        onSelect={toggleChartValue}
-                        onSessionExpired={onSessionExpired}
-                      />
+          objectType={selectedType}
+          visibleSchema={visibleSchema}
+          queryText={queryText}
+          filters={crossFilter}
+          onSelect={toggleChartValue}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
+
+      {/* WHAT IS NARROWING THIS VIEW, said out loud. A cross-filter
+          used to render nowhere in table view, so arriving from a link
+          the panel said "Showing 2 of 2 matches" with no sign a filter
+          was in force -- which reads as "there are 2 in the system".
+          Foundry treats this as a first-class concern: Object Views
+          ships a dedicated Active Filters widget for exactly it. */}
+      <ActiveFilters filters={crossFilter} onRemove={removeCrossFilter} />
+
+      {/* WHAT AN ACTION WOULD APPLY TO. Above the results, like the
+          filter pills, because it describes what is about to be read
+          -- and because "no selection" means ALL matches rather than
+          none, which is not guessable. */}
+      <div className="selection-row">
+        <SelectionBar
+          selectedCount={selectedIds.size}
+          matchCount={totalMatches}
+          pageCount={results.length}
+          selectingAll={selectingAll}
+          onSelectAllMatching={
+            totalMatches > results.length
+              ? () => {
+                  // RESOLVED BY THE SERVER, at the moment of selection.
+                  // What travels onward is the id list, never the
+                  // filter -- a reviewer approves specific changes, and
+                  // a filter that outlived the selection would let an
+                  // approval of 500 quietly become 520 overnight.
+                  setSelectingAll(true)
+                  void matchingIds(currentType, queryText, crossFilter)
+                    .then((ids) => setSelectedIds(new Set(ids)))
+                    .catch((err: unknown) => setError(getErrorMessage(err)))
+                    .finally(() => setSelectingAll(false))
+                }
+              : undefined
+          }
+          onClear={() => setSelectedIds(new Set())}
+        />
+        {/* ONLY ACTIONS THE ONTOLOGY MADE BULK-CAPABLE. The menu
+            filters on an object_reference_list parameter of THIS
+            object type; anything else would be accepted by the form
+            and refused at the far end, after a whole form was
+            filled. */}
+        {selectedType !== null && results.length > 0 && (
+          <BulkActionsMenu
+            actions={actionTypes}
+            objectType={currentType}
+            // THE PAGE, NOT EVERY MATCH, matching the selection bar
+            // and matching what the action will actually reach.
+            //
+            // This said totalMatches while the bar said the page, so
+            // with 64 matches shown 50 at a time the button offered
+            // "Actions (64)" above a bar reading "the 50 shown" -- two
+            // numbers for one thing, and the larger one was the lie.
+            //
+            // Missed when the bar was corrected: I fixed the component
+            // that displayed the count and not the sibling that
+            // displayed it too.
+            count={selectedIds.size > 0 ? selectedIds.size : results.length}
+            onChoose={setBulkAction}
+          />
+        )}
+      </div>
+
+      {bulkAction !== null && (
+        <BulkActionForm
+          action={bulkAction}
+          objectType={currentType}
+          // NO SELECTION MEANS THE WHOLE FILTERED SET -- Foundry's rule
+          // -- and it is resolved HERE rather than in the form, so the
+          // rule lives in one place. The form is told the ids and does
+          // not know how they were chosen.
+          // THE PAGE, NOT EVERY MATCH, and the selection bar says so.
+          //
+          // Foundry's rule is that an action applies to "all objects,
+          // if none are selected", and their select-all "selects all
+          // objects matching the applied filters, not just the objects
+          // on the current page". We cannot honour that half: the
+          // panel holds one PAGE of results, and total_matches counts
+          // every match.
+          //
+          // So the promise is narrowed rather than the behaviour
+          // faked. Sending results.map() while the bar claimed N
+          // matches would touch fewer objects than a person was just
+          // told -- a quiet under-application, which is worse than a
+          // refusal because nothing looks wrong afterwards.
+          objectIds={selectedIds.size > 0 ? [...selectedIds] : results.map((result) => result.id)}
+          onDone={() => {
+            setBulkAction(null)
+            setSelectedIds(new Set())
+          }}
+        />
       )}
 
       {loading && <p className="object-search__status">Searching…</p>}
 
-      {view === "table" && !loading && results.length === 0 && !error && (
-        <p className="object-search__empty">No results.</p>
+      {/*
+       * WHEN the data was current, stated rather than warned about.
+       *
+       * read_from_mirror is deployment-wide: when it is on, EVERY read
+       * comes from the mirror, always. So a warning Callout here would
+       * be permanently present, and a permanent warning is one people
+       * stop seeing -- which is worse than none, because it looks like
+       * the system is telling them something.
+       *
+       * A muted fact instead. "synced 4 minutes ago" and "synced 3
+       * days ago" are both unremarkable to render and completely
+       * different to read, and the analyst is the one who knows which
+       * matters for the question they are asking.
+       *
+       * PendingWriteCard keeps its warning Callout, correctly: that is
+       * a decision point, not continuous reading, and someone about to
+       * approve a write against stale values should be interrupted.
+       */}
+      {/* NEVER SYNCED, as distinct from synced-and-empty. The server
+          already distinguishes them -- source 'mirror' with a null
+          last_synced_at -- and only the freshness line used it. */}
+      {freshness?.source === 'mirror' && (
+        <p className="object-search__freshness">
+          {freshness.last_synced_at
+            ? `Showing mirrored data, synced ${formatTimestamp(freshness.last_synced_at)}.`
+            : 'Showing mirrored data, which has not been synced yet.'}
+        </p>
       )}
 
-      {view === "table" && (
-      <CardList className="object-search__results">
-        {results.map((result) => {
-          const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
-          return (
-            // interactive -- real hover feedback, matching every other
-            // clickable Card this migration has already used it for.
-            // The real "stretched link" pattern below (see index.css's
-            // own comment on .object-search__link::after) is what
-            // makes the WHOLE card clickable/keyboard-focusable, not
-            // just interactive's own hover styling on its own.
-            <Card key={result.id} interactive className="object-search__result">
-              <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
-                <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
-              </Link>
-              {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
-              <dl className="object-search__result-fields">
-                {visibleColumns(Object.keys(result.fields)).map((field) => [field, result.fields[field]] as const).map(([field, value]) => (
-                  <div key={field} className="object-search__result-field">
-                    <dt>{formatFieldName(field)}</dt>
-                    <dd>{formatValue(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </Card>
-          )
-        })}
-      </CardList>
+      {view === 'table' &&
+        !loading &&
+        results.length === 0 &&
+        !error &&
+        /*
+         * TWO EMPTY STATES, not one. "Your filters matched nothing" and
+         * "this type has no rows" are different facts and lead to
+         * different next actions: clear the filters, or go and look
+         * somewhere else. Collapsing them into one grey "No results."
+         * -- which is what this was -- makes an analyst guess which.
+         *
+         * A THIRD STATE IS DELIBERATELY ABSENT, and it is not the one
+         * added below. The spec this came from wants "results exist
+         * but are not visible to you". Elysium's uniform denial means
+         * the response never distinguishes "no rows" from "not
+         * allowed", and that is a security property: saying hidden
+         * rows exist leaks the existence of data the caller cannot
+         * see. That state is still refused. See UI_ROADMAP.md.
+         *
+         * THE UNSEARCHABLE STATE IS A DIFFERENT FACT. It says nothing
+         * about whether rows exist -- it reports the caller's own
+         * GRANT, known before any query runs, and leaks nothing about
+         * the data. "You may not search this" and "there is nothing
+         * here" are answers to different questions, and rendering the
+         * first as the second is what this avoids.
+         */
+        (!searchable ? (
+          <NonIdealState
+            icon="lock"
+            title="You cannot search this type"
+            description={
+              `Your permissions let you know ${currentType} exists, and not what it ` +
+              `holds. Nothing is hidden from the results below -- there are no ` +
+              `results to hide.`
+            }
+          />
+        ) : (
+          <NonIdealState
+            icon={hasFilters ? 'filter-remove' : neverSynced ? 'refresh' : 'search'}
+            title={hasFilters ? 'No matches' : neverSynced ? 'Not synced yet' : 'Nothing here yet'}
+            description={
+              hasFilters
+                ? `No ${currentType} matches the filters you have applied.`
+                : neverSynced
+                  ? /* A NEVER-SYNCED MIRROR IS NOT AN EMPTY ONE, and
+                     "no records are available" reads as the first.
+                     A deployment reading from the mirror shows
+                     nothing at all until its first sync, which is
+                     correct and is a bad first five minutes unless
+                     somebody says why. */
+                    `Elysium reads from its local mirror, and nothing has been ` +
+                    `copied into it yet. Run scripts/run_sync to fetch from ` +
+                    `the configured silos.`
+                  : `No ${currentType} records are available to show.`
+            }
+            action={
+              hasFilters ? (
+                <Button icon="filter-remove" onClick={clearAllFilters}>
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
+          />
+        ))}
+
+      {view === 'table' && (
+        <CardList className="object-search__results">
+          {results.map((result) => {
+            const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
+            return (
+              // interactive -- real hover feedback, matching every other
+              // clickable Card this migration has already used it for.
+              // The real "stretched link" pattern below (see index.css's
+              // own comment on .object-search__link::after) is what
+              // makes the WHOLE card clickable/keyboard-focusable, not
+              // just interactive's own hover styling on its own.
+              <Card key={result.id} interactive className="object-search__result">
+                {/* BESIDE THE LINK, not beneath an overlay. The card
+                    used to stretch its link across the whole surface,
+                    which is a good pattern for a card that is ONLY a
+                    link and a bad one for a card holding a checkbox:
+                    shift-clicking the box NAVIGATED, proved by a
+                    server log during a selection test. The overlay is
+                    gone and the title is the link. */}
+                <div
+                  className="object-search__row"
+                  // ON THE WRAPPER, because Blueprint hands extra props
+                  // to the <input> and not to the <label> that wraps it
+                  // -- verified by rendering one and firing at each.
+                  //
+                  // So a handler passed to Checkbox only fires when the
+                  // pointer lands on the input ITSELF. Clicking the
+                  // label anywhere else, which is most of the control's
+                  // visible area, produced no mousedown at all and the
+                  // modifier was never captured.
+                  //
+                  // mousedown here catches every path, because the
+                  // wrapper contains the label, which contains the
+                  // input. Capture-phase ordering is not needed:
+                  // mousedown bubbles here before the click that
+                  // produces the change.
+                >
+                  {/* A PLAIN INPUT, NOT Blueprint's Checkbox, and
+                      that is the fix rather than a simplification.
+
+                      Blueprint renders a Checkbox as a <label> wrapping
+                      a hidden input and a visible <span> indicator. Any
+                      click inside that label triggers label activation,
+                      which forwards a SECOND click to the input -- so
+                      one gesture produced two events and the selection
+                      toggled twice.
+
+                      Four commits tried to tell the two apart: by
+                      target, then by target plus a flag, then by a
+                      50ms window. The window is why clicks
+                      intermittently did nothing -- a real click landing
+                      inside it was mistaken for a forward. Timing
+                      cannot distinguish a fast user from a browser.
+
+                      A bare input has ONE click target. No label, no
+                      activation, no forward, nothing to disambiguate.
+                      The aria-label sits on the input itself, which is
+                      also where a screen reader expects it.
+
+                      onChange is safe here BECAUSE there is no label:
+                      Mozilla #559506 only suppresses the change event
+                      when a LABEL is shift-clicked. */}
+                  <input
+                    type="checkbox"
+                    className="object-search__select"
+                    checked={selectedIds.has(result.id)}
+                    aria-label={`Select ${String(titleValue)}`}
+                    onChange={(event) => toggleSelected(result.id, (event.nativeEvent as MouseEvent).shiftKey === true)}
+                  />
+                  <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
+                    <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
+                  </Link>
+                  {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
+                  <dl className="object-search__result-fields">
+                    {visibleColumns(Object.keys(result.fields))
+                      .map((field) => [field, result.fields[field]] as const)
+                      .map(([field, value]) => (
+                        <div key={field} className="object-search__result-field">
+                          <dt>{formatFieldName(field)}</dt>
+                          <dd>
+                            {formatValue(
+                              value,
+                              typeSchemaFields?.[field]?.decimal_places,
+                              typeSchemaFields?.[field]?.data_type,
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
+                </div>
+              </Card>
+            )
+          })}
+        </CardList>
       )}
 
-      {view === "table" && (nextPageToken || previousTokens.length > 0) && (
+      {view === 'table' && (nextPageToken || previousTokens.length > 0) && (
         <div className="object-search__pager">
           <Button
             minimal
@@ -458,18 +846,32 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
             Previous
           </Button>
           <span className="object-search__more">
-            {/* Deliberately NOT "page 3 of 12". The set is live, and
-                the API documents that default paging may duplicate or
-                miss rows as data changes underneath -- a page number
-                would promise a stability nothing provides. */}
-            Showing {results.length} of {totalMatches} matches
+            {/* Deliberately NOT "page 3 of 12". A page number would
+                promise a stability that a LIVE deployment does not
+                provide -- default paging there may duplicate or miss
+                rows as data changes underneath.
+
+                AND THE TOTAL CARRIES THE SAME CAVEAT, which this line
+                used to state unconditionally. On a live deployment
+                "of 4,312" is a number that was true when the query
+                ran and may not be true now; presenting it flatly
+                invites someone to reconcile it against a report and
+                find a discrepancy that is not one.
+
+                ON A MIRROR IT IS EXACT, and saying so matters as much.
+                A generation pins each table's snapshot, so every page
+                of one query reads the same immutable data -- the count
+                is authoritative and a UI that hedged it would
+                understate what the deployment guarantees. */}
+            Showing {results.length} of {totalMatches}
+            {freshness?.source === 'live' ? ' matches at the time of this query' : ' matches'}
           </span>
           <Button
             minimal
             rightIcon="chevron-right"
             disabled={!nextPageToken}
             onClick={() => {
-              setPreviousTokens([...previousTokens, pageToken ?? ""])
+              setPreviousTokens([...previousTokens, pageToken ?? ''])
               setPageToken(nextPageToken)
             }}
           >

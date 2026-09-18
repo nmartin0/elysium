@@ -629,6 +629,91 @@ is a different kind of blocked from this.
 
 ---
 
+## Submission criteria as a capability
+
+Criteria exist and work, but have never been tracked as a feature area
+with a stated scope. Written down here because the Approvals work
+depends on them and kept discovering their edges by hitting them.
+
+**What they express today.** A flat AND-list per sub_write, evaluated
+at propose time. Three check kinds: `current_state` (the object as it
+is now, read through the write log so a pending edit is not missed),
+`parameter` (what this call supplied), and `user` (the acting
+principal -- `user_id`, `security_value`, `role_name`, following
+Foundry's Current User template). Seven operators. Values are literals.
+Shape and vocabulary are validated at schema load by a pydantic model.
+
+**What they cannot express, in rough order of how much it matters:**
+
+- **Conditionals.** Everything is ANDed, so "above 10,000 a manager
+  must do it" is not sayable -- only "a manager must do it". This is
+  why a `role_name` criterion currently duplicates an `execute:` grant
+  rather than refining it, and the single biggest limit on the whole
+  mechanism.
+- **Dynamic values.** `value` is a literal. Comparing one side against
+  another -- the acting user against an object property, or against a
+  parameter -- is what four-eyes needs, and Foundry supports it
+  ("compared against either a statically defined list of user IDs or
+  any string parameter that stores a user ID"). Blocks the Approvals
+  build order's step 3. NOTE when doing this: `_collect_parameter_
+  references()` in action_types.py already tries to collect
+  `parameter.` references from criteria, but reads them off action_def
+  when they live per sub_write, so it finds nothing. Dead today
+  because values are literals; live and silently wrong the moment they
+  are not.
+- **OR, and negation of a group.** No way to say "either of these two
+  conditions".
+- **Cross-object criteria.** A criterion reads the sub_write's own
+  object, not another one.
+- **Field existence checking at load.** A misspelled `current_state`
+  field reads as None and the comparison simply fails, so a deployment
+  could be relying on that today -- rejecting it at load is a
+  behaviour change rather than a typo catch, and deserves its own
+  decision. Deliberately left out when load-time validation was added.
+
+**What is deliberately NOT wanted.** Criteria are not a scripting
+language. Foundry's is condition-template-based for the same reason,
+and the value of the flat list is that a deployment author can read a
+criterion and know what it does. Each item above should be added
+because something concrete needs it, not to round out a feature
+matrix.
+
+## Declarative validation for deployment config
+
+`action_types.py`, `object_type_validation.py` and
+`policy_validation.py` are roughly 1,064 lines of hand-rolled
+validation of YAML documents. `submission_criteria.py`'s `Criterion`
+model is the first piece done declaratively, and it worked well enough
+to be worth generalising -- it replaced an argument about where shared
+constants should live with a type, and made the vocabulary something
+mypy checks.
+
+**NOT a rewrite, and the split matters.** Roughly 60% of those lines
+are shape -- required keys, a value being one of three strings, a list
+being non-empty -- which a pydantic model replaces cleanly. The other
+40% is CROSS-DOCUMENT reference checking, and no model expresses it:
+
+- every name in `affected_object_types` is a real declared object type
+- `affected_object_types` matches what `sub_writes` actually touches
+- every mutation's `property` is a real field on THAT object type
+- every `parameter.x` reference resolves to a declared parameter
+- at most one parameter marked `is_current_object`, its type in
+  `affected_object_types`
+
+Those need the object-type dictionary in hand, so they stay custom
+validators either way. The end state is a declarative core with custom
+validators for cross-references -- not the deletion of what is there.
+
+**Costs to price before starting.** 32 tests assert on exact validator
+message text via `match=`; pydantic's messages are differently shaped.
+Error messages are a deployment author's primary interface to this
+system, so the migration should preserve the position information
+`scripts/lint_deployment.py` adds (file and line), and its ability to
+report EVERY bad entry rather than the first -- which is the reason
+that collecting pass exists at all.
+
+---
+
 ## Read-only data mirror architecture
 
 Raised directly -- "we must be able to provide a GUARANTEE that the
@@ -1214,7 +1299,14 @@ Not just an architecture change -- real, concrete new capability:
 
 ---
 
-## Near-term (prioritized, in build order)
+## Near-term -- SEE BACKLOG.md
+
+> **The open items from this file now live in BACKLOG.md**, which is
+> the one list. What stays here is the REASONING -- why a thing was
+> decided, rejected or measured -- because that has been needed
+> repeatedly and a backlog entry is the wrong place for it.
+
+### The original near-term list, kept for its reasoning
 
 Recommended order, from the original research: lowest-risk and
 highest-precedent first, highest-effort/lowest-immediate-ROI last.
@@ -1235,10 +1327,31 @@ highest-precedent first, highest-effort/lowest-immediate-ROI last.
    with a real batch cap. A small set of filter-capable charts
    (Listogram, Histogram, Single Statistic) before anything fancier
    (maps, grid plots).
-3. **A Pending Changes / Approvals inbox.** *(Currently on hold --
-   its own real, blocking backend prerequisite, the `PendingWriteStore`
-   rebuild, is deferred pending an eventual PostgreSQL migration; see
-   "Backend foundation work" above.)* The two-phase propose/confirm
+3. **A Pending Changes / Approvals inbox. SHIPPED**, on the existing
+   store rather than waiting for the PostgreSQL migration this entry
+   assumed was a prerequisite. It was not: the store survives a
+   configuration reload, which is what the inbox actually needed, and
+   its in-process limitation is a single-worker constraint rather than
+   a blocker.
+
+   What landed: criteria comparing against parameters, the acting user
+   and an unspoofable `proposer.`; criteria evaluated against the
+   APPROVER rather than only the proposer; eligibility by grant instead
+   of ownership; a listable queue showing both what you may decide and
+   what you proposed; a diff that REDACTS fields you may not read
+   rather than omitting them; both parties recorded in the audit; and a
+   fifth sub-app to reach it.
+
+   Two real bugs surfaced by using it: a refused approval destroyed the
+   proposal (the reservation is now two-phase), and the inbox was
+   cacheable. Neither was found by a test.
+
+   STILL OPEN: per-task eligibility, which Foundry has and we do not --
+   they scope a reviewer's action to the tasks they are eligible for,
+   where we approve a whole batch atomically. Ours is defensible, since
+   partial application of a multi-object write is a correctness
+   problem, but the two want reconciling rather than one replacing the
+   other.* The two-phase propose/confirm
    mechanism already exists (`write_log.db`, confirm/reject); this is
    giving it its own queue view across the whole org instead of only
    inline, per-submission. Reviewer eligibility derived from the SAME
@@ -1313,6 +1426,141 @@ AI-notes for those, plus the request-size-limit and /query rate-
 limit additions -- not repeated here). These are real, considered,
 but deliberately DEFERRED items, not gaps that slipped through
 unnoticed:
+
+- **KV-cache timing side channel, and why the prompt is ordered as it
+  is.** Prefix caching in an LLM server reuses the computed attention
+  state of a shared prompt prefix, which makes a cache hit measurably
+  faster than a miss. That difference is a side channel: published
+  attacks (PROMPTPEEK, EarlyBird, InputSnatch) reconstruct another
+  tenant's prompt token by token from response latency alone, and
+  report up to 100% success against unprotected vLLM and SGLang
+  deployments. NVIDIA publishes deployment guidance on it.
+
+  The attack needs STRICT PREFIX ALIGNMENT -- a probe must match from
+  the very first token. core/llm/agent_step_prompt.py's own
+  `_build_system_prompt()` puts the MAC/RBAC-filtered schema near the
+  front, so two users with different access diverge almost immediately
+  and neither can align far against the other. The per-user schema acts
+  as a cache partition key.
+
+  MEASURED, and the original claim here was slightly wrong. It said the
+  prompt "opens with `_describe_schema(...)`"; it does not. A fixed
+  preamble comes first, and two users with COMPLETELY DISJOINT
+  ontologies still share 103 characters -- about 25 tokens -- ending
+  with the `- ` that opens the first object type line.
+
+  Twenty-five tokens was a foothold rather than a wall -- where an
+  attacker would start probing forward, recovering the victim's leading
+  object type name, which visible_schema filters per user and RBAC is
+  meant to withhold.
+
+  **FIXED, not filed.** The schema is now the FIRST thing in the
+  prompt, and the preamble follows it as "Using ONLY the object types
+  and fields above...". Two users with disjoint ontologies now share 2
+  characters -- the "- " that opens a list item -- instead of 103.
+  There is no longer anything to align against.
+
+  The earlier judgement that this was disproportionate to fix was
+  wrong, and wrong in a specific way: it treated `-np 1` as mitigating.
+  One slot limits CONCURRENCY, not cache REUSE, so sequential requests
+  are still timeable. The fix turned out to be two lines.
+
+  NOW ENFORCED, not merely asserted. tests/unit/
+  test_prompt_prefix_is_user_specific.py fails if the shared prefix
+  grows past a loose budget, and separately if the examples move above
+  the schema. Two controls reproduce exactly the regression described
+  below.
+
+  THAT IS ACCIDENTAL AND MUST NOT BE OPTIMISED AWAY -- and it is a
+  test now, so it cannot be, silently. Moving the
+  generic instructions and examples above the schema -- to lengthen
+  the prefix that users share and improve cache hit rates -- would be
+  a security regression, not a performance win. It is exactly the
+  change that creates the alignable cross-privilege prefix these
+  attacks need. Per-query material may be appended at the END (which
+  is what core/llm/synthesis_prompt.py already does with
+  `_INCOMPLETE_SEARCH_NOTE`); the head of the prompt stays
+  user-specific.
+
+  RESIDUAL, recorded rather than fixed: two users in the SAME role
+  have byte-identical system prompts, so a same-role attacker could
+  align and probe forward into the user message, which carries the
+  question and gathered ontology data. Bounded -- same role means the
+  same RBAC grants -- but MAC values still differ, so it is not
+  nothing. Currently narrowed further by the server running one slot
+  (`-np 1`), which makes the exposure sequential rather than
+  concurrent.
+
+- **`auto_execute` plus indirect prompt injection.** Ontology data
+  flows into `gathered`, and `gathered` flows into the prompt, so a
+  field value containing instructions reaches the model as text.
+  Today the blast radius is small because three independent gates sit
+  between a model's decision and a write: propose_action() checks
+  `execute:<Action>`, MAC is checked per sub_write per object, and
+  confirm_and_execute() requires a human.
+
+  `auto_execute: true` removes the third. Injected text could then
+  cause a write with NO human in the loop. Still bounded by the
+  acting user's own grants, so not privilege escalation -- but it is
+  action without consent, which is a different property and one this
+  project otherwise takes seriously.
+
+  NOT LIVE: no deployment sets `auto_execute`. Re-verified, not
+  assumed.
+
+  **MITIGATED AT VALIDATION TIME.** auto_execute is now refused when
+  any mutation takes its value from `parameter.<name>`. That is the
+  distinction which is both statically detectable and load-bearing: a
+  model-supplied value means injected text decides WHETHER to write and
+  WHAT to write, where a literal lets it decide only whether. Refused
+  at load rather than warned about -- an action type is authored once
+  and read forever, and a startup warning is seen by whoever deployed
+  it and by nobody afterwards.
+
+  Of the three mitigations this entry proposed, the other two did not
+  survive examination. "No field the model has read" is not knowable at
+  validation time -- what a model has read is a property of a running
+  query, not of a schema. "Paired with a submission criterion" is
+  weaker than it sounds, since a criterion can be written vacuously
+  true: it would force an author to type something without forcing them
+  to think.
+
+  Still worth documenting for whoever first enables it: an auto_execute
+  action with literal mutations is bounded but not free. The model
+  still chooses WHEN, and an action that is harmless once may not be
+  harmless a thousand times.
+
+- **Authorization is snapshotted per query, not per hop. CLOSED --
+  fixed, not merely reassessed.** Kept because a security backlog
+  claiming a hole that no longer exists is worse than one that is
+  incomplete: it misdirects whoever reads it next.
+
+  What this entry described was real. `AgentLoop.run()` computed
+  `visible_schema` once and api/auth_dependency.py resolved the
+  UserRecord once per request, so a user disabled mid-query continued
+  under the record they started with -- and on CPU-only hardware, where
+  a query can run for minutes, that window was long enough to matter.
+
+  HOT_RELOAD_PLAN.md step 4a closed it. `AgentLoop.run()` takes a
+  `refresh_user` callable and re-resolves the acting user EVERY HOP; a
+  changed or disabled record stops the loop and the route answers 409.
+  The gathered work is returned internally and discarded by the route,
+  so a disabled user receives nothing.
+
+  A REMAINING ASYMMETRY WAS FOUND AND CLOSED SEPARATELY. The per-hop
+  check asked `is_user_disabled`; the POST-LOOP re-verification
+  compared UserRecords, and `get_user_record()` returns the same record
+  whether or not an account is disabled -- so a user disabled after the
+  last hop but before synthesis finished was still served the answer.
+  That check now asks both.
+
+  The two supporting claims are also out of date. Role-to-grant
+  mappings are no longer "read once at startup and never reloaded" --
+  policy.yaml reloads through POST /admin/reload without a restart. Nor
+  does a removed object type or field require a restart; a reload
+  rebuilds the generation, and core/mirror/drift_policy.py decides what
+  a vanished source column means rather than leaving it to whatever the
+  storage layer does.
 
 - **`TrustedHostMiddleware` / `Host` header validation. CLOSED, not
   deferred.** Re-examined rather than left open, and both original

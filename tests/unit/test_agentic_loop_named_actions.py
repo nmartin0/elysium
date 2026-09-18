@@ -95,7 +95,7 @@ def loop(tmp_path):
     adapters = _build_adapters({"primary": {"adapter": "sqlite", "connection": {"path": db}}}, _WRITE_ADAPTER_REGISTRY)
     write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES, write_log=write_log)
-    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     return AgentLoop(MagicMock(), mediator, write_mediator=write_mediator,
                       max_hops=5, max_consecutive_invalid_steps=2)
 

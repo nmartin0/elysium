@@ -111,6 +111,7 @@ loop for meaningfully longer than intended.
 
 import asyncio
 import base64
+import functools
 import json
 import logging
 import threading
@@ -119,9 +120,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from pyiceberg.catalog.sql import SqlCatalog
 
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
+from api.generation_dependency import get_generation
+from api.reload import ReloadInProgress, reload_generation
 from core.agent.agentic_loop import AgentLoop
 from core.auth.auth_cookies import (
     SESSION_COOKIE_NAME,
@@ -134,14 +138,36 @@ from core.auth.auth_cookies import (
 from core.filters import FieldFilter, as_equality_conditions, parse_filters
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
+from core.mirror.iceberg_sync import IcebergMirrorSync
+from core.mirror.integrity import _row_count, check_mirror
+from core.mirror.sync_attempts import SyncAttempts
+from core.mirror.sync_targets import resolve_sync_targets
 from core.ontology.schema import get_field_column, sort_key
-from core.ontology.write_mediator import WriteMediator
+from core.ontology.submission_criteria import SubmissionCriteriaViolation
+from core.ontology.write_mediator import MAX_BULK_OBJECTS, WriteMediator
 from core.pending_write_store import PendingWriteStore
 from core.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+def _generation(request: Request):
+    """The configuration this request is pinned to.
+
+    Pinned ONCE per request by api/generation_dependency.py and cached
+    on request.state; this reads that pin rather than app.state, so a
+    reload landing mid-request cannot make two reads in one request
+    disagree. Falls back to app.state for the small number of internal
+    callers that construct a Request without going through the
+    dependency -- notably the test client's own direct calls.
+    """
+    pinned = getattr(request.state, "generation", None)
+    if pinned is not None:
+        return pinned
+    return get_generation(request)
+
+
 
 
 class LoginRequest(BaseModel):
@@ -242,6 +268,18 @@ class SchemaFieldResponse(BaseModel):
     # for everything -- more restrictive than the server, which allows
     # any operator on a field with no declared type.
     type: str
+    # Whether this field's VALUE may be read. False is the middle rung:
+    # the caller holds discover:{Type}.{field} and not read:, so they
+    # may know the field exists and not what it holds, and a UI names
+    # it while withholding the value.
+    #
+    # Defaulted to True so a response model without the key behaves as
+    # every pre-ladder deployment did.
+    readable: bool = True
+    # Declared by the ontology, absent when it says nothing. A response
+    # model that did not name it would strip it silently -- which is
+    # exactly how `readable` shipped broken.
+    decimal_places: int | None = None
     data_type: str | None = None
     target: str | None = None
     cardinality: str | None = None
@@ -271,6 +309,17 @@ class SchemaFieldResponse(BaseModel):
 
 class VisibleObjectTypeResponse(BaseModel):
     fields: dict[str, SchemaFieldResponse]
+    # Whether this type may be SEARCHED, as opposed to merely known
+    # about. False is the middle rung: the caller holds discover:{Type}
+    # and not read:{Type}, so a search returns nothing and a UI should
+    # say so rather than render "no matches" -- a claim about the data
+    # when the truth is about their access.
+    #
+    # Defaulted, because a response model without it SILENTLY STRIPS
+    # the key FastAPI is not told about. That is how this was missed:
+    # the mediator was correct, every mediator-level test passed, and
+    # the flag never survived serialisation.
+    readable: bool = True
     id_field: str | None
     title_field: str | None
     # Matching Foundry's own object type metadata (displayName,
@@ -317,6 +366,14 @@ class UserSummaryResponse(BaseModel):
 class CreateUserResponse(BaseModel):
     status: str
     username: str
+
+
+class MatchingIdsResponse(BaseModel):
+    """Ids only, deliberately. A caller asking "what would select-all
+    select" needs identity and nothing else, and returning whole
+    objects would make an already-large response larger for no use."""
+
+    object_ids: list[str]
 
 
 class SearchResponse(BaseModel):
@@ -416,6 +473,20 @@ class SearchAroundResponse(BaseModel):
     total: int
 
 
+class LinkCountResponse(BaseModel):
+    target: str
+    count: int
+    cardinality: str | None = None
+
+
+class LinkCountsResponse(BaseModel):
+    # Keyed by link field name. A response model rather than a bare
+    # dict because an undeclared key is SILENTLY STRIPPED by FastAPI --
+    # the readable flag on visible_schema shipped broken for exactly
+    # that reason, computed correctly and never serialised.
+    links: dict[str, LinkCountResponse]
+
+
 class EditHistoryEntryResponse(BaseModel):
     id: str
     operation: str
@@ -438,6 +509,375 @@ class EditHistoryResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     checks: dict[str, str]
+
+
+def _no_store(response: Response) -> None:
+    # Shared by every /me/* route below (dependencies=[Depends(_no_store)])
+    # -- each one returns session-specific data about the CALLER
+    # specifically (their own profile, their own visible schema/apps/
+    # action types), never something safe for a shared or intermediate
+    # cache to persist and later hand back to a different person on
+    # the same machine. Cache-Control: no-store is the real, current,
+    # standard recommendation for exactly this class of response
+    # (confirmed directly against current guidance, not assumed) --
+    # matters most on a shared workstation, a realistic scenario for
+    # an internal tool like this one, not a hypothetical.
+    #
+    # A real, standard FastAPI pattern, not a workaround: a route (or,
+    # as here, a dependency) can declare a plain `response: Response`
+    # parameter and set headers on it directly, while the route itself
+    # still returns an ordinary dict for the body -- FastAPI merges
+    # the two into the one, real response actually sent (confirmed
+    # directly against FastAPI's own docs before using it this way).
+    response.headers["Cache-Control"] = "no-store"
+
+
+@router.get("/users/{username}/visible-schema", response_model=dict[str, VisibleObjectTypeResponse])
+def visible_schema_route(username: str, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    _require_manage_users(request, current_user)
+
+    user_directory = request.app.state.user_directory
+    if not user_directory.user_exists(username):
+        raise HTTPException(status_code=404, detail=f"Unknown user {username!r}")
+
+    target_record = user_directory.get_user_record(username)
+    mediator = _generation(request).mediator
+    return mediator.visible_schema(target_record)
+
+
+@router.post("/users/{username}/logout-all", status_code=204)
+def logout_all_for_user(username: str, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    request.app.state.session_store.invalidate_all_sessions(username)
+
+
+@router.post("/users/{username}/disable", status_code=204)
+def disable_user_route(username: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.disable_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post("/users/{username}/enable", status_code=204)
+def enable_user_route(username: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.enable_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.delete("/users/{username}", status_code=204)
+def delete_user_route(username: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.delete_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+async def _watch_for_disconnect(request: Request, cancel_event: threading.Event) -> None:
+    # Runs CONCURRENTLY with the executor-offloaded loop.run() call,
+    # not racing it -- just sets cancel_event if it notices the client
+    # is gone; AgentLoop.run() itself notices the event on its next hop
+    # and returns early. Polling, not instant, but cheap and bounded.
+    while not cancel_event.is_set():
+        if await request.is_disconnected():
+            cancel_event.set()
+            return
+        await asyncio.sleep(0.5)
+
+
+class AwaitingWriteResponse(BaseModel):
+    """One proposal waiting for a decision.
+
+    DELIBERATELY NOT THE CHANGED VALUES. A pending write names object
+    ids and the fields it would set, and both are governed by MAC and
+    field-level RBAC on every other read path. Returning them here
+    because the caller happens to hold an execute grant would be a way
+    around the read rules -- an approver could learn an account balance
+    by proposing a write against it and listing their own inbox.
+
+    So: what is being decided, by whom, and how long the reviewer has.
+    The values are visible through the ordinary read path, subject to
+    the ordinary checks, and a reviewer who cannot see them there
+    should not see them here.
+    """
+
+    write_id: str
+    action_type_name: str
+    description: str
+    proposed_by: str
+    proposed_at: str
+    object_count: int
+    expires_at: str
+    # WHETHER THIS IS YOURS TO DECIDE OR YOURS TO WAIT ON. A reviewer
+    # and a proposer see the same row and need different things from
+    # it, and a client that had to compare proposed_by against the
+    # current user would be re-deriving something the server already
+    # knows.
+    #
+    # Both can be true: nothing stops a deployment without a four-eyes
+    # rule from letting someone approve their own write.
+    awaiting_your_review: bool
+    proposed_by_you: bool
+    # Fields this write targets that the ontology no longer declares,
+    # as "Type.field". Non-empty means it CANNOT be approved -- the
+    # configuration moved on while it waited.
+    #
+    # A DIFFERENT STATE FROM REJECTED, which is what step 6c of
+    # HOT_RELOAD_PLAN.md asks for: rejected means a human decided
+    # against it, this means nobody can act on it either way. An inbox
+    # that showed an Approve button here would let a reviewer make a
+    # decision, learn it was refused, and have gained nothing.
+    undeclared_fields: list[str]
+    # THE INBOX FIELDS. A reviewer needs to know what they can act on
+    # and what the request is still waiting for -- otherwise "approve"
+    # looks like it will run the write, and for a request spanning
+    # security partitions it will not.
+    #
+    # COUNTS, NOT THE TASKS THEMSELVES. A listing showing fifty task
+    # rows per request would bury the requests, and the detail view
+    # already loads a single write in full.
+    tasks_total: int
+    tasks_you_may_decide: int
+    tasks_approved: int
+    # How many OTHER pending writes propose exactly this change.
+    #
+    # SURFACED, NOT PREVENTED. A second identical proposal might be a
+    # double-click, a colleague re-requesting something forgotten, or a
+    # deliberate nudge, and Elysium cannot tell which. What was wrong
+    # was that identical rows were INDISTINGUISHABLE -- a reviewer
+    # could not tell one mistake pasted three times from three separate
+    # requests, and approving one left the others behind unexplained.
+    duplicate_count: int
+
+
+@router.get("/writes/awaiting", dependencies=[Depends(_no_store)],
+            response_model=list[AwaitingWriteResponse])
+def awaiting_writes_route(request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """Proposals this user may decide on.
+
+    WITHOUT THIS, FOUR-EYES IS ENFORCEABLE AND UNREACHABLE. Confirming
+    a write requires its id, and only the proposer had one -- so the
+    single person who could find a write was the single person a
+    four-eyes rule forbids from approving it.
+
+    THE SAME ELIGIBILITY TEST THE CONFIRM ROUTE USES, so a listed write
+    can always be claimed and a claimable write is always listed.
+    Deciding them separately is how an inbox ends up showing rows that
+    404, or silently hiding a decision somebody is waiting on.
+    """
+    roles = _generation(request).config.roles
+
+    def may_confirm(candidate) -> bool:
+        return authorize(current_user, roles, f"execute:{candidate.action_type_name}")
+
+    def relevant(candidate) -> bool:
+        # EITHER YOURS TO DECIDE OR YOURS TO WAIT ON, following
+        # Foundry's inbox, which filters "Your inbox" and "Created by
+        # you" rather than showing only one.
+        #
+        # A proposer needs the second especially once four-eyes is on:
+        # they CANNOT approve their own write, so without this they
+        # propose something and then have no way to see whether anyone
+        # has looked at it. Nothing else in the product would tell
+        # them, and a proposal that vanishes into silence is one people
+        # stop making.
+        return may_confirm(candidate) or candidate.user_id == current_user.user_id
+
+    store: PendingWriteStore = request.app.state.pending_writes
+    write_mediator = _generation(request).write_mediator
+    waiting = store.awaiting(relevant)
+
+    return [
+        {
+            "write_id": write_id,
+            "action_type_name": pending.action_type_name,
+            "description": pending.description,
+            "proposed_by": pending.user_id,
+            "proposed_at": pending.proposed_at.isoformat(),
+            "object_count": len(pending.sub_writes),
+            "expires_at": store.expires_at(write_id),
+            "awaiting_your_review": may_confirm(pending),
+            "proposed_by_you": pending.user_id == current_user.user_id,
+            # THE SAME FUNCTION confirm_and_execute() uses, so the
+            # inbox cannot disagree with what approving would actually
+            # do. Computing it separately here is how a queue ends up
+            # offering a button that always fails.
+            "undeclared_fields": write_mediator.fields_no_longer_declared(pending),
+            "tasks_total": len(pending.sub_writes),
+            "tasks_you_may_decide": len(
+                write_mediator.eligible_task_indexes(pending, current_user, roles)
+            ),
+            # APPROVED, not decided: a rejected task is not progress
+            # toward invocation, and counting it as such would show a
+            # request as nearly ready when it is permanently blocked.
+            "tasks_approved": sum(
+                1 for decision in store.task_decisions(write_id).values()
+                if decision.approved
+            ),
+            "duplicate_count": store.duplicates_of(write_id),
+        }
+        # OLDEST FIRST. A reviewer works through a queue, and the write
+        # closest to expiring is the one whose decision is about to be
+        # taken away from them.
+        for write_id, pending in sorted(waiting, key=lambda item: item[1].proposed_at)
+    ]
+
+
+class FieldChangeResponse(BaseModel):
+    """One field a pending write would change.
+
+    THE FIELD NAME IS ALWAYS PRESENT. Values are shown only where the
+    reviewer may read them, and a field they may not read is marked
+    REDACTED rather than omitted.
+
+    That follows Foundry, whose review surfaces "redact certain
+    resources or users contained in a record if you do not have the
+    necessary permissions to view that item" -- and it is a deliberate
+    reversal of an earlier design here that omitted such fields and
+    reported only a boolean "something is hidden".
+
+    Omitting leaks less and is worse. A reviewer seeing three fields
+    cannot tell whether that is the whole change or a fragment, so they
+    approve believing they saw everything -- the rubber-stamp problem
+    in its worst form, because it produces MORE confidence rather than
+    less. Redaction discloses that a field exists and withholds its
+    value, which is the smaller cost: the reviewer already knows this
+    write exists and which object it touches.
+    """
+
+    field_name: str
+    # False means the reviewer lacks read:{Type}.{field}. The two value
+    # fields are then null, and that is a REDACTION rather than a null
+    # value in the data.
+    readable: bool
+    current_value: Any = None
+    proposed_value: Any = None
+
+
+class ObjectChangeResponse(BaseModel):
+    object_type: str
+    object_id: str
+    operation: str
+    changes: list[FieldChangeResponse]
+
+
+class WriteDetailResponse(BaseModel):
+    """Everything a reviewer needs to decide, and nothing more."""
+
+    write_id: str
+    action_type_name: str
+    description: str
+    proposed_by: str
+    proposed_at: str
+    expires_at: str
+    awaiting_your_review: bool
+    proposed_by_you: bool
+    objects: list[ObjectChangeResponse]
+    # Whether ANY field in this write is redacted for this reviewer.
+    # Computed rather than derived by a client, so a UI cannot forget
+    # to warn -- the one thing a reviewer must not miss is that they
+    # are seeing a partial change.
+    has_redacted_fields: bool
+
+
+@router.get("/writes/{write_id}", dependencies=[Depends(_no_store)],
+            response_model=WriteDetailResponse)
+def write_detail_route(write_id: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What a pending write would actually change.
+
+    SEPARATE FROM THE LISTING, because a diff needs the CURRENT value
+    of every changed field, which means a gated read per field per
+    object. A pending write can touch twenty objects; doing that for
+    every row of an inbox would cost hundreds of reads to render a
+    queue somebody is scanning rather than reading. Foundry splits it
+    the same way -- the inbox lists requests, and you open one to see
+    its tasks.
+
+    THE SAME VISIBILITY RULE AS THE LISTING: you may see a write you
+    could approve, or one you proposed. Anything else is a 404, not a
+    403, matching the uniform denial every other path here uses.
+    """
+    generation = _generation(request)
+    roles = generation.config.roles
+    store: PendingWriteStore = request.app.state.pending_writes
+
+    may_confirm_action = None
+    pending = None
+    for candidate_id, candidate in store.awaiting(lambda _pending: True):
+        if candidate_id != write_id:
+            continue
+        may_confirm_action = authorize(
+            current_user, roles, f"execute:{candidate.action_type_name}",
+        )
+        if may_confirm_action or candidate.user_id == current_user.user_id:
+            pending = candidate
+        break
+
+    if pending is None:
+        # Unknown, expired, and not-yours are one answer, deliberately.
+        raise HTTPException(status_code=404, detail="Unknown or expired pending write")
+
+    # WHAT THIS REVIEWER MAY READ, per type. visible_schema is already
+    # the single source of truth for that question everywhere else, so
+    # the diff asks it rather than re-deriving the grants.
+    visible = generation.mediator.visible_schema(current_user)
+
+    objects = []
+    redacted_anywhere = False
+    for sub_write in pending.sub_writes:
+        readable_fields = set((visible.get(sub_write.object_type) or {}).get("fields") or {})
+        changes = []
+        for field_name, proposed in sub_write.changes.items():
+            readable = field_name in readable_fields
+            redacted_anywhere = redacted_anywhere or not readable
+            changes.append({
+                "field_name": field_name,
+                "readable": readable,
+                # The CURRENT value comes from the ordinary read path,
+                # so MAC applies to the object as well as RBAC to the
+                # field. A null here is indistinguishable from a
+                # MAC-denied object, which is the same uniform denial
+                # every other read gives and is deliberate.
+                "current_value": generation.mediator.get_field(
+                    current_user, sub_write.object_type, sub_write.object_id, field_name,
+                ) if readable else None,
+                # Gated identically. A field you may not read is a
+                # field whose PROPOSED value you may not read either --
+                # otherwise proposing a write would be a way to learn
+                # what you are about to be told.
+                "proposed_value": proposed if readable else None,
+            })
+        objects.append({
+            "object_type": sub_write.object_type,
+            "object_id": str(sub_write.object_id),
+            "operation": sub_write.operation,
+            "changes": changes,
+        })
+
+    return {
+        "write_id": write_id,
+        "action_type_name": pending.action_type_name,
+        "description": pending.description,
+        "proposed_by": pending.user_id,
+        "proposed_at": pending.proposed_at.isoformat(),
+        "expires_at": store.expires_at(write_id),
+        "awaiting_your_review": bool(may_confirm_action),
+        "proposed_by_you": pending.user_id == current_user.user_id,
+        "objects": objects,
+        "has_redacted_fields": redacted_anywhere,
+    }
 
 
 class ConfirmWriteRequest(BaseModel):
@@ -544,6 +984,20 @@ class DeploymentConfigResponse(BaseModel):
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
     max_concurrent_requests: int
+    # WHICH configuration this is, not just what it says. Answers a
+    # question the rest of this response cannot: two deployments with
+    # identical settings below may still be different loads of
+    # different files. Once configuration can be reloaded while running
+    # (HOT_RELOAD_PLAN.md) this becomes the only way to tell which
+    # generation served a given request.
+    #
+    # The digest is over the four config files' bytes. Safe to expose
+    # alongside the rest of this response: it discloses WHETHER the
+    # files changed, never what is in them, and this endpoint already
+    # requires manage:users.
+    generation: int
+    loaded_at: str
+    source_digest: str
     security_attribute: str
     read_from_mirror: bool
     enabled_tools: list[str]
@@ -551,6 +1005,312 @@ class DeploymentConfigResponse(BaseModel):
     object_type_count: int
     action_type_count: int
     role_names: list[str]
+
+
+class ReloadResponse(BaseModel):
+    """The outcome of a configuration reload."""
+
+    from_generation: int
+    to_generation: int
+    source_digest: str
+    changed: bool
+
+
+@router.post("/admin/reload", response_model=ReloadResponse)
+def reload_route(request: Request,
+                 current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Reloads configuration from disk without restarting.
+
+    GATED ON manage:deployment, a SEPARATE grant from manage:users.
+    Creating an account and replacing the ontology, the grants and the
+    silo wiring are different powers, and a deployment should be able
+    to hand out one without the other.
+
+    FAILURE CHANGES NOTHING. build_generation() validates fully and
+    either returns a whole generation or raises, so a broken YAML edit
+    is a 400 with the validation error rather than an outage. That is
+    strictly better than today, where the only way to load new
+    configuration is to restart -- and a restart with a broken file
+    does not come back.
+
+    Requests already in flight keep the generation they pinned and
+    finish on it. The next request gets the new one.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to reload configuration")
+
+    try:
+        new = reload_generation(request.app, requested_by=current_user.user_id)
+    except ReloadInProgress as e:
+        # 409, not 429: this is a conflict with another operation, not
+        # a rate limit. Rejected rather than queued -- see
+        # reload_generation() for why.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Reload rejected: {e}") from e
+
+    return {
+        "from_generation": generation.generation,
+        "to_generation": new.generation,
+        "source_digest": new.source_digest,
+        # Whether the FILES actually differ, as opposed to whether a
+        # reload happened. Reloading unchanged files is a new
+        # generation of the same configuration, and conflating the two
+        # would make "did anything change?" unanswerable.
+        "changed": new.source_digest != generation.source_digest,
+    }
+
+
+class GenerationSummary(BaseModel):
+    generation: int
+    loaded_at: str
+    source_digest: str
+
+
+class SlowRouteResponse(BaseModel):
+    route: str
+    requests: int
+    # NULL WHEN NOTHING SUCCEEDED in the window. Zero would read as
+    # "instantaneous", which is the opposite of "we do not know".
+    p99_ms: float | None = None
+
+
+class MetricsResponse(BaseModel):
+    """RED over a window: Rate, Errors, Duration.
+
+    Saturation -- the fourth golden signal -- is deliberately absent:
+    it is a property of the host, not of this process.
+    """
+
+    window_seconds: int
+    requests: int
+    rate_per_second: float
+    # A RATIO, NOT A COUNT: ten failures means nothing without knowing
+    # whether there were twelve requests or twelve thousand.
+    error_ratio: float
+    p50_ms: float | None = None
+    p99_ms: float | None = None
+    slowest_routes: list[SlowRouteResponse]
+
+
+class ConfigHistoryResponse(BaseModel):
+    """Which configurations this deployment has run.
+
+    SUMMARIES ONLY -- no file contents. The files carry silo hosts,
+    paths and credential references, which the /config route already
+    declines to return for exactly that reason. Listing what ran is a
+    different disclosure from handing over what it said.
+    """
+
+    current_generation: int
+    generations: list[GenerationSummary]
+
+
+class MirrorTableState(BaseModel):
+    silo: str
+    table: str
+    last_synced_at: str | None
+    silver_rows: int | None
+    bronze_rows: int | None
+    # THE LAST ATTEMPT, as distinct from the last CHANGE. Snapshots
+    # record when data changed, so a sync that ran and was refused
+    # leaves exactly what a sync that ran and found nothing leaves.
+    # One is an incident; the other is Tuesday.
+    last_attempt_at: str | None
+    last_attempt_outcome: str | None
+    last_attempt_detail: str | None
+
+
+class MirrorStateResponse(BaseModel):
+    reading_from_mirror: bool
+    tables: list[MirrorTableState]
+    problems: list[str]
+
+
+@router.get("/admin/mirror", dependencies=[Depends(_no_store)],
+            response_model=MirrorStateResponse)
+def admin_mirror_route(request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What the mirror holds, table by table.
+
+    WE BUILT AN INTEGRITY GUARANTEE AND LEFT IT INVISIBLE. A value that
+    cannot be coerced fails the whole table's sync, silver keeps its
+    previous snapshot, and bronze accepts the bad value so it can be
+    diagnosed. Proven, and correct. The only trace is stderr on
+    whatever ran the sync -- so a user sees data three days stale and
+    an administrator cannot find out why from inside the product.
+
+    That mattered less when the mirror was opt-in. It is now the read
+    path.
+
+    BRONZE AND SILVER COUNTS SIDE BY SIDE, because their DIVERGENCE is
+    the drift state: bronze took the new rows, silver refused to
+    interpret them, and the gap between the two numbers is what a
+    refused sync looks like from outside.
+
+    GATED ON manage:deployment, the same grant that can reload. Row
+    counts describe the deployment's plumbing rather than its data --
+    but a count is still a fact about how much there is, and an
+    ordinary user has no reason to see it.
+
+    NO COUNTS FROM THE SOURCE. Answering "how far behind is the
+    mirror" would mean reading the customer's database on every page
+    load, which is what the mirror exists to avoid.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(
+            status_code=403,
+            detail="You need manage:deployment to see the mirror's state.",
+        )
+
+    if not generation.config.read_from_mirror:
+        # NOT AN ERROR. A deployment reading live has no mirror state
+        # to report, and saying so is more useful than an empty list
+        # that looks like a broken sync.
+        return {"reading_from_mirror": False, "tables": [], "problems": []}
+
+    # BUILT HERE RATHER THAN HELD ON THE GENERATION, because this is
+    # the only reader of it and a catalog pinned at load would go stale
+    # the moment a sync ran -- which is precisely the state this
+    # endpoint exists to report.
+    mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    catalog = SqlCatalog(
+        "elysium_mirror",
+        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
+        warehouse=f"file://{mirror_dir / 'warehouse'}",
+    )
+    sync = IcebergMirrorSync(mirror_dir, {})
+    attempts = SyncAttempts(mirror_dir / "sync_attempts.db")
+    tables = []
+    for target in resolve_sync_targets({"object_types": generation.config.schema}):
+        synced_at = sync.last_synced_at(target.silo_name, target.table_name)
+        attempt = attempts.last_for(target.silo_name, target.table_name)
+        tables.append({
+            "silo": target.silo_name,
+            "table": target.table_name,
+            "last_synced_at": synced_at.isoformat() if synced_at else None,
+            "silver_rows": _row_count(catalog, f"{target.silo_name}.{target.table_name}"),
+            "bronze_rows": _row_count(
+                catalog, f"bronze_{target.silo_name}.{target.table_name}",
+            ),
+            "last_attempt_at": attempt.at.isoformat() if attempt else None,
+            "last_attempt_outcome": attempt.outcome if attempt else None,
+            "last_attempt_detail": attempt.detail if attempt else None,
+        })
+
+    report = check_mirror(
+        catalog, generation.config.schema,
+        mirror_dir / "warehouse",
+    )
+    return {
+        "reading_from_mirror": True,
+        "tables": tables,
+        "problems": list(report.problems),
+    }
+
+
+@router.get("/admin/metrics", dependencies=[Depends(_no_store)],
+            response_model=MetricsResponse)
+def admin_metrics_route(request: Request, window_seconds: int = 3600,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Rate, errors and duration over a recent window.
+
+    THE RED METHOD, which is the canonical starting point for a
+    request-driven service because a single request-duration record
+    yields all three.
+
+    SATURATION IS ABSENT ON PURPOSE. It is the fourth golden signal and
+    a property of the HOST -- CPU, memory, queue depth -- so answering
+    it from inside the process would mean guessing at limits we do not
+    know. It belongs to whatever watches the machine, and a made-up
+    number here would be worse than the gap.
+
+    GATED ON manage:deployment, the same grant that can reload. Request
+    timings say which routes are used and how often, which is a shape
+    of the deployment's activity rather than of its data -- but it is
+    still more than an ordinary user should see about everyone else.
+
+    NO-STORE, because a cached metrics response is a lie that looks
+    like a measurement.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not permitted")
+
+    metrics = request.app.state.request_metrics
+    return {
+        **metrics.summary(window_seconds),
+        "slowest_routes": metrics.slowest_routes(window_seconds),
+    }
+
+
+@router.get("/admin/config-history", response_model=ConfigHistoryResponse)
+def config_history_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What configurations this deployment has run, most recent first.
+
+    Answers the question a reload otherwise leaves open. The audit log
+    records that generation 7 became 8; without this there is no way to
+    see what either WAS.
+
+    GATED ON manage:deployment, the same grant that can reload. Someone
+    who may replace the configuration may see which ones have run.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to view configuration history")
+
+    history = request.app.state.config_history
+    return {
+        "current_generation": generation.generation,
+        "generations": [
+            {"generation": r.generation, "loaded_at": r.loaded_at,
+             "source_digest": r.source_digest}
+            for r in history.list_generations()
+        ],
+    }
+
+
+class ConfigDiffResponse(BaseModel):
+    """What changed between two configurations, file by file."""
+
+    older: int
+    newer: int
+    changed_files: list[str]
+    unchanged: bool
+
+
+@router.get("/admin/config-history/{older}/{newer}", response_model=ConfigDiffResponse)
+def config_diff_route(older: int, newer: int, request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """WHICH FILES differ between two generations, not their contents.
+
+    Naming the changed files is enough to answer "did the policy change
+    or only the models?" -- which is the question an operator has at
+    three in the morning -- without returning silo hosts and credential
+    references over HTTP. Reading the files themselves requires access
+    to the machine, which is the correct bar for that.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to view configuration history")
+
+    try:
+        changed = request.app.state.config_history.diff(older, newer)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    return {
+        "older": older, "newer": newer,
+        "changed_files": sorted(changed),
+        # Explicit rather than inferred from an empty list: a reload of
+        # UNCHANGED files is a real and common event, and "nothing
+        # changed" should not look like "I found nothing".
+        "unchanged": not changed,
+    }
 
 
 @router.get("/config", response_model=DeploymentConfigResponse)
@@ -575,8 +1335,11 @@ def deployment_config_route(request: Request,
     contents would answer "what could I attack".
     """
     _require_manage_users(request, current_user)
-    config = request.app.state.config
+    config = _generation(request).config
     return {
+        "generation": config.generation,
+        "loaded_at": config.loaded_at.isoformat(),
+        "source_digest": config.source_digest,
         "llm_provider": config.llm_provider,
         "step_model": config.step_model,
         "synthesis_model": config.synthesis_model,
@@ -646,7 +1409,7 @@ def request_trace_route(request_id: str, request: Request,
     same uniform denial every read path uses, so the response never
     distinguishes "no such request" from "not yours".
     """
-    entries = request.app.state.mediator.audit_log.entries_for_request(
+    entries = _generation(request).mediator.audit_log.entries_for_request(
         request_id, current_user.user_id,
     )
     return [
@@ -727,7 +1490,7 @@ def list_notes_route(object_type: str, object_id: str, request: Request,
     an error -- uniform denial, so the response never distinguishes "no
     notes" from "not allowed".
     """
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     if not _may_read_object(mediator, current_user, object_type, object_id):
         return []
 
@@ -764,7 +1527,7 @@ def create_note_route(object_type: str, object_id: str, body: CreateNoteRequest,
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="A note cannot be empty")
 
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     if not _may_read_object(mediator, current_user, object_type, object_id):
         # Uniform denial: the same 404 whether the object is absent or
         # unreadable, so writing a note cannot be used to probe for
@@ -812,8 +1575,8 @@ def silos_route(request: Request,
     through a screenshot, a bug report, or a browser cache.
     """
     _require_manage_users(request, current_user)
-    config = request.app.state.config
-    mediator = request.app.state.mediator
+    config = _generation(request).config
+    mediator = _generation(request).mediator
 
     # PRIMARY storage, from silo_for_type.
     types_by_silo: dict[str, list[str]] = {name: [] for name in config.silo_configs}
@@ -934,93 +1697,9 @@ def create_user_route(body: CreateUserRequest, request: Request,
 def _require_manage_users(request: Request, current_user: UserRecord) -> None:
     # Shared by every account-management route below -- one place for
     # the check, rather than five copies of the same three lines.
-    roles = request.app.state.config.roles
+    roles = _generation(request).config.roles
     if not authorize(current_user, roles, "manage:users"):
         raise HTTPException(status_code=403, detail="Not authorized to manage users")
-
-
-def _no_store(response: Response) -> None:
-    # Shared by every /me/* route below (dependencies=[Depends(_no_store)])
-    # -- each one returns session-specific data about the CALLER
-    # specifically (their own profile, their own visible schema/apps/
-    # action types), never something safe for a shared or intermediate
-    # cache to persist and later hand back to a different person on
-    # the same machine. Cache-Control: no-store is the real, current,
-    # standard recommendation for exactly this class of response
-    # (confirmed directly against current guidance, not assumed) --
-    # matters most on a shared workstation, a realistic scenario for
-    # an internal tool like this one, not a hypothetical.
-    #
-    # A real, standard FastAPI pattern, not a workaround: a route (or,
-    # as here, a dependency) can declare a plain `response: Response`
-    # parameter and set headers on it directly, while the route itself
-    # still returns an ordinary dict for the body -- FastAPI merges
-    # the two into the one, real response actually sent (confirmed
-    # directly against FastAPI's own docs before using it this way).
-    response.headers["Cache-Control"] = "no-store"
-
-
-@router.get("/users/{username}/visible-schema", response_model=dict[str, VisibleObjectTypeResponse])
-def visible_schema_route(username: str, request: Request,
-                          current_user: UserRecord = Depends(get_current_user)) -> dict:
-    _require_manage_users(request, current_user)
-
-    user_directory = request.app.state.user_directory
-    if not user_directory.user_exists(username):
-        raise HTTPException(status_code=404, detail=f"Unknown user {username!r}")
-
-    target_record = user_directory.get_user_record(username)
-    mediator = request.app.state.mediator
-    return mediator.visible_schema(target_record)
-
-
-@router.post("/users/{username}/logout-all", status_code=204)
-def logout_all_for_user(username: str, request: Request,
-                         current_user: UserRecord = Depends(get_current_user)) -> None:
-    _require_manage_users(request, current_user)
-    request.app.state.session_store.invalidate_all_sessions(username)
-
-
-@router.post("/users/{username}/disable", status_code=204)
-def disable_user_route(username: str, request: Request,
-                        current_user: UserRecord = Depends(get_current_user)) -> None:
-    _require_manage_users(request, current_user)
-    try:
-        request.app.state.user_directory.disable_user(username)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
-
-@router.post("/users/{username}/enable", status_code=204)
-def enable_user_route(username: str, request: Request,
-                       current_user: UserRecord = Depends(get_current_user)) -> None:
-    _require_manage_users(request, current_user)
-    try:
-        request.app.state.user_directory.enable_user(username)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
-
-@router.delete("/users/{username}", status_code=204)
-def delete_user_route(username: str, request: Request,
-                       current_user: UserRecord = Depends(get_current_user)) -> None:
-    _require_manage_users(request, current_user)
-    try:
-        request.app.state.user_directory.delete_user(username)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
-
-async def _watch_for_disconnect(request: Request, cancel_event: threading.Event) -> None:
-    # Runs CONCURRENTLY with the executor-offloaded loop.run() call,
-    # not racing it -- just sets cancel_event if it notices the client
-    # is gone; AgentLoop.run() itself notices the event on its next hop
-    # and returns early. Polling, not instant, but cheap and bounded.
-    while not cancel_event.is_set():
-        if await request.is_disconnected():
-            cancel_event.set()
-            return
-        await asyncio.sleep(0.5)
 
 
 @router.get("/me", dependencies=[Depends(_no_store)], response_model=ProfileResponse)
@@ -1069,8 +1748,8 @@ def data_freshness_route(request: Request,
     # Gating it behind a permission would mean the people most likely
     # to need it (anyone about to approve a write against possibly
     # stale data) are the least likely to see it.
-    config = request.app.state.config
-    mediator = request.app.state.mediator
+    config = _generation(request).config
+    mediator = _generation(request).mediator
 
     if not config.read_from_mirror:
         # A live deployment reads the customer's real database on every
@@ -1112,7 +1791,7 @@ def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(g
     # -- that internal filtering logic genuinely reads it; only this
     # HTTP-facing shape excludes it, same "filter at the boundary, not
     # the shared internal source" pattern as both prior fixes.
-    roles = request.app.state.config.roles
+    roles = _generation(request).config.roles
     return [{"name": app["name"], "path": app["path"]} for app in visible_apps_for(current_user, roles)]
 
 
@@ -1128,7 +1807,7 @@ def my_visible_schema_route(request: Request, current_user: UserRecord = Depends
     # object types even exist and are visible BEFORE a person can pick
     # one to search -- there was no self-service way to ask that at
     # all before this route.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     return mediator.visible_schema(current_user)
 
 
@@ -1249,6 +1928,60 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
     )
 
 
+@router.get("/objects/{object_type}/matching-ids",
+         response_model=MatchingIdsResponse, response_model_exclude_none=True)
+def matching_ids_route(object_type: str, request: Request, q: str = "",
+                        conditions: str | None = None,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Every id the current filter matches, for "select all matching".
+
+    WHY IDS AND NOT A FILTER PASSED ONWARD. Foundry's approvals model
+    settles this: "a task is an individual change in Foundry. All tasks
+    associated with a request must be approved for the request to be
+    invoked." What a reviewer approves is a set of SPECIFIC CHANGES,
+    never a rule to be resolved later. Their bulk action types take an
+    object reference list for the same reason.
+
+    So the filter is resolved HERE, at the moment of selection, and
+    what travels onward is the list it produced. A filter that outlived
+    the selection would mean a reviewer approving a count that could
+    change before they looked -- overnight, twenty more rows match, and
+    an approval of 500 quietly becomes 520.
+
+    CAPPED AT THE SAME CEILING THE WRITE MEDIATOR ENFORCES, and refused
+    rather than truncated. Returning the first 1000 of 1500 would hand
+    back a selection that silently omits a third of what was asked for,
+    and nothing downstream could tell.
+
+    MAC APPLIES AS IT DOES EVERYWHERE: this returns what the CALLER can
+    see, so two users selecting "all matching" get different sets from
+    the same filter, which is correct.
+    """
+    mediator = _generation(request).mediator
+    try:
+        parsed = parse_filters(json.loads(conditions)) if conditions else None
+    except (json.JSONDecodeError, TypeError) as e:
+        raise HTTPException(status_code=400, detail="conditions must be a JSON list") from e
+
+    try:
+        matching_ids = mediator.search_object_free_text(
+            current_user, object_type, q, conditions=parsed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if len(matching_ids) > MAX_BULK_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{len(matching_ids)} objects match, and at most {MAX_BULK_OBJECTS} "
+                f"can be selected at once. Narrow the filter."
+            ),
+        )
+
+    return {"object_ids": [str(object_id) for object_id in matching_ids]}
+
+
 @router.get("/objects/{object_type}/search", response_model=SearchResponse)
 def search_objects_route(object_type: str, request: Request, q: str = "",
                           page_size: int | None = None, page_token: str | None = None,
@@ -1277,7 +2010,7 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     # independently-guessed set that could silently drift out of sync
     # with what was actually searched), not just a bare id the UI would
     # otherwise need a SEPARATE call per result to make sense of.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     try:
         parsed = parse_filters(json.loads(conditions)) if conditions else None
     except (json.JSONDecodeError, TypeError) as e:
@@ -1309,8 +2042,27 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     page_ids = matching_ids[start:start + size]
     next_start = start + size
 
+    # STRINGIFIED AT THE BOUNDARY, because every other endpoint already
+    # says an id is a string and this one did not.
+    #
+    # ObjectDetailResponse declares `id: str` and FastAPI coerces it;
+    # SearchResponse declares `results: list[dict[str, Any]]`, so the
+    # raw value passed straight through. The SAME OBJECT therefore had
+    # a string id on one endpoint and an integer on another.
+    #
+    # WHAT IT BROKE. "Select all N matching" returns ids from
+    # /matching-ids, which stringifies. The selection set then held "1"
+    # while each checkbox asked has(1) -- so the bar said 64 selected
+    # and not one row looked it, with nothing to untick.
+    #
+    # WHY NOBODY NOTICED: Customer ids are already strings, so every
+    # manual check on Customer agreed. Only integer-keyed types --
+    # Transaction here -- diverged.
     results = [
-        {"id": object_id, "fields": mediator.get_object(current_user, object_type, object_id, summary_fields)}
+        {
+            "id": str(object_id),
+            "fields": mediator.get_object(current_user, object_type, object_id, summary_fields),
+        }
         for object_id in page_ids
     ]
     return {
@@ -1358,7 +2110,7 @@ def get_object_detail_route(object_type: str, object_id: str, request: Request,
     # real enumeration primitive worth denying, not merely a REST-
     # idiom nicety to relax for a cleaner 404. NEVER "fix" this to a
     # 404 without re-reading this reasoning first.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     visible = mediator.visible_schema(current_user)
     type_def = visible.get(object_type)
     if type_def is None:
@@ -1427,8 +2179,8 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
     # an action's shape without being able to invoke it, and the UI
     # needs to know which is which to decide whether to offer a
     # button at all (see ObjectDetailPanel.jsx's own comment).
-    write_mediator: WriteMediator = request.app.state.write_mediator
-    roles = request.app.state.config.roles
+    write_mediator: WriteMediator = _generation(request).write_mediator
+    roles = _generation(request).config.roles
     visible = write_mediator.visible_action_types(current_user)
     return {
         action_name: {
@@ -1488,12 +2240,17 @@ def propose_action_route(action_type_name: str, body: ProposeActionRequest, requ
     # specific role isn't the audience the generic default protects).
     # Every OTHER role keeps the fully generic, undifferentiated
     # response exactly as before.
-    write_mediator: WriteMediator = request.app.state.write_mediator
+    write_mediator: WriteMediator = _generation(request).write_mediator
     try:
-        pending_write = write_mediator.propose_action(current_user, action_type_name, body.parameters)
+        # origin="human": this route IS the person-filled form. The
+        # agent reaches propose_action() through AgentLoop instead,
+        # and passes "agent" there.
+        pending_write = write_mediator.propose_action(
+            current_user, action_type_name, body.parameters, origin="human",
+        )
     except (ValueError, TypeError, PermissionError) as e:
         logger.warning(f"propose_action_route: {action_type_name!r} rejected for {current_user.user_id!r}: {e}")
-        roles = request.app.state.config.roles
+        roles = _generation(request).config.roles
         if authorize(current_user, roles, "discover:action_types"):
             status_code = 403 if isinstance(e, PermissionError) else 400
             raise HTTPException(status_code=status_code, detail=str(e)) from e
@@ -1540,8 +2297,8 @@ async def query(body: QueryRequest, request: Request,
         raise HTTPException(status_code=429, detail="Too many queries -- please wait before trying again")
     request.app.state.query_rate_limiter.record_query(current_user.user_id)
 
-    loop: AgentLoop = request.app.state.loop
-    synthesis_client = request.app.state.synthesis_client
+    loop: AgentLoop = _generation(request).loop
+    synthesis_client = _generation(request).synthesis_client
     executor = request.app.state.executor
     event_loop = asyncio.get_running_loop()
 
@@ -1557,23 +2314,71 @@ async def query(body: QueryRequest, request: Request,
         # is the unit of work, and the loop is one thing that happens
         # during it.
         request_context = RequestContext.new()
+        # refresh_user lets the loop notice a changed or revoked
+        # authority BETWEEN HOPS rather than only at the end. The
+        # post-query re-verification below still runs and still
+        # matters -- it catches a change during the final hop -- but on
+        # this deployment a query can run for minutes, and discovering
+        # a revocation only after all of it has executed is a long way
+        # from "takes effect".
+        #
+        # Returns None when the account is gone or disabled, which the
+        # loop treats the same as a change.
+        user_directory = request.app.state.user_directory
+
+        def refresh_user():
+            if user_directory.is_user_disabled(current_user.user_id):
+                return None
+            return user_directory.get_user_record(current_user.user_id)
+
         result = await event_loop.run_in_executor(
-            executor, loop.run, current_user, body.query, cancel_event, request_context,
+            executor,
+            functools.partial(
+                loop.run, current_user, body.query, cancel_event, request_context,
+                refresh_user=refresh_user,
+            ),
         )
     finally:
         cancel_event.set()
         watcher_task.cancel()
 
     if result.cancelled:
-        request.app.state.mediator.audit_log.log_query_cancelled(
+        _generation(request).mediator.audit_log.log_query_cancelled(
             current_user.user_id, body.query, len(result.gathered)
         )
         raise HTTPException(status_code=499, detail="Client disconnected")
 
+    if result.authority_changed:
+        # The loop stopped because the acting user's authority moved
+        # underneath it. Same 409 as the post-query check below, and
+        # deliberately the same message: from the caller's side these
+        # are one situation, differing only in how early it was
+        # noticed.
+        _generation(request).mediator.audit_log.log_query_cancelled(
+            current_user.user_id, body.query, len(result.gathered)
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="Your permissions changed while this request was processing -- please try again",
+        )
+
     # THE re-verification -- see module docstring. Applies before
     # EITHER branch below.
-    current_record_now = request.app.state.user_directory.get_user_record(current_user.user_id)
-    if current_record_now != current_user:
+    #
+    # DISABLED IS CHECKED SEPARATELY, because a record comparison
+    # cannot see it. get_user_record() returns the same UserRecord
+    # whether or not the account is disabled -- verified directly, not
+    # assumed -- so a user disabled mid-request with unchanged MAC and
+    # role compares EQUAL here and the answer is served.
+    #
+    # The per-hop refresh_user() above already checks is_user_disabled,
+    # so the exposure was narrow: disabled after the last hop but
+    # before synthesis finished. Narrow is not none, and the asymmetry
+    # was the tell -- two checks of the same thing disagreeing about
+    # what "still authorized" means.
+    user_directory = request.app.state.user_directory
+    current_record_now = user_directory.get_user_record(current_user.user_id)
+    if user_directory.is_user_disabled(current_user.user_id) or current_record_now != current_user:
         raise HTTPException(
             status_code=409,
             detail="Your permissions changed while this request was processing -- please try again",
@@ -1636,13 +2441,55 @@ async def query(body: QueryRequest, request: Request,
 async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request: Request,
                                current_user: UserRecord = Depends(get_current_user)) -> dict:
     store: PendingWriteStore = request.app.state.pending_writes
-    pending = store.pop(write_id, current_user.user_id)
+    def may_confirm(candidate) -> bool:
+        # THE GRANT, not ownership. Whoever may EXECUTE an action may
+        # decide on a proposal of it -- which is what makes an approvals
+        # flow possible at all: owner-equality meant the only person who
+        # could confirm a write was the one person a four-eyes rule
+        # forbids.
+        #
+        # This is a real widening for a deployment that declares no
+        # criteria: previously only the proposer could confirm, now any
+        # holder of the grant can. That is the intended model rather
+        # than a side effect, and the OPPOSITE policy is now
+        # expressible where it was previously hardcoded -- a criterion
+        # of `check: user, field: user_id, operator: equals, value:
+        # proposer.user_id` restores owner-only confirmation for a
+        # deployment that wants it.
+        #
+        # MAC and the criteria are NOT checked here. Both are evaluated
+        # inside confirm_and_execute() against the objects actually
+        # touched, which is where they can see what they are deciding
+        # about; duplicating them here would be a second, weaker copy.
+        return authorize(
+            current_user, _generation(request).config.roles,
+            f"execute:{candidate.action_type_name}",
+        )
+
+    # RESERVED, NOT CLAIMED, and the difference is a lost write.
+    # claim() removed the proposal and handed it back, and the decision
+    # could then fail -- a four-eyes rule refusing a self-approval, or
+    # a field the ontology no longer declares. The write was already
+    # gone, so the colleague entitled to approve it never got the
+    # chance and nothing told them it had existed.
+    #
+    # The reservation is released by the context manager on ANY
+    # exception, which is exactly the set of cases where the decision
+    # did not happen.
+    with store.reserved(write_id, may_confirm) as pending:
+        return await _decide_reserved_write(
+            request, write_id, pending, body.approved, current_user,
+        )
+
+
+async def _decide_reserved_write(request: Request, write_id: str, pending, approved: bool,
+                                 current_user: UserRecord):
     if pending is None:
         # Uniform denial -- wrong user, unknown ID, and expired ID all
         # look identical. See module docstring.
         raise HTTPException(status_code=404, detail="Unknown or expired pending write")
 
-    write_mediator: WriteMediator = request.app.state.write_mediator
+    write_mediator: WriteMediator = _generation(request).write_mediator
     # Offloaded to the SAME executor /query uses -- no longer "a
     # single, already-atomic SQL statement," which used to be why this
     # ran synchronously on the request-handling thread. Once an update
@@ -1654,7 +2501,79 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
     # directly tracing this call chain, not just reasoned about.
     executor = request.app.state.executor
     event_loop = asyncio.get_running_loop()
-    outcome = await event_loop.run_in_executor(executor, write_mediator.confirm_and_execute, pending, body.approved)
+    # THE APPROVER IS PASSED, which is what lets submission criteria be
+    # re-evaluated against the person deciding rather than the person
+    # who proposed. A four-eyes rule says nothing at propose time --
+    # there is no approver yet -- so evaluating only once is why it
+    # could not be enforced at all before.
+    #
+    # functools.partial rather than more positional arguments: the
+    # executor call already has four, and a fifth that silently lands
+    # in the wrong slot is the kind of mistake this file has made
+    # before.
+    # RECORD THE DECISION PER TASK, THEN ASK WHETHER THE REQUEST IS
+    # WHOLE.
+    #
+    # Foundry separates the two: approval is per task, invocation is
+    # not -- "all tasks associated with a request must be approved for
+    # the request to be invoked". A reviewer approves what they can and
+    # the request waits for the rest.
+    #
+    # ONLY THE TASKS THIS REVIEWER MAY DECIDE. Foundry scopes the
+    # action to what the reviewer is eligible for: "approve or reject
+    # all tasks in the request THAT YOU ARE ELIGIBLE TO REVIEW".
+    #
+    # What differs between tasks is the OBJECT. Every task shares the
+    # request's action type, so the execute: grant is the same for all
+    # of them; MAC is what separates them, and a reviewer in one
+    # security partition decides the tasks touching it and leaves the
+    # rest for someone who can see them.
+    store: PendingWriteStore = request.app.state.pending_writes
+    eligible = write_mediator.eligible_task_indexes(
+        pending, current_user, _generation(request).config.roles,
+    )
+    for task_index in sorted(eligible):
+        store.record_task_decision(write_id, task_index, current_user.user_id, approved)
+
+    if approved and not store.is_fully_approved(write_id):
+        # NOT AN ERROR, AND NOT A REFUSAL EITHER. The request is
+        # waiting for reviewers who have not decided yet, which is the
+        # normal state of a multi-reviewer request rather than a fault.
+        #
+        # REACHABLE NOW that eligibility exists. A reviewer who can see
+        # only part of a request approves their part and gets told the
+        # rest is still waiting, rather than a success that did not
+        # happen or an error that misdescribes an ordinary state.
+        undecided = len(pending.sub_writes) - sum(
+            1 for decision in store.task_decisions(write_id).values() if decision.approved
+        )
+        return {
+            "status": "awaiting_other_reviewers",
+            "write_id": write_id,
+            "tasks_outstanding": undecided,
+        }
+
+    try:
+        outcome = await event_loop.run_in_executor(
+            executor,
+            functools.partial(
+                write_mediator.confirm_and_execute, pending, approved,
+                approver=current_user,
+            ),
+        )
+    except (SubmissionCriteriaViolation, ValueError) as e:
+        # A REFUSAL IS A 409, NOT A 500, and the message is the point.
+        # These are decisions the system made for a stated reason -- a
+        # four-eyes rule declining a self-approval, a field the
+        # ontology no longer declares -- and the reviewer needs the
+        # reason, not a generic failure.
+        #
+        # Raising HTTPException here also leaves the reservation
+        # released: the context manager releases on ANY exception, and
+        # an HTTPException is one. The write goes back in the queue for
+        # somebody who can approve it.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
     return outcome if outcome is not None else {"status": "rejected"}
 
 # --- Object Set operations: the analytical half of the read surface.
@@ -1677,7 +2596,7 @@ def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: 
     # count -- two users legitimately get different answers, and a
     # count ignoring MAC would leak the existence of rows outside the
     # caller's boundary.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     try:
         return {"count": mediator.count_objects(current_user, object_type, body.as_conditions())}
     except ValueError as e:
@@ -1687,7 +2606,7 @@ def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: 
 @router.post("/objects/{object_type}/aggregate", response_model=AggregateResponse)
 def aggregate_objects_route(object_type: str, body: AggregateRequest, request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     try:
         results = mediator.aggregate_by_field(
             current_user, object_type, body.as_conditions(),
@@ -1712,9 +2631,32 @@ def search_around_route(object_type: str, body: SearchAroundRequest, request: Re
     # An ungranted or non-link field yields an empty list rather than
     # an error -- the same uniform denial every other read path uses,
     # so a caller learns nothing about whether the field exists.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
     ids = mediator.search_around(current_user, object_type, body.as_conditions(), body.link_field)
     return {"ids": ids, "total": len(ids)}
+
+
+@router.get("/objects/{object_type}/{object_id}/link-counts",
+            response_model=LinkCountsResponse)
+def link_counts_route(object_type: str, object_id: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How many objects each link leads to, before following any.
+
+    COUNTS BEFORE EXPANSION is the whole design of the link explorer: a
+    person deciding whether to follow a link needs to know it leads to
+    four things or four thousand BEFORE they commit. Fan-out should
+    never be a surprise.
+
+    Every count is what THIS caller would actually receive -- MAC and
+    RBAC apply on the far side -- so it cannot disagree with the
+    expansion that follows, and cannot leak the size of data they are
+    not permitted to see.
+
+    A GET, because it is a question rather than a change, and a person
+    sharing a link explorer view should be able to share this too.
+    """
+    mediator = _generation(request).mediator
+    return {"links": mediator.link_counts(current_user, object_type, object_id)}
 
 @router.get("/objects/{object_type}/{object_id}/history", response_model=EditHistoryResponse)
 def object_history_route(object_type: str, object_id: str, request: Request,
@@ -1733,7 +2675,7 @@ def object_history_route(object_type: str, object_id: str, request: Request,
     # Paged with the same machinery as search, rather than a second
     # scheme: an object with a long edit history is exactly what a
     # timeline widget scrolls through.
-    mediator = request.app.state.mediator
+    mediator = _generation(request).mediator
 
     # Bounds resolved against the COUNT, then only that page is read --
     # rather than reading the whole history and slicing it in Python,
@@ -1770,18 +2712,47 @@ def health_route(request: Request) -> dict:
     """
     checks: dict[str, str] = {}
 
-    mediator = getattr(request.app.state, "mediator", None)
+    # Through the PIN, not app.state -- which no longer has a mediator
+    # at all (step 2e). The getattr default this replaced was written
+    # to tolerate a not-yet-wired app, and after the attribute was
+    # deleted it silently returned None and reported "unconfigured" on
+    # a perfectly healthy deployment. A defensive default outliving the
+    # thing it defended against is worse than no default: it turns a
+    # missing dependency into a plausible-looking answer.
+    mediator = getattr(_generation(request), "mediator", None)
     checks["ontology"] = "ready" if mediator is not None else "unconfigured"
 
-    for silo_name, adapter in (getattr(mediator, "adapters", {}) or {}).items():
+    # SILOS ARE REPORTED IN AGGREGATE, not by name. Each entry was
+    # previously keyed "silo:{silo_name}", so an UNAUTHENTICATED caller
+    # learned every data source's name and how many there were.
+    #
+    # The docstring already promised "no counts, names, paths or
+    # configuration", and the test enforcing it checked the VALUES and
+    # grepped for paths and passwords -- never the KEYS, which is where
+    # the names were.
+    #
+    # A silo name is deployment-chosen and usually descriptive:
+    # `risk_sql`, `hr_payroll`, `claims`. On an anonymous endpoint that
+    # is reconnaissance, saying what a deployment holds before anyone
+    # has logged in.
+    #
+    # One entry still answers what this endpoint is FOR. A connection
+    # indicator needs to know the deployment is degraded, not which
+    # part; anyone entitled to the detail has GET /silos, which is
+    # authenticated and already backs the Silos screen.
+    unreachable = 0
+    adapters = getattr(mediator, "adapters", {}) or {}
+    for adapter in adapters.values():
         try:
             adapter.health_check()
-            checks[f"silo:{silo_name}"] = "reachable"
         except Exception:
             # The reason is deliberately NOT reported. This endpoint is
             # unauthenticated, and a connection error routinely carries
             # a host, a path, or a username.
-            checks[f"silo:{silo_name}"] = "unreachable"
+            unreachable += 1
+
+    if adapters:
+        checks["silos"] = "unreachable" if unreachable else "reachable"
 
     degraded = any(value == "unreachable" for value in checks.values())
     return {"status": "degraded" if degraded else "ok", "checks": checks}

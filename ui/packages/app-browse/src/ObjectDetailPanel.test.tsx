@@ -194,11 +194,11 @@ describe('ObjectDetailPanel -- link field rendering', () => {
     expect(screen.getByRole('link', { name: 'acct_001' })).toHaveAttribute('href', '/objects/Account/acct_001')
   })
 
-  it('renders a null link value as "(not set)", not a broken link', async () => {
+  it('renders a null link value as "—", not a broken link', async () => {
     mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', account_id: null } })
     renderPanel('Customer', 'cust_001')
 
-    await waitFor(() => expect(screen.getByText('(not set)')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('—')).toBeInTheDocument())
     expect(screen.queryByRole('link', { name: 'acct_001' })).not.toBeInTheDocument()
   })
 
@@ -216,12 +216,23 @@ describe('ObjectDetailPanel -- link field rendering', () => {
     expect(screen.getByRole('link', { name: 'order_2' })).toHaveAttribute('href', '/objects/Order/order_2')
   })
 
-  it('renders an empty array link value as "(not set)"', async () => {
+  it('renders an empty link as "(none)", not as absence', async () => {
+    // A LINK THAT WAS FOLLOWED AND FOUND NOTHING is not an unset
+    // field. "This customer has no orders" and "we do not know this
+    // customer's orders" are different answers, and a reader deciding
+    // whether to chase a missing record needs to know which.
+    //
+    // This test previously asserted the absence marker, which is how
+    // the bug survived: the call site passed null for an empty list,
+    // and the test agreed with it.
+    //
+    // The null case is already covered above ("renders a null link
+    // value as an em dash"), so the distinction holds at both ends.
     const schema: VisibleSchema = { Customer: { fields: { orders: { type: 'link', target: 'Order' } } } }
     mockedGetObjectDetail.mockResolvedValue({ fields: { orders: [] } })
     renderPanel('Customer', 'cust_001', { visibleSchema: schema })
 
-    await waitFor(() => expect(screen.getByText('(not set)')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('(none)')).toBeInTheDocument())
   })
 
   it('renders a plain data field as a plain value, never as a link', async () => {
@@ -363,8 +374,10 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
       fields: {
         name: { type: 'data' },
         transactions: {
-          type: 'link', target: 'Transaction',
-          link_type: 'CustomerTransactions', cardinality: 'one_to_many',
+          type: 'link',
+          target: 'Transaction',
+          link_type: 'CustomerTransactions',
+          cardinality: 'one_to_many',
         },
       },
     },
@@ -392,9 +405,7 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
      * searching that type -- this list is an entry point, not a
      * substitute for Browse.
      */
-    mockedGetObjectDetail.mockResolvedValue(
-      detailWith(Array.from({ length: 25 }, (_, i) => `t${i}`)),
-    )
+    mockedGetObjectDetail.mockResolvedValue(detailWith(Array.from({ length: 25 }, (_, i) => `t${i}`)))
 
     renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
 
@@ -406,9 +417,7 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
   it('counts exactly even when it shows few', async () => {
     // The cap is on RENDERING. A count that capped too would be a
     // number that quietly lies once a customer gets busy.
-    mockedGetObjectDetail.mockResolvedValue(
-      detailWith(Array.from({ length: 40000 }, (_, i) => `t${i}`)),
-    )
+    mockedGetObjectDetail.mockResolvedValue(detailWith(Array.from({ length: 40000 }, (_, i) => `t${i}`)))
 
     renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
 
@@ -420,8 +429,7 @@ describe('ObjectDetailPanel -- how many things are linked', () => {
 
     renderPanel('Customer', 'cust_001', { visibleSchema: SCHEMA })
 
-    expect((await screen.findByText('t1')).closest('a'))
-      .toHaveAttribute('href', '/objects/Transaction/t1')
+    expect((await screen.findByText('t1')).closest('a')).toHaveAttribute('href', '/objects/Transaction/t1')
   })
 })
 
@@ -461,5 +469,70 @@ describe('the link count reads as separate from the links', () => {
     const cell = document.querySelector('.object-detail__links')
     expect(cell?.textContent).not.toMatch(/2t1/)
     expect(cell?.textContent).toMatch(/2 t1/)
+  })
+})
+
+describe('a field on the middle rung of the grant ladder', () => {
+  /**
+   * `readable: false` means the caller holds `discover:Type.field` and
+   * not `read:Type.field` -- they may know the field exists and not
+   * what it holds.
+   *
+   * WITHHELD, NOT ABSENT. Omitting it would leave a reader unable to
+   * tell a partial view from a complete one, which produces MORE
+   * confidence rather than less. The approvals diff already solves it
+   * this way, and two surfaces showing the same state differently is
+   * what the ladder exists to end.
+   */
+  it('names the field and withholds the value', async () => {
+    const schema: VisibleSchema = {
+      Customer: { fields: { name: { type: 'string' }, ssn: { type: 'string', readable: false } } },
+    }
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', ssn: null } })
+    renderPanel('Customer', 'cust_001', { visibleSchema: schema })
+
+    await waitFor(() => expect(screen.getByText('Ada Okafor')).toBeInTheDocument())
+    expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument()
+  })
+
+  it('does not render it as absence', async () => {
+    // THE DISTINCTION. An em dash says "not set", which is a claim
+    // about the DATA -- and this is a fact about the reader's access.
+    // A readable field alongside, so the panel has something to
+    // render -- the assertion is that NO em dash appears, which needs
+    // a rendered panel to be meaningful.
+    const schema: VisibleSchema = {
+      Customer: { fields: { name: { type: 'string' }, ssn: { type: 'string', readable: false } } },
+    }
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', ssn: null } })
+    renderPanel('Customer', 'cust_001', { visibleSchema: schema })
+
+    await waitFor(() => expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument())
+    expect(screen.queryByText('—')).toBeNull()
+  })
+
+  it('withholds an unreadable LINK field too', async () => {
+    // Checked before the link handling, or the targets would render
+    // as links the caller may not follow.
+    const schema: VisibleSchema = {
+      Customer: { fields: { orders: { type: 'link', target: 'Order', readable: false } } },
+    }
+    mockedGetObjectDetail.mockResolvedValue({ fields: { orders: ['ord_1', 'ord_2'] } })
+    renderPanel('Customer', 'cust_001', { visibleSchema: schema })
+
+    await waitFor(() => expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: 'ord_1' })).toBeNull()
+  })
+
+  it('leaves a readable field alone', async () => {
+    // THE CONTROL. `readable` is absent on every field the agent view
+    // returns and on any deployment that has not adopted discover:, so
+    // a panel treating undefined as false would blank the product.
+    const schema: VisibleSchema = { Customer: { fields: { name: { type: 'string' } } } }
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor' } })
+    renderPanel('Customer', 'cust_001', { visibleSchema: schema })
+
+    await waitFor(() => expect(screen.getByText('Ada Okafor')).toBeInTheDocument())
+    expect(screen.queryByText('Hidden by your permissions')).toBeNull()
   })
 })

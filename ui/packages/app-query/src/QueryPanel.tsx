@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, Callout } from '@blueprintjs/core'
 import { query } from '@elysium/shell-api/api'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 
 import AnswerTrace from './AnswerTrace'
 import type { SubAppProps } from '@elysium/shell-api/types'
@@ -87,6 +88,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
     <Workspace>
       <form onSubmit={handleSubmit}>
         <textarea
+          className="query-panel__input"
           value={queryText}
           onChange={(event) => setQueryText(event.target.value)}
           placeholder="Ask a question…"
@@ -109,14 +111,12 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
           for; success/danger stays reserved for genuinely binary
           outcomes elsewhere (see PendingWriteCard's own Callout usage
           for that real contrast). */}
-      {error && <Callout intent="danger">{error}</Callout>}
+      {error && <ErrorState>{error}</ErrorState>}
       {answer && <Callout>{answer}</Callout>}
       {/* Under the answer, and only when there IS one. A trace with
           nothing to explain is a control that raises a question the
           screen cannot answer. */}
-      {answer && requestId && (
-        <AnswerTrace requestId={requestId} onSessionExpired={onSessionExpired} />
-      )}
+      {answer && requestId && <AnswerTrace requestId={requestId} onSessionExpired={onSessionExpired} />}
       {pendingWrite && (
         // No persistent view of an object here to refresh once
         // resolved (unlike ObjectDetailPanel.jsx's own ActionForm) --

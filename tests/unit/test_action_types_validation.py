@@ -700,3 +700,64 @@ def test_a_parameter_reference_is_not_a_literal():
     # References are strings by construction and resolved at proposal
     # time; they are never the value YAML retyped.
     validate_action_types(_sets("code", "parameter.widget_id"), _TYPED)
+
+
+# --- bulk actions: a parameter that names MANY objects ----------------
+#
+# Foundry draws the line in the ontology rather than the UI: a "bulk
+# action type" is one "using an object reference list parameter". Bulk
+# is a property of the ACTION, declared and reviewable before anyone
+# runs it, rather than a mode an application switches into.
+
+_BULK_SCHEMA = {
+    "Ticket": {
+        "id_field": "ticket_id",
+        "security": {"field": "region"},
+        "storage": {"table": "tickets", "id_column": "ticket_id"},
+        "fields": {
+            "ticket_id": {"type": "data", "data_type": "string"},
+            "region": {"type": "data", "data_type": "string"},
+            "state": {"type": "data", "data_type": "string"},
+        },
+    }
+}
+
+
+def _bulk_action(param_type):
+    return {
+        "CloseTickets": {
+            "affected_object_types": ["Ticket"],
+            "parameters": {
+                "ticket_ids": {"type": param_type, "object_type": "Ticket", "required": True},
+            },
+            "sub_writes": [{
+                "object_type": "Ticket",
+                "object_id": "parameter.ticket_ids",
+                "operation": "update",
+                "mutations": [{"set": {"property": "state", "value": "closed"}}],
+            }],
+        }
+    }
+
+
+def test_a_sub_write_may_take_its_id_from_a_LIST_parameter():
+    """THE GATE THIS OPENS.
+
+    A control narrowing the accepted types to object_reference alone
+    failed nothing until this existed -- the bulk tests build their
+    mediator directly and never reach the validator.
+    """
+    validate_action_types(_bulk_action("object_reference_list"), _BULK_SCHEMA)
+
+
+def test_a_single_object_reference_still_works():
+    # THE CONTROL. Every existing action names one object.
+    validate_action_types(_bulk_action("object_reference"), _BULK_SCHEMA)
+
+
+def test_any_other_parameter_type_is_still_refused():
+    # Widening to accept a list must not widen to accept anything. A
+    # sub_write whose object_id came from a plain string would name an
+    # object the ontology never checked existed.
+    with pytest.raises(ValueError, match="object_reference"):
+        validate_action_types(_bulk_action("string"), _BULK_SCHEMA)

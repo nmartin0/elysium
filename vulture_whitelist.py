@@ -39,6 +39,11 @@ list_notes_route
 create_note_route
 silos_route
 deployment_config_route
+reload_route
+config_history_route
+config_diff_route
+awaiting_writes_route
+write_detail_route
 list_users_route
 create_user_route
 visible_schema_route
@@ -167,3 +172,113 @@ icon
 visibility
 checks
 link_type
+
+# pydantic reads model_config off the class itself -- a name the
+# library looks up, never one this project's own code calls. See
+# core/ontology/submission_criteria.py's Criterion.
+model_config
+
+# pydantic calls @model_validator methods itself; nothing in this
+# project references the name. See Criterion in core/ontology/
+# submission_criteria.py.
+_user_field_must_be_a_real_user_attribute
+
+# DeploymentGeneration.mirror_snapshots -- read through the frozen
+# dataclass in api/routes.py's /config response, which vulture does not
+# follow. See core/deployment_loader.py.
+mirror_snapshots
+
+# ReloadResponse.changed (api/routes.py) -- read by FastAPI's serialiser
+# from the returned dict, never by our own code, the same as every
+# other response-model field above.
+changed
+
+# tests/unit/test_reload.py's autouse fixture -- pytest calls it by
+# registration, never by name.
+_restore_sighup
+
+# ConfigHistoryResponse / ConfigDiffResponse fields (api/routes.py) --
+# read by FastAPI's serialiser from the returned dict, as with every
+# other response model above.
+current_generation
+generations
+changed_files
+unchanged
+recorded_at
+
+# AwaitingWriteResponse fields (api/routes.py) -- read by FastAPI's
+# serialiser from the returned dicts, as with every response model.
+proposed_by
+object_count
+
+# AwaitingWriteResponse's own flags (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field.
+awaiting_your_review
+proposed_by_you
+
+# WriteDetailResponse / FieldChangeResponse / ObjectChangeResponse
+# fields (api/routes.py) -- serialised by FastAPI from the returned
+# dicts, as with every other response model.
+readable
+current_value
+proposed_value
+has_redacted_fields
+
+# AwaitingWriteResponse.undeclared_fields (api/routes.py) -- serialised
+# by FastAPI from the returned dict, like every other response field.
+undeclared_fields
+
+# AwaitingWriteResponse.duplicate_count (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field.
+duplicate_count
+
+# LinkCountsResponse.links (api/routes.py) -- serialised by FastAPI
+# from the returned dict, like every other response field.
+links
+
+# link_counts_route (api/routes.py) -- registered by its @router.get
+# decorator, which Vulture cannot see. Every route in this file is
+# reached the same way.
+link_counts_route
+matching_ids_route
+
+# SchemaFieldResponse.decimal_places (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field.
+decimal_places
+
+# MetricsResponse / SlowRouteResponse fields (api/routes.py) --
+# serialised by FastAPI from the returned dict, like every other
+# response model here.
+p99_ms
+p50_ms
+rate_per_second
+error_ratio
+slowest_routes
+window_seconds
+admin_metrics_route
+forget_older_than
+
+# TaskApproval.decided_at (core/pending_write_store.py) -- recorded
+# now, read by the approvals inbox in step 4. An approval record
+# without a timestamp is not an approval record: "who approved this
+# and when" is one question, and adding the field later would mean
+# every decision taken before then has no answer.
+decided_at
+
+# AwaitingWriteResponse's task counts (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field here.
+tasks_total
+tasks_you_may_decide
+tasks_approved
+
+# MirrorStateResponse / admin_mirror_route (api/routes.py) -- a FastAPI
+# route and its response model, reached by decorator and serialised by
+# field name, like every other endpoint in that file.
+reading_from_mirror
+admin_mirror_route
+
+# MirrorTableState's attempt fields (api/routes.py) -- serialised by
+# FastAPI from the returned dict, like every other response field.
+last_attempt_at
+last_attempt_outcome
+last_attempt_detail

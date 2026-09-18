@@ -106,7 +106,7 @@ def fixture(tmp_path, isolated_audit_log):
     )
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Ticket": "primary"}, TEST_ROLES,
                              write_log=write_log, audit_log=audit_log)
-    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     return mediator, write_mediator, write_log
 
 
@@ -250,4 +250,4 @@ def test_submission_criteria_sees_pending_value_not_stale_backend_state(fixture,
 
     from core.ontology.submission_criteria import SubmissionCriteriaViolation
     with pytest.raises(SubmissionCriteriaViolation, match="must currently be closed"):
-        write_mediator.propose_action(alice, "Reopen", {"ticket_id": 2})
+        write_mediator.propose_action(alice, "Reopen", {"ticket_id": 2}, origin="human")

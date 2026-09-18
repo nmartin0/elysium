@@ -12,8 +12,9 @@
  */
 
 import { useState } from 'react'
-import { Button, Callout, HTMLTable, Tag } from '@blueprintjs/core'
+import { Button, HTMLTable, Tag } from '@blueprintjs/core'
 import { getErrorMessage, getRequestTrace, handleIfSessionExpired } from '@elysium/shell-api/api'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 
 interface TraceEntry {
   object_type: string
@@ -24,7 +25,10 @@ interface TraceEntry {
   timestamp: string
 }
 
-export default function AnswerTrace({ requestId, onSessionExpired }: {
+export default function AnswerTrace({
+  requestId,
+  onSessionExpired,
+}: {
   requestId: string
   onSessionExpired: () => void
 }) {
@@ -46,7 +50,7 @@ export default function AnswerTrace({ requestId, onSessionExpired }: {
     setOpen(true)
     if (entries !== null) return
     try {
-      setEntries(await getRequestTrace(requestId) as TraceEntry[])
+      setEntries((await getRequestTrace(requestId)) as TraceEntry[])
     } catch (err: unknown) {
       if (handleIfSessionExpired(err, onSessionExpired)) return
       setError(getErrorMessage(err))
@@ -55,25 +59,19 @@ export default function AnswerTrace({ requestId, onSessionExpired }: {
 
   return (
     <div className="answer-trace">
-      <Button
-        minimal
-        small
-        icon={open ? 'chevron-down' : 'chevron-right'}
-        onClick={toggle}
-      >
+      <Button minimal small icon={open ? 'chevron-down' : 'chevron-right'} onClick={toggle}>
         How this answer was found
       </Button>
 
-      {open && error && <Callout intent="danger">{error}</Callout>}
+      {open && error && <ErrorState>{error}</ErrorState>}
 
-      {open && entries !== null && (
-        entries.length === 0 ? (
+      {open &&
+        entries !== null &&
+        (entries.length === 0 ? (
           // A trace can be legitimately empty: an answer needing no
           // object read, or one whose entries fell outside the log
           // scan's window. Saying so beats an empty table.
-          <p className="answer-trace__empty">
-            No object reads were recorded for this answer.
-          </p>
+          <p className="answer-trace__empty">No object reads were recorded for this answer.</p>
         ) : (
           <HTMLTable compact striped className="answer-trace__table">
             <thead>
@@ -95,17 +93,20 @@ export default function AnswerTrace({ requestId, onSessionExpired }: {
                         and exactly what someone auditing wants to
                         see rather than have hidden. */}
                     {entry.rbac_allowed && entry.mac_allowed !== false ? (
-                      <Tag minimal intent="success">yes</Tag>
+                      <Tag minimal intent="success">
+                        yes
+                      </Tag>
                     ) : (
-                      <Tag minimal intent="warning">refused</Tag>
+                      <Tag minimal intent="warning">
+                        refused
+                      </Tag>
                     )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </HTMLTable>
-        )
-      )}
+        ))}
     </div>
   )
 }

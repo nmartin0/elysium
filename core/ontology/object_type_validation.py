@@ -77,6 +77,8 @@ question" discipline that originally deferred THIS fix in the first
 place.
 """
 
+import zoneinfo
+
 from core.ontology.field_types import FIELD_DATA_TYPES
 
 
@@ -105,6 +107,18 @@ def validate_object_types(object_types: dict, only: str | None = None) -> None:
 
 VISIBILITIES = ("prominent", "normal", "hidden")
 STATUSES = ("active", "experimental", "deprecated")
+
+# HOW MANY DECIMAL PLACES a numeric field is worth showing. Declared on
+# the PROPERTY, not chosen by the UI, because the UI cannot know: the
+# ontology says a field is a number and says nothing about its scale,
+# and two decimals is wrong for a coordinate and for a count alike.
+#
+# Foundry puts this in the same place -- value formatting is property
+# metadata that transforms "raw values into more readable versions in
+# user applications" -- and it sits beside `visibility` and `status`
+# here for the same reason: all three are things the ontology author
+# knows and an application cannot infer.
+MAX_DECIMAL_PLACES = 10
 
 
 def _validate_ui_metadata(object_type_name: str, type_def: dict) -> None:
@@ -145,6 +159,56 @@ def _validate_ui_metadata(object_type_name: str, type_def: dict) -> None:
                 f"{owner}: visibility must be one of {list(VISIBILITIES)}, got {visibility!r}"
             )
         _validate_status(owner, field_info)
+        _validate_decimal_places(owner, field_info)
+
+
+def _validate_decimal_places(owner: str, field_info: dict) -> None:
+    """Checks `decimal_places`, if a field declares one.
+
+    COSMETIC, like everything else this module validates. It changes
+    how a number is DISPLAYED and never what it is -- the stored value,
+    the value an action writes, and the value a filter compares against
+    are all untouched. A deployment rounding for display and then
+    filtering on the rounded figure would be a different and much worse
+    feature.
+
+    WHY A SEPARATE KEY RATHER THAN A FORMAT STRING. "%.2f" would carry
+    padding, thousands separators, currency symbols and locale
+    assumptions along with the precision, and every one of those is a
+    decision this project has not made. A count of places is the whole
+    of what the ontology knows.
+    """
+    places = field_info.get("decimal_places")
+    if places is None:
+        return
+
+    # bool is an int in Python, and `decimal_places: true` is a typo
+    # that would otherwise mean one place.
+    if isinstance(places, bool) or not isinstance(places, int):
+        raise ValueError(
+            f"{owner}: decimal_places must be a whole number, got {places!r}"
+        )
+    if places < 0 or places > MAX_DECIMAL_PLACES:
+        raise ValueError(
+            f"{owner}: decimal_places must be between 0 and {MAX_DECIMAL_PLACES}, "
+            f"got {places}"
+        )
+
+    # ONLY MEANINGFUL ON A NUMBER. Declared on a string it would be
+    # silently ignored, and an author who wrote it meant something by
+    # it -- saying so at load is kinder than leaving them to notice the
+    # field renders unchanged.
+    data_type = field_info.get("data_type")
+    # `decimal` BELONGS HERE TOO, and was missed when that type was
+    # added -- caught by declaring a real money field and watching the
+    # linter refuse it. Two places showing "10.5" and "10.50" for the
+    # same column is exactly the inconsistency decimal_places exists to
+    # prevent, and a decimal field is the one most likely to need it.
+    if data_type is not None and data_type not in ("number", "integer", "decimal"):
+        raise ValueError(
+            f"{owner}: decimal_places is only meaningful on a numeric field, "
+            f"but this one is {data_type!r}"
+        )
 
 
 def _validate_status(owner: str, definition: dict) -> None:
@@ -240,6 +304,62 @@ def _validate_field_data_types(object_type_name: str, type_def: dict) -> None:
                 f"Object type {object_type_name!r}: field {field_name!r} is a link and must not "
                 f"declare its own data_type."
             )
+
+        _validate_field_timezone(object_type_name, field_name, field_info, declared)
+
+
+def _validate_field_timezone(object_type_name: str, field_name: str,
+                              field_info: dict, declared: str) -> None:
+    """Checks the optional `timezone` a field may declare.
+
+    WHAT IT IS FOR. A source that hands back '2026-03-12 14:30:00' has
+    given a wall-clock reading in an unstated place -- not an instant.
+    Assuming UTC is a guess, and assuming the server's zone is worse,
+    because it makes the same data mean different things on two
+    machines. A field whose source zone is KNOWN can say so, and the
+    reading is promoted to the instant it always was.
+
+    DECLARED, NEVER INFERRED. Someone had to write the zone down, which
+    is the whole difference between knowing and assuming.
+
+    ONLY ON `timestamptz`, because it answers a question only that type
+    asks. A `date` has no time to place; a `timestamp` is deliberately
+    naive and promoting it would defeat the point of declaring it.
+    Silently ignoring the key on those would let an author believe
+    their dates were being converted.
+
+    AN IANA NAME, NOT AN OFFSET. '-05:00' is wrong for half the year in
+    any zone that observes daylight saving; 'America/New_York' is
+    right in both halves.
+    """
+    timezone_name = field_info.get("timezone")
+    if timezone_name is None:
+        return
+
+    if declared != "timestamptz":
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares a "
+            f"`timezone` but its data_type is {declared!r}. A timezone places a "
+            f"naive reading on the clock, which only `timestamptz` needs."
+        )
+
+    if not isinstance(timezone_name, str):
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares a "
+            f"`timezone` that is not a string: {timezone_name!r}."
+        )
+
+    try:
+        zoneinfo.ZoneInfo(timezone_name)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+        # AT CONFIG LOAD, not at the first row that needs it. A typo in
+        # a zone name would otherwise surface during a sync, hours
+        # later, as a drift report about data that is perfectly fine.
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares "
+            f"timezone {timezone_name!r}, which is not a known IANA zone. "
+            f"Use a name like 'America/New_York', not an offset like '-05:00'."
+        ) from None
 
 
 def _validate_title_field(object_type_name: str, type_def: dict) -> None:

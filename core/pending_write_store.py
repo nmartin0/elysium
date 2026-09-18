@@ -16,6 +16,18 @@ shared store instead; a confirmation routed to a different worker
 process than the one that handled the proposal would find nothing
 here. Flagged now, not discovered later.
 
+AND THE CONSEQUENCE FOR TESTING BY HAND, which the paragraph above
+implies without saying: a RESTART empties this store. Running uvicorn
+with --reload restarts it on any watched file change, so editing
+policy.yaml -- exactly what someone does to exercise an approvals flow
+-- silently discards every pending proposal mid-test.
+
+That cost a real debugging session: proposals kept vanishing between
+steps and looked like a bug in the queue. Use --reload when editing
+Python; do not use it while testing writes. Configuration changes need
+no restart at all, and POST /api/admin/reload deliberately PRESERVES
+this store.
+
 Every stored write has a real TTL (DEFAULT_TTL) -- an unconfirmed
 proposal doesn't linger forever. Expiry is LAZY (checked at the top of
 store()/pop(), not a separate periodic background task) -- this is a
@@ -45,7 +57,9 @@ Used by: api/app.py (one instance, stored on app.state, same lifecycle
 
 import threading
 import uuid
-from dataclasses import dataclass
+from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 from core.intermediate_layer.audit import AuditLog
@@ -54,19 +68,102 @@ from core.ontology.write_mediator import PendingWrite
 DEFAULT_TTL = timedelta(minutes=15)
 
 
+@dataclass(frozen=True)
+class TaskApproval:
+    """One reviewer's decision about one task.
+
+    A TASK IS ONE SUB-WRITE, which is Foundry's own unit: "a task is an
+    individual change". A bulk action naming fifty objects is fifty
+    tasks, and a reviewer may be eligible for some and not others.
+
+    IDENTIFIED BY POSITION, not by object. A create has no object_id
+    yet, and nothing forbids two sub-writes touching one object, so
+    (type, id) is not a key. The sub_writes tuple is fixed when the
+    write is proposed, so an index cannot collide or drift.
+    """
+
+    approver_user_id: str
+    approved: bool
+    decided_at: datetime
+
+
 @dataclass
 class _StoredWrite:
     pending: PendingWrite
     owner_user_id: str
     expires_at: datetime
+    # Somebody is deciding on this RIGHT NOW. Set for the length of one
+    # confirm request, so a second reviewer cannot reserve it and a
+    # listing does not offer it. Cleared if the decision fails.
+    reserved: bool = False
+    # WHO HAS DECIDED WHICH TASK, keyed by index into pending.sub_writes.
+    #
+    # ON THE STORE RATHER THAN ON PendingWrite, because a PendingWrite
+    # is frozen and describes what was PROPOSED. Who has since approved
+    # part of it is mutable state about that proposal, which is what
+    # this class already holds -- expiry and reservation live here for
+    # the same reason.
+    #
+    # ABSENT MEANS UNDECIDED. A missing key is not a rejection: three
+    # reviewers signing off in turn means the dict fills up over time,
+    # and treating "not yet" as "no" would invoke nothing.
+    task_decisions: dict[int, TaskApproval] = field(default_factory=dict)
+
+
+def _fingerprint(pending) -> tuple:
+    """What makes two proposals the same proposal.
+
+    THE CHANGE ITSELF: the action, and every object/operation/values
+    triple it would apply. Not the proposer, not the description, not
+    the time.
+
+    Sorted, because sub_writes order is an implementation detail of how
+    an action resolves and two identical proposals must not differ by
+    it. json.dumps with sort_keys for the values, since a dict is not
+    hashable and key order is equally incidental.
+    """
+    import json
+
+    return (
+        pending.action_type_name,
+        tuple(sorted(
+            (sub.object_type, str(sub.object_id), sub.operation,
+             json.dumps(sub.changes, sort_keys=True, default=str))
+            for sub in pending.sub_writes
+        )),
+    )
 
 
 class PendingWriteStore:
-    def __init__(self, ttl: timedelta = DEFAULT_TTL, audit_log: AuditLog | None = None):
+    def __init__(self, ttl: timedelta = DEFAULT_TTL,
+                 audit_log: AuditLog | Callable[[], AuditLog] | None = None):
+        """`audit_log` may be an instance or a callable returning one.
+
+        A CALLABLE because this store SURVIVES a configuration reload
+        while the audit log does not: each generation builds its own,
+        stamped with its own generation number. Holding an instance
+        means a write expiring after a reload is recorded against the
+        log object from STARTUP, so the entry names the wrong
+        generation -- a wrong-but-plausible value in an audit trail,
+        which is worse than an obviously missing one.
+
+        Same shape as UserDirectory's roles, and the same reason: this
+        is runtime state that carries a slice of configuration. See
+        HOT_RELOAD_PLAN.md.
+
+        Not yet load-bearing, since every generation's AuditLog writes
+        to the same file. It becomes load-bearing the moment pending
+        writes outlive several generations, which is exactly what an
+        approvals inbox is for.
+        """
         self._ttl = ttl
         self._audit_log = audit_log if audit_log is not None else AuditLog()
         self._lock = threading.Lock()
         self._writes: dict[str, _StoredWrite] = {}
+
+    @property
+    def audit_log(self) -> AuditLog:
+        return self._audit_log() if callable(self._audit_log) else self._audit_log
 
     def _expire_stale_locked(self) -> None:
         # Called with self._lock already held.
@@ -74,7 +171,7 @@ class PendingWriteStore:
         expired_ids = [write_id for write_id, stored in self._writes.items() if now >= stored.expires_at]
         for write_id in expired_ids:
             stored = self._writes.pop(write_id)
-            self._audit_log.log_write_expired(write_id, stored.owner_user_id, stored.pending.description)
+            self.audit_log.log_write_expired(write_id, stored.owner_user_id, stored.pending.description)
 
     def store(self, pending: PendingWrite) -> str:
         write_id = str(uuid.uuid4())
@@ -84,11 +181,248 @@ class PendingWriteStore:
             self._writes[write_id] = _StoredWrite(pending, pending.user_id, expires_at)
         return write_id
 
-    def pop(self, write_id: str, requesting_user_id: str) -> PendingWrite | None:
+    def record_task_decision(self, write_id: str, task_index: int,
+                              approver_user_id: str, approved: bool) -> bool:
+        """Records one reviewer's decision about one task.
+
+        RETURNS FALSE FOR A WRITE THAT IS NOT THERE, rather than
+        raising. A write can expire between a reviewer opening their
+        inbox and deciding, and that is an ordinary race rather than an
+        error -- the caller reports it as "no longer available", which
+        is what happened.
+
+        LAST DECISION WINS for the same reviewer on the same task. A
+        reviewer changing their mind before the request is invoked is
+        allowed; forbidding it would mean a misclick is permanent.
+
+        REJECTING IS RECORDED, NOT ACTED ON HERE. A rejected task
+        blocks invocation because the request is not fully approved --
+        the same mechanism as one nobody has looked at yet. Deleting
+        the write on a rejection would throw away the record of who
+        rejected it and why it never ran.
+        """
         with self._lock:
             self._expire_stale_locked()
             stored = self._writes.get(write_id)
-            if stored is None or stored.owner_user_id != requesting_user_id:
+            if stored is None:
+                return False
+            if not 0 <= task_index < len(stored.pending.sub_writes):
+                # OUT OF RANGE IS A CALLER BUG, not a race, so it is
+                # loud. A reviewer cannot produce this; only code
+                # miscounting tasks can.
+                raise IndexError(
+                    f"write {write_id} has {len(stored.pending.sub_writes)} task(s); "
+                    f"no task {task_index}"
+                )
+            stored.task_decisions[task_index] = TaskApproval(
+                approver_user_id=approver_user_id,
+                approved=approved,
+                decided_at=datetime.now(UTC),
+            )
+            return True
+
+    def task_decisions(self, write_id: str) -> dict[int, TaskApproval]:
+        """Every decision recorded against a write, by task index.
+
+        A COPY, so a caller iterating it cannot be surprised by another
+        reviewer deciding mid-loop -- and cannot mutate the store by
+        accident either.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            return dict(stored.task_decisions) if stored else {}
+
+    def is_fully_approved(self, write_id: str) -> bool:
+        """Whether every task has been approved.
+
+        THIS IS THE INVOCATION GATE, and it is deliberately strict:
+        Foundry's rule is that "all tasks associated with a request
+        must be approved for the request to be invoked". One task
+        undecided or rejected means the whole request waits.
+
+        AN UNKNOWN WRITE IS NOT APPROVED. A write that expired between
+        the last approval and this check must not read as ready.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            if stored is None:
+                return False
+            decisions = stored.task_decisions
+            return all(
+                index in decisions and decisions[index].approved
+                for index in range(len(stored.pending.sub_writes))
+            )
+
+    def awaiting(self, may_claim) -> list[tuple[str, PendingWrite]]:
+        """Every unexpired write the caller may act on, id and all.
+
+        THE SAME PREDICATE claim() takes, deliberately. A listing that
+        decided eligibility differently from the claim would show writes
+        that cannot be claimed, or hide ones that can -- and the second
+        is worse, because an approver would never learn a decision was
+        waiting for them.
+
+        EXPIRES FIRST, so a listing never shows a write that would 404
+        on the next request. A stale entry in an inbox is worse than an
+        absent one: the reviewer spends attention on a decision that has
+        already been taken away from them.
+
+        RETURNS IDS, and that is the point -- before this, confirming a
+        write required knowing its id, which only the proposer had. A
+        four-eyes rule was enforceable and unreachable: the one person
+        who could find the write was the one person forbidden to
+        approve it.
+
+        NOT SORTED HERE. Oldest-first is what an inbox wants, but that
+        is a presentation choice and the caller has the timestamps.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            return [
+                (write_id, stored.pending)
+                for write_id, stored in self._writes.items()
+                # A RESERVED WRITE IS HIDDEN. Somebody is deciding on
+                # it right now, and a reservation lasts one request --
+                # showing it would invite a second reviewer to open
+                # something about to disappear. If the decision fails
+                # it is released and reappears.
+                if not stored.reserved and may_claim(stored.pending)
+            ]
+
+    def expires_at(self, write_id: str) -> str | None:
+        """When a write stops being decidable, as an ISO timestamp.
+
+        SEPARATE FROM awaiting(), because the expiry is the store's own
+        bookkeeping rather than part of the write -- PendingWrite does
+        not carry it, and adding it there would put a value that
+        changes per storage into the object being stored.
+        """
+        with self._lock:
+            stored = self._writes.get(write_id)
+            return stored.expires_at.isoformat() if stored is not None else None
+
+    @contextmanager
+    def reserved(self, write_id: str, may_claim):
+        """Holds a write while a decision is made, then commits or releases.
+
+        WHY TWO PHASES. claim() removed the write and handed it back,
+        and the decision could then FAIL -- a four-eyes rule refusing a
+        self-approval, or a field the ontology no longer declares. The
+        proposal was already gone. The colleague entitled to approve it
+        never got the chance and nothing told them it had existed.
+
+        Worse than losing a write, because the refusal is the system
+        working correctly: every control built for this flow lands
+        AFTER the point of no return.
+
+        RESERVATION IS UNDER THE LOCK, so the atomicity claim() existed
+        for survives: two approvers cannot both reserve one write, and
+        the second sees exactly what an unknown id looks like.
+
+        A CONTEXT MANAGER RATHER THAN THREE CALLS, because the release
+        is the half that gets forgotten. An exception anywhere in the
+        body -- a criteria violation, a database failure, a bug --
+        puts the write back. Only a clean exit consumes it.
+
+        A CRASH BETWEEN RESERVE AND COMMIT leaves a write reserved
+        forever, which is why expiry still applies to reserved writes:
+        the TTL is the backstop, and a stuck reservation resolves
+        itself rather than needing a restart.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            if stored is None or stored.reserved or not may_claim(stored.pending):
+                reserved = None
+            else:
+                self._writes[write_id] = replace(stored, reserved=True)
+                reserved = stored.pending
+
+        if reserved is None:
+            yield None
+            return
+
+        committed = False
+        try:
+            yield reserved
+            committed = True
+        finally:
+            with self._lock:
+                still_there = self._writes.get(write_id)
+                if still_there is None:
+                    # Expired mid-decision. Nothing to commit or put
+                    # back, and the expiry was already audited.
+                    pass
+                elif committed:
+                    del self._writes[write_id]
+                else:
+                    self._writes[write_id] = replace(still_there, reserved=False)
+
+    def duplicates_of(self, write_id: str) -> int:
+        """How many OTHER pending writes propose the same change.
+
+        SURFACED, NOT PREVENTED, and that distinction is the whole
+        design. A second identical proposal might be a double-click, or
+        a colleague re-requesting something forgotten, or a deliberate
+        nudge -- and Elysium cannot tell which. Foundry allows
+        duplicates too and relies on the reviewer seeing them together.
+
+        What was actually wrong was that three identical rows were
+        INDISTINGUISHABLE: same action, same object, same values, no
+        way to tell one mistake pasted three times from three separate
+        requests. A reviewer approving one left two behind with nothing
+        explaining why.
+
+        IDENTITY IS THE CHANGE, NOT THE PROPOSER. Two people
+        independently proposing the same edit is the clearest case of a
+        duplicate there is, and keying on the proposer would hide
+        exactly that.
+
+        Reserved writes are counted: somebody deciding on one right now
+        does not make it a different proposal, and excluding it would
+        make the count flicker during a decision.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            if stored is None:
+                return 0
+            fingerprint = _fingerprint(stored.pending)
+            return sum(
+                1 for other_id, other in self._writes.items()
+                if other_id != write_id and _fingerprint(other.pending) == fingerprint
+            )
+
+    def claim(self, write_id: str, may_claim) -> PendingWrite | None:
+        """Removes and returns a write, if the caller may act on it.
+
+        THE PREDICATE RUNS UNDER THE LOCK, which is the whole reason
+        this is a store method and not two calls. A caller that looked
+        the write up, decided, and then popped it would leave a window
+        in which two approvers both pass the check and both claim the
+        same write -- and the second one applies a change that was
+        already applied.
+
+        WHO MAY CLAIM IS THE CALLER'S QUESTION, not this store's. It
+        used to be answered here as owner-equality, which made
+        four-eyes unreachable: the only person who could confirm a
+        write was the one person a four-eyes rule forbids. Policy
+        belongs where the grants and criteria live; atomicity belongs
+        here.
+
+        UNIFORM DENIAL IS PRESERVED BY CONSTRUCTION. Unknown id,
+        expired id and ineligible caller all return None, and the
+        caller cannot tell which -- the same property the old
+        owner-equality check had, kept deliberately rather than
+        rebuilt. A probing caller learns nothing about which write ids
+        exist.
+        """
+        with self._lock:
+            self._expire_stale_locked()
+            stored = self._writes.get(write_id)
+            if stored is None or not may_claim(stored.pending):
                 return None
             del self._writes[write_id]
             return stored.pending

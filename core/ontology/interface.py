@@ -74,6 +74,27 @@ from typing import Any
 from core.adapter_roles import ReadAdapter, WriteAdapter
 
 
+class StorageUnavailable(RuntimeError):
+    """A source could not answer, for a reason the operator can act on.
+
+    RAISED BY ADAPTERS, caught at the API boundary, and never confused
+    with a bug. A dropped source table, a renamed column, a database
+    restored from a state that predates the ontology -- all deployment
+    problems with specific remedies, and all of them arrived as opaque
+    500s before this existed.
+
+    A DISTINCT TYPE RATHER THAN A MESSAGE, because the route has to
+    tell these apart from a genuine fault: one is worth showing the
+    caller verbatim and the other is not. Catching RuntimeError
+    broadly would eventually swallow a real bug and report it as a
+    configuration problem, which is the more expensive mistake.
+
+    Lives here, on the adapter contract, because every adapter owes the
+    same promise -- a future Postgres or REST adapter raises this for
+    the same class of failure rather than inventing its own.
+    """
+
+
 class ExternalReadAdapter(ReadAdapter):
     max_concurrent_reads: int | None
 
@@ -190,6 +211,27 @@ class ExternalReadAdapter(ReadAdapter):
         connection and copies the customer's own data verbatim, and
         RBAC/MAC is applied at read time by DataMediator, never at
         ingest.
+        """
+
+    @abstractmethod
+    def columns_present(self, table_name: str) -> set[str]:
+        """Which columns the source table ACTUALLY has, right now.
+
+        For the sync, and for one question: has a column the ontology
+        declares gone away? Until this existed, a vanished column
+        surfaced as whatever the adapter's own read happened to raise
+        -- storage behaviour standing in for a policy, which is the
+        thing core/mirror/ is trying to stop doing.
+
+        RETURNS THE TRUTH ON DISK, not the ontology's opinion of it.
+        The caller already knows what it declared; the whole value here
+        is the difference between the two.
+
+        An absent or unreadable table returns an EMPTY SET rather than
+        raising. Every declared column is then missing, which is
+        accurate -- a dropped table is a dropped column for each of
+        them -- and it lets one code path describe both without the
+        caller distinguishing a failure from an answer.
         """
 
     @abstractmethod

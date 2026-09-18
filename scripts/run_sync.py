@@ -52,8 +52,14 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-from core.deployment_loader import load_deployment_bundle, resolve_runtime_paths
+from core.deployment_loader import (
+    build_live_read_adapters,
+    load_deployment_bundle,
+    resolve_runtime_paths,
+)
 from core.mirror.iceberg_sync import IcebergMirrorSync
+from core.mirror.manifest import publish_manifest
+from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
 from core.sqlite_connection import require_assertions_enabled
 
@@ -124,15 +130,56 @@ def run_sync(runtime_paths=None) -> int:
             runtime_paths.config_dir, runtime_paths.data_dir
         )
         targets = resolve_sync_targets({"object_types": config.schema})
-        sync = IcebergMirrorSync(runtime_paths.data_dir / "mirror", mediator.adapters)
+        # THE WRITE LOG IS PASSED, and without it the drift policy
+        # refuses every vanished column rather than absorbing one it
+        # could not check. The mediator already holds the reader, so
+        # this costs nothing and is the difference between "nothing
+        # depends on this column" and "I did not look".
+        sync = IcebergMirrorSync(
+            # LIVE ADAPTERS, NEVER THE MEDIATOR'S. With
+            # read_from_mirror on -- the default now -- the mediator's
+            # adapters are MirrorReadAdapters, so a sync built from
+            # them would read the mirror to build the mirror and never
+            # touch the source at all.
+            #
+            # Found on a real deployment within an hour of the default
+            # flipping: dropping silver and re-syncing reported a
+            # source column "gone", because the thing being read was
+            # the empty silver table.
+            runtime_paths.data_dir / "mirror", build_live_read_adapters(),
+            write_log=mediator.write_log,
+            # WHERE THE WAREHOUSE LIVES, from config.yaml's mirror.storage.
+            # Empty means local, which is what every deployment does today.
+            #
+            # Wired HERE and not only in the class, because a capability the
+            # class supports and no caller passes is one a deployment cannot
+            # use. That gap existed for a commit: the storage parameter was
+            # built and tested end to end against a real S3 endpoint while
+            # nothing passed it.
+            storage=dict(config.mirror_storage),
+        )
+
+        # WHAT THE LAKE SAYS ABOUT ITSELF, published beside the data.
+        # A lake in object storage already survives its installation
+        # being deleted; without this it cannot say what any of the
+        # data MEANS to whatever comes next.
+        publish_manifest(sync, config)
 
         failures = 0
+        attempts = SyncAttempts(
+            runtime_paths.data_dir / "mirror" / "sync_attempts.db")
+        # SWEPT AT THE START, not on a timer. A sync is the only
+        # thing that writes here, so it is the only place a sweep
+        # can happen without inventing a scheduler -- the same
+        # argument api/reload.py makes about keeping one out.
+        attempts.forget_older_than()
         for target in targets:
             label = f"{target.silo_name}.{target.table_name}"
             try:
                 result = sync.sync_table(
                     target.silo_name, target.table_name, target.id_column,
                     target.columns, target.column_types,
+                    target.fields_by_column,
                 )
             except Exception as exc:
                 # Per-table, deliberately -- see this module's docstring.
@@ -141,7 +188,18 @@ def run_sync(runtime_paths=None) -> int:
                 # tool, and the real cause is what an operator needs.
                 failures += 1
                 print(f"FAILED  {label}: {exc}", file=sys.stderr)
+                # RECORDED BEFORE IT IS PRINTED, because stderr is
+                # the thing nobody sees. A refused sync leaves the
+                # previous snapshot in place, so from the mirror's
+                # own timestamps it is indistinguishable from a
+                # source that has not changed -- and the first is an
+                # incident while the second is Tuesday.
+                attempts.record(
+                    target.silo_name, target.table_name, "refused",
+                    str(exc),
+                )
                 continue
+            attempts.record(target.silo_name, target.table_name, "synced")
             print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")

@@ -26,6 +26,32 @@ class OllamaAdapter:
         # inference at a time. A hosted API adapter would declare a
         # much higher number, or None.
         self.max_concurrent_requests = connection.get("max_concurrent_requests", 1)
+        # PROVIDER OPTIONS, passed through opaquely. Anything Ollama
+        # accepts under its own "options" key -- num_ctx, num_thread,
+        # num_batch, seed, and so on -- is a deployment decision, not a
+        # code change: different hardware genuinely needs different
+        # values, and enumerating Ollama's option names in core/ would
+        # both break llm_connection's deliberate opacity and go stale.
+        #
+        # NAMESPACED UNDER "options", NEVER MERGED INTO THE PAYLOAD.
+        # This is a security property, not a style choice. Ollama's
+        # "messages" and "format" are TOP-LEVEL keys; a blind
+        # payload.update(config) would let a config file rewrite the
+        # conversation itself or silently disable JSON mode. Config
+        # supplies inference parameters and nothing else.
+        #
+        # The cost of opacity, stated plainly: a misspelled option name
+        # is ignored by Ollama at request time rather than rejected at
+        # load, which is weaker than this project's usual "fail loudly
+        # at startup" discipline. Accepted because validating the names
+        # here would require core/ to carry Ollama's option list.
+        self.options = dict(connection.get("options") or {})
+        # Whether the model stays resident between requests. Ollama's
+        # own default evicts after five minutes; -1 pins it. On CPU-only
+        # hardware a reload has been measured at 12-47 seconds, paid
+        # once per query or worse, so this is worth a deployment being
+        # able to set.
+        self.keep_alive = connection.get("keep_alive")
 
     def chat(self, system_prompt: str, user_message: str,
               json_mode: bool = False, temperature: float | None = None) -> str:
@@ -54,8 +80,54 @@ class OllamaAdapter:
         }
         if json_mode:
             payload["format"] = "json"
+        if self.keep_alive is not None:
+            payload["keep_alive"] = self.keep_alive
+        # THE CALLER'S TEMPERATURE WINS over a configured one,
+        # deliberately. next_step() passes temperature=0 because a step
+        # has to parse as one specific JSON shape; a deployment quietly
+        # raising it would make step selection erratic and the audit
+        # trail harder to reason about. Config sets a default for calls
+        # that express no opinion, never an override for those that do.
+        # DELIBERATION OFF BY DEFAULT, for the same reason the caller's
+        # temperature wins above: a reasoning model emits a chain of
+        # thought BEFORE its answer, and neither call here wants one. A
+        # step has to parse as a specific JSON shape; synthesis has a
+        # human waiting.
+        #
+        # THE COST IS THE WHOLE STORY ON THIS HARDWARE. Measured on
+        # this deployment, asked to reply with a single word: phi4-mini
+        # emitted 2 tokens, gemma4:e2b 84, qwen3.5:2b 370. At ~1.5
+        # tokens/sec that is under a second against six minutes, and
+        # think=false cut qwen3.5:2b from 370 tokens back to 2.
+        #
+        # NOTHING IS PAID TODAY -- no configured model reasons -- and
+        # that is exactly why this is worth sending now. The newest
+        # small models increasingly reason BY DEFAULT, so the first
+        # deployment to configure one would inherit a several-hundred-
+        # token surprise per hop with nothing in its config mentioning
+        # it. The failure would look like the deployment being slow.
+        #
+        # A DEPLOYMENT CAN STILL ASK FOR IT, by setting think in its own
+        # llm_connection options -- which is why this is applied BEFORE
+        # the passthrough rather than after. The Ollama-specific key
+        # objection is answered by where this lives: an Ollama key in
+        # the Ollama adapter is that adapter's job, and a provider
+        # without the concept simply never sees it.
+        payload["think"] = False
+
+        options = {**self.options}
         if temperature is not None:
-            payload["options"] = {"temperature": temperature}
+            options["temperature"] = temperature
+        if "think" in self.options:
+            # An explicit deployment choice wins. `think` is not an
+            # Ollama *option*, it is a top-level payload key, so a
+            # deployment naming it in connection options means the
+            # payload rather than the options block.
+            payload["think"] = self.options["think"]
+            options.pop("think", None)
+
+        if options:
+            payload["options"] = options
 
         try:
             response = requests.post(self.base_url, json=payload, timeout=self.timeout_seconds)

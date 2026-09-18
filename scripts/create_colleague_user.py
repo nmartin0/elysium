@@ -15,12 +15,9 @@ than failing, so re-running after a reboot costs nothing.
 """
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from core.deployment_loader import load_deployment, resolve_runtime_paths  # noqa: E402
-from core.user_directory import UserDirectory  # noqa: E402
+from core.deployment_loader import load_deployment, resolve_runtime_paths
+from core.user_directory import UserDirectory
 
 # The same role and region as create_debug_user.py's account. If those
 # change, this must change with them or the experiment silently stops

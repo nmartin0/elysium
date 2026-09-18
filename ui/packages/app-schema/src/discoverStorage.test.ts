@@ -1,12 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 
-import {
-  getFavourites,
-  getRecent,
-  isFavourite,
-  recordVisit,
-  toggleFavourite,
-} from './discoverStorage'
+import { getFavourites, getRecent, isFavourite, recordVisit, toggleFavourite } from './discoverStorage'
 
 const ALL = ['Customer', 'Transaction', 'Account']
 

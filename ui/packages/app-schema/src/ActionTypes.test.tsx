@@ -18,7 +18,8 @@ const TRANSFER = {
   affected_object_types: ['Account'],
   parameters: {
     new_from_balance: {
-      type: 'number', required: true,
+      type: 'number',
+      required: true,
       display_name: 'New source balance',
       description: 'The balance the source account should END with.',
     },
@@ -28,7 +29,6 @@ const TRANSFER = {
 
 beforeEach(() => {
   getVisibleActionTypesCached.mockReset()
-
 })
 
 describe('ActionTypes', () => {

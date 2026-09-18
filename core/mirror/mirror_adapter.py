@@ -50,6 +50,7 @@ Used by: core/deployment_loader.py, when a deployment opts into
          mirror-backed reads
 """
 
+from collections.abc import Mapping
 from typing import Any
 
 from pyiceberg.catalog.sql import SqlCatalog
@@ -73,7 +74,8 @@ class MirrorReadAdapter(ExternalReadAdapter):
     # concurrently, no per-backend limit to declare.
     max_concurrent_reads = None
 
-    def __init__(self, catalog: SqlCatalog, silo_name: str):
+    def __init__(self, catalog: SqlCatalog, silo_name: str,
+                 snapshot_ids: "Mapping[str, int] | None" = None):
         # Takes an already-built catalog rather than building its own:
         # one catalog is shared by every silo's adapter, since they all
         # read the same mirror. silo_name is what maps this adapter to
@@ -81,6 +83,21 @@ class MirrorReadAdapter(ExternalReadAdapter):
         # layout core/mirror/iceberg_sync.py writes.
         self._catalog = catalog
         self.silo_name = silo_name
+        # WHICH SNAPSHOT this adapter reads, per table. None means
+        # "whatever is current", which is what every read did before
+        # generations existed.
+        #
+        # PINNING MATTERS BECAUSE A SYNC CAN COMMIT MID-QUERY. Without
+        # it, hop 1 reads Customer as it was before a sync and hop 5
+        # reads Transaction as it is after -- an answer assembled from
+        # two points in time that was never true at either. Iceberg
+        # gives snapshot isolation for free; this is what asks for it.
+        #
+        # Set per GENERATION, so a reload is what moves the mirror
+        # forward. That makes publishing new data the same operation as
+        # publishing new configuration, rather than a second mechanism
+        # with its own timing -- see HOT_RELOAD_PLAN.md step 5.
+        self._snapshot_ids = dict(snapshot_ids or {})
 
     # Iceberg has In, NotIn and range comparisons natively. It has NO
     # substring predicate -- StartsWith is the closest and is not the
@@ -222,6 +239,25 @@ class MirrorReadAdapter(ExternalReadAdapter):
             return []
         return arrow.to_pylist()
 
+    def columns_present(self, table_name: str) -> set[str]:
+        """What the MIRROR holds, which is not what the source holds.
+
+        Worth being clear about, because the sync uses this method on
+        the SOURCE adapter to detect a vanished column. Asked of the
+        mirror it answers a different question -- what was copied here
+        as of the pinned snapshot -- and that is the honest answer for
+        an adapter that reads a copy.
+
+        A table absent from the catalog returns an empty set, matching
+        the contract: every declared column is then missing, which is
+        accurate for a table that is not there.
+        """
+        try:
+            table = self._catalog.load_table(f"{self.silo_name}.{table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return set()
+        return {field.name for field in table.schema().fields}
+
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         via_table = field_config["via_table"]
         via_column = field_config["via_column"]
@@ -254,11 +290,17 @@ class MirrorReadAdapter(ExternalReadAdapter):
         # called table.scan() twice when a filter was present and threw
         # the first result away. Harmless but wasteful, and misleading
         # to read.
-        if row_filter is None:
-            scan = table.scan(selected_fields=selected_fields)
-        else:
-            scan = table.scan(selected_fields=selected_fields, row_filter=row_filter)
-        return scan.to_arrow()
+        # The pinned snapshot, or the table's current state when this
+        # adapter has no pin for it -- a table synced for the first
+        # time AFTER this generation was built has no id here, and
+        # reading its current state is better than reading nothing.
+        snapshot_id = self._snapshot_ids.get(table_name)
+        scan_kwargs: dict[str, Any] = {"selected_fields": selected_fields}
+        if row_filter is not None:
+            scan_kwargs["row_filter"] = row_filter
+        if snapshot_id is not None:
+            scan_kwargs["snapshot_id"] = snapshot_id
+        return table.scan(**scan_kwargs).to_arrow()
 
     def _conditions_to_filter(self, conditions: list):
         """Filter conditions as an Iceberg expression.

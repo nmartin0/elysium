@@ -36,9 +36,7 @@ interface ViewSelectorProps {
   label?: string
 }
 
-export default function ViewSelector({
-  views, selected, onSelect, label = 'View',
-}: ViewSelectorProps) {
+export default function ViewSelector({ views, selected, onSelect, label = 'View' }: ViewSelectorProps) {
   return (
     <div className="workspace__filter">
       {/* A real label, not a heading. This names a group of controls,

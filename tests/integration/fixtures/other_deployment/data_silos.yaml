@@ -1,0 +1,5 @@
+data_silos:
+  fleet_db:
+    adapter: sqlite
+    connection:
+      path: "other_fixtures/fleet.db"

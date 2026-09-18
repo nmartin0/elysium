@@ -25,10 +25,15 @@ Called by: scripts/run_deployment.py, scripts/serve_requests.py,
            api/app.py, tests/integration/conftest.py
 """
 
+import hashlib
+import itertools
 import os
+import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from pyiceberg.catalog.sql import SqlCatalog
 
@@ -36,9 +41,14 @@ from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
+
+if TYPE_CHECKING:
+    from core.agent.agentic_loop import AgentLoop
+    from core.ontology.write_mediator import WriteMediator
 from core.functions.registry import validate_function_declarations
+from core.immutable import deep_freeze
 from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.policy_validation import validate_roles
+from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
 from core.mirror.mirror_adapter import MirrorReadAdapter
@@ -47,6 +57,7 @@ from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.mediator import DataMediator
 from core.ontology.object_type_validation import validate_object_types
+from core.ontology.submission_criteria import validate_action_type_criteria
 from core.ontology.write_log import WriteLogReader, WriteLogWriter
 
 # Two real, SEPARATE registries -- not one, mapping to a (read, write)
@@ -75,8 +86,18 @@ _LLM_ADAPTER_REGISTRY: dict[str, type] = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class DeploymentConfig:
+    """What this deployment IS. Immutable, and enforced rather than
+    asked for.
+
+    frozen=True stops a FIELD being rebound. It does nothing about
+    mutating what is inside one, so the dicts below are additionally
+    deep-frozen by load_deployment() -- see core/immutable.py for the
+    two concrete hazards that closes and why enforcement was chosen
+    over a convention.
+    """
+
     base_path: Path
     llm_provider: str            # e.g. "ollama" -- key into _LLM_ADAPTER_REGISTRY
     llm_connection: dict           # opaque to core/ -- e.g. {"base_url": ..., "request_timeout_seconds": ...}
@@ -86,6 +107,19 @@ class DeploymentConfig:
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
     max_concurrent_requests: int   # dispatch-layer thread pool size
+    # How long a proposed write waits for a decision.
+    #
+    # WAS A HARDCODED 15 MINUTES, which was right when the proposer
+    # confirmed their own write seconds later and is wrong for an
+    # approvals queue: the whole point is that the reviewer is somebody
+    # else, and somebody else is not necessarily at their desk. A
+    # colleague had fifteen minutes to notice, open and decide.
+    #
+    # Configurable rather than a new hardcoded number, because the
+    # right value is a property of how a deployment works -- a trading
+    # desk and a quarterly compliance review want different answers,
+    # and neither is Elysium's to pick.
+    pending_write_ttl_minutes: int
     schema: dict
     users: dict
     roles: dict                    # role name -> {"allowed_actions": [...]} -- RBAC
@@ -93,6 +127,17 @@ class DeploymentConfig:
     silo_configs: dict          # silo name -> {"adapter": ..., "connection": {...}}
     enabled_tools: list[str]      # from config.yaml tools.enabled -- GENUINELY optional,
                                    # unlike everything else here (see load_deployment())
+    mirror_storage: dict          # Where the Iceberg warehouse lives, and how to reach it.
+                                   # EMPTY MEANS LOCAL, which is correct for one host and what
+                                   # every deployment does today. A `warehouse` key moves it --
+                                   # to an s3:// URI for object storage -- and any other keys
+                                   # are passed to pyiceberg verbatim (s3.endpoint,
+                                   # s3.access-key-id and so on), deliberately: this layer
+                                   # should not invent its own vocabulary for someone else's
+                                   # options.
+                                   #
+                                   # Matters once a changelog exists, since the mirror then
+                                   # holds history no source can return. See ELT_ROADMAP.md.
     read_from_mirror: bool        # Phase 4 of the read-only mirror architecture -- serve
                                    # READS from the local Iceberg mirror rather than querying
                                    # the customer's own databases live. Writes are unaffected
@@ -106,6 +151,79 @@ class DeploymentConfig:
                                    # not a dataclass-level default -- same "explicit, not
                                    # silently inferred" discipline as writes_enabled/
                                    # visible_action_types in agent_step_prompt.py.
+
+    # --- WHICH CONFIGURATION THIS IS -------------------------------
+    #
+    # Elysium reads these four files once at startup. Nothing today can
+    # say WHICH configuration was in force for a given audit entry or a
+    # given pending write, because there has only ever been one. That
+    # stops being true the moment configuration can be reloaded while
+    # running, and it is already not quite true now: a restart with
+    # edited files produces a second configuration that the log cannot
+    # distinguish from the first.
+    #
+    # Stamped on the audit log and on pending writes rather than kept
+    # here alone -- see HOT_RELOAD_PLAN.md step 1. This is the whole of
+    # step 1a: identity only, no reloading, no behaviour change.
+    #
+    # Modelled on Palantir treating version as a PARAMETER carried by
+    # each operation rather than a global the server swaps: every
+    # Foundry Ontology call names the ontology it acts against.
+    # The four files' text, exactly as read. Carried so that whoever
+    # builds a generation can record it (core/config_history.py)
+    # without re-reading and possibly getting different bytes.
+    source_text: Mapping[str, str]
+    generation: int               # monotonic within one process, first load is 1
+    loaded_at: datetime           # when this configuration was read, UTC and aware
+    source_digest: str            # sha256 over the four files' bytes -- see _source_digest()
+
+
+# Assigned by the loader, never by a caller, so two callers cannot mint
+# the same number. Guarded because a reload triggered by a signal
+# handler and one triggered by an HTTP request could otherwise race
+# (step 3), and getting the counter right later is harder than getting
+# it right now.
+_generation_lock = threading.Lock()
+_generation_counter = itertools.count(1)
+
+
+def _next_generation() -> int:
+    with _generation_lock:
+        return next(_generation_counter)
+
+
+# The four files that ARE the deployment. Named once so that
+# _source_digest() and load_deployment() cannot drift into disagreeing
+# about what a deployment consists of -- the same reasoning as the step
+# vocabulary probe in tests/unit/test_step_vocabulary_consistency.py.
+CONFIG_FILENAMES = ["config.yaml", "ontology_schema.yaml", "policy.yaml", "data_silos.yaml"]
+
+
+def _source_digest(base_path: Path, filenames: list[str]) -> str:
+    """A stable fingerprint of the configuration files on disk.
+
+    Over the RAW BYTES, not the parsed structures, and deliberately:
+    the question this answers is "are these the same files as last
+    time", which is about what was read, not about what it meant.
+    Comparing parsed dicts would call a comment change identical and a
+    key reordering different, both backwards for this purpose.
+
+    Sorted by filename so the digest does not depend on iteration
+    order, and each file's name is fed in alongside its content so that
+    moving text between two files changes the digest.
+
+    A missing file is fed as its name with no content rather than
+    raising. load_deployment() below reports a missing file far better
+    than a hash function could, and this must not become a second,
+    worse place that error surfaces.
+    """
+    digest = hashlib.sha256()
+    for name in sorted(filenames):
+        digest.update(name.encode())
+        path = base_path / name
+        if path.exists():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
 
 
 def _freeze_roles(roles_raw: dict) -> dict:
@@ -194,7 +312,64 @@ def validate_identifier_types(schema_raw: dict, policy_raw: dict) -> None:
         _require_str(user_id, "A user_id in policy.yaml's own users section")
 
 
+def _resolve_models(llm_config: dict) -> tuple[str, str]:
+    """Returns (step_model, synthesis_model) from either config form.
+
+    TWO FORMS, and exactly one per deployment:
+
+        model: "phi4-mini"          # one model serves every call
+        step_model / synthesis_model  # a different model for each
+
+    The single form exists because running two models means Ollama
+    loading and evicting between them -- measured at 12-47 seconds per
+    load on CPU-only hardware, paid at least once per query. One model
+    stays resident.
+
+    Naming BOTH forms is rejected rather than resolved by precedence.
+    A deployment that sets `model` and `step_model` has two plausible
+    intentions and no way to signal which, and silently preferring one
+    means the operator's next debugging session starts from a false
+    belief about which model ran. Fails at load, like every other
+    deployment-configuration error.
+    """
+    single = llm_config.get("model")
+    step = llm_config.get("step_model")
+    synthesis = llm_config.get("synthesis_model")
+
+    if single is not None:
+        if step is not None or synthesis is not None:
+            raise ValueError(
+                "config.yaml llm: set EITHER 'model' (one model for every call) "
+                "OR both 'step_model' and 'synthesis_model', never both forms."
+            )
+        return single, single
+
+    if step is None or synthesis is None:
+        missing = [name for name, value in (("step_model", step), ("synthesis_model", synthesis))
+                   if value is None]
+        raise ValueError(
+            f"config.yaml llm: missing {missing}. Set 'model' for one model serving "
+            f"every call, or both 'step_model' and 'synthesis_model' for two."
+        )
+    return step, synthesis
+
+
 def load_deployment(base_path: Path) -> DeploymentConfig:
+    # Digested BEFORE parsing, so the fingerprint describes exactly the
+    # bytes this load saw. Taking it afterwards would leave a window in
+    # which a file changed between being read and being hashed.
+    source_digest = _source_digest(base_path, CONFIG_FILENAMES)
+    # The same bytes the digest was taken over, kept so a generation
+    # can later be inspected, diffed or restored -- see
+    # core/config_history.py. Read HERE rather than re-read later for
+    # the same reason the digest is taken here: anything else leaves a
+    # window in which a file changed between the two reads, and the
+    # history would then describe a configuration that never ran.
+    source_text = {
+        name: (base_path / name).read_text()
+        for name in CONFIG_FILENAMES if (base_path / name).exists()
+    }
+
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
     policy_raw = load_yaml(base_path / "policy.yaml")
@@ -226,36 +401,88 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
 
     validate_function_declarations(enabled_tools, schema_raw["object_types"])
 
+    step_model, synthesis_model = _resolve_models(config["llm"])
+
+    # Named before the config is built, because the VALIDATORS below run
+    # against this RAW form rather than against the frozen config.
+    #
+    # WHY: deep_freeze turns lists into tuples, and several validators
+    # type-check with isinstance(..., list) -- correctly, since their
+    # job is to check what was parsed out of a YAML file, and that
+    # genuinely is a list. Validating the raw parse and freezing the
+    # RESULT keeps both honest: validators check the document, the
+    # frozen config is what the running system holds.
+    #
+    # Found by the tests, not by inspection. An earlier version of this
+    # commit froze first, and every action type in every deployment
+    # failed with "'sub_writes' must be a non-empty list".
+    action_types_raw = schema_raw.get("action_types", {})
+
     try:
+        # DEEP-FROZEN as it is built, not afterwards. Freezing a
+        # constructed object would mean constructing a mutable one
+        # first and trusting nothing touched it in between; this way
+        # there is no window and no mutable version to leak.
         deployment_config = DeploymentConfig(
+            source_text=deep_freeze(source_text),
+            generation=_next_generation(),
+            loaded_at=datetime.now(UTC),
+            source_digest=source_digest,
             base_path=base_path,
             llm_provider=config["llm"]["provider"],
-            llm_connection=config["llm"]["connection"],
-            step_model=config["llm"]["step_model"],
-            synthesis_model=config["llm"]["synthesis_model"],
+            llm_connection=deep_freeze(config["llm"]["connection"]),
+            step_model=step_model,
+            synthesis_model=synthesis_model,
             max_hops=config["agent"]["max_hops"],
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
             max_concurrent_requests=config["agent"].get("max_concurrent_requests", 4),
-            schema=schema_raw["object_types"],
-            users=policy_raw["users"],
-            roles=_freeze_roles(policy_raw["roles"]),
+            # FOUR HOURS by default, not fifteen minutes. Long enough
+            # that a reviewer can be in a meeting; short enough that a
+            # forgotten proposal does not outlive the context that
+            # produced it. A proposal that expires leaves an audit
+            # trail either way -- see log_write_expired().
+            pending_write_ttl_minutes=config.get("writes", {}).get(
+                "pending_write_ttl_minutes", 240,
+            ),
+            schema=deep_freeze(schema_raw["object_types"]),
+            users=deep_freeze(policy_raw["users"]),
+            roles=deep_freeze(_freeze_roles(policy_raw["roles"])),
             security_attribute=policy_raw["security_attribute"],
-            silo_configs=data_silos_raw["data_silos"],
-            enabled_tools=enabled_tools,
+            silo_configs=deep_freeze(data_silos_raw["data_silos"]),
+            enabled_tools=deep_freeze(enabled_tools),
             # GENUINELY optional in the YAML itself -- .get() with a {}
             # default, same as enabled_tools above, NOT inside the
             # strict required-key try/except: a deployment predating
             # named actions entirely (or simply not using them) has no
             # "action_types:" key in ontology_schema.yaml at all, and
             # that must remain completely valid.
-            action_types=schema_raw.get("action_types", {}),
+            action_types=deep_freeze(action_types_raw),
             # GENUINELY optional, defaulting to False -- a deployment
             # that has never run a sync (or simply wants live reads)
             # must stay completely valid, and the live path stays the
             # default until a deployment explicitly opts in. Phase 4 of
             # the read-only mirror architecture; see ROADMAP.md.
-            read_from_mirror=config.get("mirror", {}).get("read_from_mirror", False),
+            # `or {}` AS WELL AS A DEFAULT, because a YAML section whose
+            # every line is a comment parses as None rather than an empty
+            # mapping -- and a commented-out example is exactly what a
+            # deployment ships with. get("mirror", {}) returns None there,
+            # and None has no .get(). Found by the deployment linter the
+            # moment the example was written.
+            mirror_storage=deep_freeze((config.get("mirror") or {}).get("storage") or {}),
+            # DEFAULTS TO TRUE. The mirror was always meant to be the
+            # read path -- it is what makes reads independent of a
+            # source's availability and latency, and it is the layer
+            # where types are enforced. It shipped opt-in and
+            # commented out, which made a plain Elysium the opposite
+            # of its own design.
+            #
+            # A DEPLOYMENT MAY STILL TURN IT OFF, and the direct-read
+            # path stays for now: see UNIFIED_ROADMAP phase 0.5. It is
+            # a secondary option on the way to deprecation, and its
+            # likely future is as the refresh mechanism behind a
+            # read-through cache rather than as a serving path.
+            read_from_mirror=(config.get("mirror") or {}).get("read_from_mirror", True),
         )
     except KeyError as e:
         raise ValueError(f"Missing expected key {e} in config.yaml/ontology_schema.yaml/policy.yaml.") from e
@@ -267,13 +494,18 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # docstring for the full reasoning on why this belongs here, at
     # load time, not deferred to propose_action() -- including why a
     # missing "sub_writes" is now REJECTED, not silently skipped).
-    validate_action_types(deployment_config.action_types, deployment_config.schema)
+    validate_action_types(action_types_raw, schema_raw["object_types"])
+    # Separate call because core/ontology/action_types.py may not
+    # import core/ontology/submission_criteria.py -- they are siblings
+    # in pyproject.toml's core.ontology layering. See that function's
+    # own docstring.
+    validate_action_type_criteria(action_types_raw)
 
     # title_field -- an OPTIONAL, per-object-type display-name
     # declaration (see core/ontology/object_type_validation.py's own
     # module docstring for the full reasoning, including what's
     # DELIBERATELY still deferred).
-    validate_object_types(deployment_config.schema)
+    validate_object_types(schema_raw["object_types"])
 
     # Every role's own grants, checked against what they actually
     # reference -- see core/intermediate_layer/policy_validation.py's
@@ -283,6 +515,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # anywhere, just silently never match.
     validate_roles(deployment_config.roles, deployment_config.schema, deployment_config.action_types,
                     deployment_config.enabled_tools)
+    # Cross-grant coherence, which validate_roles() deliberately does
+    # not do -- see validate_role_coherence()'s own docstring for why
+    # it cannot live inside a function the linter calls per grant.
+    validate_role_coherence(deployment_config.roles)
 
     return deployment_config
 
@@ -323,6 +559,45 @@ def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | No
     return min(timestamps) if timestamps else None
 
 
+def build_live_read_adapters(config_dir: Path | None = None) -> dict:
+    """Read adapters that always talk to the SOURCE, never the mirror.
+
+    THE SYNC NEEDS THESE AND CANNOT USE THE MEDIATOR'S. When
+    read_from_mirror is on -- which is now the default -- the
+    mediator's adapters are MirrorReadAdapters, so a sync built from
+    them reads the mirror to build the mirror. The source is never
+    touched.
+
+    That is not a subtle failure. Found within an hour of flipping the
+    default, on a real deployment, where dropping silver and
+    re-syncing reported a source column "gone" -- because the thing
+    being read was the empty silver table rather than the database.
+
+    SEPARATE FROM THE MEDIATOR'S, not a flag on it, because the two
+    answer different questions. The mediator serves reads and should
+    obey the deployment's choice; the sync FILLS what those reads come
+    from and has no choice to obey.
+    """
+    paths = resolve_runtime_paths()
+    config = load_deployment(config_dir or paths.config_dir)
+
+    # THE SAME RESOLUTION build_generation() DOES, which is inline
+    # there rather than a function. A relative silo path is relative to
+    # the DATA directory, and an adapter built without that resolution
+    # opens a file that is not there.
+    resolved = {}
+    for silo_name, silo_config in config.silo_configs.items():
+        connection = dict(silo_config["connection"])
+        if "path" in connection:
+            connection["path"] = paths.data_dir / connection["path"]
+        resolved[silo_name] = {**silo_config, "connection": connection}
+
+    return cast(
+        "dict[str, ExternalReadAdapter]",
+        _build_adapters(resolved, _READ_ADAPTER_REGISTRY),
+    )
+
+
 def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
                           data_dir: Path) -> dict[str, ExternalReadAdapter]:
     # THE Phase 4 cutover, and deliberately the whole of it: which
@@ -349,12 +624,60 @@ def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
     # mirror, and each silo maps to its own Iceberg namespace, matching
     # exactly what core/mirror/iceberg_sync.py writes.
     mirror_dir = data_dir / "mirror"
+    # CREATED ON DEMAND, because reading from the mirror is now the
+    # default and a fresh deployment has never synced. SqlCatalog opens
+    # a SQLite file, and SQLite will not create one in a directory that
+    # does not exist -- so without this, every deployment that has not
+    # yet run a sync fails at startup with "unable to open database
+    # file", which says nothing about mirrors.
+    #
+    # An empty catalog is the CORRECT state for a fresh deployment. The
+    # adapter returns no rows, data-freshness reports a mirror with no
+    # last_synced_at, and Browse says so rather than claiming the data
+    # is empty.
+    mirror_dir.mkdir(parents=True, exist_ok=True)
     catalog = SqlCatalog(
         "elysium_mirror",
         uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
         warehouse=f"file://{mirror_dir / 'warehouse'}",
     )
-    return {silo_name: MirrorReadAdapter(catalog, silo_name) for silo_name in resolved_silo_configs}
+    # Computed HERE, where the catalog already exists, and passed into
+    # each adapter rather than set on it afterwards. Setting it after
+    # construction would leave a window in which an adapter existed
+    # unpinned, and "mostly immutable" is the shape of object this
+    # project keeps finding bugs in.
+    snapshot_ids = _snapshot_ids_from_catalog(catalog, config)
+    return {
+        silo_name: MirrorReadAdapter(
+            catalog, silo_name,
+            snapshot_ids={
+                table: snapshot for (silo, table), snapshot in snapshot_ids.items()
+                if silo == silo_name
+            },
+        )
+        for silo_name in resolved_silo_configs
+    }
+
+
+def _snapshot_ids_from_catalog(catalog, config: DeploymentConfig) -> dict:
+    # {(silo, table): snapshot_id} for every mirrored table that has
+    # actually synced. A table that never has is ABSENT rather than
+    # present with a null: there is no snapshot to pin, and a
+    # placeholder would look like one.
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    from core.mirror.sync_targets import resolve_sync_targets
+
+    ids = {}
+    for target in resolve_sync_targets({"object_types": config.schema}):
+        try:
+            table = catalog.load_table(f"{target.silo_name}.{target.table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            continue
+        snapshot = table.current_snapshot()
+        if snapshot is not None:
+            ids[(target.silo_name, target.table_name)] = snapshot.snapshot_id
+    return ids
 
 
 def _build_adapters(
@@ -426,6 +749,153 @@ def resolve_runtime_paths() -> RuntimePaths:
     paths.secrets_dir.mkdir(parents=True, exist_ok=True)
     paths.secrets_dir.chmod(0o700)
     return paths
+
+
+@dataclass(frozen=True)
+class DeploymentGeneration:
+    """Everything derived from one load of the configuration files.
+
+    THE POINT IS THAT THESE MOVE TOGETHER OR NOT AT ALL. Until now they
+    were five separate attributes on api/app.py's `app.state`, and a
+    route read `app.state.mediator` and `app.state.config` as two
+    independent reads. Replacing them one at a time gives a window
+    where a request sees a new mediator and an old config -- schema and
+    grants disagreeing inside one request, which is an authorization
+    bug rather than a cosmetic one.
+
+    That is not hypothetical. Step 2a hit it directly: a test replaced
+    config.roles and the MEDIATOR carried on authorizing against the
+    old grants, because it holds its own reference. Mutation had only
+    ever "worked" because all three held the same dict object.
+
+    Frozen, and holding a deep-frozen DeploymentConfig, because the
+    read path takes no lock: a request reads this reference once and
+    uses it throughout. That is read-copy-update, and it is only sound
+    while the shared object genuinely cannot be mutated.
+
+    WHAT IS DELIBERATELY NOT HERE: sessions, credentials, the user
+    directory, lockout counters, rate limiters, pending writes, the
+    artifact store, the thread pool. Those are RUNTIME STATE and must
+    SURVIVE a reload. Rebuilding them would log out every user, discard
+    every pending write, and reset every lockout counter -- which would
+    let an attacker clear their own rate limit by triggering a reload.
+    See HOT_RELOAD_PLAN.md for the full split.
+    """
+
+    generation: int
+    loaded_at: datetime
+    source_digest: str
+
+    config: DeploymentConfig
+    mediator: DataMediator
+    write_mediator: "WriteMediator"
+    loop: "AgentLoop"
+    synthesis_client: LLMAdapter
+    write_adapters: dict
+
+    # WHICH DATA this generation reads, per mirrored table, as
+    # {"silo.table": snapshot_id}. The config digest answers "did the
+    # DEFINITION change"; this answers "which data does it describe".
+    # Two questions, two fields, deliberately not conflated -- folding
+    # snapshot state into the digest would make "did the config
+    # change?" unanswerable whenever a sync ran.
+    #
+    # Present from the start rather than added later because a
+    # generation's SHAPE is decided once; adding a field afterwards
+    # means changing every construction site twice.
+    #
+    # Empty when read_from_mirror is off: there is no mirror being read,
+    # so there is nothing to pin.
+    mirror_snapshots: Mapping[str, int]
+
+
+def repointed_silos(before: DeploymentConfig, after: DeploymentConfig) -> list[str]:
+    """Silos whose CONNECTION changed between two configurations.
+
+    THE MOST SECURITY-RELEVANT CHANGE A RELOAD CAN MAKE, and until this
+    it was invisible: repointing a silo changes WHERE THE CUSTOMER'S
+    DATA COMES FROM, and the audit entry said only that generation 7
+    became 8. Someone reviewing that log could not tell a model-timeout
+    tweak from a database being swapped underneath the ontology.
+
+    COMPARES THE CONNECTION ONLY, not the whole silo entry. Changing
+    the adapter TYPE is already a different silo in every way that
+    matters and shows up here too; changing an unrelated key does not,
+    because an audit line that fires on every edit is one nobody reads.
+
+    A silo ADDED or REMOVED is deliberately not reported as a repoint.
+    Neither redirects an existing read: a new silo has nothing pointed
+    at it yet, and a removed one fails validation at load if anything
+    still declares it.
+    """
+    changed = []
+    for name, new_silo in after.silo_configs.items():
+        old_silo = before.silo_configs.get(name)
+        if old_silo is None:
+            continue
+        if old_silo.get("connection") != new_silo.get("connection") or \
+                old_silo.get("adapter") != new_silo.get("adapter"):
+            changed.append(name)
+    return sorted(changed)
+
+
+def _mirror_snapshot_ids(mediator: DataMediator) -> Mapping[str, int]:
+    """What the READ ADAPTERS are actually pinned to, as
+    {"silo.table": snapshot_id}.
+
+    READ OFF THE ADAPTERS rather than re-enumerated from the catalog,
+    and that is the whole point. An independent second walk would be a
+    second source of truth: it could disagree with what the adapters
+    pinned -- a sync committing between the two would be enough -- and
+    the generation would then REPORT a snapshot nobody was reading.
+
+    Same reasoning as mediator.roles being the same OBJECT as
+    config.roles rather than an equal copy.
+    """
+    ids = {}
+    for silo_name, adapter in mediator.adapters.items():
+        for table_name, snapshot_id in getattr(adapter, "_snapshot_ids", {}).items():
+            ids[f"{silo_name}.{table_name}"] = snapshot_id
+    return deep_freeze(ids)
+
+
+def build_generation(
+    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None
+) -> DeploymentGeneration:
+    """Builds one complete, immutable generation from the files on disk.
+
+    PURE with respect to process state: it touches no global, mutates
+    nothing, and either returns a whole generation or raises. That is
+    what lets a failed reload leave the running generation untouched
+    (HOT_RELOAD_PLAN.md step 3), and what lets this be tested without
+    a server.
+
+    NOT included, deliberately: resume_pending_writes(). It recovers
+    writes interrupted by a crash and belongs to STARTING UP, not to
+    loading configuration. A reload must not repeat it -- the writes
+    it recovers are already recovered, and re-running it against
+    in-flight state is a different operation with different risks.
+    api/app.py calls it once, after the first generation is built.
+    """
+    from core.agent.agentic_loop import AgentLoop
+    from core.ontology.write_mediator import WriteMediator
+
+    config, mediator, write_adapters = load_deployment_bundle(config_dir, data_dir, log_dir)
+    write_mediator = WriteMediator(
+        mediator, write_adapters, config.roles, config.action_types, config.generation,
+    )
+    return DeploymentGeneration(
+        generation=config.generation,
+        loaded_at=config.loaded_at,
+        source_digest=config.source_digest,
+        config=config,
+        mediator=mediator,
+        write_mediator=write_mediator,
+        loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator),
+        synthesis_client=build_llm_adapter(config, config.synthesis_model),
+        write_adapters=write_adapters,
+        mirror_snapshots=_mirror_snapshot_ids(mediator),
+    )
 
 
 def load_deployment_bundle(
@@ -513,7 +983,10 @@ def load_deployment_bundle(
     # AuditLog itself (see its own docstring for why that default
     # exists and this store is never left without one) -- nothing
     # further to do here in that case.
-    audit_log = AuditLog(log_dir / "audit.log") if log_dir is not None else None
+    audit_log = (
+        AuditLog(log_dir / "audit.log", generation=config.generation)
+        if log_dir is not None else None
+    )
     # The mirror's own last-sync time -- what bounds the read-your-writes
     # overlay (see DataMediator._read_field_with_log_check()). None for a
     # live deployment, which disables the overlay entirely.

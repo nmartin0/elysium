@@ -1,4 +1,29 @@
-/* index.css -- layout and spacing, built on tokens.css.
+/* IN THE `components` LAYER, so the declared cascade order is real.
+ *
+ * See tokens.css for the full reasoning. In short: this file was
+ * UNLAYERED, unlayered styles beat every layer, and so a bare element
+ * selector here silently outranked Blueprint however specific
+ * Blueprint's own rule was.
+ *
+ * THIS DOES NOT MAKE BARE ELEMENT SELECTORS SAFE, and it would be
+ * easy to read it as though it did. `components` comes after `vendor`,
+ * so our rules still beat Blueprint's REGARDLESS OF SPECIFICITY --
+ * exactly as before. The `:not(.bp6-control)` guards below are still
+ * load-bearing, and the test listing every bare element selector is
+ * still the thing that catches a new one.
+ *
+ * What layering buys is smaller and real: the declared order becomes
+ * the ACTUAL order, so `utilities` and `overrides` will work when
+ * something needs them, and nothing here silently outranks a layer
+ * added later.
+ *
+ * The whole file is reindented by one level, which the formatter
+ * does and is not worth fighting -- a claim that this would be a
+ * two-line diff was wrong, and the diff is mechanical rather than
+ * small.
+ */
+@layer components {
+  /* index.css -- layout and spacing, built on tokens.css.
  *
  * This once read "deliberately plain, no design system", which was
  * right for a phase-one API client and wrong once people used it:
@@ -9,36 +34,75 @@
  * elevation carry meaning rather than being chosen per rule. Where a
  * literal survives below it is because the rule predates the tokens
  * and its own comment explains why the value is what it is.
+ *
+ * --- A SHRINKING CHILD NEEDS AN EXPLICIT MINIMUM ---------------------
+ *
+ * A flex item defaults to `min-width: auto` and a grid track to
+ * `min-content`. Both mean "never smaller than my contents", so a wide
+ * table inside one pushes its parent wider than the viewport instead
+ * of scrolling within it. The page grows a horizontal scrollbar, the
+ * fixed chrome stops lining up, and nothing in the offending rule
+ * looks wrong -- the cause is a default nobody wrote down.
+ *
+ * ALREADY APPLIED where it bites: `min-width: 0` on .app__content and
+ * .app__content main, `min-height: 0` on the shell rows, and
+ * `minmax(0, 1fr)` on every grid track that has to give.
+ *
+ * THE RULE, for whoever adds the next pane: a child of a flex or grid
+ * container that is expected to SHRINK -- because it scrolls, holds a
+ * table, or sits in a 1fr track -- needs min-width: 0, and min-height:
+ * 0 when the axis is vertical. A child with a FIXED width, as the
+ * sidebar and config pane have, does not; adding one there says
+ * something untrue about the layout.
+ *
+ * NOT ENFORCED BY A TEST, deliberately. Whether an element is a
+ * shrinking flex or grid child is not decidable from the text of its
+ * own rule, and three of the five scrolling panes here legitimately
+ * lack the property. A guard would be wrong three times in five, and a
+ * guard that cries wolf is weakened by whoever hits it next.
  */
 
-* {
-  box-sizing: border-box;
-}
+  * {
+    box-sizing: border-box;
+  }
 
-/* html and body locked too, or the document scrolls behind the shell
+  /* html and body locked too, or the document scrolls behind the shell
  * and the user gets two scrollbars -- one that moves nothing. */
-html,
-body,
-#root {
-  height: 100%;
-  overflow: hidden;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
 
-body {
-  margin: 0;
-  /* Stops the rubber-band bounce that makes a fixed shell feel like a
+  body {
+    margin: 0;
+    /* Stops the rubber-band bounce that makes a fixed shell feel like a
    * page on touch devices. */
-  overscroll-behavior: none;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
-  background: var(--surface-sunken);
-  color: var(--text-primary);
-}
+    overscroll-behavior: none;
+    /* SCROLL ANCHORING ON, explicitly rather than by default. When
+   * content loads ABOVE what the reader is looking at -- a chart
+   * resolving, a freshness note appearing, a Callout replacing a
+   * spinner -- the browser keeps their position instead of pushing the
+   * page down under them.
+   *
+   * It is the default in every engine that implements it, so this
+   * declares an intent rather than changing behaviour: it says nobody
+   * may turn it off further down without meeting this comment. The
+   * failure it prevents is the reader losing their line mid-sentence,
+   * which they experience as the app being twitchy rather than as a
+   * bug they could report. */
+    overflow-anchor: auto;
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      sans-serif;
+    background: var(--surface-sunken);
+    color: var(--text-primary);
+  }
 
-/* --- The shell is viewport-locked ---------------------------------
+  /* --- The shell is viewport-locked ---------------------------------
  *
  * This is an APPLICATION, not a document: the chrome stays put and the
  * regions inside it scroll independently. A terminal, not a page.
@@ -55,7 +119,7 @@ body {
  * than the screen. The vh line above is the fallback for anything that
  * does not know dvh.
  */
-/* --- The frame: header on top, everything else below ---------------
+  /* --- The frame: header on top, everything else below ---------------
  *
  * The header spans the FULL WIDTH above the rail, not beside it. That
  * is what the cloud consoles do, and it is what makes the three
@@ -68,17 +132,17 @@ body {
  * measures the LARGEST viewport, leaving a fixed shell taller than the
  * screen.
  */
-.app-frame {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 100vh;
-  height: 100dvh;
-  overflow: hidden;
-  background: var(--surface-sunken);
-  color: var(--text-primary);
-}
+  .app-frame {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    background: var(--surface-sunken);
+    color: var(--text-primary);
+  }
 
-/* --- The global header --------------------------------------------
+  /* --- The global header --------------------------------------------
  *
  * Documented as "a mandatory element in every application", carrying
  * the product name and the GLOBAL actions -- the things that belong to
@@ -88,19 +152,19 @@ body {
  * content, and marked Classes.DARK for the same reason: a Blueprint
  * widget styles itself for whatever surface it is told it sits on.
  */
-.app__header {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-normal);
-  padding: 0 var(--space-normal);
-  height: 48px;
-  background: var(--surface-chrome);
-  color: var(--text-on-chrome);
-}
+  .app__header {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-normal);
+    padding: 0 var(--space-normal);
+    height: 48px;
+    background: var(--surface-chrome);
+    color: var(--text-on-chrome);
+  }
 
-/* NO border under the header.
+  /* NO border under the header.
  *
  * A rule drew one across the full width, which cut a grey line
  * through the chrome exactly where the header meets the rail -- two
@@ -117,59 +181,64 @@ body {
  * it would have been in the flow -- and this header centres its
  * children, so without it the line landed across the MIDDLE of the
  * pane. */
-.app__header::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: var(--sidebar-rail);
-  right: 0;
-  height: 1px;
-  background: var(--border-subtle);
-}
+  .app__header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: var(--sidebar-rail);
+    right: 0;
+    height: 1px;
+    background: var(--border-subtle);
+  }
 
-.app-frame:not(.app-frame--sidebar-collapsed) .app__header::after {
-  left: var(--sidebar-width);
-}
+  .app-frame:not(.app-frame--sidebar-collapsed) .app__header::after {
+    left: var(--sidebar-width);
+  }
 
-.app__header-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
+  .app__header-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
 
-.app__header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-tight);
-}
+  .app__header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-tight);
+  }
 
-.app {
-  display: flex;
-  min-height: 0;
-  overflow: hidden;
-}
+  .app {
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
 
-/* Sidebar background reuses the existing dark primary-button token
+  /* Sidebar background reuses the existing dark primary-button token
    (#2d2d34), not a new color -- the same value already carrying
    "this is the app's own primary chrome" meaning everywhere else
    (buttons, active-link background). */
-.app__sidebar {
-  flex: none;
-  /* Its OWN scroll, for when there are more apps than height. Without
+  .app__sidebar {
+    flex: none;
+    /* Its OWN scroll, for when there are more apps than height. Without
    * this a long nav list is simply clipped by the shell's overflow
    * hidden -- which is what "only the Query button is visible" was. */
-  overflow-y: auto;
-  overflow-x: hidden;
-  width: var(--sidebar-width);
-  transition: width 0.15s ease;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-chrome);
-  color: var(--text-on-chrome);
-  padding: var(--space-normal) var(--space-snug);
-  gap: var(--space-loose);
-  /* A real, pre-existing bug, found and fixed while reviewing this
+    overflow-y: auto;
+    /* Scroll stops HERE rather than chaining to the canvas behind it.
+   * Without this, reaching the end of this pane hands the wheel to the
+   * parent and the page moves under the cursor -- the reader loses
+   * their place in a list they were not trying to leave. */
+    overscroll-behavior: contain;
+    overflow-x: hidden;
+    width: var(--sidebar-width);
+    transition: width 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-chrome);
+    color: var(--text-on-chrome);
+    padding: var(--space-normal) var(--space-snug);
+    gap: var(--space-loose);
+    /* A real, pre-existing bug, found and fixed while reviewing this
      exact rule for the sidebar's own Blueprint migration, unrelated
      to Blueprint itself: this used to read `transition: margin-left
      0.15s ease`, but the collapsed state below never changes
@@ -182,18 +251,17 @@ body {
      after a real collapse click, before this fix, and it was 0 on
      every sample -- an instant snap, not the smooth animation this
      declaration looked like it should produce. */
-  transition:
-    width 0.15s ease,
-    padding-left 0.15s ease,
-    padding-right 0.15s ease;
-}
+    transition:
+      width 0.15s ease,
+      padding-left 0.15s ease,
+      padding-right 0.15s ease;
+  }
 
+  .app__nav {
+    flex: 1;
+  }
 
-.app__nav {
-  flex: 1;
-}
-
-/* .app__nav.bp6-menu, not just .app__nav alone -- a real, FOURTH
+  /* .app__nav.bp6-menu, not just .app__nav alone -- a real, FOURTH
    occurrence of this same class of bug this migration, caught the
    same reliable way as the third (queried the real browser directly
    for the actual matching CSS rule, not guessed): Blueprint's own
@@ -206,11 +274,11 @@ body {
    Two real classes together for genuinely higher specificity than
    Blueprint's own single-class rule, the same proven approach as
    every other fix of this kind this migration. */
-.app__nav.bp6-menu {
-  background: transparent;
-}
+  .app__nav.bp6-menu {
+    background: transparent;
+  }
 
-/* .app__nav .bp6-menu-item, not just .bp6-menu-item alone -- the same
+  /* .app__nav .bp6-menu-item, not just .bp6-menu-item alone -- the same
    real lesson already learned twice this migration (UserMenu's own
    trigger, and before that, this project's own pre-Blueprint sidebar
    contrast bugs): Blueprint's own MenuItem styling is built for a
@@ -220,15 +288,15 @@ body {
    bare .bp6-menu-item override) so this only ever affects sidebar nav
    items, never some other, future Menu elsewhere in the app that
    SHOULD keep Blueprint's own default light-theme treatment. */
-.app__nav .bp6-menu-item {
-  color: var(--text-on-chrome);
-}
+  .app__nav .bp6-menu-item {
+    color: var(--text-on-chrome);
+  }
 
-.app__nav .bp6-menu-item.bp6-active {
-  background: rgba(255, 255, 255, 0.1);
-}
+  .app__nav .bp6-menu-item.bp6-active {
+    background: rgba(255, 255, 255, 0.1);
+  }
 
-/* user-menu -- rebuilt on real Blueprint primitives (PopoverNext +
+  /* user-menu -- rebuilt on real Blueprint primitives (PopoverNext +
    Menu + MenuItem); see UserMenu.tsx's own header comment for why
    this file's own CSS shrank so much -- Blueprint's own CSS now owns
    the popover panel and menu item styling entirely (.bp6-menu, .bp6-
@@ -244,15 +312,15 @@ body {
    recent major version), so this class no longer exists anywhere in
    the real DOM at all. */
 
-.user-menu__trigger {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  text-align: left;
-}
+  .user-menu__trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    text-align: left;
+  }
 
-/* .user-menu__trigger.bp6-button.bp6-minimal, not just .user-menu__
+  /* .user-menu__trigger.bp6-button.bp6-minimal, not just .user-menu__
    trigger alone -- a real, third occurrence of the same class of bug
    this project has now hit three times, confirmed precisely this
    time via the browser's own real, matched CSS rules (not grepped
@@ -269,53 +337,61 @@ body {
    specificity that's safely, unambiguously higher than Blueprint's
    own two-class-level rule -- not just tied with it and hoping source
    order still favors this file. */
-.user-menu__trigger.bp6-button.bp6-minimal {
-  color: var(--text-on-chrome);
-}
+  .user-menu__trigger.bp6-button.bp6-minimal {
+    color: var(--text-on-chrome);
+  }
 
-.user-menu__avatar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
+  .user-menu__avatar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
 
-.user-menu__profile {
-  padding: 0.7rem 0.85rem;
-  border-bottom: 1px solid var(--border-subtle);
-}
+  .user-menu__profile {
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
 
-.user-menu__username {
-  margin: 0;
-  font-weight: 600;
-  word-break: break-word;
-}
+  .user-menu__username {
+    margin: 0;
+    font-weight: 600;
+    word-break: break-word;
+  }
 
-.user-menu__role {
-  margin: 0.15rem 0 0;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-}
+  .user-menu__role {
+    margin: 0.15rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+  }
 
-.app__content {
-  flex: 1;
-  /* min-width AND min-height 0: a flex child defaults to min-*: auto,
+  .app__content {
+    flex: 1;
+    /* min-width AND min-height 0: a flex child defaults to min-*: auto,
    * which refuses to shrink below its content and reintroduces exactly
    * the overflow the shell height was set to prevent. */
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+    min-width: 0;
+    min-height: 0;
+    /* THE CANVAS IS A QUERY CONTAINER, so what is inside it can size
+   * against the space it actually has rather than against the
+   * viewport. Those are different numbers whenever the sidebar is
+   * open, and they will diverge further once the sidebar collapses
+   * per sub-app. Named, so a query reads as asking about the canvas
+   * rather than about whichever ancestor happens to be nearest. */
+    container-type: inline-size;
+    container-name: canvas;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
 
-/* Inside the rail, above the icons -- not a bordered box floating in
+  /* Inside the rail, above the icons -- not a bordered box floating in
  * the content area beside it.
  *
  * A control that changes the rail belongs to the rail. Sitting it in
@@ -324,28 +400,28 @@ body {
  *
  * No border and no background: it is chrome on chrome, and a box
  * around it would draw the same seam the header border did. */
-.app__sidebar-toggle {
-  align-self: stretch;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 32px;
-  margin: 0 0 var(--space-tight);
-  padding: 0;
-  background: transparent;
-  color: var(--text-on-chrome-dim);
-  border: none;
-  border-radius: var(--radius);
-  cursor: pointer;
-}
+  .app__sidebar-toggle {
+    align-self: stretch;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    margin: 0 0 var(--space-tight);
+    padding: 0;
+    background: transparent;
+    color: var(--text-on-chrome-dim);
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
 
-.app__sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-on-chrome);
-}
+  .app__sidebar-toggle:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-on-chrome);
+  }
 
-/* No max-width. This was 640px -- a reading measure, right for prose
+  /* No max-width. This was 640px -- a reading measure, right for prose
  * and wrong for a data-dense application: a results table, a filter
  * panel and a chart cannot share 640px, so everything stacked into one
  * narrow column and the app read as a long scroll rather than a
@@ -355,7 +431,7 @@ body {
  * applications", and its own guidance asks for an F-shaped layout with
  * configuration to the left of content. Neither is possible inside a
  * reading column. */
-/* The canvas slot.
+  /* The canvas slot.
  *
  * A sub-app that uses .workspace fills this edge to edge and provides
  * its own padding inside each pane. One that does NOT -- Query,
@@ -365,17 +441,22 @@ body {
  * Setting `padding: 0` unconditionally for Browse's flush panels was a
  * regression that stripped every other sub-app's breathing room.
  */
-.app__content main {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-loose);
-  padding: var(--space-loose) var(--space-loose) var(--space-section);
-}
+  .app__content main {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    /* Scroll stops HERE rather than chaining to the canvas behind it.
+   * Without this, reaching the end of this pane hands the wheel to the
+   * parent and the page moves under the cursor -- the reader loses
+   * their place in a list they were not trying to leave. */
+    overscroll-behavior: contain;
+    padding: var(--space-loose);
+    padding: var(--space-loose) var(--space-loose) var(--space-section);
+  }
 
-/* --- The F-shape: configuration left, content centre --------------
+  /* --- The F-shape: configuration left, content centre --------------
  *
  * Their guidance is explicit that a layout should "clearly distinguish
  * between configuration and content sections" and follow an F-shaped
@@ -386,26 +467,26 @@ body {
  * darker ones "indicate less critical items, such as filters or
  * collapsible panels". A filter matters, but the results matter more.
  */
-.workspace {
-  display: grid;
-  /* minmax(0, 1fr) rather than 1fr: a grid track defaults to
+  .workspace {
+    display: grid;
+    /* minmax(0, 1fr) rather than 1fr: a grid track defaults to
    * min-content, which refuses to shrink below its contents and
    * reintroduces the overflow the shell height exists to prevent. */
-  grid-template-columns: var(--config-width) minmax(0, 1fr);
-  /* No gap. Panel EDGES meet; internal padding does the breathing. */
-  gap: 0;
-  height: 100%;
-  min-height: 0;
-  /* NOT align-items: start. That sizes each pane to its content, so
+    grid-template-columns: var(--config-width) minmax(0, 1fr);
+    /* No gap. Panel EDGES meet; internal padding does the breathing. */
+    gap: 0;
+    height: 100%;
+    min-height: 0;
+    /* NOT align-items: start. That sizes each pane to its content, so
    * neither fills the shell and neither can scroll -- their
    * overflow-y: auto never engages because nothing constrains them.
    * An appended rule had claimed to fix this layout while leaving
    * `align-items: start` in force above it. */
-  align-items: stretch;
-}
+    align-items: stretch;
+  }
 
-.workspace__config {
-  /* NOT sticky. Sticky belongs to a scrolling page, which this layout
+  .workspace__config {
+    /* NOT sticky. Sticky belongs to a scrolling page, which this layout
    * does away with -- the pane is fixed within the shell and scrolls
    * ITSELF when its controls need more room than the window has.
    *
@@ -413,84 +494,126 @@ body {
    * rule further down claimed to have removed it. It had not: the
    * later block never set `position`, so the comment described
    * something the CSS did not do. */
-  overflow-y: auto;
-  min-height: 0;
-  background: var(--surface-config);
-  /* Right border only -- the separator between configuration and
+    overflow-y: auto;
+    /* Scroll stops HERE rather than chaining to the canvas behind it.
+   * Without this, reaching the end of this pane hands the wheel to the
+   * parent and the page moves under the cursor -- the reader loses
+   * their place in a list they were not trying to leave. */
+    overscroll-behavior: contain;
+    min-height: 0;
+    background: var(--surface-config);
+    /* Right border only -- the separator between configuration and
    * content. The others would draw a box inside a flush layout. */
-  border-right: 1px solid var(--border-subtle);
-  padding: var(--space-normal);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-normal);
-}
+    border-right: 1px solid var(--border-subtle);
+    padding: var(--space-normal);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-normal);
+  }
 
-.workspace__content {
-  background: var(--surface-content);
-  padding: var(--space-loose);
-  min-width: 0;
-  min-height: 0;
-  /* The canvas: the one region that scrolls in ordinary use. */
-  overflow-y: auto;
-}
+  .workspace__content {
+    background: var(--surface-content);
+    padding: var(--space-loose);
+    min-width: 0;
+    min-height: 0;
+    /* The canvas: the one region that scrolls in ordinary use. */
+    overflow-y: auto;
+    /* Scroll stops HERE rather than chaining to the canvas behind it.
+   * Without this, reaching the end of this pane hands the wheel to the
+   * parent and the page moves under the cursor -- the reader loses
+   * their place in a list they were not trying to leave. */
+    overscroll-behavior: contain;
+  }
 
-/* One filter group: a label and its control, never side by side --
+  /* One filter group: a label and its control, never side by side --
  * a narrow column reads down, not across. */
-/* A sub-app with no configuration pane still fills the shell and
+  /* A sub-app with no configuration pane still fills the shell and
  * scrolls itself -- the same contract, one column instead of two. */
-.workspace--single {
-  height: 100%;
-}
-
-.workspace__filter {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-hair);
-}
-
-.workspace__filter > label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* Below this, a two-column workspace leaves neither column usable. */
-/* THE breakpoint, and there is only one.
- *
- * Three widths were in play: the workspace collapsed to one column at
- * 900, the sidebar overlaid at 1100, and it auto-collapsed at 640.
- * Between them a sidebar could float over a two-column workspace with
- * nothing collapsing it, which is what hid the Back button and the
- * left edge of every screen.
- *
- * One number now, matched in Shell.tsx, so the three behaviours that
- * depend on it change together. Derived: below this a config pane
- * plus content plus a rail leaves the content unusable. */
-@media (max-width: 1099px) {
-  .workspace {
-    grid-template-columns: minmax(0, 1fr);
+  .workspace--single {
+    height: 100%;
   }
 
-  .workspace__config {
-    position: static;
+  .workspace__filter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-hair);
   }
-}
 
-/* Collapsed: the sidebar itself is unmounted from layout flow (see
+  /* THE FILTER'S OWN HEADING, and only that.
+ *
+ * `> label` matched EVERY direct child label -- and Blueprint's
+ * Checkbox IS a label. So each checkbox in the Columns filter was
+ * given the heading treatment: uppercase, bold, and laid out as its
+ * own column item with the box above its text.
+ *
+ * That was the "checkboxes above their text throughout the UI" report,
+ * and it was in shared CSS rather than in Browse, which is why a sweep
+ * for `<Checkbox` found nothing.
+ *
+ * :not(.bp6-control) excludes Blueprint's own controls, which bring
+ * their own layout and should keep it. */
+  .workspace__filter > label:not(.bp6-control) {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Below this, a two-column workspace leaves neither column usable.
+ *
+ * A CONTAINER QUERY, not a media query, and the difference is the
+ * whole point. A media query asks how wide the VIEWPORT is; what
+ * decides whether two columns fit is how wide the CANVAS is, and those
+ * are different numbers whenever the sidebar is open. At a 1200px
+ * viewport with the sidebar out, the canvas is about 900px -- narrow
+ * enough that two columns do not work -- and a viewport query says
+ * nothing is wrong because 1200 > 1099.
+ *
+ * THIS REPLACES A COUPLING RATHER THAN BREAKING ONE, which matters
+ * because the coupling was itself a fix. Three widths were once in
+ * play: the workspace collapsed at 900, the sidebar overlaid at 1100,
+ * and it auto-collapsed at 640. Between them a sidebar could float
+ * over a two-column workspace with nothing collapsing it, which hid
+ * the Back button and the left edge of every screen. One shared number
+ * fixed that by making the three move together.
+ *
+ * Asking the canvas directly is strictly stronger: the workspace
+ * collapses whenever it is ACTUALLY narrow, whatever made it narrow --
+ * a small viewport, an open sidebar, a future inspector. There is no
+ * gap between the numbers to fall into, because there is one number
+ * and it measures the thing that matters.
+ *
+ * Shell.tsx keeps its own 1099px media query, correctly: whether the
+ * SIDEBAR becomes a drawer is a viewport question, not a canvas one.
+ *
+ * The threshold is 840px rather than 1099: the canvas at a 1099px
+ * viewport with the rail (56px) and an open sidebar (240px) is about
+ * 800px, so this fires at close to the same real width it used to --
+ * it is the same judgement, measured where it applies. */
+  @container canvas (max-width: 840px) {
+    .workspace {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .workspace__config {
+      position: static;
+    }
+  }
+
+  /* Collapsed: the sidebar itself is unmounted from layout flow (see
    Shell.tsx's own aria-hidden on <aside>) -- width and padding both
    collapse to zero rather than just visually hiding it, so the
    content pane genuinely reclaims the full width, not just an empty
    dark strip. */
-.app-frame--sidebar-collapsed .app__sidebar {
-  width: 0;
-  padding-left: 0;
-  padding-right: 0;
-  overflow: hidden;
-}
+  .app-frame--sidebar-collapsed .app__sidebar {
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    overflow: hidden;
+  }
 
-/* No @media (max-width: 640px) rule here anymore -- this used to give
+  /* No @media (max-width: 640px) rule here anymore -- this used to give
    an OPEN .app__sidebar `position: fixed` etc. below this width, but
    that selector can no longer match anything at all: on a narrow
    viewport, Shell.tsx's own isMobile state now renders a real
@@ -501,240 +624,305 @@ body {
    rule used to hand-roll; removed rather than left as dead CSS that
    would never match again. */
 
-/* app__pre-auth -- the checking/loggedOut screens in App.tsx, before
+  /* app__pre-auth -- the checking/loggedOut screens in App.tsx, before
    a session exists at all. Genuinely different layout shape from
    .app below (Shell.tsx's own sidebar structure): a simple, narrow,
    centered column, since there's no sidebar to show yet -- this is
    exactly .app's own original layout, before the sidebar existed,
    preserved here under its own name rather than lost when .app
    itself became a flex row. */
-.app__pre-auth {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 2rem 1rem;
-}
+  .app__pre-auth {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
 
-.app__pre-auth-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-}
+  .app__pre-auth-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
 
-.app__pre-auth-header h1 {
-  font-size: 1.4rem;
-  margin: 0;
-}
+  .app__pre-auth-header h1 {
+    font-size: 1.4rem;
+    margin: 0;
+  }
 
-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
 
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
-}
+  /* A FORM FIELD'S OWN LABEL: its text above its control.
+ *
+ * SCOPED AWAY FROM BLUEPRINT'S CONTROLS, which are labels too.
+ * Blueprint renders a Checkbox as
+ * `<label class="bp6-control bp6-checkbox"><input><span
+ * class="bp6-control-indicator"></span>Text</label>` -- so as a bare
+ * element selector this stacked the box ABOVE its own text, everywhere
+ * in the app, and Blueprint's own stylesheet is never imported here to
+ * put it back.
+ *
+ * That was the "checkboxes above their text throughout the UI" report.
+ * I first blamed `.workspace__filter > label`, which was wrong: that
+ * rule only set typography. This is the one that laid them out.
+ *
+ * AND THE REASON IT BEAT BLUEPRINT IS THE CASCADE LAYERS, not
+ * specificity. `.bp6-control` is more specific than `label` and still
+ * loses, because Blueprint sits in the `vendor` layer (see
+ * ui/src/layers.css) while this file is UNLAYERED -- and unlayered
+ * styles beat every layer. So any bare element selector here silently
+ * overrides Blueprint's own component styling, however carefully
+ * Blueprint wrote it.
+ *
+ * A correction: an earlier version of this comment said Blueprint's
+ * stylesheet was never imported. It is, via an @import in layers.css,
+ * which is the only way to assign a layer.
+ *
+ * The comment directly below records someone hitting exactly this
+ * class of problem with a bare `input` selector "fighting their own
+ * geometry". The same mistake, one element over. */
+  label:not(.bp6-control) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+  }
 
-input,
-textarea {
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  font-size: 1rem;
-  font-family: inherit;
-}
+  /* Blueprint's controls, restored to the layout Blueprint gives them.
+ *
+ * Needed because the rule above excludes them and this file is
+ * unlayered: without something here they would fall back to
+ * Blueprint's `vendor`-layer styling, which is correct -- but stating
+ * it makes the intent explicit rather than depending on a cascade
+ * subtlety a reader would have to work out. */
+  label.bp6-control {
+    display: flex;
+    align-items: center;
+    gap: var(--space-snug);
+    font-size: 0.9rem;
+  }
 
-button {
-  padding: 0.55rem 1rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--surface-chrome);
-  color: #ffffff; /* on the danger red below, not a theme surface */
-  font-size: 0.95rem;
-  cursor: pointer;
-  text-decoration: none;
-  display: inline-block;
-}
+  /* SCOPED to the plain controls that still exist, not every input in
+ * the app. As a bare element selector this also styled every Blueprint
+ * InputGroup and TextArea, fighting their own geometry -- the same
+ * fault the `button` rule below had, just less visible because it set
+ * borders and padding rather than colour.
+ *
+ * Two plain controls remain: ObjectSearchPanel's search box and
+ * QueryPanel's textarea. Everything else is a Blueprint widget and
+ * styles itself. */
+  .object-search__controls input,
+  .query-panel__input {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    font-size: 1rem;
+    font-family: inherit;
+  }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
+  /* NO BARE `button` RULE, deliberately, and this is worth knowing
+ * before anyone adds one back.
+ *
+ * There was one. It set `background: var(--surface-chrome)` on EVERY
+ * button in the app -- including every Blueprint <Button>, because
+ * Blueprint renders a real <button> element. --surface-chrome is dark
+ * in BOTH themes by design, since it is furniture rather than content,
+ * so every Blueprint button rendered dark-on-light.
+ *
+ * Reported as "the Table and Charts navigation buttons are dark in
+ * light mode and it looks awful". It was legacy from before the
+ * Blueprint migration and had been silently overriding the library
+ * ever since -- an element selector cannot be scoped away by a
+ * component, so nothing downstream could have fixed it.
+ *
+ * The `.secondary` and `.danger` companions went with it: .secondary
+ * had no users left at all (confirmed by grep -- only comments
+ * describing its removal), and .danger's single user now uses
+ * Blueprint's own intent="danger", which is theme-aware where a fixed
+ * red was not.
+ *
+ * THE RULE THIS LEAVES: Blueprint's components style themselves and we
+ * do not reach in. An element selector is the one thing a component
+ * cannot opt out of, so it is the one kind of rule that must never
+ * describe a widget the library owns.
+ */
 
-button.secondary {
-  background: transparent;
-  border: 1px solid #999;
-  color: var(--text-primary);
-}
-
-/* .error class removed -- confirmed dead via a real, whole-frontend
+  /* .error class removed -- confirmed dead via a real, whole-frontend
    grep before removing it, not assumed: AdminPanel.tsx and LoginForm.
    tsx were the last two files using it, both converted to Blueprint's
    own Callout intent="danger" during a full-migration review pass. */
 
-.pending-write {
-  margin-top: 1.25rem;
-  padding: 1rem;
-  border-radius: 8px;
-  background: var(--surface-content);
-  border: 1px solid var(--border-subtle);
-}
+  .pending-write {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    border-radius: 8px;
+    background: var(--surface-content);
+    border: 1px solid var(--border-subtle);
+  }
 
-.pending-write h3 {
-  margin-top: 0;
-  margin-bottom: 0.4rem;
-}
+  .pending-write h3 {
+    margin-top: 0;
+    margin-bottom: 0.4rem;
+  }
 
-.pending-write__action-name {
-  margin: 0 0 0.3rem;
-  font-weight: 600;
-}
+  .pending-write__action-name {
+    margin: 0 0 0.3rem;
+    font-weight: 600;
+  }
 
-.pending-write__description {
-  margin: 0 0 0.85rem;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  word-break: break-word;
-}
+  .pending-write__description {
+    margin: 0 0 0.85rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    word-break: break-word;
+  }
 
-.pending-write__object {
-  margin-bottom: 0.6rem;
-  padding: 0.7rem 0.8rem;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-}
+  .pending-write__object {
+    margin-bottom: 0.6rem;
+    padding: 0.7rem 0.8rem;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+  }
 
-.pending-write__object:last-of-type {
-  margin-bottom: 0;
-}
+  .pending-write__object:last-of-type {
+    margin-bottom: 0;
+  }
 
-.pending-write__object-label {
-  margin: 0 0 0.4rem;
-  font-weight: 600;
-}
+  .pending-write__object-label {
+    margin: 0 0 0.4rem;
+    font-weight: 600;
+  }
 
-.pending-write__fields {
-  margin: 0;
-}
+  .pending-write__fields {
+    margin: 0;
+  }
 
-.pending-write__field {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  padding: 0.3rem 0;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 0.9rem;
-}
+  .pending-write__field {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.9rem;
+  }
 
-.pending-write__field:last-child {
-  border-bottom: none;
-}
+  .pending-write__field:last-child {
+    border-bottom: none;
+  }
 
-.pending-write__field dt {
-  color: var(--text-secondary);
-}
+  .pending-write__field dt {
+    color: var(--text-secondary);
+  }
 
-.pending-write__field dd {
-  margin: 0;
-  text-align: right;
-  font-weight: 500;
-  word-break: break-word;
-}
+  .pending-write__field dd {
+    margin: 0;
+    text-align: right;
+    font-weight: 500;
+    word-break: break-word;
+  }
 
-.pending-write__old-value {
-  color: var(--text-secondary);
-  font-weight: 400;
-}
+  .pending-write__old-value {
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
 
-.pending-write__actions {
-  display: flex;
-  gap: 0.6rem;
-  margin-top: 0.75rem;
-}
+  .pending-write__actions {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+  }
 
-.pending-write--resolved {
-  color: var(--text-primary);
-}
+  .pending-write--resolved {
+    color: var(--text-primary);
+  }
 
-/* No card of its own. It sits in the configuration pane now, which
+  /* No card of its own. It sits in the configuration pane now, which
  * already supplies a surface and a border -- a second box inside one
  * draws the same seam the header border did. */
-.create-user-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-snug);
-}
+  .create-user-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-snug);
+  }
 
-.create-user-form h3 {
-  margin-top: 0;
-  font-size: 1rem;
-}
+  .create-user-form h3 {
+    margin-top: 0;
+    font-size: 1rem;
+  }
 
-.user-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--surface-content);
-  border-radius: 8px;
-  overflow: hidden;
-}
+  .user-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface-content);
+    border-radius: 8px;
+    overflow: hidden;
+  }
 
-.user-table th,
-.user-table td {
-  text-align: left;
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 0.9rem;
-}
+  .user-table th,
+  .user-table td {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.9rem;
+  }
 
-.user-table__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
+  .user-table__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
 
-.user-table__actions button {
-  padding: 0.3rem 0.5rem;
-  font-size: 0.8rem;
-}
+  .user-table__actions button {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+  }
 
-.user-table pre {
-  background: var(--surface-sunken);
-  padding: 0.6rem;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  overflow-x: auto;
-}
+  .user-table pre {
+    background: var(--surface-sunken);
+    padding: 0.6rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    overflow-x: auto;
+  }
 
-button.danger {
-  background: #b3261e;
-}
+  button.danger {
+    background: var(--fill-danger);
+  }
 
-.object-search__controls {
-  display: flex;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
-}
+  /* A muted FACT, not a warning. read_from_mirror is deployment-wide, so
+ * this is present on every view when it is on -- and a permanent
+ * warning is one people stop seeing. Secondary text, small, no icon. */
+  .object-search__freshness {
+    margin: 0 0 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
 
-.object-search__controls select {
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  font-size: 1rem;
-  background: var(--surface-content);
-  min-width: 10rem;
-}
+  .object-search__controls {
+    display: flex;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
 
-.object-search__controls input {
-  flex: 1;
-}
+  .object-search__controls select {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    font-size: 1rem;
+    background: var(--surface-content);
+    min-width: 10rem;
+  }
 
-.object-search__status,
+  .object-search__controls input {
+    flex: 1;
+  }
+
+  .object-search__status,
 .object-search__empty,
 
 /* CardList/Card, not a bare <ul>/<li> -- see ObjectSearchPanel.tsx's
@@ -744,15 +932,15 @@ button.danger {
    `.bp6-card-list > .bp6-card` direct-child selector, which a <Link>
    wrapper in between would silently break). */
 .object-search__result {
-  /* position: relative -- what .object-search__link's own ::after
+    /* position: relative -- what .object-search__link's own ::after
      below resolves its inset: 0 against. Without this, the stretched
      hitbox would expand to the nearest ANY positioned ancestor
      instead (likely much larger than this one card), not the
      intended, real element. */
-  position: relative;
-}
+    position: relative;
+  }
 
-/* A real, second Blueprint-CSS-override lesson this migration, beyond
+  /* A real, second Blueprint-CSS-override lesson this migration, beyond
    Shell.tsx's own sidebar one -- confirmed directly, not assumed: a
    Card that's CardList's own direct child gets `display: flex;
    align-items: center` from Blueprint's own real, shipped CSS (its
@@ -768,11 +956,11 @@ button.danger {
    real, genuinely-present classes together on each side of the child
    combinator (0,4,0), reliably beating Blueprint's own 0,2,0 rule
    regardless of source order. */
-.object-search__results.bp6-card-list > .object-search__result.bp6-card {
-  display: block;
-}
+  .object-search__results.bp6-card-list > .object-search__result.bp6-card {
+    display: block;
+  }
 
-/* The real "stretched link" pattern (the same one Bootstrap's own
+  /* The real "stretched link" pattern (the same one Bootstrap's own
    stretched-link utility uses) -- deliberately NOT the whole card's
    own visible content wrapped in one <Link> (this file's own earlier,
    pre-Blueprint version): only the title text itself is real,
@@ -781,214 +969,308 @@ button.danger {
    keyboard-focusable hitbox to cover the entire card, working
    correctly regardless of how the rest of the card's own content
    (subtitle, fields) is laid out around it. */
-.object-search__link {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-}
+  .object-search__link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+  }
 
-.object-search__link::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
+  /* THE STRETCHED LINK IS GONE, and this records why rather than
+ * leaving a reader to wonder where it went.
+ *
+ * `::after { inset: 0 }` made the whole card a link target, which is a
+ * good pattern for a card that is ONLY a link. This card is not: it
+ * holds a checkbox, and the two are fundamentally incompatible. An
+ * overlay covering the card either swallows the control's clicks or
+ * has to be out-stacked by it, and every interaction that is not a
+ * plain left-click then has to be reasoned about separately.
+ *
+ * It cost three failed fixes. Shift-clicking a checkbox NAVIGATED --
+ * proved by a server log showing GET /objects/Transaction/4 during a
+ * selection test -- while plain clicks selected correctly, because
+ * z-index resolved that case and only that case.
+ *
+ * So the title is the link and the card is not. Clicking the card body
+ * no longer navigates, which is a real loss and a smaller one than a
+ * selection control that works for some clicks and not others. */
 
+  /* The checkbox, beside the content rather than beneath an overlay.
+ *
+ * This block used to explain why it needed its own stacking
+ * context to sit above a stretched link. That link is gone -- see
+ * the comment above -- so the reasoning is gone with it rather
+ * than left behind to mislead. */
+  /* THE CARD'S CONTENT, LAID OUT BESIDE ITS CHECKBOX.
+ *
+ * The card itself stays `display: block` -- that is deliberate and
+ * load-bearing, because Blueprint's CardList gives a direct child Card
+ * `display: flex; align-items: center`, which laid this card's
+ * multi-line content (title, subtitle, a whole fields table) out
+ * side-by-side instead of stacked.
+ *
+ * So the row goes INSIDE the card rather than being the card. A
+ * checkbox in a block container takes its own line above everything,
+ * which is what put every box above the row it belonged to.
+ *
+ * align-items: start, not center: the content is several lines tall
+ * and a checkbox floating at its vertical middle reads as belonging to
+ * whichever line it happens to land beside. */
+  .object-search__row {
+    display: flex;
+    align-items: start;
+    gap: var(--space-snug);
+  }
 
+  /* The content takes the rest, so long titles wrap rather than pushing
+ * the checkbox off the edge. */
+  .object-search__row > .object-search__link,
+  .object-search__row > :not(.object-search__select) {
+    min-width: 0;
+  }
 
+  .object-search__select {
+    /* NO z-index HERE ANY MORE. It existed to out-stack the stretched
+   * link, which is gone -- and keeping a stacking context that guards
+   * against nothing is how the next reader concludes it is load-
+   * bearing and works around it. */
+    /* Nudged down to sit on the title's own line rather than above its
+   * cap height -- Blueprint's checkbox has its own internal padding
+   * that a bare flex row does not account for. */
+    margin-block-start: 2px;
+    /* Enough room that the cursor does not have to be precise; a
+   * mis-click here navigates away and loses the selection. */
+    padding-inline-end: var(--space-normal);
+  }
 
+  /* The bar that says what is selected and offers to act on it. Above
+ * the results rather than beside them, like the filter pills: it
+ * describes what an action would apply to, so it has to be read
+ * first. */
+  .selection-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+  }
 
-.object-search__result-field:last-child {
-  border-bottom: none;
-}
+  /* The selection bar and the actions it enables, on one line. They
+ * describe the same thing -- what is selected, and what can be done
+ * with it -- so separating them would make a person look in two
+ * places to answer one question. */
+  .selection-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-normal);
+    margin-block-end: var(--space-normal);
+  }
 
+  /* The bulk form appears below the row that opened it, above the
+ * results it will change, so the objects are still in view while the
+ * form is filled in. */
+  .bulk-action-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-normal);
+    margin-block-end: var(--space-loose);
+  }
 
+  .object-search__result-field:last-child {
+    border-bottom: none;
+  }
 
-.object-detail__type {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
+  .object-detail__type {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
 
-.object-detail__title {
-  margin: 0.15rem 0 0.15rem;
-}
+  .object-detail__title {
+    margin: 0.15rem 0 0.15rem;
+  }
 
-.object-detail__subtitle {
-  margin: 0 0 1rem;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
+  /* THE OBJECT ID, in monospace. It is read to compare and to copy, and
+ * proportional type makes both harder -- 1/l/I and 0/O collapse, and
+ * two ids of equal length look different widths.
+ *
+ * user-select: all so one click selects the WHOLE id. An id is never
+ * usefully selected in part, and a double-click otherwise stops at
+ * the underscore in cust_001. */
+  .object-detail__subtitle {
+    font-family: var(--font-mono);
+    user-select: all;
+    margin: 0 0 1rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
 
-.object-detail__fields {
-  margin: 0;
-  padding: 1rem;
-  border-radius: 8px;
-  background: var(--surface-content);
-  border: 1px solid var(--border-subtle);
-}
+  .object-detail__fields {
+    margin: 0;
+    padding: 1rem;
+    border-radius: 8px;
+    background: var(--surface-content);
+    border: 1px solid var(--border-subtle);
+  }
 
-.object-detail__field {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
+  .object-detail__field {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
 
-.object-detail__field:last-child {
-  border-bottom: none;
-}
+  .object-detail__field:last-child {
+    border-bottom: none;
+  }
 
-.object-detail__field dt {
-  color: var(--text-secondary);
-}
+  .object-detail__field dt {
+    color: var(--text-secondary);
+  }
 
-.object-detail__field dd {
-  margin: 0;
-  text-align: right;
-  word-break: break-word;
-}
+  .object-detail__field dd {
+    margin: 0;
+    text-align: right;
+    word-break: break-word;
+  }
 
-.object-detail__links a {
-  color: var(--text-primary);
-  font-weight: 600;
-}
+  .object-detail__links a {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
 
-.object-detail__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
+  .object-detail__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
 
-.action-form {
-  margin-top: 1rem;
-  padding: 1rem;
-  border-radius: 8px;
-  background: var(--surface-content);
-  border: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
+  .action-form {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 8px;
+    background: var(--surface-content);
+    border: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
 
-.action-form h3 {
-  margin: 0;
-}
+  .action-form h3 {
+    margin: 0;
+  }
 
-.action-form__field input:disabled {
-  background: var(--surface-sunken);
-  color: var(--text-secondary);
-}
+  .action-form__field input:disabled {
+    background: var(--surface-sunken);
+    color: var(--text-secondary);
+  }
 
-.action-form__actions {
-  display: flex;
-  gap: 0.5rem;
-}
+  .action-form__actions {
+    display: flex;
+    gap: 0.5rem;
+  }
 
-/* --- Results ------------------------------------------------------
+  /* --- Results ------------------------------------------------------
  *
  * A result is a row to scan, not a card to read. These were spaced
  * like blog posts, so ten results filled a screen and comparing two
  * meant scrolling between them.
  */
-.object-search__results {
-  border: none;
-  box-shadow: none;
-}
+  .object-search__results {
+    border: none;
+    box-shadow: none;
+  }
 
-.object-search__results .bp6-card {
-  padding: var(--space-tight) var(--space-snug);
-  box-shadow: none;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
-}
+  .object-search__results .bp6-card {
+    padding: var(--space-tight) var(--space-snug);
+    box-shadow: none;
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 0;
+  }
 
-.object-search__result-title {
-  margin: 0;
-  font-weight: 600;
-}
+  .object-search__result-title {
+    margin: 0;
+    font-weight: 600;
+  }
 
-.object-search__result-subtitle {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
+  .object-search__result-subtitle {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
 
-/* Fields read ACROSS a row rather than down a list. A definition list
+  /* Fields read ACROSS a row rather than down a list. A definition list
  * per result, stacked, is why ten rows filled the viewport. */
-.object-search__result-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-hair) var(--space-normal);
-  margin: var(--space-hair) 0 0;
-}
+  .object-search__result-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-hair) var(--space-normal);
+    margin: var(--space-hair) 0 0;
+  }
 
-.object-search__result-field {
-  display: flex;
-  gap: var(--space-hair);
-  font-size: 12px;
-}
+  .object-search__result-field {
+    display: flex;
+    gap: var(--space-hair);
+    font-size: 12px;
+  }
 
-.object-search__result-field dt {
-  color: var(--text-secondary);
-}
+  .object-search__result-field dt {
+    color: var(--text-secondary);
+  }
 
-.object-search__result-field dt::after {
-  content: ":";
-}
+  .object-search__result-field dt::after {
+    content: ':';
+  }
 
-.object-search__result-field dd {
-  margin: 0;
-  color: var(--text-primary);
-}
+  .object-search__result-field dd {
+    margin: 0;
+    color: var(--text-primary);
+  }
 
-.object-search__pager {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-normal);
-  padding-top: var(--space-snug);
-  border-top: 1px solid var(--border-subtle);
-}
+  .object-search__pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-normal);
+    padding-top: var(--space-snug);
+    border-top: 1px solid var(--border-subtle);
+  }
 
-.object-search__more {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
+  .object-search__more {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
 
-/* --- Charts -------------------------------------------------------
+  /* --- Charts -------------------------------------------------------
  * Two per row where there is room. One per row wasted the width the
  * removed reading column just gave back.
  */
-.charts-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--space-normal);
-}
+  .charts-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-normal);
+  }
 
-.charts-panel__chart {
-  background: var(--surface-content);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  padding: var(--space-snug);
-}
+  .charts-panel__chart {
+    background: var(--surface-content);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    padding: var(--space-snug);
+  }
 
-.charts-panel__chart h4 {
-  margin: 0 0 var(--space-tight);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+  .charts-panel__chart h4 {
+    margin: 0 0 var(--space-tight);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 
-
-
-/* --- The rail -----------------------------------------------------
+  /* --- The rail -----------------------------------------------------
  *
  * Collapsed, the sidebar becomes an icon rail rather than disappearing
  * -- so the app switcher is always reachable and moving between
@@ -998,30 +1280,30 @@ button.danger {
  * The label is hidden VISUALLY, never removed. Screen readers still
  * announce it, and the tooltip covers sighted users.
  */
-.app-frame--sidebar-collapsed .app__sidebar {
-  width: var(--sidebar-rail);
-  padding-left: var(--space-tight);
-  padding-right: var(--space-tight);
-  overflow: hidden;
-}
+  .app-frame--sidebar-collapsed .app__sidebar {
+    width: var(--sidebar-rail);
+    padding-left: var(--space-tight);
+    padding-right: var(--space-tight);
+    overflow: hidden;
+  }
 
-.app-frame--sidebar-collapsed .app__nav-label {
-  /* Not display:none -- that would take it out of the accessibility
+  .app-frame--sidebar-collapsed .app__nav-label {
+    /* Not display:none -- that would take it out of the accessibility
    * tree along with the pixels. */
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 
-/* Below the three-column minimum an expanded sidebar OVERLAYS rather
+  /* Below the three-column minimum an expanded sidebar OVERLAYS rather
  * than pushing, because pushing would leave the content unusable.
  * This is the "Auto" mode a mainstream enterprise component library
  * ships as its default: push at desktop widths, overlay below. */
-@media (max-width: 1099px) {
-  /* BELOW the header, not over it. An earlier `top` of zero covered
+  @media (max-width: 1099px) {
+    /* BELOW the header, not over it. An earlier `top` of zero covered
      the global header entirely -- the product name, theme toggle and
      user menu all disappeared behind the expanded rail, and its own
      contents shifted up into the space the header should occupy. The
@@ -1030,36 +1312,36 @@ button.danger {
      The explanation sits OUTSIDE the braces deliberately: a test that
      reads CSS by regex reads a comment inside them as declarations,
      which has already made one assertion pass against broken CSS. */
-  .app-frame:not(.app-frame--sidebar-collapsed) .app__sidebar {
-    position: fixed;
-    top: 48px;
-    bottom: 0;
-    left: 0;
-    z-index: 20;
-    box-shadow: var(--elevate-raised);
+    .app-frame:not(.app-frame--sidebar-collapsed) .app__sidebar {
+      position: fixed;
+      top: 48px;
+      bottom: 0;
+      left: 0;
+      z-index: 20;
+      box-shadow: var(--elevate-raised);
+    }
   }
-}
 
-/* --- Flush panels -------------------------------------------------
+  /* --- Flush panels -------------------------------------------------
  *
  * Panel EDGES meet; internal padding stays. Borders separate, padding
  * breathes -- which is how the double-sidebar products actually do it,
  * and it keeps the 30-40% whitespace their own guidance asks for
  * without the gutters that made this app read as a scroll.
  */
-/* A workspace fills the canvas edge to edge and provides its own
+  /* A workspace fills the canvas edge to edge and provides its own
  * padding inside each pane; a sub-app without one keeps the padding
  * and scroll `main` gives it above.
  *
  * :has() on the CONTAINER, because the Workspace component is what
  * declares which of the two a sub-app is -- the stylesheet no longer
  * has to infer the structure from class names nested by hand. */
-.app__content:has(.workspace, .workspace--single) main {
-  padding: 0;
-  overflow: hidden;
-}
+  .app__content:has(.workspace, .workspace--single) main {
+    padding: 0;
+    overflow: hidden;
+  }
 
-/* --- Focus, which had no styling at all ---------------------------
+  /* --- Focus, which had no styling at all ---------------------------
  *
  * Blueprint styles its own controls; every element we wrote by hand
  * had none, so keyboard navigation worked and was invisible. For an
@@ -1069,33 +1351,33 @@ button.danger {
  * :focus-visible rather than :focus, so a mouse click does not leave a
  * ring behind.
  */
-:focus-visible {
-  outline: 2px solid var(--accent-focus);
-  outline-offset: 1px;
-}
+  :focus-visible {
+    outline: 2px solid var(--accent-focus);
+    outline-offset: 1px;
+  }
 
-/* --- Target size --------------------------------------------------
+  /* --- Target size --------------------------------------------------
  *
  * WCAG 2.2 SC 2.5.8 (AA) sets 24x24 CSS px as the floor for anything
  * you can point at. Applied to the controls we wrote; Blueprint's own
  * already clear it.
  */
-button,
-select,
-input[type="checkbox"],
-[role="button"] {
-  min-height: var(--target-min);
-}
+  button,
+  select,
+  input[type='checkbox'],
+  [role='button'] {
+    min-height: var(--target-min);
+  }
 
-/* A single filter above the content it filters. Not a sidebar: that
+  /* A single filter above the content it filters. Not a sidebar: that
  * pattern is for more than five filters, and one input in a 288px
  * column is mostly empty grey. */
-.schema-panel__toolbar {
-  max-width: 420px;
-  margin-bottom: var(--space-normal);
-}
+  .schema-panel__toolbar {
+    max-width: 420px;
+    margin-bottom: var(--space-normal);
+  }
 
-/* --- Schema's parameter and field tables --------------------------
+  /* --- Schema's parameter and field tables --------------------------
  *
  * Fixed column widths, because the browser sizes columns from CONTENT
  * by default: a Description column with nothing in it collapses to the
@@ -1107,241 +1389,241 @@ input[type="checkbox"],
  * than of whatever data happens to be in it, so the header stays put
  * whether every row has a description or none does.
  */
-.schema-panel__fields {
-  table-layout: fixed;
-  width: 100%;
-}
+  .schema-panel__fields {
+    table-layout: fixed;
+    width: 100%;
+  }
 
-.schema-panel__fields th:nth-child(1),
-.schema-panel__fields td:nth-child(1) {
-  width: 28%;
-}
+  .schema-panel__fields th:nth-child(1),
+  .schema-panel__fields td:nth-child(1) {
+    width: 28%;
+  }
 
-.schema-panel__fields th:nth-child(2),
-.schema-panel__fields td:nth-child(2) {
-  width: 22%;
-}
+  .schema-panel__fields th:nth-child(2),
+  .schema-panel__fields td:nth-child(2) {
+    width: 22%;
+  }
 
-/* Description takes the rest, and wraps rather than forcing the table
+  /* Description takes the rest, and wraps rather than forcing the table
  * wider than its pane. */
-.schema-panel__fields th:nth-child(3),
-.schema-panel__fields td:nth-child(3) {
-  width: 50%;
-  word-break: break-word;
-}
+  .schema-panel__fields th:nth-child(3),
+  .schema-panel__fields td:nth-child(3) {
+    width: 50%;
+    word-break: break-word;
+  }
 
-/* --- The deployment config view -----------------------------------
+  /* --- The deployment config view -----------------------------------
  * Label and value, not a data table -- the left column is a caption
  * and should not compete with what it names. */
-.deployment-config section {
-  margin-bottom: var(--space-loose);
-}
+  .deployment-config section {
+    margin-bottom: var(--space-loose);
+  }
 
-.deployment-config h3 {
-  margin: 0 0 var(--space-tight);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+  .deployment-config h3 {
+    margin: 0 0 var(--space-tight);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 
-.deployment-config__table {
-  table-layout: fixed;
-  width: 100%;
-  max-width: 640px;
-}
+  .deployment-config__table {
+    table-layout: fixed;
+    width: 100%;
+    max-width: 640px;
+  }
 
-.deployment-config__label {
-  width: 40%;
-  color: var(--text-secondary);
-}
+  .deployment-config__label {
+    width: 40%;
+    color: var(--text-secondary);
+  }
 
-/* --- Silo status --------------------------------------------------
+  /* --- Silo status --------------------------------------------------
  * The summary callout sits above the table, because "is anything
  * wrong" is the question this screen is opened to answer -- a table of
  * green rows makes you read every one to find that out. */
-.silos__table {
-  table-layout: fixed;
-  width: 100%;
-  margin-top: var(--space-normal);
-}
+  .silos__table {
+    table-layout: fixed;
+    width: 100%;
+    margin-top: var(--space-normal);
+  }
 
-.silos__table th:nth-child(2),
-.silos__table td:nth-child(2) {
-  width: 15%;
-}
+  .silos__table th:nth-child(2),
+  .silos__table td:nth-child(2) {
+    width: 15%;
+  }
 
-.silos__table th:nth-child(3),
-.silos__table td:nth-child(3) {
-  width: 25%;
-}
+  .silos__table th:nth-child(3),
+  .silos__table td:nth-child(3) {
+    width: 25%;
+  }
 
-/* The failure KIND, never a message -- an exception class name, shown
+  /* The failure KIND, never a message -- an exception class name, shown
  * quietly beside the status rather than as the headline. */
-.silos__failure {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
+  .silos__failure {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
 
-/* The expanded field list, indented under its silo. Grouping is what
+  /* The expanded field list, indented under its silo. Grouping is what
  * carries the mapping -- adjacency scales to any number of silos where
  * a colour palette runs out at about six. */
-.silos__fields-row > td {
-  padding: 0 0 var(--space-normal) var(--space-loose);
-  background: var(--surface-sunken);
-}
+  .silos__fields-row > td {
+    padding: 0 0 var(--space-normal) var(--space-loose);
+    background: var(--surface-sunken);
+  }
 
-.silos__fields {
-  table-layout: fixed;
-  width: 100%;
-}
+  .silos__fields {
+    table-layout: fixed;
+    width: 100%;
+  }
 
-/* A column whose name differs from its field is the case worth
+  /* A column whose name differs from its field is the case worth
  * noticing, so it is marked rather than left to be spotted. */
-.silos__renamed {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
+  .silos__renamed {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
 
-/* The identifier tag sits beside the field name, not in a column of
+  /* The identifier tag sits beside the field name, not in a column of
  * its own -- a join key is a field with a role, not a fifth thing. */
-.silos__id-tag {
-  margin-left: var(--space-hair);
-}
+  .silos__id-tag {
+    margin-left: var(--space-hair);
+  }
 
-/* --- The filter bar -----------------------------------------------
+  /* --- The filter bar -----------------------------------------------
  * Applied filters ABOVE the control that adds them, because what is
  * currently filtering the results is the more important of the two --
  * and it was invisible entirely until now.
  */
-.filter-bar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-tight);
-}
+  .filter-bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+  }
 
-.filter-bar__pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-hair);
-  align-items: center;
-}
+  .filter-bar__pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-hair);
+    align-items: center;
+  }
 
-/* Stacked, not inline: the pane is 288px and a field picker, an
+  /* Stacked, not inline: the pane is 288px and a field picker, an
  * operator and two value boxes do not share a line at that width. */
-.filter-bar__add {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-hair);
-}
+  .filter-bar__add {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-hair);
+  }
 
-/* The count leads the list, because "how many" is the question asked
+  /* The count leads the list, because "how many" is the question asked
  * before "which ones". */
-.object-detail__link-count {
-  margin-right: var(--space-hair);
-}
+  .object-detail__link-count {
+    margin-right: var(--space-hair);
+  }
 
-.object-detail__link-more {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
+  .object-detail__link-more {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
 
-/* --- Object history -----------------------------------------------
+  /* --- Object history -----------------------------------------------
  * Under the fields, because what an object IS comes before what
  * happened to it.
  */
-.object-detail__history {
-  margin-top: var(--space-section);
-}
+  .object-detail__history {
+    margin-top: var(--space-section);
+  }
 
-.object-detail__history h3 {
-  margin: 0 0 var(--space-tight);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+  .object-detail__history h3 {
+    margin: 0 0 var(--space-tight);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 
-.object-history {
-  table-layout: fixed;
-  width: 100%;
-}
+  .object-history {
+    table-layout: fixed;
+    width: 100%;
+  }
 
-/* The raw timestamp needs room and should not wrap mid-value. */
-.object-history__when {
-  width: 30%;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+  /* The raw timestamp needs room and should not wrap mid-value. */
+  .object-history__when {
+    width: 30%;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
 
-/* An entry whose changed fields are all unreadable still appears --
+  /* An entry whose changed fields are all unreadable still appears --
  * the fact of the edit is what an audit trail is for. Said plainly,
  * because a blank cell reads as a rendering fault. */
-.object-history__withheld {
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-style: italic;
-}
+  .object-history__withheld {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-style: italic;
+  }
 
-/* --- Notes on an object -------------------------------------------
+  /* --- Notes on an object -------------------------------------------
  * Before history: what people SAID is more often what someone came
  * for than what changed.
  */
-.object-detail__notes {
-  margin-top: var(--space-section);
-}
+  .object-detail__notes {
+    margin-top: var(--space-section);
+  }
 
-.object-detail__notes h3 {
-  margin: 0 0 var(--space-tight);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+  .object-detail__notes h3 {
+    margin: 0 0 var(--space-tight);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 
-.object-notes__note {
-  padding: var(--space-tight) 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
+  .object-notes__note {
+    padding: var(--space-tight) 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
 
-.object-notes__text {
-  margin: 0;
-  /* Preserves the line breaks someone typed. A note is prose, and
+  .object-notes__text {
+    margin: 0;
+    /* Preserves the line breaks someone typed. A note is prose, and
    * collapsing its paragraphs changes what it says. */
-  white-space: pre-wrap;
-}
+    white-space: pre-wrap;
+  }
 
-.object-notes__meta,
-.object-notes__empty {
-  margin: var(--space-hair) 0 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
+  .object-notes__meta,
+  .object-notes__empty {
+    margin: var(--space-hair) 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
 
-/* --- How an answer was found --------------------------------------
+  /* --- How an answer was found --------------------------------------
  * Collapsed by default: the answer is what someone came for, the
  * trace is the follow-up.
  */
-.answer-trace {
-  margin-top: var(--space-snug);
-}
+  .answer-trace {
+    margin-top: var(--space-snug);
+  }
 
-.answer-trace__table {
-  table-layout: fixed;
-  width: 100%;
-  margin-top: var(--space-tight);
-}
+  .answer-trace__table {
+    table-layout: fixed;
+    width: 100%;
+    margin-top: var(--space-tight);
+  }
 
-.answer-trace__empty {
-  margin: var(--space-tight) 0 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
+  .answer-trace__empty {
+    margin: var(--space-tight) 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
 
-/* --- The Overview graph and its preview ---------------------------
+  /* --- The Overview graph and its preview ---------------------------
  *
  * The preview OVERLAYS the chart rather than taking a column beside
  * it.
@@ -1352,65 +1634,282 @@ input[type="checkbox"],
  * chart had already given up the space. The whole canvas belongs to
  * the graph; the preview is a thing that appears ON it.
  */
-.schema-overview {
-  position: relative;
-}
+  .schema-overview {
+    position: relative;
+  }
 
-.graph-preview {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: min(320px, 45%);
-  max-height: 100%;
-  overflow-y: auto;
-  padding: var(--space-normal);
-  /* Opaque, not translucent: text over a moving force layout is
+  .graph-preview {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: min(320px, 45%);
+    max-height: 100%;
+    overflow-y: auto;
+    /* Scroll stops HERE rather than chaining to the canvas behind it.
+   * Without this, reaching the end of this pane hands the wheel to the
+   * parent and the page moves under the cursor -- the reader loses
+   * their place in a list they were not trying to leave. */
+    overscroll-behavior: contain;
+    padding: var(--space-normal);
+    /* Opaque, not translucent: text over a moving force layout is
    * unreadable, and the panel exists to be read. */
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  /* Above the chart's canvas. */
-  z-index: 1;
-}
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    /* Above the chart's canvas. */
+    z-index: 1;
+  }
 
-.graph-preview__close {
-  float: right;
-  margin: calc(-1 * var(--space-hair)) calc(-1 * var(--space-hair)) 0 0;
-}
+  .graph-preview__close {
+    float: right;
+    margin: calc(-1 * var(--space-hair)) calc(-1 * var(--space-hair)) 0 0;
+  }
 
-.graph-preview h3 {
-  margin: 0 0 var(--space-tight);
-}
+  .graph-preview h3 {
+    margin: 0 0 var(--space-tight);
+  }
 
-.graph-preview h4 {
-  margin: var(--space-normal) 0 var(--space-hair);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+  .graph-preview h4 {
+    margin: var(--space-normal) 0 var(--space-hair);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 
-.graph-preview__kind {
-  margin: 0;
-  font-size: 11px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+  .graph-preview__kind {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 
-.graph-preview__fields {
-  margin: 0;
-  padding-left: var(--space-normal);
-}
+  .graph-preview__fields {
+    margin: 0;
+    padding-left: var(--space-normal);
+  }
 
-.graph-preview__type,
-.graph-preview__joins,
-.graph-preview__affects {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
+  .graph-preview__type,
+  .graph-preview__joins,
+  .graph-preview__affects {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
 
-.graph-preview__visibility {
-  margin-left: var(--space-hair);
+  .graph-preview__visibility {
+    margin-left: var(--space-hair);
+  }
+
+  /* Hidden from sight, NOT from a screen reader.
+ *
+ * display:none and visibility:hidden both remove an element from the
+ * accessibility tree, so a label using either announces nothing -- the
+ * exact failure this class exists to avoid. The clip-rect technique
+ * keeps it in the layout at one pixel and out of view.
+ *
+ * white-space: nowrap because a clipped element that wraps can still
+ * paint a stray pixel; the standard incantation includes it for that
+ * reason rather than for typography. */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* The metrics screen: a row of figures, then the routes behind them. */
+  .metrics-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-normal);
+  }
+
+  /* Wraps rather than scrolls, because five figures on a narrow screen
+ * should stack instead of hiding the last two off the edge. */
+  .metrics-panel__figures {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-loose);
+    margin: 0;
+  }
+
+  .metrics-panel__figures dt {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  /* The number itself, large enough to read at a glance -- this screen
+ * exists to be scanned, not studied. */
+  .metrics-panel__figures dd {
+    margin: 0;
+    font-size: 1.4rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metrics-panel__window,
+  .metrics-panel__empty {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin: 0;
+  }
+
+  /* Durations line up column-wise, so a long tail is visible as a wider
+ * number rather than needing to be read. */
+  .metrics-table td:nth-child(2),
+  .metrics-table td:nth-child(3) {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* Active filters -- a pill row saying what is narrowing this view.
+ * Above the results rather than beside them: it describes what you are
+ * about to read, so it has to be read first. */
+  .active-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-tight);
+    margin-block-end: var(--space-normal);
+  }
+
+  /* Explore related -- where each link leads, and how far. A list rather
+ * than a canvas: one hop at a time is the whole design, and a layout
+ * engine is the "full Vertex" item. */
+  .explore-related {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .explore-related__link {
+    display: flex;
+    gap: var(--space-normal);
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .explore-related__label {
+    color: var(--text-secondary);
+  }
+
+  .explore-related__go {
+    text-decoration: none;
+  }
+
+  .explore-related__none {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  /* Saved views -- a popover, because saving is a momentary act and the
+ * list is short. A permanent sidebar section would spend space on
+ * something most people touch once a week. */
+  .saved-views__menu {
+    min-width: 18rem;
+  }
+
+  .saved-views__save {
+    display: flex;
+    gap: var(--space-tight);
+    align-items: center;
+    padding: var(--space-tight);
+  }
+
+  .saved-views__save .bp6-input-group {
+    flex: 1;
+    /* Without an explicit minimum a flex child refuses to shrink below
+   * its content, so a long placeholder would widen the popover. The
+   * same rule the workspace panes needed. */
+    min-inline-size: 0;
+  }
+
+  /* The shared loading treatment -- see components/LoadingState.tsx for
+ * why a spinner alone was not enough. */
+  .loading-state {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-loose);
+  }
+
+  /* --- Approvals: a queue of proposals awaiting a decision ------------
+ *
+ * Rows are read by someone scanning for what needs them, so the
+ * DESCRIPTION leads and everything else is secondary. The tags carry
+ * the two facts a reviewer sorts on -- is this mine to decide, or mine
+ * to wait on -- and both can be true at once.
+ */
+  .approvals__item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+    align-items: stretch;
+  }
+
+  .approvals__description {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .approvals__meta {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
+
+  .approvals__tags {
+    display: flex;
+    gap: var(--space-hair);
+  }
+
+  .approvals__actions {
+    display: flex;
+    gap: var(--space-hair);
+  }
+
+  /* The diff, revealed under a row rather than in a modal. A modal
+ * hides the queue behind it, and in analytic work the surrounding
+ * context is usually what the reader needs -- see UI_ROADMAP.md on
+ * drawers and popovers over modals. */
+  .write-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+    border-top: 1px solid var(--border-subtle);
+    padding-top: var(--space-tight);
+  }
+
+  .write-detail__object-title {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .write-detail__changes {
+    width: 100%;
+    /* Values are ids, amounts and categories read side by side against
+   * their proposed replacements -- tabular figures keep the two
+   * columns comparable at a glance. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A REFUSAL'S DETAIL, which is a multi-line drift report naming the
+   column and the offending value. Preformatted because the line
+   breaks carry meaning -- one line per drifted column -- and wrapped
+   because a long value should not scroll the page sideways. */
+  .mirror__refusal {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin-block: 0 var(--space-snug);
+  }
 }

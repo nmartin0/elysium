@@ -30,11 +30,71 @@ uv pip compile requirements.txt requirements-dev.txt --generate-hashes \
 ```bash
 ./lint.sh                                    # ruff, mypy, vulture, import-linter
 python -m pytest tests/ -q -m "not integration"   # the suite that must pass
-cd ui && npx vitest run && npm run lint      # frontend
+cd ui && npx vitest run && npm run lint      # oxlint, tsc, oxfmt, knip
 ```
+
+**`npm run lint` is the whole frontend gate**, matching the backend's
+own four-way split: oxlint asks whether a file is well-formed, `tsc
+--noEmit` whether the types agree, oxfmt whether it is formatted, and
+knip whether anything still uses a file or export or dependency at
+all. It stops at the first failure.
+
+It ran only the first two until recently, and oxfmt and knip were
+named in this list as a separate line, which quietly stopped being
+run: 14 unused imports, an undeclared runtime dependency and 57
+unformatted files accumulated while this command reported success.
+Documenting them was not enough, so they are inside the script now.
+Each of the four has been confirmed to fail the gate on purpose.
+
+oxlint runs with `--deny-warnings` there for the same reason. **A bare
+`npx oxlint` exits 0 on warnings**, so if you run it directly rather
+than through `npm run lint`, read the count, not the exit code.
 
 Integration tests marked `test_real_model_*` need a live Ollama. They
 fail in sandboxes without one. That is environmental, not a regression.
+
+## Hand over the restart with the patch, not after it
+
+A patch touching `api/` or `core/` needs `uvicorn` restarted before
+its effect is visible. That belongs in the same block as the
+`git am`, every time, rather than in a sentence afterwards.
+
+    cd ~/elysium
+    git am ~/Downloads/NNN-....patch
+    git push
+    cd ~/elysium/ui && npm run build     # if the patch touched ui/
+    # restart uvicorn                     # if it touched api/ or core/
+
+WHY IT KEEPS BEING FORGOTTEN: the frontend hot-reloads, so a
+UI-and-backend patch LOOKS applied. The new panel appears, the new
+column renders, and only the data behind it is stale.
+
+AND THE SYMPTOM IS NOT ALWAYS A 404. A new response field arriving as
+`undefined` renders as the UI's own empty state -- so a working
+feature looks like it found nothing. That one cost a real diagnosis.
+
+## One patch per commit, in the order they were made
+
+Never combine commits into one patch file, however convenient. If a
+patch fails to apply, produce the SAME commits again as separate
+patches rather than a single squashed one.
+
+WHY: a combined patch is all-or-nothing. When it fails -- and it has,
+repeatedly, on a stale `.git/rebase-apply` or a file that moved --
+every commit in it is blocked, including the ones that would have
+applied cleanly. Separate patches fail one at a time and the rest
+still land.
+
+It also keeps the applier's history matching the author's. A squashed
+patch silently rewrites four commits into one, and the reasoning for
+each is then buried in a single message.
+
+    197-...kp.patch   one commit
+    198-...kq.patch   the next
+    199-...kr.patch   the next
+
+Numbered in order, applied in order, checked with
+`git log --oneline -1` after each.
 
 ## You do not push
 
@@ -64,10 +124,300 @@ work and start the next task on a tree missing it. That happened here;
 the commit was recoverable from the reflog only because it was
 noticed within a few minutes.
 
+## Never `git reset --hard` without checking what it discards
+
+    git log --oneline origin/dev..HEAD
+
+RUN THAT FIRST, EVERY TIME. If it prints anything, a reset destroys
+it, and the reset is silent -- no warning, no prompt, no trace except
+the reflog.
+
+This cost work three times in one session. The last time it orphaned
+three commits, noticed only because a finding recorded twice was
+missing from BACKLOG.md both times. Recovering them meant reading the
+reflog and cherry-picking across a branch point.
+
+Resetting is the right way to guarantee a clean base and should stay.
+The rule is the check before it, not the avoidance of it.
+
+## A failed `git am` blocks every later one, silently
+
+    fatal: previous rebase directory .git/rebase-apply still exists
+
+WHEN A PATCH FAILS TO APPLY, git leaves `.git/rebase-apply` behind,
+and EVERY subsequent `git am` refuses with that message rather than
+doing anything. The refusal reads as a new failure of the new patch.
+
+    rm -rf .git/rebase-apply
+
+That is the fix, and it has to happen before the next attempt. Three
+patches in a row appeared to fail in one session; the first failed for
+a real reason and the other two never ran at all.
+
+SO A `git am` IS NOT DONE UNTIL `git log --oneline -1` HAS CHANGED.
+That check catches both this and a patch applied to the wrong base,
+and the commands in this repository's own instructions already print
+it twice for exactly that reason. Nobody was reading the second one.
+
+## A patch cannot delete a file that changes on its own
+
+`git am` verifies the content of every file it deletes. So a patch
+that untracks generated state -- a mirror, a database, a build output
+-- applies only on a machine where that state has not moved since the
+patch was written, which is no machine at all.
+
+Change `.gitignore` in the patch and leave `git rm -r --cached` to a
+person, with the command written beside the rule.
+
+## `npm ci`, not `npm install`
+
+`npm install` REWRITES package-lock.json whenever a `^` range resolves
+upward -- a dependency releasing a patch version is enough. The tree
+then has a modified lockfile nobody asked for, and `git am` refuses to
+apply any patch touching that file: "does not match index".
+
+That is not hypothetical. It blocked a correct patch for five rounds
+of debugging, during which the symptom looked like a bug in the code
+being applied.
+
+`npm ci` installs exactly what the lockfile says and never writes to
+it. Use it whenever the intent is "give me the declared tree" -- which
+is every time except deliberately adding or upgrading a dependency.
+
+When a dependency IS being changed, `npm install` is correct and the
+lockfile change belongs in that commit, where a reviewer can see it.
+
+## A mocked callback tests the component and skips the wire
+
+When a test replaces a handler with a mock, it stops at the component
+boundary. Everything inside is checked; the connection to what actually
+happens is not, and a control that breaks the connection passes.
+
+THREE TIMES IN ONE SESSION, each found by a control that did not fire:
+
+  AgentLoop had to pass for_agent=True to get the model's view of the
+  schema. Every test called visible_schema directly, so removing the
+  flag failed nothing -- and the model would have received object
+  types it cannot search.
+
+  visible_schema computed a `readable` flag correctly and FastAPI's
+  response_model stripped it, because no test went over HTTP. Found by
+  a person running the product, after the feature built on it had
+  already shipped.
+
+  Removing one filter pill had to leave the others. Every test mocked
+  onRemove, so replacing the handler with "clear everything" passed --
+  and would have shown far more rows than asked for while looking like
+  it worked.
+
+The shape is always the same: the component is right, the wire is not,
+and the suite is green.
+
+THE CHECK IS CHEAP. For any handler a test mocks, ask what the REAL one
+does, and write one test that drives it end to end -- through the
+route, through the loop, through the panel. One such test per wire is
+enough; it is the existence of the test that matters, not its
+thoroughness.
+
+Related to "Run the feature before committing it", and weaker than it.
+Running the product caught the `readable` bug that no test could.
+
+## Measure the cost of a fix, not just the size of the problem
+
+A decision not to fix something is a claim about cost, and a claim
+about cost deserves the same scrutiny as a test that passes.
+
+FOUND BY BEING WRONG. A KV-cache timing exposure was measured
+precisely -- two users shared 103 characters of prompt prefix, enough
+for an attack to align on -- and then filed as disproportionate to fix
+on reasoning that was never checked. The fix was two lines, and it took
+the shared prefix from 103 characters to 2.
+
+The same commit repeated a mitigation claim without testing it: that
+the server running one slot narrowed the exposure. One slot limits
+CONCURRENCY, not cache REUSE, so sequential requests were still
+timeable. Two unmeasured claims, both load-bearing, both in the
+paragraph explaining why nothing needed doing.
+
+The tell is a sentence like "this touches every read path" or "a
+half-migration would be worse than either end" with no number in it.
+Those are estimates wearing the clothes of findings. Counting the call
+sites takes one grep.
+
+APPLIED IMMEDIATELY, and it moved a second decision: the permission
+ladder was parked partly on "touches every read path". Six call sites,
+all in one file, across four functions. Still parked -- the DESIGN is
+genuinely undecided -- but no longer parked on a guess about size.
+
+## Run the feature before committing it
+
+**A PASSING TEST SUITE IS NOT EVIDENCE THAT A FEATURE WORKS.** Before
+committing anything that adds a capability, EXERCISE IT THROUGH THE
+REAL ENTRY POINT -- with a throwaway probe script, deleted afterwards.
+Not the handler: the loop that calls it. Not a fake: the real mediator,
+the real deployment config, the real database.
+
+This exists because three shipped commits crashed on the user's first
+real run, and every one passed a full green suite first:
+
+- `get_object` gained an `object_ids` form. Seventeen tests covered the
+  step handler and the parser. Nothing covered `run()`, which sits
+  between them -- and `run()` raised KeyError on the first query.
+- `aggregate_object` was made reachable. Tests proved the parser
+  accepted it. Nothing ever EXECUTED one, so a link column reached
+  SQLite and the loop died.
+- Configuration reload shipped. Tests proved it reloaded. Nothing
+  created a user afterwards, so a stale roles copy went unnoticed.
+
+**Cleaner commits would not have caught any of them.** One minute of
+running the feature would have caught all three. The pattern already
+exists in this repository: the probe that reproduced the `get_object`
+crash against the real mediator was written AFTER shipping the bug
+instead of before.
+
+**THE TEST IS "WHAT DID I RUN", NOT "WHAT PASSED".** A commit message
+saying "1,319 tests pass" is weaker than one saying "proposed and
+confirmed a write through run() against the real mediator". Say the
+second.
+
+**SQUASH WITHIN A CHANGE, NEVER ACROSS.** A bug found in work not yet
+handed over is amended into the commit that introduced it. A bug found
+in work already pushed gets its own commit -- do NOT rewrite published
+history to hide it. Those fix commits are often the most useful
+documentation in the repository, because they record the trap and how
+it was found.
+
+## Read the signature before you call it
+
+Every invented name in this session was caught by a tool, which means
+every one cost a round trip that reading would have saved:
+
+    _expire_locked          was  _expire_stale_locked
+    store.add               was  store.store
+    catalog._fs_io()        does not exist at all
+    PendingWrite(...)       missing two required fields
+    getByRole('link')       the nav uses role="menuitem"
+    `.workspace__filter`    was not the rule that caused the bug
+
+A plausible name is not a name. `grep -n "def "` on the file, or
+reading the dataclass, takes seconds and is the difference between
+writing code once and writing it three times.
+
+THE SAME APPLIES TO FILES. Three exact-match edits in one session
+failed against text that was not there -- twice because a formatter
+had reshaped it, once because an earlier edit had already changed it.
+When an edit asserts a match count and fails, READ THE FILE rather
+than adjusting the pattern. Twice in a row on one file means the file
+is not what you think it is.
+
+WHAT WORKS, demonstrated on the per-task approval gate: read
+confirm_and_execute, the route, and the store's public methods first,
+then write. No invented names, nothing caught by mypy, and faster than
+the guess-and-fix loop that preceded it.
+
+## What has actually worked
+
+Habits worth keeping, each earned the expensive way in this project:
+
+**A control that cannot fail is a test that proves nothing.** Break
+the code deliberately; if the test still passes, it was never testing
+that. This has caught more real gaps than any other practice here.
+
+**Verify against the real thing, not a description of it.** The API
+returns a dict keyed by name, not a list. Blueprint attaches props to
+the input, not the label. jsdom forwards a label click. Each was found
+by rendering or calling it and looking -- and each had a plausible
+wrong answer that would have survived a whole commit.
+
+**When a fix does not work twice, change the approach rather than the
+fix.** Four attempts at telling one click from another ended with
+removing the component that produced two. The fifth idea was not
+better than the fourth; it was a different kind of idea.
+
+**Write the limit down where the next person will hit it.** "jsdom
+computes no layout." "This test cannot fire and here is why." "The
+assertions in this file have never been run." A known gap stated is
+worth more than a gap someone rediscovers.
+
+**Ask for the fact rather than guessing at it.** Which browser. The
+server log. The full output. Every one of those ended a debugging loop
+that had already cost several attempts.
+
+## Do not truncate the output you are diagnosing from
+
+`tail -1` and `grep -oE "Tests .*"` discard exactly the line that names
+what failed. Both test suites already print it:
+
+    FAILED tests/unit/test_x.py::test_y - AssertionError...
+    FAIL packages/a/src/b.test.ts > describe > it
+
+THREE "UNEXPLAINED" FLAKES IN ONE SESSION WERE NOT UNEXPLAINED. Each
+was recorded as unidentifiable -- twice in BACKLOG.md, escalated once
+as needing a verbose reporter -- and each time the name had been
+printed and thrown away by the pipe used to read it.
+
+THE SAME MISTAKE TWICE MORE, on other commands. `run_sync` prints
+`FAILED <table>: <error>` to stderr before its count, and I recorded
+"reports 0/2 with no explanation" as a defect after reading it with
+`tail -2`. A patch's own failure message was read the same way.
+
+SO: when something fails unexpectedly, RE-RUN IT WITHOUT THE PIPE
+before concluding anything about the failure. A diagnosis truncated by
+the command used to read it looks exactly like a diagnosis that was
+never written -- and the second conclusion leads to building tooling
+for a problem that does not exist.
+
+Piping is fine for a result you EXPECT. It is not fine for one you are
+investigating.
+
 ## Verification that actually verifies
 
 When you write a test for a bug you fixed, **break the fix and confirm
 the test fails.** If it still passes, find out why before moving on.
+
+**THE CONTROL IS NOT A FINAL CHECK. IT IS HOW YOU FIND OUT WHETHER YOU
+WROTE A TEST.** Do not treat it as diligence performed on a test you
+already believe. Until the control has failed, you do not know that
+what you wrote asserts anything, and "it passes" is evidence of
+nothing -- a test that cannot fail passes for the same reason a
+correct one does.
+
+State the property first, in one sentence, then ask what change to the
+code would make that sentence false. If you cannot name one, you are
+about to write a test that cannot fail. Write the control first if
+that helps; the order matters less than doing it before you believe
+the result.
+
+**THE FAILURE MODE IS SPECIFIC AND RECURRING: a test written beside
+the code it tests tends to assert the code's SHAPE rather than its
+PROPERTY.** You have just read the implementation, so you reach for
+what it does instead of what it must guarantee, and those agree
+exactly while the code is correct. Only breaking it separates them.
+Recent instances, each caught only by the control:
+
+- A test that a signal handler does not block asserted the reload
+  eventually happened. That is true whether the work runs on a thread
+  or inline -- it tested the outcome, not the timing.
+- A test that an exception cannot escape a thread expected the
+  exception to fail the test. An exception escaping a DAEMON thread
+  does not fail a test; it prints a warning and the run goes green.
+- A test that an audit entry names the PROPOSING generation passed
+  with the implementation replaced by the APPLYING one, because the
+  fixture had both at the same number.
+- A test that a thread was awaited polled for a side effect with a
+  deadline, so it returned while the thread still held a lock.
+
+**CHECK THE CONTROL FAILS FOR THE RIGHT REASON, AND THAT THE RIGHT
+TESTS FAIL.** A control that fails everything is usually broken
+setup, not a guarded property. Say in the commit message which tests
+failed and how many: "cap truncates silently -> 1 fail" is a
+verification; "the control failed" is a claim.
+
+**AND CHECK THE OPPOSITE DIRECTION WHERE THERE IS ONE.** A guard that
+only ever fires is decoration. If a test asserts something must NOT
+appear, add its pair asserting the legitimate case still passes --
+otherwise an over-eager future change satisfies the guard by breaking
+something else.
 
 This caught five hollow tests in one session: a concurrency test that
 passed against a racy lock (one trial, wrong interleaving), a batching

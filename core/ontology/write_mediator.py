@@ -34,8 +34,10 @@ Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
@@ -73,6 +75,21 @@ def _fields_to_columns(resolved_type_config: dict, values_by_field: dict) -> dic
     }
 
 
+# What put a write forward. A closed set, as Literal rather than Enum
+# to match SubWrite.operation directly below -- this codebase has no
+# Enum anywhere, and a second convention for the same job would be one
+# to remember.
+#
+# "human": a person submitted it directly, through POST
+#          /actions/{action_type_name}.
+# "agent": the LLM chose it mid-query, through AgentLoop's own
+#          propose_action step. The person named in user_id still
+#          supplied every permission used -- see UI_ROADMAP.md's
+#          approvals record on why the agent is an envelope and never
+#          a principal -- but they did not pick this action.
+Origin = Literal["human", "agent"]
+
+
 @dataclass(frozen=True)
 class SubWrite:
     # One object's own share of a (possibly multi-object) proposed
@@ -106,13 +123,14 @@ class PendingWrite:
     # sub_writes is ALWAYS at least one entry, even for what looks like
     # an ordinary single-object action -- there is deliberately no
     # separate "single-object" representation living alongside a
-    # "multi-object" one. propose_action() and core/ontology/
-    # action_types.py's own schema-load validation already fully
-    # support declaring and resolving more than one -- the one piece
-    # still catching up is confirm_and_execute()'s own apply logic
-    # (still only ever applies sub_writes[0] as of this writing; see
-    # this file's own AI-notes at the bottom for exactly where that
-    # stands).
+    # "multi-object" one. propose_action(), core/ontology/
+    # action_types.py's own schema-load validation, AND confirm_and_
+    # execute()'s own apply logic all fully support more than one:
+    # every write goes through _apply_batch(), one sub_write or many,
+    # with no special case for either. (This comment used to say the
+    # apply side "still only ever applies sub_writes[0]" -- true when
+    # written, stale since the batch work landed. See this file's own
+    # AI-notes and write_log.py's MULTI-OBJECT BATCHES section.)
     #
     # action_type_name is the action's own real, raw name (e.g.
     # "TransferFunds") -- distinct from description, which is a
@@ -128,11 +146,129 @@ class PendingWrite:
     user_id: str
     description: str
     action_type_name: str
+    # PROVENANCE. Who proposed this, when, and through what.
+    #
+    # user_id alone is not provenance: both paths that reach
+    # propose_action() -- a person filling in ActionForm via POST
+    # /actions/{name}, and the agent choosing an action mid-query --
+    # set it to the same person, so the two were previously
+    # indistinguishable in the record. An approvals inbox has to be
+    # able to say "Alice submitted this" versus "the agent proposed
+    # this while answering Alice's question", and a reviewer weighs
+    # those differently.
+    #
+    # origin is REQUIRED, with no default, deliberately. A default
+    # would be a guess written into the audit trail, and the safe
+    # guess does not exist: defaulting to "human" understates agent
+    # involvement, and defaulting to "agent" libels a person. Omitting
+    # it raises TypeError instead -- the same reasoning
+    # core/request_context.py gives for threading its own context
+    # explicitly, that "will not start" beats quietly attributing work
+    # to the wrong actor.
+    #
+    # TWO VALUES, not three. Whether a human then CONFIRMED an agent
+    # proposal, or auto_execute skipped that step, is a fact about the
+    # DECISION rather than the proposal, and belongs to whatever
+    # records the decision -- see UI_ROADMAP.md's approvals design
+    # record, step 3. Origin answers only "what put this forward".
+    #
+    # proposed_at is here rather than read back from
+    # PendingWriteStore's own expires_at (which is proposed_at + TTL,
+    # recoverable only by knowing the TTL) because an auto_execute
+    # write never enters that store at all, and would otherwise carry
+    # no timestamp anywhere.
+    origin: Origin
+    proposed_at: datetime
+    # WHICH CONFIGURATION AUTHORIZED THIS -- see HOT_RELOAD_PLAN.md.
+    #
+    # A pending write is the first thing in Elysium that OUTLIVES the
+    # request that made it. Everything else is decided and finished
+    # inside one call, so the configuration in force could never have
+    # changed underneath it. This one waits for a human.
+    #
+    # Once configuration can be reloaded while running, a write can be
+    # proposed under one set of grants and approved under another. That
+    # is not hypothetical for an approvals inbox, where the wait is the
+    # entire point. Recording the generation is what makes the question
+    # answerable at all; deciding what to DO about a mismatch is a
+    # later step of that plan, and deliberately not this one.
+    #
+    # Required, no default, for the same reason origin above is: a
+    # default would be a guess written into an audit trail.
+    proposed_under_generation: int
+
+    # WHAT A CONFIRM-TIME CRITERION NEEDS, and neither is reconstructible
+    # later. The parameters are the action's own inputs, which a
+    # `parameter.<name>` reference resolves against; the proposer is the
+    # full record, which `proposer.<attribute>` resolves against.
+    #
+    # THE PROPOSER IS STORED AS A RECORD, not just the user_id already
+    # on this class, because a criterion may compare against any
+    # attribute -- their MAC value, their role. Re-resolving it at
+    # confirm time from the directory would read the CURRENT record,
+    # and a four-eyes rule must compare against who proposed it, not
+    # against whoever holds that username now.
+    parameters: dict
+    proposer: UserRecord
+
+
+def _describe_action(action_type_name: str, action_def: dict, parameters: dict) -> str:
+    """A sentence a reviewer can read, not a repr of a dict.
+
+    This was `f"{name}(parameters={parameters})"`, which was fine as a
+    log line and became the primary text of an inbox row the moment
+    /writes/awaiting existed. Seen in a real queue it reads
+    `RecategorizeTransaction(parameters={'transaction_id': 1,
+    'new_category': 'travel'})` -- Python punctuation a reviewer has to
+    parse before they can think about the decision.
+
+    BUILT FROM WHAT THE DEPLOYMENT ALREADY AUTHORED, not from a new
+    field nobody has filled in. Action types carry a `description`
+    written for humans, and parameters carry `display_name`. Both
+    existed and neither was used here, so a schema that already reads
+    well produces a row that already reads well.
+
+    LOSES NOTHING THE OLD FORM CARRIED. Every parameter name and value
+    still appears; only the punctuation changes. That matters because
+    this string reaches the audit log -- as log_pre's query_text, and
+    as the text on an expiry entry -- and a prettier description that
+    dropped a parameter would be a quieter audit trail bought with
+    readability.
+    """
+    sentence = (action_def or {}).get("description") or action_type_name
+    declared = (action_def or {}).get("parameters") or {}
+
+    parts = []
+    for name, value in parameters.items():
+        # The authored label where there is one. Falling back to the
+        # raw name keeps an un-labelled parameter visible rather than
+        # dropping it -- see the docstring on losing nothing.
+        label = (declared.get(name) or {}).get("display_name") or name
+        parts.append(f"{label}: {value}")
+
+    if not parts:
+        return sentence
+    return f"{sentence} ({', '.join(parts)})"
+
+
+# THE MOST OBJECTS ONE ACTION MAY WRITE.
+#
+# Matches Foundry, which makes actions "unavailable if the number of
+# selected objects exceeds 1000" -- and the reasoning is the same. An
+# atomic batch has no natural ceiling, so without one a bulk write of
+# fifty thousand would hold a lock for minutes, produce an audit entry
+# nobody can read, and hand a reviewer a diff they cannot meaningfully
+# approve.
+#
+# A deployment that genuinely needs more is describing a data pipeline
+# rather than a user action, and should be pointed at one.
+MAX_BULK_OBJECTS = 1000
 
 
 class WriteMediator:
     def __init__(
-        self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict, action_types: dict
+        self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict,
+        action_types: dict, generation: int,
     ):
         # action_types is required, not optional -- a WriteMediator's
         # only real capability is propose_action(), which is useless
@@ -145,6 +281,12 @@ class WriteMediator:
         self.mediator = mediator
         self.roles = roles
         self.action_types = action_types
+        # Taken from the SAME DeploymentConfig the mediator's audit log
+        # was built from, so a pending write and the audit entries
+        # describing it can never name different generations. Passing
+        # it separately to each was the alternative and is exactly how
+        # two sources of one truth start to disagree.
+        self.generation = generation
         # write_adapters -- a real, SEPARATE, independent set of
         # adapters, never mediator's own (see this class's own
         # AI-notes for the full story: Phase 0 of the read-only mirror
@@ -777,7 +919,8 @@ class WriteMediator:
             )
         return {}
 
-    def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict) -> PendingWrite:
+    def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict,
+                       origin: Origin) -> PendingWrite:
         # Matches Palantir Foundry's own action-type model directly
         # (verified against their docs, not assumed): a NAMED,
         # independently-governed operation, not a generic CRUD verb.
@@ -884,73 +1027,201 @@ class WriteMediator:
             # already uses -- see this method's own top-level comment
             # for why object_id is just an ordinary parameter now, not
             # a special case.
-            object_id = self._resolve_mutation_value(sw_def["object_id"], parameters, user_record)
+            resolved = self._resolve_mutation_value(sw_def["object_id"], parameters, user_record)
 
-            # The FULL duplicate check, against REAL resolved ids --
-            # the complement to core/ontology/action_types.py's own,
-            # WEAKER, load-time-only structural check. Two DIFFERENT
-            # object_id expressions (e.g. parameter.from_id and
-            # parameter.to_id) could still resolve to the SAME real id
-            # once real parameters arrive -- the schema-load check can
-            # never catch that; only this, with real values in hand,
-            # can.
-            object_ref = (object_type, str(object_id))
-            if object_ref in seen_object_refs:
-                raise ValueError(
-                    f"Action {action_type_name!r}: two sub_writes both resolved to the "
-                    f"identical {object_type} {object_id!r}"
-                )
-            seen_object_refs.add(object_ref)
-
-            self._authorize_sub_write(
-                user_record, object_type, object_id, operation, execute_action_id, rbac_allowed
-            )
-
-            # Submission criteria -- now PER SUB_WRITE, not per action;
-            # see core/ontology/submission_criteria.py's own docstring
-            # for why this stays a property of the write being
-            # proposed, not a generic validation bolted onto "update"
-            # itself. The "parameter" check kind still reads from the
-            # action's own declared parameter names, shared across
-            # every sub_write, not a per-sub_write namespace.
-            criteria = sw_def.get("submission_criteria", [])
-            if criteria:
-                current_state = self._read_current_state_for_criteria(object_type, object_id, criteria) \
-                    if operation == "update" else None
-                evaluate_submission_criteria(criteria, current_state, parameters)
-
-            # Resolve this sub_write's own declared mutations into a
-            # concrete field-value dict -- this, not free-form model
-            # input, is what actually gets written.
-            # A DELETE HAS NO MUTATIONS. Validation has allowed that
-            # since deletes were added -- a delete names an object, not
-            # a change to it -- but this path still required the key,
-            # so a delete action validated cleanly at load and raised
-            # KeyError the moment an agent proposed one.
+            # A LIST EXPANDS INTO ONE SUB-WRITE PER OBJECT. This is
+            # the whole of "bulk": an action whose object_id comes
+            # from an object_reference_list parameter touches every
+            # object named, and each one goes through the SAME
+            # per-object checks below -- authorization, submission
+            # criteria, the duplicate guard. Nothing is skipped
+            # because there are many.
             #
-            # Each half was tested and the SEAM between them was not,
-            # which is what the end-to-end test that found this exists
-            # for.
-            changes = {
-                mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"],
-                                                                            parameters, user_record)
-                for mutation in (sw_def.get("mutations") or [])
-            }
+            # Foundry draws the line in the same place: a "bulk
+            # action type" is one "using an object reference list
+            # parameter", so it is a property of the ACTION rather
+            # than a mode the UI switches into.
+            #
+            # STILL ONE ATOMIC BATCH. Forty objects means forty
+            # writes that all succeed or all fail, which is what
+            # makes a bulk action safe to approve as a unit -- a
+            # half-applied bulk edit is the state nobody can
+            # reason about.
+            object_ids = resolved if isinstance(resolved, list) else [resolved]
 
-            # For "update," expected_current_values is built PER
-            # STORAGE GROUP (same _group_changes_by_storage()
-            # confirm_and_execute() itself uses) -- this is what makes
-            # a multi-storage update possible at all; see write_log.py's
-            # own module docstring for the full mechanism.
-            expected_current_values = self._expected_current_values_for(
-                operation, object_type, object_id, changes, action_type_name
+            # A CEILING, because an atomic batch has no natural one.
+            #
+            # Forty objects all succeeding or all failing is the point.
+            # Fifty thousand is the same promise made about a write
+            # that will hold a lock for minutes, produce an audit entry
+            # nobody can read, and present a reviewer with a diff they
+            # cannot meaningfully approve. The atomicity that makes a
+            # bulk action safe at small sizes is what makes it
+            # dangerous at large ones.
+            #
+            # Foundry stops at the same number: actions "are
+            # unavailable if the number of selected objects exceeds
+            # 1000". Refused at PROPOSE time rather than at confirm, so
+            # nobody assembles a selection they will not be allowed to
+            # act on.
+            if len(object_ids) > MAX_BULK_OBJECTS:
+                raise ValueError(
+                    f"Action {action_type_name!r} names {len(object_ids)} objects, and at most "
+                    f"{MAX_BULK_OBJECTS} may be written in one action. Narrow the selection, or "
+                    f"split it across several proposals."
+                )
+
+            for object_id in object_ids:
+
+                # The FULL duplicate check, against REAL resolved ids --
+                # the complement to core/ontology/action_types.py's own,
+                # WEAKER, load-time-only structural check. Two DIFFERENT
+                # object_id expressions (e.g. parameter.from_id and
+                # parameter.to_id) could still resolve to the SAME real id
+                # once real parameters arrive -- the schema-load check can
+                # never catch that; only this, with real values in hand,
+                # can.
+                object_ref = (object_type, str(object_id))
+                if object_ref in seen_object_refs:
+                    raise ValueError(
+                        f"Action {action_type_name!r}: two sub_writes both resolved to the "
+                        f"identical {object_type} {object_id!r}"
+                    )
+                seen_object_refs.add(object_ref)
+
+                self._authorize_sub_write(
+                    user_record, object_type, object_id, operation, execute_action_id, rbac_allowed
+                )
+
+                # Submission criteria -- now PER SUB_WRITE, not per action;
+                # see core/ontology/submission_criteria.py's own docstring
+                # for why this stays a property of the write being
+                # proposed, not a generic validation bolted onto "update"
+                # itself. The "parameter" check kind still reads from the
+                # action's own declared parameter names, shared across
+                # every sub_write, not a per-sub_write namespace.
+                criteria = sw_def.get("submission_criteria", [])
+                if criteria:
+                    current_state = self._read_current_state_for_criteria(object_type, object_id, criteria) \
+                        if operation == "update" else None
+                    evaluate_submission_criteria(criteria, current_state, parameters, user_record)
+
+                # Resolve this sub_write's own declared mutations into a
+                # concrete field-value dict -- this, not free-form model
+                # input, is what actually gets written.
+                # A DELETE HAS NO MUTATIONS. Validation has allowed that
+                # since deletes were added -- a delete names an object, not
+                # a change to it -- but this path still required the key,
+                # so a delete action validated cleanly at load and raised
+                # KeyError the moment an agent proposed one.
+                #
+                # Each half was tested and the SEAM between them was not,
+                # which is what the end-to-end test that found this exists
+                # for.
+                changes = {
+                    mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"],
+                                                                                parameters, user_record)
+                    for mutation in (sw_def.get("mutations") or [])
+                }
+
+                # For "update," expected_current_values is built PER
+                # STORAGE GROUP (same _group_changes_by_storage()
+                # confirm_and_execute() itself uses) -- this is what makes
+                # a multi-storage update possible at all; see write_log.py's
+                # own module docstring for the full mechanism.
+                expected_current_values = self._expected_current_values_for(
+                    operation, object_type, object_id, changes, action_type_name
+                )
+                resolved_sub_writes.append(
+                    SubWrite(object_type, object_id, operation, changes, expected_current_values)
+                )
+
+        description = _describe_action(action_type_name, action_def, parameters)
+        return PendingWrite(
+            tuple(resolved_sub_writes), user_record.user_id, description, action_type_name,
+            origin, datetime.now(UTC), self.generation,
+            parameters=dict(parameters), proposer=user_record,
+        )
+
+    def _criteria_for(self, pending: PendingWrite) -> list[tuple[str, Any, list]]:
+        """Each sub_write's criteria, from the CURRENT action definition.
+
+        CURRENT, not the definition in force when the write was
+        proposed, and that is the same choice step 6b already made
+        about fields: the deployment's rules today are what governs a
+        decision taken today. A write proposed before a four-eyes rule
+        was added must still obey it.
+        """
+        action_def = self.action_types.get(pending.action_type_name) or {}
+        declared = action_def.get("sub_writes") or []
+        return [
+            (sub_write.object_type, sub_write.object_id, (sw_def or {}).get("submission_criteria") or [])
+            for sub_write, sw_def in zip(pending.sub_writes, declared, strict=False)
+        ]
+
+    def eligible_task_indexes(self, pending: PendingWrite, approver: UserRecord,
+                               roles: dict) -> set[int]:
+        """Which of a request's tasks this reviewer may decide.
+
+        FOUNDRY SCOPES A REVIEWER TO WHAT THEY CAN REVIEW: "approve or
+        reject all tasks in the request THAT YOU ARE ELIGIBLE TO
+        REVIEW". This is that set.
+
+        WHAT DIFFERS BETWEEN TASKS IS THE OBJECT, not the action. Every
+        task in one request shares an action type, so the
+        `execute:<ActionType>` grant is identical across all of them --
+        it decides whether a reviewer may act on the REQUEST at all.
+        MAC is what differs: a reviewer in one security partition may
+        decide the tasks touching objects in it and not the others.
+
+        check_access() is the existing primitive for exactly that
+        question, combining MAC on the object with RBAC on the action,
+        and reusing it means eligibility here cannot drift from
+        eligibility anywhere else.
+
+        A CREATE HAS NO OBJECT TO CHECK. There is nothing to read a
+        security value from, so it falls back to the action grant
+        alone -- the same answer the request-level check already gives.
+        """
+        eligible = set()
+        for index, sub_write in enumerate(pending.sub_writes):
+            if sub_write.operation == "create":
+                if authorize(approver, roles, f"execute:{pending.action_type_name}"):
+                    eligible.add(index)
+                continue
+            if check_access(
+                self.mediator, approver, roles, sub_write.object_type,
+                sub_write.object_id, f"execute:{pending.action_type_name}",
+            ):
+                eligible.add(index)
+        return eligible
+
+    def _check_approver_criteria(self, pending: PendingWrite, approver: UserRecord) -> None:
+        """Re-evaluates submission criteria with the APPROVER acting.
+
+        WHY AGAIN, when propose_action() already evaluated them: it
+        evaluated them against the PROPOSER. A four-eyes rule is about
+        the approver and says nothing at propose time -- there is no
+        approver yet. Evaluating only once is why four-eyes could not
+        be enforced at all before this.
+
+        The proposer is threaded through so `proposer.<attribute>`
+        resolves, which is what makes the rule unspoofable -- see
+        submission_criteria.py on why a parameter cannot do this job.
+        """
+        for object_type, object_id, criteria in self._criteria_for(pending):
+            if not criteria:
+                continue
+            current_state = self._read_current_state_for_criteria(
+                object_type, object_id, criteria,
             )
-            resolved_sub_writes.append(SubWrite(object_type, object_id, operation, changes, expected_current_values))
+            evaluate_submission_criteria(
+                criteria, current_state, pending.parameters, approver,
+                proposer=pending.proposer,
+            )
 
-        description = f"{action_type_name}(parameters={parameters})"
-        return PendingWrite(tuple(resolved_sub_writes), user_record.user_id, description, action_type_name)
-
-    def confirm_and_execute(self, pending: PendingWrite, approved: bool) -> dict | None:
+    def confirm_and_execute(self, pending: PendingWrite, approved: bool,
+                             approver: UserRecord | None = None) -> dict | None:
         # ALWAYS goes through _apply_batch() below, one sub_write or
         # many -- see this file's own AI-notes at the bottom, and
         # write_log.py's own MULTI-OBJECT BATCHES docstring section,
@@ -960,6 +1231,47 @@ class WriteMediator:
         # _group_changes_by_storage() already lets a single-storage
         # object apply through the exact same loop as a multi-storage
         # one, with no special case for either.
+        # STILL APPLICABLE? A pending write proposed under one
+        # configuration can be confirmed under another -- the store
+        # survives a reload, deliberately, because discarding proposals
+        # on every configuration change would make an approvals inbox
+        # useless. So the ontology it was written against may no longer
+        # describe the fields it targets.
+        #
+        # CHECKED AT CONFIRM TIME rather than only at apply time,
+        # because the failure would otherwise arrive AFTER a human
+        # approved it: the approver would be told their decision was
+        # accepted and then that it could not be carried out, which is
+        # the worst order to learn those two things in.
+        #
+        # HOT_RELOAD_PLAN.md step 6 also wants these marked unapplyable
+        # at RELOAD time, so an inbox never shows a proposal that
+        # cannot be approved. That is a better experience and it is not
+        # the correctness half -- a write must be refused whether or
+        # not anything got round to marking it, and this is the refusal
+        # that cannot be skipped.
+        if approved and approver is not None:
+            # BEFORE the unapplyable check and before anything is
+            # written: an approver who is not permitted to approve
+            # should learn that, not learn about a schema change they
+            # cannot act on either way.
+            self._check_approver_criteria(pending, approver)
+
+        if approved:
+            unapplyable = self._fields_no_longer_declared(pending)
+            if unapplyable:
+                self.audit_log.log_write_unapplyable(
+                    pending.user_id, pending.description,
+                    pending.proposed_under_generation, self.generation, unapplyable,
+                )
+                raise ValueError(
+                    f"This write can no longer be applied: it changes "
+                    f"{', '.join(unapplyable)}, which the ontology no longer "
+                    f"declares. It was proposed under configuration generation "
+                    f"{pending.proposed_under_generation} and the deployment is now "
+                    f"on {self.generation}. Nothing has been written."
+                )
+
         request_id = str(uuid.uuid4())
         self.audit_log.log_pre(
             request_id, pending.user_id, pending.description, f"write:{pending.action_type_name}",
@@ -971,6 +1283,44 @@ class WriteMediator:
                 # mac_allowed/rbac_allowed independently rather than
                 # only a combined allow/deny bit.
                 "sub_write_count": len(pending.sub_writes),
+                # Provenance, recorded here because the audit log is
+                # the only place it survives the process. A reader
+                # asking "did a person choose this, or did the agent"
+                # otherwise has to infer it from which route happened
+                # to be hit, which the log does not record.
+                "origin": pending.origin,
+                "proposed_at": pending.proposed_at.isoformat(),
+                # The configuration in force when this was PROPOSED.
+                # The audit log stamps the generation in force when it
+                # is APPLIED, so an entry carrying two different
+                # numbers is a write that outlived a configuration
+                # change -- which is exactly the thing an approvals
+                # inbox makes ordinary, and which nothing could
+                # currently detect. Recorded now; what to DO about a
+                # mismatch is a later step of HOT_RELOAD_PLAN.md.
+                "proposed_under_generation": pending.proposed_under_generation,
+                # WHO APPROVED IT, which this entry recorded nowhere.
+                # user_id above is the PROPOSER -- correct, since the
+                # write is theirs -- so a four-eyes deployment could
+                # enforce that two different people were involved and
+                # then not be able to PROVE it afterwards. The control
+                # existed; the evidence did not.
+                #
+                # None when no approver was supplied, which is honest
+                # rather than tidy: scripts/run_deployment.py confirms
+                # without one, and writing the proposer into this field
+                # would make a single-party write look like a reviewed
+                # one in the log.
+                "approved_by": approver.user_id if approver is not None else None,
+                # THE PAIR IS THE EVIDENCE, so it is computed here
+                # rather than left to a reader to derive. Someone
+                # auditing a four-eyes control asks one question --
+                # were these the same person -- and a log that makes
+                # them compare two fields invites the comparison being
+                # done wrong, or not at all.
+                "self_approved": (
+                    approver is not None and approver.user_id == pending.user_id
+                ),
                 "sub_writes": [
                     {"object_type": sw.object_type, "object_id": sw.object_id, "changes": sw.changes}
                     for sw in pending.sub_writes
@@ -985,6 +1335,56 @@ class WriteMediator:
         object_ids = self._apply_batch(pending)
         self.audit_log.log_post(request_id, "success", object_ids)
         return {"status": "written", "object_ids": object_ids}
+
+    def fields_no_longer_declared(self, pending: PendingWrite) -> list[str]:
+        """Public name for the same question the confirm path asks.
+
+        THE INBOX AND THE CONFIRM PATH MUST AGREE. A listing that
+        computed applicability its own way could show a write as
+        approvable that confirm then refuses -- or, worse, mark one
+        unapplyable that would have worked, so nobody tries.
+
+        One function, two callers, no second opinion.
+        """
+        return self._fields_no_longer_declared(pending)
+
+    def _fields_no_longer_declared(self, pending: PendingWrite) -> list[str]:
+        """Fields this write targets that the current ontology lacks.
+
+        Returned as "Type.field" strings because that is what an
+        operator greps ontology_schema.yaml for -- a bare field name
+        sends them to the wrong declaration when two types share one.
+
+        AN UNKNOWN OBJECT TYPE COUNTS TOO, and is the sharper case: a
+        type removed entirely takes every field with it, and reporting
+        only "the type is gone" would leave the approver guessing which
+        of their changes were affected.
+        """
+        missing: list[str] = []
+        for sub_write in pending.sub_writes:
+            try:
+                declared = self._adapter_mediator._type_schema(sub_write.object_type)
+            except (KeyError, ValueError):
+                missing.extend(
+                    f"{sub_write.object_type}.{field}" for field in sub_write.changes
+                )
+                continue
+            # THE ID FIELD IS DECLARED SEPARATELY, not inside `fields`,
+            # and a create legitimately sets it. Found by five existing
+            # tests: without this, every create was refused as targeting
+            # an undeclared field, and the message said so while
+            # reporting the SAME generation on both sides -- which is
+            # itself the tell that nothing had changed and the check was
+            # simply wrong.
+            declared_names = set(declared.get("fields", {}))
+            id_field = declared.get("id_field")
+            if id_field is not None:
+                declared_names.add(id_field)
+            missing.extend(
+                f"{sub_write.object_type}.{field}"
+                for field in sub_write.changes if field not in declared_names
+            )
+        return missing
 
     def _apply_batch(self, pending: PendingWrite) -> list:
         # THE actual atomicity boundary for the WHOLE write, one

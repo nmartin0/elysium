@@ -55,8 +55,25 @@ OPERATOR_TYPES: dict[str, tuple[str, ...] | None] = {
     "in": None,
     "not_in": None,
     "range": ("integer", "number"),
-    "date_range": ("string",),  # ISO-8601 text; see _validate_date_range
-    "relative_date": ("string",),
+    # THE REAL TEMPORAL TYPES FIRST, because on them a date_range is
+    # correct BY CONSTRUCTION: the mirror stores date32 and timestamp
+    # values, and Iceberg compares them chronologically rather than
+    # lexically.
+    #
+    # `string` REMAINS, and is the case this operator was built for
+    # when no date type existed. It works only for padded ISO-8601 --
+    # lexical order matches chronological order, which is the property
+    # that format was designed for. Measured, everything else does not:
+    #
+    #     '2026-1-5'   sorts AFTER '2026-02-03'   (unpadded month)
+    #     '01/05/2026' sorts by month, year ignored
+    #
+    # And the validator below checks the FILTER's bounds, never the
+    # STORED data -- so a well-formed filter still compares against
+    # whatever the column holds. A field declared `date` has no such
+    # gap.
+    "date_range": ("string", "date", "timestamp", "timestamptz"),
+    "relative_date": ("string", "date", "timestamp", "timestamptz"),
     "contains": ("string",),
 }
 

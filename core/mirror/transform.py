@@ -58,7 +58,11 @@ Used by: core/mirror/iceberg_sync.py (the sync applies this stage
 
 from dataclasses import dataclass, field
 
-from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, coerce
+from core.ontology.field_types import (
+    DEFAULT_FIELD_DATA_TYPE,
+    coerce,
+    split_declared_type,
+)
 
 
 @dataclass(frozen=True)
@@ -115,8 +119,9 @@ def transform_rows(rows: list[dict], columns: list[str],
         cleaned_row = {}
         for column in columns:
             declared = resolved[column]
+            declared, source_timezone = split_declared_type(declared)
             try:
-                cleaned_row[column] = coerce(row[column], declared)
+                cleaned_row[column] = coerce(row[column], declared, source_timezone)
             except (ValueError, TypeError):
                 # The FIRST offending value for this column is the one
                 # reported -- later ones are almost always the same

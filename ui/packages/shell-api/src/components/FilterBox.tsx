@@ -98,9 +98,7 @@ export default function FilterBox({ value, onChange, placeholder }: FilterBoxPro
       value={text}
       onChange={(e) => update(e.currentTarget.value)}
       rightElement={
-        text === '' ? undefined : (
-          <Button minimal icon="cross" aria-label="Clear filter" onClick={() => update('')} />
-        )
+        text === '' ? undefined : <Button minimal icon="cross" aria-label="Clear filter" onClick={() => update('')} />
       }
     />
   )

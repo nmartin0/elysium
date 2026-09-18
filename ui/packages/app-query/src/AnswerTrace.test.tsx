@@ -16,8 +16,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   getRequestTrace.mockResolvedValue([
     {
-      object_type: 'Customer', object_id: 'c1', action: 'read',
-      rbac_allowed: true, mac_allowed: true, timestamp: '2026-09-09T10:00:00Z',
+      object_type: 'Customer',
+      object_id: 'c1',
+      action: 'read',
+      rbac_allowed: true,
+      mac_allowed: true,
+      timestamp: '2026-09-09T10:00:00Z',
     },
   ])
 })
@@ -52,8 +56,12 @@ describe('AnswerTrace', () => {
      */
     getRequestTrace.mockResolvedValue([
       {
-        object_type: 'Customer', object_id: 'c9', action: 'read',
-        rbac_allowed: false, mac_allowed: null, timestamp: '2026-09-09T10:00:00Z',
+        object_type: 'Customer',
+        object_id: 'c9',
+        action: 'read',
+        rbac_allowed: false,
+        mac_allowed: null,
+        timestamp: '2026-09-09T10:00:00Z',
       },
     ])
     render(<AnswerTrace {...props} />)
@@ -69,8 +77,12 @@ describe('AnswerTrace', () => {
     // the row. Showing it as allowed would be wrong.
     getRequestTrace.mockResolvedValue([
       {
-        object_type: 'Customer', object_id: 'c9', action: 'read',
-        rbac_allowed: true, mac_allowed: false, timestamp: '2026-09-09T10:00:00Z',
+        object_type: 'Customer',
+        object_id: 'c9',
+        action: 'read',
+        rbac_allowed: true,
+        mac_allowed: false,
+        timestamp: '2026-09-09T10:00:00Z',
       },
     ])
     render(<AnswerTrace {...props} />)

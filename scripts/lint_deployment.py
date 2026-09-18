@@ -87,10 +87,11 @@ from core.deployment_loader import (
     resolve_runtime_paths,
     validate_identifier_types,
 )
-from core.intermediate_layer.policy_validation import validate_roles
+from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
 from core.ontology.action_types import validate_action_types
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.object_type_validation import validate_object_types
+from core.ontology.submission_criteria import validate_action_type_criteria
 
 
 def _report_invalid(config_dir: Path, errors: list[str]) -> bool:
@@ -226,6 +227,7 @@ def _collect_action_type_and_role_errors(schema_raw: dict, policy_raw: dict, ena
     for action_type_name, action_def in action_types.items():
         try:
             validate_action_types({action_type_name: action_def}, object_types)
+            validate_action_type_criteria({action_type_name: action_def})
         except ValueError as e:
             position = _describe_position(schema_text, "ontology_schema.yaml", ["action_types", action_type_name])
             errors.append(f"{e}{position}")
@@ -240,6 +242,29 @@ def _collect_action_type_and_role_errors(schema_raw: dict, policy_raw: dict, ena
                     policy_text, "policy.yaml", ["roles", role_name, "allowed_actions", grant_index]
                 )
                 errors.append(f"{e}{position}")
+
+        # THE ONE CHECK THAT IS NOT PER-GRANT, run once for the whole
+        # role. A field grant requires a grant on its type, which is a
+        # relationship BETWEEN two grants -- and the per-grant loop
+        # above hands validate_roles() a role holding exactly one, so
+        # the type grant is never in scope and every field grant looks
+        # orphaned.
+        #
+        # The comment further up says these checks are "entirely
+        # self-contained per role (verified directly: neither compares
+        # across different entries)". That was true when written and
+        # this rule is the first exception, so it gets its own call
+        # rather than quietly invalidating the observation.
+        #
+        # Per ROLE rather than per grant, so its error is reported once
+        # instead of once for every field the role holds.
+        try:
+            validate_role_coherence({role_name: role_def})
+        except ValueError as e:
+            position = _describe_position(
+                policy_text, "policy.yaml", ["roles", role_name, "allowed_actions"]
+            )
+            errors.append(f"{e}{position}")
     return errors
 
 
@@ -322,6 +347,32 @@ def lint_deployment(config_dir: Path | None = None) -> bool:
         f"  {len(config_obj.schema)} object type(s), {len(config_obj.action_types)} action type(s), "
         f"{len(config_obj.roles)} role(s), {len(config_obj.users)} user(s)"
     )
+
+    # NOT AN ERROR, BUT WORTH SAYING. An object type without a
+    # title_field shows its raw id on every result card -- `cust_001`
+    # rather than `Ada Okafor`. That is correct behaviour for an
+    # ontology that never said which field names the thing, and an
+    # unhelpful screen.
+    #
+    # A WARNING RATHER THAN A FAILURE because it is sometimes right: a
+    # transaction has no name and its id IS its honest title. A
+    # deployment that means it can ignore this line; one that forgot
+    # gets told.
+    #
+    # The shipped deployment had forgotten for every type, while the
+    # test fixture declared one -- so every test passed and every real
+    # screen showed ids. Found by a browser test clicking a customer by
+    # name.
+    untitled = [
+        name for name, type_def in config_obj.schema.items()
+        if not type_def.get("title_field")
+    ]
+    if untitled:
+        print(
+            f"\n  Note: no title_field on {', '.join(sorted(untitled))}. "
+            f"Result cards will show raw ids for these."
+        )
+
     return True
 
 

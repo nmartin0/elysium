@@ -36,6 +36,28 @@ VISIBLE_APPS: list[dict[str, str | None]] = [
     # uniform denial every other read path uses.
     {"name": "Schema", "path": "/schema", "gating_permission": None},
     {"name": "Admin", "path": "/admin", "gating_permission": "manage:users"},
+    # UNGATED, like Query and Browse, and that needs saying because it
+    # looks like it should be gated.
+    #
+    # An approvals inbox is not an administrative surface. Foundry's
+    # equivalent consolidates "compliance, governance, and PEER-REVIEW
+    # workflows" and is reachable directly rather than only through
+    # their admin console -- peer review being ordinary users deciding
+    # on each other's work.
+    #
+    # There is no single grant that means "you review things" here
+    # either. Eligibility is per-action: whoever may EXECUTE an action
+    # may decide on a proposal of it, so a user's inbox is non-empty
+    # exactly when somebody has proposed something they could have done
+    # themselves. Gating the app on any one permission would hide it
+    # from reviewers who hold a different one.
+    #
+    # The page is self-gating in the way that matters: it lists only
+    # what /writes/awaiting returns, which is already filtered to
+    # writes this caller may decide on or proposed. Someone with
+    # neither relationship sees an empty inbox, not a forbidden page --
+    # the same uniform denial every read path uses.
+    {"name": "Approvals", "path": "/approvals", "gating_permission": None},
 ]
 
 

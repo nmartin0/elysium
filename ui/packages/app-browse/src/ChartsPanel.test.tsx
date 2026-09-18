@@ -75,14 +75,22 @@ describe('which fields get a chart', () => {
 describe('ChartsPanel', () => {
   it('asks for a count grouped by each chartable field', async () => {
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
-    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
-      'Customer',
-      expect.objectContaining({ aggregate: 'count', group_by: 'region' }),
-    ))
+    await waitFor(() =>
+      expect(aggregateObjects).toHaveBeenCalledWith(
+        'Customer',
+        expect.objectContaining({ aggregate: 'count', group_by: 'region' }),
+      ),
+    )
   })
 
   it('excludes a field\u2019s OWN selection from its own chart', async () => {
@@ -92,19 +100,31 @@ describe('ChartsPanel', () => {
     // using it.
     const filters = [{ field: 'region', values: ['us-west'], mode: 'keep' as const }]
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={filters} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={filters}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
-    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
-      'Customer', expect.objectContaining({ conditions: [] }),
-    ))
+    await waitFor(() =>
+      expect(aggregateObjects).toHaveBeenCalledWith('Customer', expect.objectContaining({ conditions: [] })),
+    )
   })
 
   it('draws a chart per field that has something to show', async () => {
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
     expect(await screen.findByText('Region distribution')).toBeInTheDocument()
@@ -116,8 +136,14 @@ describe('ChartsPanel', () => {
     aggregateObjects.mockResolvedValue({ results: { 'us-west': 4 } })
 
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
     expect(await screen.findByText(/nothing to chart/)).toBeInTheDocument()
@@ -127,8 +153,14 @@ describe('ChartsPanel', () => {
     aggregateObjects.mockRejectedValue(new Error('aggregate unavailable'))
 
     render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
     expect(await screen.findByText(/aggregate unavailable/)).toBeInTheDocument()
@@ -139,14 +171,26 @@ describe('ChartsPanel', () => {
     // Depending on its identity would refetch every chart on every
     // keystroke in the search box beside it.
     const { rerender } = render(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledTimes(1))
 
     rerender(
-      <ChartsPanel objectType="Customer" visibleSchema={SCHEMA} queryText=""
-                   filters={[]} onSelect={noop2} onSessionExpired={noop} />,
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
     )
 
     expect(aggregateObjects).toHaveBeenCalledTimes(1)
@@ -178,9 +222,12 @@ describe('a chart does not filter itself', () => {
 
     render(
       <ChartsPanel
-        objectType="Customer" visibleSchema={SCHEMA} queryText=""
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
         filters={[{ field: 'region', values: ['us-west'], mode: 'keep' }]}
-        onSelect={noop2} onSessionExpired={noop}
+        onSelect={noop2}
+        onSessionExpired={noop}
       />,
     )
 
@@ -206,17 +253,182 @@ describe('a chart does not filter itself', () => {
             },
           },
         }}
-        queryText="" filters={filters} onSelect={noop2} onSessionExpired={noop}
+        queryText=""
+        filters={filters}
+        onSelect={noop2}
+        onSessionExpired={noop}
       />,
     )
 
     // The region chart sees the NAME filter but not its own.
-    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledWith(
-      'Customer',
-      expect.objectContaining({
-        group_by: 'region',
-        conditions: [{ field: 'name', operator: 'in', value: ['Ada'] }],
-      }),
-    ))
+    await waitFor(() =>
+      expect(aggregateObjects).toHaveBeenCalledWith(
+        'Customer',
+        expect.objectContaining({
+          group_by: 'region',
+          conditions: [{ field: 'name', operator: 'in', value: ['Ada'] }],
+        }),
+      ),
+    )
+  })
+})
+
+describe('one chart failing does not destroy the rest', () => {
+  /**
+   * Promise.all rejected the whole batch, so a single unaggregatable
+   * column replaced every chart with an error -- five perfectly good
+   * distributions thrown away because the sixth could not be computed.
+   *
+   * WHAT MUST NOT HAPPEN INSTEAD is a quiet partial. Showing five
+   * charts as though they were all of them is a wrong answer reporting
+   * success, which is the failure this project keeps finding. So the
+   * ones that failed are NAMED, beside the ones that worked.
+   */
+  const TWO_CHARTS: VisibleSchema = {
+    Customer: {
+      fields: {
+        region: { type: 'data', visibility: 'prominent', display_name: 'Region' },
+        tier: { type: 'data', visibility: 'prominent', display_name: 'Tier' },
+      },
+    },
+  }
+
+  function renderCharts(schema: VisibleSchema = TWO_CHARTS) {
+    return render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={schema}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
+    )
+  }
+
+  it('still draws the charts that worked', async () => {
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { 'us-west': 3, 'us-east': 1 } })
+      .mockRejectedValueOnce(new Error('cannot aggregate tier'))
+    renderCharts()
+
+    await waitFor(() => expect(screen.getByText('Region')).toBeInTheDocument())
+  })
+
+  it('names the ones that did not', async () => {
+    // "One chart failed" would not tell a person whether to trust what
+    // they are looking at. WHICH field is missing is the thing that
+    // decides it.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { 'us-west': 3, 'us-east': 1 } })
+      .mockRejectedValueOnce(new Error('cannot aggregate tier'))
+    renderCharts()
+
+    expect(await screen.findByText('Some charts could not be drawn')).toBeInTheDocument()
+    expect(screen.getByText('Tier')).toBeInTheDocument()
+  })
+
+  it('says nothing when every chart worked', async () => {
+    // THE CONTROL. A notice that always appeared would train people to
+    // ignore it, which is worse than not having one.
+    aggregateObjects.mockResolvedValue({ results: { 'us-west': 3, 'us-east': 1 } })
+    renderCharts()
+
+    await waitFor(() => expect(screen.getByText('Region')).toBeInTheDocument())
+    expect(screen.queryByText('Some charts could not be drawn')).toBeNull()
+  })
+
+  it('reports WHY when nothing worked at all', async () => {
+    // Everything failing is not a partial result. Naming the fields
+    // would say what is missing while losing the reason -- and when
+    // nothing worked, the reason is the only useful thing left.
+    aggregateObjects.mockRejectedValue(new Error('the silo is unreachable'))
+    renderCharts()
+
+    expect(await screen.findByText(/the silo is unreachable/)).toBeInTheDocument()
+  })
+})
+
+describe('a field has to have a distribution worth drawing', () => {
+  /**
+   * TWO WAYS TO SAY NOTHING, and they are mirrors of each other:
+   *
+   *   ONE GROUP -- every object shares a value. One bar is not a
+   *   distribution. Already guarded.
+   *
+   *   AS MANY GROUPS AS OBJECTS -- every value is distinct. That is an
+   *   IDENTIFIER, not a category, and a pie chart of `name` draws one
+   *   slice per customer conveying nothing that counting the rows
+   *   would not. This is the half that was missing, and the reason
+   *   Browse -> Customer -> Charts made no sense.
+   */
+  const TWO_FIELDS: VisibleSchema = {
+    Customer: {
+      fields: {
+        name: { type: 'data', visibility: 'prominent', display_name: 'Name' },
+        region: { type: 'data', visibility: 'prominent', display_name: 'Region' },
+      },
+    },
+  }
+
+  function renderCharts() {
+    return render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={TWO_FIELDS}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
+    )
+  }
+
+  it('drops a field whose every value is distinct', async () => {
+    // Three customers, three names, one each. An identifier.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
+      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 1 } })
+    renderCharts()
+
+    await waitFor(() => expect(screen.getByText('Region')).toBeInTheDocument())
+    expect(screen.queryByText('Name')).toBeNull()
+  })
+
+  it('keeps a field with fewer groups than objects', async () => {
+    // THE CONTROL. A guard that dropped everything would empty the tab
+    // and look exactly like an aggregation failure.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
+      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 1 } })
+    renderCharts()
+
+    expect(await screen.findByText('Region')).toBeInTheDocument()
+  })
+
+  it('still drops a field where every object shares one value', async () => {
+    // The original guard, retested because the two now share a
+    // function and a change to one could quietly undo the other.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
+      .mockResolvedValueOnce({ results: { 'us-west': 3 } })
+    renderCharts()
+
+    await waitFor(() => expect(aggregateObjects).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Region')).toBeNull()
+    expect(screen.queryByText('Name')).toBeNull()
+  })
+
+  it('keeps a field that is nearly but not entirely distinct', async () => {
+    // NOT A RATIO OR A THRESHOLD. "Drop it if more than 80% of values
+    // are unique" would need a number nobody can justify and would
+    // hide a real distribution that happened to be sparse. Four groups
+    // over five objects is sparse and still real.
+    aggregateObjects
+      .mockResolvedValueOnce({ results: { a: 1, b: 1, c: 1, d: 2 } })
+      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 3 } })
+    renderCharts()
+
+    expect(await screen.findByText('Name')).toBeInTheDocument()
   })
 })

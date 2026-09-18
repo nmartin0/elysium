@@ -218,7 +218,7 @@ def write_loop(tmp_path):
                    else dict(action))
             for name, action in schema["action_types"].items()
         }
-        write_mediator = WriteMediator(mediator, adapters, policy["roles"], action_types)
+        write_mediator = WriteMediator(mediator, adapters, policy["roles"], action_types, generation=1)
         return AgentLoop(client=None, mediator=mediator, write_mediator=write_mediator), mediator
 
     return build
@@ -336,7 +336,7 @@ def test_a_delete_goes_from_the_agents_prompt_through_to_applied(write_loop):
 
     # It reaches the prompt from the deployment's own declaration, with
     # no code change.
-    described = _describe_actions({"RemoveAccount": delete_action}, [])
+    described = _describe_actions({"RemoveAccount": delete_action})
     assert "RemoveAccount" in described
     assert "propose_action" in described
 
@@ -396,7 +396,7 @@ def test_a_delete_action_type_reaches_the_agents_prompt(write_loop):
         "executable": True,
     }
 
-    described = _describe_actions({"RemoveAccount": delete_action}, [])
+    described = _describe_actions({"RemoveAccount": delete_action})
 
     assert "RemoveAccount" in described
     assert "propose_action" in described
@@ -420,7 +420,7 @@ def test_a_type_error_is_logged_as_a_likely_bug_not_just_a_bad_step(caplog):
         roles: dict = {}
         schema: dict = {}
 
-        def visible_schema(self, user_record):
+        def visible_schema(self, user_record, *, for_agent: bool = False):  # noqa: ARG002 -- accepted, ignored: this double returns a fixed schema
             return {}
 
         def search_object(self, *args, **kwargs):
@@ -451,7 +451,7 @@ def test_a_value_error_is_still_treated_as_an_ordinary_bad_step(caplog):
         roles: dict = {}
         schema: dict = {}
 
-        def visible_schema(self, user_record):
+        def visible_schema(self, user_record, *, for_agent: bool = False):  # noqa: ARG002 -- accepted, ignored: this double returns a fixed schema
             return {}
 
         def search_object(self, *args, **kwargs):

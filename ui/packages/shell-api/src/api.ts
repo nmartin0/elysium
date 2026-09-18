@@ -143,6 +143,66 @@ function getCsrfCookie(): string | null {
   return match ? decodeURIComponent(match[1]!) : null
 }
 
+/**
+ * Which configuration answered us last, and who to tell when it moves.
+ *
+ * THE PROBLEM. The UI fetches a user's visible schema ONCE, at login,
+ * and never again. A configuration reload changes what the server will
+ * answer, and the browser goes on believing what it was told.
+ *
+ * Found by using it: a field moved to `discover:` was correctly
+ * withheld by the server, arriving as null, and rendered as "not set"
+ * because the cached schema still said it was readable. The right
+ * answer only appeared after a manual browser refresh.
+ *
+ * NO POLLING. Every response carries the serving generation, so the
+ * client notices on its NEXT request -- whatever that request is --
+ * rather than asking on a timer for news that usually has not come.
+ */
+let lastSeenGeneration: string | null = null
+let onGenerationChange: (() => void) | null = null
+
+/** Forgets which generation was last seen.
+ *
+ * FOR TESTS, and it earns its place rather than being a convenience:
+ * the baseline is module state, so one test leaving it at "8" makes
+ * the next test's "7" look like a reload. Without this, these tests
+ * would pass or fail by ORDER, which is the kind of flake that gets
+ * diagnosed as something else entirely.
+ *
+ * Harmless in production -- nothing calls it, and calling it would at
+ * worst cost one extra refetch.
+ */
+export function forgetLastSeenGeneration(): void {
+  lastSeenGeneration = null
+}
+
+/** Registers the callback fired when the server's configuration moves.
+ *  The shell uses it to refetch the schema and the app list. */
+export function setGenerationChangeHandler(handler: () => void): void {
+  onGenerationChange = handler
+}
+
+function noticeGeneration(response: Response): void {
+  // DEFENSIVE ABOUT THE RESPONSE SHAPE, because this runs on EVERY
+  // call and a throw here would fail requests that were otherwise
+  // fine. Test doubles return objects without headers, and a fetch
+  // that rejected mid-flight can too -- neither is a reason to break
+  // the call it was attached to.
+  const current = response?.headers?.get?.('x-elysium-generation') ?? null
+  // AN ABSENT HEADER IS NOT A CHANGE. A static file, or a response
+  // from before this shipped, must not look like a reload -- that
+  // would refetch the schema on every page load forever.
+  if (current === null) return
+
+  const previous = lastSeenGeneration
+  lastSeenGeneration = current
+  // The FIRST response establishes the baseline rather than firing.
+  // Otherwise logging in would immediately refetch what it just
+  // fetched.
+  if (previous !== null && previous !== current) onGenerationChange?.()
+}
+
 async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const headers = {
     'Content-Type': 'application/json',
@@ -171,7 +231,9 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
   // zero-cost, and removes any ambiguity about whether the session
   // cookie actually gets attached, which this entire mechanism now
   // depends on.
-  return fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' })
+  const response = await fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' })
+  noticeGeneration(response)
+  return response
 }
 
 // Throws ApiError on any non-2xx response -- used by calls where the
@@ -237,6 +299,123 @@ export async function confirmWrite(writeId: string, approved: boolean): Promise<
     body: JSON.stringify({ approved }),
   })
   return response.json()
+}
+
+/** One proposal waiting for this user to decide on it.
+ *
+ * DELIBERATELY WITHOUT THE CHANGED VALUES. A pending write names object
+ * ids and the fields it would set, both governed by MAC and
+ * field-level RBAC on every other read path -- returning them because
+ * the caller holds an execute grant would be a way around the read
+ * rules. The server enforces this; the type says so, so a component
+ * cannot be written expecting values that will never arrive.
+ */
+export interface AwaitingWrite {
+  write_id: string
+  action_type_name: string
+  description: string
+  proposed_by: string
+  proposed_at: string
+  object_count: number
+  expires_at: string
+  /** Both can be true: a deployment with no four-eyes rule lets
+   *  someone approve their own write, and showing one flag would
+   *  misreport the other. */
+  awaiting_your_review: boolean
+  proposed_by_you: boolean
+  /** Fields the ontology no longer declares, as "Type.field".
+   *
+   *  Non-empty means this write CANNOT be approved -- the
+   *  configuration moved on while it waited. A different state from
+   *  rejected: rejected means a human decided against it, this means
+   *  nobody can act on it either way.
+   */
+  undeclared_fields: string[]
+  /** How many OTHER pending writes propose exactly this change.
+   *
+   *  Surfaced rather than prevented: a second identical proposal might
+   *  be a double-click, a colleague re-requesting something forgotten,
+   *  or a deliberate nudge, and the server cannot tell which. What was
+   *  wrong was identical rows being indistinguishable.
+   */
+  duplicate_count: number
+  /** How many individual changes this request makes.
+   *
+   *  A bulk action naming fifty objects is fifty tasks, and a
+   *  reviewer may be eligible for some and not others. */
+  tasks_total: number
+  /** How many of them THIS reviewer may decide.
+   *
+   *  Fewer than tasks_total when a request spans security
+   *  partitions: approving then covers this reviewer's share and
+   *  leaves the rest for someone who can see them. Without this
+   *  number, Approve looks like it runs the whole write. */
+  tasks_you_may_decide: number
+  /** How many have been approved, by anyone.
+   *
+   *  APPROVED, not decided: a rejected task is not progress toward
+   *  invocation, so showing it as such would make a permanently
+   *  blocked request look nearly ready. */
+  tasks_approved: number
+}
+
+/** Proposals this user may decide on, oldest first.
+ *
+ * Before this existed, confirming a write required knowing its id --
+ * which only the proposer had. Four-eyes was enforceable and
+ * unreachable: the one person who could find a write was the one
+ * person forbidden to approve it.
+ */
+export async function getAwaitingWrites(): Promise<AwaitingWrite[]> {
+  const response = await apiFetchOrThrow('/writes/awaiting')
+  return response.json() as Promise<AwaitingWrite[]>
+}
+
+/** One field a pending write would change.
+ *
+ * `readable` false means the reviewer lacks the read grant for it, and
+ * both values are null as a REDACTION rather than because the data is
+ * null. The distinction matters in a diff: a reviewer deciding on a
+ * change needs to know the difference between "this becomes empty" and
+ * "you may not see this".
+ */
+export interface FieldChange {
+  field_name: string
+  readable: boolean
+  current_value: unknown
+  proposed_value: unknown
+}
+
+export interface ObjectChange {
+  object_type: string
+  object_id: string
+  operation: string
+  changes: FieldChange[]
+}
+
+export interface WriteDetailResponse {
+  write_id: string
+  action_type_name: string
+  description: string
+  proposed_by: string
+  proposed_at: string
+  expires_at: string
+  awaiting_your_review: boolean
+  proposed_by_you: boolean
+  objects: ObjectChange[]
+  has_redacted_fields: boolean
+}
+
+/** What a pending write would actually change.
+ *
+ * SEPARATE FROM THE LISTING, because a diff needs the current value of
+ * every changed field -- a permission-checked read per field per
+ * object. Fetched when a reviewer opens a row, not for every row of a
+ * queue they are scanning.
+ */
+export async function getWriteDetail(writeId: string): Promise<WriteDetailResponse> {
+  const response = await apiFetchOrThrow(`/writes/${writeId}`)
+  return response.json() as Promise<WriteDetailResponse>
 }
 
 // How current the data being read actually is. A deployment-wide fact,
@@ -358,14 +537,109 @@ export async function searchObjects(
   // Omitted rather than sent empty: the server has defaults, and
   // sending page_size="" would make it parse and reject a value the
   // caller never chose.
-  if (options.pageToken) params.set("page_token", options.pageToken)
-  if (options.pageSize) params.set("page_size", String(options.pageSize))
-  if (options.orderBy) params.set("order_by", options.orderBy)
+  if (options.pageToken) params.set('page_token', options.pageToken)
+  if (options.pageSize) params.set('page_size', String(options.pageSize))
+  if (options.orderBy) params.set('order_by', options.orderBy)
   if (options.conditions?.length) {
-    params.set("conditions", JSON.stringify(options.conditions))
+    params.set('conditions', JSON.stringify(options.conditions))
   }
   const response = await apiFetchOrThrow(`/objects/${objectType}/search?${params}`)
   return response.json()
+}
+
+/** Every id the current filter matches, for "select all matching".
+ *
+ * IDS, NOT A FILTER PASSED ONWARD. Foundry's approvals model settles
+ * the design: "a task is an individual change in Foundry. All tasks
+ * associated with a request must be approved for the request to be
+ * invoked." A reviewer approves specific changes, never a rule to be
+ * resolved later -- so the filter is resolved at SELECTION time and
+ * what travels onward is the list it produced.
+ *
+ * Refused by the server above its bulk ceiling rather than truncated,
+ * so a caller never receives a selection that silently omits part of
+ * what it asked for.
+ */
+export async function matchingIds(objectType: string, queryText: string, conditions?: unknown[]): Promise<string[]> {
+  const params = new URLSearchParams({ q: queryText })
+  if (conditions?.length) params.set('conditions', JSON.stringify(conditions))
+  const response = await apiFetchOrThrow(`/objects/${objectType}/matching-ids?${params}`)
+  const body = (await response.json()) as { object_ids: string[] }
+  return body.object_ids
+}
+
+/** RED metrics over a recent window, for the admin screen.
+ *
+ * Gated on manage:deployment by the server -- request timings say
+ * which routes are used and how often, which is more than an ordinary
+ * user should see about everyone else.
+ */
+/** One table's state in the mirror. */
+export interface MirrorTableState {
+  silo: string
+  table: string
+  last_synced_at: string | null
+  /** Rows in the TYPED layer, which is what Elysium reads. */
+  silver_rows: number | null
+  /** Rows in the RAW layer, which takes whatever the source gave.
+   *
+   *  A DIVERGENCE FROM silver_rows IS THE DRIFT STATE: bronze took the
+   *  new rows, silver refused to interpret them, and the gap is what a
+   *  refused sync looks like from outside. */
+  bronze_rows: number | null
+  /** When the last sync ATTEMPT ran, as distinct from when the data
+   *  last changed.
+   *
+   *  Snapshots record change, so a sync that ran and was REFUSED
+   *  leaves exactly what a sync that ran and found nothing leaves.
+   *  One is an incident; the other is Tuesday. */
+  last_attempt_at: string | null
+  /** 'synced' or 'refused'. Null when nothing has been recorded --
+   *  which on an existing deployment means no sync has run since
+   *  attempts began being kept. */
+  last_attempt_outcome: string | null
+  /** Why it was refused, in full. A reader who sees a refusal wants
+   *  the column and the value, not a category. */
+  last_attempt_detail: string | null
+}
+
+export interface MirrorState {
+  reading_from_mirror: boolean
+  tables: MirrorTableState[]
+  problems: string[]
+}
+
+export async function getMirrorState(): Promise<MirrorState> {
+  const response = await apiFetchOrThrow('/admin/mirror')
+  return response.json() as Promise<MirrorState>
+}
+
+export async function getMetrics(windowSeconds?: number): Promise<unknown> {
+  const params = windowSeconds === undefined ? '' : `?window_seconds=${windowSeconds}`
+  const response = await apiFetchOrThrow(`/admin/metrics${params}`)
+  return response.json()
+}
+
+export interface LinkCount {
+  target: string
+  count: number
+  cardinality?: string | null
+}
+
+/** How far each link from this object leads, before following any.
+ *
+ * COUNTS BEFORE EXPANSION: a person deciding whether to follow a link
+ * needs to know it leads to four things or four thousand before they
+ * commit. Every count is what THIS caller would receive, so it cannot
+ * disagree with the expansion that follows.
+ */
+export async function getLinkCounts(objectType: string, objectId: string): Promise<Record<string, LinkCount>> {
+  // encodeURIComponent for the same reason getObjectDetail does it: an
+  // id is DATA, and one containing a literal "/" would otherwise split
+  // the URL path.
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/link-counts`)
+  const body = (await response.json()) as { links?: Record<string, LinkCount> }
+  return body.links ?? {}
 }
 
 export async function getObjectDetail(objectType: string, objectId: string): Promise<unknown> {
@@ -435,68 +709,46 @@ export interface AggregateBody {
   group_by?: string
 }
 
-export async function aggregateObjects(
-  objectType: string,
-  body: AggregateBody,
-): Promise<unknown> {
+export async function aggregateObjects(objectType: string, body: AggregateBody): Promise<unknown> {
   const response = await apiFetchOrThrow(`/objects/${objectType}/aggregate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   return response.json()
 }
 
 export async function getRequestTrace(requestId: string): Promise<unknown> {
-  const response = await apiFetchOrThrow(
-    `/requests/${encodeURIComponent(requestId)}/trace`,
-  )
+  const response = await apiFetchOrThrow(`/requests/${encodeURIComponent(requestId)}/trace`)
   return response.json()
 }
 
-export async function getObjectNotes(
-  objectType: string,
-  objectId: string,
-): Promise<unknown> {
-  const response = await apiFetchOrThrow(
-    `/objects/${objectType}/${encodeURIComponent(objectId)}/notes`,
-  )
+export async function getObjectNotes(objectType: string, objectId: string): Promise<unknown> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/notes`)
   return response.json()
 }
 
-export async function createObjectNote(
-  objectType: string,
-  objectId: string,
-  text: string,
-): Promise<unknown> {
-  const response = await apiFetchOrThrow(
-    `/objects/${objectType}/${encodeURIComponent(objectId)}/notes`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    },
-  )
+export async function createObjectNote(objectType: string, objectId: string, text: string): Promise<unknown> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
   return response.json()
 }
 
-export async function getObjectHistory(
-  objectType: string,
-  objectId: string,
-): Promise<unknown> {
-  const response = await apiFetchOrThrow(
-    `/objects/${objectType}/${encodeURIComponent(objectId)}/history`,
-  )
+export async function getObjectHistory(objectType: string, objectId: string): Promise<unknown> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/history`)
   return response.json()
 }
 
 export async function getSilos(): Promise<unknown> {
-  const response = await apiFetchOrThrow("/silos")
+  const response = await apiFetchOrThrow('/silos')
   return response.json()
 }
 
 export async function getDeploymentConfig(): Promise<unknown> {
-  const response = await apiFetchOrThrow("/config")
+  const response = await apiFetchOrThrow('/config')
   return response.json()
 }
 

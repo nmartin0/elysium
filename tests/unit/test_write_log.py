@@ -122,7 +122,7 @@ def fixture(tmp_path):
         "risk_sql": {"adapter": "sqlite", "connection": {"path": db_risk}},
     }, _WRITE_ADAPTER_REGISTRY)
     mediator = DataMediator(TEST_SCHEMA, adapters, {"Customer": "primary_sql"}, TEST_ROLES, write_log=write_log)
-    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     return mediator, write_mediator, write_log
 
 
@@ -136,8 +136,7 @@ def test_multi_storage_update_succeeds_via_the_log(fixture):
 
     pending = write_mediator.propose_action(
         alice, "UpdateNameAndRiskScore",
-        {"customer_id": "cust_001", "new_name": "New Name", "new_score": 0.99},
-    )
+        {"customer_id": "cust_001", "new_name": "New Name", "new_score": 0.99}, origin="human")
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
     assert outcome == {"status": "written", "object_ids": ["cust_001"]}
@@ -153,7 +152,9 @@ def test_single_storage_update_still_works_via_the_log_path(fixture):
     mediator, write_mediator, _ = fixture
     alice = _record("alice")
 
-    pending = write_mediator.propose_action(alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.77})
+    pending = write_mediator.propose_action(
+        alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.77}, origin="human",
+    )
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
     assert outcome == {"status": "written", "object_ids": ["cust_001"]}
@@ -195,7 +196,9 @@ def test_read_after_apply_no_longer_consults_the_log(fixture):
     mediator, write_mediator, write_log = fixture
     alice = _record("alice")
 
-    pending = write_mediator.propose_action(alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.88})
+    pending = write_mediator.propose_action(
+        alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.88}, origin="human",
+    )
     write_mediator.confirm_and_execute(pending, approved=True)
 
     assert write_log.get_pending_changes("Customer", "cust_001") is None
@@ -209,7 +212,9 @@ def test_expected_current_values_lost_update_check_still_works(fixture):
     mediator, write_mediator, _ = fixture
     alice = _record("alice")
 
-    pending = write_mediator.propose_action(alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.99})
+    pending = write_mediator.propose_action(
+        alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.99}, origin="human",
+    )
     # Simulate a concurrent change to the SAME field between proposal
     # and confirmation, directly against the real backend.
     real_adapter = mediator.adapters["risk_sql"]
@@ -226,8 +231,7 @@ def test_log_entry_marked_applied_not_left_pending(fixture):
 
     pending = write_mediator.propose_action(
         alice, "UpdateNameAndRiskScore",
-        {"customer_id": "cust_001", "new_name": "Another Name", "new_score": 0.33},
-    )
+        {"customer_id": "cust_001", "new_name": "Another Name", "new_score": 0.33}, origin="human")
     write_mediator.confirm_and_execute(pending, approved=True)
 
     assert write_log.get_pending_changes("Customer", "cust_001") is None

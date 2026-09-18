@@ -84,8 +84,7 @@ def deployment(tmp_path):
         write_log=write_log,
     )
     write_mediator = WriteMediator(
-        mediator, adapters, policy["roles"], schema["action_types"]
-    )
+        mediator, adapters, policy["roles"], schema["action_types"], generation=1)
     return mediator, write_mediator, write_log, db_path
 
 
@@ -98,8 +97,7 @@ def _transfer(write_mediator, from_balance=900, to_balance=600):
             "to_account_id": "acc_savings",
             "new_from_balance": from_balance,
             "new_to_balance": to_balance,
-        },
-    )
+        }, origin="human")
 
 
 def _raw(db_path, account_id):

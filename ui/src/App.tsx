@@ -8,6 +8,7 @@ import {
   logout,
   getCurrentUser,
   getMyVisibleSchema,
+  setGenerationChangeHandler,
   getVisibleApps,
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
@@ -18,7 +19,11 @@ import {
 // override Blueprint's own defaults where we actually want that, not
 // the reverse. The standard, conventional pattern -- library base
 // styles first, local overrides after.
-import '@blueprintjs/core/lib/css/blueprint.css'
+// layers.css declares the cascade order AND imports Blueprint into the
+// vendor layer. Blueprint is no longer imported directly here: only a
+// CSS @import can assign a layer, and leaving it unlayered would make
+// it beat every layer below. See layers.css.
+import './layers.css'
 import '@elysium/shell-api/tokens.css'
 // tokens BEFORE index.css: index.css consumes the variables, and a
 // consumer loaded first would resolve them to nothing.
@@ -55,6 +60,7 @@ const SchemaPanel = lazy(() => import('@elysium/app-schema/SchemaPanel'))
 const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
+const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'))
 
 type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn'
 
@@ -290,6 +296,26 @@ export default function App() {
   // component's own comment for why that's the deliberate default.
   useFetchOnLogin(authStatus, () => getCurrentUser() as Promise<CurrentUser>, setCurrentUser, handleSessionExpired)
 
+  // A CONFIGURATION RELOAD CHANGES WHAT THESE ANSWER, and until now
+  // nothing asked again -- useFetchOnLogin is exactly what its name
+  // says. A field moved to `discover:` was correctly withheld by the
+  // server and rendered as "not set", because the cached schema still
+  // called it readable. The right answer only appeared after a manual
+  // browser refresh.
+  //
+  // Every response carries the serving generation, so this fires on
+  // the NEXT request after a reload rather than on a timer.
+  //
+  // THE APP LIST TOO, not only the schema: a reload can grant or
+  // revoke a sub-app, and a rail offering something the server now
+  // refuses is the same staleness wearing different clothes.
+  useEffect(() => {
+    setGenerationChangeHandler(() => {
+      void (getMyVisibleSchema() as Promise<VisibleSchema>).then(setVisibleSchema).catch(() => {})
+      void (getVisibleApps() as Promise<VisibleApp[]>).then(setVisibleApps).catch(() => {})
+    })
+  }, [])
+
   if (authStatus === 'checking') {
     // Brief, unavoidable moment while the real network round-trip
     // above is in flight -- see this file's own header comment for
@@ -370,6 +396,7 @@ export default function App() {
             element={<ObjectDetailPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
           />
           <Route path="/admin" element={<AdminPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/approvals" element={<ApprovalsPanel onSessionExpired={handleSessionExpired} />} />
           <Route path="*" element={<Navigate to="/query" replace />} />
         </Route>
       </Routes>

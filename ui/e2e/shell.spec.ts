@@ -6,19 +6,22 @@
 // navigation, real logout, and (new here) zero uncaught console
 // errors across the whole flow.
 //
-// REQUIRES A REAL, RUNNING SERVER PAIR, set up exactly like every
-// other live test in this project's own session history:
+// SETUP. The steps that used to be here could not work: they named a
+// role, `editor`, that this deployment does not define, and asked for
+// a separate dev server the tests no longer point at. Nobody noticed,
+// because nothing ran them.
 //
-//   export ELYSIUM_CONFIG_DIR=~/elysium/tests/integration/fixtures
-//   export ELYSIUM_DATA_DIR=/tmp/e2e_data
-//   export ELYSIUM_LOG_DIR=/tmp/e2e_log
-//   (build the fixture databases, same as any other live test)
-//   python3 -c "... ud.create_user('plainuser', 'plainpass123', 'us-west', 'editor') ..."
-//   python3 -c "... ud.create_user('adminuser', 'adminpass123', None, 'admin') ..."
-//   uvicorn api.app:app --reload   (one terminal)
-//   npm run dev                     (a second terminal, inside ui/)
+// EVERY LINE FROM THE REPOSITORY ROOT, spelled out -- a list mixing
+// `cd ui && ...` with root-relative commands leaves a reader in ui/
+// and produces "No module named 'scripts'".
 //
-// Then, from ui/: npx playwright test
+//   cd ~/elysium/ui && npm run build   (tests the BUILT bundle)
+//   cd ~/elysium && python -m scripts.create_e2e_users \
+//                       --yes-this-is-development
+//   cd ~/elysium && uvicorn api.app:app
+//   cd ~/elysium/ui && npm run e2e
+//
+// NO DEV SERVER: uvicorn serves the UI and the API together.
 //
 // NOT run as part of `npm test` (that stays fast, mocked, no real
 // server needed) -- same reasoning as this project's own backend

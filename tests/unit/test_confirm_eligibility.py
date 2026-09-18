@@ -1,0 +1,445 @@
+"""
+Who may confirm a pending write.
+
+IT USED TO BE THE PROPOSER, AND ONLY THE PROPOSER -- owner-equality
+inside PendingWriteStore.pop(). That made four-eyes unreachable: the
+only person who could confirm a write was the one person a four-eyes
+rule forbids.
+
+IT IS NOW THE GRANT. Whoever may EXECUTE an action may decide on a
+proposal of it. That is a real widening for a deployment declaring no
+criteria, and it is the intended model rather than a side effect --
+with the opposite policy now EXPRESSIBLE where it was previously
+hardcoded:
+
+    check: user
+    field: user_id
+    operator: equals
+    value: proposer.user_id
+
+restores owner-only confirmation for a deployment that wants it.
+
+Worth stating plainly: when this changed, NO TEST NOTICED. Owner-only
+was a convention rather than a guarantee, which is why these exist.
+"""
+
+import contextlib
+import dataclasses
+from datetime import UTC, datetime
+
+import pytest
+
+from core.intermediate_layer.auth import UserRecord
+from core.ontology.write_mediator import PendingWrite, SubWrite
+from core.pending_write_store import PendingWriteStore
+
+ALICE = UserRecord("alice", "us-west", "editor")
+
+
+def _pending(user_id="alice", action="RenameAuthor"):
+    return PendingWrite(
+        sub_writes=(SubWrite("Author", "auth_001", "update", {"name": "Ada"}, {}),),
+        user_id=user_id,
+        description="rename",
+        action_type_name=action,
+        origin="human",
+        proposed_at=datetime.now(UTC),
+        proposed_under_generation=1,
+        parameters={},
+        proposer=UserRecord(user_id, "us-west", "editor"),
+    )
+
+
+def _store():
+    store = PendingWriteStore()
+    write_id = store.store(_pending())
+    return store, write_id
+
+
+class TestClaim:
+    def test_an_eligible_caller_gets_the_write(self):
+        store, write_id = _store()
+
+        assert store.claim(write_id, lambda _pending: True) is not None
+
+    def test_an_ineligible_caller_gets_nothing(self):
+        store, write_id = _store()
+
+        assert store.claim(write_id, lambda _pending: False) is None
+
+    def test_an_ineligible_claim_does_not_consume_the_write(self):
+        # THE PROPERTY A REFUSAL MUST HAVE. If a denied claim removed
+        # the write, one ineligible request would destroy a proposal
+        # somebody else was entitled to approve -- a denial-of-service
+        # available to anyone who can guess an id.
+        store, write_id = _store()
+
+        store.claim(write_id, lambda _pending: False)
+
+        assert store.claim(write_id, lambda _pending: True) is not None
+
+    def test_a_second_claim_finds_nothing(self):
+        # ATOMICITY. Two approvers must not both claim one write, or
+        # the second applies a change that was already applied.
+        store, write_id = _store()
+
+        assert store.claim(write_id, lambda _pending: True) is not None
+        assert store.claim(write_id, lambda _pending: True) is None
+
+    def test_the_predicate_sees_the_write_it_is_deciding_about(self):
+        # The grant check needs the action type, so the predicate is
+        # given the write rather than just its id.
+        store, write_id = _store()
+        seen = []
+
+        store.claim(write_id, lambda pending: seen.append(pending.action_type_name) or True)
+
+        assert seen == ["RenameAuthor"]
+
+    def test_an_unknown_id_is_indistinguishable_from_an_ineligible_one(self):
+        # UNIFORM DENIAL, kept deliberately from the owner-equality
+        # version rather than rebuilt. A probing caller learns nothing
+        # about which write ids exist.
+        store, write_id = _store()
+
+        assert store.claim("no-such-id", lambda _pending: True) is None
+        assert store.claim(write_id, lambda _pending: False) is None
+
+    def test_the_predicate_is_not_called_for_an_unknown_id(self):
+        # Otherwise a predicate that raises on a missing write would
+        # turn a routine 404 into a 500, and the shape of the error
+        # would tell a prober the id was absent.
+        store, _ = _store()
+        called = []
+
+        store.claim("no-such-id", lambda pending: called.append(pending) or True)
+
+        assert called == []
+
+
+class TestAwaiting:
+    """Listing what a reviewer may decide on.
+
+    WITHOUT IT, FOUR-EYES IS ENFORCEABLE AND UNREACHABLE. Confirming a
+    write requires its id, and only the proposer had one -- so the
+    single person who could find a write was the single person a
+    four-eyes rule forbids from approving it.
+    """
+
+    def test_lists_a_write_the_caller_may_claim(self):
+        store, write_id = _store()
+
+        listed = store.awaiting(lambda _pending: True)
+
+        assert [item[0] for item in listed] == [write_id]
+
+    def test_hides_a_write_the_caller_may_not_claim(self):
+        store, _ = _store()
+
+        assert store.awaiting(lambda _pending: False) == []
+
+    def test_listing_does_not_consume_anything(self):
+        # An inbox is read constantly. If looking at it removed writes,
+        # the first reviewer to open the page would destroy the queue.
+        store, write_id = _store()
+
+        store.awaiting(lambda _pending: True)
+
+        assert store.claim(write_id, lambda _pending: True) is not None
+
+    def test_what_is_listed_can_always_be_claimed(self):
+        # THE PROPERTY THAT MAKES AN INBOX HONEST, and the reason both
+        # take the same predicate. Deciding eligibility separately is
+        # how a queue ends up showing rows that 404 -- or worse, hiding
+        # a decision somebody is waiting on.
+        store, _ = _store()
+        eligible = lambda pending: pending.action_type_name == "RenameAuthor"  # noqa: E731
+
+        listed = store.awaiting(eligible)
+
+        for write_id, _pending in listed:
+            assert store.claim(write_id, eligible) is not None
+
+    def test_an_expired_write_is_not_listed(self):
+        # A stale entry in an inbox is worse than an absent one: the
+        # reviewer spends attention on a decision that has already been
+        # taken away from them.
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(seconds=-1))
+        store.store(_pending())
+
+        assert store.awaiting(lambda _pending: True) == []
+
+    def test_reports_when_a_write_expires(self):
+        store, write_id = _store()
+
+        assert store.expires_at(write_id) is not None
+        assert store.expires_at("no-such-id") is None
+
+
+class TestTheTTLIsConfigurable:
+    """How long a reviewer has to decide.
+
+    FIFTEEN MINUTES WAS THE HARDCODED DEFAULT, which was right when the
+    proposer confirmed their own write seconds later and wrong for an
+    approvals queue: the point of four-eyes is that the reviewer is
+    somebody else, and somebody else is not necessarily at their desk.
+    """
+
+    def test_the_store_honours_the_ttl_it_is_given(self):
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(seconds=-1))
+        write_id = store.store(_pending())
+
+        assert store.claim(write_id, lambda _pending: True) is None
+
+    def test_a_longer_ttl_keeps_a_write_decidable(self):
+        # THE CONTROL. A store that expired everything would pass the
+        # test above while making the feature useless.
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(hours=4))
+        write_id = store.store(_pending())
+
+        assert store.claim(write_id, lambda _pending: True) is not None
+
+    def test_the_deployment_default_is_long_enough_to_be_useful(self):
+        # A four-hour default is long enough for a reviewer to be in a
+        # meeting and short enough that a forgotten proposal does not
+        # outlive the context that produced it. Asserted against the
+        # real config rather than the constant, because the constant is
+        # only a fallback now.
+        from pathlib import Path
+
+        from core.deployment_loader import load_deployment
+
+        config = load_deployment(
+            Path(__file__).resolve().parent.parent.parent / "deployment" / "etc",
+        )
+
+        assert config.pending_write_ttl_minutes >= 60
+
+
+class TestBothCategories:
+    """An inbox shows what you may decide AND what you proposed.
+
+    Following Foundry, whose Approvals inbox filters "Your inbox" and
+    "Created by you" rather than showing only one.
+
+    THE PROPOSER NEEDS THE SECOND ESPECIALLY ONCE FOUR-EYES IS ON: they
+    cannot approve their own write, so without this they propose
+    something and have no way to see whether anyone has looked at it. A
+    proposal that vanishes into silence is one people stop making.
+    """
+
+    def test_a_proposer_sees_their_own_write_even_without_the_grant(self):
+        store, _ = _store()  # proposed by alice
+
+        listed = store.awaiting(lambda pending: pending.user_id == "alice")
+
+        assert len(listed) == 1
+
+    def test_a_reviewer_sees_a_write_they_did_not_propose(self):
+        store = PendingWriteStore()
+        store.store(_pending(user_id="bob"))
+
+        listed = store.awaiting(lambda _pending: True)
+
+        assert [pending.user_id for _id, pending in listed] == ["bob"]
+
+    def test_someone_with_neither_relationship_sees_nothing(self):
+        # THE CONTROL. A predicate that returned everything would make
+        # the inbox a directory of every write in the deployment.
+        store = PendingWriteStore()
+        store.store(_pending(user_id="bob"))
+
+        assert store.awaiting(lambda pending: pending.user_id == "carol") == []
+
+
+class TestReservation:
+    """A failed decision must not destroy the proposal.
+
+    THE BUG THIS FIXES. claim() removed the write and handed it back,
+    and the decision could then FAIL -- a four-eyes rule refusing a
+    self-approval, or a field the ontology no longer declares. The
+    proposal was already gone: the colleague entitled to approve it
+    never got the chance, and nothing told them it had existed.
+
+    Worse than simply losing a write, because the refusal is the system
+    working CORRECTLY. Every control built for this flow -- criteria
+    evaluated against the approver, the unapplyable check -- lands
+    after the point of no return.
+    """
+
+    def test_a_clean_decision_consumes_the_write(self):
+        store, write_id = _store()
+
+        with store.reserved(write_id, lambda _pending: True) as pending:
+            assert pending is not None
+
+        assert store.awaiting(lambda _pending: True) == []
+
+    def test_a_FAILED_decision_puts_the_write_back(self):
+        # THE PROPERTY. The reviewer who could have approved it must
+        # still find it there.
+        store, write_id = _store()
+
+        with pytest.raises(ValueError):
+            with store.reserved(write_id, lambda _pending: True) as pending:
+                assert pending is not None
+                raise ValueError("a four-eyes rule refused this")
+
+        assert [item[0] for item in store.awaiting(lambda _p: True)] == [write_id]
+
+    def test_a_second_reviewer_cannot_reserve_what_is_being_decided(self):
+        # The atomicity claim() existed for, preserved. Two approvers
+        # must not both act on one write.
+        store, write_id = _store()
+
+        with store.reserved(write_id, lambda _pending: True) as first:
+            assert first is not None
+            with store.reserved(write_id, lambda _pending: True) as second:
+                assert second is None
+
+    def test_a_reserved_write_is_hidden_from_the_listing(self):
+        # Somebody is deciding on it right now, and a reservation lasts
+        # one request. Showing it would invite a second reviewer to
+        # open something about to disappear.
+        store, write_id = _store()
+
+        with store.reserved(write_id, lambda _pending: True):
+            assert store.awaiting(lambda _pending: True) == []
+
+    def test_a_released_write_becomes_listable_again(self):
+        # THE PAIR to the test above. Hiding it permanently would be
+        # the same lost write by another route.
+        store, write_id = _store()
+
+        with contextlib.suppress(ValueError):
+            with store.reserved(write_id, lambda _pending: True):
+                raise ValueError("refused")
+
+        assert [item[0] for item in store.awaiting(lambda _p: True)] == [write_id]
+
+    def test_an_ineligible_reviewer_reserves_nothing(self):
+        store, write_id = _store()
+
+        with store.reserved(write_id, lambda _pending: False) as pending:
+            assert pending is None
+
+        # And the write survives, so someone eligible can still act.
+        assert [item[0] for item in store.awaiting(lambda _p: True)] == [write_id]
+
+    def test_a_write_that_expires_mid_decision_is_not_resurrected(self):
+        # Releasing must not put back something the TTL already took
+        # away -- an expired write is audited as expired, and a
+        # reappearing one would contradict its own audit entry.
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(seconds=-1))
+        write_id = store.store(_pending())
+
+        with store.reserved(write_id, lambda _pending: True) as pending:
+            assert pending is None
+
+        assert store.awaiting(lambda _pending: True) == []
+
+
+class TestDuplicateProposals:
+    """Identical proposals are surfaced, not prevented.
+
+    Three identical rows appeared in a real inbox -- same action, same
+    object, same values -- with no way to tell one mistake pasted three
+    times from three separate requests. A reviewer approving one left
+    two behind with nothing explaining why.
+
+    NOT DEDUPLICATED, deliberately. A second identical proposal might be
+    a double-click, a colleague re-requesting something forgotten, or a
+    deliberate nudge, and Elysium cannot tell which. Foundry allows
+    duplicates too and relies on the reviewer seeing them together --
+    which only works if they can SEE that they are duplicates.
+    """
+
+    def test_a_lone_proposal_has_no_duplicates(self):
+        store, write_id = _store()
+
+        assert store.duplicates_of(write_id) == 0
+
+    def test_an_identical_proposal_is_counted(self):
+        store, first = _store()
+        store.store(_pending())
+
+        assert store.duplicates_of(first) == 1
+
+    def test_two_identical_proposals_are_counted_from_either(self):
+        store, first = _store()
+        second = store.store(_pending())
+        third = store.store(_pending())
+
+        assert store.duplicates_of(first) == 2
+        assert store.duplicates_of(second) == 2
+        assert store.duplicates_of(third) == 2
+
+    def test_a_DIFFERENT_change_is_not_a_duplicate(self):
+        # THE CONTROL. A counter that matched everything would make the
+        # tag permanent and therefore meaningless.
+        from core.ontology.write_mediator import SubWrite
+
+        store, first = _store()
+        other = _pending()
+        store.store(dataclasses.replace(other, sub_writes=(
+            SubWrite("Author", "auth_002", "update", {"name": "Grace"}, {}),
+        )))
+
+        assert store.duplicates_of(first) == 0
+
+    def test_a_different_VALUE_is_not_a_duplicate(self):
+        # The sharper version: same object, same field, different
+        # target. Two people proposing different names for one customer
+        # are in conflict, not agreement, and calling them duplicates
+        # would hide that.
+        from core.ontology.write_mediator import SubWrite
+
+        store, first = _store()
+        store.store(dataclasses.replace(_pending(), sub_writes=(
+            SubWrite("Author", "auth_001", "update", {"name": "Grace"}, {}),
+        )))
+
+        assert store.duplicates_of(first) == 0
+
+    def test_a_different_PROPOSER_is_still_a_duplicate(self):
+        # IDENTITY IS THE CHANGE, NOT THE PROPOSER. Two people
+        # independently proposing the same edit is the clearest case of
+        # a duplicate there is, and keying on the proposer would hide
+        # exactly that.
+        store, first = _store()
+        store.store(_pending(user_id="bob"))
+
+        assert store.duplicates_of(first) == 1
+
+    def test_an_expired_duplicate_stops_counting(self):
+        # A count including writes nobody can act on would tell a
+        # reviewer to look for rows that are not there.
+        from datetime import timedelta
+
+        store = PendingWriteStore(ttl=timedelta(hours=1))
+        first = store.store(_pending())
+        store.store(_pending())
+        assert store.duplicates_of(first) == 1
+
+        store._writes = {
+            write_id: dataclasses.replace(
+                stored, expires_at=datetime.now(UTC) - timedelta(seconds=1),
+            )
+            if write_id != first else stored
+            for write_id, stored in store._writes.items()
+        }
+
+        assert store.duplicates_of(first) == 0
+
+    def test_an_unknown_id_reports_none(self):
+        store, _ = _store()
+
+        assert store.duplicates_of("no-such-id") == 0

@@ -87,6 +87,7 @@ Used by: core/ontology/mediator.py (owns the instance directly,
 """
 
 import json
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -94,7 +95,23 @@ _DEFAULT_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "deployment"
 
 
 class AuditLog:
-    def __init__(self, log_path: Path = _DEFAULT_LOG_PATH):
+    def __init__(self, log_path: Path = _DEFAULT_LOG_PATH, generation: int | None = None):
+        """`generation` identifies WHICH configuration load produced
+        these entries -- see HOT_RELOAD_PLAN.md step 1.
+
+        Held here rather than threaded through every logging call
+        because this object is already built per configuration load, by
+        load_deployment_bundle(). One instance belongs to exactly one
+        generation for its whole life, so there is nothing to keep in
+        sync and no call site that can forget to pass it.
+
+        Optional, and None means "not recorded", because the two
+        callers that construct a bare AuditLog() -- DataMediator and
+        PendingWriteStore, each defaulting one for tests -- genuinely
+        have no generation to name. A zero or a -1 would be a value
+        that looks like an answer.
+        """
+        self._generation = generation
         self._log_path = log_path
         # Set once the directory is known to exist -- see _write().
         # A plain bool rather than a lock: two threads both creating it
@@ -120,6 +137,11 @@ class AuditLog:
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
             self._log_dir_ready = True
         entry["timestamp"] = datetime.now(UTC).isoformat()
+        # Stamped HERE, in the one place every entry passes through, so
+        # that a new kind of entry added later cannot be the one that
+        # forgets it -- the same reasoning as the timestamp above.
+        if self._generation is not None:
+            entry["generation"] = self._generation
         with open(self._log_path, "a") as f:
             f.write(json.dumps(entry) + "\n")
 
@@ -215,6 +237,66 @@ class AuditLog:
             "allowed": bool(mac_allowed) and rbac_allowed,
         })
 
+    def log_bulk_read(self, user_id: str, object_type: str, action: str, *,
+                       considered: int, denied_object_ids: list,
+                       fields_read: list[str], security_values_seen: Iterable,
+                       request_id: str | None = None) -> None:
+        """One record for one read, however many objects it touched.
+
+        WHY NOT ONE PER OBJECT. A read over 50,000 objects wrote 50,007
+        records, of which 49,997 were identical grants -- measured, on
+        the real path, along with the 2.8x it cost. NIST SP 800-92 asks
+        for "events that are significant for security and
+        accountability... events that involve a state change or a
+        SECURITY DECISION", and a bulk read makes ONE decision -- may
+        this user read this type -- then applies it many times. The
+        decision is the event.
+
+        Successful access stays in scope: the same guidance lists
+        "attempts to access sensitive resources (successful and
+        failed)". This records that the read happened, at the
+        granularity of the thing that happened.
+
+        DENIALS ARE NEVER SUMMARISED. Every denied object id is listed
+        individually here AND keeps its own log_access() record --
+        "sample strategically for non-security telemetry ONLY". A
+        denial you cannot name is unauditable, and the measurement said
+        detail is free: a record carrying 500 ids cost 0.061ms against
+        0.034ms for one carrying three.
+
+        THE SIX QUESTIONS a defensible trail answers -- who acted, what
+        changed, when, where it originated, why it was permitted, and
+        what outcome followed -- map to the fields below. The per-object
+        records answered three of them; this answers all six, and adds
+        two the old ones never captured: WHICH FIELDS were read, and
+        WHICH SECURITY PARTITIONS were touched.
+
+        Durable identifiers throughout, never display names: "one
+        platform records a display name while another records a durable
+        identifier... that creates reconciliation work, weakens
+        evidence".
+        """
+        self._write({
+            "stage": "bulk_read",
+            # WHO
+            "user_id": user_id,
+            # WHAT
+            "object_type": object_type,
+            "action": action,
+            "fields_read": sorted(fields_read),
+            # WHERE it originated
+            "request_id": request_id,
+            # WHY it was permitted -- which security partitions the
+            # caller's own clearance admitted them to.
+            "security_values_seen": sorted(str(value) for value in security_values_seen),
+            # WHAT OUTCOME followed
+            "considered": considered,
+            "denied": len(denied_object_ids),
+            "denied_object_ids": list(denied_object_ids),
+            # WHEN is stamped by _write(), in the one place every entry
+            # passes through.
+        })
+
     def log_unknown_reference(self, user_id: str, object_type: str, field_name: str | None = None) -> None:
         # A get_field()/search_object() request naming an object_type or
         # field_name that GENUINELY does not exist in the schema at all --
@@ -258,6 +340,83 @@ class AuditLog:
             "user_id": user_id,
             "object_type": object_type,
             "object_id": object_id,
+        })
+
+    def log_reload(self, user_id: str, outcome: str, from_generation: int,
+                    to_generation: int | None, source_digest: str | None,
+                    detail: str | None = None) -> None:
+        """A configuration reload was attempted.
+
+        Security-relevant and previously unrecordable, because a
+        configuration could only change by restarting. Records the
+        attempt whether it SUCCEEDED or FAILED -- a rejected reload is
+        as interesting as an accepted one, and more so if someone is
+        probing.
+
+        to_generation and source_digest are None on failure, because
+        there is no new generation to name. A failed reload changes
+        nothing, which is the point of validating before swapping.
+        """
+        self._write({
+            "stage": "config_reload",
+            "user_id": user_id,
+            "outcome": outcome,
+            "from_generation": from_generation,
+            "to_generation": to_generation,
+            "new_source_digest": source_digest,
+            "detail": detail,
+        })
+
+    def log_write_invalidated(self, write_id: str, user_id: str, description: str,
+                               from_generation: int, to_generation: int,
+                               fields: list[str], reloaded_by: str) -> None:
+        """A configuration change made a pending write impossible to apply.
+
+        DISTINCT FROM log_write_unapplyable(), which records a reviewer
+        being REFUSED. This records the moment the write died, which
+        may be the only entry it ever gets: a proposal the inbox
+        correctly discourages is never attempted, so it expires
+        silently and the trail shows a write proposed and a write
+        expired with nothing connecting them.
+
+        Names WHO RELOADED as well as who proposed. The person whose
+        write was invalidated did nothing; somebody else changed the
+        configuration, and an entry that named only the proposer would
+        read as though they had.
+        """
+        self._write({
+            "stage": "write_invalidated",
+            "write_id": write_id,
+            "user_id": user_id,
+            "description": description,
+            "from_generation": from_generation,
+            "to_generation": to_generation,
+            "undeclared_fields": fields,
+            "reloaded_by": reloaded_by,
+        })
+
+    def log_write_unapplyable(self, user_id: str, description: str,
+                               proposed_under: int, applying_under: int,
+                               fields: list[str]) -> None:
+        """A confirmed write was refused because its fields are gone.
+
+        A DISTINCT OUTCOME from rejected, and the audit must say which.
+        Rejected means a human decided against it; this means a human
+        decided FOR it and the configuration had moved on. Collapsing
+        them would make the log say someone declined a change they
+        actually approved.
+
+        Both generations are recorded, because the pair IS the
+        explanation: a write proposed under 7 and refused under 12 says
+        exactly where to look for what changed.
+        """
+        self._write({
+            "stage": "write_unapplyable",
+            "user_id": user_id,
+            "description": description,
+            "proposed_under_generation": proposed_under,
+            "applying_under_generation": applying_under,
+            "undeclared_fields": fields,
         })
 
     def log_pre(self, request_id: str, user_id: str, query_text: str,

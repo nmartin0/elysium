@@ -22,16 +22,14 @@
  * than trusting the call is there.
  */
 
+import { Classes } from '@blueprintjs/core'
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts/core'
 import { BarChart, GraphChart, PieChart } from 'echarts/charts'
-import {
-  GridComponent,
-  LegendComponent,
-  TitleComponent,
-  TooltipComponent,
-} from 'echarts/components'
+import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+
+import { chartTheme } from '../chartColors'
 
 // Registered once, at module load. Registering per render would
 // re-register the same modules on every mount for no benefit.
@@ -73,6 +71,55 @@ export interface ChartProps {
   ariaLabel: string
 }
 
+/**
+ * Applies Elysium's chart palette to a caller's option object.
+ *
+ * APPLIED HERE, so no caller chooses colours. Before this, every
+ * caller either picked its own or fell through to ECharts' defaults --
+ * which meant two charts on one screen could use different palettes,
+ * and none of them was checked for colour vision deficiency.
+ *
+ * A CALLER'S OWN `color` WINS. A chart that genuinely needs specific
+ * colours -- a status breakdown where red must mean failed -- says so
+ * explicitly, and this must not silently override it. Defaults are
+ * supplied; decisions are not overridden.
+ *
+ * The axis and gridline colours are likewise only filled in where the
+ * caller left them unset, and only for axes the caller actually
+ * declared: adding an xAxis to a pie chart would make ECharts render
+ * an empty grid behind it.
+ */
+function withTheme(option: Record<string, unknown>): Record<string, unknown> {
+  // Classes.DARK, not a literal, and document.body, not
+  // documentElement -- BOTH were wrong here, and each one alone was
+  // enough to make every chart draw light-theme axis labels and
+  // gridlines onto a dark surface. Silently, because the light palette
+  // looks perfectly fine on its own.
+  //
+  // Shell.tsx already warned about the literal at the exact line that
+  // sets the class: Blueprint 6 emits `bp6-dark` where 5 emitted
+  // `bp5-dark`, and "a hardcoded string silently stops working on a
+  // major upgrade, and the test asserting the same literal would keep
+  // passing". That comment exists because it had happened once
+  // before. This was the second time.
+  const theme = chartTheme(document.body.classList.contains(Classes.DARK))
+  const themed: Record<string, unknown> = { color: theme.categorical, ...option }
+
+  for (const axis of ['xAxis', 'yAxis'] as const) {
+    if (option[axis] === undefined) continue
+    const declared = option[axis] as Record<string, unknown>
+    themed[axis] = {
+      ...declared,
+      axisLabel: { color: theme.axisLabel, ...(declared.axisLabel as object) },
+      splitLine: {
+        lineStyle: { color: theme.gridLine },
+        ...(declared.splitLine as object),
+      },
+    }
+  }
+  return themed
+}
+
 export default function Chart({ option, onSelect, height = 240, ariaLabel }: ChartProps) {
   const container = useRef<HTMLDivElement | null>(null)
   const instance = useRef<echarts.ECharts | null>(null)
@@ -95,7 +142,7 @@ export default function Chart({ option, onSelect, height = 240, ariaLabel }: Cha
   }, [])
 
   useEffect(() => {
-    instance.current?.setOption(option, true)
+    instance.current?.setOption(withTheme(option), true)
   }, [option])
 
   useEffect(() => {
@@ -116,12 +163,5 @@ export default function Chart({ option, onSelect, height = 240, ariaLabel }: Cha
     }
   }, [onSelect])
 
-  return (
-    <div
-      ref={container}
-      role="img"
-      aria-label={ariaLabel}
-      style={{ height, width: '100%' }}
-    />
-  )
+  return <div ref={container} role="img" aria-label={ariaLabel} style={{ height, width: '100%' }} />
 }

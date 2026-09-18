@@ -82,10 +82,12 @@ def test_a_confirmed_write_lands_in_write_adapters_own_database_not_mediators(tm
     write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(TEST_SCHEMA, {"primary": read_adapter}, {"Widget": "primary"}, TEST_ROLES,
                              write_log=write_log)
-    write_mediator = WriteMediator(mediator, {"primary": write_adapter}, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, {"primary": write_adapter}, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
 
     alice = resolve_user_record(TEST_USERS, "alice", "org_id")
-    pending = write_mediator.propose_action(alice, "RenameWidget", {"widget_id": "w1", "new_name": "renamed"})
+    pending = write_mediator.propose_action(
+        alice, "RenameWidget", {"widget_id": "w1", "new_name": "renamed"}, origin="human",
+    )
     write_mediator.confirm_and_execute(pending, approved=True)
 
     # The real, unambiguous proof: write_side.db has the real update;
@@ -117,7 +119,7 @@ def test_write_mediator_never_reaches_into_mediators_own_adapters_dict(tmp_path)
     write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(TEST_SCHEMA, {"primary": read_adapter}, {"Widget": "primary"}, TEST_ROLES,
                              write_log=write_log)
-    write_mediator = WriteMediator(mediator, {"primary": write_adapter}, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, {"primary": write_adapter}, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
 
     assert write_mediator._adapter_mediator is not mediator
     assert write_mediator._adapter_mediator.adapters["primary"] is write_adapter

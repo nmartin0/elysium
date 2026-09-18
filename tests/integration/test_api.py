@@ -32,60 +32,21 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 
-from api.app import create_app
 from core.auth.database import connection
 from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW
-from core.deployment_loader import RuntimePaths
 from core.intermediate_layer.auth import UserRecord
+from tests.conftest import config_of, mediator_of, with_config, with_roles
 
 pytestmark = pytest.mark.mocked_llm
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-@pytest.fixture
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # TestClient's own base URL is plain http://testserver, not https --
-    # a real, found gap this test suite ran into directly: a Secure-
-    # flagged cookie (core/auth/auth_cookies.py's own default, matching
-    # a real production deployment) is genuinely never TRANSMITTED back
-    # by httpx's own cookie jar over a non-HTTPS connection, even
-    # though it IS still stored client-side -- exactly matching a real
-    # browser's own behavior, confirmed directly by isolating the
-    # exact mechanism before assuming this was the cause. Every real
-    # test in this file needs the same local-dev-style override a real
-    # developer's own machine would set, for the same reason.
-    monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
-
-    data_dir = tmp_path / "data"
-    dev_fixtures_dir = data_dir / "dev_fixtures"
-    dev_fixtures_dir.mkdir(parents=True)
-
-    # ALL THREE silos data_silos.yaml actually declares -- not just
-    # primary_sql. Was only ever mediator.db before this file's own
-    # get_object_detail_route tests needed a REAL Customer.risk_score
-    # (an MDO field, backed by risk_sql) to genuinely exist: a real
-    # gap this test fixture had, not something to work around in the
-    # test itself by avoiding a field a real customer_service user can
-    # actually see. Cheap to build (a handful of rows each) -- no
-    # meaningful cost to every OTHER test in this file gaining two
-    # small databases they don't happen to touch.
-    for db_name, schema_name in [
-        ("mediator.db", "schema.sql"),
-        ("support.db", "support_schema.sql"),
-        ("risk.db", "risk_schema.sql"),
-    ]:
-        conn = sqlite3.connect(dev_fixtures_dir / db_name)
-        conn.executescript((FIXTURES_DIR / schema_name).read_text())
-        conn.commit()
-        conn.close()
-
-    test_paths = RuntimePaths(config_dir=FIXTURES_DIR, data_dir=data_dir, log_dir=tmp_path / "log")
-    app = create_app(test_paths)
-
-    return TestClient(app)
+# The `client` fixture moved to tests/integration/conftest.py so
+# test_approvals_inbox.py can use the same one -- it encodes a real
+# found gap about Secure cookies over TestClient's plain-http base
+# URL, and a second copy would eventually drift from it.
 
 
 def _login(client, username, password):
@@ -422,8 +383,8 @@ def test_data_freshness_reports_the_mirror_sync_time_when_reading_from_it(client
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    client.app.state.config.read_from_mirror = True
-    client.app.state.mediator.mirror_synced_at = "2026-01-15T09:00:00+00:00"
+    with_config(client.app, read_from_mirror=True)
+    mediator_of(client.app).mirror_synced_at = "2026-01-15T09:00:00+00:00"
 
     response = client.get("/api/data-freshness")
 
@@ -470,10 +431,16 @@ def test_visible_schema_never_leaks_per_field_internals(client):
             # they exist so a UI can render a readable label. Everything
             # else a field definition carries is internal.
             leaked = set(field_info) - {
-                "type", "target", "cardinality", "display_name", "description",
+                "type",
+                "target",
+                "cardinality",
+                "display_name",
+                "description",
                 # UI rendering hints, deliberately exposed. Cosmetic --
                 # "hidden" does not withhold anything, RBAC does.
-                "visibility", "status", "link_type",
+                "visibility",
+                "status",
+                "link_type",
                 # data_type, added deliberately and NOT physical layout
                 # despite having been grouped with it. "number" says
                 # nothing about where a column lives; it is what the
@@ -484,6 +451,18 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 # it -- MORE restrictive than the server, which allows
                 # any operator on a field declaring no type.
                 "data_type",
+                # Whether this field's VALUE may be read. A permission
+                # OUTCOME, not infrastructure -- the opposite of the
+                # storage and security keys this guard exists to keep
+                # out. Withholding it would leave a caller unable to
+                # tell a withheld field from an empty one, which is the
+                # ambiguity the grant ladder was built to end.
+                "readable",
+                # How many decimal places to SHOW. Cosmetic ontology
+                # metadata in the same family as visibility and status
+                # -- it says nothing about where the data lives or how
+                # it is secured, which is what this guard keeps out.
+                "decimal_places",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 
@@ -649,9 +628,7 @@ def test_search_objects_finds_a_partial_match_with_real_field_values(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": "ada"}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": "ada"})
 
     assert response.status_code == 200
     body = response.json()
@@ -669,9 +646,7 @@ def test_search_objects_empty_query_returns_every_visible_result(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": ""}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": ""})
 
     assert response.status_code == 200
     body = response.json()
@@ -700,9 +675,7 @@ def test_search_objects_blocks_cross_region_mac(client):
     client.app.state.user_directory.create_user("bob", "correct-pw", "us-east", "customer_service")
     _login(client, "bob", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": "ada"}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": "ada"})
 
     assert response.status_code == 200
     assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
@@ -712,9 +685,7 @@ def test_search_objects_no_match_returns_empty_results(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": "zzz_nonexistent"}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": "zzz_nonexistent"})
 
     assert response.status_code == 200
     assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
@@ -724,9 +695,7 @@ def test_search_objects_unknown_type_returns_empty_results_not_error(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/TotallyFakeType/search", params={"q": "ada"}
-    )
+    response = client.get("/api/objects/TotallyFakeType/search", params={"q": "ada"})
 
     assert response.status_code == 200
     assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
@@ -806,9 +775,7 @@ def test_object_detail_and_search_routes_do_not_collide(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = client.get(
-        "/api/objects/Customer/search", params={"q": "ada"}
-    )
+    response = client.get("/api/objects/Customer/search", params={"q": "ada"})
 
     assert response.status_code == 200
     assert "results" in response.json()
@@ -898,8 +865,10 @@ def test_propose_action_succeeds_and_returns_a_real_pending_write(client):
     assert body["action_type_name"] == "UpdateCustomerName"
     assert body["sub_writes"] == [
         {
-            "object_type": "Customer", "object_id": "cust_001",
-            "changes": {"name": "Ada Lovelace"}, "expected_current_values": {"name": "Ada Okafor"},
+            "object_type": "Customer",
+            "object_id": "cust_001",
+            "changes": {"name": "Ada Lovelace"},
+            "expected_current_values": {"name": "Ada Okafor"},
         }
     ]
 
@@ -941,9 +910,7 @@ def test_propose_action_rejected_leaves_the_database_unchanged(client):
     )
     write_id = propose_response.json()["pending_write"]["id"]
 
-    client.post(
-        f"/api/writes/{write_id}/confirm", json={"approved": False}, headers=_csrf_headers(client)
-    )
+    client.post(f"/api/writes/{write_id}/confirm", json={"approved": False}, headers=_csrf_headers(client))
 
     detail_response = client.get("/api/objects/Customer/cust_001")
     assert detail_response.json()["fields"]["name"] == "Ada Okafor"
@@ -960,15 +927,17 @@ def test_propose_action_unknown_action_and_real_but_unauthorized_action_are_iden
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
     _login(client, "alice", "correct-pw")
 
-    unknown = client.post(
-        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client)
-    )
+    unknown = client.post("/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client))
     unauthorized = client.post(
         "/api/actions/TransferFunds",
-        json={"parameters": {
-            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
-            "new_from_balance": 1, "new_to_balance": 1,
-        }},
+        json={
+            "parameters": {
+                "from_account_id": "acc_checking",
+                "to_account_id": "acc_savings",
+                "new_from_balance": 1,
+                "new_to_balance": 1,
+            }
+        },
         headers=_csrf_headers(client),
     )
 
@@ -1078,9 +1047,7 @@ def test_propose_action_unknown_action_shows_the_real_message_for_a_discover_hol
     client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
     _login(client, "carol", "correct-pw")
 
-    response = client.post(
-        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client)
-    )
+    response = client.post("/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client))
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Unknown action_type: 'TotallyFakeAction'"
@@ -1096,10 +1063,14 @@ def test_propose_action_real_but_unauthorized_shows_403_for_a_discover_holder(cl
 
     response = client.post(
         "/api/actions/TransferFunds",
-        json={"parameters": {
-            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
-            "new_from_balance": 1, "new_to_balance": 1,
-        }},
+        json={
+            "parameters": {
+                "from_account_id": "acc_checking",
+                "to_account_id": "acc_savings",
+                "new_from_balance": 1,
+                "new_to_balance": 1,
+            }
+        },
         headers=_csrf_headers(client),
     )
 
@@ -1117,15 +1088,17 @@ def test_propose_action_unknown_vs_unauthorized_are_no_longer_identical_for_a_di
     client.app.state.user_directory.create_user("carol", "correct-pw", "us-west", "process_auditor")
     _login(client, "carol", "correct-pw")
 
-    unknown = client.post(
-        "/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client)
-    )
+    unknown = client.post("/api/actions/TotallyFakeAction", json={"parameters": {}}, headers=_csrf_headers(client))
     unauthorized = client.post(
         "/api/actions/TransferFunds",
-        json={"parameters": {
-            "from_account_id": "acc_checking", "to_account_id": "acc_savings",
-            "new_from_balance": 1, "new_to_balance": 1,
-        }},
+        json={
+            "parameters": {
+                "from_account_id": "acc_checking",
+                "to_account_id": "acc_savings",
+                "new_from_balance": 1,
+                "new_to_balance": 1,
+            }
+        },
         headers=_csrf_headers(client),
     )
 
@@ -1138,7 +1111,8 @@ def test_create_user_without_manage_users_grant_is_rejected(client):
     _login(client, "alice", "correct-pw")
 
     response = client.post(
-        "/api/users", json={"username": "bob", "password": "pw", "role_name": "customer_service"},
+        "/api/users",
+        json={"username": "bob", "password": "pw", "role_name": "customer_service"},
         headers=_csrf_headers(client),
     )
     assert response.status_code == 403
@@ -1150,8 +1124,12 @@ def test_create_user_with_manage_users_grant_succeeds_and_new_user_can_log_in(cl
 
     create_response = client.post(
         "/api/users",
-        json={"username": "newperson", "password": "newpass123",
-              "mac_value": "us-west", "role_name": "customer_service"},
+        json={
+            "username": "newperson",
+            "password": "newpass123",
+            "mac_value": "us-west",
+            "role_name": "customer_service",
+        },
         headers=_csrf_headers(client),
     )
     assert create_response.status_code == 201
@@ -1286,8 +1264,10 @@ def test_query_refuses_if_permissions_changed_during_processing(client):
     # than what the request actually authenticated with.
     changed_record = UserRecord(user_id="alice", security_value="us-west", role_name=None)
 
-    with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post), \
-         patch("core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]):
+    with (
+        patch("adapters.ollama_adapter.requests.post", side_effect=fake_post),
+        patch("core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]),
+    ):
         response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
 
     assert response.status_code == 409
@@ -1301,7 +1281,7 @@ def _propose_action(client, session=None, new_name="Updated Name"):
     # own execute: grant covers -- see policy.yaml's own comment.
     # No separate "object_id" field -- customer_id is just another
     # entry in "parameters" now, matching Palantir Foundry's own action
-    # parameter model directly (see WriteMediator.propose_action()'s
+    # parameter model directly (see WriteMediator.propose_action(, origin="human")'s
     # own docstring).
     #
     # session=None (the common case): acts as the client's own,
@@ -1311,10 +1291,17 @@ def _propose_action(client, session=None, new_name="Updated Name"):
     # helper's own comment for why this is occasionally necessary.
     def fake_post(*args, **kwargs):
         response = MagicMock()
-        response.json.return_value = {"message": {"content": json.dumps({
-            "step": "propose_action", "action_type": "UpdateCustomerName",
-            "parameters": {"customer_id": "cust_001", "new_name": new_name},
-        })}}
+        response.json.return_value = {
+            "message": {
+                "content": json.dumps(
+                    {
+                        "step": "propose_action",
+                        "action_type": "UpdateCustomerName",
+                        "parameters": {"customer_id": "cust_001", "new_name": new_name},
+                    }
+                )
+            }
+        }
         response.raise_for_status.return_value = None
         return response
 
@@ -1338,7 +1325,9 @@ def test_query_proposing_an_action_returns_202_with_a_reference(client):
     assert body["pending_write"]["action_type_name"] == "UpdateCustomerName"
     assert body["pending_write"]["sub_writes"] == [
         {
-            "object_type": "Customer", "object_id": "cust_001", "changes": {"name": "Updated Name"},
+            "object_type": "Customer",
+            "object_id": "cust_001",
+            "changes": {"name": "Updated Name"},
             "expected_current_values": {"name": "Ada Okafor"},
         }
     ]
@@ -1351,7 +1340,8 @@ def test_confirming_an_approved_action_actually_changes_the_database(client):
     write_id = _propose_action(client).json()["pending_write"]["id"]
 
     confirm_response = client.post(
-        f"/api/writes/{write_id}/confirm", json={"approved": True},
+        f"/api/writes/{write_id}/confirm",
+        json={"approved": True},
         headers=_csrf_headers(client),
     )
     assert confirm_response.status_code == 200
@@ -1360,8 +1350,8 @@ def test_confirming_an_approved_action_actually_changes_the_database(client):
     # Real proof the database actually changed -- a direct adapter
     # read, not just trusting the confirm endpoint's own claim. This
     # fixture's OWN, disposable database -- nothing to restore afterward.
-    adapter = client.app.state.mediator._adapter_for("Customer")
-    type_config = client.app.state.mediator._type_schema("Customer")
+    adapter = mediator_of(client.app)._adapter_for("Customer")
+    type_config = mediator_of(client.app)._type_schema("Customer")
     actual_value = adapter.get_raw_field("Customer", "cust_001", "name", type_config)
     assert actual_value == "Updated Name"
 
@@ -1373,14 +1363,15 @@ def test_confirming_a_rejected_action_does_not_change_the_database(client):
     write_id = _propose_action(client).json()["pending_write"]["id"]
 
     confirm_response = client.post(
-        f"/api/writes/{write_id}/confirm", json={"approved": False},
+        f"/api/writes/{write_id}/confirm",
+        json={"approved": False},
         headers=_csrf_headers(client),
     )
     assert confirm_response.status_code == 200
     assert confirm_response.json()["status"] == "rejected"
 
-    adapter = client.app.state.mediator._adapter_for("Customer")
-    type_config = client.app.state.mediator._type_schema("Customer")
+    adapter = mediator_of(client.app)._adapter_for("Customer")
+    type_config = mediator_of(client.app)._type_schema("Customer")
     actual_value = adapter.get_raw_field("Customer", "cust_001", "name", type_config)
     assert actual_value == "Ada Okafor"  # the fixture's real, unchanged seed value
 
@@ -1397,11 +1388,13 @@ def test_confirm_with_wrong_user_and_unknown_id_are_identical(client):
 
     _use_session(client, eve_session)
     wrong_user_response = client.post(
-        f"/api/writes/{write_id}/confirm", json={"approved": True},
+        f"/api/writes/{write_id}/confirm",
+        json={"approved": True},
         headers=_csrf_header_for(eve_session),
     )
     unknown_id_response = client.post(
-        "/api/writes/totally-fake-id/confirm", json={"approved": True},
+        "/api/writes/totally-fake-id/confirm",
+        json={"approved": True},
         headers=_csrf_header_for(eve_session),
     )
 
@@ -1416,7 +1409,7 @@ def _make_admin(client):
     # small number of callers that need to act as this admin AND
     # another, separate user within the same test -- see that
     # helper's own comment.
-    client.app.state.config.roles["admin"] = {"allowed_actions": frozenset(["manage:users", "manage:locks"])}
+    with_roles(client.app, admin={"allowed_actions": frozenset(["manage:users", "manage:locks"])})
     client.app.state.user_directory.create_user("admin_user", "adminpass", None, "admin")
     _login(client, "admin_user", "adminpass")
     return _capture_session(client)
@@ -1461,7 +1454,8 @@ def test_logout_all_revokes_every_session_for_the_caller(client):
     for session in (session1, session2):
         _use_session(client, session)
         result = client.post(
-            "/api/query", json={"query": "test"},
+            "/api/query",
+            json={"query": "test"},
             headers=_csrf_header_for(session),
         )
         assert result.status_code == 401
@@ -1488,16 +1482,24 @@ def test_admin_logout_all_for_a_target_user_works(client):
 
     _use_session(client, alice_session)
     result = client.post(
-        "/api/query", json={"query": "test"},
+        "/api/query",
+        json={"query": "test"},
         headers=_csrf_header_for(alice_session),
     )
     assert result.status_code == 401
 
 
 def test_visible_schema_debug_view_shows_what_the_target_user_can_see(client):
-    client.app.state.config.roles["customer_service"] = {"allowed_actions": [
-        "read:Customer", "read:Customer.customer_id", "read:Customer.name",
-    ]}
+    with_roles(
+        client.app,
+        customer_service={
+            "allowed_actions": [
+                "read:Customer",
+                "read:Customer.customer_id",
+                "read:Customer.name",
+            ]
+        },
+    )
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _make_admin(client)
 
@@ -1518,9 +1520,7 @@ def test_visible_schema_debug_view_requires_manage_users(client):
 
 def test_visible_schema_debug_view_for_unknown_user_is_404(client):
     _make_admin(client)
-    response = client.get(
-        "/api/users/totally_fake_user/visible-schema"
-    )
+    response = client.get("/api/users/totally_fake_user/visible-schema")
     assert response.status_code == 404
 
 
@@ -1537,7 +1537,8 @@ def test_disable_user_blocks_new_logins_and_kills_existing_sessions(client):
     # Existing session immediately rejected -- not just future logins.
     _use_session(client, alice_session)
     existing_session_result = client.post(
-        "/api/query", json={"query": "test"},
+        "/api/query",
+        json={"query": "test"},
         headers=_csrf_header_for(alice_session),
     )
     assert existing_session_result.status_code == 401
@@ -1577,7 +1578,8 @@ def test_delete_user_removes_credential_and_kills_sessions(client):
 
     _use_session(client, alice_session)
     existing_session_result = client.post(
-        "/api/query", json={"query": "test"},
+        "/api/query",
+        json={"query": "test"},
         headers=_csrf_header_for(alice_session),
     )
     assert existing_session_result.status_code == 401
@@ -1603,6 +1605,7 @@ def test_delete_nonexistent_user_is_404(client):
 # uglier and length-limited. They are reads despite the verb, which
 # does mean they are CSRF-gated like any other POST -- asserted below
 # rather than assumed.
+
 
 def _post(client, path, body):
     return client.post(path, json=body, headers=_csrf_headers(client))
@@ -1653,7 +1656,8 @@ def test_aggregate_groups_and_sums(client):
     _login(client, "alice", "correct-pw")
 
     response = _post(
-        client, "/api/objects/Transaction/aggregate",
+        client,
+        "/api/objects/Transaction/aggregate",
         {"criteria": {}, "aggregate": "sum", "field": "amount", "group_by": "category"},
     )
 
@@ -1669,9 +1673,7 @@ def test_aggregate_with_no_group_by_returns_one_result_under_an_empty_key(client
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = _post(
-        client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "count"}
-    )
+    response = _post(client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "count"})
 
     assert response.json()["results"] == {"": 4}
 
@@ -1683,7 +1685,8 @@ def test_an_unknown_aggregate_is_a_400_not_a_500(client):
     _login(client, "alice", "correct-pw")
 
     response = _post(
-        client, "/api/objects/Transaction/aggregate",
+        client,
+        "/api/objects/Transaction/aggregate",
         {"criteria": {}, "aggregate": "median", "field": "amount"},
     )
 
@@ -1695,9 +1698,7 @@ def test_an_aggregate_missing_its_field_is_a_400(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = _post(
-        client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "sum"}
-    )
+    response = _post(client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "sum"})
 
     assert response.status_code == 400
     assert "field_name" in response.json()["detail"]
@@ -1707,9 +1708,7 @@ def test_invalid_criteria_is_a_400(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = _post(
-        client, "/api/objects/Customer/count", {"criteria": {"not_a_real_field": "x"}}
-    )
+    response = _post(client, "/api/objects/Customer/count", {"criteria": {"not_a_real_field": "x"}})
 
     assert response.status_code == 400
 
@@ -1719,7 +1718,8 @@ def test_search_around_traverses_a_link(client):
     _login(client, "alice", "correct-pw")
 
     response = _post(
-        client, "/api/objects/Customer/search-around",
+        client,
+        "/api/objects/Customer/search-around",
         {"criteria": {"region": "us-west"}, "link_field": "transactions"},
     )
 
@@ -1735,7 +1735,8 @@ def test_search_around_returns_only_ids_the_caller_could_read_directly(client):
     _login(client, "alice", "correct-pw")
 
     ids = _post(
-        client, "/api/objects/Customer/search-around",
+        client,
+        "/api/objects/Customer/search-around",
         {"criteria": {}, "link_field": "transactions"},
     ).json()["ids"]
 
@@ -1754,7 +1755,8 @@ def test_search_around_on_an_ungranted_field_returns_empty_not_an_error(client):
     _login(client, "alice", "correct-pw")
 
     response = _post(
-        client, "/api/objects/Customer/search-around",
+        client,
+        "/api/objects/Customer/search-around",
         {"criteria": {}, "link_field": "not_a_real_field"},
     )
 
@@ -1822,7 +1824,7 @@ def _many_customers(client, count=137):
     directory = client.app.state.user_directory
     directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
-    adapter = client.app.state.mediator.adapters["primary_sql"]
+    adapter = mediator_of(client.app).adapters["primary_sql"]
     conn = sqlite3.connect(adapter.db_path)
     conn.executemany(
         "INSERT INTO customers VALUES (?, ?, ?, ?)",
@@ -1894,9 +1896,7 @@ def test_a_malformed_page_token_returns_the_first_page(client):
     # into an error page. Starting over is recoverable and obvious.
     _many_customers(client, count=30)
 
-    body = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=3&page_token=not-a-number"
-    ).json()
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=3&page_token=not-a-number").json()
 
     assert len(body["results"]) == 3
     assert body["results"][0]["id"] == "c0000"
@@ -1905,9 +1905,7 @@ def test_a_malformed_page_token_returns_the_first_page(client):
 def test_an_out_of_range_page_token_returns_the_first_page(client):
     _many_customers(client, count=10)
 
-    body = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=3&page_token=99999"
-    ).json()
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=3&page_token=99999").json()
 
     assert body["results"][0]["id"] == "c0000"
 
@@ -1915,12 +1913,8 @@ def test_an_out_of_range_page_token_returns_the_first_page(client):
 def test_results_are_ordered_by_a_requested_field(client):
     _many_customers(client, count=20)
 
-    ascending = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=4&order_by=name"
-    ).json()
-    descending = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=4&order_by=name:desc"
-    ).json()
+    ascending = client.get("/api/objects/Customer/search?q=Person&page_size=4&order_by=name").json()
+    descending = client.get("/api/objects/Customer/search?q=Person&page_size=4&order_by=name:desc").json()
 
     ascending_names = [r["fields"]["name"] for r in ascending["results"]]
     descending_names = [r["fields"]["name"] for r in descending["results"]]
@@ -1936,14 +1930,10 @@ def test_an_unknown_order_by_field_is_ignored_rather_than_scrambling(client):
     # -- silently scrambling results while looking successful.
     _many_customers(client, count=10)
 
-    unsorted_ids = [
-        r["id"] for r in client.get("/api/objects/Customer/search?q=Person&page_size=5").json()["results"]
-    ]
+    unsorted_ids = [r["id"] for r in client.get("/api/objects/Customer/search?q=Person&page_size=5").json()["results"]]
     bogus_ids = [
         r["id"]
-        for r in client.get(
-            "/api/objects/Customer/search?q=Person&page_size=5&order_by=not_a_field"
-        ).json()["results"]
+        for r in client.get("/api/objects/Customer/search?q=Person&page_size=5&order_by=not_a_field").json()["results"]
     ]
 
     assert bogus_ids == unsorted_ids
@@ -1962,7 +1952,7 @@ def test_paging_survives_an_unstable_underlying_order(client):
     import random
 
     total = _many_customers(client, count=40)
-    mediator = client.app.state.mediator
+    mediator = mediator_of(client.app)
     real_search = mediator.search_object_free_text
 
     def shuffled(*args, **kwargs):
@@ -1995,17 +1985,12 @@ def test_ordering_stays_consistent_across_pages(client):
     # continue where page one left off, not re-sort a different subset.
     _many_customers(client, count=20)
 
-    first = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=5&order_by=name"
-    ).json()
+    first = client.get("/api/objects/Customer/search?q=Person&page_size=5&order_by=name").json()
     second = client.get(
-        f"/api/objects/Customer/search?q=Person&page_size=5&order_by=name"
-        f"&page_token={first['next_page_token']}"
+        f"/api/objects/Customer/search?q=Person&page_size=5&order_by=name&page_token={first['next_page_token']}"
     ).json()
 
-    names = [r["fields"]["name"] for r in first["results"]] + [
-        r["fields"]["name"] for r in second["results"]
-    ]
+    names = [r["fields"]["name"] for r in first["results"]] + [r["fields"]["name"] for r in second["results"]]
     assert names == sorted(names)
 
 
@@ -2022,12 +2007,8 @@ def _record_edit(client, changes, description, user_id="alice"):
     same database, exactly as the app's own WriteMediator does."""
     from core.ontology.write_log import WriteLogWriter
 
-    writer = WriteLogWriter(client.app.state.mediator.write_log.db_path)
-    writer.mark_applied(
-        writer.log_pending_update(
-            "Customer", "cust_001", changes, {}, user_id, description
-        )
-    )
+    writer = WriteLogWriter(mediator_of(client.app).write_log.db_path)
+    writer.mark_applied(writer.log_pending_update("Customer", "cust_001", changes, {}, user_id, description))
 
 
 def test_object_history_is_empty_for_an_unedited_object(client):
@@ -2082,8 +2063,7 @@ def test_object_history_pages(client):
 
     first = client.get("/api/objects/Customer/cust_001/history?page_size=5").json()
     second = client.get(
-        f"/api/objects/Customer/cust_001/history?page_size=5"
-        f"&page_token={first['next_page_token']}"
+        f"/api/objects/Customer/cust_001/history?page_size=5&page_token={first['next_page_token']}"
     ).json()
 
     assert first["total"] == 12
@@ -2126,9 +2106,7 @@ def test_a_bare_offset_is_no_longer_accepted(client):
     # working until the encoding changes again.
     _many_customers(client, count=30)
 
-    body = client.get(
-        "/api/objects/Customer/search?q=Person&page_size=3&page_token=5"
-    ).json()
+    body = client.get("/api/objects/Customer/search?q=Person&page_size=3&page_token=5").json()
 
     assert body["results"][0]["id"] == "c0000", "a bare offset should not resolve"
 
@@ -2140,9 +2118,7 @@ def test_every_malformed_token_shape_falls_back_to_the_first_page(client):
     _many_customers(client, count=30)
 
     for bad in ("garbage", "v2.abc", "v1.", "v1.!!!", "v1.bm90YW51bQ=="):
-        body = client.get(
-            f"/api/objects/Customer/search?q=Person&page_size=3&page_token={bad}"
-        ).json()
+        body = client.get(f"/api/objects/Customer/search?q=Person&page_size=3&page_token={bad}").json()
         assert body["results"][0]["id"] == "c0000", f"{bad!r} did not fall back"
 
 
@@ -2193,11 +2169,23 @@ def test_health_is_reachable_without_authentication(client):
     assert response.json()["status"] == "ok"
 
 
-def test_health_reports_each_silo(client):
+def test_health_reports_silos_in_aggregate_not_by_name(client):
+    """It used to key each entry "silo:{silo_name}".
+
+    So an UNAUTHENTICATED caller learned every data source's name and
+    how many there were. A silo name is deployment-chosen and usually
+    descriptive -- `risk_sql`, `hr_payroll`, `claims` -- which on an
+    anonymous endpoint says what a deployment holds before anyone has
+    logged in.
+
+    One entry still answers what this endpoint is for. Anyone entitled
+    to the detail has GET /silos, which is authenticated.
+    """
     body = client.get("/api/health").json()
 
     assert body["checks"]["ontology"] == "ready"
-    assert any(key.startswith("silo:") for key in body["checks"])
+    assert body["checks"]["silos"] in ("reachable", "unreachable")
+    assert not [key for key in body["checks"] if key.startswith("silo:")]
 
 
 def test_health_leaks_nothing_about_the_data(client):
@@ -2212,13 +2200,26 @@ def test_health_leaks_nothing_about_the_data(client):
         assert leaked not in serialized, f"/health exposed {leaked!r}"
     assert set(body["checks"].values()) <= {"ready", "reachable", "unreachable", "unconfigured"}
 
+    # THE KEYS TOO, which this test did not check and which is where a
+    # leak actually lived: silo names were keys, not values, so a
+    # value-set assertion and a grep for paths both passed while every
+    # data source's name was in the response.
+    assert set(body["checks"]) <= {"ontology", "silos"}, (
+        f"/health exposed deployment configuration in its keys: {sorted(body['checks'])}"
+    )
+
+    # And no deployment-chosen identifier anywhere. The silo names this
+    # deployment declares must not appear in any form.
+    for silo_name in mediator_of(client.app).adapters:
+        assert silo_name not in serialized, f"/health exposed silo name {silo_name!r}"
+
 
 def test_health_reports_degraded_rather_than_failing(client, monkeypatch):
     # 200 even when degraded, with the detail in the body. A caller
     # distinguishing "the service is down" from "the service is up but
     # its database is not" needs both answers to arrive, and a non-200
     # collapses them into one.
-    adapter = next(iter(client.app.state.mediator.adapters.values()))
+    adapter = next(iter(mediator_of(client.app).adapters.values()))
 
     def unreachable():
         raise OSError("database is gone")
@@ -2243,7 +2244,13 @@ def test_a_missing_sqlite_file_is_not_reported_healthy(tmp_path):
     from adapters.sqlite_adapter import SQLiteReadAdapter
 
     db_path = tmp_path / "silo.db"
-    sqlite_module.connect(db_path).close()
+    connection = sqlite_module.connect(db_path)
+    # A REAL TABLE, because an empty database is no longer healthy
+    # either -- see the test below. This one is about the file being
+    # GONE, so it needs a database that would otherwise pass.
+    connection.execute("CREATE TABLE customers (customer_id TEXT)")
+    connection.commit()
+    connection.close()
     adapter = SQLiteReadAdapter({"path": db_path})
     adapter.health_check()
 
@@ -2251,6 +2258,29 @@ def test_a_missing_sqlite_file_is_not_reported_healthy(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         adapter.health_check()
+
+
+def test_an_EMPTY_database_is_not_reported_healthy_either(tmp_path):
+    """The same bug one layer in, and the comment above stopped short
+    of it.
+
+    sqlite3.connect() creates an empty database, and an empty database
+    answers SELECT 1 happily -- so a file that EXISTS but has no tables
+    passed every check and failed every read.
+
+    Found the hard way: a dev database was restored to a state with no
+    tables, Silos reported all three silos reachable, and every object
+    read returned a raw 500.
+    """
+    import sqlite3 as sqlite_module
+
+    from adapters.sqlite_adapter import SQLiteReadAdapter
+
+    db_path = tmp_path / "empty.db"
+    sqlite_module.connect(db_path).close()
+
+    with pytest.raises(RuntimeError, match="no tables"):
+        SQLiteReadAdapter({"path": db_path}).health_check()
 
 
 def test_a_link_field_carries_its_link_type_through_the_response_model(client):
@@ -2322,9 +2352,7 @@ def test_count_accepts_the_full_condition_vocabulary(client):
     """
     _filter_user(client, "filteruser")
 
-    everything = _post(
-        client, "/api/objects/Customer/count", {"criteria": {}}
-    ).json()["count"]
+    everything = _post(client, "/api/objects/Customer/count", {"criteria": {}}).json()["count"]
 
     # Two ids this caller can see. MAC scopes them to us-west, and the
     # fixture puts exactly cust_001 and cust_002 there -- asserted
@@ -2334,14 +2362,14 @@ def test_count_accepts_the_full_condition_vocabulary(client):
     assert everything >= 2, "need two visible customers, or this proves nothing"
 
     one = _post(
-        client, "/api/objects/Customer/count",
-        {"conditions": [{"field": "customer_id", "operator": "in",
-                         "value": first_two[:1]}]},
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "customer_id", "operator": "in", "value": first_two[:1]}]},
     ).json()["count"]
     both = _post(
-        client, "/api/objects/Customer/count",
-        {"conditions": [{"field": "customer_id", "operator": "in",
-                         "value": first_two}]},
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "customer_id", "operator": "in", "value": first_two}]},
     ).json()["count"]
 
     assert one >= 1, "the fixture should match something, or this proves nothing"
@@ -2355,13 +2383,11 @@ def test_the_dict_form_still_works(client):
     # expressiveness.
     _filter_user(client, "filteruser2")
 
-    from_dict = _post(
-        client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"}}
-    ).json()["count"]
+    from_dict = _post(client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"}}).json()["count"]
     from_conditions = _post(
-        client, "/api/objects/Customer/count",
-        {"conditions": [{"field": "region", "operator": "equals",
-                         "value": "us-west"}]},
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "region", "operator": "equals", "value": "us-west"}]},
     ).json()["count"]
 
     assert from_dict == from_conditions
@@ -2375,9 +2401,12 @@ def test_sending_both_forms_is_rejected_rather_than_merged(client):
     _filter_user(client, "filteruser3")
 
     response = _post(
-        client, "/api/objects/Customer/count", {"criteria": {"region": "us-west"},
-              "conditions": [{"field": "region", "operator": "equals",
-                              "value": "us-east"}]}
+        client,
+        "/api/objects/Customer/count",
+        {
+            "criteria": {"region": "us-west"},
+            "conditions": [{"field": "region", "operator": "equals", "value": "us-east"}],
+        },
     )
 
     assert response.status_code == 400
@@ -2387,8 +2416,9 @@ def test_a_malformed_condition_is_a_400_not_a_500(client):
     _filter_user(client, "filteruser4")
 
     response = _post(
-        client, "/api/objects/Customer/count", {"conditions": [{"field": "region", "operator": "nonsense",
-                              "value": "x"}]}
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "region", "operator": "nonsense", "value": "x"}]},
     )
 
     assert response.status_code == 400
@@ -2400,12 +2430,14 @@ def test_a_condition_on_an_unreadable_field_is_a_400(client):
     _filter_user(client, "filteruser5")
 
     unknown = _post(
-        client, "/api/objects/Customer/count", {"conditions": [{"field": "no_such_field", "operator": "equals",
-                              "value": "x"}]}
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "no_such_field", "operator": "equals", "value": "x"}]},
     )
     unreadable = _post(
-        client, "/api/objects/Customer/count", {"conditions": [{"field": "internal_notes", "operator": "equals",
-                              "value": "x"}]}
+        client,
+        "/api/objects/Customer/count",
+        {"conditions": [{"field": "internal_notes", "operator": "equals", "value": "x"}]},
     )
 
     assert unknown.status_code == unreadable.status_code == 400
@@ -2423,12 +2455,8 @@ def test_text_and_conditions_narrow_together(client):
     _filter_user(client, "textcond")
 
     text_only = client.get("/api/objects/Customer/search?q=a").json()["total_matches"]
-    conditions = json.dumps(
-        [{"field": "customer_id", "operator": "in", "value": ["cust_001"]}]
-    )
-    both = client.get(
-        f"/api/objects/Customer/search?q=a&conditions={conditions}"
-    ).json()["total_matches"]
+    conditions = json.dumps([{"field": "customer_id", "operator": "in", "value": ["cust_001"]}])
+    both = client.get(f"/api/objects/Customer/search?q=a&conditions={conditions}").json()["total_matches"]
 
     assert text_only > 1, "the text alone should match several, or this proves nothing"
     assert both == 1
@@ -2437,13 +2465,9 @@ def test_text_and_conditions_narrow_together(client):
 def test_conditions_alone_work_without_any_text(client):
     # The chart-click case: no search term, just a filter.
     _filter_user(client, "condonly")
-    conditions = json.dumps(
-        [{"field": "customer_id", "operator": "in", "value": ["cust_001", "cust_002"]}]
-    )
+    conditions = json.dumps([{"field": "customer_id", "operator": "in", "value": ["cust_001", "cust_002"]}])
 
-    body = client.get(
-        f"/api/objects/Customer/search?conditions={conditions}"
-    ).json()
+    body = client.get(f"/api/objects/Customer/search?conditions={conditions}").json()
 
     assert body["total_matches"] == 2
 
@@ -2468,9 +2492,7 @@ def test_a_condition_on_an_unreadable_field_is_rejected_by_search_too(client):
 def test_malformed_conditions_are_a_400(client):
     _filter_user(client, "condbad")
 
-    assert client.get(
-        "/api/objects/Customer/search?conditions=not-json"
-    ).status_code == 400
+    assert client.get("/api/objects/Customer/search?conditions=not-json").status_code == 400
 
 
 def _admin_user(client, username):
@@ -2560,7 +2582,7 @@ def test_silos_route_reports_the_failure_KIND_not_the_message(client, tmp_path):
     report or a browser cache.
     """
     _admin_user(client, "silofail")
-    mediator = client.app.state.mediator
+    mediator = mediator_of(client.app)
     adapter = mediator.adapters["primary_sql"]
     original = adapter.db_path
     adapter.db_path = str(tmp_path / "gone.db")
@@ -2680,8 +2702,7 @@ def test_silos_route_shows_the_join_key_and_its_renaming(client):
     assert identifier["column"] == "cust_ref"
 
     primary = next(silo for silo in body if silo["name"] == "primary_sql")
-    same_type = next(f for f in primary["fields"]
-                     if f["is_identifier"] and f["object_type"] == "Customer")
+    same_type = next(f for f in primary["fields"] if f["is_identifier"] and f["object_type"] == "Customer")
     assert same_type["column"] == "customer_id", "the two silos key differently"
 
 
@@ -2694,8 +2715,7 @@ def test_silos_route_lists_an_identifier_once_per_storage(client):
     body = client.get("/api/silos").json()
 
     primary = next(silo for silo in body if silo["name"] == "primary_sql")
-    customer_ids = [f for f in primary["fields"]
-                    if f["is_identifier"] and f["object_type"] == "Customer"]
+    customer_ids = [f for f in primary["fields"] if f["is_identifier"] and f["object_type"] == "Customer"]
     assert len(customer_ids) == 1
 
 
@@ -2717,8 +2737,7 @@ def test_silos_route_sorts_the_identifier_first_within_a_type(client):
 def test_a_note_can_be_written_and_read_back(client):
     _filter_user(client, "notewriter")
 
-    created = _post(client, "/api/objects/Customer/cust_001/notes",
-                    {"text": "Fee waived after the March flood."})
+    created = _post(client, "/api/objects/Customer/cust_001/notes", {"text": "Fee waived after the March flood."})
     assert created.status_code == 201
 
     listed = client.get("/api/objects/Customer/cust_001/notes").json()
@@ -2758,8 +2777,7 @@ def test_an_empty_note_is_rejected(client):
     # read and nobody meant to write.
     _filter_user(client, "noteempty")
 
-    assert _post(client, "/api/objects/Customer/cust_001/notes",
-                 {"text": "   "}).status_code == 400
+    assert _post(client, "/api/objects/Customer/cust_001/notes", {"text": "   "}).status_code == 400
 
 
 def test_writing_a_note_on_an_unreadable_object_is_a_404(client):
@@ -2797,3 +2815,876 @@ def test_a_request_trace_is_empty_for_a_request_you_did_not_make(client):
 
 def test_a_request_trace_needs_a_session(client):
     assert client.get("/api/requests/x/trace").status_code == 401
+
+
+def test_reload_requires_its_own_grant_not_manage_users(client):
+    """manage:users is NOT enough to reload configuration.
+
+    Creating an account and replacing the ontology, the grants and the
+    silo wiring are different powers. A deployment should be able to
+    hand out one without the other, which is why manage:deployment
+    exists as a separate grant rather than reusing the admin gate.
+    """
+    _make_admin(client)  # holds manage:users
+
+    assert client.post("/api/admin/reload", headers=_csrf_headers(client)).status_code == 403
+
+
+def test_reload_with_the_grant_advances_the_generation(client):
+    with_roles(client.app, reloader={"allowed_actions": frozenset(["manage:deployment"])})
+    client.app.state.user_directory.create_user("reloader", "pw", None, "reloader")
+    _login(client, "reloader", "pw")
+    before = client.app.state.generation.generation
+
+    response = client.post("/api/admin/reload", headers=_csrf_headers(client))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["from_generation"] == before
+    assert body["to_generation"] > before
+    # Unchanged files: a new GENERATION of the same CONFIGURATION.
+    assert body["changed"] is False
+    assert client.app.state.generation.generation == body["to_generation"]
+
+
+def test_an_unauthenticated_reload_is_refused(client):
+    # 403 from CSRF, not 401 from auth: the middleware runs first and
+    # an unauthenticated caller has no CSRF cookie to present. Both are
+    # refusals; asserting the wrong one would be asserting a mechanism
+    # this test does not care about.
+    assert client.post("/api/admin/reload").status_code in (401, 403)
+
+
+def _propose_as(client, username, role="editor"):
+    """Logs a user in and has them propose a real write. Returns its id."""
+    client.app.state.user_directory.create_user(username, "pw", "us-west", role)
+    _login(client, username, "pw")
+    response = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_001", "new_name": f"By {username}"}},
+        headers=_csrf_headers(client),
+    )
+    assert response.status_code == 202, response.text
+    return response.json()["pending_write"]["id"]
+
+
+def test_a_colleague_sees_a_write_they_did_not_propose(client):
+    """THE WHOLE POINT OF THE INBOX, and what three controls showed my
+    first tests were not checking: they called the endpoint against an
+    EMPTY store, so they asserted the response shape and nothing about
+    who sees what.
+    """
+    _propose_as(client, "alice")
+    _propose_as(client, "bob")  # logs bob in, replacing alice's session
+
+    body = client.get("/api/writes/awaiting").json()
+    mine = [entry for entry in body if entry["proposed_by"] == "alice"]
+
+    assert mine, "bob cannot see a write alice proposed"
+    assert mine[0]["awaiting_your_review"] is True
+    assert mine[0]["proposed_by_you"] is False
+
+
+def test_a_proposer_sees_their_own_write(client):
+    # Without this a proposer who cannot approve their own write -- the
+    # four-eyes case -- has no way to learn whether anyone looked at
+    # it. A proposal that vanishes into silence is one people stop
+    # making.
+    _propose_as(client, "alice")
+
+    body = client.get("/api/writes/awaiting").json()
+    mine = [entry for entry in body if entry["proposed_by"] == "alice"]
+
+    assert mine
+    assert mine[0]["proposed_by_you"] is True
+
+
+def test_a_proposer_still_sees_their_write_after_losing_the_grant(client):
+    """WHEN THE `proposed_by_you` CLAUSE IS ACTUALLY LOAD-BEARING.
+
+    Found by a control that did NOT fire: in this deployment every
+    proposer also holds the execute grant, so the clause is unreachable
+    in the ordinary case and removing it changed nothing.
+
+    It matters when a grant is revoked after proposing -- a role
+    change, or a deployment that separates proposing from approving.
+    The proposer must still be able to see that their write exists,
+    or it disappears from their view entirely while continuing to sit
+    in somebody else's queue.
+    """
+    _propose_as(client, "alice")
+
+    # Strip the grant alice proposed under, leaving her everything else.
+    with_roles(client.app, editor={"allowed_actions": frozenset(["read:Customer"])})
+
+    body = client.get("/api/writes/awaiting").json()
+    mine = [entry for entry in body if entry["proposed_by"] == "alice"]
+
+    assert mine, "alice cannot see her own write after losing the grant"
+    assert mine[0]["proposed_by_you"] is True
+    assert mine[0]["awaiting_your_review"] is False
+
+
+def test_someone_with_neither_relationship_sees_nothing(client):
+    # THE CONTROL that matters. Without it, a predicate returning
+    # everything would turn the inbox into a directory of every write
+    # in the deployment -- and the two tests above would still pass.
+    _propose_as(client, "alice")
+    _filter_user(client, "outsider")  # no execute grant, proposed nothing
+
+    assert client.get("/api/writes/awaiting").json() == []
+
+
+def test_awaiting_writes_lists_what_this_user_may_decide(client):
+    """The inbox that makes four-eyes reachable.
+
+    Confirming a write requires its id, and before this route only the
+    proposer had one -- so the single person who could find a write was
+    the single person a four-eyes rule forbids from approving it.
+    """
+    _make_admin(client)
+
+    response = client.get("/api/writes/awaiting")
+
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_awaiting_writes_never_returns_the_changed_values(client):
+    """DELIBERATELY NOT THE VALUES, and this is the security decision.
+
+    A pending write names object ids and the fields it would set, both
+    governed by MAC and field-level RBAC on every other read path.
+    Returning them because the caller holds an EXECUTE grant would be a
+    way around the read rules: an approver could learn a balance by
+    proposing a write against it and listing their own inbox.
+    """
+    from api.routes import AwaitingWriteResponse
+
+    # ASSERTED AGAINST THE RESPONSE MODEL, not against a live response,
+    # and a control taught me why. FastAPI strips undeclared keys, so a
+    # route that tried to return sub_writes would be filtered and a
+    # test inspecting the body would pass either way -- it would be
+    # asserting FastAPI's behaviour, not ours.
+    #
+    # The model IS the control. Widening it is the change that would
+    # leak, so the model is what this pins.
+    declared = set(AwaitingWriteResponse.model_fields)
+
+    assert declared == {
+        "write_id",
+        "action_type_name",
+        "description",
+        "proposed_by",
+        "proposed_at",
+        "object_count",
+        "expires_at",
+        "awaiting_your_review",
+        "proposed_by_you",
+        "undeclared_fields",
+        "duplicate_count",
+        # THE TASK COUNTS ARE COUNTS. They say how many tasks a request
+        # has, how many this reviewer may decide, and how many are
+        # approved -- never WHICH objects or what would change.
+        #
+        # A count of eligible tasks does reveal how many of a request's
+        # objects fall in the reviewer's own partition, which they could
+        # learn by listing those objects anyway.
+        #
+        # Added to this set deliberately rather than around it: the
+        # failure was this test doing its job.
+        "tasks_total",
+        "tasks_you_may_decide",
+        "tasks_approved",
+    }
+    for leaky in ("changes", "sub_writes", "object_id", "object_ids", "parameters"):
+        assert leaky not in declared
+
+
+def test_awaiting_writes_requires_a_login(client):
+    assert client.get("/api/writes/awaiting").status_code in (401, 403)
+
+
+def test_the_pending_write_store_uses_the_configured_ttl(client):
+    """The wiring, which nothing asserted.
+
+    A configuration value that is read, validated, and then never
+    passed to the thing it configures is the quietest kind of dead
+    setting: /config reports it, the template documents it, and it does
+    nothing. A control removing the ttl= argument from api/app.py
+    passed every other test.
+    """
+    from datetime import timedelta
+
+    store = client.app.state.pending_writes
+    expected = timedelta(minutes=config_of(client.app).pending_write_ttl_minutes)
+
+    assert store._ttl == expected
+    # And it is not the old hardcoded default, which is what makes the
+    # assertion above mean something rather than coincide.
+    assert store._ttl != timedelta(minutes=15)
+
+
+# --- the redacting diff: what a reviewer actually sees ---
+
+
+def test_a_reviewer_sees_the_values_they_may_read(client):
+    write_id = _propose_as(client, "alice")
+
+    body = client.get(f"/api/writes/{write_id}").json()
+
+    assert body["action_type_name"] == "UpdateCustomerName"
+    [changed] = body["objects"][0]["changes"]
+    assert changed["field_name"] == "name"
+    assert changed["readable"] is True
+    assert changed["proposed_value"] == "By alice"
+    assert body["has_redacted_fields"] is False
+
+
+def test_a_field_the_reviewer_cannot_read_is_REDACTED_not_omitted(client):
+    """THE DESIGN DECISION IN THIS COMMIT, and a reversal of an earlier
+    one.
+
+    Omitting an unreadable field leaks less and is worse: a reviewer
+    seeing three fields cannot tell whether that is the whole change or
+    a fragment, so they approve believing they saw everything. That is
+    the rubber-stamp problem in its worst form, because it produces
+    MORE confidence rather than less.
+
+    Foundry redacts -- "certain resources or users contained in a
+    record if you do not have the necessary permissions to view that
+    item" -- and this follows it.
+    """
+    write_id = _propose_as(client, "alice")
+
+    # Strip the reviewer's read grant on the field, keeping everything
+    # else: they may still execute the action, so they remain an
+    # eligible reviewer with no way to read what they are approving.
+    with_roles(
+        client.app,
+        editor={
+            "allowed_actions": frozenset(
+                [
+                    "read:Customer",
+                    "execute:UpdateCustomerName",
+                ]
+            )
+        },
+    )
+
+    body = client.get(f"/api/writes/{write_id}").json()
+    [changed] = body["objects"][0]["changes"]
+
+    # The field is STILL LISTED -- that is the redaction.
+    assert changed["field_name"] == "name"
+    assert changed["readable"] is False
+    assert changed["current_value"] is None
+    assert changed["proposed_value"] is None
+    assert body["has_redacted_fields"] is True
+
+
+def test_the_proposed_value_is_gated_as_tightly_as_the_current_one(client):
+    # Otherwise proposing a write would be a way to learn what you are
+    # about to be told: a caller with execute but not read could read
+    # back their own proposal's values through this endpoint.
+    write_id = _propose_as(client, "alice")
+    with_roles(
+        client.app,
+        editor={
+            "allowed_actions": frozenset(
+                [
+                    "read:Customer",
+                    "execute:UpdateCustomerName",
+                ]
+            )
+        },
+    )
+
+    body = client.get(f"/api/writes/{write_id}").json()
+
+    assert body["objects"][0]["changes"][0]["proposed_value"] is None
+
+
+def test_an_unknown_write_is_a_404_not_a_403(client):
+    # Uniform denial: unknown, expired and not-yours are one answer.
+    _propose_as(client, "alice")
+
+    assert client.get("/api/writes/no-such-id").status_code == 404
+
+
+def test_a_write_you_may_neither_review_nor_claim_is_a_404(client):
+    write_id = _propose_as(client, "alice")
+    _filter_user(client, "outsider")
+
+    assert client.get(f"/api/writes/{write_id}").status_code == 404
+
+
+def test_reading_the_detail_does_not_consume_the_write(client):
+    # An inbox is opened and closed. If looking at a write claimed it,
+    # the reviewer would lose the ability to approve it by reading it.
+    write_id = _propose_as(client, "alice")
+
+    assert client.get(f"/api/writes/{write_id}").status_code == 200
+    assert client.get(f"/api/writes/{write_id}").status_code == 200
+
+
+def test_a_refused_approval_leaves_the_write_for_someone_else(client):
+    """THE BUG THIS COMMIT FIXES, end to end.
+
+    The route claimed the write -- removing it -- and only then ran the
+    decision. A refusal therefore destroyed the proposal: the colleague
+    entitled to approve it never got the chance, and nothing told them
+    it had existed.
+
+    Worse than losing a write, because the refusal is the system
+    working CORRECTLY.
+    """
+    write_id = _propose_as(client, "alice")
+
+    # A confirm that fails INSIDE confirm_and_execute, after the
+    # reservation. The write adapter is made to raise, which is the
+    # general shape of every such failure -- a criteria violation, an
+    # unapplyable field, a database error.
+    #
+    # The schema itself cannot be mutated to provoke this: step 2a
+    # deep-froze the configuration, and an attempt raises
+    # "'mappingproxy' object does not support item assignment". That
+    # guarantee holding is why this test reaches for the adapter
+    # instead.
+    write_mediator = client.app.state.generation.write_mediator
+    original_apply = type(write_mediator)._apply_batch
+
+    def refuse(self, pending):
+        raise ValueError("a four-eyes rule refused this")
+
+    type(write_mediator)._apply_batch = refuse
+    try:
+        refused = client.post(
+            f"/api/writes/{write_id}/confirm",
+            json={"approved": True},
+            headers=_csrf_headers(client),
+        )
+        assert refused.status_code >= 400
+    finally:
+        type(write_mediator)._apply_batch = original_apply
+
+    # THE WRITE IS STILL THERE. Before the fix this was an empty list.
+    listed = client.get("/api/writes/awaiting").json()
+    assert write_id in [entry["write_id"] for entry in listed]
+
+
+def test_a_successful_approval_still_consumes_the_write(client):
+    # THE CONTROL. A store that never consumed anything would pass the
+    # test above while letting one proposal be applied repeatedly.
+    write_id = _propose_as(client, "alice")
+
+    approved = client.post(
+        f"/api/writes/{write_id}/confirm",
+        json={"approved": True},
+        headers=_csrf_headers(client),
+    )
+
+    assert approved.status_code == 200
+    listed = client.get("/api/writes/awaiting").json()
+    assert write_id not in [entry["write_id"] for entry in listed]
+
+
+def test_every_per_caller_route_forbids_caching(client):
+    """Session-specific responses must not be cached.
+
+    THE BUG THIS CATCHES, found by using the product: the approvals
+    inbox had no Cache-Control, so a browser served a stale EMPTY list
+    after a write had been proposed. The data was right and the screen
+    was wrong.
+
+    That is the mild version. The reason _no_store exists, in its own
+    words, is that these responses are "never something safe for a
+    shared or intermediate cache to persist and later hand back to a
+    DIFFERENT PERSON on the same machine" -- a realistic scenario for
+    an internal tool on a shared workstation.
+
+    ASSERTED ACROSS EVERY SUCH ROUTE rather than the two I just fixed.
+    The existing ones were equally unguarded; naming only mine would
+    leave the next one to be found the same way.
+    """
+    _propose_as(client, "alice")
+
+    per_caller = [
+        "/api/me",
+        "/api/me/visible-apps",
+        "/api/me/visible-schema",
+        "/api/me/visible-action-types",
+        "/api/data-freshness",
+        "/api/writes/awaiting",
+    ]
+
+    for path in per_caller:
+        response = client.get(path)
+        assert response.status_code == 200, f"{path} -> {response.status_code}"
+        assert "no-store" in response.headers.get("cache-control", ""), (
+            f"{path} may be cached and handed to a different user on the same machine"
+        )
+
+
+def test_a_write_detail_forbids_caching_too(client):
+    # Separate because it needs an id. Its contents are gated per
+    # reviewer -- redacted differently for different people -- so a
+    # cached copy is the worst case of all: one person's permitted view
+    # served to another.
+    write_id = _propose_as(client, "alice")
+
+    response = client.get(f"/api/writes/{write_id}")
+
+    assert response.status_code == 200
+    assert "no-store" in response.headers.get("cache-control", "")
+
+
+def test_the_listing_reports_a_write_the_ontology_has_outrun(client):
+    """HOT_RELOAD_PLAN.md step 6c, server side.
+
+    A write whose field the ontology no longer declares cannot be
+    approved -- confirm_and_execute() refuses it. The listing says so,
+    so an inbox never offers a decision that would only be refused.
+
+    THE SAME FUNCTION BOTH PATHS USE. A listing computing applicability
+    its own way could mark a write unapplyable that would have worked,
+    so nobody tries -- which is worse than the button that fails,
+    because nothing reveals the mistake.
+    """
+    write_id = _propose_as(client, "alice")
+
+    before = client.get("/api/writes/awaiting").json()
+    assert [e["undeclared_fields"] for e in before if e["write_id"] == write_id] == [[]]
+
+    # The write mediator's view of the ontology loses the field.
+    write_mediator = client.app.state.generation.write_mediator
+    original = type(write_mediator)._fields_no_longer_declared
+    type(write_mediator)._fields_no_longer_declared = lambda self, pending: ["Customer.name"]
+    try:
+        after = client.get("/api/writes/awaiting").json()
+    finally:
+        type(write_mediator)._fields_no_longer_declared = original
+
+    assert [e["undeclared_fields"] for e in after if e["write_id"] == write_id] == [["Customer.name"]]
+
+
+def test_the_readable_flag_survives_serialisation(client):
+    """THE GAP THAT SHIPPED, and the reason it shipped.
+
+    visible_schema computed `readable` correctly and every test of it
+    passed -- because they all called the mediator DIRECTLY. FastAPI's
+    response_model silently strips keys it is not told about, so the
+    flag never left the process, and the UI rendering built on top of
+    it could never have worked.
+
+    Found by a person running the thing, not by the suite. The same
+    mechanism caught the approvals card earlier: a test aimed one layer
+    below the contract it guards.
+    """
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    body = client.get("/api/me/visible-schema").json()
+
+    # Present on every field and every type, whatever its value.
+    for type_name, type_schema in body.items():
+        assert "readable" in type_schema, f"{type_name} lost its readable flag"
+        for field_name, field_info in type_schema["fields"].items():
+            assert "readable" in field_info, f"{type_name}.{field_name} lost its readable flag"
+
+
+def test_a_discover_only_field_reports_itself_unreadable_over_http(client):
+    """The end-to-end version: a grant change reaches the browser.
+
+    Without this the flag could be present and always True, which is
+    what a default gives you and is indistinguishable from working.
+    """
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    granted = set(mediator_of(client.app).roles["customer_service"]["allowed_actions"])
+    with_roles(
+        client.app,
+        customer_service={
+            "allowed_actions": frozenset(
+                (granted - {"read:Customer.email"}) | {"discover:Customer.email"},
+            )
+        },
+    )
+
+    fields = client.get("/api/me/visible-schema").json()["Customer"]["fields"]
+
+    assert fields["email"]["readable"] is False
+    assert fields["name"]["readable"] is True
+
+
+def test_link_counts_survive_serialisation(client):
+    """The route, not the mediator.
+
+    The `readable` flag shipped broken because every test called the
+    mediator directly and FastAPI's response_model silently strips keys
+    it is not told about. Counting is worth nothing if the number never
+    leaves the process.
+    """
+    client.app.state.user_directory.create_user("alice", "pw", "us-west", "customer_service")
+    _login(client, "alice", "pw")
+
+    response = client.get("/api/objects/Customer/cust_001/link-counts")
+
+    assert response.status_code == 200
+    links = response.json()["links"]
+    assert links["transactions"]["count"] == 2
+    assert links["transactions"]["target"] == "Transaction"
+    assert links["transactions"]["cardinality"] == "many"
+
+
+def test_link_counts_require_authentication(client):
+    # An unauthenticated caller learning that Customer has a
+    # transactions link, and how many, is the same disclosure the
+    # /health silo names were.
+    response = client.get("/api/objects/Customer/cust_001/link-counts")
+
+    assert response.status_code == 401
+
+
+def test_every_response_says_which_generation_answered(client):
+    """So a client can notice a reload on its next request.
+
+    The UI fetched a user's visible schema ONCE at login and never
+    again, so a configuration reload left the browser believing what it
+    was told. A field moved to `discover:` was correctly withheld by
+    the server and rendered as "not set", because the cached schema
+    still called it readable.
+
+    No polling: every response carries the number, so the client
+    notices on whatever it does next.
+    """
+    response = client.get("/api/health")
+
+    assert response.headers.get("x-elysium-generation") is not None
+
+
+def test_the_number_changes_when_the_configuration_does(client):
+    # A header that never moved would be worse than none: the client
+    # would conclude nothing had changed and stop checking.
+    before = client.get("/api/health").headers["x-elysium-generation"]
+
+    # The REAL reload path, not a hand-built generation. A helper that
+    # only bumped a counter would test the header and not the thing the
+    # header is for.
+    from api.reload import reload_generation
+
+    reload_generation(client.app, requested_by="test")
+
+    after = client.get("/api/health").headers["x-elysium-generation"]
+    assert after != before
+
+
+def test_an_unauthenticated_response_carries_it_too(client):
+    # The header is not a secret -- it is an opaque counter, and it
+    # says nothing about what the configuration CONTAINS. Withholding
+    # it before login would mean the first post-login request looked
+    # like a reload.
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.headers.get("x-elysium-generation") is not None
+
+
+# --- "select all matching" ---------------------------------------------
+#
+# WHY IDS AND NOT A FILTER PASSED ONWARD. Foundry's approvals model
+# settles it: "a task is an individual change in Foundry. All tasks
+# associated with a request must be approved for the request to be
+# invoked." A reviewer approves specific changes, never a rule resolved
+# later -- and a filter that outlived the selection would let an
+# approval of 500 quietly become 520 once more rows matched overnight.
+#
+# So the filter is resolved at SELECTION time and what travels onward is
+# the list it produced.
+
+
+def _selecting_user(client):
+    """A user with a region, because MAC is per object.
+
+    Created with mac_value=None, a user sees NOTHING -- which is
+    correct, and makes every assertion here pass vacuously.
+    """
+    client.app.state.user_directory.create_user("selector", "correct-pw", "us-west", "customer_service")
+    _login(client, "selector", "correct-pw")
+
+
+def test_matching_ids_returns_every_match_not_a_page(client):
+    _selecting_user(client)
+
+    page = client.get("/api/objects/Customer/search?page_size=1").json()
+    ids = client.get("/api/objects/Customer/matching-ids").json()["object_ids"]
+
+    assert len(page["results"]) == 1, "the page must be smaller than the whole"
+    assert len(ids) == page["total_matches"]
+
+
+def test_matching_ids_shows_only_what_the_caller_can_see(client):
+    # MAC applies as everywhere else, so two users selecting "all
+    # matching" get different sets from the same filter. That is
+    # correct; a shared set would be a leak.
+    _selecting_user(client)
+
+    ids = client.get("/api/objects/Transaction/matching-ids").json()["object_ids"]
+    visible = client.get("/api/objects/Transaction/search").json()["total_matches"]
+
+    assert len(ids) == visible
+
+
+def test_matching_ids_honours_the_filter(client):
+    _selecting_user(client)
+
+    conditions = json.dumps([{"field": "name", "operator": "equals", "value": "Ada Okafor"}])
+    filtered = client.get(f"/api/objects/Customer/matching-ids?conditions={conditions}").json()
+    everything = client.get("/api/objects/Customer/matching-ids").json()
+
+    assert len(filtered["object_ids"]) < len(everything["object_ids"])
+
+
+def test_matching_ids_refuses_rather_than_truncating(client, monkeypatch):
+    """ABOVE THE CEILING IT REFUSES, and does not return the first N.
+
+    Handing back 1000 of 1500 would be a selection that silently omits
+    a third of what was asked for, and nothing downstream could tell --
+    the form would say "1000 objects" and be wrong about which.
+    """
+    from api import routes
+
+    monkeypatch.setattr(routes, "MAX_BULK_OBJECTS", 1)
+    _selecting_user(client)
+
+    response = client.get("/api/objects/Customer/matching-ids")
+
+    assert response.status_code == 400
+    assert "at most 1" in response.json()["detail"]
+    assert "Narrow the filter" in response.json()["detail"]
+
+
+def test_matching_ids_needs_a_session(client):
+    response = client.get("/api/objects/Customer/matching-ids")
+
+    assert response.status_code == 401
+
+
+# --- RED metrics -------------------------------------------------------
+
+
+def test_a_real_request_is_recorded(client):
+    """THE WIRE, which the store's own tests cannot see.
+
+    The middleware reads the store off app.state at REQUEST time, not
+    at registration -- middleware is registered before runtime_paths is
+    resolved, so a store handed over then would be None forever, and a
+    middleware that silently recorded nothing is worse than none: the
+    dashboard would show an idle server.
+    """
+    client.get("/api/health")
+
+    summary = client.app.state.request_metrics.summary()
+    assert summary["requests"] >= 1
+
+
+def test_the_route_template_is_recorded_not_the_path(client):
+    # `/objects/{object_type}` and not `/objects/Customer`. A
+    # per-value row would make the table unbounded in cardinality
+    # while answering no question anyone asks.
+    _selecting_user(client)
+    client.get("/api/objects/Customer/search")
+
+    routes = {row["route"] for row in client.app.state.request_metrics.slowest_routes()}
+    assert any("{object_type}" in route for route in routes)
+
+
+def test_a_failed_request_is_recorded_too(client):
+    # An unauthenticated call is exactly the kind of thing a dashboard
+    # exists to show, and recording only the happy path would hide it.
+    client.get("/api/objects/Customer/matching-ids")
+
+    assert client.app.state.request_metrics.summary()["error_ratio"] > 0
+
+
+def test_metrics_need_manage_deployment(client):
+    # Request timings say which routes are used and how often -- a
+    # shape of the deployment's activity, and more than an ordinary
+    # user should see about everyone else.
+    _selecting_user(client)
+
+    response = client.get("/api/admin/metrics")
+
+    assert response.status_code == 403
+
+
+def test_metrics_report_red_and_not_saturation(client):
+    """Saturation is the fourth golden signal and deliberately absent.
+
+    It is a property of the HOST, so answering it from inside the
+    process would mean guessing at limits we do not know. A made-up
+    number would be worse than the gap.
+    """
+    # A ROLE HOLDING manage:deployment, built for this test. There is
+    # no standing admin account in the fixtures, deliberately -- every
+    # test says which grants it needs.
+    with_roles(client.app, operator={"allowed_actions": frozenset(["manage:deployment"])})
+    client.app.state.user_directory.create_user("operator", "pw", "us-west", "operator")
+    _login(client, "operator", "pw")
+
+    body = client.get("/api/admin/metrics").json()
+
+    assert {"requests", "rate_per_second", "error_ratio"} <= set(body)
+    assert "saturation" not in body
+    assert "cpu" not in body
+
+
+def test_old_metrics_are_dropped_at_startup(tmp_path, monkeypatch):
+    """THE WIRE, which the store's own tests cannot see.
+
+    forget_older_than() existed for a commit before anything called it,
+    so the table grew without bound while a method that would have
+    pruned it sat unused.
+
+    AT STARTUP AND NOWHERE ELSE, which is a real limit rather than an
+    oversight: a server running for months without a restart keeps
+    accumulating. Measured at 192 KB per 10,000 requests, so restart
+    frequency is a reasonable sweep interval.
+    """
+    import time
+
+    from api.app import create_app
+    from core.deployment_loader import RuntimePaths
+    from core.request_metrics import RequestMetrics
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+
+    # A row far outside any plausible window, written before the app
+    # exists so the sweep is the only thing that could remove it.
+    stale = RequestMetrics(data_dir / "metrics.db")
+    with stale._connection() as conn:
+        conn.execute(
+            "INSERT INTO requests VALUES (?, ?, ?, ?, ?)",
+            (time.time() - 400 * 24 * 60 * 60, "/api/query", "POST", 200, 10.0),
+        )
+        conn.commit()
+    assert stale.summary(window_seconds=500 * 24 * 60 * 60)["requests"] == 1
+
+    monkeypatch.setenv("ELYSIUM_DATA_DIR", str(data_dir))
+    create_app(
+        RuntimePaths(
+            config_dir=Path("deployment/etc"),
+            data_dir=data_dir,
+            log_dir=tmp_path / "log",
+        )
+    )
+
+    assert stale.summary(window_seconds=500 * 24 * 60 * 60)["requests"] == 0
+
+
+# --- object ids are strings everywhere -------------------------------
+#
+# THE SAME OBJECT HAD A STRING ID ON ONE ENDPOINT AND AN INTEGER ON
+# ANOTHER. ObjectDetailResponse declares `id: str` and FastAPI coerces
+# it; SearchResponse declares `results: list[dict[str, Any]]`, so the
+# raw value passed straight through.
+#
+# It broke "select all N matching": the selection set held "1" from
+# /matching-ids while each checkbox asked has(1), so the bar said 64
+# selected and not one row looked it.
+#
+# NOBODY NOTICED BECAUSE CUSTOMER IDS ARE ALREADY STRINGS. Every manual
+# check on Customer agreed. These tests use Transaction, whose ids are
+# integers, because a test on the agreeing type proves nothing.
+
+
+def test_search_returns_string_ids_for_an_integer_keyed_type(client):
+    _selecting_user(client)
+
+    results = client.get("/api/objects/Transaction/search").json()["results"]
+
+    assert results, "the fixture must return something for this to mean anything"
+    assert all(isinstance(row["id"], str) for row in results)
+
+
+def test_search_and_matching_ids_agree_on_representation(client):
+    """THE TEST THAT WOULD HAVE CAUGHT IT.
+
+    My earlier tests used string ids on BOTH sides, so they compared a
+    convention with itself. What matters is that two endpoints
+    describing the same objects can have their answers compared -- a
+    set built from one must contain the ids from the other.
+    """
+    _selecting_user(client)
+
+    page_ids = {row["id"] for row in client.get("/api/objects/Transaction/search").json()["results"]}
+    selectable = set(client.get("/api/objects/Transaction/matching-ids").json()["object_ids"])
+
+    assert page_ids, "the fixture must return something"
+    assert page_ids <= selectable
+
+
+def test_search_and_detail_agree_on_representation(client):
+    _selecting_user(client)
+
+    first = client.get("/api/objects/Transaction/search").json()["results"][0]
+    detail = client.get(f"/api/objects/Transaction/{first['id']}").json()
+
+    assert detail["id"] == first["id"]
+
+
+def test_the_inbox_says_what_a_reviewer_may_decide(client):
+    """Step 4: a reviewer's inbox scopes itself to them.
+
+    Foundry's rule is "approve or reject all tasks in the request THAT
+    YOU ARE ELIGIBLE TO REVIEW", and a listing that did not say which
+    those were would make Approve look like it runs the write -- which
+    for a request spanning security partitions it does not.
+
+    ONE TASK HERE, because this fixture's actions take a single object
+    reference. That is enough to prove the WIRING and no more: with one
+    task and a reviewer who can see it, eligible equals total either
+    way, so a control replacing eligible_task_indexes() with a plain
+    count still passes this.
+
+    The multi-task and multi-reviewer logic -- where those two numbers
+    differ -- is covered in tests/unit/test_task_approvals.py, where
+    the controls do fire.
+    """
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    proposed = client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_002", "new_name": "Bram F."}},
+        headers=_csrf_headers(client),
+    )
+    assert proposed.status_code == 202, proposed.text
+
+    entry = client.get("/api/writes/awaiting").json()[0]
+
+    assert entry["tasks_total"] == 1
+    assert entry["tasks_you_may_decide"] == 1
+    assert entry["tasks_approved"] == 0
+
+
+def test_the_inbox_counts_approvals_not_decisions(client):
+    # APPROVED, not decided: a rejected task is not progress toward
+    # invocation, and counting it as such would show a request as
+    # nearly ready when it is permanently blocked.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    client.post(
+        "/api/actions/UpdateCustomerName",
+        json={"parameters": {"customer_id": "cust_002", "new_name": "Bram F."}},
+        headers=_csrf_headers(client),
+    )
+    write_id = client.get("/api/writes/awaiting").json()[0]["write_id"]
+
+    client.app.state.pending_writes.record_task_decision(write_id, 0, "alice", approved=False)
+
+    entry = client.get("/api/writes/awaiting").json()[0]
+    assert entry["tasks_approved"] == 0

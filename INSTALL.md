@@ -29,7 +29,7 @@ source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
 
 pip install -r requirements.txt
 
-cd ui && npm install && cd ..
+cd ui && npm ci && cd ..
 ```
 
 For a real, running production install, see section 7 instead.
@@ -115,10 +115,11 @@ detection for files/exports/dependencies (`knip`), and formatting
 
 ```bash
 cd ui
-npm run lint          # oxlint, then tsc --noEmit
-npm run knip
-npm run format:check  # verify without changing anything
+npm run lint          # all four: oxlint, tsc --noEmit, oxfmt, knip
 ```
+
+`npm run typecheck`, `npm run format:check` and `npm run knip` run the
+individual pieces if you want one on its own.
 
 See `ui/README.md`'s own "Testing, linting, and type checking" section
 for the full breakdown, and `ui/tsconfig.json`'s own comments for the
@@ -392,3 +393,15 @@ When a server-backed adapter is added, its configuration in
 is the point at which the guidance above becomes directly actionable.
 Until then it is recorded here so the requirement is not discovered
 late.
+
+## A note for backups
+
+Internal databases under `deployment/var/lib/` run in SQLite WAL mode,
+which creates `-wal` and `-shm` files beside each `.db`. A backup that
+copies only the `.db` can miss committed transactions still in the WAL.
+Either copy all three files together, or use `sqlite3 <db> ".backup"`,
+which handles it.
+
+WAL does not work over a network filesystem. Putting `data_dir` on NFS
+logs a warning at startup and falls back to rollback journal, which is
+correct but stalls reads briefly during writes.

@@ -89,9 +89,7 @@ describe('package layering', () => {
   // same rule; this is the frontend's.
 
   const packagesDir = path.join(UI_ROOT, 'packages')
-  const subAppDirs = readdirSync(packagesDir).filter(
-    (name) => name.startsWith('app-'),
-  )
+  const subAppDirs = readdirSync(packagesDir).filter((name) => name.startsWith('app-'))
 
   it('has more than one sub-app, or this check proves nothing', () => {
     expect(subAppDirs.length).toBeGreaterThan(1)
@@ -125,16 +123,12 @@ describe('package layering', () => {
 
     function walk(dir: string): string[] {
       return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-        entry.isDirectory()
-          ? walk(path.join(dir, entry.name))
-          : [path.join(dir, entry.name)],
+        entry.isDirectory() ? walk(path.join(dir, entry.name)) : [path.join(dir, entry.name)],
       )
     }
 
     const offenders = walk(srcDir).filter(
-      (path) =>
-        (path.endsWith('.ts') || path.endsWith('.tsx'))
-        && readFileSync(path, 'utf8').includes('@elysium/app-'),
+      (path) => (path.endsWith('.ts') || path.endsWith('.tsx')) && readFileSync(path, 'utf8').includes('@elysium/app-'),
     )
 
     expect(offenders).toEqual([])
@@ -160,10 +154,8 @@ describe('every sub-app reads the same way', () => {
 
     for (const panel of panels) {
       const source = readFileSync(path.resolve(__dirname, '..', panel), 'utf8')
-      expect(source, `${panel} should use the shared ViewSelector`)
-        .toMatch(/<ViewSelector/)
-      expect(source, `${panel} should not have its own tab strip`)
-        .not.toMatch(/<Tabs\b/)
+      expect(source, `${panel} should use the shared ViewSelector`).toMatch(/<ViewSelector/)
+      expect(source, `${panel} should not have its own tab strip`).not.toMatch(/<Tabs\b/)
     }
   })
 })

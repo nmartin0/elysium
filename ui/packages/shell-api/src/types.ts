@@ -33,7 +33,6 @@ export interface SubAppProps {
   onSessionExpired: () => void
 }
 
-
 // --- The ontology, as GET /me/visible-schema returns it -------------
 //
 // Here rather than in a module of its own: this file is already "the
@@ -52,6 +51,24 @@ export interface SubAppProps {
 
 export interface FieldSchema {
   type: string
+  /** Whether this field's VALUE may be read.
+   *
+   *  False is the middle rung of the grant ladder: the caller holds
+   *  `discover:Type.field` and not `read:Type.field`, so they may know
+   *  the field exists and not what it holds. The field is still
+   *  present here -- omitting it would leave a reader unable to tell a
+   *  partial view from a complete one, which is the rubber-stamp
+   *  problem the approvals diff already solves this way.
+   *
+   *  Optional because the agent's own view of the schema omits
+   *  unreadable fields entirely, so anything it receives is readable.
+   */
+  readable?: boolean
+  /** How many decimal places this field is worth showing, if the
+   *  ontology says. Absent means show the value as it arrived --
+   *  there is no sensible default, which is why it is declared rather
+   *  than guessed. */
+  decimal_places?: number | null
   target?: string
   // Added by SchemaPanel, the next consumer to need more of this
   // shape -- optional, so nothing that already reads it changes.
@@ -59,15 +76,32 @@ export interface FieldSchema {
   description?: string | null
   cardinality?: string | null
   link_type?: string | null
-  /** The SEMANTIC type -- number, string -- which is what the filter
-   *  vocabulary validates against. Absent means the author declared
-   *  none, and the server then accepts any operator. */
+  /** The SEMANTIC type the ontology declares -- string, integer,
+   *  number, decimal, boolean, date, timestamp, timestamptz.
+   *
+   *  TWO CONSUMERS NOW. The filter vocabulary validates against it,
+   *  which is why it was added. And FORMATTING needs it: the UI
+   *  cannot infer that '2026-03-12' is a date when
+   *  'ACME-2026-03-12' is also a string, so without this a date
+   *  renders as text and a timestamp is never converted to the
+   *  reader's zone.
+   *
+   *  Absent means the author declared none; the server then accepts
+   *  any operator and the UI shows the value as it arrived. */
   data_type?: string
   visibility?: string
   status?: string
 }
 
 export interface TypeSchema {
+  /** Whether this type may be SEARCHED.
+   *
+   *  False means the caller holds `discover:Type` and not `read:Type`:
+   *  they may know the type exists, and it yields no ids. A search box
+   *  would return nothing, so offering one would be a lie about what
+   *  the deployment will do.
+   */
+  readable?: boolean
   title_field?: string | null
   fields?: Record<string, FieldSchema>
   // Display metadata. Every one is optional at the API too -- an

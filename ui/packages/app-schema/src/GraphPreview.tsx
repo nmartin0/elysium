@@ -38,10 +38,7 @@ export type GraphSelection =
  * Exported and pure because it is the whole of the behaviour -- a test
  * that reimplemented this comparison would be testing its own copy.
  */
-export function toggleSelection(
-  current: GraphSelection | null,
-  next: GraphSelection,
-): GraphSelection | null {
+export function toggleSelection(current: GraphSelection | null, next: GraphSelection): GraphSelection | null {
   if (current !== null && current.kind === next.kind && current.name === next.name) {
     return null
   }
@@ -54,35 +51,32 @@ interface GraphPreviewProps {
   onClose: () => void
   selection: GraphSelection
   schema: VisibleSchema
-  actionTypes: Record<string, {
-    display_name?: string | null
-    description?: string | null
-    affected_object_types?: string[]
-    parameters?: Record<string, {
-      type?: string
-      object_type?: string
-      required?: boolean
+  actionTypes: Record<
+    string,
+    {
       display_name?: string | null
-    }>
-  }>
+      description?: string | null
+      affected_object_types?: string[]
+      parameters?: Record<
+        string,
+        {
+          type?: string
+          object_type?: string
+          required?: boolean
+          display_name?: string | null
+        }
+      >
+    }
+  >
   onOpenFull: (name: string, kind: 'object' | 'action' | 'link') => void
 }
 
-export default function GraphPreview({
-  selection, schema, actionTypes, onOpenFull, onClose,
-}: GraphPreviewProps) {
+export default function GraphPreview({ selection, schema, actionTypes, onOpenFull, onClose }: GraphPreviewProps) {
   // One control, rendered by every branch. A panel that opens and
   // cannot be closed leaves part of the graph covered with no way to
   // get it back.
   const closeButton = (
-    <Button
-      minimal
-      small
-      icon="cross"
-      aria-label="Close preview"
-      className="graph-preview__close"
-      onClick={onClose}
-    />
+    <Button minimal small icon="cross" aria-label="Close preview" className="graph-preview__close" onClick={onClose} />
   )
 
   if (selection.kind === 'link') {
@@ -106,7 +100,10 @@ export default function GraphPreview({
           {sides.map((side) => (
             <li key={`${side.objectType}.${side.apiName}`}>
               {side.objectType}.{side.apiName}
-              <span className="graph-preview__type"> {side.cardinality} {side.target}</span>
+              <span className="graph-preview__type">
+                {' '}
+                {side.cardinality} {side.target}
+              </span>
             </li>
           ))}
         </ul>
@@ -128,9 +125,7 @@ export default function GraphPreview({
         <p className="graph-preview__kind">Action type</p>
         <h3>{action?.display_name ?? selection.name}</h3>
         {action?.description && <p>{action.description}</p>}
-        <p className="graph-preview__affects">
-          Affects: {(action?.affected_object_types ?? []).join(', ') || '—'}
-        </p>
+        <p className="graph-preview__affects">Affects: {(action?.affected_object_types ?? []).join(', ') || '—'}</p>
 
         {/* PARAMETERS are an action's equivalent of fields, and the
             preview showed none -- so selecting an action told you less
@@ -140,11 +135,11 @@ export default function GraphPreview({
           {Object.entries(action?.parameters ?? {}).map(([name, parameter]) => (
             <li key={name}>
               {formatFieldName(parameter.display_name ?? name)}
-              <span className="graph-preview__type">
-                {' '}{parameter.object_type ?? parameter.type}
-              </span>
+              <span className="graph-preview__type"> {parameter.object_type ?? parameter.type}</span>
               {parameter.required && (
-                <Tag minimal intent="primary" className="graph-preview__visibility">required</Tag>
+                <Tag minimal intent="primary" className="graph-preview__visibility">
+                  required
+                </Tag>
               )}
             </li>
           ))}
@@ -182,7 +177,9 @@ export default function GraphPreview({
                 fixture ontology declares none, so this path is
                 exercised by tests rather than by the dev deployment. */}
             {field.visibility && field.visibility !== 'normal' && (
-              <Tag minimal className="graph-preview__visibility">{field.visibility}</Tag>
+              <Tag minimal className="graph-preview__visibility">
+                {field.visibility}
+              </Tag>
             )}
           </li>
         ))}
@@ -194,9 +191,7 @@ export default function GraphPreview({
           <ul className="graph-preview__fields">
             {linkFields.map(([name, field]) => (
               <li key={name}>
-                {formatFieldName(name)} <span className="graph-preview__type">
-                  {field.target}
-                </span>
+                {formatFieldName(name)} <span className="graph-preview__type">{field.target}</span>
               </li>
             ))}
           </ul>

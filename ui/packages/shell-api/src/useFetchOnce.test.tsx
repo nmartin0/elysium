@@ -4,10 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { useFetchOnce } from './useFetchOnce'
 import { ApiError } from './api'
 
-function Harness({ fetcher, onSessionExpired }: {
-  fetcher: () => Promise<unknown>
-  onSessionExpired: () => void
-}) {
+function Harness({ fetcher, onSessionExpired }: { fetcher: () => Promise<unknown>; onSessionExpired: () => void }) {
   const { data, error } = useFetchOnce<{ value: string }>(fetcher, onSessionExpired)
   return <div>{error ?? data?.value ?? 'loading'}</div>
 }
@@ -44,10 +41,7 @@ describe('useFetchOnce', () => {
      */
     const onSessionExpired = vi.fn()
     render(
-      <Harness
-        fetcher={() => Promise.reject(new ApiError(401, 'Unauthorized'))}
-        onSessionExpired={onSessionExpired}
-      />,
+      <Harness fetcher={() => Promise.reject(new ApiError(401, 'Unauthorized'))} onSessionExpired={onSessionExpired} />,
     )
 
     await waitFor(() => expect(onSessionExpired).toHaveBeenCalled())
@@ -55,9 +49,7 @@ describe('useFetchOnce', () => {
   })
 
   it('shows a real failure', async () => {
-    render(
-      <Harness fetcher={() => Promise.reject(new Error('it broke'))} onSessionExpired={vi.fn()} />,
-    )
+    render(<Harness fetcher={() => Promise.reject(new Error('it broke'))} onSessionExpired={vi.fn()} />)
 
     expect(await screen.findByText(/it broke/)).toBeInTheDocument()
   })

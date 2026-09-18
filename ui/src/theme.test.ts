@@ -4,12 +4,8 @@ import { fileURLToPath } from 'url'
 import path from 'path'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const CSS = readFileSync(
-  path.resolve(__dirname, '../packages/shell-api/src/index.css'), 'utf8',
-)
-const TOKENS = readFileSync(
-  path.resolve(__dirname, '../packages/shell-api/src/tokens.css'), 'utf8',
-)
+const CSS = readFileSync(path.resolve(__dirname, '../packages/shell-api/src/index.css'), 'utf8')
+const TOKENS = readFileSync(path.resolve(__dirname, '../packages/shell-api/src/tokens.css'), 'utf8')
 
 /**
  * Dark mode was unreadable, and the cause was a dozen colours written
@@ -21,15 +17,16 @@ const TOKENS = readFileSync(
  */
 
 function colourLiterals(css: string): string[] {
-  return css
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('/*') && !line.trim().startsWith('*'))
-    // NAMED colours too, not just hex. An earlier version matched
-    // only `#`, so seven `background: white` declarations passed
-    // straight through and never inverted in dark mode.
-    .filter((line) =>
-      /(background|^\s*color|border[^-]*):\s*(#[0-9a-fA-F]|white|black|rgb)/.test(line))
-    .map((line) => line.trim())
+  return (
+    css
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('/*') && !line.trim().startsWith('*'))
+      // NAMED colours too, not just hex. An earlier version matched
+      // only `#`, so seven `background: white` declarations passed
+      // straight through and never inverted in dark mode.
+      .filter((line) => /(background|^\s*color|border[^-]*):\s*(#[0-9a-fA-F]|white|black|rgb)/.test(line))
+      .map((line) => line.trim())
+  )
 }
 
 describe('theming', () => {
@@ -48,9 +45,7 @@ describe('theming', () => {
      *   in either theme, and a token would fix it to one.
      */
     const offenders = colourLiterals(CSS).filter(
-      (line) => !line.includes('#b3261e')
-        && !line.includes('#ffffff')
-        && !/rgba\(255,\s*255,\s*255/.test(line),
+      (line) => !line.includes('#b3261e') && !line.includes('#ffffff') && !/rgba\(255,\s*255,\s*255/.test(line),
     )
 
     expect(offenders).toEqual([])
@@ -63,9 +58,19 @@ describe('theming', () => {
      * theme buttons with it -- reported as "the buttons are not
      * present".
      */
+    // RESOLVED THROUGH the primitive layer, because semantic tokens now
+    // hold `var(--grey-900)` rather than a literal. Comparing primitive
+    // NAMES would be weaker: two names can point at the same hex, which
+    // is exactly the bug this guards.
     const dark = TOKENS.slice(TOKENS.indexOf('.bp6-dark'))
-    const chrome = /--surface-chrome: (#[0-9a-f]{6})/.exec(dark)?.[1]
-    const sunken = /--surface-sunken: (#[0-9a-f]{6})/.exec(dark)?.[1]
+    const resolve = (token: string) => {
+      const ref = new RegExp(`--${token}: var\\((--[a-z0-9-]+)\\)`).exec(dark)?.[1]
+      if (ref === undefined) return undefined
+      return new RegExp(`\\${ref}: (#[0-9a-f]{6})`).exec(TOKENS)?.[1]
+    }
+
+    const chrome = resolve('surface-chrome')
+    const sunken = resolve('surface-sunken')
 
     expect(chrome).toBeDefined()
     expect(sunken).toBeDefined()
@@ -144,8 +149,7 @@ describe('the stylesheet has one rule per selector', () => {
      * leaves the rest, which makes a comment describe something the
      * CSS does not do.
      */
-    const selectors = [...CSS.matchAll(/^(\.[a-z_-][a-z_ -]*)\{/gm)]
-      .map((match) => match[1]?.trim())
+    const selectors = [...CSS.matchAll(/^(\.[a-z_-][a-z_ -]*)\{/gm)].map((match) => match[1]?.trim())
     const seen = new Set<string>()
     const duplicated = selectors.filter((selector) => {
       if (selector === undefined) return false
@@ -229,14 +233,11 @@ describe('the breakpoint is one number', () => {
      * Read from both files, because a constant duplicated across a
      * stylesheet and a module is exactly the kind that drifts.
      */
-    const shell = readFileSync(
-      path.resolve(__dirname, './Shell.tsx'), 'utf8',
-    )
+    const shell = readFileSync(path.resolve(__dirname, './Shell.tsx'), 'utf8')
 
     // EVERY media query, not the first: there were three different
     // widths in this file, which is how they drifted apart.
-    const cssWidths = [...CSS.matchAll(/^@media \(max-width: (\d+)px\)/gm)]
-      .map((m) => m[1])
+    const cssWidths = [...CSS.matchAll(/^\s*@media \(max-width: (\d+)px\)/gm)].map((m) => m[1])
     // Two media queries, one width -- distinct VALUES is the property.
     expect([...new Set(cssWidths)]).toHaveLength(1)
     const cssWidth = cssWidths[0]
@@ -281,8 +282,7 @@ describe('schema tables have fixed columns', () => {
     // fields -- and all three have exactly the same shape: name, type,
     // description. Checked rather than assumed before writing widths
     // that apply to all of them.
-    const widths = [...CSS.matchAll(/\.schema-panel__fields td:nth-child\((\d)\)/g)]
-      .map((match) => match[1])
+    const widths = [...CSS.matchAll(/\.schema-panel__fields td:nth-child\((\d)\)/g)].map((match) => match[1])
 
     expect(new Set(widths)).toEqual(new Set(['1', '2', '3']))
   })

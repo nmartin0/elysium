@@ -127,31 +127,35 @@ set is how someone edits ten thousand objects by accident.
 duplicate or miss rows -- the UI must not present its row count as
 authoritative during a live sort.
 
-### 3. Pending changes / approvals inbox — BLOCKED, and on a decision
+### 3. Pending changes / approvals inbox — designed, and it is four backend pieces first
 
 The two-phase propose/confirm mechanism exists. This gives it a queue
 view across the org rather than only inline.
 
-**Blocked on a backend design question, not a migration.** Today only
-the PROPOSING user may confirm their own pending write, the store is
-in-memory, and it expires in 15 minutes. The first of those is a
-security property in the current model -- it stops a second user
-completing a write the first abandoned -- so an approvals inbox is a
-SECOND model, not a repair of the first.
+**The design is settled -- see "Approvals: the design, and why the
+actor is not an object" below.** That section replaces the four open
+questions this entry used to list. Two of them were already answered
+in code (`core/artifact_store.py` was built for this and says so), one
+was answered by Palantir's own precedent, and one -- who may approve
+-- turned out to be the wrong question.
 
-The questions to answer before any UI work: who may approve what (a
-reviewer grant, distinct from `execute:`), whether a proposer may
-approve their own write, what expiry means when a human is expected to
-be slow, and what the audit trail records about both parties.
+**The old framing here was wrong in a specific way, kept because it is
+the mistake most likely to be made again.** It said the inbox was
+blocked on deciding "whether a proposer may approve their own write,"
+treating self-approval as the defect. Against Foundry's own precedent
+that is backwards: self-approval is correct when you already hold the
+permission, and the actual defect is that nobody ELSE can see a
+pending write at all. There is no list endpoint. The fix is
+visibility, not prohibition.
 
 **Not blocked on PostgreSQL.** SQLite already backs the write log and
 credential store under concurrent writers; that framing was wrong and
 has been corrected in `ROADMAP.md`.
 
-**When it is unblocked:** reviewer eligibility derives from the SAME
-RBAC and MAC check that gates the underlying action, never a separate
-ACL. The field-level before/after diff is itself filtered through MAC,
-so a reviewer never sees a field they could not otherwise read.
+**Build order, and none of it is UI:** provenance on `PendingWrite`,
+then `check: user` in submission criteria, then approve as a governed
+operation, then elevation. The inbox itself is mostly rendering once
+those exist.
 
 ### 4. Vertex-lite: a read-only link explorer
 
@@ -269,11 +273,17 @@ this makes it work.
 
 **2. The Approvals inbox.** propose_action and confirm_and_execute
 both exist, the artifact store exists, and there is no REVIEWER
-screen. ActionForm confirms a write for the person who proposed it --
-that is the author approving their own -- and there is nowhere for
-anyone else to see a pending write at all. That is a broken
-feature rather than a missing one. Needs the design question answered:
-who may approve, may an author approve their own, what expiry means.
+screen. There is nowhere for anyone else to see a pending write at
+all -- no list endpoint exists. That is a broken feature rather than a
+missing one.
+
+The design questions this entry used to list are now settled -- see
+"Approvals: the design, and why the actor is not an object". Note
+specifically that "ActionForm confirms a write for the person who
+proposed it, that is the author approving their own" was recorded here
+as evidence of the defect, and is wrong: self-approval is correct when
+you already hold the permission. The defect is the missing
+visibility, not the self-approval.
 
 **3. Object Views.** What an operational user looks at all day. The
 backend is entirely present -- get_object, search_around,
@@ -1282,6 +1292,255 @@ labels a node with its type name, which is unique. Instances are not
 -- forty customers all labelled "Customer" is unreadable. title_field
 exists in the ontology for exactly this and should be used.
 
+## Approvals: the design, and why the actor is not an object
+
+Written before anyone starts building, like Vertex-lite above, and for
+the same reason: the governance model IS the design here and the inbox
+is nearly incidental. Every claim below is either a line of code in
+this repository or a quote from Palantir's own documentation. Where it
+is neither, it says so.
+
+### There are TWO approval models and this project conflated them
+
+Foundry ships both, and they answer different questions.
+
+**Model A -- the Approvals application.** For a change you may not
+make: "A user may not have permission to make a particular change in
+Foundry and needs to make a request for that change. This request gets
+routed to administrators for approval." The requester LACKS the
+permission; the approver supplies it. "Requests can be edited or
+closed by the requesting user or by any eligible reviewers. Only
+eligible reviewers can `approve`, `reject` or `reject and close`."
+
+**Model B -- Branching and Foundry Rules proposals.** For a change you
+ARE trusted with, where the proposal is a protection ritual rather
+than a permission grant. Foundry is explicit that self-approval is
+fine: "You can approve your own proposal if you have edit access on
+the object."
+
+**Elysium is model B today.** `propose_action()` authorizes
+`execute:{action_type_name}` and RAISES before any `PendingWrite`
+exists, so the proposer always holds the permission and confirm is a
+pause, not a grant. Read the code before assuming otherwise; that one
+early `raise` is the whole reason model A does not exist here.
+
+### The actor is a PRINCIPAL, not an object, and this is load-bearing
+
+Asked directly -- if a person proposes and approves things, are they
+implicitly in the ontology? Foundry's answer is three separate things,
+and keeping them separate is what makes the rest work:
+
+1. **The actor is not an object.** Submission criteria read the acting
+   user through a Current User template that checks "a user's ID,
+   group memberships via group IDs, or any other multipass attribute
+   available." Those are identity-system attributes. Foundry never
+   converts the logged-in person into an object in order to authorize
+   them.
+2. **The actor's IDENTIFIER may be a value on an object.** User IDs
+   compare against a static list or a parameter holding one. The
+   string crosses into the ontology; the principal does not. This is
+   the mechanism four-eyes uses.
+3. **The actor's DECISIONS become objects.** Foundry's action log
+   "models all action submissions as object types," and Foundry Rules
+   makes proposals ordinary objects reviewed by ordinary Actions.
+
+For Elysium this is not merely analogous, it is already enforced.
+`UserRecord` is `(user_id, security_value, role_name)`, resolved once
+per request from `policy.yaml`, and `./lint.sh` checks on every run
+that authentication (`core.auth`) and authorization
+(`core.intermediate_layer`) stay independent. Making a user an
+ontology object would collapse a boundary this project verifies
+mechanically, and would make a user's own role MAC-filtered data --
+circular, since you would need permission to resolve permissions.
+
+### The LLM is not a principal either. It is an envelope.
+
+Also asked directly. A principal is authenticated and granted things.
+The LLM authenticates as nothing, holds no grants, and never sees a
+`UserRecord` -- `_step_propose_action()` passes the HUMAN's record
+into `propose_action()`, and every check runs against the person.
+
+The agent does have a permission surface, but not an identity-shaped
+one: `tools.enabled` in `config.yaml` and per-action `auto_execute`.
+Neither grants the LLM anything; both limit what may be reached
+THROUGH it. The accurate formulation:
+
+    effective authority = the human's grants INTERSECT the agent's envelope
+
+The human supplies authority, the agent only narrows it. That is why
+`auto_execute` belongs in the action config rather than `policy.yaml`
+-- it is a constraint on a channel, not a permission -- and it is what
+keeps "the LLM never makes a security decision" true.
+
+Where the agent DOES deserve first-class treatment is provenance,
+which is where Foundry puts it: their object timeline reports
+"agentic coverage," how much of an object's history was driven by
+agents versus humans, with rows for agents, humans and resources.
+
+### `users` is NOT renamed to `principals`
+
+Considered and declined. Every principal here is a human login in
+`credentials.db`; there is no second kind, so the general term would
+be a speculative generalization -- the same reasoning that keeps a
+Settings entry out of `UserMenu`. Foundry's own product vocabulary is
+users and groups even though it genuinely has service accounts. And
+the change would break `policy.yaml`'s `users:` key, `user_directory
+.py`, `/users`, `AdminPanel` and three deployments for no behavioural
+gain.
+
+What the impulse was RIGHT about is provenance, which genuinely has
+more than one kind. Keep `who` (always a user) separate from `through
+what` (a human form, or the agent). Two fields, no rename.
+
+### Platform-level and ontology-level: separate entities, ONE governance
+
+Foundry has both -- platform Approvals requests/tasks, and Foundry
+Rules proposals modelled as ordinary customer objects. Asked whether
+Elysium should fold them into one. No, and the reason is not
+philosophical: what separates them is WHO DECLARES THEM. A platform
+capability must work on day one in every deployment; an ontology
+entity is written by the deployer in YAML.
+
+Folding gives one of two bad outcomes. Either approvals stop working
+until each deployer models `Proposal` and `Approve` in
+`ontology_schema.yaml` -- a platform capability held hostage to data
+modelling -- or Elysium injects synthetic types into the ontology, in
+which case `visible_schema()` reports object types nobody wrote, and
+they surface in the schema viewer, the graph, and the agent's own
+prompt vocabulary.
+
+**The real unification is governance, and it is required.** Approve is
+not an action type, but it passes the identical three gates an action
+does -- RBAC grant, MAC on every touched object, submission criteria
+-- through the SAME code, never a parallel copy. Those three drifting
+apart is a security bug. Two entity kinds that never shared an
+implementation are not duplication.
+
+### Approve is a CLOSURE, not a nullary function
+
+Raised as `(lambda _: x)` with unit input -- worth correcting, because
+the corrected version is more useful. Approve has real inputs: the
+decision itself, the approving principal, and the state of the world
+at approve time, since criteria are re-evaluated then and objects may
+have drifted.
+
+    propose : (Action, Params, Principal)     -> PendingWrite
+    confirm : (PendingWrite, Principal, Bool) -> Effect
+
+A pending write is a closure: propose binds the parameters and returns
+a thunk, confirm supplies the remaining arguments and forces it. The
+shared abstraction is a GOVERNED OPERATION -- an authorization
+envelope plus an effect -- where an Action and an Approval differ only
+in which arguments are already bound.
+
+This framing retrodicts machinery that already exists, which is the
+main reason to trust it: a closure forced later may reference state
+that has since changed, which is exactly why the confirm response
+already carries `expected_current_values` per field.
+
+**Record the framing; do not build the hierarchy yet.** There would be
+two implementors, one of which does not exist. Extract at the second
+real caller.
+
+### Elevation: RBAC is elevatable, MAC NEVER is
+
+Proposed directly: someone without a privilege should be able to raise
+a proposal they cannot approve, so it routes to someone who can. That
+is model A, it is worth building, and it is what makes the inbox a
+workflow rather than a mirror of your own drafts.
+
+**The hard rule.** RBAC is a grant, so lending it is meaningful -- the
+approver genuinely holds `execute:`. MAC is the mandatory boundary: a
+user can never see data outside their own value for it, regardless of
+role. A proposer outside a region raising a proposal against that
+region's objects is not delegation, it is a MAC bypass with a human in
+the middle, via a UI that renders the object so they can fill the
+form. So: **MAC is enforced on the PROPOSER, always, at propose time,
+even when RBAC is deferred to the approver.**
+
+Two consequences. The proposer also needs `read:` on the fields
+involved or the form and diff cannot be rendered at all. And authority
+inverts on invocation -- Foundry applies the change once approvals are
+obtained, meaning Elysium would execute using permissions the proposer
+never held, so the audit record MUST state whose authority applied it
+or this is a privilege-escalation path with a friendly UI.
+
+**Uniform denial survives intact.** To request an action you must know
+it exists, and `discover:action_types` already exists as a separate
+axis from execution: a blanket grant to see the whole catalogue
+including actions the role holds no `execute:` for. A role without it
+still cannot distinguish an unknown action from a forbidden one. No
+new hole, and no new grant needed to open one.
+
+### The structural finding that makes this feasible
+
+`propose_action()`'s RBAC check is a SINGLE early guard -- authorize,
+then `raise PermissionError`, logging with `mac_allowed=None` because
+"MAC never ran, short-circuited before a real database query." MAC
+runs later, per sub_write. Deferring RBAC while keeping MAC is
+therefore a separation the code already makes, not one that has to be
+carved into it.
+
+### Build order
+
+1. **Provenance on `PendingWrite`.** Today it carries `sub_writes`,
+   `user_id`, `description`, `action_type_name` -- and BOTH routes
+   (`POST /actions/{name}` and the agent's own `propose_action` step)
+   produce an identical record, so an inbox cannot render "proposed by
+   Alice" versus "proposed by the agent on Alice's behalf" at all.
+   Actor, timestamp, origin. No policy change; needed by everything
+   below.
+2. **`check: user` in submission criteria.** A third check kind beside
+   `current_state` and `parameter`, whose docstring already says the
+   two exist "because they read from genuinely different places" --
+   the acting principal is a third such place. Needs `user.*` on the
+   `value:` side too, matching the vocabulary `sub_writes` already
+   accepts. This is what four-eyes composes from, and it is why NO
+   bespoke `approver_must_differ` flag is being added: Foundry has no
+   such flag, and expresses separation of duties through submission
+   criteria comparing the current user against a list or parameter.
+3. **Approve as a governed operation.** Move eligibility off
+   `PendingWriteStore.pop()`'s owner-equality check onto grant + MAC +
+   criteria evaluated at APPROVE time, with the decision audited as
+   its own event naming both parties.
+4. **Elevation (model A).** The authority-inversion piece above.
+   Largest, and its own design conversation.
+
+Storage is already answered: `core/artifact_store.py` exists, says in
+its own docstring that "the Approvals inbox needs it," and settles
+ownership (by role), expiry (owned by the artifact type, NULL means
+never) and persistence (SQLite, not Postgres). Today's 15-minute TTL
+exists because a pending write is "the continuation of one person's
+session" -- an inbox breaks that premise, and Foundry keeps requests
+after completion as a record of past decisions.
+
+### Open, honestly
+
+- **Is "may request" a new grant verb, or does it fall out of
+  `discover:action_types` plus the approver's own `execute:`?** Not
+  settled. Decide before building step 4, not during.
+- **Self-approval in the model-A sense is extrapolated.** Branching
+  says plainly you may approve your own proposal with edit access; the
+  Approvals app never says, because its requester lacks the permission
+  by construction. The conclusion is inferred from the first, not
+  documented for the second.
+- **Statuses are not designed.** Foundry has six (pending approval,
+  closed, rejected and closed, changes requested, action required,
+  completed). A reduced set is probably right -- "changes requested"
+  presumes editing a proposal, which does not exist here -- but this
+  has had no real pass.
+- **No notifications in v1**, deliberately. Foundry notifies
+  reviewers; we have no notification system and the scheduler is
+  unbuilt. Pull-only, stated as a scope cut rather than an omission.
+
+### Found stale while researching this
+
+`PendingWrite`'s own comment says `confirm_and_execute()` "still only
+ever applies sub_writes[0] as of this writing." That is no longer
+true -- it routes everything through `_apply_batch()`, one sub_write
+or many. Relevant here because a multi-object diff is exactly what an
+approvals view renders. Fix in its own commit.
+
 ## Recorded with reservations, not endorsed
 
 These were asked for and are written down; the objection is recorded
@@ -1313,19 +1572,51 @@ hardest against.
 
 ## Cross-cutting, and worth deciding once
 
-**Error shape.** The API returns 400 with a real message for caller
-mistakes -- an unknown aggregate names the valid ones. Surface those
-messages rather than replacing them with a generic failure; they were
-written to be read.
+**Error shape. HELD, AND NOW GUARDED.** The API returns 400 with a real
+message for caller mistakes -- an unknown aggregate names the valid
+ones -- and the UI surfaces those messages rather than replacing them
+with a generic failure. They were written to be read.
+
+Checked rather than assumed: apiFetchOrThrow preserves body.detail, and
+QueryPanel shows it verbatim. The one generic message
+("Could not reach the server.") is correct where it sits, in the catch
+for a request that never arrived and so has no backend wording to
+preserve.
+
+Nothing guarded it until now. A refactor toward friendlier error
+handling would look like an improvement while replacing a message that
+names the valid aggregates with "Something went wrong" -- and the
+person who most needs the detail is the one who just made the
+mistake.
 
 **`/health` is unauthenticated** and reports only whether subsystems
-answer. Useful for a connection indicator; it deliberately carries no
-counts, names or paths.
+answer. Useful for a connection indicator; it carries no counts, names
+or paths.
 
-**Paging consistency is documented, not guaranteed.** Default paging
+That claim was FALSE when written and is true now. Each silo was
+reported under a key of `silo:{silo_name}`, so an anonymous caller
+learned every data source's name and how many there were -- and a silo
+name is deployment-chosen and usually descriptive. Silos are now one
+aggregate entry. Detail lives on GET /silos, which is authenticated.
+
+**Paging consistency: GUARANTEED ON A MIRROR, not on a live
+deployment.** This note predated snapshot pinning and was too weak.
+
+A generation records the Iceberg snapshot id of each table when it is
+built, and every read in that generation uses it -- so page one and
+page two of the same query read the same immutable snapshot even if a
+sync commits between them. A UI CAN page an export on a mirror
+deployment. Tested, with a control showing an unpinned read does see
+the newer rows.
+
+It remains exactly right for a LIVE deployment, which reads the
+customer's database directly and has no snapshot to pin: default paging
 returns the latest results and may duplicate or miss rows if data
-changes between pages. Fine for browsing, wrong for an export. A UI
-offering an export should read once rather than page a moving target.
+changes between pages. Such a UI should read once rather than page a
+moving target.
+
+The distinction is visible to a caller: GET /api/data-freshness reports
+`source: mirror` or `source: live`.
 
 **The agent's step vocabulary** is `search_object`, `get_field`,
 `get_object`, `aggregate_object`, `search_around`, `use_tool`,
@@ -1426,3 +1717,251 @@ A full Ontology Manager (self-service schema editing), point-and-click
 analysis beyond the three basic charts, trigger-based automations, and
 a full editable graph canvas. Each is real and each is a separate
 project; the near-term four do not depend on any of them.
+
+---
+
+## The design system: what was checked, what was rejected, what to build
+
+Five design inputs arrived in one conversation -- a token spec, a UI
+spec (twice), shell layout guidance, a frontend architecture fragment,
+and one rule. None of it was written down. Recorded with what was
+CHECKED AGAINST THE CODE rather than assumed, because a third of it
+turned out to already exist and two "bugs" turned out to be my own
+bad greps.
+
+### THE RULE, settled first: Blueprint always wins
+
+Stated directly: **if a new colour or component means overriding
+Blueprint, do not do it.** tokens.css already argued this -- "inventing
+a parallel palette would mean two that drift" -- and it now applies
+beyond the palette.
+
+The consequence is larger than it sounds. Blueprint 6 ships intents,
+a gray ramp, a dark theme, an icon set and a font stack. So an external
+spec's status colours, accents, dark hexes and icon library are all OUT.
+What survives is its DISCIPLINE -- contrast stated per token, status
+always paired with a label, accent functional only -- not its values.
+
+### Already true. Checked, not assumed.
+
+- Chrome fixed in px, canvas fluid -- the layout guide's "single most
+  important rule", and what tokens.css already does
+- Rail 56px, sidebar 240px, top bar 48px, sidebar rows 32px
+- 4px spacing base, 8px rhythm, 2px radius matched to Blueprint's
+- WCAG 2.2 target-size floor recorded as a token
+- `font-variant-numeric: tabular-nums` in use
+- System font stack, which also ANSWERS THE FONT LICENCE QUESTION:
+  nothing to redistribute, no font-CDN request, works air-gapped --
+  which matters for a deployment beside a customer's databases
+- The shell is already one CSS Grid driven by custom properties
+- Zero `!important` across the entire UI
+- `minmax(0, 1fr)` on grid tracks -- the min-width:auto blowout already
+  solved where it bites
+- Sub-apps create zero landmarks; the shell has header, nav, aside AND
+  main, each with recorded reasoning
+- Navigation uses Blueprint MenuItem with a real `href`, so middle-click,
+  back and open-in-new-tab work
+- Four sub-apps, so the rail's three-to-seven guidance holds
+
+TWO ITEMS I LISTED AS BUGS WERE MY OWN ERRORS. I reported the
+authenticated shell as having no `<main>` and navigation as possibly
+using buttons. Both were wrong: my grep covered ui/src/App.tsx and
+shell-api but not ui/src/Shell.tsx, which is where the authenticated
+shell lives. Recorded because "checked" and "checked the right file"
+are different claims, and the second one is the one that counts.
+
+### Does not apply to Elysium
+
+- **Workspace switcher and tenant/white-label logos.** Elysium is
+  SINGLE-TENANT, stated in README.md and PRINCIPLES.md. There are no
+  workspaces to switch between.
+- **Most of the branding table.** There is no logo -- zero SVGs in ui/.
+  Splash screens, favicons, export lockups and marketing headers are a
+  brand asset project, not a usability one.
+- **Offline banner.** Elysium runs beside the customer's databases,
+  often on the same network. "Offline" is a different failure mode
+  than for a SaaS app.
+- **Radix / React Aria** for focus traps and popovers. The PRINCIPLE
+  is right -- do not hand-roll these -- but Blueprint already ships
+  Popover, Dialog, Menu and Omnibar. A second component system is the
+  drift the rule exists to prevent.
+- **Lucide / Phosphor icons.** @blueprintjs/icons is the dependency.
+  Take only the SIZE convention: 16px inline, 20px rail.
+
+### REMOVING THE TOP BAR: considered and rejected
+
+Raised after observing that a Palantir product appeared not to have
+one, and that the canvas would be larger without it.
+
+REJECTED, and the evidence is in this repo: it was previously the
+other way. ui/src/Shell.test.tsx records that the theme toggle and user
+menu used to live in the rail, that this made "a rail doing two jobs",
+and that it "is why the columns started at different heights". The
+header was introduced to fix that, and there is a test pinning each
+half.
+
+The arithmetic is also weaker than it feels: 48px is 4.4% of a 1080p
+display, while the collapsible 240px sidebar is FIVE TIMES that and
+already half-built. Density controls recover more vertical space than
+the header costs. And the command palette trigger, notifications and
+breadcrumbs all need somewhere to live -- the palette especially, whose
+whole value is being visibly discoverable.
+
+If the header looks disproportionate in practice, the fix is its
+CONTENTS -- an `<h1>Elysium</h1>` where a compact mark would do -- not
+the region.
+
+### To build, in dependency order -- SEE BACKLOG.md
+
+> **The open items from this file now live in BACKLOG.md**, which is
+> the one list. What stays here is the REASONING -- why a thing was
+> decided, rejected or measured -- because that has been needed
+> repeatedly and a backlog entry is the wrong place for it.
+
+### The original order, kept for its reasoning
+
+**ALL OF 1-7 AND 9 ARE SHIPPED.** Marked individually below rather
+than deleted, because each carries the reasoning for a decision that is
+now load-bearing -- why Blueprint always wins, why the dark class is
+bp6 and not bp5, why an element selector may not impose on a Blueprint
+widget. Item 5 is partly done and item 8 has two leftovers; both say
+what remains.
+
+**Structural run first**, because each makes the next cheaper:
+
+1. **Cascade layers. DONE.** `@layer reset, tokens, base, layout, components,
+   utilities, overrides`, declared once. A later layer wins regardless
+   of specificity, so sitting beside Blueprint stops requiring
+   escalation. Zero `!important` today; this is how that stays true.
+2. **Token architecture. DONE.** Primitives, semantic, component. Components
+   consume layer 3 only. Cheap now and expensive after the dark theme,
+   because every component written before the split gets revisited.
+3. **Dark theme. DONE** -- via Blueprint's `.bp6-dark`, not bp5, with
+   a persisted toggle.
+   Most of the visual change asked for, for almost no work.
+
+**Then the two biggest user-visible wins:**
+
+4. **Chart colour scale. DONE.** LIVE, NOT HYPOTHETICAL -- echarts is a
+   dependency and shell-api/src/components/Chart.tsx already exists,
+   so the "before the first dashboard ships" window has closed. Needs
+   categorical (6-8 hues, CVD-safe), sequential and diverging scales
+   on both themes. The ONE palette decision Blueprint does not cover.
+5. **View-state matrix. PARTLY DONE.** Nine states in the spec, and ONE OF THEM
+   CANNOT BE BUILT HERE -- recorded before someone tries.
+
+   The spec asks for a PERMISSION DENIED state "distinct from empty --
+   state that results exist but are not visible to this user". Elysium
+   deliberately does the opposite. Its uniform denial means "the
+   response never distinguishes 'no history' from 'not allowed' from
+   'no such object'", and that is a SECURITY PROPERTY, not an
+   oversight: telling a caller that hidden rows exist leaks the
+   existence of data they cannot see, which is what MAC is for. A UI
+   saying "3 results hidden by your clearance" would defeat the read
+   path's core guarantee. The generic spec assumes an access model
+   Elysium does not have.
+
+   WHAT CAN BE DISTINGUISHED, and should be:
+   - loading FIRST vs loading a REFRESH, where existing data stays
+     readable. AsyncPanel already reasons about exactly this and
+     deliberately excludes Browse for that reason.
+   - empty because NOTHING EXISTS YET vs empty because THE FILTERS
+     MATCHED NOTHING -- echo the filters, offer to clear them.
+   - STALE: /data-freshness already knows when the mirror last synced
+     and whether reads come from it. Nothing surfaces it.
+   - PARTIAL: the loop already reports hit_max_hops through
+     possibly_incomplete, and a search cut short is not a search that
+     found nothing.
+   - ERROR, which AsyncPanel already handles.
+
+   Thirty-one components handle loading or empty; ZERO use Blueprint's
+   NonIdealState. ObjectSearchPanel renders the bare string "No
+   results." for every empty case, which is the collapse worth fixing
+   first -- both halves are answerable without leaking anything.
+
+**Then:**
+
+
+   SHIPPED: the two empty states (nothing here yet vs no matches, with
+   a clear-filters action), and NonIdealState as the shared shape.
+   REJECTED, recorded so it is not rediscovered: a permission-denied
+   state, because uniform denial is a security property -- announcing
+   that hidden rows exist would violate MAC.
+
+   STILL OPEN: the loading, error and partial states as one audited
+   matrix rather than per-panel choices.
+6. **Container queries. DONE.** Zero exist, three media queries. A
+   component's real constraint is its PANEL width, which changes when
+   the sidebar collapses -- not the viewport. Cheap at three, expensive
+   at thirty, and a precondition for per-sub-app sidebar collapse.
+7. **Scrolling. DONE.** overscroll-behavior: contain, sticky headers, scroll
+   restoration on back and on sub-app return, overflow-anchor, total
+   counts ("1,284 entities"), no row-shift on load-more, virtualize
+   above ~200.
+8. **Formatting. PARTLY DONE.** Timestamps were already correct --
+   relative under 24h, absolute with a NAMED timezone beyond it, which
+   formatTimestamp has done since the freshness work.
+
+   NULL VS ZERO VS UNKNOWN: done. formatValue no longer produces a
+   blank cell for any input. An empty string reads "(empty)",
+   whitespace "(whitespace)", an empty array "(none)" -- a link
+   followed that found nothing, which is a different fact from never
+   set -- and absence is an em dash. Zero and false are deliberately
+   left alone: a guard treating them as empty is the classic falsy bug
+   and would hide the answer in any count or balance field.
+
+   THE MAC PREMISE WAS WRONG, and checking it is what found the real
+   problems. A field the caller may not read is OMITTED from the
+   response entirely rather than returned as null, verified against the
+   mediator -- so it never reaches a formatter and cannot render blank.
+   The ambiguities that DO exist were the empty string, the empty array
+   and whitespace, none of which this item named.
+
+   Also unified: four places rendered absence as an em dash while
+   formatValue said "(not set)". One convention now, the dash, because
+   "(not set)" repeated down a column competes with the values beside
+   it.
+
+   IDS IN MONOSPACE: done, with a `--font-mono` primitive (Blueprint
+   ships no monospace token, so there was nothing to override) and
+   `user-select: all` so one click takes the WHOLE id -- a double-click
+   otherwise stops at the underscore in cust_001 and gives "cust".
+
+   AND A BUG THE BLANK-CELL WORK MISSED. ObjectDetailPanel passed
+   `null` for an empty link list, so "this customer has no orders" read
+   as "we do not know this customer's orders". The test agreed with it,
+   which is how it survived that commit.
+
+   STILL OPEN: fixed precision for numbers. Not a correctness problem
+   -- and it wants a decision about WHOSE precision, since the ontology
+   declares types but not scale.
+9. **min-inline-size: 0 as a rule. DONE as documentation**, not three
+   instances.
+
+**Deferred, with reasons:**
+
+- **Keyboard model.** Every source calls it expensive to retrofit and
+  that is true, but the ROVING-FOCUS half is a power-user feature and
+  nobody has established who uses Elysium daily. The FOCUS-RING half is
+  an accessibility floor and is unconditional -- fold it into the token
+  work.
+- **Command palette.** Premature at four sub-apps with two-level
+  navigation. Revisit at six or seven. Blueprint's Omnibar when it
+  happens.
+- **Table built properly once.** Right in principle and large; it
+  consumes the token split and the formatting rules, so it goes after
+  both.
+- **URL as state.** Real value, touches every view, and wants the state
+  matrix settled first.
+- **Sub-app manifest.** App.tsx imports each panel explicitly, so a
+  fifth sub-app edits the shell. Worth fixing only if a fifth is
+  coming -- a genuine open question.
+- **Motion, density, forms, canvas floor, sidebar behaviour.** All
+  worth doing, none urgent, natural follow-ons.
+
+### One rule that is a convention, not a guarantee
+
+Sub-apps create no landmarks today because four authors happened to
+agree, not because anything checks. A grep test over app-*/src would
+be three lines and would fail the day someone adds one -- the same
+pattern as the guards in tests/unit/test_generation_pin.py.

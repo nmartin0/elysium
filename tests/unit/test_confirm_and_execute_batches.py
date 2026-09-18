@@ -58,7 +58,7 @@ def wm_and_log(test_db_path, test_schema, tmp_path):
     silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
     write_log = WriteLogWriter(tmp_path / "write_log.db")
     mediator = DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES, write_log=write_log)
-    write_mediator = WriteMediator(mediator, {"test_silo": adapter}, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, {"test_silo": adapter}, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     return write_mediator, write_log
 
 
@@ -72,7 +72,7 @@ def test_confirm_and_execute_ends_with_no_pending_batches(wm_and_log):
     # implicitly already relies on.
     write_mediator, write_log = wm_and_log
     pending = write_mediator.propose_action(_record("alice"), "RenameAuthor",
-                                             {"author_id": "auth_001", "new_name": "Ada L."})
+                                             {"author_id": "auth_001", "new_name": "Ada L."}, origin="human")
 
     write_mediator.confirm_and_execute(pending, approved=True)
 
@@ -82,7 +82,7 @@ def test_confirm_and_execute_ends_with_no_pending_batches(wm_and_log):
 def test_confirm_and_execute_result_reflects_every_touched_object(wm_and_log):
     write_mediator, write_log = wm_and_log
     pending = write_mediator.propose_action(_record("alice"), "RenameAuthor",
-                                             {"author_id": "auth_001", "new_name": "Ada L."})
+                                             {"author_id": "auth_001", "new_name": "Ada L."}, origin="human")
 
     result = write_mediator.confirm_and_execute(pending, approved=True)
 
@@ -95,7 +95,7 @@ def test_rejected_action_creates_no_batch_at_all(wm_and_log):
     # row, nothing to find pending OR applied.
     write_mediator, write_log = wm_and_log
     pending = write_mediator.propose_action(_record("alice"), "RenameAuthor",
-                                             {"author_id": "auth_001", "new_name": "Should Not Apply"})
+                                             {"author_id": "auth_001", "new_name": "Should Not Apply"}, origin="human")
 
     result = write_mediator.confirm_and_execute(pending, approved=False)
 
@@ -116,7 +116,7 @@ def test_the_per_object_row_is_correctly_batch_owned_mid_apply(wm_and_log, monke
     # batch mechanism.
     write_mediator, write_log = wm_and_log
     pending = write_mediator.propose_action(_record("alice"), "RenameAuthor",
-                                             {"author_id": "auth_001", "new_name": "Ada L."})
+                                             {"author_id": "auth_001", "new_name": "Ada L."}, origin="human")
 
     observed = {}
     original_write_fields = write_mediator.mediator.adapters["test_silo"].write_fields

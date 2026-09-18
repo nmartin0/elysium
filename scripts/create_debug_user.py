@@ -13,12 +13,9 @@ account like this has no place in one.
 """
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from core.deployment_loader import load_deployment, resolve_runtime_paths  # noqa: E402
-from core.user_directory import UserDirectory  # noqa: E402
+from core.deployment_loader import load_deployment, resolve_runtime_paths
+from core.user_directory import UserDirectory
 
 USERNAME = "debug"
 PASSWORD = "a"
@@ -33,8 +30,32 @@ def main() -> int:
     if ROLE not in config.roles:
         print(
             f"No {ROLE!r} role in {paths.config_dir}/policy.yaml.\n"
-            f"This script is for the development fixture deployment; set "
-            f"ELYSIUM_CONFIG_DIR to tests/integration/fixtures.",
+            f"Add one, or point ELYSIUM_CONFIG_DIR at a deployment that "
+            f"has it. Both deployment/etc and tests/integration/fixtures "
+            f"do.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # REFUSES TO RUN WITHOUT --yes-this-is-development, and the reason
+    # is the password. A four-grant admin account with a memorable
+    # password is a mistake; a SIXTEEN-grant account whose password is
+    # the single character "a" is a back door, and the thing that makes
+    # it dangerous is precisely what makes it convenient here.
+    #
+    # A guard rather than a warning: this script exists to be run
+    # without thinking, which is exactly the property that gets it run
+    # somewhere it should not be. Nobody types a flag that says
+    # "development" onto a production box by accident and on purpose at
+    # the same time -- and if they do, they have been told what it
+    # costs.
+    if "--yes-this-is-development" not in sys.argv:
+        print(
+            f"REFUSING. This creates {USERNAME!r} with password {PASSWORD!r} and "
+            f"every grant the deployment defines.\n"
+            f"That is a back door, not an account. If this really is a "
+            f"development machine, re-run with:\n\n"
+            f"    python -m scripts.create_debug_user --yes-this-is-development\n",
             file=sys.stderr,
         )
         return 1

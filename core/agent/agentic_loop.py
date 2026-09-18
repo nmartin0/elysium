@@ -65,6 +65,7 @@ Used by: scripts/run_deployment.py, api/routes.py, and directly by
 import json
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -84,6 +85,20 @@ from core.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
+# The most objects one get_object step may name. A cap exists because
+# max_hops bounds how much a single query can read, and an uncapped
+# list of ids would let one hop read arbitrarily much -- the same
+# reasoning as MAX_SUB_WRITES in core/ontology/action_types.py, which
+# cites Palantir capping their own batched action calls.
+#
+# 20, matching MAX_SUB_WRITES rather than being picked independently:
+# both answer "how much may one step do", and two different answers to
+# one question is a thing to remember rather than derive. Exceeding it
+# is a NAMED error the model can recover from, never a silent short
+# read -- Palantir errors with ObjectsExceededLimit for the same
+# reason.
+MAX_OBJECT_IDS = 20
+
 
 @dataclass
 class AgentLoopResult:
@@ -91,6 +106,26 @@ class AgentLoopResult:
     pending_write: PendingWrite | None = None
     cancelled: bool = False
     hit_max_hops: bool = False
+    # The acting user's authority changed mid-query and the loop
+    # stopped. Distinct from cancelled: nobody asked for this, and the
+    # caller should say something different about it.
+    authority_changed: bool = False
+
+
+def _object_ids_in(step: dict) -> list:
+    """The objects a get_object step names, whichever key it used.
+
+    Module-level, and used by _step_signature(), the duplicate-
+    recording loop in run(), AND AgentLoop._step_get_object(), because
+    the first version of the set-shaped read had each of those reading
+    step["object_id"] directly. Two of them were missed, and run()
+    crashed with a KeyError on the first real query -- caught by a live
+    run, not by the tests, which exercised the step handler and the
+    parser but never the path between them.
+    """
+    if "object_ids" in step:
+        return list(step["object_ids"])
+    return [step["object_id"]]
 
 
 def _step_signature(step: dict):
@@ -107,7 +142,10 @@ def _step_signature(step: dict):
         # set of fields on the SAME object twice must be detected as a
         # genuine repeat regardless of what ORDER it happened to list
         # them in either time.
-        return ("get_object", step["object_type"], step["object_id"], frozenset(step["field_names"]))
+        # frozenset over the ids too, for the same reason: naming the
+        # same objects in a different ORDER is the same request.
+        return ("get_object", step["object_type"], frozenset(_object_ids_in(step)),
+                frozenset(step["field_names"]))
     if step["step"] == "use_tool":
         # Function args can contain UNHASHABLE values (e.g. lists for
         # x_values/y_values) -- frozenset(dict.items()), used for the
@@ -347,24 +385,148 @@ class AgentLoop:
             context=context,
         )
 
+    @staticmethod
+    def _reject_unknown_fields(step: dict, visible_schema: dict) -> None:
+        """Refuses a field name this type does not have, saying which.
+
+        MEASURED, NOT IMAGINED. Asked for one customer's transactions,
+        a real model asked for `field_names: ["*"]` -- a wildcard that
+        does not exist here and that it had no way to know was wrong.
+        get_field returns None for an unknown field, so the step
+        SUCCEEDED and returned `{"*": None}`: indistinguishable from a
+        field that is genuinely empty. The agent asked again, and again,
+        until the duplicate guard stopped it nine hops later.
+
+        THE MEDIATOR MUST NOT CHANGE. get_field returns None for both
+        "no such field" and "not authorised", deliberately, so that an
+        unauthorised caller cannot map the schema by guessing names.
+        Raising there would leak exactly what that hides.
+
+        THE LOOP CAN SAY IT SAFELY, because visible_schema is already
+        filtered to what THIS user may see. Naming a field that is
+        absent from it tells them nothing they were not already given.
+
+        NAMES THE FIELDS THAT DO EXIST, because "unknown field" alone
+        leaves the model guessing again -- which is how this started.
+        """
+        object_type = step.get("object_type")
+        type_def = visible_schema.get(object_type) if object_type else None
+        if not type_def:
+            # NOT OUR FAULT TO REPORT. An unknown object_type has its
+            # own handling further in; duplicating it here would give
+            # two different messages for one mistake.
+            return
+
+        known = set(type_def.get("fields") or {})
+        unknown = [name for name in step.get("field_names") or [] if name not in known]
+        if not unknown:
+            return
+
+        raise ValueError(
+            f"get_object: {object_type} has no field(s) "
+            f"{', '.join(repr(name) for name in unknown)}. "
+            f"There is no wildcard -- name the fields you want from: "
+            f"{', '.join(sorted(known))}."
+        )
+
     def _step_get_object(self, step: dict, user_record: UserRecord,
                          visible_schema: dict, gathered: list[dict],
                          context: RequestContext | None = None) -> Any:
-        """Fans ONE step out into one gathered entry per field.
+        """Fans ONE step out into one gathered entry per object per field.
+
+        SET-SHAPED ON BOTH AXES. `field_names` was always a list;
+        `object_ids` now is too. This is the N+1 problem in an agentic
+        loop: a search returns a list of ids, and reading one field
+        from each of them used to cost one HOP per id. On the CPU-only
+        deployment this was written for a hop was measured at ~193
+        seconds, so two transactions cost 6.4 minutes to read one field
+        each.
+
+        The usual fix -- DataLoader, collecting individual loads and
+        issuing one bulk query underneath -- does not apply here. It
+        works because the caller's loads happen within one tick and can
+        be batched invisibly. Our caller is a model that must emit each
+        read as a separate, expensive round trip; there is no tick to
+        batch within. So the vocabulary has to change, which is what
+        REST does when transparent batching is impossible.
+
+        Shaped after Palantir's ObjectSet rather than as a batch
+        variant of a singular verb: their read primitive takes a SET
+        plus a `select` of which properties to return, and a
+        single-object fetch is the special case. `object_id` (singular)
+        still works and is normalised to a one-element list, so nothing
+        that already worked stops working.
 
         Recorded as get_field entries so everything downstream --
         synthesis, the trace, the prompt's own history -- sees the same
         shape whether a field was fetched singly or in a batch.
+
+        NOTHING ABOUT AUTHORIZATION IS BATCHED, and that is worth
+        stating because "batch read" invites the opposite assumption.
+        mediator.get_object() remains a per-field loop around
+        get_field(), and this adds a per-object loop around that: every
+        RBAC grant, every MAC check and every audit entry still happens
+        once per field per object, exactly as if the model had asked
+        one at a time. The saving is round trips to the MODEL, not work
+        in the mediator.
+
+        Relatedly, and deliberately not done: DataLoader's other half
+        is a per-request cache keyed by id. Adding one here would be a
+        second place authorization state could go stale, and the
+        pattern's own guidance is that such caches must be per-request
+        precisely to prevent leakage between users. Not worth it for a
+        loop that reads a handful of objects.
         """
-        field_values = self.mediator.get_object(
-            user_record, step["object_type"], step["object_id"], step["field_names"]
-        )
-        for field_name, value in field_values.items():
-            gathered.append({
-                "step": "get_field", "object_type": step["object_type"],
-                "object_id": step["object_id"], "field_name": field_name, "result": value,
-            })
+        self._reject_unknown_fields(step, visible_schema)
+        object_ids = self._object_ids_for(step)
+        for object_id in object_ids:
+            field_values = self.mediator.get_object(
+                user_record, step["object_type"], object_id, step["field_names"]
+            )
+            for field_name, value in field_values.items():
+                gathered.append({
+                    "step": "get_field", "object_type": step["object_type"],
+                    "object_id": object_id, "field_name": field_name, "result": value,
+                })
         return STEP_HANDLED
+
+    @staticmethod
+    def _object_ids_for(step: dict) -> list:
+        # Accepts either key. A step naming one `object_id` is the
+        # common case and keeps working unchanged.
+        if "object_ids" in step and (
+                not isinstance(step["object_ids"], list) or not step["object_ids"]):
+            raise ValueError("get_object: 'object_ids' must be a non-empty list")
+        object_ids = _object_ids_in(step)
+
+        if len(object_ids) > MAX_OBJECT_IDS:
+            # A NAMED refusal, never a silent truncation -- answering
+            # about some of a list and quietly skipping the rest is the
+            # exact failure the prompt already warns the model against.
+            # Palantir does the same at their own scale, erroring with
+            # ObjectsExceededLimit rather than returning a short page.
+            #
+            # A cap exists at all because max_hops bounds how much a
+            # query can read, and an uncapped list would let one hop
+            # read arbitrarily much. Same reasoning as MAX_SUB_WRITES
+            # in core/ontology/action_types.py.
+            # SAY WHAT TO DO, NOT JUST WHAT IS WRONG. "Ask for fewer at
+            # a time" was measured against a real model and produced a
+            # catastrophic over-correction: given 32 ids and told the
+            # limit was 20, it came back asking for TWO, then spent the
+            # rest of its hops fetching one object at a time until the
+            # duplicate guard stopped it.
+            #
+            # "Fewer" is a direction, not a quantity. Naming the batch
+            # and the remainder gives the model a step it can take
+            # rather than a bound it has to guess under.
+            raise ValueError(
+                f"get_object: {len(object_ids)} object_ids exceeds the "
+                f"limit of {MAX_OBJECT_IDS}. Ask for the first "
+                f"{MAX_OBJECT_IDS} now, and the remaining "
+                f"{len(object_ids) - MAX_OBJECT_IDS} in a later step."
+            )
+        return object_ids
 
     def _step_use_tool(self, step: dict, user_record: UserRecord,
                        visible_schema: dict, gathered: list[dict],
@@ -395,8 +557,12 @@ class AgentLoop:
                              context: RequestContext | None = None) -> Any:
         if self.write_mediator is None:
             raise ValueError("Writes are not enabled for this deployment")
+        # origin="agent": user_record is still the person whose
+        # permissions authorize this, but the LLM chose the action,
+        # not them. Recording only user_id would make this
+        # indistinguishable from a form they filled in themselves.
         pending = self.write_mediator.propose_action(
-            user_record, step["action_type"], step["parameters"]
+            user_record, step["action_type"], step["parameters"], origin="agent",
         )
         action_def = self.write_mediator.action_types.get(step["action_type"]) or {}
         if action_def.get("auto_execute") is True:
@@ -488,7 +654,8 @@ class AgentLoop:
 
     def run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None,
-            context: RequestContext | None = None) -> AgentLoopResult:
+            context: RequestContext | None = None,
+            refresh_user: "Callable[[], UserRecord | None] | None" = None) -> AgentLoopResult:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # a proposed write/cancellation/max_hops -- whichever comes
@@ -515,12 +682,44 @@ class AgentLoop:
         # handled correctly already, since _build_system_prompt() itself
         # is rebuilt fresh on every call to next_step() below, and
         # `gathered` is the same list, growing across hops.
-        visible_schema = self.mediator.visible_schema(user_record)
+        # for_agent=True: the model's schema is a menu of what it can
+        # DO. A discover-only type or field is something it can only
+        # fail on -- prompt tokens every hop, and steps the mediator
+        # then denies. A PERSON sees them, through the UI's own call.
+        visible_schema = self.mediator.visible_schema(user_record, for_agent=True)
         visible_action_types = self.write_mediator.visible_action_types(user_record) if self.write_mediator else {}
 
         for _ in range(1, self.max_hops + 1):
             if cancel_event is not None and cancel_event.is_set():
                 return AgentLoopResult(gathered=gathered, cancelled=True)
+
+            # THE ACTING USER IS RE-RESOLVED EVERY HOP, not once per
+            # request. Identity is resolved once when the request
+            # arrives, and on this deployment a query can run for
+            # minutes -- long enough for an administrator to disable an
+            # account or change a role and reasonably expect it to take
+            # effect. Recorded in ROADMAP.md's security backlog before
+            # this migration began.
+            #
+            # A CHANGE STOPS THE LOOP rather than continuing under the
+            # new authority, and that is the substantive decision. The
+            # alternative -- carry on with the new record -- produces an
+            # answer assembled partly under one set of grants and partly
+            # under another, which was never authorized as a whole. That
+            # is the same objection as a torn read, and as an answer
+            # that mixes two data snapshots.
+            #
+            # Recomputing visible_schema instead was the other option.
+            # It has the same defect: the gathered data was read under
+            # the old schema and would be reported under the new one.
+            if refresh_user is not None:
+                current = refresh_user()
+                if current is None or current != user_record:
+                    # None means the account is gone or disabled. Either
+                    # way the work so far is returned: it WAS authorized
+                    # when it was read, and discarding it would lose
+                    # information the user was entitled to.
+                    return AgentLoopResult(gathered=gathered, authority_changed=True)
 
             step = next_step(
                 self.client, query_text, visible_schema, gathered, self.tools, writes_enabled, visible_action_types
@@ -564,8 +763,10 @@ class AgentLoop:
                     # AI-notes for the reverse, rarer case (get_field
                     # first, then a LARGER get_object covering that
                     # same field among others) this does NOT close.
-                    for field_name in step["field_names"]:
-                        seen_signatures.add(("get_field", step["object_type"], step["object_id"], field_name))
+                    for object_id in _object_ids_in(step):
+                        for field_name in step["field_names"]:
+                            seen_signatures.add(
+                                ("get_field", step["object_type"], object_id, field_name))
 
             consecutive_invalid, consecutive_business_rule, should_stop, pending_write = self._execute_step(
                 step, user_record, visible_schema, gathered, consecutive_invalid,

@@ -114,7 +114,7 @@ TEST_ACTION_TYPES = {
         }],
     },
     # DELIBERATELY sets an explicit id (now required for every create --
-    # see WriteMediator.propose_action()'s own comment on why) and
+    # see WriteMediator.propose_action(, origin="human")'s own comment on why) and
     # risk_score, but never "name" or "region" -- for
     # test_create_without_setting_security_field_produces_an_unreadable_row
     # below. Once every create requires an explicit id, this can no
@@ -227,10 +227,12 @@ def test_search_mixing_fields_from_different_storages_is_rejected(mediator):
 
 
 def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
-    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     alice = _record("alice")
 
-    pending = write_mediator.propose_action(alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.99})
+    pending = write_mediator.propose_action(
+        alice, "UpdateRiskScore", {"customer_id": "cust_001", "new_score": 0.99}, origin="human",
+    )
     assert pending.sub_writes[0].expected_current_values == {"risk_score": 0.42}
 
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
@@ -244,7 +246,7 @@ def test_action_to_an_mdo_field_actually_changes_the_right_database(mediator):
 
 def test_create_without_explicit_id_is_rejected(mediator):
     # An explicit id is REQUIRED for EVERY create now, not just one
-    # spanning multiple storages -- see WriteMediator.propose_action()'s
+    # spanning multiple storages -- see WriteMediator.propose_action(, origin="human")'s
     # own comment on why this was unified rather than kept as two
     # separately-maintained mechanisms (matches "update"'s own
     # precedent of a single, unconditional path regardless of storage
@@ -255,11 +257,11 @@ def test_create_without_explicit_id_is_rejected(mediator):
     # declared mutations mix a primary field (name) and an MDO field
     # (risk_score) without ever naming customer_id itself -- the
     # multi-storage case still exercises this same, now-universal rule.
-    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     alice = _record("alice")
     with pytest.raises(ValueError, match="requires an explicit 'customer_id' value"):
         write_mediator.propose_action(alice, "CreateCustomerWithNameAndRiskScore",
-                                       {"new_id": "cust_998", "new_name": "New Name", "new_score": 0.5})
+                                       {"new_id": "cust_998", "new_name": "New Name", "new_score": 0.5}, origin="human")
 
 
 def test_search_with_empty_criteria_defaults_to_primary_storage(mediator):
@@ -429,11 +431,11 @@ def test_create_without_setting_security_field_produces_an_unreadable_row(mediat
     # addition, this test never actually verified the log entry fires
     # here, only that the return values are correctly None. A genuine
     # gap between what the docstring claimed and what was proven.
-    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES)
+    write_mediator = WriteMediator(mediator, mediator.adapters, TEST_ROLES, TEST_ACTION_TYPES, generation=1)
     alice = _record("alice")
 
     pending = write_mediator.propose_action(alice, "CreateCustomerRiskOnly",
-                                             {"new_id": "cust_incomplete", "risk_score": 0.15})
+                                             {"new_id": "cust_incomplete", "risk_score": 0.15}, origin="human")
     outcome = write_mediator.confirm_and_execute(pending, approved=True)
 
     # The write itself succeeds -- no error, no guard against this today.

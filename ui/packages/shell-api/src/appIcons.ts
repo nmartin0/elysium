@@ -16,6 +16,10 @@
  * Admin gets `people` rather than `cog`: it manages USERS, and a cog
  * says "preferences" to everyone who has used a computer.
  *
+ * Approvals gets `inbox` rather than a tick: the rail says where you
+ * are GOING, not what you will do when you arrive, and the page is
+ * equally somewhere to reject a write or watch one you proposed.
+ *
  * Blueprint's icon set, Apache-2.0 and already a dependency. A second
  * icon library would be a second visual language for no gain.
  */
@@ -27,6 +31,11 @@ const BY_PATH: Record<string, IconName> = {
   '/browse': 'search',
   '/schema': 'diagram-tree',
   '/admin': 'people',
+  // `inbox`, not `endorsed` or `tick`: the rail says where you are
+  // going, not what you will do when you arrive. A tick would promise
+  // approval and the page is equally a place to reject, or to watch
+  // something you proposed.
+  '/approvals': 'inbox',
 }
 
 /**

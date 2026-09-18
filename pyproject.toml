@@ -159,6 +159,20 @@ layers = [
     # A leaf with no dependencies can be depended on by any layer
     # without creating a cycle.
     "request_context",
+    # deep_freeze, the same shape as filters and request_context above:
+    # a leaf importing nothing but the standard library. It knows what a
+    # dict, list and set are and nothing else -- not what a schema is,
+    # not what a role is. deployment_loader is its only caller today,
+    # and any layer may reach it without creating a cycle.
+    "immutable",
+    # config_history, a leaf like artifact_store: its own SQLite store,
+    # importing nothing from core but the shared connection helper.
+    "config_history",
+    # request_metrics, the same shape again: one SQLite table of request
+    # timings, importing only the shared connection helper. It knows
+    # what a route and a duration are and nothing else -- not what an
+    # object is, not what a role is -- so any layer may reach it.
+    "request_metrics",
     # The artifact store, also a leaf. It persists and scopes saved
     # things -- searches, selections, pending writes -- and knows
     # nothing about what is inside one: `body` is opaque JSON.
@@ -201,9 +215,22 @@ modules = ["core.auth", "core.intermediate_layer"]
 # designed from assumption).
 
 [[tool.importlinter.contracts]]
-name = "api/ internal layering (app wires routes + csrf + request size limit; routes wires apps + auth_dependency)"
+name = "api/ internal layering (app wires routes + csrf + request size limit; routes wires apps + dependencies)"
 type = "layers"
-layers = ["app", "routes", "apps | auth_dependency | csrf_middleware | request_size_limit_middleware"]
+# generation_dependency sits beside auth_dependency: both are
+# per-request dependencies routes wires, and neither may import the
+# other. One resolves WHO is asking, the other WHICH configuration
+# answers -- independent questions, deliberately kept that way.
+#
+# generation_header_middleware sits beside them rather than above:
+# it reads the pin that generation_dependency leaves on request.state
+# but does NOT import it, reaching the value through the ASGI scope.
+# Middleware that imported a dependency would make the two orderable,
+# and they are not.
+layers = [
+    "app", "routes",
+    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware",
+]
 containers = ["api"]
 exhaustive = true
 

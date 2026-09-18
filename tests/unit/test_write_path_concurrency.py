@@ -86,8 +86,7 @@ def _deployment(tmp_path, trial):
         write_log=WriteLogWriter(tmp_path / f"wl{trial}.db"),
     )
     write_mediator = WriteMediator(
-        mediator, adapters, policy["roles"], schema["action_types"]
-    )
+        mediator, adapters, policy["roles"], schema["action_types"], generation=1)
     return mediator, write_mediator
 
 
@@ -128,8 +127,7 @@ def _transfer(write_mediator, new_from_balance):
             "to_account_id": "acc_savings",
             "new_from_balance": new_from_balance,
             "new_to_balance": 600,
-        },
-    )
+        }, origin="human")
     return lambda: write_mediator.confirm_and_execute(pending, approved=True)
 
 
@@ -199,8 +197,7 @@ def test_concurrent_writes_to_different_objects_both_succeed(tmp_path, trial):
         pending = write_mediator.propose_action(
             UserRecord(user_id="u1", security_value="us-west", role_name="editor"),
             "UpdateCustomerName",
-            {"customer_id": customer_id, "new_name": name},
-        )
+            {"customer_id": customer_id, "new_name": name}, origin="human")
         return lambda: write_mediator.confirm_and_execute(pending, approved=True)
 
     results = _run_together([rename("cust_001", "Ada X"), rename("cust_002", "Bram Y")])

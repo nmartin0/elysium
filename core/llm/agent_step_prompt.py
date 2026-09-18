@@ -41,6 +41,11 @@ from core.ontology.submission_criteria import SubmissionCriteriaViolation, evalu
 
 logger = logging.getLogger(__name__)
 
+# The aggregates DataMediator.aggregate_by_field() accepts. Stated here
+# because next_step() rejects a bad one before it costs a hop; the
+# mediator remains the enforcing side.
+AGGREGATES = frozenset({"count", "sum", "avg", "min", "max"})
+
 
 def _finish_step() -> dict:
     # A fresh dict on every call, deliberately -- NOT a shared
@@ -187,11 +192,21 @@ def _sub_write_validity_for_object(sub_write_def: dict, known_state: dict) -> tu
     # "not_equals" criterion would incorrectly read as satisfied
     # against a field that was simply never read at all).
     criteria = sub_write_def.get("submission_criteria", [])
+    if any(c["check"] == "user" for c in criteria):
+        # NO VERDICT, for the same reason a partial state read gets
+        # none. A "user" criterion is about the acting principal, and
+        # nothing here knows who that is -- prompt construction
+        # deliberately has no UserRecord, so that a user's identity
+        # cannot shape what the model is told. Enforcement happens at
+        # propose time either way; the only cost of staying silent is
+        # that the agent may propose something that is then refused,
+        # which is the safe direction.
+        return None
     needed_fields = {c["field"] for c in criteria if c["check"] == "current_state"}
     if not needed_fields.issubset(known_state.keys()):
         return None
     try:
-        evaluate_submission_criteria(criteria, known_state, {})
+        evaluate_submission_criteria(criteria, known_state, {}, None)
         return True, ""
     except SubmissionCriteriaViolation as e:
         return False, str(e)
@@ -243,22 +258,18 @@ def _object_reference_hints(action_def: dict, gathered: list[dict]) -> list[str]
     return lines
 
 
-def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
+def _describe_actions(visible_action_types: dict) -> str:
     # Renders the model-facing named-action vocabulary -- one block per
     # action this user is authorized for (already filtered by
     # WriteMediator.visible_action_types() BEFORE this is ever called;
     # this function has no authorization logic of its own).
     #
-    # For any object the model has ALREADY read enough state for
-    # during this same run, annotates whether the action is currently
-    # valid or blocked (and why) for that specific object -- the
-    # hybrid design: cheap and precise when state is already known
-    # (mirroring how a real UI can disable/hide an action button for
-    # an object already loaded on screen), and silently absent
-    # otherwise (an action with no annotatable objects yet -- the
-    # common case, e.g. at the very start of a request, before any
-    # object's state has been read at all -- is shown with no verdict,
-    # exactly as a UI with nothing loaded yet would show it).
+    # STATIC. Depends only on visible_action_types, never on what has
+    # been gathered, so this text is byte-identical for every hop of a
+    # query. The per-object "currently valid / currently blocked"
+    # annotations that used to live inside each block moved to
+    # _action_state_notes() below -- see _build_system_prompt() for
+    # the measured reason.
     blocks = []
     for action_name, action_def in visible_action_types.items():
         params = action_def.get("parameters", {})
@@ -283,11 +294,31 @@ def _describe_actions(visible_action_types: dict, gathered: list[dict]) -> str:
             f'- {action_name} (on {object_types_touched}): requires {param_desc}\n'
             f'  {{"step": "propose_action", "action_type": "{action_name}", "parameters": {{{param_json}}}}}'
         )
-        hint_lines = _object_reference_hints(action_def, gathered)
-        if hint_lines:
-            block += "\n" + "\n".join(hint_lines)
         blocks.append(block)
     return "\n".join(blocks)
+
+
+def _action_state_notes(visible_action_types: dict, gathered: list[dict]) -> str:
+    # The half of the action vocabulary that DOES depend on gathered:
+    # whether each action is currently valid or blocked for objects
+    # whose state has already been read this run. Mirrors how a real UI
+    # disables an action button for an object already on screen.
+    #
+    # Rendered as its own trailing section rather than inline in each
+    # action's block, because inline it changed the middle of the
+    # system prompt on the exact hop a write became relevant. See
+    # _build_system_prompt().
+    blocks = []
+    for action_name, action_def in visible_action_types.items():
+        hint_lines = _object_reference_hints(action_def, gathered)
+        if hint_lines:
+            blocks.append(f"- {action_name}:\n" + "\n".join(hint_lines))
+    if not blocks:
+        return ""
+    return (
+        "\n\nCurrent action availability, based on what you have already read"
+        " this run:\n\n" + "\n".join(blocks)
+    )
 
 
 def _build_system_prompt(visible_schema: dict, tools: list[Function], writes_enabled: bool,
@@ -318,12 +349,43 @@ answer a question. If an action below is marked "Currently blocked"
 for a specific object, invoking it for that object will fail -- prefer
 a different action or a different object instead.
 
-{_describe_actions(visible_action_types, gathered)}
+{_describe_actions(visible_action_types)}
 """
-    return f"""You gather information step by step to answer a question,
-using ONLY these object types and fields:
+    # THE SCHEMA IS THE FIRST THING IN THE PROMPT, and that ordering is
+    # a SECURITY property rather than a stylistic one.
+    #
+    # Prefix caching makes a cache hit measurably faster than a miss,
+    # and published attacks (PROMPTPEEK, EarlyBird, InputSnatch)
+    # reconstruct another tenant's prompt token by token from latency
+    # alone. They need STRICT PREFIX ALIGNMENT -- a probe must match
+    # from the very first token.
+    #
+    # This previously opened with a fixed preamble, so two users with
+    # COMPLETELY DISJOINT ontologies still shared 103 characters, about
+    # 25 tokens. Measured, not estimated. That is a foothold: an
+    # attacker aligns on it and probes forward, and what they recover
+    # first is the victim's leading object type name -- which
+    # visible_schema filters per user, so it is exactly what RBAC
+    # withholds.
+    #
+    # With the MAC/RBAC-filtered schema first, two such users share
+    # nothing beyond the "- " that opens a list item. The per-user
+    # schema becomes a genuine cache partition key rather than one
+    # sitting behind a shared header.
+    #
+    # DO NOT MOVE INSTRUCTIONS, EXAMPLES OR THE STEP VOCABULARY ABOVE
+    # THIS. Lengthening the shared prefix to improve cache hit rates
+    # would be a security regression wearing the costume of a
+    # performance win -- see tests/unit/
+    # test_prompt_prefix_is_user_specific.py, which fails if it
+    # happens.
+    #
+    # Per-query material may still be appended at the END, which is
+    # what synthesis_prompt.py already does.
+    return f"""{_describe_schema(visible_schema)}
 
-{_describe_schema(visible_schema)}
+Using ONLY the object types and fields above, you gather information
+step by step to answer a question.
 {tools_section}{writes_section}
 At each step, respond with ONLY one JSON object, in one of these shapes:
 
@@ -335,10 +397,13 @@ field's value is another object's ID -- you can search_object or
 get_field on it next):
   {{"step": "get_field", "object_type": "<type>", "object_id": "<id>", "field_name": "<field>"}}
 
-To read SEVERAL fields of the SAME object in one step -- prefer this
-over several separate get_field calls whenever you already know you
-need more than one field from the same object:
-  {{"step": "get_object", "object_type": "<type>", "object_id": "<id>", "field_names": ["<field1>", "<field2>"]}}
+To read fields from ONE OR MORE objects of the same type in a single
+step. Prefer this over several separate get_field calls ALWAYS -- both
+when you need several fields from one object, and when you need the
+same field from several objects. Every id you can name here saves a
+whole step:
+  {{"step": "get_object", "object_type": "<type>", "object_ids": ["<id1>", "<id2>"],
+     "field_names": ["<field1>", "<field2>"]}}
 
 To COUNT or TOTAL across many objects -- always prefer this over
 reading each object one at a time, which is slower and may run out of
@@ -366,32 +431,35 @@ finish instead.
 IMPORTANT: If a previous get_field result is a LIST of IDs (this means
 you followed a link with multiple targets), your next steps should be
 get_field calls on those INDIVIDUAL IDs to read the actual data you
-need (e.g. amount, date) -- do NOT request the same link field again.
+need -- do NOT request the same link field again.
 
-Example: to answer "What is cust_001's email", the correct sequence is:
-  1. {{"step": "search_object", "object_type": "Customer", "filter": {{"customer_id": "cust_001"}}}}
-  2. {{"step": "get_field", "object_type": "Customer", "object_id": "cust_001", "field_name": "email"}}
-  3. {{"step": "finish"}}  <- stop here, do NOT request "email" or any other field again.
+These examples use PLACEHOLDER names. ExampleType and RelatedType are
+not object types you can use -- the real ones are listed above.
 
-Example: to answer "What is cust_001's name and email", after the same
+Example: to answer "What is ex_001's f_a", the correct sequence is:
+  1. {{"step": "search_object", "object_type": "ExampleType", "filter": {{"example_id": "ex_001"}}}}
+  2. {{"step": "get_field", "object_type": "ExampleType", "object_id": "ex_001", "field_name": "f_a"}}
+  3. {{"step": "finish"}}  <- stop here, do NOT request "f_a" or any other field again.
+
+Example: to answer "What is ex_001's f_a and f_b", after the same
 search_object step, use ONE get_object call instead of two separate
 get_field calls:
-  {{"step": "get_object", "object_type": "Customer", "object_id": "cust_001", "field_names": ["name", "email"]}}
+  {{"step": "get_object", "object_type": "ExampleType", "object_ids": ["ex_001"], "field_names": ["f_a", "f_b"]}}
   then {{"step": "finish"}}.
 
-Example: to answer "What are cust_001's transaction amounts", after you
-get_field "transactions" on Customer cust_001 and receive [1, 2], the
-correct next steps are:
-  {{"step": "get_field", "object_type": "Transaction", "object_id": 1, "field_name": "amount"}}
-  {{"step": "get_field", "object_type": "Transaction", "object_id": 2, "field_name": "amount"}}
-  then {{"step": "finish"}} -- NOT another get_field on "transactions".
+Example: to answer "What are ex_001's related f_c values", after you
+get_field "related_items" on ExampleType ex_001 and receive [1, 2], name
+BOTH ids in ONE step:
+  {{"step": "get_object", "object_type": "RelatedType", "object_ids": [1, 2], "field_names": ["f_c"]}}
+  then {{"step": "finish"}} -- NOT one get_field per id, and NOT another
+  get_field on "related_items".
 
 IMPORTANT: Before you finish, check EVERY ID from a list result (like
 [1, 2] above) has been asked about EQUALLY. If you fetched a field for
 ID 1 but not the same field for ID 2, that's incomplete -- go back and
 get it for ID 2 too before finishing. Do not answer about some items in
 a list and silently skip others.
-"""
+""" + _action_state_notes(visible_action_types, gathered)
 
 
 def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
@@ -480,9 +548,20 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         }
 
     if step == "get_object":
-        required = {"object_type", "object_id", "field_names"}
+        # EITHER key names the objects. object_ids is the set form,
+        # object_id the one-object special case -- see AgentLoop._step_
+        # get_object() for why the read is set-shaped on both axes.
+        id_key = "object_ids" if "object_ids" in parsed else "object_id"
+        required = {"object_type", id_key, "field_names"}
         if not _has_required_keys(parsed, required, "get_object"):
             return _finish_step()
+        if id_key == "object_ids":
+            object_ids = parsed["object_ids"]
+            # Same reasoning as field_names below: a non-list or an
+            # empty one is structurally malformed, not "read nothing".
+            if not isinstance(object_ids, list) or not object_ids:
+                logger.warning("malformed get_object step (object_ids must be a non-empty list), finishing")
+                return _finish_step()
         field_names = parsed["field_names"]
         # A non-list, or an empty one, is structurally malformed --
         # NOT "read every field" or "read nothing," and never treated
@@ -499,8 +578,53 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         return {
             "step": "get_object",
             "object_type": parsed["object_type"],
-            "object_id": parsed["object_id"],
+            id_key: parsed[id_key],
             "field_names": field_names,
+        }
+
+    if step == "aggregate_object":
+        # BOTH THIS AND search_around BELOW WERE MISSING, and their
+        # handlers have existed in AgentLoop._step_handlers() the whole
+        # time. An unmatched step falls through to the "unrecognized
+        # step" branch at the bottom and is silently converted into a
+        # finish, so the prompt has been teaching two step types the
+        # parser rejected. Observed live, on a real query:
+        #
+        #   unrecognized step 'aggregate_object', finishing
+        #
+        # and the query ended after two steps having answered a count
+        # question by reading a link list.
+        if not _has_required_keys(parsed, {"object_type", "aggregate"}, "aggregate_object"):
+            return _finish_step()
+        aggregate = parsed["aggregate"]
+        if aggregate not in AGGREGATES:
+            logger.warning(f"malformed aggregate_object step (unknown aggregate {aggregate!r}), finishing")
+            return _finish_step()
+        # count needs no field; every other aggregate does. Checked
+        # here rather than left to the mediator, because at this depth
+        # a bad step costs a whole hop to discover.
+        if aggregate != "count" and not parsed.get("field_name"):
+            logger.warning(f"malformed aggregate_object step ({aggregate} needs field_name), finishing")
+            return _finish_step()
+        validated = {
+            "step": "aggregate_object",
+            "object_type": parsed["object_type"],
+            "aggregate": aggregate,
+            "filter": parsed.get("filter") or {},
+        }
+        for optional in ("field_name", "group_by"):
+            if parsed.get(optional):
+                validated[optional] = parsed[optional]
+        return validated
+
+    if step == "search_around":
+        if not _has_required_keys(parsed, {"object_type", "link_field"}, "search_around"):
+            return _finish_step()
+        return {
+            "step": "search_around",
+            "object_type": parsed["object_type"],
+            "link_field": parsed["link_field"],
+            "filter": parsed.get("filter") or {},
         }
 
     if step == "use_tool":
