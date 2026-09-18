@@ -495,6 +495,29 @@ them. Across is worth more and forces the storage question.
 **Depends on:** 1.1, which is the first piece of state that has to
 move anyway.
 
+### 3.25 A help assistant, separate from Query
+
+**DESIGNED -- see TRIGGERS_AND_PLUGINS.md part three.** A chat that
+answers questions ABOUT ELYSIUM rather than about a deployment's data.
+
+Precedent is AIP Assist, and the security property is the whole
+design: Palantir state it "does not access your data". No MAC, no
+submission criteria, no audit of data access, no per-recipient
+evaluation.
+
+**A DIFFERENT SUB-APP, NOT A MODE OF QUERY**, because a different
+threat model one wrong branch away from leaking is not a mode.
+
+Context without data: knowing which SCREEN a user is on, never which
+object. A deployment may register its own runbooks as additional
+content, as Foundry allows custom content sources.
+
+**IT MATTERS MORE THAN IT LOOKS.** Elysium's operational surface is
+scripts needing a terminal and knowledge of when to use them. An
+assistant that can answer "the mirror is stale, what do I do" is the
+difference between a product an administrator can run and one they
+need us for.
+
 ### 3.3 Schema migrations
 
 `CREATE TABLE IF NOT EXISTS` plus hand-written migration functions.

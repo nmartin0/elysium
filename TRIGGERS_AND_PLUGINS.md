@@ -197,6 +197,95 @@ isolation we do not have.
 administrator, and documented as such. Sandboxing is a later decision
 with real options (out-of-process, WASM) and real costs.
 
+## A PLUGIN'S DATA SHOULD BE DISCUSSABLE WITH THE AGENT
+
+The natural next question: can a third-party sub-app's data be talked
+about in Query, not just rendered?
+
+**YES, AND THE CONSTRAINT ABOVE IS WHAT MAKES IT FREE.** A plugin that
+declares object types, actions and functions is already in the
+ontology, and the agent's world IS the ontology. Nothing further is
+needed: its objects are searchable, its fields readable under MAC, its
+actions proposable through the approvals queue.
+
+**FOUNDRY REACHED THE SAME PLACE.** Their chatbots take "context from
+the Ontology or tools such as functions", and "can be published as
+Functions, which allows them to be used anywhere in the platform where
+Functions can be executed" -- so a chatbot is not a special kind of
+thing, it is a function. A plugin contributing conversational
+behaviour is a plugin contributing a function.
+
+That is the same conclusion reached here from the security side, which
+is a good sign: the constraint that keeps plugins safe is also the one
+that makes them powerful.
+
+---
+
+# Part three: a help assistant, separate from Query
+
+**What it is**: a chat that answers questions ABOUT ELYSIUM -- how to
+use it, how to administer it, how it is built -- rather than about a
+deployment's data.
+
+**PRECEDENT: AIP Assist**, "an LLM-powered support tool designed to
+help users navigate, understand, and generate value with the Palantir
+platform". It has modes: Platform Documentation Assist for the docs,
+Developer Assist for APIs and examples, and user-built chatbots.
+
+## THE SECURITY PROPERTY IS THE WHOLE DESIGN
+
+Palantir state it plainly: AIP Assist **"does not access your data"**.
+
+That single sentence is what makes this a small feature rather than a
+second Query. A help assistant needs:
+
+- no MAC evaluation, because it reads no objects
+- no submission criteria, because it proposes no writes
+- no audit of data access, because there is none
+- no per-recipient evaluation, because every user may see the same
+  documentation
+
+**It is a different product with a different threat model, and it
+should be a different sub-app** -- not a mode of Query, where the
+distinction would be one wrong branch away from leaking.
+
+## WHAT IT WOULD READ
+
+Generic, non-deployment-specific Elysium documentation: the user
+manual, the administration manual, the architecture notes. Everything
+in this repository's own documents is already written in that register.
+
+**AND A DEPLOYMENT SHOULD BE ABLE TO ADD ITS OWN.** Foundry allows
+"custom content sources" -- an organisation's own markdown registered
+into the same assistant. For Elysium that would be a deployment's
+runbooks and internal conventions, which is exactly the material a new
+user asks about and which no generic manual can contain.
+
+That is a content-source registry, not a code change, and it fits the
+`deployment/etc` pattern already used for everything else a deployment
+declares.
+
+## CONTEXT WITHOUT DATA
+
+AIP Assist is "aware of what Foundry application you are in". The
+equivalent: knowing a user is on the Approvals screen so "how do I
+reject this" answers about approvals rather than in general.
+
+**That is navigation state, not data.** Passing the current route is
+safe in a way passing the current object would not be, and the
+distinction is worth writing into the interface rather than trusting.
+
+## WHY IT MATTERS MORE THAN IT LOOKS
+
+Elysium's operational surface is scripts. check_mirror,
+repair_catalog, run_sync, measure_prompts, create_e2e_users -- each
+needs a terminal on the host and knowledge of when to use it. A help
+assistant that can answer "the mirror is stale, what do I do" is the
+difference between a product an administrator can run and one they
+need us for.
+
+---
+
 ## What would make this real
 
 1. Freeze `shell-api` as a versioned contract; enumerate what it
