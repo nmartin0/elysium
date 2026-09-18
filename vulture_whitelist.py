@@ -270,3 +270,9 @@ decided_at
 tasks_total
 tasks_you_may_decide
 tasks_approved
+
+# MirrorStateResponse / admin_mirror_route (api/routes.py) -- a FastAPI
+# route and its response model, reached by decorator and serialised by
+# field name, like every other endpoint in that file.
+reading_from_mirror
+admin_mirror_route

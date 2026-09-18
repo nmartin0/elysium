@@ -120,6 +120,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from pyiceberg.catalog.sql import SqlCatalog
 
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
@@ -137,6 +138,9 @@ from core.auth.auth_cookies import (
 from core.filters import FieldFilter, as_equality_conditions, parse_filters
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
+from core.mirror.iceberg_sync import IcebergMirrorSync
+from core.mirror.integrity import _row_count, check_mirror
+from core.mirror.sync_targets import resolve_sync_targets
 from core.ontology.schema import get_field_column, sort_key
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import MAX_BULK_OBJECTS, WriteMediator
@@ -1100,6 +1104,99 @@ class ConfigHistoryResponse(BaseModel):
 
     current_generation: int
     generations: list[GenerationSummary]
+
+
+class MirrorTableState(BaseModel):
+    silo: str
+    table: str
+    last_synced_at: str | None
+    silver_rows: int | None
+    bronze_rows: int | None
+
+
+class MirrorStateResponse(BaseModel):
+    reading_from_mirror: bool
+    tables: list[MirrorTableState]
+    problems: list[str]
+
+
+@router.get("/admin/mirror", dependencies=[Depends(_no_store)],
+            response_model=MirrorStateResponse)
+def admin_mirror_route(request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What the mirror holds, table by table.
+
+    WE BUILT AN INTEGRITY GUARANTEE AND LEFT IT INVISIBLE. A value that
+    cannot be coerced fails the whole table's sync, silver keeps its
+    previous snapshot, and bronze accepts the bad value so it can be
+    diagnosed. Proven, and correct. The only trace is stderr on
+    whatever ran the sync -- so a user sees data three days stale and
+    an administrator cannot find out why from inside the product.
+
+    That mattered less when the mirror was opt-in. It is now the read
+    path.
+
+    BRONZE AND SILVER COUNTS SIDE BY SIDE, because their DIVERGENCE is
+    the drift state: bronze took the new rows, silver refused to
+    interpret them, and the gap between the two numbers is what a
+    refused sync looks like from outside.
+
+    GATED ON manage:deployment, the same grant that can reload. Row
+    counts describe the deployment's plumbing rather than its data --
+    but a count is still a fact about how much there is, and an
+    ordinary user has no reason to see it.
+
+    NO COUNTS FROM THE SOURCE. Answering "how far behind is the
+    mirror" would mean reading the customer's database on every page
+    load, which is what the mirror exists to avoid.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(
+            status_code=403,
+            detail="You need manage:deployment to see the mirror's state.",
+        )
+
+    if not generation.config.read_from_mirror:
+        # NOT AN ERROR. A deployment reading live has no mirror state
+        # to report, and saying so is more useful than an empty list
+        # that looks like a broken sync.
+        return {"reading_from_mirror": False, "tables": [], "problems": []}
+
+    # BUILT HERE RATHER THAN HELD ON THE GENERATION, because this is
+    # the only reader of it and a catalog pinned at load would go stale
+    # the moment a sync ran -- which is precisely the state this
+    # endpoint exists to report.
+    mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    catalog = SqlCatalog(
+        "elysium_mirror",
+        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
+        warehouse=f"file://{mirror_dir / 'warehouse'}",
+    )
+    sync = IcebergMirrorSync(mirror_dir, {})
+    tables = []
+    for target in resolve_sync_targets({"object_types": generation.config.schema}):
+        synced_at = sync.last_synced_at(target.silo_name, target.table_name)
+        tables.append({
+            "silo": target.silo_name,
+            "table": target.table_name,
+            "last_synced_at": synced_at.isoformat() if synced_at else None,
+            "silver_rows": _row_count(catalog, f"{target.silo_name}.{target.table_name}"),
+            "bronze_rows": _row_count(
+                catalog, f"bronze_{target.silo_name}.{target.table_name}",
+            ),
+        })
+
+    report = check_mirror(
+        catalog, generation.config.schema,
+        mirror_dir / "warehouse",
+    )
+    return {
+        "reading_from_mirror": True,
+        "tables": tables,
+        "problems": list(report.problems),
+    }
 
 
 @router.get("/admin/metrics", dependencies=[Depends(_no_store)],

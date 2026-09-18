@@ -574,6 +574,32 @@ export async function matchingIds(objectType: string, queryText: string, conditi
  * which routes are used and how often, which is more than an ordinary
  * user should see about everyone else.
  */
+/** One table's state in the mirror. */
+export interface MirrorTableState {
+  silo: string
+  table: string
+  last_synced_at: string | null
+  /** Rows in the TYPED layer, which is what Elysium reads. */
+  silver_rows: number | null
+  /** Rows in the RAW layer, which takes whatever the source gave.
+   *
+   *  A DIVERGENCE FROM silver_rows IS THE DRIFT STATE: bronze took the
+   *  new rows, silver refused to interpret them, and the gap is what a
+   *  refused sync looks like from outside. */
+  bronze_rows: number | null
+}
+
+export interface MirrorState {
+  reading_from_mirror: boolean
+  tables: MirrorTableState[]
+  problems: string[]
+}
+
+export async function getMirrorState(): Promise<MirrorState> {
+  const response = await apiFetchOrThrow('/admin/mirror')
+  return response.json() as Promise<MirrorState>
+}
+
 export async function getMetrics(windowSeconds?: number): Promise<unknown> {
   const params = windowSeconds === undefined ? '' : `?window_seconds=${windowSeconds}`
   const response = await apiFetchOrThrow(`/admin/metrics${params}`)

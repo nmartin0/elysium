@@ -276,7 +276,7 @@ are only reflected as part of the data change events themselves". So
 polling the catalog at sync time is not a shortcut; it is what the
 established tool has to do too.
 
-### 0.5.4 A mirror administration surface
+### 0.5.4 ~~A mirror administration surface~~ FIRST HALF DONE
 
 **WE BUILT AN INTEGRITY GUARANTEE AND LEFT IT INVISIBLE.** Proven
 behaviour: a value that cannot be coerced fails the whole table's
@@ -299,10 +299,21 @@ the mirror. What it should show:
 - Sync now, so recovery does not need shell access.
 - `check_mirror` and `repair_catalog` results.
 
+**BUILT:** Admin -> Mirror. Per table: last synced, rows SERVED
+(silver) and rows FETCHED (bronze), with the divergence NAMED rather
+than left as two numbers to compare -- "fetched but not served, the
+last sync was refused". Integrity problems from check_mirror above the
+table. A live deployment says so rather than showing a blank page.
+
+**STILL OPEN:** snapshot history and roll-back, and a Sync now button.
+Both need endpoints that DO something rather than report, which is a
+larger security question than reading.
+
 **THE GENERAL POINT:** operational tooling here is all scripts
 requiring a terminal on the host -- check_mirror, repair_catalog,
 run_sync, measure_prompts. For a commercial product that is a support
-burden, and the workaround audit should have caught it.
+burden, and the workaround audit should have caught it. This closes
+the reading half of check_mirror only.
 
 ### 0.5.5 ~~Report every drifted column at once~~ IT ALREADY DID
 
