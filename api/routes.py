@@ -379,6 +379,12 @@ class MatchingIdsResponse(BaseModel):
 class SearchResponse(BaseModel):
     results: list[dict[str, Any]]
     total_matches: int
+    # THE ID THAT MAKES THE TRACE REACHABLE. Every access decision made
+    # while serving this request carries it, and
+    # GET /requests/{id}/trace reads them back -- but only if the
+    # caller knows the id. Query already returns its own; Browse
+    # recorded a trace nobody could ask for.
+    request_id: str | None = None
     # Present only when there are more results -- see the route.
     next_page_token: str | None = None
 
@@ -386,6 +392,9 @@ class SearchResponse(BaseModel):
 class ObjectDetailResponse(BaseModel):
     id: str
     fields: dict[str, Any]
+    # See SearchResponse: the trace is recorded either way, and this is
+    # what lets a caller ask for it.
+    request_id: str | None = None
 
 
 class ConfirmWriteResponse(BaseModel):
@@ -2078,6 +2087,7 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     return {
         "results": results,
         "total_matches": len(matching_ids),
+        "request_id": request_context.request_id,
         # Absent, not empty, when there is no further page -- Foundry's
         # own contract is that "the presence of the nextPageToken field
         # indicates that there are more results."
@@ -2124,6 +2134,9 @@ def get_object_detail_route(object_type: str, object_id: str, request: Request,
     visible = mediator.visible_schema(current_user)
     type_def = visible.get(object_type)
     if type_def is None:
+        # NO request_id HERE, deliberately: this returns before any
+        # read happens, so there is no trace to ask for. An id
+        # promising an empty trace is worse than no id.
         return {"id": object_id, "fields": {}}
 
     field_names = list(type_def["fields"].keys())
@@ -2138,7 +2151,7 @@ def get_object_detail_route(object_type: str, object_id: str, request: Request,
         current_user, object_type, object_id, field_names,
         context=request_context,
     )
-    return {"id": object_id, "fields": fields}
+    return {"id": object_id, "fields": fields, "request_id": request_context.request_id}
 
 
 class ProposeActionRequest(BaseModel):

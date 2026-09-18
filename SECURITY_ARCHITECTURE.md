@@ -133,9 +133,18 @@ object-reading call sites wrote untracked lines.
 `get_object` also dropped it: a per-field loop around `get_field`,
 which accepted a context all along.
 
-Search and object-detail now carry one. **STILL OPEN:** the other
-object-reading routes, and a way to ASK -- `entries_for_request`
-exists with no endpoint in front of it.
+Search and object-detail now carry one, AND RETURN IT, which is what
+makes the trace reachable.
+
+**THE WAY TO ASK ALSO ALREADY EXISTED:** `GET /requests/{id}/trace`,
+scoped to the caller's own requests. Query returned its id and its UI
+showed the trace; Browse recorded one nobody could ask for, which is
+the same as absent for anyone trying to use it.
+
+**STILL OPEN:** the remaining object-reading routes, and ADMIN-SIDE
+tracing. The endpoint filters to the caller's own user_id -- correct
+for transparency, useless for debugging someone else's request. Those
+are two different needs and only one is served.
 
 **SMALLEST, AND IT MAKES EVERYTHING BELOW OBSERVABLE.**
 `check_access()` already sees every object access and already writes an

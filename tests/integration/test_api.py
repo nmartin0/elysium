@@ -678,7 +678,17 @@ def test_search_objects_blocks_cross_region_mac(client):
     response = client.get("/api/objects/Customer/search", params={"q": "ada"})
 
     assert response.status_code == 200
-    assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
+    body = response.json()
+    # THE RESULT FIELDS EXACTLY, and request_id separately. These
+    # searches return nothing, and an empty result set is a real answer
+    # that must not quietly gain rows -- so the shape stays pinned.
+    # request_id is a correlation handle rather than a result, and it
+    # is checked for PRESENCE because its value is a fresh uuid every
+    # time.
+    assert {k: v for k, v in body.items() if k != "request_id"} == {
+        "results": [], "total_matches": 0, "next_page_token": None,
+    }
+    assert "request_id" in body
 
 
 def test_search_objects_no_match_returns_empty_results(client):
@@ -688,7 +698,17 @@ def test_search_objects_no_match_returns_empty_results(client):
     response = client.get("/api/objects/Customer/search", params={"q": "zzz_nonexistent"})
 
     assert response.status_code == 200
-    assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
+    body = response.json()
+    # THE RESULT FIELDS EXACTLY, and request_id separately. These
+    # searches return nothing, and an empty result set is a real answer
+    # that must not quietly gain rows -- so the shape stays pinned.
+    # request_id is a correlation handle rather than a result, and it
+    # is checked for PRESENCE because its value is a fresh uuid every
+    # time.
+    assert {k: v for k, v in body.items() if k != "request_id"} == {
+        "results": [], "total_matches": 0, "next_page_token": None,
+    }
+    assert "request_id" in body
 
 
 def test_search_objects_unknown_type_returns_empty_results_not_error(client):
@@ -698,7 +718,17 @@ def test_search_objects_unknown_type_returns_empty_results_not_error(client):
     response = client.get("/api/objects/TotallyFakeType/search", params={"q": "ada"})
 
     assert response.status_code == 200
-    assert response.json() == {"results": [], "total_matches": 0, "next_page_token": None}
+    body = response.json()
+    # THE RESULT FIELDS EXACTLY, and request_id separately. These
+    # searches return nothing, and an empty result set is a real answer
+    # that must not quietly gain rows -- so the shape stays pinned.
+    # request_id is a correlation handle rather than a result, and it
+    # is checked for PRESENCE because its value is a fresh uuid every
+    # time.
+    assert {k: v for k, v in body.items() if k != "request_id"} == {
+        "results": [], "total_matches": 0, "next_page_token": None,
+    }
+    assert "request_id" in body
 
 
 def test_object_detail_without_token_is_rejected(client):
@@ -762,7 +792,10 @@ def test_object_detail_unknown_type_returns_200_with_empty_fields(client):
     response = client.get("/api/objects/TotallyFakeType/whatever")
 
     assert response.status_code == 200
-    assert response.json() == {"id": "whatever", "fields": {}}
+    # request_id IS None HERE, deliberately: this returns before any
+    # read happens, so there is no trace to ask for. An id promising an
+    # empty trace is worse than no id.
+    assert response.json() == {"id": "whatever", "fields": {}, "request_id": None}
 
 
 def test_object_detail_and_search_routes_do_not_collide(client):
