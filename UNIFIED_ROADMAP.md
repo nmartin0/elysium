@@ -624,6 +624,28 @@ across a version boundary.
 
 ---
 
+## Phase 3.5 — Non-user-derived constraints
+
+**ASSESSED, NOT BUILT -- see SECURITY_ARCHITECTURE.md.**
+
+**ONE REAL HOLE.** Every MAC check compares an object to the USER's
+security value; nothing compares two objects to each other. So an
+analyst cleared for two partitions can run an action that reads one
+and writes the other, and data crosses a boundary with every check
+passing.
+
+That is Bell-LaPadula's \*-property -- no write down. Elysium enforces
+its partner (no read up) and not it, and neither term appears in the
+codebase: not a decision, an omission.
+
+**BUILD ORDER:** a request-scoped trace id first (smallest, and it
+makes the rest observable); then the write-down check; then
+intersection for action authority; then the grant algebra, once there
+is something worth specifying.
+
+**WHAT NOT TO BUILD:** actions carrying authority their caller lacks,
+which is a confused deputy. Attenuation only.
+
 ## Deliberately not doing
 
 Recorded so each is a decision rather than an omission.

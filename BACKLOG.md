@@ -610,6 +610,17 @@ ADDING one is a decision someone makes deliberately rather than a
 change that silently outranks a vendor component. Five are currently
 allowed, each reviewed.
 
+## 0d3. Non-user-derived constraints, assessed September 18
+
+See SECURITY_ARCHITECTURE.md. One real hole: every MAC check compares
+an object to the USER'''s value and nothing compares two objects, so
+data can cross a partition boundary with every check passing --
+Bell-LaPadula'''s \*-property, absent and unnoticed.
+
+Build order: trace id, write-down check, intersection, grant algebra.
+Attenuation only; an action must never carry authority its caller
+lacks.
+
 ## 0d2. The mirror, decided September 18
 
 Recorded here because BACKLOG.md is the ONE list; the reasoning and

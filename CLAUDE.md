@@ -19,18 +19,22 @@ that have gone wrong repeatedly.
    planning documents hold ~8,500 lines between them; each is right
    about its own area and none can say what comes first. This one is
    the ordering, by dependency, and points at the others for detail.
-5. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
+5. **`SECURITY_ARCHITECTURE.md`** — whether objects and actions should
+   be gated like users. Records one REAL HOLE (Elysium enforces
+   no-read-up and not no-write-down), what would be dangerous, and
+   a build order. Nothing in it is built.
+6. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
    before building, because both touch the security model and both
    are hard to retrofit. Neither is built.
-6. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
+7. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
    precedent behind each part, and which parts wait for a model.
-7. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
+8. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
    besides data, and why the ontology is a COPY there rather than a
    home. Corrects an earlier conclusion in BACKLOG.md.
-8. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
+9. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
-9. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
+10. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
    `IDEAS.md` — the REASONING, not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written
    so a fresh session starts with the decisions made, not
