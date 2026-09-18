@@ -77,6 +77,8 @@ question" discipline that originally deferred THIS fix in the first
 place.
 """
 
+import zoneinfo
+
 from core.ontology.field_types import FIELD_DATA_TYPES
 
 
@@ -297,6 +299,62 @@ def _validate_field_data_types(object_type_name: str, type_def: dict) -> None:
                 f"Object type {object_type_name!r}: field {field_name!r} is a link and must not "
                 f"declare its own data_type."
             )
+
+        _validate_field_timezone(object_type_name, field_name, field_info, declared)
+
+
+def _validate_field_timezone(object_type_name: str, field_name: str,
+                              field_info: dict, declared: str) -> None:
+    """Checks the optional `timezone` a field may declare.
+
+    WHAT IT IS FOR. A source that hands back '2026-03-12 14:30:00' has
+    given a wall-clock reading in an unstated place -- not an instant.
+    Assuming UTC is a guess, and assuming the server's zone is worse,
+    because it makes the same data mean different things on two
+    machines. A field whose source zone is KNOWN can say so, and the
+    reading is promoted to the instant it always was.
+
+    DECLARED, NEVER INFERRED. Someone had to write the zone down, which
+    is the whole difference between knowing and assuming.
+
+    ONLY ON `timestamptz`, because it answers a question only that type
+    asks. A `date` has no time to place; a `timestamp` is deliberately
+    naive and promoting it would defeat the point of declaring it.
+    Silently ignoring the key on those would let an author believe
+    their dates were being converted.
+
+    AN IANA NAME, NOT AN OFFSET. '-05:00' is wrong for half the year in
+    any zone that observes daylight saving; 'America/New_York' is
+    right in both halves.
+    """
+    timezone_name = field_info.get("timezone")
+    if timezone_name is None:
+        return
+
+    if declared != "timestamptz":
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares a "
+            f"`timezone` but its data_type is {declared!r}. A timezone places a "
+            f"naive reading on the clock, which only `timestamptz` needs."
+        )
+
+    if not isinstance(timezone_name, str):
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares a "
+            f"`timezone` that is not a string: {timezone_name!r}."
+        )
+
+    try:
+        zoneinfo.ZoneInfo(timezone_name)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+        # AT CONFIG LOAD, not at the first row that needs it. A typo in
+        # a zone name would otherwise surface during a sync, hours
+        # later, as a drift report about data that is perfectly fine.
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares "
+            f"timezone {timezone_name!r}, which is not a known IANA zone. "
+            f"Use a name like 'America/New_York', not an offset like '-05:00'."
+        ) from None
 
 
 def _validate_title_field(object_type_name: str, type_def: dict) -> None:

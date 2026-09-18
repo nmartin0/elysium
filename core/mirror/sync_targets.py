@@ -196,6 +196,15 @@ def _targets_for_type(type_def: dict):
         declared = field_config.get("data_type")
         if declared is not None:
             types_by_storage[storage_key][column] = declared
+            # THE SOURCE ZONE TRAVELS WITH THE TYPE, because it is part
+            # of what the type means: a `timestamptz` whose source is
+            # naive cannot be read without it. Carried on the same
+            # `data_type` string rather than a second dict, so nothing
+            # downstream can have one without the other -- validation
+            # has already established it appears only on timestamptz.
+            timezone_name = field_config.get("timezone")
+            if timezone_name is not None:
+                types_by_storage[storage_key][column] = f"{declared}@{timezone_name}"
 
     # The MAC security field, when it names a real field on this type
     # rather than a chain through a link. Always required -- see this

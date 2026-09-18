@@ -118,6 +118,25 @@ FIELD_DATA_TYPES = {
 DEFAULT_FIELD_DATA_TYPE = "string"
 
 
+def split_declared_type(declared: str) -> tuple[str, str | None]:
+    """A declared type and its optional source zone.
+
+    THE TWO TRAVEL TOGETHER, encoded as "timestamptz@America/New_York",
+    because a `timestamptz` whose source is naive cannot be read
+    without its zone -- the zone is part of what the type MEANS, not a
+    setting beside it. One string cannot arrive without the other or be
+    reunited with the wrong one.
+
+    ONE PLACE THAT KNOWS THE ENCODING. A first version split it inline
+    where the coercer needed it, and left `arrow_type_for` to receive
+    the whole string and refuse it -- which broke the sync's schema
+    builder rather than the coercion, several files away from the
+    change. Both callers now come here.
+    """
+    data_type, _, zone = declared.partition("@")
+    return data_type, zone or None
+
+
 def arrow_type_for(data_type: str) -> pa.DataType:
     """The real Arrow type for a declared `data_type`. Raises on an
     unknown one rather than silently falling back to string -- a typo

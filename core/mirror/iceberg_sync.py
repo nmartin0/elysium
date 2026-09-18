@@ -62,7 +62,11 @@ from core.mirror.drift_policy import (
 )
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.transform import describe_drift, transform_rows
-from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for
+from core.ontology.field_types import (
+    DEFAULT_FIELD_DATA_TYPE,
+    arrow_type_for,
+    split_declared_type,
+)
 from core.ontology.interface import ExternalReadAdapter
 
 logger = logging.getLogger(__name__)
@@ -778,5 +782,12 @@ class IcebergMirrorSync(MirrorSync):
             column: column_types.get(column, DEFAULT_FIELD_DATA_TYPE) for column in columns
         }
         data = {column: [row[column] for row in rows] for column in columns}
-        schema = pa.schema([(column, arrow_type_for(resolved[column])) for column in columns])
+        # THE ZONE IS NOT PART OF THE ARROW TYPE. `timestamptz` already
+        # carries tz=UTC; the declared source zone says how to READ a
+        # naive value, not how to STORE it, and everything is stored
+        # UTC by then.
+        schema = pa.schema([
+            (column, arrow_type_for(split_declared_type(resolved[column])[0]))
+            for column in columns
+        ])
         return pa.table(data, schema=schema)
