@@ -122,15 +122,30 @@ an OOM on the first real query.
 this makes the failure worse, not better, because real databases hold
 real volumes.
 
-### 0.3 A bound on the security cache
+### 0.3 ~~A bound on the security cache~~ THE ENTRY WAS WRONG
 
-`_security_value_cache` and `_security_link_cache` are per-generation,
-cleared only at the start of a bulk prefetch, and otherwise accumulate
-one entry per object ever security-checked. One mediator lives until a
-configuration reload.
+It said the caches "accumulate one entry per object ever
+security-checked" and that a long-running deployment "grows memory
+monotonically".
 
-A long-running deployment reading many distinct objects grows memory
-monotonically. Invisible in testing, fatal in production.
+**MEASURED, AND THEY DO NOT.** Twenty-one identical searches leave the
+cache exactly as one search does, and a search of a different type
+REPLACES its contents. Both writes live inside
+`_prefetch_security_values`, which CLEARS FIRST -- the words "cleared
+only at the start of a bulk prefetch" were in the entry, and I read
+them as a weakness rather than as the bound.
+
+**SO THE BOUND IS ONE SEARCH'S CANDIDATE SET**, which 0.2 capped.
+Verified against a patched ceiling: 2 gives 3 entries, 1 gives 2.
+
+**PINNED ANYWAY, because the bound is INCIDENTAL.** Nothing declared
+it, and a write added outside the prefetch would restore the growth
+the entry feared with no test objecting. A source-level tripwire now
+asserts every write happens where the clearing does.
+
+**THE SECOND ROADMAP ENTRY THIS WEEK TO BE WRONG ON INSPECTION**, and
+both were wrong in the same direction: describing a defect that
+reading the code carefully would have ruled out.
 
 **Blocks:** any deployment that stays up for a week.
 
