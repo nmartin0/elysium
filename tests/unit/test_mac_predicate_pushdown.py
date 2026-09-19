@@ -42,9 +42,9 @@ def _conditions_reaching_the_adapter(generation, object_type, user):
     seen = []
     real = MirrorReadAdapter.find_ids
 
-    def spy(self, name, conditions, type_config):
+    def spy(self, name, conditions, type_config, limit=None):
         seen.append([(c.field, c.operator, c.value) for c in conditions])
-        return real(self, name, conditions, type_config)
+        return real(self, name, conditions, type_config, limit)
 
     with patch.object(MirrorReadAdapter, "find_ids", spy):
         generation.mediator.search_object(user, object_type, [])

@@ -106,7 +106,8 @@ class MirrorReadAdapter(ExternalReadAdapter):
     # SUBSET of the right rows and look like it worked.
     pushable_operators = frozenset({"equals", "in", "not_in", "range", "date_range"})
 
-    def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
+    def find_ids(self, object_type: str, conditions: list, type_config: dict,
+                 limit: int | None = None) -> list[Any]:
         table_name = type_config["storage"]["table"]
         id_column = type_config["storage"]["id_column"]
 
@@ -114,6 +115,7 @@ class MirrorReadAdapter(ExternalReadAdapter):
             table_name,
             selected_fields=(id_column,),
             row_filter=self._conditions_to_filter(conditions),
+            limit=limit,
         )
         if arrow is None:
             return []
@@ -271,7 +273,8 @@ class MirrorReadAdapter(ExternalReadAdapter):
             return []
         return arrow.column(target_id_column).to_pylist()
 
-    def _scan(self, table_name: str, selected_fields: tuple[str, ...], row_filter=None):
+    def _scan(self, table_name: str, selected_fields: tuple[str, ...], row_filter=None,
+              limit: int | None = None):
         try:
             table = self._catalog.load_table(f"{self.silo_name}.{table_name}")
         except (NoSuchTableError, NoSuchNamespaceError):
@@ -296,6 +299,12 @@ class MirrorReadAdapter(ExternalReadAdapter):
         # reading its current state is better than reading nothing.
         snapshot_id = self._snapshot_ids.get(table_name)
         scan_kwargs: dict[str, Any] = {"selected_fields": selected_fields}
+        if limit is not None and limit > 0:
+            # PYICEBERG TAKES A LIMIT NATIVELY, so this stops rows
+            # being read rather than trimming them afterwards -- which
+            # is the whole point, and would not have been true if the
+            # cap had to be applied to a materialised table.
+            scan_kwargs["limit"] = limit
         if row_filter is not None:
             scan_kwargs["row_filter"] = row_filter
         if snapshot_id is not None:

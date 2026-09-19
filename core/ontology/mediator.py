@@ -162,6 +162,27 @@ class ReauthorizedConditions:
 # ontology is not one.
 logger = logging.getLogger(__name__)
 
+# HOW MANY ROWS A SINGLE SEARCH MAY READ.
+#
+# MEASURED, on the read path this bounds: 200,000 rows cost 0.70s and
+# 66MB, which extrapolates to roughly 35 seconds and 3.3GB for ten
+# million -- per request, before any filtering. Unbounded is an OOM on
+# the first real table.
+#
+# 10,000 IS A JUDGEMENT, not a measurement. It is far above any page a
+# user reads (the API's own MAX_PAGE_SIZE is 500) and far below the
+# point where the fetch hurts: at the measured rate it costs about
+# 35ms and 3MB.
+#
+# WHAT IT MEANS DEPENDS ON WHETHER MAC WAS PUSHED. With a `field:`
+# security declaration the database returns only rows the user may
+# see, so this caps the ANSWER. With `via_field:` it caps a SCAN whose
+# survivors are then filtered, so a truncated result says "we stopped
+# looking" and NOT "there is more for you" -- a distinction reported
+# in rows SCANNED rather than rows matched, which is how governed
+# query engines report exactly this.
+MAX_SEARCH_SCAN = 10_000
+
 
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
@@ -1047,9 +1068,22 @@ class DataMediator:
                             value=user_record.security_value),
             ]
 
+        # ONE MORE THAN THE CEILING, deliberately: reading
+        # MAX_SEARCH_SCAN + 1 is how "we stopped looking" is
+        # distinguished from "that was all of them" without a second
+        # query. Getting exactly the ceiling back is ambiguous.
         candidate_ids = self._find_ids_with_fallback(
-            adapter, object_type, translated, resolved_type_config
+            adapter, object_type, translated, resolved_type_config,
+            MAX_SEARCH_SCAN + 1,
         )
+        scan_truncated = len(candidate_ids) > MAX_SEARCH_SCAN
+        if scan_truncated:
+            candidate_ids = candidate_ids[:MAX_SEARCH_SCAN]
+            logger.warning(
+                "%s: a search read the %d-row ceiling and stopped. "
+                "Results are incomplete; narrow the filters.",
+                object_type, MAX_SEARCH_SCAN,
+            )
         candidate_ids = self._reconcile_search_with_pending_writes(
             object_type, conditions, candidate_ids, adapter, resolved_type_config
         )
@@ -1345,7 +1379,8 @@ class DataMediator:
         return translated
 
     def _find_ids_with_fallback(self, adapter, object_type: str, conditions: list,
-                                 resolved_type_config: dict) -> list:
+                                 resolved_type_config: dict,
+                                 limit: int | None = None) -> list:
         """Pushes what the storage declared it can express; applies the
         rest here.
 
@@ -1371,7 +1406,7 @@ class DataMediator:
         pushed = [c for c in conditions if c.operator in pushable]
         remaining = [c for c in conditions if c.operator not in pushable]
 
-        candidate_ids = adapter.find_ids(object_type, pushed, resolved_type_config)
+        candidate_ids = adapter.find_ids(object_type, pushed, resolved_type_config, limit)
         if not remaining:
             return candidate_ids
         return self._apply_conditions_in_python(

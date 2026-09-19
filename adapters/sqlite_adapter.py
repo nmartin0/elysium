@@ -152,6 +152,23 @@ def _clause_for(condition) -> tuple[str, list]:
     raise UnsupportedFilter(f"SQLite adapter cannot express {operator!r}")
 
 
+def _limit_clause(limit: int | None) -> str:
+    """` LIMIT n`, or nothing at all.
+
+    INTERPOLATED RATHER THAN BOUND, which is safe here and nowhere
+    else: SQLite will not accept a placeholder in LIMIT, and the value
+    is an int the adapter has just checked -- never a string, never
+    user text. Every other value in this module is bound.
+
+    A NON-POSITIVE LIMIT IS NO LIMIT. Asking for at most zero rows is
+    almost always a caller bug rather than an intention, and returning
+    nothing would look like an empty table.
+    """
+    if limit is None or not isinstance(limit, int) or limit <= 0:
+        return ""
+    return f" LIMIT {int(limit)}"
+
+
 def _bounded_clause(field: str, low, high) -> tuple[str, list]:
     # Both absent would emit `field <= ?` bound to None, which matches
     # NOTHING and reports no error -- the hardest kind of wrong answer
@@ -224,7 +241,8 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         {"equals", "in", "not_in", "range", "date_range", "contains"}
     )
 
-    def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
+    def find_ids(self, object_type: str, conditions: list, type_config: dict,
+                 limit: int | None = None) -> list[Any]:
         table = type_config["storage"]["table"]
         id_column = type_config["storage"]["id_column"]
 
@@ -246,12 +264,17 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             if where_clause:
                 rows = _run_query(
                     conn,
-                    f"SELECT {id_column} FROM {table} WHERE {where_clause}",
+                    f"SELECT {id_column} FROM {table} WHERE {where_clause}"
+                    + _limit_clause(limit),
                     tuple(values),
                     db_path=str(self.db_path),
                 )
             else:
-                rows = _run_query(conn, f"SELECT {id_column} FROM {table}", db_path=str(self.db_path))
+                rows = _run_query(
+                    conn,
+                    f"SELECT {id_column} FROM {table}" + _limit_clause(limit),
+                    db_path=str(self.db_path),
+                )
         return [row[id_column] for row in rows]
 
     def find_ids_matching_text(self, object_type: str, columns: list[str], query_text: str,

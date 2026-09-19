@@ -371,7 +371,10 @@ def test_only_unpushable_conditions_come_back_to_python(tmp_path):
     storage = NoSubstring()
     received: list[list] = []
     real_find = real.find_ids
-    storage.find_ids = lambda t, conds, cfg: (
+    # limit accepted and IGNORED, which the interface explicitly
+    # permits: an adapter that ignores it is correct but expensive,
+    # because the caller trims anyway.
+    storage.find_ids = lambda t, conds, cfg, limit=None: (
         received.append(conds), real_find(t, conds, cfg)
     )[1]
 

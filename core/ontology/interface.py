@@ -115,9 +115,25 @@ class ExternalReadAdapter(ReadAdapter):
     pushable_operators: frozenset[str]
 
     @abstractmethod
-    def find_ids(self, object_type: str, conditions: list, type_config: dict) -> list[Any]:
+    def find_ids(self, object_type: str, conditions: list, type_config: dict,
+                 limit: int | None = None) -> list[Any]:
         """Matching IDs. NOT security-filtered -- DataMediator filters
         after calling this.
+
+        `limit` CAPS WHAT IS READ, not what is returned. An adapter
+        that ignores it is CORRECT but expensive: the caller trims
+        anyway, so the contract is about cost rather than answers.
+
+        WHAT THE CAP MEANS DEPENDS ON THE CALLER. Where the MAC filter
+        was pushed into `conditions`, the rows read are already the
+        rows the user may see and a limit is exact. Where it could not
+        be (a `via_field:` security declaration), the cap bounds a
+        SCAN whose survivors are filtered afterwards -- so it must be
+        reported as rows scanned rather than rows matched, which is
+        how governed query engines report the same thing.
+
+        None means no cap, which is what every caller that wants a
+        whole small table should pass.
 
         `conditions` is a list of FieldFilter (see
         core/ontology/filters.py), ANDed together, with `field` already

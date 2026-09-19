@@ -82,10 +82,22 @@ known hazard rather than a local limitation: the row-level-security
 field guidance is "keep predicates join-free", and Databricks'
 SecureView barrier forces full scans for the same reason.
 
-**STILL OPEN:** the LIMIT itself. Where MAC is pushed a limit is
-correct; where it is residual a ceiling is needed, reported in terms
-of rows SCANNED rather than matched -- which is how governed query
-engines report it.
+**AND THE LIMIT IS BUILT.** `find_ids` takes one, SQLite emits
+`LIMIT n`, and pyiceberg takes a limit natively so the mirror stops
+reading rather than trimming. `MAX_SEARCH_SCAN` is 10,000 -- far above
+the API's own MAX_PAGE_SIZE of 500, far below where the fetch hurts.
+
+**MEASURED:** 200,000 rows went from 858ms and 66MB to 49ms and
+3.2MB, on a table twenty times smaller than the one that would have
+exhausted memory.
+
+**ONE MORE THAN THE CEILING IS READ**, which is how "we stopped
+looking" is distinguished from "that was all of them" without a second
+query.
+
+**STILL OPEN:** reporting truncation to the CALLER. The mediator logs
+it; the API response does not carry it, so a user sees a short list
+and no reason.
 
 ### 0.2 (original note)
 
