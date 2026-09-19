@@ -60,6 +60,7 @@ from core.mirror.drift_policy import (
     verdict_for_removed_column,
     verdict_for_type_change,
 )
+from core.mirror.durability import force_table_metadata_to_disk
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.transform import describe_drift, transform_rows
 from core.ontology.field_types import (
@@ -166,6 +167,17 @@ class IcebergMirrorSync(MirrorSync):
         if warehouse is None:
             (mirror_dir / "warehouse").mkdir(exist_ok=True)
             warehouse = f"file://{mirror_dir / 'warehouse'}"
+
+        # THE LOCAL WAREHOUSE DIRECTORY, or None when it is not
+        # local. fsync needs a real path; a warehouse on S3 has no
+        # local file to force and its own durability story, so the
+        # durability step is skipped there rather than pretending
+        # to have run.
+        self._warehouse_path = (
+            Path(warehouse[len("file://"):])
+            if isinstance(warehouse, str) and warehouse.startswith("file://")
+            else None
+        )
 
         self._catalog = SqlCatalog(
             "elysium_mirror",
@@ -382,6 +394,17 @@ class IcebergMirrorSync(MirrorSync):
                 )
             else:
                 table.overwrite(arrow_table)
+                # FORCED TO DISK BEFORE THE POINTER IS TRUSTED.
+                #
+                # pyiceberg writes metadata through an UNSYNCED
+                # path while SQLite fsyncs its own commit, so by
+                # default the pointer is durable and the thing it
+                # points at is not -- exactly backwards. This
+                # deployment hit the result during development: the
+                # disk filled and the catalog afterwards named
+                # metadata file 00008 when only 00007 existed.
+                # scripts/repair_catalog.py was written to recover.
+                self._force_metadata_to_disk(identifier)
 
         # INVARIANT: the committed snapshot holds exactly what was
         # handed to overwrite(). Checked against the CATALOG rather than
@@ -606,6 +629,24 @@ class IcebergMirrorSync(MirrorSync):
             return self._read_source_rows(adapter, table_name, id_column, declared)
 
         return raw_rows
+
+    def _force_metadata_to_disk(self, identifier: str) -> None:
+        """Makes this table's metadata durable, or stops the sync.
+
+        LOCAL FILESYSTEMS ONLY, and it says so rather than
+        pretending. A warehouse on S3 has no local file to fsync
+        and its own durability story; calling this there would be a
+        no-op dressed as a guarantee.
+        """
+        if self._warehouse_path is None:
+            return
+
+        synced = force_table_metadata_to_disk(
+            self._warehouse_path, identifier,
+        )
+        logger.debug(
+            "%s: forced %d metadata file(s) to disk", identifier, synced,
+        )
 
     def _already_current(self, table, arrow_table) -> bool:
         """True when the committed snapshot already holds exactly this.

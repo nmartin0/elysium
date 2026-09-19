@@ -582,7 +582,7 @@ outlived a config change.
 authority re-evaluated at use, meaning checked by the guard that
 exists, with the narrow residual gap recorded.
 
-### 1.2 fsync before the catalog pointer swap
+### 1.2 ~~fsync before the catalog pointer swap~~ DONE
 
 Researched. pyiceberg writes metadata through an unsynced path while
 SQLite fsyncs its own commit — so the POINTER is durable and the thing
