@@ -552,6 +552,11 @@ automation's proposal.
 
 ### 3.1 The plugin API
 
+**DESIGNED UNDER A STRICTER PREMISE -- see
+THIRD_PARTY_EXTENSIONS.md.** Every component untrusted, first-party
+included. Module federation is DISQUALIFIED; a third-party adapter is
+a SILO; the channel comes before the boundary.
+
 The largest item. Research done; no plan written.
 
 **DESIGNED -- see TRIGGERS_AND_PLUGINS.md.** The UI boundary already

@@ -23,18 +23,22 @@ that have gone wrong repeatedly.
    be gated like users. Records one REAL HOLE (Elysium enforces
    no-read-up and not no-write-down), what would be dangerous, and
    a build order. Nothing in it is built.
-6. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
+6. **`THIRD_PARTY_EXTENSIONS.md`** — how a third party extends Elysium
+   when every component is assumed hostile. Records why module
+   federation is DISQUALIFIED, and that a third-party adapter is just
+   a silo. Nothing in it is built.
+7. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
    before building, because both touch the security model and both
    are hard to retrofit. Neither is built.
-7. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
+8. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
    precedent behind each part, and which parts wait for a model.
-8. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
+9. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
    besides data, and why the ontology is a COPY there rather than a
    home. Corrects an earlier conclusion in BACKLOG.md.
-9. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
+10. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
-10. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
+11. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
    `IDEAS.md` — the REASONING, not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written
    so a fresh session starts with the decisions made, not

@@ -109,6 +109,24 @@ That ties triggers to the sync and gives a natural, already-scheduled
 moment — no new scheduler, which keeps `api/reload.py`'s decision
 intact.
 
+## SUPERSEDED IN PART -- see THIRD_PARTY_EXTENSIONS.md
+
+The plugin half of this document assumed plugins could run in-process,
+administrator-vetted, the way Superset ships extensions. A later
+assessment took the stricter premise -- every component untrusted,
+including first-party -- and reached different conclusions:
+
+- **MODULE FEDERATION IS DISQUALIFIED**, not merely risky. It gives
+  remote code the host's DOM, cookies and authenticated API access.
+- **A third-party adapter is a SILO**, so the mirror pipeline is
+  already the sandbox for its data.
+- **The channel comes before the boundary**, because isolating an
+  inadequate API means doing both twice.
+
+What holds from this document: the boundary already exists, declare it
+before converting to it, and a plugin must not get a private channel
+to the agent.
+
 ## THE MIRROR'S OWN HEALTH IS A CONDITION, and was missing here
 
 Everything above is a condition on ONTOLOGY DATA -- objects added,
