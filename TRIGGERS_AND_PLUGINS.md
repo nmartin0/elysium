@@ -32,8 +32,19 @@ a decision rather than an omission.
   need: Elysium is snapshot-only, by a decision with the cost measured
   and the trigger named.
 
-A "set" is a saved search. **Elysium already has saved explorations**
-— a URL plus a name — which is the same thing.
+A "set" is a saved search, and an earlier version of this file said
+Elysium already had them.
+
+**THAT WAS HALF TRUE AND MISLEADING.** `SavedView` is `{name, url,
+saved_at}` in the BROWSER'S localStorage. The concept exists and the
+SERVER CANNOT SEE IT -- so nothing that runs on a schedule can
+reference one, which is exactly what a condition must do.
+
+**MOVING SAVED VIEWS SERVER-SIDE IS THE REAL PREREQUISITE** for
+object-set conditions, and it is a larger piece than the per-recipient
+evaluation below. It needs an owner, a name, a stored query rather
+than a URL, and a decision about whether one person's saved view may
+be referenced by another person's automation.
 
 **EFFECTS** are actions, notifications, or a function.
 
@@ -56,6 +67,70 @@ threshold" must say a different number to someone who can only see
 us-west. Evaluating the notification per recipient is the difference
 between a feature and a data leak, and it must be in the design from
 the first line rather than added after someone notices.
+
+## HOW PER-RECIPIENT EVALUATION ACTUALLY WORKS
+
+An earlier version of this file called this "the genuinely novel
+security work". It is not novel at all, and seeing why is what makes
+the design right.
+
+**`search_object(user_record, ...)` ALREADY TAKES A USER.** So:
+
+    condition evaluated as the OWNER      did this fire at all?
+    condition evaluated as a RECIPIENT    what does their
+                                          notification say?
+
+Both go through `check_access`, MAC and the audit log unchanged.
+**There is no second permission path to get wrong**, which is the
+property that matters more than any other here.
+
+### Three things fall out for free
+
+**A RECIPIENT WHOSE EVALUATION RETURNS NOTHING GETS NO NOTIFICATION.**
+Not an empty one -- none. That is Foundry's "may trigger for some
+recipients but not others", arrived at as the natural behaviour rather
+than a special case: if you can see nothing, there is nothing to tell
+you.
+
+**THE COUNT IS PER-RECIPIENT BY CONSTRUCTION.** Alice's notification
+says 3 because her search returned 3; Bob's says 1 because his
+returned 1. Nobody computes a "real" number and redacts it -- THERE IS
+NO PRIVILEGED VIEW TO LEAK FROM.
+
+**AND EVERY NOTIFICATION IS AUDITED**, because the evaluation went
+through the normal read path. "What did Bob's notification tell him"
+is answerable from the trail that already exists.
+
+### The rule to write down
+
+**A notification carries only what its recipient's own evaluation
+produced.** Never a number computed once and shared; never a payload
+assembled by the owner and filtered afterwards.
+
+Filtering-after-assembly is where these systems leak, because the
+unfiltered thing existed.
+
+### What it costs, honestly
+
+**N SEARCHES PER FIRING**, one per recipient. Bounded by the scan
+ceiling, and not free: fifty recipients means fifty searches.
+
+**AND ACTION EFFECTS ARE CHEAPER THAN NOTIFICATIONS**, which is the
+opposite of what an earlier version of this file assumed.
+`propose_action(user_record, action_type, parameters, origin)` already
+exists, already takes a typed origin, and already lands in the
+approvals queue with criteria, four-eyes, TTL and audit. A
+NOTIFICATION has no machinery at all -- no delivery channel, no
+recipient concept, nothing.
+
+So "notifications first because the approvals integration can wait"
+was wrong twice over: the integration is nearly free, and the
+notification plumbing is the part that does not exist.
+
+**THE REAL ARGUMENT FOR MIRROR HEALTH FIRST** is narrower and better:
+you cannot auto-fix a refused sync, so that condition admits no action
+effect. The first condition is notification-only because of what it
+is, not because notifications are cheaper.
 
 ## An action must be able to refuse automation
 
@@ -172,7 +247,15 @@ the moment to decide whether somebody should be told.
    clearly needed: a sync refused, or a table stale beyond a
    threshold. The facts are already recorded; nothing watches them.
    It also exercises the whole path -- condition, effect, recipient --
-   without needing object sets to exist first.
+   WITHOUT NEEDING SAVED VIEWS TO EXIST SERVER-SIDE, which is the
+   prerequisite the object-set conditions have and this one does not.
+
+0.5 SAVED VIEWS, SERVER-SIDE. The actual prerequisite for anything
+   object-set shaped, currently `{name, url}` in a browser's
+   localStorage where nothing scheduled can reach it. Needs an owner,
+   a name, a stored QUERY rather than a URL, and a decision about
+   whether one person's saved view may be referenced by another
+   person's automation.
 1. A condition: a saved exploration plus a check (gained rows, lost
    rows, crossed a count). Evaluated after a successful sync.
 2. A notification effect, evaluated PER RECIPIENT. In-product first;

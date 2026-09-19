@@ -759,6 +759,19 @@ rather than executing weakens us against Foundry. `auto_execute`
 already exists per action type, defaulting to confirmation, enforced
 in Python. An automation uses the action's own setting.
 
+**SAVED VIEWS ARE NOT SERVER-SIDE**, which an earlier version of this
+entry got wrong. `SavedView` is `{name, url}` in a browser's
+localStorage, so nothing scheduled can reference one. Moving them
+server-side is the real prerequisite for object-set conditions --
+which is a second reason mirror health goes first, since it needs
+none.
+
+**AND PER-RECIPIENT EVALUATION IS NOT NOVEL WORK.**
+`search_object(user_record, ...)` already takes a user, so evaluating
+a condition as the owner and then as each recipient is one existing
+function called with a different first argument. No second permission
+path to get wrong.
+
 **THE REAL RISKS ARE VOLUME:** MAX_SUB_WRITES is 20 and the queue TTL
 is 15 minutes, so an automation across a thousand objects floods or
 expires. And four-eyes means an owner cannot approve their own
