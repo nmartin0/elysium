@@ -677,6 +677,23 @@ is something worth specifying.
 **WHAT NOT TO BUILD:** actions carrying authority their caller lacks,
 which is a confused deputy. Attenuation only.
 
+## Phase 3.6 — Fusion and identity
+
+**DESIGNED, NOT BUILT -- see FUSION_AND_IDENTITY.md.** Elysium follows
+links someone wrote down and infers none. The precedent says identity
+resolution is a PIPELINE problem, which places it in the GOLD layer
+Elysium does not have.
+
+**THE PERMISSIONS FEAR DISSOLVES:** column-wise MDO already exists, so
+a merged subject is one object whose FIELDS keep the classification of
+their source. No write-down. What does NOT dissolve is the
+classification of the identity link itself.
+
+**HAND-WRITTEN JOINS ARE THE PRIMARY PATH**, working with zero
+inference. Inference is off by default and its proposals always go
+through the approvals queue -- which answers unresolution natively,
+since un-merging is another write.
+
 ## Deliberately not doing
 
 Recorded so each is a decision rather than an omission.
