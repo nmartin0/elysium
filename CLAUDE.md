@@ -205,6 +205,27 @@ was correct, the data was correct, and the server was old.
 instructions with the `git am`, not as something to remember
 afterwards.**
 
+**AND DO NOT REACH FOR `/openapi.json` TO CHECK WHAT THE SERVER HAS.**
+It is DISABLED -- `openapi_url=None`, with `docs_url` and `redoc_url`,
+a considered security decision recorded in api/app.py: FastAPI
+registers all three on the app itself, outside the protected router,
+so an unauthenticated request could browse the full API surface
+including every admin route path.
+
+A `curl` to it returns 404 whatever the server is running, which looks
+exactly like a stale process. That cost a round trip: the 404 was in
+the log and got read as "old code" rather than "wrong URL".
+
+To check what the CODE has:
+
+    python -c "
+    from api.app import app
+    import json
+    print(json.dumps(app.openapi()).count('some_new_field'))
+    "
+
+To check what the RUNNING SERVER has, use the feature.
+
 ## Give a synopsis before working
 
 The user asked for this explicitly. Before a run of tool calls, say
