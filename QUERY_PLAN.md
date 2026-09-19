@@ -54,6 +54,50 @@ each paired with a `user_id` because the runner impersonates that
 person. So it is not quite a UI affordance — but it is proof that a
 deployment can and does state what good questions look like.
 
+## DEFERRED: a starter question can leak what MAC hides
+
+**THE PROBLEM, CONCRETELY.** The examples name specific ids:
+
+    - user_id: user_alice
+      query: "What are cust_001's recent transactions?"
+
+Alice can see `cust_001`; Bob cannot. Showing Bob that example tells
+him a customer called `cust_001` EXISTS. He cannot read it -- MAC
+still refuses -- but he has learned it exists from a system built
+specifically to refuse that. `get_field` on a hidden object returns
+None, indistinguishable from "no such object", ON PURPOSE.
+
+**THE `user_id` KEY DOES NOT SOLVE IT.** That is the deployment
+author's assertion about who should see what, not something
+`check_access` enforces. An author adding an example under the wrong
+user, or a user's grants changing later, produces a quiet leak that
+nothing detects.
+
+**THE CATEGORY IS KNOWN AND THE FIX IS NOT STANDARDISED.** Power BI
+states plainly that "RLS filters rows but does not hide the existence
+of aggregated data... to completely hide the existence of data,
+combine RLS with careful design of DAX measures" -- a mature product
+saying row-level security alone cannot do this. The standard review
+advice names the same shape: "check through slicers, drillthrough, and
+bookmarks thoroughly to ensure that they're not leaking unauthorized
+data."
+
+Those are UI affordances that reveal existence, audited by practice
+rather than prevented by mechanism. Nobody publishes a canonical fix
+for suggested questions.
+
+**THE SHAPE OF AN ANSWER, when this is picked up:** one file, two
+sections. `examples:` keeps real ids for
+`scripts/run_deployment.py`, which impersonates each user and needs
+ids that resolve. A separate `starters:` list carries no ids at all --
+"What are a customer's recent transactions?" -- because a starter's
+job is to teach the SHAPE of a good question.
+
+That also fixes a second problem: `cust_001` may not exist next month,
+and a starter naming a deleted id is broken with nothing to notice.
+
+---
+
 `AnswerTrace` already shows the hops an answer took. That is more than
 most systems offer and should stay.
 

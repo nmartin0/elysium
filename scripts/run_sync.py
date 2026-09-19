@@ -61,7 +61,10 @@ from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
-from core.sqlite_connection import require_assertions_enabled
+from core.sqlite_connection import (
+    require_assertions_enabled,
+    require_json_each,
+)
 
 
 @contextmanager
@@ -107,6 +110,11 @@ def run_sync(runtime_paths=None) -> int:
     # snapshot holds exactly what was written -- so it needs the same
     # guarantee the server does.
     require_assertions_enabled()
+    # THE WRITE LOG PASSES ID LISTS AS JSON, so a SQLite without
+    # json_each cannot serve one. Checked here rather than discovered
+    # at the first write-log read, where the error would name neither
+    # the requirement nor what to do about it.
+    require_json_each()
 
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()

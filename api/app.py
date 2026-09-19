@@ -107,7 +107,10 @@ from core.deployment_loader import (
 from core.pending_write_persistence import PendingWritePersistence
 from core.pending_write_store import PendingWriteStore
 from core.request_metrics import RETENTION_SECONDS, RequestMetrics
-from core.sqlite_connection import require_assertions_enabled
+from core.sqlite_connection import (
+    require_assertions_enabled,
+    require_json_each,
+)
 from core.user_directory import UserDirectory
 
 logger = logging.getLogger(__name__)
@@ -121,6 +124,11 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # `assert` and are stripped by -O / PYTHONOPTIMIZE; starting
     # without them means silent corruption rather than louder failure.
     require_assertions_enabled()
+    # THE WRITE LOG PASSES ID LISTS AS JSON, so a SQLite without
+    # json_each cannot serve one. Checked here rather than discovered
+    # at the first write-log read, where the error would name neither
+    # the requirement nor what to do about it.
+    require_json_each()
 
     # docs_url/redoc_url/openapi_url all explicitly None -- a real,
     # confirmed finding, part of the same broader "backend is a

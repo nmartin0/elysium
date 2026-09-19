@@ -140,6 +140,52 @@ def _deny_all_writes(action_code: int, _arg1: str | None, _arg2: str | None,
     return sqlite3.SQLITE_DENY
 
 
+# THE SQLITE THAT `json_each` NEEDS.
+#
+# The function comes from the json1 extension, ALWAYS present from
+# 3.38 (2022) and usually present from 3.9 (2015) because most builds
+# compile it in. 3.38 is the line where it stops depending on how the
+# library was built.
+#
+# WHY A FLOOR AT ALL: the write log passes a list of ids as ONE JSON
+# parameter rather than building placeholders, which is what removed
+# two `S608` suppressions and the chunking loop that existed to
+# respect SQLite's variable limit.
+MINIMUM_SQLITE_FOR_JSON_EACH = (3, 38, 0)
+
+
+def require_json_each() -> None:
+    """Refuses to start if this SQLite cannot expand a JSON array.
+
+    AT STARTUP, NOT AT THE FIRST READ. Without this the failure
+    arrives as "no such function: json_each" from inside a write-log
+    lookup -- accurate, and it names neither the requirement nor what
+    to do about it.
+
+    THE SAME SHAPE AS require_assertions_enabled(), and for the same
+    reason: a deployment that cannot satisfy an assumption should say
+    so before it starts serving, not while it is.
+    """
+    version = tuple(int(part) for part in sqlite3.sqlite_version.split("."))
+    if version >= MINIMUM_SQLITE_FOR_JSON_EACH:
+        return
+
+    # BELOW THE LINE IS NOT AUTOMATICALLY BROKEN. json_each may still
+    # be compiled in, so this ASKS rather than assuming -- an
+    # unnecessary refusal on a working build would be its own defect.
+    try:
+        sqlite3.connect(":memory:").execute(
+            "SELECT value FROM json_each('[1]')",
+        ).fetchone()
+    except sqlite3.OperationalError as e:
+        raise RuntimeError(
+            f"This SQLite ({sqlite3.sqlite_version}) cannot run json_each, "
+            f"which Elysium's write log needs: {e}. Build or install SQLite "
+            f"{'.'.join(str(n) for n in MINIMUM_SQLITE_FOR_JSON_EACH)} or "
+            f"later, where it is always available."
+        ) from e
+
+
 def require_assertions_enabled() -> None:
     """Refuses to start if Python's assertions have been disabled.
 

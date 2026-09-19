@@ -213,11 +213,6 @@ from typing import Any
 from core.internal_storage import InternalReadAdapter, InternalWriteAdapter
 from core.sqlite_connection import connection_with_schema
 
-# HOW MANY IDS PER QUERY. Well under SQLite's variable limit (999 on
-# older builds), because the cost being removed is per-CONNECTION and
-# a few extra round trips on one connection are irrelevant beside it.
-_ID_CHUNK = 500
-
 
 class WriteLogReader(InternalReadAdapter):
     """
@@ -598,20 +593,24 @@ class WriteLogReader(InternalReadAdapter):
         if not object_ids:
             return {}
 
-        wanted = [str(object_id) for object_id in object_ids]
+        # ONE PARAMETER CARRYING A JSON ARRAY, so the SQL is a CONSTANT
+        # string. That removes the `S608` suppression -- there is
+        # nothing left to interpolate -- and with it the chunking loop,
+        # which existed only to respect SQLite's variable limit.
+        #
+        # `json_each` NEEDS SQLITE 3.38, checked at startup by
+        # require_json_each() rather than discovered here.
+        wanted = json.dumps([str(object_id) for object_id in object_ids])
         found: dict = {}
         with self._connection() as conn:
-            for start in range(0, len(wanted), _ID_CHUNK):
-                chunk = wanted[start:start + _ID_CHUNK]
-                placeholders = ",".join("?" * len(chunk))
-                rows = conn.execute(
-                    f"SELECT object_id, changes FROM write_log "  # noqa: S608 - placeholders only
-                    f"WHERE object_type = ? AND status = 'pending' "
-                    f"AND object_id IN ({placeholders})",
-                    (object_type, *chunk),
-                ).fetchall()
-                for row in rows:
-                    found[row["object_id"]] = json.loads(row["changes"])
+            rows = conn.execute(
+                "SELECT object_id, changes FROM write_log "
+                "WHERE object_type = ? AND status = 'pending' "
+                "AND object_id IN (SELECT value FROM json_each(?))",
+                (object_type, wanted),
+            ).fetchall()
+            for row in rows:
+                found[row["object_id"]] = json.loads(row["changes"])
         return found
 
     def deleted_ids(self, object_type: str, object_ids: list) -> set:
@@ -622,18 +621,18 @@ class WriteLogReader(InternalReadAdapter):
         if not object_ids:
             return set()
 
-        wanted = [str(object_id) for object_id in object_ids]
+        # See the sibling above: one JSON parameter, constant SQL, no
+        # chunking, no suppression.
+        wanted = json.dumps([str(object_id) for object_id in object_ids])
         deleted: set = set()
         with self._connection() as conn:
-            for start in range(0, len(wanted), _ID_CHUNK):
-                chunk = wanted[start:start + _ID_CHUNK]
-                placeholders = ",".join("?" * len(chunk))
-                rows = conn.execute(
-                    f"SELECT object_id FROM object_deleted "  # noqa: S608 - placeholders only
-                    f"WHERE object_type = ? AND object_id IN ({placeholders})",
-                    (object_type, *chunk),
-                ).fetchall()
-                deleted.update(row["object_id"] for row in rows)
+            rows = conn.execute(
+                "SELECT object_id FROM object_deleted "
+                "WHERE object_type = ? "
+                "AND object_id IN (SELECT value FROM json_each(?))",
+                (object_type, wanted),
+            ).fetchall()
+            deleted.update(row["object_id"] for row in rows)
         return deleted
 
     def is_deleted(self, object_type: str, object_id: Any) -> bool:

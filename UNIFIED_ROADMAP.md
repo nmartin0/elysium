@@ -734,7 +734,7 @@ the threshold where multi-step tool use works reliably — the observed
 duplicate-spiral after a rejection is the documented failure mode of
 that model class, not only a prompt defect.
 
-### 2.3 json_each for the write log
+### 2.3 ~~json_each for the write log~~ DONE
 
 Deferred by decision, not forgotten. Removes two `S608` suppressions,
 the chunking loop and the variable limit, in exchange for a minimum
@@ -916,8 +916,10 @@ phase is half-done.
 
     R1   cap search_around            DONE
     R4   a restore script             DONE
-    2.1  Query's buildable parts      example_queries.yaml is unread
-    2.3  json_each for the write log  needs one SQLite-version decision
+    2.1  Query's buildable parts      DEFERRED -- a starter naming an
+                                      id leaks that it exists; see
+                                      QUERY_PLAN.md
+    2.3  json_each for the write log  DONE
     0.5.4 (rest) snapshot history,    endpoints that DO rather than
           a Sync now button           report -- a security question,
                                       not a technical one
