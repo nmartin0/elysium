@@ -1,9 +1,10 @@
 # The unified roadmap
 
-**Why this exists.** Nine planning documents hold roughly 8,500 lines
-between them. Each is right about its own area and none can say what
-to do next, because the answer depends on the others. This file is the
-ordering; the detail stays where it is, and each item names its home.
+**Why this exists.** Nineteen planning documents hold roughly 12,700
+lines between them -- nine and 8,500 when this file was first written.
+Each is right about its own area and none can say what to do next,
+because the answer depends on the others. This file is the ordering;
+the detail stays where it is, and each item names its home.
 
 **How it is ordered.** By dependency and by what would stop a
 deployment, not by size or by interest. An item appears after
@@ -12,6 +13,37 @@ everything it needs and before everything that needs it.
 **What this is not.** It is not a schedule and it does not estimate.
 Several items below are a day and several are a month, and saying
 which would be a guess presented as a plan.
+
+---
+
+## Where this stands, September 19
+
+**PHASES 0 AND 1 ARE COMPLETE.** The four blockers the commercial
+audit named -- no real database adapter, unbounded search, unbounded
+cache, no query timeout -- are closed, along with the live-read
+coercion that had to precede them and the four items of phase 0.5.
+
+    0.0  live reads honour the declared type        DONE
+    0.1  an adapter for a real database             DONE
+    0.2  a row limit that reaches the query         DONE
+    0.3  a bound on the security cache              was already bounded
+    0.4  a silo query timeout                       DONE
+    0.5  the mirror becomes the read path           DONE
+    1.1  persist the pending write store            DONE
+    1.2  fsync before the catalog pointer swap      DONE
+    1.3  backup                                     DONE (restore: cp -a)
+    1.4  secret indirection                         DONE
+
+**TWO ENTRIES WERE WRONG ON INSPECTION** and are corrected in place
+rather than deleted, because the mistake is more useful than the
+absence: 0.3's caches were already bounded, and 0.5.5's sync already
+reported every drifted column. Both were wrong in the same direction
+-- describing a defect that reading the code would have ruled out.
+
+**WHAT REMAINS IS ORDERED BY DEPENDENCY BELOW.** Phase 2 needs
+nothing. Phase 3 needs research. Phases 3.5 and 3.6 are designed and
+unbuilt. The items in "Found on review" have no phase yet and are
+placed where their dependencies put them.
 
 ---
 
@@ -849,6 +881,121 @@ classification of the identity link itself.
 inference. Inference is off by default and its proposals always go
 through the approvals queue -- which answers unresolution natively,
 since un-merging is another write.
+
+## What to build next, in dependency order
+
+The phases below are grouped by SUBJECT. This is the same work
+grouped by WHAT BLOCKS WHAT, which is the more useful question once a
+phase is half-done.
+
+### Ready now — nothing blocks these
+
+    R1   cap search_around            the measurement already exists
+    R4   a restore script             completes 1.3
+    2.1  Query's buildable parts      example_queries.yaml is unread
+    2.3  json_each for the write log  needs one SQLite-version decision
+    0.5.4 (rest) snapshot history,    endpoints that DO rather than
+          a Sync now button           report -- a security question,
+                                      not a technical one
+
+### Ready, but each needs one decision first
+
+    R2   context rot          run the harness before changing anything
+    2.2  measurement's        same harness, same session
+         remaining questions
+    3.0  triggers             mirror health first, per its own note
+    0.5.35 source column      needs the adapter method that does not
+           types                exist -- but the adapter now does
+
+### Blocked on design that is written but unbuilt
+
+    3.1  the plugin API       THIRD_PARTY_EXTENSIONS.md: the channel
+                              comes before the boundary
+    3.5  write-down check     needs the ordered-vs-incomparable
+                              decision on MAC values
+    3.6  fusion               needs the gold layer, which nothing has
+
+### Blocked on something genuinely absent
+
+    R3   runtime role editing  belongs after 3.5, not before
+    1.3  restore VERIFICATION  a script can check an inventory; only a
+                               real restore proves it
+    3.2  multiple workers      pending writes now persist, so this is
+                               closer than it was
+
+**THE HONEST READING:** eight items are ready now or near it, and
+nothing in the first group depends on anything in the last. The
+temptation with a roadmap this size is to take the interesting item;
+the dependency order says take R1, which is small, measured, and
+closes a hole phase 0.2 left open.
+
+---
+
+## Found on review, September 19 — four things no phase held
+
+Re-read of the nineteen planning documents against this roadmap. Four
+real items had no entry, and they are placed by what they depend on
+rather than by how interesting they are.
+
+### R1. `search_around` is not capped — DEPENDS ON NOTHING
+
+**THE FRONT DOOR IS SHUT AND THIS ONE IS OPEN.** Phase 0.2 capped
+`search_object` and `search_object_free_text` at MAX_SEARCH_SCAN.
+`search_around` -- the link traversal -- has no limit at all.
+
+That matters because it is the exact path ROADMAP.md profiled:
+
+    _io.open      1.21s   (200,006 calls -- audit logging)
+    file close    0.71s
+    SQL query     0.66s
+    json encode   0.56s
+
+**A 200,000-object traversal writes 200,006 audit lines.** Authorization
+was fixed, the engine was never the problem, and what remains is the
+audit trail's own volume. The entry in ROADMAP.md has "been wrong
+twice, each time because a fix moved the bottleneck somewhere the
+previous profile could not see" -- and phase 0.2 moved it again,
+without touching this path.
+
+Smallest real item on this list, and the measurement already exists.
+
+### R2. Context rot in the agent loop — DEPENDS ON THE MEASUREMENT HARNESS
+
+UI_ROADMAP names it as "a risk to what already exists, not a feature":
+current research describes "a model's effective recall degrading as
+the token count grows, WELL BEFORE the hard context limit is reached".
+
+**Our agent accumulates `gathered` across every step and feeds it back
+each hop.** A query touching many objects degrades the ANSWER before
+it errors -- "the failure mode is a worse answer, not a crash, which
+is the hard kind to notice. We have never measured where that begins."
+
+`scripts/measure_prompts.py` exists and is the instrument for this.
+The measurement comes before any fix, because a fix without one is a
+guess about a threshold nobody has found.
+
+### R3. Runtime role editing — DEPENDS ON HOT RELOAD, WHICH EXISTS
+
+UI_ROADMAP item 13: policy.yaml becomes editable while the
+application runs. The reload machinery it needs is built and has its
+own plan document.
+
+**NOT SCHEDULED HERE**, because it is a UI feature with a security
+question attached -- who may edit grants, and whether a grant edit
+should itself pass through the approvals queue. That question belongs
+with phase 3.5's work on non-user-derived constraints rather than
+before it.
+
+### R4. A restore script — DEPENDS ON 1.3, WHICH IS DONE
+
+The backup exists; restore is `cp -a`. Honest for a stopped
+deployment, and it leaves the inventory unchecked: the backup NAMES
+what was absent, and nothing verifies a restore is complete before
+somebody depends on it.
+
+Small, and the natural completion of 1.3.
+
+---
 
 ## Deliberately not doing
 
