@@ -8,41 +8,44 @@ that have gone wrong repeatedly.
 
 1. **`AGENTS.md`** — commands, invariants, commit style, what not to
    hand-edit. Non-negotiable.
-2. **`PRINCIPLES.md`** — eleven principles, each learned from a real
+2. **`RULES.md`** — the working method as generic rules, distilled
+   from this file, `AGENTS.md` and `PRINCIPLES.md`. Read it if you
+   want the method without the project's specifics.
+3. **`PRINCIPLES.md`** — eleven principles, each learned from a real
    failure. Principle 2 (negative controls) is the one that catches
    the most.
-3. **`BACKLOG.md`** — the ONE list of what is open. Five files used to
+4. **`BACKLOG.md`** — the ONE list of what is open. Five files used to
    carry their own and they drifted apart; the entry marked "blocking
    everything below it" had been fixed weeks earlier and no list said
    so.
-4. **`UNIFIED_ROADMAP.md`** — START HERE for what to do next. Nine
+5. **`UNIFIED_ROADMAP.md`** — START HERE for what to do next. Nine
    planning documents hold ~8,500 lines between them; each is right
    about its own area and none can say what comes first. This one is
    the ordering, by dependency, and points at the others for detail.
-5. **`SECURITY_ARCHITECTURE.md`** — whether objects and actions should
+6. **`SECURITY_ARCHITECTURE.md`** — whether objects and actions should
    be gated like users. Records one REAL HOLE (Elysium enforces
    no-read-up and not no-write-down), what would be dangerous, and
    a build order. Nothing in it is built.
-6. **`THIRD_PARTY_EXTENSIONS.md`** — how a third party extends Elysium
+7. **`THIRD_PARTY_EXTENSIONS.md`** — how a third party extends Elysium
    when every component is assumed hostile. Records why module
    federation is DISQUALIFIED, and that a third-party adapter is just
    a silo. Nothing in it is built.
-7. **`FUSION_AND_IDENTITY.md`** — merging records that mean the same
+8. **`FUSION_AND_IDENTITY.md`** — merging records that mean the same
    thing. Records that this is a PIPELINE problem, that the gold layer
    is the missing slot, and that MDO already answers the permissions
    question. Nothing in it is built.
-8. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
+9. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
    before building, because both touch the security model and both
    are hard to retrofit. Neither is built.
-9. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
+10. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
    precedent behind each part, and which parts wait for a model.
-10. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
+11. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
    besides data, and why the ontology is a COPY there rather than a
    home. Corrects an earlier conclusion in BACKLOG.md.
-11. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
+12. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
-12. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
+13. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
    `IDEAS.md` — the REASONING, not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written
    so a fresh session starts with the decisions made, not

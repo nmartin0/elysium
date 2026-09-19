@@ -73,6 +73,33 @@ AND THE SYMPTOM IS NOT ALWAYS A 404. A new response field arriving as
 `undefined` renders as the UI's own empty state -- so a working
 feature looks like it found nothing. That one cost a real diagnosis.
 
+## Audit your own work before handing it over
+
+**After the work is done and before the patch is built, read what you
+actually changed as though somebody else wrote it.**
+
+    git diff                  the WHOLE change, not the parts you
+                              remember editing
+    git status                because git diff does NOT show new
+                              files -- found while auditing the
+                              commit that added this rule
+    every comment             against the code beside it -- a comment
+                              describing an earlier draft is worse
+                              than none
+    every claim in the message  measured, or removed
+    every new test            does it fail when the change is
+                              reverted? If you have not run that
+                              control, you do not know
+    anything nothing calls    a function whose body is `return value`
+                              is a comment with parentheses
+
+**THIS IS A SEPARATE STEP, NOT A FEELING.** The work being finished
+and the work being correct are different states, and the gap between
+them is where most defects live.
+
+The generic form of this and every other rule here lives in
+`RULES.md`.
+
 ## One patch per commit, in the order they were made
 
 Never combine commits into one patch file, however convenient. If a
