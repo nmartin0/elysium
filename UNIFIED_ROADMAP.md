@@ -903,7 +903,7 @@ phase is half-done.
 
 ### Ready now — nothing blocks these
 
-    R1   cap search_around            the measurement already exists
+    R1   cap search_around            DONE
     R4   a restore script             completes 1.3
     2.1  Query's buildable parts      example_queries.yaml is unread
     2.3  json_each for the write log  needs one SQLite-version decision
@@ -950,7 +950,7 @@ Re-read of the nineteen planning documents against this roadmap. Four
 real items had no entry, and they are placed by what they depend on
 rather than by how interesting they are.
 
-### R1. `search_around` is not capped — DEPENDS ON NOTHING
+### R1. ~~`search_around` is not capped~~ DONE
 
 **THE FRONT DOOR IS SHUT AND THIS ONE IS OPEN.** Phase 0.2 capped
 `search_object` and `search_object_free_text` at MAX_SEARCH_SCAN.
@@ -970,7 +970,17 @@ twice, each time because a fix moved the bottleneck somewhere the
 previous profile could not see" -- and phase 0.2 moved it again,
 without touching this path.
 
-Smallest real item on this list, and the measurement already exists.
+**CAPPED ON THE TARGETS, NOT THE SOURCES.** Capping sources further
+would answer a different question wrongly -- somebody asking about ten
+customers with a hundred transactions each wants all thousand, and the
+limit that matters is on what comes back.
+
+**MEASURED BEFORE BUILDING:** an audit line costs about 11
+microseconds, so a million-target traversal spends ELEVEN SECONDS
+writing its own trail before any data reaches the caller.
+
+**AND IT REPORTS**, through the same `scan_truncated` the searches
+use.
 
 ### R2. Context rot in the agent loop — DEPENDS ON THE MEASUREMENT HARNESS
 

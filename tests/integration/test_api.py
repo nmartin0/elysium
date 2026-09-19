@@ -1809,7 +1809,11 @@ def test_search_around_on_an_ungranted_field_returns_empty_not_an_error(client):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"ids": [], "total": 0}
+    # scan_truncated IS False HERE, which is a real assertion rather
+    # than a shape update: a traversal that found nothing did not stop
+    # early, and reporting truncation on an empty result would tell
+    # somebody to narrow filters that already exclude everything.
+    assert response.json() == {"ids": [], "total": 0, "scan_truncated": False}
 
 
 def test_the_new_routes_require_authentication(client):

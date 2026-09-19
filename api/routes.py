@@ -488,6 +488,12 @@ class AggregateResponse(BaseModel):
 class SearchAroundResponse(BaseModel):
     ids: list[Any]
     total: int
+    # SEE SearchResponse: the traversal stopped, which does NOT mean
+    # there is more for this caller to see. Phase 0.2 capped the
+    # SOURCE side of a search-around and left the fan-out unbounded --
+    # ten thousand sources holding a hundred links each is a million
+    # targets, and one audit line per target.
+    scan_truncated: bool = False
 
 
 class LinkCountResponse(BaseModel):
@@ -2680,8 +2686,16 @@ def search_around_route(object_type: str, body: SearchAroundRequest, request: Re
     # an error -- the same uniform denial every other read path uses,
     # so a caller learns nothing about whether the field exists.
     mediator = _generation(request).mediator
-    ids = mediator.search_around(current_user, object_type, body.as_conditions(), body.link_field)
-    return {"ids": ids, "total": len(ids)}
+    search_outcome = SearchOutcome()
+    ids = mediator.search_around(
+        current_user, object_type, body.as_conditions(), body.link_field,
+        outcome=search_outcome,
+    )
+    return {
+        "ids": ids,
+        "total": len(ids),
+        "scan_truncated": search_outcome.scan_truncated,
+    }
 
 
 @router.get("/objects/{object_type}/{object_id}/link-counts",

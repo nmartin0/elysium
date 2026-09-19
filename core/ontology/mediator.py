@@ -1609,7 +1609,8 @@ class DataMediator:
 
     def search_around(self, user_record: UserRecord, object_type: str, conditions: list,
                        link_field: str,
-                      context: RequestContext | None = None) -> list:
+                      context: RequestContext | None = None,
+                      outcome: "SearchOutcome | None" = None) -> list:
         """Follows a link from every object matching criteria, returning
         the ids on the far side that the caller can also see.
 
@@ -1668,6 +1669,34 @@ class DataMediator:
         # Targets are a DIFFERENT object type from the sources, so this
         # prefetch is for the target type -- the source side was already
         # resolved by the search_object() call at the top of this method.
+        # CAPPED LIKE THE SEARCHES, and it needed its own cap
+        # because phase 0.2 bounded the SOURCE side and left the
+        # FAN-OUT unbounded: 10,000 sources each holding 100 links
+        # is a million targets, and check_access writes one audit
+        # line per target.
+        #
+        # MEASURED: an audit line costs about 11 microseconds, so a
+        # million-target traversal spends ELEVEN SECONDS writing its
+        # own trail before any data reaches the caller. ROADMAP.md
+        # profiled the same shape at 200,000 objects and found
+        # 200,006 open() calls dominating everything else.
+        #
+        # THE TARGETS, NOT THE SOURCES. Capping sources further
+        # would answer a different question wrongly -- somebody
+        # asking about ten customers with a hundred transactions
+        # each wants all thousand, and the limit that matters is on
+        # what comes back.
+        targets = list(targets)
+        if len(targets) > MAX_SEARCH_SCAN:
+            targets = targets[:MAX_SEARCH_SCAN]
+            if outcome is not None:
+                outcome.scan_truncated = True
+            logger.warning(
+                "%s -> %s: a search-around reached the %d-target ceiling and "
+                "stopped. Results are incomplete; narrow the filters.",
+                object_type, target_type, MAX_SEARCH_SCAN,
+            )
+
         self._prefetch_security_values(target_type, list(targets))
         seen = set()
         allowed = []
