@@ -48,7 +48,20 @@ data_silos:
 #      # the query -- a client-side timeout only stops waiting, and
 #      # leaves the database working on something nobody will read.
 #
-# THE PASSWORD GOES IN THIS URL TODAY, which is the gap phase 1.4
-# names: secrets live in plaintext configuration. That is the next
-# thing to fix now that real credentials exist.
+# THE PASSWORD DOES NOT GO IN THIS FILE. Any value here may carry a
+# ${VAR} reference, resolved from the process environment when the
+# deployment loads:
+#
+#      url: "postgresql+psycopg://elysium:${PGPASSWORD}@db/warehouse"
+#
+# A MISSING VARIABLE REFUSES TO LOAD, naming both the variable and the
+# field it came from. Substituting an empty string would produce a URL
+# that looks complete and connects as nobody, and the error would name
+# the database rather than the configuration.
+#
+# Set it where secrets already live: systemd's EnvironmentFile=, a
+# container runtime's secret mount, or a CI secret. This moves the
+# credential out of a file that lands in every backup and usually in
+# version control -- it is not a secret store, and does not claim to
+# be.
 

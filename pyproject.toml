@@ -187,6 +187,11 @@ layers = [
     # returned "safe" content would be a second place deciding what a
     # caller may see.
     "artifact_store",
+    # A TRUE LEAF: it imports nothing from core at all, only os and re.
+    # So it goes at the BOTTOM of the layer list rather than into
+    # exhaustive_ignores, which is for modules that sit outside the
+    # hierarchy rather than beneath it.
+    "secret_references",
 ]
 containers = ["core"]
 exhaustive = true

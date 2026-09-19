@@ -654,7 +654,7 @@ silver derive from the silos; history does not.
 
 **Depends on:** 1.2, so that what is captured is itself consistent.
 
-### 1.4 Secret indirection in configuration
+### 1.4 ~~Secret indirection in configuration~~ DONE
 
 `data_silos.yaml` holds hosts and credentials with no `${ENV_VAR}`
 expansion or secret-store reference. Anyone pointing Elysium at a real

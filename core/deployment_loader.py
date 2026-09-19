@@ -42,6 +42,7 @@ from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
+from core.secret_references import expand_secrets
 
 if TYPE_CHECKING:
     from core.agent.agentic_loop import AgentLoop
@@ -598,7 +599,16 @@ def build_live_read_adapters(config_dir: Path | None = None) -> dict:
     # opens a file that is not there.
     resolved = {}
     for silo_name, silo_config in config.silo_configs.items():
-        connection = dict(silo_config["connection"])
+        # ${VAR} RESOLVED HERE, at the one place a connection
+        # block becomes a live thing. A credential belongs in the
+        # process environment -- where systemd's EnvironmentFile=,
+        # a container's secret mount and every CI system already
+        # put them -- rather than in a file that lands in every
+        # backup and usually in version control.
+        connection = expand_secrets(
+            dict(silo_config["connection"]),
+            where=f"data_silos.yaml: {silo_name}.connection",
+        )
         if "path" in connection:
             connection["path"] = paths.data_dir / connection["path"]
         resolved[silo_name] = {**silo_config, "connection": connection}
@@ -933,7 +943,16 @@ def load_deployment_bundle(
     # two directories genuinely need to differ.
     resolved_silo_configs = {}
     for silo_name, silo_config in config.silo_configs.items():
-        connection = dict(silo_config["connection"])
+        # ${VAR} RESOLVED HERE, at the one place a connection
+        # block becomes a live thing. A credential belongs in the
+        # process environment -- where systemd's EnvironmentFile=,
+        # a container's secret mount and every CI system already
+        # put them -- rather than in a file that lands in every
+        # backup and usually in version control.
+        connection = expand_secrets(
+            dict(silo_config["connection"]),
+            where=f"data_silos.yaml: {silo_name}.connection",
+        )
         if "path" in connection:
             connection["path"] = data_dir / connection["path"]
         resolved_silo_configs[silo_name] = {**silo_config, "connection": connection}
