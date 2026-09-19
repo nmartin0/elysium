@@ -676,10 +676,21 @@ not choose.
 pointed at the silos, built a generation and served four transactions
 with its mirror timestamp intact.
 
-**STILL OPEN: restore is a `cp -a`, not a script.** That is honest for
-now -- restoring into a stopped deployment is a directory copy -- but
-a script would be the place to check the inventory is complete before
-someone discovers it is not.
+**AND RESTORE IS A SCRIPT NOW**, whose value is the CHECKING rather
+than the copying. Every database must open AND hold tables --
+`sqlite3.connect()` succeeds on a file that is not a database at all,
+failing only when something reads.
+
+**EVERY PROBLEM IS REPORTED, NOT THE FIRST.** Somebody fixing a backup
+one error at a time, with a restore between each, gives up before the
+third.
+
+**A MISSING credentials.db IS NAMED SPECIFICALLY**, because that
+backup restores silently and then nobody can log in -- which looks
+like a different failure entirely.
+
+**Verified end to end:** a restored backup, pointed at the silos,
+builds a generation and serves four transactions.
 
 **THE CHANGELOG IS THE ONE THING THAT CANNOT BE REBUILT.** Bronze and
 silver derive from the silos; history does not.
@@ -904,7 +915,7 @@ phase is half-done.
 ### Ready now — nothing blocks these
 
     R1   cap search_around            DONE
-    R4   a restore script             completes 1.3
+    R4   a restore script             DONE
     2.1  Query's buildable parts      example_queries.yaml is unread
     2.3  json_each for the write log  needs one SQLite-version decision
     0.5.4 (rest) snapshot history,    endpoints that DO rather than
@@ -1009,7 +1020,7 @@ should itself pass through the approvals queue. That question belongs
 with phase 3.5's work on non-user-derived constraints rather than
 before it.
 
-### R4. A restore script — DEPENDS ON 1.3, WHICH IS DONE
+### R4. ~~A restore script~~ DONE
 
 The backup exists; restore is `cp -a`. Honest for a stopped
 deployment, and it leaves the inventory unchecked: the backup NAMES
