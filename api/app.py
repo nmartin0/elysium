@@ -104,6 +104,7 @@ from core.deployment_loader import (
     build_generation,
     resolve_runtime_paths,
 )
+from core.pending_write_persistence import PendingWritePersistence
 from core.pending_write_store import PendingWriteStore
 from core.request_metrics import RETENTION_SECONDS, RequestMetrics
 from core.sqlite_connection import require_assertions_enabled
@@ -379,6 +380,14 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.pending_writes = PendingWriteStore(
         ttl=timedelta(minutes=config.pending_write_ttl_minutes),
         audit_log=lambda: app.state.generation.mediator.audit_log,
+        # PERSISTED, so a restart does not empty the approval queue.
+        # For a product whose pitch is that writes are mediated and
+        # approved, losing the queue on deploy was the worst fit
+        # between the claim and the behaviour -- and the store's own
+        # docstring said so, as a stated limitation.
+        persistence=PendingWritePersistence(
+            runtime_paths.data_dir / "pending_writes.db",
+        ),
     )
 
     from api.routes import router

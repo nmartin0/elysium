@@ -528,7 +528,7 @@ primary mode -- as the refresh mechanism rather than the serving one.
 
 ## Phase 1 — A deployment that survives its own operation
 
-### 1.1 Persist the pending write store
+### 1.1 ~~Persist the pending write store~~ DONE
 
 In-process memory, stated plainly in its own docstring. A restart
 loses every approval awaiting decision.

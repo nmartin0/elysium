@@ -186,7 +186,13 @@ layers = [
 ]
 containers = ["core"]
 exhaustive = true
-exhaustive_ignores = ["adapter_roles", "concurrency", "config", "deployment_loader", "internal_storage", "logging_config", "pending_write_store", "sqlite_connection", "user_directory"]
+# pending_write_persistence and pending_write_serialisation join
+# pending_write_store here for the same reason it is already listed:
+# they are storage for a thing the ontology defines, so they sit ABOVE
+# ontology while the store they serve sits outside the hierarchy
+# entirely. Placing them in the layer list would force a position that
+# says something untrue about what depends on what.
+exhaustive_ignores = ["adapter_roles", "concurrency", "config", "deployment_loader", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
 
 # Contract 3 of 3 -- the single most repeatedly-stated architectural
 # principle throughout this project's own history: authentication

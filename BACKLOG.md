@@ -610,6 +610,25 @@ ADDING one is a decision someone makes deliberately rather than a
 change that silently outranks a vendor component. Five are currently
 allowed, each reviewed.
 
+## 0d5. Pending writes persist, September 19
+
+pending_writes.db, write-through beside the locked dict. A restart no
+longer empties the approval queue.
+
+NOT A REWRITE: the dict stays the working store and reads answer at
+memory speed. Reading from SQLite directly would have turned eight
+call sites under one lock into transactions.
+
+## 0d4. Snapshot growth, observed September 19
+
+A developer deployment's warehouse held 140 files against 101 on
+another built the same week -- 40% more, from ordinary use over a few
+days. Nothing expires Iceberg snapshots.
+
+Already on the backlog as deferred-with-a-trigger. The observation is
+that the trigger is nearer than "someday": the growth is visible
+within a week of light use, and a backup copies every file of it.
+
 ## 0d3. Non-user-derived constraints, assessed September 18
 
 See SECURITY_ARCHITECTURE.md. One real hole: every MAC check compares

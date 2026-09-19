@@ -55,17 +55,29 @@ Used by: api/app.py (one instance, stored on app.state, same lifecycle
          as everything else built once at startup), api/routes.py
 """
 
+import logging
 import threading
 import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from core.intermediate_layer.audit import AuditLog
 from core.ontology.write_mediator import PendingWrite
 
 DEFAULT_TTL = timedelta(minutes=15)
+
+
+if TYPE_CHECKING:  # pragma: no cover
+    # IMPORTED FOR TYPING ONLY. The persistence module imports the
+    # serialisation module, which imports write_mediator -- a runtime
+    # import here would close a cycle for a name used in one signature.
+    from core.pending_write_persistence import PendingWritePersistence
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -136,7 +148,8 @@ def _fingerprint(pending) -> tuple:
 
 class PendingWriteStore:
     def __init__(self, ttl: timedelta = DEFAULT_TTL,
-                 audit_log: AuditLog | Callable[[], AuditLog] | None = None):
+                 audit_log: AuditLog | Callable[[], AuditLog] | None = None,
+                 persistence: "PendingWritePersistence | None" = None):
         """`audit_log` may be an instance or a callable returning one.
 
         A CALLABLE because this store SURVIVES a configuration reload
@@ -161,9 +174,57 @@ class PendingWriteStore:
         self._lock = threading.Lock()
         self._writes: dict[str, _StoredWrite] = {}
 
+        # WRITE-THROUGH, NOT A REPLACEMENT. The dict stays the working
+        # store -- every read answers from memory, at memory speed --
+        # and each mutation is mirrored to SQLite so a restart can
+        # rebuild it.
+        #
+        # THE ALTERNATIVE WAS READING FROM SQLITE DIRECTLY, and it is
+        # worse here: eight call sites touch this dict under one lock,
+        # several inside a context manager that reserves a write and
+        # may hand it back, and turning each into a transaction would
+        # rewrite the concurrency this store already gets right.
+        #
+        # None means NO PERSISTENCE, which is what every test gets and
+        # what a deployment that has not configured a path gets. The
+        # store works exactly as it did.
+        self._persistence = persistence
+        if self._persistence is not None:
+            self._restore_locked()
+
     @property
     def audit_log(self) -> AuditLog:
         return self._audit_log() if callable(self._audit_log) else self._audit_log
+
+    def _restore_locked(self) -> None:
+        """Rebuilds the queue from disk, at construction.
+
+        LOCKED BY CONSTRUCTION, not by acquiring one: nothing else has
+        a reference to this store yet, so there is nobody to race.
+        Taking the lock here would be honest-looking and pointless.
+
+        RESTORED WRITES ARE PROPOSALS. Every question about whether one
+        may now execute is asked again at confirm time, against the
+        CURRENT configuration -- `confirm` authorises against the
+        current generation's roles, MAC and the criteria are evaluated
+        inside `confirm_and_execute()`, and `_fields_no_longer_declared()`
+        refuses one whose fields the ontology has since dropped.
+        """
+        persistence = self._persistence
+        if persistence is None:  # pragma: no cover - guarded by the caller
+            return
+
+        for write_id, owner, expires_at, pending, decisions in persistence.load():
+            stored = _StoredWrite(pending, owner, expires_at)
+            for task_index, decision in decisions.items():
+                stored.task_decisions[task_index] = TaskApproval(**decision)
+            self._writes[write_id] = stored
+
+        if self._writes:
+            logger.info(
+                "restored %d pending write(s) awaiting decision",
+                len(self._writes),
+            )
 
     def _expire_stale_locked(self) -> None:
         # Called with self._lock already held.
@@ -171,6 +232,11 @@ class PendingWriteStore:
         expired_ids = [write_id for write_id, stored in self._writes.items() if now >= stored.expires_at]
         for write_id in expired_ids:
             stored = self._writes.pop(write_id)
+            if self._persistence is not None:
+                # A WRITE THAT EXPIRED IN MEMORY IS GONE, so the row
+                # must go too -- otherwise a restart restores something
+                # this process already decided was too old.
+                self._persistence.forget(write_id)
             self.audit_log.log_write_expired(write_id, stored.owner_user_id, stored.pending.description)
 
     def store(self, pending: PendingWrite) -> str:
@@ -178,7 +244,10 @@ class PendingWriteStore:
         expires_at = datetime.now(UTC) + self._ttl
         with self._lock:
             self._expire_stale_locked()
-            self._writes[write_id] = _StoredWrite(pending, pending.user_id, expires_at)
+            stored = _StoredWrite(pending, pending.user_id, expires_at)
+            self._writes[write_id] = stored
+            if self._persistence is not None:
+                self._persistence.record(write_id, stored)
         return write_id
 
     def record_task_decision(self, write_id: str, task_index: int,
@@ -214,11 +283,20 @@ class PendingWriteStore:
                     f"write {write_id} has {len(stored.pending.sub_writes)} task(s); "
                     f"no task {task_index}"
                 )
-            stored.task_decisions[task_index] = TaskApproval(
+            approval = TaskApproval(
                 approver_user_id=approver_user_id,
                 approved=approved,
                 decided_at=datetime.now(UTC),
             )
+            stored.task_decisions[task_index] = approval
+            if self._persistence is not None:
+                # DECISIONS PERSIST SEPARATELY FROM THE WRITE, because
+                # they accumulate against it: a fifty-task request may
+                # collect decisions from several reviewers over
+                # minutes, and losing them on a restart would send
+                # everyone back to the start of a queue they had
+                # already worked through.
+                self._persistence.record_decision(write_id, task_index, approval)
             return True
 
     def task_decisions(self, write_id: str) -> dict[int, TaskApproval]:
