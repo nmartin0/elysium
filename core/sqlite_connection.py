@@ -54,14 +54,64 @@ db_path, in-process, so it only actually runs once.
 import logging
 import sqlite3
 import threading
+import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
+# HOW LONG ONE QUERY MAY RUN, in seconds.
+#
+# THERE IS ONE WORKER PROCESS, so a hung query does not slow the
+# service down -- it stops it. A few of them and nothing is served at
+# all.
+#
+# THIRTY SECONDS is far above any query a deployment should be issuing
+# (the scan ceiling bounds the largest read at about 50ms, measured)
+# and far below a person's patience. It is a backstop against a query
+# that will never finish, not a performance target.
+#
+# SQLite ON LOCAL DISK RARELY HANGS. This exists because the same
+# mechanism must be there when a NETWORK database is the source, and a
+# timeout added with the first network adapter would be a timeout
+# nobody had ever seen fire.
+DEFAULT_QUERY_TIMEOUT_SECONDS = 30.0
 
-def open_connection(db_path: Path, read_only: bool = False) -> sqlite3.Connection:
+# HOW OFTEN THE DEADLINE IS CHECKED, in SQLite virtual-machine steps.
+#
+# The handler runs every N instructions, so this trades responsiveness
+# against overhead. 10,000 is roughly a millisecond of work on a
+# modern machine: fine enough that a runaway query stops promptly,
+# coarse enough that an ordinary one never notices.
+_PROGRESS_STEPS = 10_000
+
+
+def open_connection(db_path: Path, read_only: bool = False,
+                    timeout_seconds: float | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+
+    # A DEADLINE PER CONNECTION, enforced by SQLite itself.
+    #
+    # set_progress_handler runs a callback every _PROGRESS_STEPS
+    # virtual-machine instructions; returning non-zero ABORTS the
+    # statement with OperationalError("interrupted"). Verified.
+    #
+    # PER CONNECTION AND NOT PER STATEMENT, which is a real
+    # simplification: a connection used for several statements shares
+    # one deadline from when it opened. Every read path here opens a
+    # connection, runs its query and closes, so the two coincide --
+    # and a caller that held one open across many queries would get a
+    # stricter bound than it asked for, which is the safe direction to
+    # be wrong in.
+    limit = (
+        DEFAULT_QUERY_TIMEOUT_SECONDS if timeout_seconds is None
+        else timeout_seconds
+    )
+    if limit and limit > 0:
+        deadline = time.monotonic() + limit
+        conn.set_progress_handler(
+            lambda: 1 if time.monotonic() > deadline else 0, _PROGRESS_STEPS,
+        )
     if read_only:
         # Confirmed directly, empirically, before relying on this (a
         # real, isolated test: SELECT succeeded, INSERT/UPDATE/DROP

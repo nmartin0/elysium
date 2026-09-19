@@ -16,3 +16,14 @@ data_silos:
     adapter: sqlite
     connection:
       path: "dev_fixtures/mediator.db"
+      # query_timeout_seconds: 30   # how long ONE query may run
+      #
+      # ABSENT MEANS THE DEFAULT, which is what nearly every
+      # deployment should use. There is ONE worker process, so a
+      # hung query does not slow the service -- it stops it.
+      #
+      # Set it per silo when one source is slower than the rest:
+      # a database across a WAN has a different idea of "too
+      # long" than one on local disk. 0 disables the deadline
+      # entirely, which a silo that genuinely runs long jobs may
+      # want and nothing else should.

@@ -197,6 +197,12 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         # e.g. {"path": "dev_fixtures/mediator.db"} -- opaque to
         # DataMediator, meaningful only here.
         self.db_path = Path(connection["path"])
+        # A DEADLINE THIS SILO MAY SET FOR ITSELF. Absent means the
+        # default, which is what nearly every deployment should use --
+        # the option exists because a silo on a slow link has a
+        # different idea of "too long" than one on local disk, not
+        # because anyone should be tuning it routinely.
+        self.query_timeout_seconds = connection.get("query_timeout_seconds")
 
     @contextmanager
     def _connection(self):
@@ -230,7 +236,8 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         # credential is the primary enforcement point, with
         # application code as defense in depth, never the reverse.
         # Neither layer alone is the whole guarantee.
-        conn = _connect(self.db_path, read_only=True)
+        conn = _connect(self.db_path, read_only=True,
+                        timeout_seconds=self.query_timeout_seconds)
         try:
             yield conn
         finally:
@@ -522,7 +529,14 @@ class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):
         # structurally unwritable; WriteMediator's own -- reached only
         # through the two-phase propose/confirm flow, after RBAC/MAC
         # and a human approval -- genuinely are.
-        conn = _connect(self.db_path)
+        # THE SAME DEADLINE APPLIES TO WRITES, inherited from the read
+        # adapter this subclasses. A hung write blocks the one worker
+        # exactly as a hung read does, and a write that cannot finish
+        # in thirty seconds is not a write anyone is waiting for.
+        #
+        # SQLite ABORTS CLEANLY: the interrupt rolls the statement
+        # back, so a timed-out write leaves nothing half-applied.
+        conn = _connect(self.db_path, timeout_seconds=self.query_timeout_seconds)
         try:
             yield conn
         finally:

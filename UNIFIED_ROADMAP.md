@@ -149,11 +149,27 @@ reading the code carefully would have ruled out.
 
 **Blocks:** any deployment that stays up for a week.
 
-### 0.4 A silo query timeout
+### 0.4 ~~A silo query timeout~~ DONE
 
-No adapter sets one. A slow or hung source blocks a worker
-indefinitely, and there is ONE worker process — so a few hung queries
-stop the service entirely.
+**THE ENTRY WAS RIGHT, this time.** No adapter set one, verified
+before building.
+
+`set_progress_handler` is SQLite's own mechanism -- a callback every
+10,000 virtual-machine instructions, returning non-zero aborts with
+OperationalError("interrupted"). Measured: a runaway query stops at
+0.20s against a 0.2s deadline, and an ordinary one runs in 0.1ms
+untouched.
+
+**WRITES TOO**, inherited from the read adapter. Verified that an
+aborted write leaves NOTHING behind -- zero rows -- because a
+half-applied write would be far worse than a slow one.
+
+**30 SECONDS BY DEFAULT**, per silo overridable, 0 to disable.
+Documented in data_silos.yaml.
+
+**BUILT BEFORE THE ADAPTER THAT NEEDS IT**, deliberately: a timeout
+added alongside the first network adapter would be a timeout nobody
+had ever watched fire.
 
 **Depends on:** 0.1 in practice. SQLite on local disk rarely hangs; a
 network database routinely does.
