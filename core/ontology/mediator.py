@@ -103,6 +103,8 @@ Used by: scripts/run_deployment.py (via core/deployment_loader.py),
          core/memory/guard.py, core/agent/agentic_loop.py
 """
 
+import decimal
+import logging
 import threading
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -114,6 +116,7 @@ from core.filters import FieldFilter, row_matches, validate_filter
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.ontology.field_types import coerce
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.schema import (
     get_column_for_field,
@@ -151,6 +154,13 @@ class ReauthorizedConditions:
 
     runnable: list
     disabled: list[str]
+
+
+# THIS MODULE HAD NO LOGGER until a live read needed to report a type
+# it could not honour. The audit log was the wrong home for it: that
+# records ACCESS DECISIONS, and a source value disagreeing with the
+# ontology is not one.
+logger = logging.getLogger(__name__)
 
 
 class DataMediator:
@@ -597,6 +607,19 @@ class DataMediator:
         id_column = resolved_type_config["storage"]["id_column"]
         column = get_column_for_field(resolved_type_config, field_name)
 
+        # NOT COERCED, DELIBERATELY. This resolves a SECURITY VALUE,
+        # which is compared for equality against the user's own. Coercion
+        # changes a value's representation, and changing the
+        # representation of one side of the comparison that decides
+        # authorization is not a risk worth taking to make a region name
+        # tidier.
+        #
+        # A security field is a string in every deployment shipped, so
+        # there is nothing to coerce in practice -- but "nothing to
+        # coerce in practice" is a fact about today's configs rather
+        # than a guarantee, which is why this says so rather than
+        # relying on it.
+
         # Filtered IN THE ENGINE. This read every row of the table and
         # discarded the rest in Python; fetching three objects out of
         # 200,004 read all of them.
@@ -806,7 +829,10 @@ class DataMediator:
                 return applied[field_name]
 
         column = get_column_for_field(resolved_type_config, field_name)
-        return adapter.get_raw_field(object_type, object_id, column, resolved_type_config)
+        return self._as_declared(
+            object_type, field_name,
+            adapter.get_raw_field(object_type, object_id, column, resolved_type_config),
+        )
 
     def reauthorize_conditions(self, user_record: UserRecord, object_type: str,
                                conditions: list) -> "ReauthorizedConditions":
@@ -1139,6 +1165,61 @@ class DataMediator:
             candidate_id for candidate_id in candidate_ids
             if check_access(self, user_record, self.roles, object_type, candidate_id, action, context)
         ]
+
+    def _as_declared(self, object_type: str, field_name: str, value):
+        """A raw source value, as the type the ontology declares it is.
+
+        WHY THE LIVE PATH NEEDS THIS AND THE MIRROR DOES NOT. A sync
+        coerces on the way into silver, so a mirror read already
+        returns what the ontology promised. A live read hands back
+        whatever the driver produced.
+
+        MEASURED, same field and same ontology: the mirror returns
+        Decimal('49.990000000') and the silo returns 49.99 as a FLOAT.
+        The ontology says `decimal` and one path ignored it.
+
+        THAT MATTERS MORE WITH A REAL DATABASE. SQLite has few types
+        and hands back str, int and float. psycopg returns Decimal,
+        datetime, date and UUID objects -- none of which the ontology's
+        vocabulary names -- so a PostgreSQL adapter would widen this
+        gap rather than reveal it.
+
+        A FAILURE HERE IS REPORTED AND THE RAW VALUE PASSES THROUGH.
+        The sync can refuse a whole table because a refused sync leaves
+        the previous snapshot standing; a READ has no previous value to
+        fall back on, and refusing would turn a type disagreement into
+        an unreadable object. Drift is the sync's job to catch and the
+        mirror panel's to show.
+        """
+        if value is None:
+            return None
+
+        declared = self._declared_type(object_type, field_name)
+        if declared is None:
+            # NO EXPECTATION TO VIOLATE. Declaring a type is how an
+            # author opts in, the same bargain the operator check makes.
+            return value
+
+        try:
+            return coerce(value, declared)
+        except (ValueError, TypeError, decimal.InvalidOperation):
+            # ONE LINE PER OFFENDING VALUE, which on a whole bad column
+            # is one line per row. Accepted rather than deduplicated:
+            # the mediator holds no per-request state to remember what
+            # it has already said, and inventing some to quieten a log
+            # would be more machinery than the problem deserves on a
+            # path that is being deprecated.
+            #
+            # THE SYNC IS THE PROPER MECHANISM. It collects every
+            # drifted column, reports the first offending value for
+            # each, and refuses. This is a backstop for the live path,
+            # not a replacement for that.
+            logger.warning(
+                "%s.%s: source value %r does not match the declared type %r. "
+                "Serving it unchanged; a sync would refuse it.",
+                object_type, field_name, value, declared,
+            )
+            return value
 
     def _declared_type(self, object_type: str, field_name: str) -> str | None:
         """A field's declared data_type, or None when it declares none.

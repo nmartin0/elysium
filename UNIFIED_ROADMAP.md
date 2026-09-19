@@ -20,6 +20,32 @@ which would be a guess presented as a plan.
 Everything in this phase is a blocker for any commercial use. None of
 it is interesting and all of it is required.
 
+### 0.0 ~~Live reads honour the declared type~~ DONE
+
+**THE PRE-POSTGRES COMMIT**, measured: the same field and ontology
+returned `Decimal('49.990000000')` from the mirror and `49.99` as a
+FLOAT from the silo. The sync coerces into silver; a live read handed
+back whatever the driver produced.
+
+It comes BEFORE 0.1 because psycopg returns Decimal, datetime, date
+and UUID objects -- none of which the ontology's vocabulary names --
+so an adapter would have widened this gap rather than revealed it.
+
+**A FAILURE IS REPORTED AND SERVED.** The sync can refuse a whole
+table because a refused sync leaves the previous snapshot standing; a
+read has no previous value, and refusing would turn a type
+disagreement into an unreadable object.
+
+**THE SECURITY-VALUE PATH IS DELIBERATELY EXCLUDED** -- it is compared
+for equality against the user's own, and changing the representation
+of one side of the comparison that decides authorization is not worth
+tidying a region name for.
+
+**ONE HONEST DIFFERENCE REMAINS:** the mirror returns a decimal at
+storage scale (`49.990000000`), the live path at source scale
+(`49.99`). Numerically equal, and `decimal_places` governs display, so
+the two agree everywhere a user looks -- but `str()` differs.
+
 ### 0.1 An adapter for a real database
 
 **THE SINGLE LARGEST GAP.** `_LLM_ADAPTER_REGISTRY`'s sibling holds
