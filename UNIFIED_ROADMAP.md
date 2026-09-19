@@ -598,12 +598,31 @@ than closing it — worth stating in the code.
 
 `scripts/repair_catalog.py` already makes the damage survivable.
 
-### 1.3 Backup and restore
+### 1.3 ~~Backup and restore~~ BACKUP DONE
 
-Five SQLite databases — credentials, write_log, config_history,
-metrics, artifacts — plus an Iceberg warehouse, and no script that
-captures them consistently. Copying them while running tears across a
-write.
+**THE INVENTORY WAS WRONG: SEVEN, NOT FIVE.** The entry named
+credentials, write_log, config_history, metrics and artifacts, and
+missed the mirror's own `catalog.db`; `sync_attempts.db` did not exist
+when it was written. Verified against the live deployment.
+
+`scripts/backup_deployment.py` uses `sqlite3.Connection.backup()`,
+which takes a CONSISTENT snapshot of a database being written to --
+`cp` tears across a write, and a torn credentials database is one
+nobody can log into.
+
+**THE SILOS ARE DELIBERATELY EXCLUDED**, and the manifest says so.
+`dev_fixtures/` stands in for a CUSTOMER'S databases; backing them up
+would copy data Elysium does not own into a directory the customer did
+not choose.
+
+**VERIFIED BY RESTORING:** a backup copied into a fresh directory,
+pointed at the silos, built a generation and served four transactions
+with its mirror timestamp intact.
+
+**STILL OPEN: restore is a `cp -a`, not a script.** That is honest for
+now -- restoring into a stopped deployment is a directory copy -- but
+a script would be the place to check the inventory is complete before
+someone discovers it is not.
 
 **THE CHANGELOG IS THE ONE THING THAT CANNOT BE REBUILT.** Bronze and
 silver derive from the silos; history does not.
