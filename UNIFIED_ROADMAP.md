@@ -540,7 +540,47 @@ is blocked on its DESIGN — who may see a queued write across a
 restart, and what a reload does to one proposed under an older
 generation — not on storage.
 
-**Depends on:** nothing technical. Needs the design decision made.
+**THE DESIGN DECISION IS MADE.** Both questions turned out to be
+answered by code that already exists.
+
+**WHO MAY SEE A QUEUED WRITE ACROSS A RESTART:** whoever the CURRENT
+grants say. Nothing about eligibility is stored. `confirm` authorises
+against `_generation(request).config.roles`, and MAC and the
+submission criteria are evaluated inside `confirm_and_execute()`
+against the objects actually touched -- "duplicating them here would
+be a second, weaker copy". Authority is re-evaluated at the point of
+use, which is this project's rule everywhere else too.
+
+**WHAT A RELOAD DOES TO ONE PROPOSED UNDER AN OLDER GENERATION:** this
+is the real question, and it is about MEANING rather than authority. A
+PendingWrite holds RESOLVED `sub_writes` -- the old ontology's
+interpretation of what the action does. Re-authorising those under new
+grants would check the new rules against the old meaning.
+
+**AND A CHECK FOR IT ALREADY EXISTS.** `PendingWrite` carries
+`proposed_under_generation`, and `confirm_and_execute()` calls
+`_fields_no_longer_declared()` -- refusing a write whose target fields
+the current ontology lacks, naming both generations and writing
+`log_write_unapplyable`.
+
+I began building a `source_digest` pin and backed it out: that refuses
+whenever ANY configuration changed, where the existing check refuses
+only when THIS WRITE can no longer be applied. Cruder, and a
+duplicate.
+
+**THE RESIDUAL GAP, narrower than first framed:** the existing check
+asks whether the target FIELDS still exist. It does not ask whether
+the ACTION still means what it meant -- an action whose sub-writes
+were redefined leaves a stored write holding the old computation
+against a field that is still perfectly present.
+
+That is a real hole and a small one. Worth fixing when the action
+definition itself can be compared, not by refusing every write that
+outlived a config change.
+
+**Depends on:** nothing. SQLite suffices, and the design is settled --
+authority re-evaluated at use, meaning checked by the guard that
+exists, with the narrow residual gap recorded.
 
 ### 1.2 fsync before the catalog pointer swap
 
