@@ -46,7 +46,32 @@ storage scale (`49.990000000`), the live path at source scale
 (`49.99`). Numerically equal, and `decimal_places` governs display, so
 the two agree everywhere a user looks -- but `str()` differs.
 
-### 0.1 An adapter for a real database
+### 0.1 ~~An adapter for a real database~~ DONE
+
+**ON SQLALCHEMY CORE, NOT A NATIVE DRIVER.** Our queries are simple --
+no joins, no subqueries, no window functions -- so almost everything
+that differs between engines is what Core's dialects handle:
+placeholder style, identifier quoting, row-limit syntax, and schema
+introspection.
+
+**THE LAST DECIDED IT.** The schema-drift work needs to know what a
+source says its column types are, and hand-writing that means
+information_schema, PRAGMA, ALL_TAB_COLUMNS and sys.columns -- four
+dialects of one question. Core's Inspector answers it once.
+
+**Airflow is the precedent:** SQLAlchemy underneath, with
+per-database overrides where they matter.
+
+**THE SQLITE ADAPTER IS UNTOUCHED**, serving Elysium's own storage on
+the stdlib module. Two mechanisms, divided on a real line: embedded
+fixture storage against a customer's real database.
+
+**VERIFIED AGAINST A REAL POSTGRESQL 16.2**, not a mock. `pgserver`
+ships the server as a wheel, so the adapter's 19 tests exercise a
+genuine engine -- which is what removed the objection that an untested
+database adapter would be the largest unverified thing here.
+
+### 0.1 (original note)
 
 **THE SINGLE LARGEST GAP.** `_LLM_ADAPTER_REGISTRY`'s sibling holds
 exactly one read adapter: `sqlite`. There is no PostgreSQL, MySQL,

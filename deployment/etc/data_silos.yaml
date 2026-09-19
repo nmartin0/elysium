@@ -27,3 +27,28 @@ data_silos:
       # long" than one on local disk. 0 disables the deadline
       # entirely, which a silo that genuinely runs long jobs may
       # want and nothing else should.
+
+# A REAL DATABASE, through SQLAlchemy. Commented out because the
+# shipped fixtures are SQLite; uncomment and edit to point Elysium at
+# something a customer actually runs.
+#
+#  warehouse_pg:
+#    adapter: sqlalchemy
+#    connection:
+#      # SQLALCHEMY'S OWN URL SHAPE, which is how it names a database.
+#      # Keeping the config in that shape rather than inventing
+#      # host/port/user keys means a deployment can reach anything
+#      # SQLAlchemy has a dialect for -- PostgreSQL, MySQL, Oracle,
+#      # SQL Server -- without this project learning about each.
+#      url: "postgresql+psycopg://elysium@db.internal:5432/warehouse"
+#      # query_timeout_seconds: 30
+#      #
+#      # SERVER-SIDE where the dialect allows it. On PostgreSQL this
+#      # becomes `statement_timeout`, which makes the SERVER abandon
+#      # the query -- a client-side timeout only stops waiting, and
+#      # leaves the database working on something nobody will read.
+#
+# THE PASSWORD GOES IN THIS URL TODAY, which is the gap phase 1.4
+# names: secrets live in plaintext configuration. That is the next
+# thing to fix now that real credentials exist.
+

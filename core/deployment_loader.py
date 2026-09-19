@@ -39,6 +39,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 
 from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 from adapters.ollama_adapter import OllamaAdapter
+from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
 
@@ -71,6 +72,16 @@ from core.ontology.write_log import WriteLogReader, WriteLogWriter
 # this registry split exists at all.
 _READ_ADAPTER_REGISTRY: dict[str, type] = {
     "sqlite": SQLiteReadAdapter,
+    # EXTERNAL DATABASES, through SQLAlchemy Core. One entry serves
+    # PostgreSQL, MySQL, Oracle and SQL Server, because what differs
+    # between them for queries this simple is what Core's dialects
+    # handle -- placeholders, quoting, row-limit syntax and schema
+    # introspection.
+    #
+    # The `sqlite` entry above stays on the stdlib module: it serves
+    # Elysium's OWN storage, it works, and churning it would buy
+    # nothing.
+    "sqlalchemy": SQLAlchemyReadAdapter,
 }
 
 _WRITE_ADAPTER_REGISTRY: dict[str, type] = {

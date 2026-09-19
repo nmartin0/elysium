@@ -30,3 +30,17 @@ httpx2          # test-only -- Starlette's TestClient imports it (as httpx) for
 moto[server]
 boto3
 flask-cors
+
+# A REAL POSTGRESQL, as a wheel, for the test suite.
+#
+# WHY A TEST DEPENDENCY AND NOT A RUNTIME ONE: a deployment connects to
+# a PostgreSQL somebody else runs. This exists so the adapter's tests
+# run against a genuine server rather than a mock -- an untested
+# database adapter would be the largest unverified thing in this
+# codebase, and every other commit here is verified by measurement.
+#
+# IT IS NOT SMALL. That cost is accepted deliberately: the alternative
+# was tests that skip wherever no PostgreSQL happens to be installed,
+# which means the adapter is verified nowhere in particular.
+pgserver<1.0
+

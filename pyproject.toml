@@ -122,6 +122,10 @@ ignore_imports = [
     "core.deployment_loader -> adapters.ollama_adapter",
     "core.deployment_loader -> adapters.claude_agent_sdk_adapter",
     "core.deployment_loader -> adapters.sqlite_adapter",
+    # The adapter REGISTRY is the one place core names a concrete
+    # adapter, and each exception is listed rather than the rule
+    # weakened. A fifth would be a fifth line here.
+    "core.deployment_loader -> adapters.sqlalchemy_adapter",
 ]
 
 # Contract 2 of 3 -- the real, internal shape of core/ itself, mapped

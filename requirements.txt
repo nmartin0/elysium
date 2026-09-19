@@ -47,3 +47,23 @@ starlette>=1.0.1,<2.0  # FastAPI's ASGI layer -- pinned: versions before this ha
 # back to a prior sync's snapshot works. Every package in its own dependency tree
 # is MIT, BSD-3-Clause, or Apache-2.0 -- zero copyleft.
 pyiceberg[sql-sqlite,pyarrow]<1.0
+
+# EXTERNAL ADAPTERS ONLY. The SQLite adapter Elysium uses for its own
+# storage stays on the stdlib `sqlite3` module -- it works, it is
+# tested, and churning it would buy nothing.
+#
+# SQLAlchemy Core (NOT the ORM) is the base for adapters that reach a
+# CUSTOMER'S database. Four things differ between engines for queries
+# as simple as ours -- placeholder style, identifier quoting, row-limit
+# syntax, and schema introspection -- and Core's dialects handle all
+# four. Its Inspector is what the schema-drift work needs, uniformly,
+# rather than hand-written information_schema queries per database.
+#
+# Airflow's own dialect layer is the precedent: SQLAlchemy underneath,
+# with per-database overrides where they matter.
+sqlalchemy<3.0
+# The PostgreSQL driver SQLAlchemy dials through. psycopg 3, not 2:
+# it returns Decimal, aware datetime, date and UUID objects natively,
+# which is what the ontology's declared types expect.
+psycopg[binary]<4.0
+
