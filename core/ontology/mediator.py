@@ -629,6 +629,72 @@ class DataMediator:
         )
         return {row[id_column]: row[column] for row in rows}
 
+    def _pushable_security_column(self, object_type: str, searched_adapter,
+                                   searched_config: dict) -> str | None:
+        """The COLUMN a MAC filter can become, or None if it cannot.
+
+        THE CANONICAL NAME FOR THIS IS PREDICATE PUSHDOWN, and what
+        cannot be pushed is the RESIDUAL predicate, applied after the
+        read. Row-level security is the same idea stated as "an
+        enforced, invisible WHERE clause": the condition becomes a
+        property of the table rather than something every query must
+        remember.
+
+        `field:` IS PUSHABLE. The security value lives in a column of
+        the object's own table, so `WHERE region = ?` expresses the
+        whole rule and a LIMIT after it is CORRECT rather than a guess.
+
+        `via_field:` IS NOT. The value is reached by following a link,
+        possibly into another table or another silo, and resolved
+        recursively. No single query against this table expresses it.
+
+        THAT IS A KNOWN HAZARD, NOT A LOCAL LIMITATION. The field
+        guidance for row-level security is "keep predicates join-free";
+        a security rule requiring a join is exactly the pattern
+        practitioners warn about. Databricks hits the same wall from
+        the other side -- their SecureView barrier stops predicates
+        crossing the policy boundary, which "can force full table
+        scans... even when the policy resolves to a constant true".
+
+        So an author choosing `via_field:` over `field:` is choosing a
+        scan, and ontology_schema.yaml says so.
+        """
+        security = (self.schema.get(object_type) or {}).get("security") or {}
+        field_name = security.get("field")
+        if field_name is None:
+            return None
+
+        try:
+            security_adapter, security_config = self._resolve_shared_storage(
+                object_type, [field_name],
+            )
+        except (KeyError, ValueError):
+            # UNRESOLVABLE MEANS UNPUSHABLE, not an error to raise here.
+            # Whatever is wrong with the mapping, the caller's fallback
+            # is a residual filter, which is correct if slower.
+            return None
+
+        # AND IT MUST LIVE IN THE TABLE BEING SEARCHED, which is why
+        # the caller passes its own resolved config rather than this
+        # re-resolving. With MDO an object type spans several storages
+        # and the one a search routes to depends on WHICH FIELDS it
+        # filters on -- so "the table being searched" is not a property
+        # of the object type, and asking for the default storage gives
+        # the wrong answer.
+        #
+        # Three MDO tests caught this: `WHERE region = ?` against a
+        # table with no such column fails outright.
+        #
+        # Same silo AND same table: a column name means nothing outside
+        # one table, and two tables in one silo may each have a
+        # `region` meaning different things.
+        if searched_adapter is not security_adapter:
+            return None
+        if security_config["storage"] != searched_config["storage"]:
+            return None
+
+        return get_column_for_field(security_config, field_name)
+
     def _security_allowed(self, object_type: str, object_id: Any, requesting_user_security_value: str) -> bool:
         security_value = self._get_security_value(object_type, object_id)
         return security_value is not None and security_value == requesting_user_security_value
@@ -960,6 +1026,27 @@ class DataMediator:
             )
             for condition in conditions
         ]
+        # THE MAC FILTER, PUSHED INTO THE QUERY where the ontology lets
+        # it be. `field:` security lives in a column of this very
+        # table, so it is just another condition -- and appending it
+        # here rather than before translation is deliberate: it is not
+        # user input and must not go through the filterable-column
+        # check, which exists to stop a caller filtering on something
+        # they cannot see.
+        #
+        # WHERE THIS APPLIES, THE DATABASE RETURNS ONLY ROWS THE USER
+        # MAY SEE, so the residual filter below finds nothing to remove
+        # and a row limit becomes CORRECT rather than a guess.
+        pushed_security = self._pushable_security_column(
+            object_type, adapter, resolved_type_config,
+        )
+        if pushed_security is not None and user_record.security_value is not None:
+            translated = [
+                *translated,
+                FieldFilter(field=pushed_security, operator="equals",
+                            value=user_record.security_value),
+            ]
+
         candidate_ids = self._find_ids_with_fallback(
             adapter, object_type, translated, resolved_type_config
         )

@@ -56,6 +56,25 @@ object_types:
       id_column: transaction_id
     id_field: transaction_id
     security:
+      # `via_field:` CANNOT BE PUSHED INTO THE QUERY, and that is a
+      # cost worth knowing when choosing between it and `field:`.
+      #
+      # A `field:` security value lives in a column of this very
+      # table, so the MAC filter becomes part of the WHERE clause
+      # and the database returns only rows the user may see.
+      #
+      # A `via_field:` value is reached by FOLLOWING A LINK, maybe
+      # into another silo, so no single query expresses it: every
+      # candidate row is fetched and filtered afterwards.
+      #
+      # THAT IS A KNOWN HAZARD, NOT A LOCAL LIMITATION. The field
+      # guidance for row-level security is "keep predicates
+      # join-free", and Databricks' SecureView barrier forces full
+      # scans for the same reason.
+      #
+      # Here it is the right choice anyway -- a transaction has no
+      # region of its own, and inventing one to duplicate the
+      # customer's would be a worse problem than a scan.
       via_field: customer_id
     fields:
       amount:

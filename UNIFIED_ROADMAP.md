@@ -66,7 +66,28 @@ is whether it reads their warehouse.
 two implementations (`sqlite`, `inmemory`) — which is the two-reference
 test a plugin surface is supposed to pass.
 
-### 0.2 A row limit that reaches the query
+### 0.2 A row limit that reaches the query -- MAC PUSHDOWN DONE
+
+**THE FIRST HALF IS BUILT.** A `field:` security declaration is now
+pushed into the query as a condition, so the database returns only
+rows the user may see. The canonical name is PREDICATE PUSHDOWN; what
+cannot be pushed is the RESIDUAL predicate.
+
+**MEASURED BEFORE:** 200,000 rows cost 0.70s and 66MB, extrapolating
+to ~35s and ~3.3GB for ten million -- per request, before filtering.
+
+**`via_field:` CANNOT BE PUSHED** and ontology_schema.yaml now says
+so, because it is a schema choice with a performance consequence. A
+known hazard rather than a local limitation: the row-level-security
+field guidance is "keep predicates join-free", and Databricks'
+SecureView barrier forces full scans for the same reason.
+
+**STILL OPEN:** the LIMIT itself. Where MAC is pushed a limit is
+correct; where it is residual a ceiling is needed, reported in terms
+of rows SCANNED rather than matched -- which is how governed query
+engines report it.
+
+### 0.2 (original note)
 
 `search_object` takes no limit. It returns every matching id, MAC
 filtering happens after the fetch, and the adapter's read is a bare
