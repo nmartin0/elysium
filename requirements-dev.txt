@@ -42,5 +42,16 @@ flask-cors
 # IT IS NOT SMALL. That cost is accepted deliberately: the alternative
 # was tests that skip wherever no PostgreSQL happens to be installed,
 # which means the adapter is verified nowhere in particular.
-pgserver<1.0
+#
+# PYTHON 3.12 ONLY, which is why the marker is here. pgserver 0.1.4
+# publishes a cp312 wheel and no cp313 one, so a 3.13 environment has
+# nothing to install and `pip install -r` FAILS outright -- which it
+# did, on a real machine, immediately after this line was added
+# without the marker.
+#
+# THE ADAPTER'S TESTS SKIP WITHOUT IT, via importorskip. So a 3.13
+# developer gets a working install and 19 fewer tests, rather than no
+# install at all. That is the right way round: a dependency that
+# cannot be satisfied must not block the ones that can.
+pgserver<1.0; python_version < "3.13"
 
