@@ -142,6 +142,7 @@ from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import _row_count, check_mirror
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
+from core.ontology.mediator import SearchOutcome
 from core.ontology.schema import get_field_column, sort_key
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import MAX_BULK_OBJECTS, WriteMediator
@@ -387,6 +388,13 @@ class SearchResponse(BaseModel):
     request_id: str | None = None
     # Present only when there are more results -- see the route.
     next_page_token: str | None = None
+    # THE SEARCH READ ITS CEILING AND STOPPED. It does NOT mean
+    # "there is more for you": where MAC could not be pushed into
+    # the query, the ceiling bounds a SCAN whose survivors are
+    # filtered afterwards, so the rows beyond it might all have
+    # been invisible anyway. The UI must say "we stopped looking",
+    # never "there is more".
+    scan_truncated: bool = False
 
 
 class ObjectDetailResponse(BaseModel):
@@ -2031,9 +2039,15 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     # and without this they were fifty-one unrelated facts.
     request_context = RequestContext.new()
     try:
+        # THE OUT-PARAMETER IS CREATED HERE because this is the
+        # caller that reports it. search_object_free_text returns a
+        # list of ids to many call sites; changing that shape to
+        # carry one boolean would touch every one for a fact most
+        # of them do not want.
+        search_outcome = SearchOutcome()
         matching_ids = mediator.search_object_free_text(
             current_user, object_type, q, conditions=parsed,
-            context=request_context,
+            context=request_context, outcome=search_outcome,
         )
     except ValueError as e:
         # A bad filter is the caller's mistake, not a server fault. The
@@ -2088,6 +2102,7 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
         "results": results,
         "total_matches": len(matching_ids),
         "request_id": request_context.request_id,
+        "scan_truncated": search_outcome.scan_truncated,
         # Absent, not empty, when there is no further page -- Foundry's
         # own contract is that "the presence of the nextPageToken field
         # indicates that there are more results."

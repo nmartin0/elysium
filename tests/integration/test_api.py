@@ -687,6 +687,11 @@ def test_search_objects_blocks_cross_region_mac(client):
     # time.
     assert {k: v for k, v in body.items() if k != "request_id"} == {
         "results": [], "total_matches": 0, "next_page_token": None,
+        # A SEARCH THAT MATCHED NOTHING DID NOT TRUNCATE, which is a
+        # real assertion rather than a shape update: reporting
+        # truncation on an empty result would tell a user to narrow
+        # filters that already exclude everything.
+        "scan_truncated": False,
     }
     assert "request_id" in body
 
@@ -707,6 +712,11 @@ def test_search_objects_no_match_returns_empty_results(client):
     # time.
     assert {k: v for k, v in body.items() if k != "request_id"} == {
         "results": [], "total_matches": 0, "next_page_token": None,
+        # A SEARCH THAT MATCHED NOTHING DID NOT TRUNCATE, which is a
+        # real assertion rather than a shape update: reporting
+        # truncation on an empty result would tell a user to narrow
+        # filters that already exclude everything.
+        "scan_truncated": False,
     }
     assert "request_id" in body
 
@@ -727,6 +737,11 @@ def test_search_objects_unknown_type_returns_empty_results_not_error(client):
     # time.
     assert {k: v for k, v in body.items() if k != "request_id"} == {
         "results": [], "total_matches": 0, "next_page_token": None,
+        # A SEARCH THAT MATCHED NOTHING DID NOT TRUNCATE, which is a
+        # real assertion rather than a shape update: reporting
+        # truncation on an empty result would tell a user to narrow
+        # filters that already exclude everything.
+        "scan_truncated": False,
     }
     assert "request_id" in body
 

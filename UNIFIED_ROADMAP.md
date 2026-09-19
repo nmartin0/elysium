@@ -95,9 +95,17 @@ exhausted memory.
 looking" is distinguished from "that was all of them" without a second
 query.
 
-**STILL OPEN:** reporting truncation to the CALLER. The mediator logs
-it; the API response does not carry it, so a user sees a short list
-and no reason.
+**AND THE CALLER IS TOLD.** `scan_truncated` on the search response,
+and a Browse banner saying the search STOPPED rather than that there
+is more -- because where MAC is residual the ceiling bounds a scan
+whose survivors are filtered, so the rows beyond it might all have
+been invisible anyway.
+
+**THE FREE-TEXT PATH WAS UNCAPPED**, which is the route Browse
+actually uses: the first ceiling only reached `search_object`. Both of
+its fetches are capped now.
+
+**0.2 IS DONE.**
 
 ### 0.2 (original note)
 

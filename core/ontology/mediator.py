@@ -162,6 +162,33 @@ class ReauthorizedConditions:
 # ontology is not one.
 logger = logging.getLogger(__name__)
 
+
+@dataclass
+class SearchOutcome:
+    """What a search did, beyond the ids it returned.
+
+    AN OUT-PARAMETER RATHER THAN A RETURN TYPE, which is the less
+    elegant of two options and the right one here. `search_object`
+    returns a list of ids to 92 call sites; changing that shape to
+    carry one boolean would touch every one of them, almost all tests,
+    for a fact most callers do not want.
+
+    NOT ON RequestContext, which was the first idea and is wrong:
+    that is frozen, and its own docstring describes the fields it
+    expects to gain -- a deadline, a token count -- which are INPUTS
+    set at creation. This is an output.
+
+    Callers that care pass one and read it; callers that do not pass
+    nothing and are unaffected.
+    """
+
+    # THE SEARCH READ THE CEILING AND STOPPED. It does NOT mean "there
+    # is more for you to see": where MAC could not be pushed into the
+    # query, the ceiling bounds a SCAN whose survivors are then
+    # filtered, so the rows beyond it might all have been invisible
+    # anyway. Reported as rows scanned, never as rows matched.
+    scan_truncated: bool = False
+
 # HOW MANY ROWS A SINGLE SEARCH MAY READ.
 #
 # MEASURED, on the read path this bounds: 200,000 rows cost 0.70s and
@@ -971,7 +998,8 @@ class DataMediator:
     def search_object(self, user_record: UserRecord, object_type: str,
                        conditions: "list[FieldFilter] | None" = None,
                        visible_schema: dict | None = None,
-                      context: RequestContext | None = None) -> list:
+                      context: RequestContext | None = None,
+                      outcome: "SearchOutcome | None" = None) -> list:
         """IDs the caller may see, matching every condition.
 
         TAKES CONDITIONS, not a {field: value} dict. The dict could
@@ -1076,9 +1104,10 @@ class DataMediator:
             adapter, object_type, translated, resolved_type_config,
             MAX_SEARCH_SCAN + 1,
         )
-        scan_truncated = len(candidate_ids) > MAX_SEARCH_SCAN
-        if scan_truncated:
+        if len(candidate_ids) > MAX_SEARCH_SCAN:
             candidate_ids = candidate_ids[:MAX_SEARCH_SCAN]
+            if outcome is not None:
+                outcome.scan_truncated = True
             logger.warning(
                 "%s: a search read the %d-row ceiling and stopped. "
                 "Results are incomplete; narrow the filters.",
@@ -1177,7 +1206,8 @@ class DataMediator:
     def search_object_free_text(self, user_record: UserRecord, object_type: str, query_text: str,
                                  visible_schema: dict | None = None,
                                  conditions: list | None = None,
-                                context: RequestContext | None = None) -> list:
+                                context: RequestContext | None = None,
+                                outcome: "SearchOutcome | None" = None) -> list:
         """Free-text search, optionally narrowed by structured filters.
 
         TWO CONTEXTS, COMBINED, which is how every search engine that
@@ -1258,6 +1288,11 @@ class DataMediator:
                 # text search takes columns and a string, and widening
                 # its contract to also take conditions would give two
                 # ways to express the same filter.
+                # CAPPED LIKE THE OTHERS. This narrows an already-found
+                # text match, so the ceiling bounds how many CONDITION
+                # matches are read to intersect against -- and a
+                # truncated set here silently drops text matches that
+                # would have qualified, which is why it reports too.
                 eligible = set(
                     self._find_ids_with_fallback(
                         adapter, object_type,
@@ -1265,8 +1300,11 @@ class DataMediator:
                             object_type, conditions, resolved_type_config, visible_type_def
                         ),
                         resolved_type_config,
+                        MAX_SEARCH_SCAN + 1,
                     )
                 )
+                if len(eligible) > MAX_SEARCH_SCAN and outcome is not None:
+                    outcome.scan_truncated = True
                 candidate_ids = [oid for oid in candidate_ids if oid in eligible]
         else:
             # No text: the conditions ARE the query.
@@ -1276,7 +1314,17 @@ class DataMediator:
                     object_type, conditions or [], resolved_type_config, visible_type_def
                 ),
                 resolved_type_config,
+                MAX_SEARCH_SCAN + 1,
             )
+            if len(candidate_ids) > MAX_SEARCH_SCAN:
+                candidate_ids = candidate_ids[:MAX_SEARCH_SCAN]
+                if outcome is not None:
+                    outcome.scan_truncated = True
+                logger.warning(
+                    "%s: a free-text search read the %d-row ceiling and "
+                    "stopped. Results are incomplete; narrow the filters.",
+                    object_type, MAX_SEARCH_SCAN,
+                )
 
         action = f"read:{object_type}"
         candidate_ids = self._without_deleted(object_type, candidate_ids)

@@ -1,5 +1,12 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
+import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
+
+// THE SERVER'S OWN CEILING, spelled for a reader rather than imported.
+// The number lives in core/ontology/mediator.py and the UI cannot see
+// it; naming it here risks the two drifting, and saying "10,000 rows"
+// when the server stopped at 10,000 is worth that risk against saying
+// nothing useful at all.
+const MAX_SCAN_LABEL = '10,000'
 import { Link } from 'react-router-dom'
 import {
   getDataFreshness,
@@ -137,6 +144,12 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     writePreference('browseColumns', username, next)
   }
   const [totalMatches, setTotalMatches] = useState(0)
+  // THE SEARCH READ ITS CEILING AND STOPPED. Deliberately NOT called
+  // "hasMore": where MAC could not be pushed into the query the
+  // ceiling bounds a SCAN, and the rows beyond it might all have been
+  // invisible to this user. "We stopped looking" is the honest claim;
+  // "there is more" is not one this can make.
+  const [scanTruncated, setScanTruncated] = useState(false)
 
   // WHICH OBJECTS AN ACTION WOULD APPLY TO, by id rather than by row,
   // so a selection survives paging and re-sorting. Foundry's rule:
@@ -338,10 +351,12 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           results: SearchResult[]
           total_matches: number
           next_page_token?: string | null
+          scan_truncated?: boolean
         }
         if (isStale(thisRequestId)) return
         setResults(response.results)
         setTotalMatches(response.total_matches)
+        setScanTruncated(response.scan_truncated === true)
         setNextPageToken(response.next_page_token ?? null)
       } catch (err) {
         if (isStale(thisRequestId)) return
@@ -659,6 +674,13 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
       {/* NEVER SYNCED, as distinct from synced-and-empty. The server
           already distinguishes them -- source 'mirror' with a null
           last_synced_at -- and only the freshness line used it. */}
+      {scanTruncated && (
+        <Callout intent="warning" className="object-search__truncated">
+          This search stopped after reading {MAX_SCAN_LABEL} rows, so these results are incomplete. Narrowing the
+          filters will find the rest.
+        </Callout>
+      )}
+
       {freshness?.source === 'mirror' && (
         <p className="object-search__freshness">
           {freshness.last_synced_at

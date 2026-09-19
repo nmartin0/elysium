@@ -255,6 +255,40 @@ describe('ObjectSearchPanel -- results rendering', () => {
     await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeInTheDocument())
   })
 
+  describe('a truncated search', () => {
+    it('says the search stopped, not that there is more', async () => {
+      /** "WE STOPPED LOOKING", NEVER "THERE IS MORE FOR YOU".
+       *
+       * Where MAC could not be pushed into the query, the ceiling
+       * bounds a SCAN whose survivors are filtered afterwards -- so the
+       * rows beyond it might all have been invisible to this user. A
+       * banner promising more results would be a guess dressed as a
+       * fact.
+       */
+      mockedSearchObjects.mockResolvedValue({
+        ...searchResult([]),
+        scan_truncated: true,
+      })
+      renderPanel(CUSTOMER_SCHEMA)
+
+      expect(await screen.findByText(/stopped after reading/)).toBeInTheDocument()
+      expect(screen.queryByText(/there is more/i)).toBeNull()
+    })
+
+    it('says nothing when the search completed', async () => {
+      // THE CONTROL. A banner on every search is one nobody reads by
+      // the time it matters.
+      mockedSearchObjects.mockResolvedValue({
+        ...searchResult([]),
+        scan_truncated: false,
+      })
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await screen.findByText('Nothing here yet')
+      expect(screen.queryByText(/stopped after reading/)).toBeNull()
+    })
+  })
+
   describe('data freshness', () => {
     /**
      * WHEN the data was current, stated rather than warned about.
