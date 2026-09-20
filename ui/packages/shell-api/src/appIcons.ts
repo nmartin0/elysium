@@ -36,6 +36,9 @@ const BY_PATH: Record<string, IconName> = {
   // approval and the page is equally a place to reject, or to watch
   // something you proposed.
   '/approvals': 'inbox',
+  // A BELL, not an envelope: this is what the deployment told you,
+  // not mail somebody sent.
+  '/notifications': 'notifications',
 }
 
 /**

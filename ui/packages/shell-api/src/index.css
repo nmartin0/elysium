@@ -1939,4 +1939,25 @@
   .mirror__sync-message {
     color: var(--text-secondary);
   }
+
+  /* WHAT THE DEPLOYMENT TOLD YOU. The head line carries the kind, the
+   time and the read control; the summary is the message itself, and
+   the detail is context rather than the point. */
+  .notifications__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+  }
+
+  .notifications__when {
+    color: var(--text-secondary);
+  }
+
+  .notifications__summary {
+    margin-block: var(--space-tight) 0;
+  }
+
+  .notifications__detail {
+    margin-block-start: var(--space-tight);
+  }
 }

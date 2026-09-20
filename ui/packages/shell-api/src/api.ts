@@ -620,6 +620,29 @@ export interface MirrorState {
   problems: string[]
 }
 
+export interface Notification {
+  notification_id: string
+  created_at: string
+  kind: string
+  summary: string
+  detail: string | null
+  seen: boolean
+}
+
+export async function getNotifications(): Promise<{
+  notifications: Notification[]
+  unseen: number
+}> {
+  const response = await apiFetchOrThrow('/notifications')
+  return response.json() as Promise<{ notifications: Notification[]; unseen: number }>
+}
+
+export async function markNotificationSeen(notificationId: string): Promise<void> {
+  await apiFetchOrThrow(`/notifications/${encodeURIComponent(notificationId)}/seen`, {
+    method: 'POST',
+  })
+}
+
 export async function startMirrorSync(): Promise<{ started: boolean; detail: string }> {
   const response = await apiFetchOrThrow('/admin/mirror/sync', { method: 'POST' })
   return response.json() as Promise<{ started: boolean; detail: string }>

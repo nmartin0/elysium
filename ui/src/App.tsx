@@ -61,6 +61,7 @@ const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPan
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
 const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'))
+const NotificationsPanel = lazy(() => import('@elysium/app-notifications/NotificationsPanel'))
 
 type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn'
 
@@ -397,6 +398,7 @@ export default function App() {
           />
           <Route path="/admin" element={<AdminPanel onSessionExpired={handleSessionExpired} />} />
           <Route path="/approvals" element={<ApprovalsPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/notifications" element={<NotificationsPanel onSessionExpired={handleSessionExpired} />} />
           <Route path="*" element={<Navigate to="/query" replace />} />
         </Route>
       </Routes>

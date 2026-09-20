@@ -58,6 +58,17 @@ VISIBLE_APPS: list[dict[str, str | None]] = [
     # neither relationship sees an empty inbox, not a forbidden page --
     # the same uniform denial every read path uses.
     {"name": "Approvals", "path": "/approvals", "gating_permission": None},
+    # UNGATED, FOR THE SAME REASON AS APPROVALS. These are the
+    # caller's OWN notifications, scoped by user in the query, so
+    # somebody with none sees an empty page rather than a forbidden
+    # one -- the uniform denial every read path here uses.
+    #
+    # AND GATING WOULD BE WRONG RATHER THAN MERELY UNNECESSARY. A
+    # notification is sent to whoever a condition names, and that is
+    # decided per condition; a single permission could not describe
+    # who should be able to read theirs.
+    {"name": "Notifications", "path": "/notifications",
+     "gating_permission": None},
 ]
 
 

@@ -256,9 +256,19 @@ the moment to decide whether somebody should be told.
    start a sync you should hear that one is needed, and adding an
    administrator changes the recipient list by doing so.
 
-   **STILL OPEN:** the UI. The endpoints exist (`GET
-   /notifications`, `POST /notifications/{id}/seen`); nothing in the
-   product shows them yet.
+   **AND THE UI EXISTS**, at `/notifications`: a panel listing what
+   arrived, newest first, with a per-row read control.
+
+   **UNGATED, FOR THE SAME REASON AS APPROVALS.** Notifications are
+   scoped by user in the query, so somebody with none sees an empty
+   page rather than a forbidden one -- the uniform denial every read
+   path here uses. Gating would also be WRONG rather than merely
+   unnecessary: a notification goes to whoever a condition names,
+   decided per condition, and no single permission describes that.
+
+   **MARKED SEEN ON A CLICK, NOT ON RENDER.** Opening a list is not
+   reading it, and a badge that cleared itself when somebody glanced
+   at the tab would lose the one thing it is for.
 
 0. (original note) MIRROR HEALTH FIRST, because it is the smallest and the most
    clearly needed: a sync refused, or a table stale beyond a
