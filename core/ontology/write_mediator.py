@@ -265,6 +265,57 @@ def _describe_action(action_type_name: str, action_def: dict, parameters: dict) 
 MAX_BULK_OBJECTS = 1000
 
 
+class CrossCompartmentWrite(ValueError):
+    """An action would move data between security compartments.
+
+    ITS OWN TYPE because it is not an authorization failure. Every
+    individual check PASSED -- the caller may read the source and may
+    write the target. What is refused is the COMBINATION, which no
+    per-object check can see.
+    """
+
+
+def _compartment_crossings(read_labels: dict, write_labels: dict) -> list[tuple]:
+    """Where an action would write data into a different compartment.
+
+    THE BELL-LAPADULA \\*-PROPERTY, in the form Elysium needs. The
+    model's rule is that a subject may not write to a label that does
+    not DOMINATE what it read; dominance for compartments is set
+    containment.
+
+    ELYSIUM'S LABELS ARE SINGLE COMPARTMENTS today, so containment
+    reduces to equality -- and that is the check. It generalises
+    without rewriting when a label becomes a set: replace `!=` with
+    "not a superset".
+
+    COMPARTMENTS, NOT LEVELS, and the two are separate for a reason.
+    Foundry keeps markings (compartments, conjunctive) apart from
+    Classification-based Access Controls (levels, hierarchical) and
+    says "classifications can not be used together with markings...
+    on the same mandatory control property". CBAC is off by default
+    there. A level hierarchy is a chain of nested compartment sets
+    anyway, so deferring levels costs no expressiveness.
+
+    RETURNS THE CROSSINGS rather than a boolean, because a refusal
+    that cannot say WHICH object went where is one nobody can act on.
+    """
+    crossings = []
+    for (read_type, read_id), read_label in read_labels.items():
+        if read_label is None:
+            # AN UNLABELLED SOURCE CANNOT LEAK A COMPARTMENT it does
+            # not have. This is not a silent pass: an object with no
+            # security value is one the ontology declared as needing
+            # none.
+            continue
+        for (write_type, write_id), write_label in write_labels.items():
+            if write_label is not None and write_label != read_label:
+                crossings.append(
+                    (read_type, read_id, read_label,
+                     write_type, write_id, write_label),
+                )
+    return crossings
+
+
 class WriteMediator:
     def __init__(
         self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict,
@@ -919,6 +970,86 @@ class WriteMediator:
             )
         return {}
 
+    def _refuse_cross_compartment(self, user_record, action_type_name: str,
+                                  action_def: dict, parameters: dict,
+                                  sub_writes: list) -> None:
+        """Refuses an action that would carry data across compartments.
+
+        THE GAP THIS CLOSES. Every MAC check in this codebase compares
+        an object to the USER; nothing compared two OBJECTS. So an
+        analyst cleared for two compartments could read one and write
+        the other, and every individual check passed.
+
+        THE BELL-LAPADULA \\*-PROPERTY is the name for what was
+        missing -- "no write down" -- and it is about the FLOW rather
+        than about either end of it.
+
+        THE READ SET IS THE OBJECT-REFERENCE PARAMETERS. Those are the
+        objects the action was handed, and Foundry's model is the
+        same: "an existing object whose primary key is derived from
+        object reference parameters". An action can only carry what it
+        was given.
+
+        REFUSED AT PROPOSAL, not at execution. A write that cannot
+        legally happen should not sit in an approval queue looking
+        like a decision somebody could make.
+        """
+        read_labels = {}
+        for name, definition in (action_def.get("parameters") or {}).items():
+            if definition.get("type") not in (
+                "object_reference", "object_reference_list",
+            ):
+                continue
+            referenced = parameters.get(name)
+            if referenced is None:
+                continue
+            object_type = definition.get("object_type")
+            for object_id in (
+                referenced if isinstance(referenced, list) else [referenced]
+            ):
+                read_labels[(object_type, object_id)] = (
+                    self._adapter_mediator._get_security_value(
+                        object_type, object_id,
+                    )
+                )
+
+        write_labels = {
+            (sub.object_type, sub.object_id):
+                self._adapter_mediator._get_security_value(
+                    sub.object_type, sub.object_id,
+                )
+            for sub in sub_writes
+            if sub.operation != "create"
+        }
+
+        crossings = _compartment_crossings(read_labels, write_labels)
+        if not crossings:
+            return
+
+        read_type, read_id, read_label, write_type, write_id, write_label = (
+            crossings[0]
+        )
+        # LOGGED AS AN ACCESS DECISION, using the method that exists.
+        # A first version called `log_write_refused` behind a hasattr
+        # guard -- the method does not exist, and the guard was hiding
+        # that rather than handling it.
+        self.audit_log.log_access(
+            user_record.user_id, write_type, write_id,
+            # `execute:` BECAUSE THAT IS THE GRANT THIS ACTION NEEDED,
+            # and the vocabulary check requires every verb the code
+            # asks for to be one a deployment can actually write. A
+            # first version used `refused:` and a test caught it: "a
+            # deployment cannot write them, so those checks can never
+            # pass". mac_allowed=False records WHY it was refused.
+            f"execute:{action_type_name}", False, True,
+        )
+        raise CrossCompartmentWrite(
+            f"This action would read {read_type} {read_id} (in "
+            f"{read_label}) and write {write_type} {write_id} (in "
+            f"{write_label}). Data may not cross a security compartment, "
+            f"even when you can see both sides. Nothing has been written."
+        )
+
     def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict,
                        origin: Origin) -> PendingWrite:
         # Matches Palantir Foundry's own action-type model directly
@@ -1135,6 +1266,11 @@ class WriteMediator:
                 resolved_sub_writes.append(
                     SubWrite(object_type, object_id, operation, changes, expected_current_values)
                 )
+
+        self._refuse_cross_compartment(
+            user_record, action_type_name, action_def, parameters,
+            resolved_sub_writes,
+        )
 
         description = _describe_action(action_type_name, action_def, parameters)
         return PendingWrite(

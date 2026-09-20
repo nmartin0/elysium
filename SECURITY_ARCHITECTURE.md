@@ -197,10 +197,45 @@ mechanizable: dominance, least upper-bound, and reading/writing
 predicates are simple, total, decidable functions on integer ranks
 plus subset tests on compartment sets".
 
-**WHAT STILL NEEDS DECIDING IS SMALLER:** whether Elysium adopts the
-full pair now, or keeps single-compartment labels and adds levels when
-a deployment needs them. The second is less work and the first is
-where this ends up; either way the comparison is the same function.
+**AND THE REMAINING CHOICE IS SETTLED TOO: COMPARTMENTS ONLY.**
+Researched against Foundry, which Elysium models itself on, and the
+answer is the opposite of adopting the pair up front.
+
+**FOUNDRY KEEPS THEM APART, and ships only one by default.** Markings
+are compartments -- "to access a resource, a user must be a member of
+ALL Markings applied to a resource", which is set containment exactly.
+Classification-based Access Controls are levels -- "every user can
+only access data that is classified at or below their own
+classification level". And "classifications can NOT be used together
+with markings or organizations on the same mandatory control
+property".
+
+**CBAC IS OFF BY DEFAULT**, and "configuration of classification
+markings requires Palantir involvement". So the system this design
+follows treats compartments as the default and levels as an opt-in
+extension needing vendor setup.
+
+**AND DEFERRING LEVELS COSTS NO EXPRESSIVENESS**, which is why that
+works. Foundry notes markings can express hierarchy anyway: "the data
+tiers are hierarchical, and users who have access to the Identifiable
+Data Marking also have access to the De-identified Data Marking". A
+level hierarchy is a CHAIN OF NESTED COMPARTMENT SETS -- `{secret}`
+inside `{secret, topsecret}` gives "top secret dominates secret" with
+no levels mechanism at all. Levels are ergonomics over something
+compartments already say.
+
+**SO THE CHECK IS SMALLER THAN THE LATTICE SUGGESTS:**
+`source_compartments` must be a subset of `target_compartments`, and
+with today's single-string values that is the equality already in the
+code -- applied between two OBJECTS instead of object-and-user.
+
+**ONE THING NEITHER MODEL COVERS**, recorded before somebody asks for
+it: Foundry's classification markings have DISJUNCTIVE components,
+where "users belonging to one of the groups... can satisfy the CBAC
+access condition. This is commonly used to define releasability." OR
+rather than AND. Neither Bell-LaPadula nor Elysium has it, and
+"shareable with partner X or partner Y" is the request that will want
+it.
 
 **AND TWO SPECIAL LABELS COMPLETE THE LATTICE**, worth having from the
 start: SYSTEM_HIGH dominates everything (highest level, every

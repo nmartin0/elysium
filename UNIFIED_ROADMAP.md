@@ -937,11 +937,10 @@ phase is half-done.
 
     3.1  the plugin API       THIRD_PARTY_EXTENSIONS.md: the channel
                               comes before the boundary
-    3.5  write-down check     UNBLOCKED -- the question was wrong.
-                              A label is (level, compartments); both
-                              exist in Bell-LaPadula and Elysium'''s
-                              values are compartments. See
-                              SECURITY_ARCHITECTURE.md
+    3.5  write-down check     DONE for compartments. An action that
+                              reads one and writes another is refused
+                              at PROPOSAL. Levels deferred, following
+                              Foundry, and they cost nothing to defer
     3.6  fusion               needs the gold layer, which nothing has
 
 ### Blocked on something genuinely absent
