@@ -39,17 +39,27 @@ class CountCondition:
     # FIRES WHEN IT GAINS AT LEAST THIS MANY since last time. None
     # disables it.
     gained: int | None = None
+    # FIRES WHEN IT LOSES AT LEAST THIS MANY. None disables it.
+    #
+    # SEPARATE FROM `gained` RATHER THAN A SIGNED THRESHOLD, because
+    # the two are different questions: "work is piling up" and "work
+    # is being cleared" want different words and often different
+    # recipients.
+    fell: int | None = None
 
 
 def _verdict(condition: CountCondition, previous: int | None,
              current: int) -> str | None:
     """What to say about this count, or nothing.
 
-    THE FIRST EVALUATION IS A BASELINE AND SAYS NOTHING. A condition
-    declared today has no previous count, and treating that as zero
-    would report every existing match as a gain -- the flood a
-    monitoring tool that hit it warns about: "the first successful run
-    creates a baseline, never a flood of fake new ads".
+    THE FIRST EVALUATION IS A BASELINE AND SAYS NOTHING HERE -- the
+    caller sends a separate "now watching" notice, because silence is
+    indistinguishable from a condition that never ran.
+
+    Treating a missing previous count as zero would report every
+    existing match as a gain, which is the flood a monitoring tool
+    that hit it warns about: "the first successful run creates a
+    baseline, never a flood of fake new ads".
     """
     if previous is None:
         return None
@@ -78,33 +88,83 @@ def _verdict(condition: CountCondition, previous: int | None,
             f"({previous} to {current})."
         )
 
-    # A COUNT THAT FELL IS NOT REPORTED, deliberately. An object
-    # leaving a filtered set may mean it changed, was deleted, or that
-    # the reader's grants changed -- and the third is indistinguishable
-    # from the first two with what is stored here. A monitoring tool
-    # puts the same caution plainly: a row "disappearing from a result
-    # list never becomes AD_BECAME_INACTIVE".
+    if condition.fell is not None and previous - current >= condition.fell:
+        # SAFE ONLY BECAUSE THE CONFIGURATION IS PINNED. An object
+        # leaving a filtered set may mean it changed, was deleted, or
+        # that the READER'S GRANTS changed -- and the caller refuses to
+        # compare across a configuration change, so the third is ruled
+        # out before this runs.
+        #
+        # IT STILL SAYS "3 FEWER", NEVER "THESE THREE". Knowing which
+        # needs last time's result set, which is exactly what is not
+        # stored. A monitoring tool puts the residue plainly: a row
+        # "disappearing from a result list never becomes
+        # AD_BECAME_INACTIVE".
+        return (
+            f"{condition.description}: {previous - current} fewer than "
+            f"last time ({previous} to {current})."
+        )
+
     return None
 
 
 def evaluate_for_recipients(condition: CountCondition, counts: dict,
-                            store) -> int:
+                            store, config_digest: str | None = None) -> int:
     """Tells each recipient what their own count did. Returns how many.
 
     `counts` IS {user_id: count}, already evaluated as each person.
     This function does not search -- it compares -- so the caller
     decides who is asked and with whose authority, which is where that
     decision belongs.
+
+    `config_digest` PINS WHAT THE COUNT MEANS. A count is a fact about
+    what ONE PERSON could see, and what a person can see is decided by
+    policy.yaml, which the digest covers. Two counts taken under
+    different configurations are not comparable: somebody granted a
+    new region sees more without anything being added, and somebody
+    who lost one sees fewer without anything being removed.
     """
     told = 0
     for user_id, current in counts.items():
-        previous = store.last_count(condition.key, user_id)
-        summary = _verdict(condition, previous, current)
+        previous, previous_digest = store.last_measurement(
+            condition.key, user_id,
+        )
 
+        # A CHANGED CONFIGURATION RESETS THE BASELINE. Not a special
+        # case for falling counts -- a grant change moves a count in
+        # EITHER direction, and comparing across one reports the
+        # change in authority as a change in the data.
+        configuration_changed = (
+            previous_digest is not None
+            and config_digest is not None
+            and previous_digest != config_digest
+        )
+
+        summary = (
+            None if configuration_changed
+            else _verdict(condition, previous, current)
+        )
+
+        first_time = previous is None
         # RECORDED WHETHER OR NOT ANYTHING WAS SENT. A count that moved
         # without making news still moved, and the next evaluation
         # compares against where it actually is.
-        store.record_count(condition.key, user_id, current)
+        store.record_count(condition.key, user_id, current, config_digest)
+
+        if first_time:
+            # SILENCE IS INDISTINGUISHABLE FROM A CONDITION THAT NEVER
+            # RAN. Somebody who declares one and hears nothing cannot
+            # tell "watching, nothing to report" from "broken".
+            #
+            # NOT AN ALERT, and not suppressed by the repeat check --
+            # it happens once per person per condition by
+            # construction, because there is no second first time.
+            store.notify(
+                user_id, "count_condition_watching",
+                f"{condition.description}: now watching. Currently "
+                f"{current}.",
+            )
+            continue
 
         if summary is None:
             continue

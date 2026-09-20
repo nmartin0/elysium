@@ -288,12 +288,26 @@ the moment to decide whether somebody should be told.
    previous result set would be tens of thousands of ids times however
    many recipients; an integer each is nothing.
 
-   **LOST ROWS ARE NOT REPORTED**, deliberately. An object leaving a
-   filtered set may mean it changed, was deleted, or that the reader's
-   grants changed, and the third is indistinguishable from the first
-   two with what is stored. A monitoring tool states the same caution:
-   a row "disappearing from a result list never becomes
+   **LOST ROWS ARE REPORTED, AND THE AMBIGUITY IS RESOLVED RATHER
+   THAN AVOIDED.** A count that fell may mean the data moved, or that
+   the READER'S GRANTS changed -- and `source_digest` tells them
+   apart, because it covers policy.yaml. A count taken under a
+   different configuration is not compared at all; the baseline
+   resets instead.
+
+   **BOTH DIRECTIONS**, not only the fall: somebody granted a new
+   region sees more objects without anything having been added.
+
+   **IT STILL SAYS "3 FEWER", NEVER "THESE THREE"**, and that does
+   not change -- knowing which needs last time's result set, which is
+   exactly what is not stored. A monitoring tool names the residue: a
+   row "disappearing from a result list never becomes
    AD_BECAME_INACTIVE".
+
+   **AND THE BASELINE ANNOUNCES ITSELF.** A first evaluation sends
+   "now watching, currently N" -- information rather than an alert,
+   because silence is indistinguishable from a condition that never
+   ran.
 2. A notification effect, evaluated PER RECIPIENT. In-product first;
    email and webhooks later, each a place data leaves the deployment.
 3. An action effect, using the action's own `auto_execute`.

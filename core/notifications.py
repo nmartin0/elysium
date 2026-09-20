@@ -72,6 +72,19 @@ CREATE TABLE IF NOT EXISTS notification_state (
     -- otherwise every condition fires a flood on the day it is
     -- declared.
     last_count INTEGER,
+    -- THE CONFIGURATION THIS COUNT WAS MEASURED UNDER.
+    --
+    -- A COUNT IS A FACT ABOUT WHAT ONE PERSON COULD SEE, and what a
+    -- person can see is decided by policy.yaml -- which
+    -- `source_digest` covers. So a count measured under one
+    -- configuration is not comparable with one measured under
+    -- another: somebody granted a new region sees more objects
+    -- without anything having been added, and somebody who lost one
+    -- sees fewer without anything having been removed.
+    --
+    -- BOTH DIRECTIONS, not only the fall. A grant change can make a
+    -- count rise spuriously as easily as drop.
+    last_digest TEXT,
     PRIMARY KEY (condition_key, user_id)
 );
 """
@@ -210,6 +223,28 @@ class NotificationStore:
             return False
         return row is not None and row["last_summary"] == summary
 
+    def last_measurement(self, condition_key: str,
+                         user_id: str) -> tuple[int | None, str | None]:
+        """The last count AND the configuration it was taken under.
+
+        BOTH OR NEITHER. A count without its configuration cannot be
+        compared safely, so they are read together and a caller cannot
+        accidentally use one without the other.
+        """
+        try:
+            with self._connection() as conn:
+                row = conn.execute(
+                    "SELECT last_count, last_digest FROM notification_state "
+                    "WHERE condition_key = ? AND user_id = ?",
+                    (condition_key, user_id),
+                ).fetchone()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("could not read notification state: %s", e)
+            return None, None
+        if row is None:
+            return None, None
+        return row["last_count"], row["last_digest"]
+
     def last_count(self, condition_key: str, user_id: str) -> int | None:
         """How many this condition matched for this person last time.
 
@@ -236,7 +271,7 @@ class NotificationStore:
         return None if row is None else row["last_count"]
 
     def record_count(self, condition_key: str, user_id: str,
-                     count: int) -> None:
+                     count: int, digest: str | None = None) -> None:
         """Records what this person's evaluation matched, this time.
 
         WRITTEN WHETHER OR NOT ANYTHING WAS SENT. A condition that
@@ -248,12 +283,13 @@ class NotificationStore:
             with self._connection() as conn:
                 conn.execute(
                     "INSERT INTO notification_state (condition_key, user_id, "
-                    "last_fired_at, last_summary, last_count) "
-                    "VALUES (?, ?, ?, '', ?) "
+                    "last_fired_at, last_summary, last_count, last_digest) "
+                    "VALUES (?, ?, ?, '', ?, ?) "
                     "ON CONFLICT(condition_key, user_id) DO UPDATE SET "
-                    "last_count = excluded.last_count",
+                    "last_count = excluded.last_count, "
+                    "last_digest = excluded.last_digest",
                     (condition_key, user_id, datetime.now(UTC).isoformat(),
-                     count),
+                     count, digest),
                 )
                 conn.commit()
         except Exception as e:  # noqa: BLE001

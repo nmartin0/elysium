@@ -114,8 +114,14 @@ class TestPerRecipient:
         )
 
         assert told == 1
-        assert store.unseen_count("alice") == 1
-        assert store.unseen_count("bob") == 0
+        # TWO FOR ALICE: the "now watching" notice from the baseline
+        # evaluation, plus this one. Bob has only his watching notice,
+        # because gaining 1 is not gaining 3.
+        alice = [n.kind for n in store.for_user("alice")]
+        bob = [n.kind for n in store.for_user("bob")]
+
+        assert alice.count("count_condition") == 1
+        assert bob.count("count_condition") == 0
 
     def test_a_newcomer_gets_a_baseline_not_a_flood(self, store):
         """SOMEBODY GRANTED ACCESS TODAY has no history, so their
@@ -129,6 +135,108 @@ class TestPerRecipient:
         )
 
         assert told == 0
+
+
+class TestTheBaselineIsAnnounced:
+    def test_a_first_evaluation_says_it_is_watching(self, store):
+        """SILENCE IS INDISTINGUISHABLE FROM A CONDITION THAT NEVER
+        RAN. Somebody who declares one and hears nothing cannot tell
+        "watching, nothing to report" from "broken"."""
+        evaluate_for_recipients(ABOVE_TEN, {"alice": 15}, store)
+
+        kinds = [n.kind for n in store.for_user("alice")]
+
+        assert kinds == ["count_condition_watching"]
+
+    def test_it_is_not_an_alert(self, store):
+        """RETURNS ZERO TOLD. A baseline is information, not a
+        condition being met, and a caller counting alerts must not
+        count it."""
+        assert evaluate_for_recipients(ABOVE_TEN, {"alice": 15}, store) == 0
+
+    def test_it_happens_once(self, store):
+        """ONCE PER PERSON PER CONDITION BY CONSTRUCTION, because
+        there is no second first time."""
+        evaluate_for_recipients(ABOVE_TEN, {"alice": 15}, store)
+        evaluate_for_recipients(ABOVE_TEN, {"alice": 16}, store)
+
+        watching = [
+            n for n in store.for_user("alice")
+            if n.kind == "count_condition_watching"
+        ]
+
+        assert len(watching) == 1
+
+
+class TestAConfigurationChangeResetsTheBaseline:
+    def test_a_count_is_not_compared_across_one(self, store):
+        """A COUNT IS A FACT ABOUT WHAT ONE PERSON COULD SEE, and what
+        a person can see is decided by policy.yaml -- which
+        `source_digest` covers.
+
+        Somebody granted a new region sees more objects without
+        anything having been added.
+        """
+        evaluate_for_recipients(GAINED_THREE, {"alice": 5}, store, "digest-1")
+
+        told = evaluate_for_recipients(
+            GAINED_THREE, {"alice": 50}, store, "digest-2",
+        )
+
+        assert told == 0
+
+    def test_but_the_next_one_compares_normally(self, store):
+        """THE RESET IS ONE EVALUATION, not a permanent silence. Once
+        a count has been taken under the new configuration, the
+        following one is comparable with it."""
+        evaluate_for_recipients(GAINED_THREE, {"alice": 5}, store, "digest-1")
+        evaluate_for_recipients(GAINED_THREE, {"alice": 50}, store, "digest-2")
+
+        told = evaluate_for_recipients(
+            GAINED_THREE, {"alice": 60}, store, "digest-2",
+        )
+
+        assert told == 1
+
+    def test_it_guards_both_directions(self, store):
+        """A GRANT CHANGE MOVES A COUNT EITHER WAY. Somebody who LOST
+        a region sees fewer without anything having been removed, and
+        a guard that only covered falls would report that as data
+        leaving."""
+        falling = CountCondition("k", "Open tickets", fell=3)
+        evaluate_for_recipients(falling, {"alice": 50}, store, "digest-1")
+
+        told = evaluate_for_recipients(
+            falling, {"alice": 5}, store, "digest-2",
+        )
+
+        assert told == 0
+
+
+class TestFallingCounts:
+    def test_a_real_fall_is_reported(self, store):
+        """SAFE ONLY BECAUSE THE CONFIGURATION IS PINNED. With the
+        reader's authority identical, a drop means the data moved."""
+        falling = CountCondition("k", "Open tickets", fell=3)
+        evaluate_for_recipients(falling, {"alice": 9}, store, "d")
+
+        told = evaluate_for_recipients(falling, {"alice": 5}, store, "d")
+
+        assert told == 1
+
+    def test_it_says_how_many_never_which(self, store):
+        """KNOWING WHICH needs last time's result set, which is
+        exactly what is not stored -- and that does not change."""
+        falling = CountCondition("k", "Open tickets", fell=3)
+        evaluate_for_recipients(falling, {"alice": 9}, store, "d")
+        evaluate_for_recipients(falling, {"alice": 5}, store, "d")
+
+        summary = [
+            n.summary for n in store.for_user("alice")
+            if n.kind == "count_condition"
+        ][0]
+
+        assert "4 fewer" in summary
 
 
 class TestRepeatsAreSuppressed:
