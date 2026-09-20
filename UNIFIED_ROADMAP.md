@@ -937,8 +937,11 @@ phase is half-done.
 
     3.1  the plugin API       THIRD_PARTY_EXTENSIONS.md: the channel
                               comes before the boundary
-    3.5  write-down check     needs the ordered-vs-incomparable
-                              decision on MAC values
+    3.5  write-down check     UNBLOCKED -- the question was wrong.
+                              A label is (level, compartments); both
+                              exist in Bell-LaPadula and Elysium'''s
+                              values are compartments. See
+                              SECURITY_ARCHITECTURE.md
     3.6  fusion               needs the gold layer, which nothing has
 
 ### Blocked on something genuinely absent

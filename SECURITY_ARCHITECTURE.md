@@ -165,13 +165,48 @@ The chokepoint already knows every value it needs; what is missing is
 the comparison. Precedented, bounded, and it closes a hole rather than
 adding a feature.
 
-**A DECISION IT NEEDS FIRST:** whether Elysium's MAC values are
-ORDERED. Bell-LaPadula assumes a lattice -- secret dominates
-confidential. Elysium's values are regions (`us-west`, `us-east`),
-which are incomparable rather than ranked. For incomparable values the
-rule is simpler and stricter: **an action may not read one partition
-and write another at all.** Whether that is too strict for real use is
-the thing to find out before building it.
+**THE DECISION IS SETTLED, and the question was wrong.** It asked
+whether Elysium's MAC values are ORDERED or INCOMPARABLE. Bell and
+LaPadula's own model has BOTH, and the answer was in the original
+paper.
+
+**A SECURITY LABEL IS A PAIR:** a sensitivity LEVEL and a set of
+COMPARTMENTS. Given `L1 = (S1, C1)` and `L2 = (S2, C2)`:
+
+    L1 <= L2   when   S1 <= S2   and   C1 subset-of C2
+
+Levels are TOTALLY ordered -- Unclassified, Confidential, Secret, Top
+Secret. Compartments are NOT ordered at all; they are a set, and the
+relation between two sets is containment.
+
+**SO INCOMPARABILITY IS NORMAL, NOT A PROBLEM TO DESIGN AROUND.** The
+standard teaching example is `(secret, {crypto})` against `(top
+secret, {nuclear})` -- neither dominates the other, and the model
+expects that.
+
+**ELYSIUM'S VALUES ARE COMPARTMENTS.** `us-east` and `us-west` are
+disjoint sets with no ranking, which is exactly what a compartment is.
+The current check -- string equality -- is the DEGENERATE CASE of the
+lattice: one compartment each, and equality is `C1 subset-of C2` in
+both directions at once.
+
+**WHICH MAKES THE WRITE-DOWN CHECK SMALL.** It is the same dominance
+predicate applied between two OBJECTS rather than between an object
+and a user. The published assessment of this is that "the lattice is
+mechanizable: dominance, least upper-bound, and reading/writing
+predicates are simple, total, decidable functions on integer ranks
+plus subset tests on compartment sets".
+
+**WHAT STILL NEEDS DECIDING IS SMALLER:** whether Elysium adopts the
+full pair now, or keeps single-compartment labels and adds levels when
+a deployment needs them. The second is less work and the first is
+where this ends up; either way the comparison is the same function.
+
+**AND TWO SPECIAL LABELS COMPLETE THE LATTICE**, worth having from the
+start: SYSTEM_HIGH dominates everything (highest level, every
+compartment) and SYSTEM_LOW is dominated by everything (lowest level,
+no compartments). Without them a lattice has no top or bottom, and
+code that needs one invents a special case.
 
 ### 3. Intersection for action authority
 
