@@ -1208,6 +1208,79 @@ class MirrorStateResponse(BaseModel):
     problems: list[str]
 
 
+class NotificationResponse(BaseModel):
+    notification_id: str
+    created_at: str
+    kind: str
+    summary: str
+    detail: str | None
+    seen: bool
+
+
+class NotificationsResponse(BaseModel):
+    notifications: list[NotificationResponse]
+    unseen: int
+
+
+def _notification_store(request: Request):
+    from core.notifications import NotificationStore
+
+    return NotificationStore(
+        request.app.state.runtime_paths.data_dir / "notifications.db",
+    )
+
+
+@router.get("/notifications", dependencies=[Depends(_no_store)],
+            response_model=NotificationsResponse)
+def notifications_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """What is waiting for the caller.
+
+    NO GRANT REQUIRED, because these are the caller's OWN
+    notifications and nobody else's. The store scopes by user_id IN
+    THE QUERY -- there is no call that returns everyone's, so there is
+    no privileged view for a bug to leak from.
+    """
+    store = _notification_store(request)
+    return {
+        "notifications": [
+            {
+                "notification_id": n.notification_id,
+                "created_at": n.created_at,
+                "kind": n.kind,
+                "summary": n.summary,
+                "detail": n.detail,
+                "seen": n.seen,
+            }
+            for n in store.for_user(current_user.user_id)
+        ],
+        "unseen": store.unseen_count(current_user.user_id),
+    }
+
+
+@router.post("/notifications/{notification_id}/seen",
+             dependencies=[Depends(_no_store)])
+def mark_notification_seen_route(
+    notification_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Marks one seen, if it belongs to the caller.
+
+    A 404 FOR SOMEBODY ELSE'S, not a 403. Telling a caller that a
+    notification exists but is not theirs says more than refusing to
+    say anything -- and the store's UPDATE simply matches no row,
+    which is the same answer as "no such notification".
+    """
+    if not _notification_store(request).mark_seen(
+        current_user.user_id, notification_id,
+    ):
+        raise HTTPException(status_code=404, detail="No such notification")
+    return {"seen": True}
+
+
 class SyncStartedResponse(BaseModel):
     started: bool
     detail: str

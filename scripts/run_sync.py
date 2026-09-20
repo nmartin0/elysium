@@ -102,6 +102,69 @@ def _single_writer(lock_path: Path):
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
+def _notify_mirror_health(runtime_paths, config, attempts, targets) -> None:
+    """Tells whoever can fix the mirror that it needs fixing.
+
+    NEVER RAISES INTO THE SYNC. The sync has already done its work and
+    reported it; a failure to notice something about that work must
+    not turn a successful sync into a failed one.
+
+    RECIPIENTS COME FROM A GRANT, not a list. Whoever holds
+    `manage:deployment` can start a sync, so whoever holds it should
+    hear that one is needed -- and a deployment that adds or removes
+    an administrator changes the recipient list by doing so.
+    """
+    try:
+        from core.intermediate_layer.access_control import authorize
+        from core.mirror.health_condition import (
+            RECIPIENT_GRANT,
+            notify_mirror_health,
+        )
+        from core.notifications import NotificationStore
+        from core.user_directory import UserDirectory
+
+        states = []
+        for target in targets:
+            attempt = attempts.last_for(target.silo_name, target.table_name)
+            states.append({
+                "silo": target.silo_name,
+                "table": target.table_name,
+                "last_synced_at": (
+                    attempt.at.isoformat() if attempt else None
+                ),
+                "last_attempt_outcome": attempt.outcome if attempt else None,
+            })
+
+        # THE DIRECTORY IS BUILT HERE because a sync does not load one
+        # -- it needs a config and adapters, not users. Reading the
+        # same credentials database the API reads keeps one source of
+        # truth about who exists.
+        directory = UserDirectory(
+            runtime_paths.data_dir / "credentials.db", config.roles,
+        )
+        recipients = [
+            row["username"]
+            for row in directory.list_users()
+            if not row.get("disabled")
+            and authorize(
+                directory.get_user_record(row["username"]),
+                config.roles, RECIPIENT_GRANT,
+            )
+        ]
+        told = notify_mirror_health(
+            states, recipients, NotificationStore(
+                runtime_paths.data_dir / "notifications.db",
+            ),
+        )
+        if told:
+            print(f"notified {told} administrator(s) about mirror health")
+    except Exception as e:  # noqa: BLE001 - see the docstring
+        # PRINTED, NOT LOGGED: this script has no logger, and a
+        # message nobody sees is the failure mode this whole
+        # condition exists to prevent.
+        print(f"could not evaluate mirror health: {e}", file=sys.stderr)
+
+
 def run_sync(runtime_paths=None) -> int:
     """Syncs every ontology-referenced table. Returns the number of
     tables that FAILED -- 0 meaning a fully successful run, so a
@@ -211,6 +274,14 @@ def run_sync(runtime_paths=None) -> int:
             print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
+
+        # THE CONDITION IS CHECKED AFTER THE SYNC, which is the only
+        # moment the facts are current. A separate scheduler would need
+        # its own trigger, its own failure mode and its own reason to
+        # exist; a sync already runs on whatever schedule the
+        # deployment chose.
+        _notify_mirror_health(runtime_paths, config, attempts, targets)
+
         return failures
 
 

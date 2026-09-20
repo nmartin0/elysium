@@ -291,3 +291,10 @@ request_id
 # FastAPI route and its response model, reached by decorator.
 admin_mirror_sync_route
 started
+
+# notifications_route / mark_notification_seen_route and their response
+# models (api/routes.py) -- FastAPI routes, reached by decorator.
+notifications_route
+mark_notification_seen_route
+notifications
+unseen

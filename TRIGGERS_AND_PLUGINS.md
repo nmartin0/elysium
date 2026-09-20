@@ -243,7 +243,24 @@ the moment to decide whether somebody should be told.
 
 ## Sketch, in build order
 
-0. MIRROR HEALTH FIRST, because it is the smallest and the most
+0. ~~MIRROR HEALTH FIRST~~ **BUILT.** `core/notifications.py` holds
+   one row per recipient; `core/mirror/health_condition.py` is the
+   condition; `scripts/run_sync.py` evaluates it after every sync,
+   which is the only moment the facts are current.
+
+   **REPEATS ARE SUPPRESSED PER RECIPIENT**, comparing the SUMMARY
+   rather than the condition -- "3 tables stale" becoming "5 tables
+   stale" is news and goes through.
+
+   **RECIPIENTS COME FROM A GRANT**, `manage:deployment`: if you can
+   start a sync you should hear that one is needed, and adding an
+   administrator changes the recipient list by doing so.
+
+   **STILL OPEN:** the UI. The endpoints exist (`GET
+   /notifications`, `POST /notifications/{id}/seen`); nothing in the
+   product shows them yet.
+
+0. (original note) MIRROR HEALTH FIRST, because it is the smallest and the most
    clearly needed: a sync refused, or a table stale beyond a
    threshold. The facts are already recorded; nothing watches them.
    It also exercises the whole path -- condition, effect, recipient --
