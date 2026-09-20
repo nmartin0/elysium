@@ -229,6 +229,28 @@ class ExternalReadAdapter(ReadAdapter):
         ingest.
         """
 
+    def source_column_types(self, table_name: str) -> dict[str, str]:
+        """What the SOURCE says its columns are, verbatim.
+
+        NOT THE ONTOLOGY'S TYPES. Those are what Elysium was told;
+        these are what the database says today, and the gap between
+        them is drift that coercion cannot see.
+
+        VERBATIM, NOT NORMALISED, and that is deliberate. Normalising
+        means deciding NUMERIC(12,2) and DECIMAL(12,2) are the same
+        thing, and being wrong about that on an engine nobody here has
+        met. "The source said NUMERIC(12,2)" is a FACT; "the source
+        said decimal" is an interpretation, and a stored interpretation
+        cannot be re-examined later.
+
+        AN EMPTY DICT MEANS "CANNOT SAY", not "no columns". An adapter
+        that does not implement this returns one, and drift detection
+        skips the comparison rather than reporting every column as
+        changed.
+        """
+        return {}
+
+
     @abstractmethod
     def columns_present(self, table_name: str) -> set[str]:
         """Which columns the source table ACTUALLY has, right now.

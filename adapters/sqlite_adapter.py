@@ -432,6 +432,35 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         with self._connection() as conn:
             return _run_query(conn, f"SELECT {column_list} FROM {table_name}", db_path=str(self.db_path))
 
+    def source_column_types(self, table_name: str) -> dict[str, str]:
+        """NOTHING, and the reason is worth stating.
+
+        SQLITE CANNOT REPORT COLUMN TYPES THROUGH A READ-ONLY
+        CONNECTION. The two ways to ask both fail here:
+
+        PRAGMA table_info RETURNS "not authorized". The authorizer
+        this adapter uses permits SQLITE_SELECT, READ and FUNCTION and
+        denies everything else -- PRAGMA included, which is exactly
+        the guarantee that makes a read adapter unable to write.
+        `columns_present` hit this first and documents it.
+
+        AND THE ALLOWED PATH CARRIES NO TYPES. `SELECT * LIMIT 0` gives
+        `cursor.description` with a name per column and None for every
+        other field, verified.
+
+        SO THIS RETURNS {} -- "cannot say" -- and drift detection skips
+        the comparison rather than reporting every column as changed.
+        Routing around the authorizer to answer it would trade a
+        structural write guarantee for a diagnostic, which is a bad
+        trade.
+
+        A REAL DATABASE ANSWERS THIS PROPERLY. The SQLAlchemy adapter
+        returns verbatim types through Core's Inspector, uniformly
+        across every dialect -- and a customer's data lives there,
+        while SQLite is the embedded fixture case.
+        """
+        return {}
+
     def columns_present(self, table_name: str) -> set[str]:
         """Which columns this table ACTUALLY has, right now.
 

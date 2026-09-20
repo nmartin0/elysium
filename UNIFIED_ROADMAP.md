@@ -930,8 +930,8 @@ phase is half-done.
     2.2  measurement's        same harness, same session
          remaining questions
     3.0  triggers             mirror health first, per its own note
-    0.5.35 source column      needs the adapter method that does not
-           types                exist -- but the adapter now does
+    0.5.35 source column      DONE for a real database; SQLite
+           types                cannot say, and says so
 
 ### Blocked on design that is written but unbuilt
 

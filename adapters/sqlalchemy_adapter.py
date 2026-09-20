@@ -292,6 +292,29 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
             grouped.setdefault(row[foreign_key], []).append(row[target_id_column])
         return grouped
 
+    def source_column_types(self, table_name: str) -> dict[str, str]:
+        """Verbatim column types, via Core's Inspector.
+
+        THE SAME CALL `columns_present` MAKES, keeping the type it was
+        already discarding. Uniform across every dialect SQLAlchemy
+        has -- which is the reason this adapter is on Core at all.
+        """
+        try:
+            return {
+                column["name"]: str(column["type"])
+                for column in inspect(self._engine).get_columns(table_name)
+            }
+        except SQLAlchemyError as e:
+            # CANNOT SAY, not "no columns". `columns_present` RAISES
+            # here because a missing table must not read as an empty
+            # one; this is only used for drift reporting, where a
+            # silent skip beats a false alarm on every column.
+            logger.warning(
+                "%s: could not read column types of %r: %s",
+                self._describe_source(), table_name, e,
+            )
+            return {}
+
     def columns_present(self, table_name: str) -> set[str]:
         """What the source actually has, via Core's Inspector.
 

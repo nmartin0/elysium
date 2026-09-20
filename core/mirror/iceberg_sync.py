@@ -41,6 +41,7 @@ columns Elysium has no business copying at all.
 Used by: scripts/run_sync.py
 """
 
+import json
 import logging
 import warnings
 from datetime import UTC, datetime
@@ -117,6 +118,83 @@ BRONZE_RETENTION = {
     "history.expire.min-snapshots-to-keep": "2",
     "history.expire.max-snapshot-age-ms": str(RETENTION_MARGIN_MS),
 }
+
+
+# WHERE THE SOURCE'S OWN COLUMN TYPES ARE KEPT, on the bronze table.
+#
+# BRONZE, NOT SILVER: bronze is what the source looked like, and this
+# is a fact about the source rather than about the mirror.
+SOURCE_TYPES_PROPERTY = "elysium.source_column_types"
+
+# TYPE CHANGES THAT WIDEN, which are worth a quieter word than the
+# rest. The canonical severity model for schema drift puts a removed
+# column and an incompatible narrowing (VARCHAR to INT) in one band,
+# and widening (INT to BIGINT, VARCHAR(50) to VARCHAR(255)) in a
+# lesser one.
+#
+# DELIBERATELY SHALLOW. A full compatibility matrix per dialect is a
+# library's job -- this recognises the obvious widenings and reports
+# everything else as a plain change, which is honest about how much
+# it knows.
+_WIDENINGS = frozenset({
+    ("INTEGER", "BIGINT"),
+    ("SMALLINT", "INTEGER"),
+    ("SMALLINT", "BIGINT"),
+    ("REAL", "DOUBLE PRECISION"),
+})
+
+
+def _source_types_json(adapter, table_name: str) -> str:
+    """The source's column types, as JSON, or an empty string.
+
+    EMPTY MEANS "COULD NOT SAY", which is a third state beside "same"
+    and "changed". An adapter that does not implement the method
+    returns {}, and storing that would make the NEXT sync report every
+    column as removed.
+    """
+    try:
+        types = adapter.source_column_types(table_name)
+    except Exception as e:  # noqa: BLE001 - drift reporting, not a read path
+        logger.warning("%s: could not read source column types: %s",
+                       table_name, e)
+        return ""
+    return json.dumps(types, sort_keys=True) if types else ""
+
+
+def _report_type_drift(silo_name: str, table_name: str,
+                       previous_json: str, current_json: str) -> None:
+    """Says what changed about the source's own column types.
+
+    REPORTS, DOES NOT REFUSE. A sync that stopped on a type change
+    would turn a widened column into an outage, and the row-level
+    drift policy already decides what to do about columns appearing
+    and disappearing. This answers the question that policy cannot
+    see: whether a column that is still present still MEANS the same
+    thing.
+    """
+    try:
+        previous = json.loads(previous_json)
+        current = json.loads(current_json)
+    except json.JSONDecodeError:
+        return
+
+    changed = [
+        (name, was, current[name])
+        for name, was in previous.items()
+        if name in current and current[name] != was
+    ]
+    if not changed:
+        return
+
+    for name, was, now in changed:
+        widening = (was.upper().split("(")[0], now.upper().split("(")[0])
+        severity = "widened" if widening in _WIDENINGS else "CHANGED"
+        logger.warning(
+            "%s.%s: column %r %s from %s to %s since the last sync. "
+            "Coercion cannot see this -- a value may still parse and mean "
+            "something else.",
+            silo_name, table_name, name, severity, was, now,
+        )
 
 
 class IcebergMirrorSync(MirrorSync):
@@ -611,11 +689,32 @@ class IcebergMirrorSync(MirrorSync):
                         "ignore", message="Delete operation did not match any records")
                     table.overwrite(arrow_table)
 
+            # WHAT THE SOURCE SAID ITS COLUMNS WERE, this sync.
+            #
+            # COERCION CANNOT SEE A TYPE CHANGE. Three silent failures
+            # were measured: timestamptz->timestamp loses the offset,
+            # numeric->float loses scale, and integer->text is absorbed
+            # by int() with the whitespace along with it. Every one
+            # produces plausible data and no error.
+            #
+            # SO THE PREVIOUS SYNC'S ANSWER IS KEPT and compared
+            # against this one. Debezium's schema history is the same
+            # idea; Elysium already has config_history doing it for
+            # the OTHER side of the same question.
+            previous_types = table.properties.get(SOURCE_TYPES_PROPERTY)
+            current_types = _source_types_json(adapter, table_name)
+            if previous_types and current_types:
+                _report_type_drift(
+                    silo_name, table_name, previous_types, current_types,
+                )
+
             with table.transaction() as tx:
                 tx.set_properties({
                     "elysium.source_silo": silo_name,
                     "elysium.source_table": table_name,
                     "elysium.layer": "bronze",
+                    **({SOURCE_TYPES_PROPERTY: current_types}
+                       if current_types else {}),
                     **BRONZE_RETENTION,
                 })
         except (OSError, ValueError, KeyError, pa.ArrowInvalid) as e:
