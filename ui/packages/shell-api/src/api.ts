@@ -601,6 +601,17 @@ export interface MirrorTableState {
   /** Why it was refused, in full. A reader who sees a refusal wants
    *  the column and the value, not a category. */
   last_attempt_detail: string | null
+  /** When the data changed, newest first. Iceberg keeps a snapshot
+   *  per commit, so this is history the mirror already holds. */
+  snapshots?: MirrorSnapshot[]
+}
+
+/** One point the mirror could be rolled back to. */
+export interface MirrorSnapshot {
+  at: string
+  operation: string
+  rows: number | null
+  current: boolean
 }
 
 export interface MirrorState {

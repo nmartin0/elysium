@@ -920,9 +920,12 @@ phase is half-done.
                                       id leaks that it exists; see
                                       QUERY_PLAN.md
     2.3  json_each for the write log  DONE
-    0.5.4 (rest) snapshot history,    endpoints that DO rather than
-          a Sync now button           report -- a security question,
-                                      not a technical one
+    0.5.4 snapshot history            DONE
+    0.5.4 a Sync now button           an endpoint that DOES rather
+                                      than reports, and a sync can
+                                      take a minute -- so it needs
+                                      background execution, not just
+                                      a route
 
 ### Ready, but each needs one decision first
 

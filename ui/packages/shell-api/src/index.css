@@ -1912,4 +1912,16 @@
     overflow-wrap: anywhere;
     margin-block: 0 var(--space-snug);
   }
+
+  /* A TABLE'S RECENT CHANGES, collapsed. Indented so the row reads as
+   belonging to the table above it rather than as a table of its own,
+   and muted because it is context rather than the answer. */
+  .mirror__history {
+    padding-inline-start: var(--space-loose);
+    color: var(--text-secondary);
+  }
+
+  .mirror__history ul {
+    margin-block: var(--space-tight) 0;
+  }
 }

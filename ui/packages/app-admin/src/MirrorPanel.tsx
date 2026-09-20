@@ -1,3 +1,4 @@
+import React from 'react'
 import { Callout, HTMLTable, Tag } from '@blueprintjs/core'
 import { getErrorMessage, getMirrorState, handleIfSessionExpired, type MirrorState } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
@@ -141,57 +142,87 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
             const behind =
               table.silver_rows !== null && table.bronze_rows !== null && table.bronze_rows !== table.silver_rows
             return (
-              <tr key={identifier}>
-                <td>{identifier}</td>
-                <td>
-                  {table.last_synced_at ? (
-                    formatTimestamp(table.last_synced_at)
-                  ) : (
-                    <Tag minimal intent="warning">
-                      never synced
-                    </Tag>
-                  )}
-                </td>
-                <td>
-                  {table.last_attempt_outcome === 'refused' ? (
-                    <Tag intent="warning" minimal>
-                      refused{table.last_attempt_at ? ` ${formatTimestamp(table.last_attempt_at)}` : ''}
-                    </Tag>
-                  ) : table.last_attempt_at ? (
-                    formatTimestamp(table.last_attempt_at)
-                  ) : (
-                    /* NOTHING RECORDED is not a failure. An
+              <React.Fragment key={identifier}>
+                <tr>
+                  <td>{identifier}</td>
+                  <td>
+                    {table.last_synced_at ? (
+                      formatTimestamp(table.last_synced_at)
+                    ) : (
+                      <Tag minimal intent="warning">
+                        never synced
+                      </Tag>
+                    )}
+                  </td>
+                  <td>
+                    {table.last_attempt_outcome === 'refused' ? (
+                      <Tag intent="warning" minimal>
+                        refused{table.last_attempt_at ? ` ${formatTimestamp(table.last_attempt_at)}` : ''}
+                      </Tag>
+                    ) : table.last_attempt_at ? (
+                      formatTimestamp(table.last_attempt_at)
+                    ) : (
+                      /* NOTHING RECORDED is not a failure. An
                          existing deployment has no attempts until
                          its next sync, and saying "refused" or
                          "never" there would both be wrong. */
-                    <span className="bp6-text-muted">not recorded</span>
-                  )}
-                </td>
-                <td>{table.silver_rows ?? '—'}</td>
-                <td>
-                  {table.bronze_rows ?? '—'}
-                  {behind && (
-                    /* THE GAP, NAMED. Bronze took rows that silver
+                      <span className="bp6-text-muted">not recorded</span>
+                    )}
+                  </td>
+                  <td>{table.silver_rows ?? '—'}</td>
+                  <td>
+                    {table.bronze_rows ?? '—'}
+                    {behind && (
+                      /* THE GAP, NAMED. Bronze took rows that silver
                        refused to interpret, which means the last sync
                        was rejected and what is being served is the
                        snapshot before it. A number alone would leave a
                        reader to spot the difference and guess what it
                        meant. */
-                    <Tag minimal intent="warning" style={{ marginInlineStart: '0.5rem' }}>
-                      {/* THE DIRECTION SAYS WHICH FAULT IT IS. A first
+                      <Tag minimal intent="warning" style={{ marginInlineStart: '0.5rem' }}>
+                        {/* THE DIRECTION SAYS WHICH FAULT IT IS. A first
                           version said "fetched but not served" for
                           both, which is right when bronze has MORE and
                           wrong when it has fewer -- seen on a real
                           deployment serving 67 against 7 fetched,
                           where nothing had been dropped and silver was
                           simply out of date. */}
-                      {table.bronze_rows! > table.silver_rows!
-                        ? 'fetched but not served — the last sync was refused'
-                        : 'serving more than was last fetched — silver is out of date'}
-                    </Tag>
-                  )}
-                </td>
-              </tr>
+                        {table.bronze_rows! > table.silver_rows!
+                          ? 'fetched but not served — the last sync was refused'
+                          : 'serving more than was last fetched — silver is out of date'}
+                      </Tag>
+                    )}
+                  </td>
+                </tr>
+                {(table.snapshots ?? []).length > 0 && (
+                  <tr>
+                    {/* SPANNING THE ROW, because a history is about
+                        the table above it rather than a column of
+                        its own. COLLAPSED by default: an admin
+                        opening this panel wants the health of every
+                        table, not the history of one. */}
+                    <td colSpan={5} className="mirror__history">
+                      <details>
+                        <summary>
+                          {(table.snapshots ?? []).length} recent change
+                          {(table.snapshots ?? []).length === 1 ? '' : 's'}
+                        </summary>
+                        <ul>
+                          {(table.snapshots ?? []).map((snapshot) => (
+                            <li key={snapshot.at}>
+                              {formatTimestamp(snapshot.at)}
+                              {' — '}
+                              {snapshot.operation}
+                              {snapshot.rows !== null ? `, ${snapshot.rows} rows` : ''}
+                              {snapshot.current ? ' (serving now)' : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             )
           })}
         </tbody>

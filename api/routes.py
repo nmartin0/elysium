@@ -1130,6 +1130,54 @@ class ConfigHistoryResponse(BaseModel):
     generations: list[GenerationSummary]
 
 
+def _recent_snapshots(catalog, identifier: str, limit: int = 5) -> list[dict]:
+    """The newest snapshots of one table, newest first.
+
+    READ FROM METADATA, not by scanning. Iceberg records a snapshot per
+    commit with its timestamp, operation and row count, so this is
+    history the mirror already holds.
+
+    A TABLE THAT CANNOT BE READ RETURNS NOTHING rather than raising.
+    This decorates a panel; a missing history should cost its own row
+    and not the screen, and `check_mirror` is what reports a table
+    that has genuinely gone.
+    """
+    from datetime import UTC, datetime
+
+    try:
+        table = catalog.load_table(identifier)
+        current = table.current_snapshot()
+        current_id = current.snapshot_id if current else None
+        snapshots = list(table.metadata.snapshots)
+    except Exception:  # noqa: BLE001 - see the docstring
+        return []
+
+    recent = []
+    for snapshot in reversed(snapshots[-limit:]):
+        rows = snapshot.summary.get("total-records")
+        recent.append({
+            "at": datetime.fromtimestamp(
+                snapshot.timestamp_ms / 1000, tz=UTC,
+            ).isoformat(),
+            # str() BECAUSE IT IS AN ENUM. Operation.APPEND serialises
+            # as an object otherwise, and a panel showing
+            # "Operation.APPEND" reads worse than "APPEND".
+            "operation": str(snapshot.summary.operation).split(".")[-1],
+            "rows": int(rows) if rows is not None else None,
+            "current": snapshot.snapshot_id == current_id,
+        })
+    return recent
+
+
+class MirrorSnapshot(BaseModel):
+    """One point the mirror could be rolled back to."""
+
+    at: str
+    operation: str
+    rows: int | None
+    current: bool
+
+
 class MirrorTableState(BaseModel):
     silo: str
     table: str
@@ -1143,6 +1191,15 @@ class MirrorTableState(BaseModel):
     last_attempt_at: str | None
     last_attempt_outcome: str | None
     last_attempt_detail: str | None
+    # WHEN THE DATA CHANGED, newest first. Iceberg records a snapshot
+    # per commit and keeps them, so this is history the mirror already
+    # holds rather than something new to store.
+    #
+    # THE NEWEST FEW, NOT ALL OF THEM. A long-running deployment
+    # accumulates snapshots -- nothing expires them, which is its own
+    # backlog item -- and a panel listing hundreds teaches less than
+    # one listing the last handful.
+    snapshots: list[MirrorSnapshot] = []
 
 
 class MirrorStateResponse(BaseModel):
@@ -1222,6 +1279,9 @@ def admin_mirror_route(request: Request,
             "last_attempt_at": attempt.at.isoformat() if attempt else None,
             "last_attempt_outcome": attempt.outcome if attempt else None,
             "last_attempt_detail": attempt.detail if attempt else None,
+            "snapshots": _recent_snapshots(
+                catalog, f"{target.silo_name}.{target.table_name}",
+            ),
         })
 
     report = check_mirror(

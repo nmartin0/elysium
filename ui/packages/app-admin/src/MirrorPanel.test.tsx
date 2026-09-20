@@ -37,6 +37,7 @@ function table(overrides = {}) {
     last_attempt_at: new Date().toISOString(),
     last_attempt_outcome: 'synced',
     last_attempt_detail: null,
+    snapshots: [],
     ...overrides,
   }
 }
@@ -172,6 +173,58 @@ describe('a refused sync', () => {
     render(<MirrorPanel onSessionExpired={vi.fn()} />)
 
     expect(await screen.findByText(/could not be read/)).toBeInTheDocument()
+  })
+})
+
+describe("a table's recent changes", () => {
+  it('lists them when there are some', async () => {
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [
+        table({
+          snapshots: [
+            { at: new Date().toISOString(), operation: 'APPEND', rows: 7, current: true },
+            { at: new Date().toISOString(), operation: 'DELETE', rows: 0, current: false },
+          ],
+        }),
+      ],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/2 recent changes/)).toBeInTheDocument()
+  })
+
+  it('says nothing when a table has no history', async () => {
+    // THE CONTROL. A table with no snapshots should show no history
+    // row at all rather than an empty one.
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table({ snapshots: [] })],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText('primary_sql.transactions')
+    expect(screen.queryByText(/recent change/)).toBeNull()
+  })
+
+  it('marks which one is being served', async () => {
+    /** A HISTORY WITHOUT A CURRENT MARKER is a list of dates. The
+     *  point of showing it is knowing where you are in it -- which is
+     *  also what a rollback would need. */
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [
+        table({
+          snapshots: [{ at: new Date().toISOString(), operation: 'APPEND', rows: 7, current: true }],
+        }),
+      ],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/serving now/)).toBeInTheDocument()
   })
 })
 
