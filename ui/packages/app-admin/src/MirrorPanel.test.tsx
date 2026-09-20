@@ -13,18 +13,20 @@
  * one leaves (2, 4).
  */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MirrorPanel from './MirrorPanel'
 
 vi.mock('@elysium/shell-api/api', () => ({
   getMirrorState: vi.fn(),
+  startMirrorSync: vi.fn(),
   getErrorMessage: (error: unknown) => String((error as Error)?.message ?? error),
   handleIfSessionExpired: () => false,
 }))
 
-const { getMirrorState } = await import('@elysium/shell-api/api')
+const { getMirrorState, startMirrorSync } = await import('@elysium/shell-api/api')
+const mockedSync = vi.mocked(startMirrorSync)
 const mocked = vi.mocked(getMirrorState)
 
 function table(overrides = {}) {
@@ -302,6 +304,58 @@ describe('while the page is open', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('starting a sync', () => {
+  it('reports what the server said', async () => {
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table()],
+      problems: [],
+    })
+    mockedSync.mockResolvedValue({
+      started: true,
+      detail: 'A sync is running.',
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText('primary_sql.transactions')
+    fireEvent.click(screen.getByRole('button', { name: /sync now/i }))
+
+    expect(await screen.findByText(/A sync is running/)).toBeInTheDocument()
+  })
+
+  it('says nothing before the button is pressed', async () => {
+    // THE CONTROL. A message rendered unconditionally would pass the
+    // test above while telling every visitor a sync was running.
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table()],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText('primary_sql.transactions')
+
+    expect(screen.queryByText(/A sync is running/)).toBeNull()
+  })
+
+  it('shows the failure rather than swallowing it', async () => {
+    /** A BUTTON THAT DOES NOTHING VISIBLE on failure is one somebody
+     *  presses repeatedly. */
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table()],
+      problems: [],
+    })
+    mockedSync.mockRejectedValue(new Error('this deployment reads live'))
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText('primary_sql.transactions')
+    fireEvent.click(screen.getByRole('button', { name: /sync now/i }))
+
+    expect(await screen.findByText(/reads live/)).toBeInTheDocument()
   })
 })
 

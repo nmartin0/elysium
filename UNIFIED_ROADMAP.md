@@ -471,7 +471,8 @@ had not changed since Tuesday.
 the panel shows it beside the change date, with the reason above the
 table.
 
-**STILL OPEN:** snapshot history and roll-back, and a Sync now button.
+**STILL OPEN:** roll-back. History and Sync now are built;
+rolling BACK to a snapshot is a write, and a different question.
 Both need endpoints that DO something rather than report, which is a
 larger security question than reading.
 
@@ -921,11 +922,7 @@ phase is half-done.
                                       QUERY_PLAN.md
     2.3  json_each for the write log  DONE
     0.5.4 snapshot history            DONE
-    0.5.4 a Sync now button           an endpoint that DOES rather
-                                      than reports, and a sync can
-                                      take a minute -- so it needs
-                                      background execution, not just
-                                      a route
+    0.5.4 a Sync now button           DONE
 
 ### Ready, but each needs one decision first
 

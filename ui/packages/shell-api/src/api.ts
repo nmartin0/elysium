@@ -620,6 +620,11 @@ export interface MirrorState {
   problems: string[]
 }
 
+export async function startMirrorSync(): Promise<{ started: boolean; detail: string }> {
+  const response = await apiFetchOrThrow('/admin/mirror/sync', { method: 'POST' })
+  return response.json() as Promise<{ started: boolean; detail: string }>
+}
+
 export async function getMirrorState(): Promise<MirrorState> {
   const response = await apiFetchOrThrow('/admin/mirror')
   return response.json() as Promise<MirrorState>

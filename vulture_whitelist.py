@@ -286,3 +286,8 @@ last_attempt_detail
 # SearchResponse / ObjectDetailResponse request_id (api/routes.py) --
 # serialised by FastAPI, read by whoever wants the access trace.
 request_id
+
+# admin_mirror_sync_route / SyncStartedResponse (api/routes.py) -- a
+# FastAPI route and its response model, reached by decorator.
+admin_mirror_sync_route
+started

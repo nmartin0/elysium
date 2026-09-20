@@ -1924,4 +1924,19 @@
   .mirror__history ul {
     margin-block: var(--space-tight) 0;
   }
+
+  /* THE SYNC CONTROL, above the table it affects. The message beside it
+   reports what the SERVER said rather than a state this panel tracks:
+   the request returns before the sync finishes, so the panel never
+   knows one is running. */
+  .mirror__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+    margin-block-end: var(--space-normal);
+  }
+
+  .mirror__sync-message {
+    color: var(--text-secondary);
+  }
 }

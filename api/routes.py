@@ -1208,6 +1208,93 @@ class MirrorStateResponse(BaseModel):
     problems: list[str]
 
 
+class SyncStartedResponse(BaseModel):
+    started: bool
+    detail: str
+
+
+@router.post("/admin/mirror/sync", dependencies=[Depends(_no_store)],
+             response_model=SyncStartedResponse)
+def admin_mirror_sync_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Starts a sync, and returns before it finishes.
+
+    A SYNC IS NOT INSTANT. Two seconds on the shipped fixtures, but
+    ROADMAP.md measured 500,000 rows in 2.46s and about a minute for
+    ten million. A synchronous request would hold a connection for
+    that long, and the one worker process with it.
+
+    SO IT RUNS ON A THREAD and this returns immediately. The SAME
+    SHAPE as `install_sighup_handler`, which reloads configuration the
+    same way and injects its thread factory for exactly the reason
+    this one does.
+
+    **NOTHING NEW REPORTS THE RESULT.** `run_sync()` already records
+    every attempt in `sync_attempts.db`, and the mirror panel already
+    polls every thirty seconds -- so the outcome arrives through
+    machinery that exists, rather than through a job id nobody would
+    poll.
+
+    **AND NOTHING NEW GUARDS IT.** `run_sync()` takes an exclusive
+    flock for the duration and yields False if another holds it, so a
+    second sync cannot start. A button pressed twice does one sync,
+    and the second press is told so.
+
+    GATED ON manage:deployment, the same grant that can reload -- and
+    a stricter bar than reading the panel, because this one DOES
+    something. A sync reads a customer's database and rewrites the
+    mirror every user then reads.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(
+            status_code=403,
+            detail="You need manage:deployment to start a sync.",
+        )
+
+    if not generation.config.read_from_mirror:
+        # A LIVE DEPLOYMENT HAS NO MIRROR TO FILL. Starting a sync
+        # would work and serve nobody, which is worse than refusing.
+        raise HTTPException(
+            status_code=409,
+            detail="This deployment reads live, so there is no mirror to sync.",
+        )
+
+    generation.mediator.audit_log.log_access(
+        current_user.user_id, "_mirror", "_sync", "start", None, True,
+    )
+
+    thread_factory = getattr(request.app.state, "sync_thread_factory",
+                             threading.Thread)
+    thread_factory(target=_run_sync_in_background, daemon=True).start()
+
+    return {
+        "started": True,
+        "detail": (
+            "A sync is running. Its outcome will appear in this panel's "
+            "last-attempt column."
+        ),
+    }
+
+
+def _run_sync_in_background() -> None:
+    """Runs one sync, swallowing everything.
+
+    A THREAD THAT RAISES TAKES ITS EXCEPTION NOWHERE. Nobody is
+    waiting on it, so an escaping error would be lost entirely --
+    whereas run_sync() has already recorded what happened in
+    sync_attempts.db before any exception could reach here.
+    """
+    from scripts.run_sync import run_sync
+
+    try:
+        run_sync()
+    except Exception:  # noqa: BLE001 - see the docstring
+        logger.exception("a sync started from the mirror panel failed")
+
+
 @router.get("/admin/mirror", dependencies=[Depends(_no_store)],
             response_model=MirrorStateResponse)
 def admin_mirror_route(request: Request,

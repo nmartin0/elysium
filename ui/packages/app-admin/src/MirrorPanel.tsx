@@ -1,6 +1,12 @@
 import React from 'react'
-import { Callout, HTMLTable, Tag } from '@blueprintjs/core'
-import { getErrorMessage, getMirrorState, handleIfSessionExpired, type MirrorState } from '@elysium/shell-api/api'
+import { Button, Callout, HTMLTable, Tag } from '@blueprintjs/core'
+import {
+  getErrorMessage,
+  getMirrorState,
+  handleIfSessionExpired,
+  type MirrorState,
+  startMirrorSync,
+} from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatTimestamp } from '@elysium/shell-api/format'
@@ -22,6 +28,22 @@ import { useEffect, useState } from 'react'
 export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: () => void }) {
   const [state, setState] = useState<MirrorState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // WHAT THE LAST PRESS DID, or null. Not a boolean "syncing": the
+  // request returns before the sync finishes, so this panel never
+  // knows one is running -- the OUTCOME arrives through the
+  // last-attempt column on the next poll, which is the honest
+  // account of what it can see.
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+
+  async function handleSync() {
+    setSyncMessage(null)
+    try {
+      setSyncMessage((await startMirrorSync()).detail)
+    } catch (caught: unknown) {
+      if (handleIfSessionExpired(caught, onSessionExpired)) return
+      setSyncMessage(getErrorMessage(caught))
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -106,6 +128,13 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
           </ul>
         </Callout>
       )}
+
+      <div className="mirror__actions">
+        <Button icon="refresh" onClick={handleSync}>
+          Sync now
+        </Button>
+        {syncMessage && <span className="mirror__sync-message">{syncMessage}</span>}
+      </div>
 
       <HTMLTable compact striped>
         <thead>
