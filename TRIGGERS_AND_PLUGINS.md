@@ -132,14 +132,33 @@ you cannot auto-fix a refused sync, so that condition admits no action
 effect. The first condition is notification-only because of what it
 is, not because notifications are cheaper.
 
-## An action must be able to refuse automation
+## ~~An action must be able to refuse automation~~ BUILT
 
-Foundry lets an action type toggle off "the switch that allows
-Automate to submit the action", under Security & Submission Criteria.
+`automatable: false` on an action type, validated at config load and
+refused at PROPOSAL -- so it never reaches a queue looking like a
+decision somebody could make.
 
-Some actions should only ever be taken by a person who looked at the
-screen. This is one field on the action type schema and it belongs in
-the first version.
+**A DIFFERENT QUESTION FROM auto_execute**, and the two are easy to
+confuse. `auto_execute` asks whether a proposal needs confirming;
+`automatable` asks whether a trigger may propose it AT ALL. An action
+can be both: safe without confirmation when a person asked, and never
+started by a condition firing at 3am.
+
+**ABSENT MEANS TRUE**, which is the one permissive default in that
+validator. Every action already passes through the approvals queue
+unless `auto_execute` says otherwise, so a trigger proposing one
+produces a pending write somebody must decide on. The flag is for
+actions that should not even be PROPOSED unattended.
+
+**AND `automation` IS A THIRD ORIGIN**, not a kind of agent. An agent
+is a model reasoning on somebody's behalf in a conversation they are
+having; an automation is a condition that fired while everybody was
+asleep. `origin` reaches the audit trail and the approval criteria,
+so that difference matters most to whoever decides whether to approve
+it.
+
+**THE REFUSAL IS NOT A PermissionError.** Nobody's grants are wrong
+-- the action itself says it must be started by a person.
 
 ## Is proposing rather than executing a flaw? No — and we already have both
 

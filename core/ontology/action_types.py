@@ -131,6 +131,7 @@ def validate_action_types(action_types: dict, object_types: dict) -> None:
             raise ValueError(f"Action type {action_type_name!r}: missing required key 'sub_writes'.")
         _validate_sub_writes_action(action_type_name, action_def, object_types)
         _validate_auto_execute(action_type_name, action_def)
+        _validate_automatable(action_type_name, action_def)
         _validate_parameters_are_used(action_type_name, action_def)
         _validate_effects_are_reachable(action_type_name, action_def, object_types)
 
@@ -540,6 +541,37 @@ def _validate_parameters_are_used(action_type_name: str, action_def: dict) -> No
             f"Action type {action_type_name!r}: parameter(s) {sorted(unused)} are declared "
             f"but never referenced. A reference must be written 'parameter.<name>'; any "
             f"other form is treated as a literal value."
+        )
+
+
+def _validate_automatable(action_type_name: str, action_def: dict) -> None:
+    """Checks the optional automatable flag.
+
+    A DIFFERENT QUESTION FROM auto_execute, and the two are easy to
+    confuse. `auto_execute` asks whether a proposal needs confirming;
+    `automatable` asks whether a TRIGGER may propose it at all.
+
+    An action can be both: safe to run without confirmation when a
+    person asked for it, and never to be started by a condition
+    firing at 3am. Refusing to allow the second is not a stricter
+    version of the first -- it is about WHO may begin the write rather
+    than what happens after.
+
+    ABSENT MEANS TRUE, deliberately, and this is the one default in
+    this file that is permissive. Every action already passes through
+    the approvals queue unless auto_execute says otherwise, so a
+    trigger proposing one produces a pending write somebody must
+    decide on. The flag exists for actions that should not even be
+    PROPOSED unattended -- and an author who wants that says so,
+    rather than every author having to opt in to ordinary behaviour.
+    """
+    if "automatable" not in action_def:
+        return
+    value = action_def["automatable"]
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"Action type {action_type_name!r}: automatable must be true or "
+            f"false, got {value!r}."
         )
 
 

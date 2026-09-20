@@ -87,7 +87,18 @@ def _fields_to_columns(resolved_type_config: dict, values_by_field: dict) -> dic
 #          supplied every permission used -- see UI_ROADMAP.md's
 #          approvals record on why the agent is an envelope and never
 #          a principal -- but they did not pick this action.
-Origin = Literal["human", "agent"]
+# WHO ASKED FOR A WRITE.
+#
+# NOT A DETAIL: `origin` reaches the audit trail and the approval
+# criteria, so it is how somebody reviewing a queue tells a proposal a
+# COLLEAGUE made from one a MODEL made from one NOBODY made.
+#
+# "automation" IS A THIRD THING, not a kind of agent. An agent is a
+# model reasoning on somebody's behalf, in a conversation they are
+# having. An automation is a condition that fired while everybody was
+# asleep, and the difference matters most to whoever has to decide
+# whether to approve it.
+Origin = Literal["human", "agent", "automation"]
 
 
 @dataclass(frozen=True)
@@ -263,6 +274,16 @@ def _describe_action(action_type_name: str, action_def: dict, parameters: dict) 
 # A deployment that genuinely needs more is describing a data pipeline
 # rather than a user action, and should be pointed at one.
 MAX_BULK_OBJECTS = 1000
+
+
+class NotAutomatable(ValueError):
+    """A trigger tried to propose an action that refuses automation.
+
+    ITS OWN TYPE, and NOT a PermissionError: nobody's grants are
+    wrong. The action itself says it must be started by a person, and
+    a permission error would send somebody auditing roles that are
+    perfectly correct.
+    """
 
 
 class CrossCompartmentWrite(ValueError):
@@ -1083,6 +1104,22 @@ class WriteMediator:
         action_def = self.action_types.get(action_type_name)
         if action_def is None:
             raise ValueError(f"Unknown action_type: {action_type_name!r}")
+
+        # AN ACTION MAY REFUSE TO BE STARTED BY A CONDITION.
+        #
+        # A DIFFERENT QUESTION FROM auto_execute: that one asks whether
+        # a proposal needs confirming, this asks whether a trigger may
+        # propose it AT ALL. An action can be both -- safe without
+        # confirmation when a person asked, and never to be started by
+        # something firing at 3am.
+        #
+        # REFUSED AT PROPOSAL, so it never reaches a queue looking
+        # like a decision somebody could make.
+        if origin == "automation" and action_def.get("automatable") is False:
+            raise NotAutomatable(
+                f"{action_type_name!r} declares automatable: false, so a "
+                f"trigger may not propose it. A person can still run it."
+            )
 
         execute_action_id = f"execute:{action_type_name}"
         rbac_allowed = authorize(user_record, self.roles, execute_action_id)
