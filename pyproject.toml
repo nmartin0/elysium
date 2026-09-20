@@ -196,6 +196,10 @@ layers = [
     # outside the hierarchy -- so this is a leaf beside
     # secret_references rather than a module sitting outside.
     "notifications",
+    # count_condition imports nothing from core at all -- it COMPARES
+    # rather than searches, and the caller decides who is asked with
+    # whose authority. A leaf beside the others.
+    "count_condition",
 ]
 containers = ["core"]
 exhaustive = true

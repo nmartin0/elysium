@@ -273,8 +273,27 @@ the moment to decide whether somebody should be told.
    a name, a stored QUERY rather than a URL, and a decision about
    whether one person's saved view may be referenced by another
    person's automation.
-1. A condition: a saved exploration plus a check (gained rows, lost
-   rows, crossed a count). Evaluated after a successful sync.
+1. A condition: a saved exploration plus a check. **HALF BUILT** --
+   `core/count_condition.py` holds the check; the saved exploration
+   is what 0.5 is for.
+
+   **IT IS A COUNT, NOT A DIFF**, and researching that made the item
+   much smaller. No alerting system worth copying stores last time's
+   RESULT SET: Databricks keeps OK/TRIGGERED/ERROR per evaluation,
+   Google Cloud compares "the number of rows in the query result"
+   against a threshold over a lookback window, and the canonical
+   change-detection pattern is a saved watermark.
+
+   **WHICH MAKES PER-RECIPIENT EVALUATION FREE.** Each person's
+   previous result set would be tens of thousands of ids times however
+   many recipients; an integer each is nothing.
+
+   **LOST ROWS ARE NOT REPORTED**, deliberately. An object leaving a
+   filtered set may mean it changed, was deleted, or that the reader's
+   grants changed, and the third is indistinguishable from the first
+   two with what is stored. A monitoring tool states the same caution:
+   a row "disappearing from a result list never becomes
+   AD_BECAME_INACTIVE".
 2. A notification effect, evaluated PER RECIPIENT. In-product first;
    email and webhooks later, each a place data leaves the deployment.
 3. An action effect, using the action's own `auto_execute`.

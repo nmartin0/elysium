@@ -54,6 +54,24 @@ CREATE TABLE IF NOT EXISTS notification_state (
     user_id TEXT NOT NULL,
     last_fired_at TEXT NOT NULL,
     last_summary TEXT NOT NULL,
+    -- HOW MANY THE CONDITION MATCHED, last time, for this person.
+    --
+    -- A COUNT, NOT THE SET. Every alerting system worth copying stores
+    -- state rather than results: Databricks keeps OK/TRIGGERED/ERROR
+    -- per evaluation, Google Cloud compares a row count against a
+    -- threshold over a lookback window, and the canonical
+    -- change-detection pattern is a saved watermark.
+    --
+    -- WHICH MAKES PER-RECIPIENT STORAGE FREE. Storing each person's
+    -- previous RESULT SET would be tens of thousands of ids times
+    -- however many recipients; an integer each is nothing, and it is
+    -- the only thing a "3 more than last time" notification needs.
+    --
+    -- NULL MEANS NEVER EVALUATED, which is not the same as zero. The
+    -- first evaluation records a BASELINE and notifies nobody --
+    -- otherwise every condition fires a flood on the day it is
+    -- declared.
+    last_count INTEGER,
     PRIMARY KEY (condition_key, user_id)
 );
 """
@@ -192,14 +210,71 @@ class NotificationStore:
             return False
         return row is not None and row["last_summary"] == summary
 
+    def last_count(self, condition_key: str, user_id: str) -> int | None:
+        """How many this condition matched for this person last time.
+
+        None MEANS NEVER EVALUATED, which is not the same as zero. A
+        condition evaluated for the first time must record a BASELINE
+        and notify nobody -- otherwise every condition fires a flood
+        on the day it is declared, which a monitoring tool that hit it
+        states plainly: "the first successful run creates a baseline,
+        never a flood of fake new ads".
+        """
+        try:
+            with self._connection() as conn:
+                row = conn.execute(
+                    "SELECT last_count FROM notification_state WHERE "
+                    "condition_key = ? AND user_id = ?",
+                    (condition_key, user_id),
+                ).fetchone()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("could not read notification state: %s", e)
+            # CANNOT SAY MEANS TREAT AS NEW, which records a baseline
+            # and stays quiet. The alternative -- treating it as zero --
+            # would report every match as a gain.
+            return None
+        return None if row is None else row["last_count"]
+
+    def record_count(self, condition_key: str, user_id: str,
+                     count: int) -> None:
+        """Records what this person's evaluation matched, this time.
+
+        WRITTEN WHETHER OR NOT ANYTHING WAS SENT. A condition that
+        stopped matching still moved, and the next evaluation compares
+        against where it actually is rather than where it last made
+        news.
+        """
+        try:
+            with self._connection() as conn:
+                conn.execute(
+                    "INSERT INTO notification_state (condition_key, user_id, "
+                    "last_fired_at, last_summary, last_count) "
+                    "VALUES (?, ?, ?, '', ?) "
+                    "ON CONFLICT(condition_key, user_id) DO UPDATE SET "
+                    "last_count = excluded.last_count",
+                    (condition_key, user_id, datetime.now(UTC).isoformat(),
+                     count),
+                )
+                conn.commit()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("could not record a count: %s", e)
+
     def record_notified(self, condition_key: str, user_id: str,
                         summary: str) -> None:
         try:
             with self._connection() as conn:
                 conn.execute(
-                    "INSERT OR REPLACE INTO notification_state "
-                    "(condition_key, user_id, last_fired_at, last_summary) "
-                    "VALUES (?, ?, ?, ?)",
+                    # UPSERT, NOT "INSERT OR REPLACE". Replace deletes
+                    # the row and inserts a new one, which silently
+                    # wiped last_count -- a condition would record a
+                    # baseline, notify, and then compare against
+                    # nothing on the next evaluation. Found by probing
+                    # the two methods together rather than apart.
+                    "INSERT INTO notification_state (condition_key, user_id, "
+                    "last_fired_at, last_summary) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(condition_key, user_id) DO UPDATE SET "
+                    "last_fired_at = excluded.last_fired_at, "
+                    "last_summary = excluded.last_summary",
                     (condition_key, user_id, datetime.now(UTC).isoformat(),
                      summary),
                 )
