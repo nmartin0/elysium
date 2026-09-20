@@ -926,7 +926,7 @@ phase is half-done.
 
 ### Ready, but each needs one decision first
 
-    R2   context rot          run the harness before changing anything
+    R2   context rot          MEASURED; the fix is still a decision
     2.2  measurement's        same harness, same session
          remaining questions
     3.0  triggers             mirror health first, per its own note
@@ -995,7 +995,7 @@ writing its own trail before any data reaches the caller.
 **AND IT REPORTS**, through the same `scan_truncated` the searches
 use.
 
-### R2. Context rot in the agent loop — DEPENDS ON THE MEASUREMENT HARNESS
+### R2. ~~Context rot in the agent loop~~ MEASURED
 
 UI_ROADMAP names it as "a risk to what already exists, not a feature":
 current research describes "a model's effective recall degrading as
@@ -1006,9 +1006,26 @@ each hop.** A query touching many objects degrades the ANSWER before
 it errors -- "the failure mode is a worse answer, not a crash, which
 is the hard kind to notice. We have never measured where that begins."
 
-`scripts/measure_prompts.py` exists and is the instrument for this.
-The measurement comes before any fix, because a fix without one is a
-guess about a threshold nobody has found.
+**MEASURED, on the shipped deployment with num_ctx 4096:**
+
+    system prompt alone          ~1,138 tokens    28% of the window
+    + one heavy hop              ~2,030            50%
+    + four heavy hops            ~4,664           114%  OVERFLOWS
+    + eight (default max_hops)   ~8,176           200%
+
+**THE LOOP CAN EXCEED ITS OWN CONFIGURED WINDOW AT HOP FOUR**, well
+before it stops on its own. `MAX_OBJECT_IDS` of 20 and `max_hops` of 8
+were chosen for other reasons and do not bound this.
+
+**A WARNING AT 80% IS BUILT**, which is AWS's published threshold for
+exactly this. Past the window the server TRUNCATES rather than
+failing, so the warning says that -- a note that a prompt is large
+reads as a performance remark.
+
+**STILL OPEN: what to DO about it.** Summarise older hops, cap what
+enters `gathered`, or raise the window. That is a separate decision,
+and it needed this measurement first -- a fix without one is a guess
+about a threshold nobody had found.
 
 ### R3. Runtime role editing — DEPENDS ON HOT RELOAD, WHICH EXISTS
 

@@ -10,11 +10,32 @@ deployment's config.yaml llm.connection block (e.g. {"base_url": ...,
 Used by: core/deployment_loader.py's build_llm_adapter() factory
 """
 
+import logging
 from typing import Any
 
 import requests
 
 from core.llm.interface import LLMUnavailable
+
+logger = logging.getLogger(__name__)
+
+# WHEN A PROMPT IS TOO BIG TO TRUST, as a fraction of the window.
+#
+# 0.8 IS THE PUBLISHED PRACTICE. AWS's agentic-AI lens names
+# exactly this: "alarms when context window utilization exceeds
+# 80%, triggering summarization or pruning workflows before the
+# limit becomes a hard wall".
+#
+# THE WALL IS NOT AN ERROR, which is why it matters. A model given
+# more than it can hold does not refuse -- it TRUNCATES, and
+# answers from what survived. A worse answer, not a crash.
+CONTEXT_WARNING_FRACTION = 0.8
+
+# ROUGHLY FOUR CHARACTERS PER TOKEN, the usual figure for English
+# and JSON. Deliberately approximate: a real tokeniser would mean
+# shipping one per model, and this says "you are near the wall"
+# rather than counting.
+_CHARS_PER_TOKEN = 4
 
 
 class OllamaAdapter:
@@ -53,6 +74,48 @@ class OllamaAdapter:
         # able to set.
         self.keep_alive = connection.get("keep_alive")
 
+    def _warn_if_context_is_tight(self, system_prompt: str,
+                                  user_message: str) -> None:
+        """Says so when a prompt is close to the window it must fit.
+
+        MEASURED, on the shipped deployment with num_ctx 4096: the
+        system prompt alone is about 1,138 tokens (28% of the
+        window), one heavy hop reaches 50%, four reach 114% and the
+        default max_hops of eight reaches 200%.
+
+        So the loop can exceed its own configured window at HOP
+        FOUR, well before it stops on its own.
+
+        A WARNING, NOT A REFUSAL. Truncation may still produce a
+        fine answer, and a deployment that raises num_ctx or asks
+        narrower questions never sees this. Refusing would turn a
+        degraded answer into no answer, which is worse.
+
+        THIS IS THE INSTRUMENTATION HALF of the context-rot item.
+        What to DO about it -- summarise older hops, cap what
+        enters `gathered`, raise the window -- is a separate
+        decision that needed this measurement first.
+        """
+        window = self.options.get("num_ctx")
+        if not window:
+            # A DEPLOYMENT THAT DOES NOT STATE ONE gets no warning
+            # rather than a guessed threshold: the server's own
+            # default is not knowable from here.
+            return
+
+        estimated = (
+            len(system_prompt) + len(user_message)
+        ) // _CHARS_PER_TOKEN
+        if estimated < window * CONTEXT_WARNING_FRACTION:
+            return
+
+        logger.warning(
+            "a prompt of roughly %d tokens is %.0f%% of num_ctx %d. "
+            "Past the window the server TRUNCATES rather than failing, "
+            "so the answer may be built from part of what was gathered.",
+            estimated, estimated / window * 100, window,
+        )
+
     def chat(self, system_prompt: str, user_message: str,
               json_mode: bool = False, temperature: float | None = None) -> str:
         # Raises requests.RequestException on network/timeout failure --
@@ -78,6 +141,7 @@ class OllamaAdapter:
             ],
             "stream": False,
         }
+        self._warn_if_context_is_tight(system_prompt, user_message)
         if json_mode:
             payload["format"] = "json"
         if self.keep_alive is not None:
