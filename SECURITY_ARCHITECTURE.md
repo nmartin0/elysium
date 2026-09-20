@@ -277,8 +277,39 @@ described a defect that reading the code carefully ruled out.
 
 ### 4. The grant algebra, specified
 
-Once 2 and 3 exist there is something worth specifying, and the
-properties above become testable rather than aspirational.
+2 and 3 exist, so these are no longer aspirational. Each is pinned by
+a UNIVERSAL test in `tests/unit/test_grant_algebra.py` -- one that
+fails when a NEW mechanism appears, not merely when an existing one
+breaks.
+
+**ONE CHOKEPOINT.** `write_fields` and `create_object` are the only
+ways an adapter mutates anything, and both are called from
+`write_mediator` alone. Verified across the whole tree. A second
+caller would bypass the pending-write log, the approvals queue, the
+MAC check and the compartment check at once, while every test of
+those still passed.
+
+**ATTENUATION ONLY.** No mechanism may do what its caller could not.
+An action declares no authority of its own, and every write is
+checked against `user_record.security_value`. Nothing synthesises a
+UserRecord -- which is the shape this fails in: a service account, a
+scheduled trigger, an automation "running as the system".
+
+**AUTHORITY IS NEVER STORED.** It is re-evaluated at the point of
+use, against the CURRENT generation. A pending write survives a
+restart and a reload, so a decision taken at proposal would be taken
+under rules that may no longer exist.
+
+**DATA DOES NOT CROSS COMPARTMENTS.** Every other check compares an
+object to the USER; the \\*-property check compares what was READ to
+what is being WRITTEN, which is the only way a flow is visible at
+all.
+
+**AND THE DOCUMENT AND THE TESTS MUST AGREE.** A test file is not a
+specification -- somebody reasoning about this reads here, somebody
+changing it runs those -- so a test fails if this section stops naming
+what it checks. It fired once already, on the edit that removed
+"attenuation only" while correcting item 3.
 
 ---
 

@@ -868,7 +868,16 @@ across a version boundary.
 
 ---
 
-## Phase 3.5 — Non-user-derived constraints
+## Phase 3.5 — ~~Non-user-derived constraints~~ DONE
+
+**ALL FOUR PIECES.** Trace id (built earlier), the write-down check
+(compartments, levels deferred following Foundry), attenuation (found
+already true and pinned), and the grant algebra -- now four UNIVERSAL
+tests that fail when a NEW mechanism appears rather than when an
+existing one breaks.
+
+**THREE OF THE FOUR WERE SMALLER THAN WRITTEN.** Recorded in
+SECURITY_ARCHITECTURE.md in place rather than deleted.
 
 **ASSESSED, NOT BUILT -- see SECURITY_ARCHITECTURE.md.**
 
