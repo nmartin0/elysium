@@ -108,6 +108,78 @@ def _verdict(condition: CountCondition, previous: int | None,
     return None
 
 
+def count_for_each(mediator, view, user_records: list) -> dict:
+    """Runs one saved view as each person. Returns {user_id: count}.
+
+    THE SAME QUERY, DIFFERENT AUTHORITY. `search_object` already takes
+    a user, so evaluating a view as Alice and then as Bob is one
+    existing function called with a different first argument -- through
+    `check_access`, MAC and the audit log unchanged.
+
+    THERE IS NO SECOND PERMISSION PATH TO GET WRONG, which matters
+    more here than anywhere: this is the one place a condition touches
+    somebody else's data.
+
+    AND NO PRIVILEGED COUNT EXISTS. Nobody evaluates the view as an
+    owner and filters; each number comes from its own search. So a
+    recipient who can see nothing counts zero, rather than being told
+    a number and shown none of it.
+
+    A FAILURE COSTS ITS OWN RECIPIENT. One person's search raising --
+    a silo unreachable for their partition, a grant mid-change --
+    should not stop the others being told.
+    """
+    from core.filters import FieldFilter
+
+    conditions = [
+        FieldFilter(
+            field=condition["field"],
+            operator=condition["operator"],
+            value=condition.get("value"),
+        )
+        for condition in view.conditions
+    ]
+
+    counts: dict = {}
+
+    # A VIEW WHOSE TYPE IS GONE CANNOT BE EVALUATED FOR ANYBODY, and
+    # `search_object` returns an EMPTY LIST rather than raising for an
+    # unknown type -- deliberately, so a caller cannot tell "does not
+    # exist" from "not authorized to discover".
+    #
+    # That is right for a search and wrong here: zero for everyone
+    # would report every existing match as removed on the next
+    # evaluation. Checked once, against the schema, before asking
+    # anybody.
+    if view.object_type not in mediator.schema:
+        logger.warning(
+            "view %r names object type %r, which the ontology no longer "
+            "declares -- not evaluated",
+            view.name, view.object_type,
+        )
+        return {}
+
+    for user_record in user_records:
+        try:
+            if view.query_text:
+                matched = mediator.search_object_free_text(
+                    user_record, view.object_type, view.query_text,
+                    conditions=conditions,
+                )
+            else:
+                matched = mediator.search_object(
+                    user_record, view.object_type, conditions,
+                )
+        except Exception as e:  # noqa: BLE001 - see the docstring
+            logger.warning(
+                "could not evaluate view %r as %s: %s",
+                view.name, user_record.user_id, e,
+            )
+            continue
+        counts[user_record.user_id] = len(matched)
+    return counts
+
+
 def evaluate_for_recipients(condition: CountCondition, counts: dict,
                             store, config_digest: str | None = None) -> int:
     """Tells each recipient what their own count did. Returns how many.

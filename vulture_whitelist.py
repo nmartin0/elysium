@@ -298,3 +298,14 @@ notifications_route
 mark_notification_seen_route
 notifications
 unseen
+
+# saved-view routes and their models (api/routes.py) -- FastAPI
+# routes, reached by decorator.
+saved_views_route
+save_view_route
+delete_saved_view_route
+views
+view_id
+object_type
+query_text
+conditions

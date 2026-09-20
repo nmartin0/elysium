@@ -267,12 +267,29 @@ the moment to decide whether somebody should be told.
    WITHOUT NEEDING SAVED VIEWS TO EXIST SERVER-SIDE, which is the
    prerequisite the object-set conditions have and this one does not.
 
-0.5 SAVED VIEWS, SERVER-SIDE. The actual prerequisite for anything
-   object-set shaped, currently `{name, url}` in a browser's
-   localStorage where nothing scheduled can reach it. Needs an owner,
-   a name, a stored QUERY rather than a URL, and a decision about
-   whether one person's saved view may be referenced by another
-   person's automation.
+0.5 ~~SAVED VIEWS, SERVER-SIDE~~ **BUILT.** `core/saved_views.py`,
+   with `GET/POST /saved-views` and `DELETE /saved-views/{id}`.
+
+   **A STORED QUERY, NOT A URL.** The URL carried `type`, `q`,
+   `sort`, `view` and `filters`; only the first, second and last
+   describe WHAT MATCHES. The others describe how a person likes to
+   look at it, which a condition counting rows should not have to
+   parse a URL to ignore.
+
+   **THE CROSS-USER QUESTION IS ANSWERED: THEY STAY PRIVATE.** A
+   query can name specific ids -- "customer_id = cust_001" says
+   cust_001 exists -- which is the leak shape that deferred the Query
+   panel's starter questions.
+
+   **AND A CONDITION STILL WORKS ACROSS RECIPIENTS**, because a
+   recipient never sees the query. They see the condition's
+   DESCRIPTION, which its author wrote, and their OWN count from
+   running that query with their OWN authority. The query is used on
+   their behalf and never disclosed to them.
+
+   **VERIFIED ON THE SHIPPED DEPLOYMENT:** the same "All
+   transactions" view counts 4 for a us-west reader and 2 for a
+   us-east one.
 1. A condition: a saved exploration plus a check. **HALF BUILT** --
    `core/count_condition.py` holds the check; the saved exploration
    is what 0.5 is for.

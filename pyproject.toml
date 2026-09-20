@@ -196,10 +196,8 @@ layers = [
     # outside the hierarchy -- so this is a leaf beside
     # secret_references rather than a module sitting outside.
     "notifications",
-    # count_condition imports nothing from core at all -- it COMPARES
-    # rather than searches, and the caller decides who is asked with
-    # whose authority. A leaf beside the others.
-    "count_condition",
+    # saved_views imports only sqlite_connection, like notifications.
+    "saved_views",
 ]
 containers = ["core"]
 exhaustive = true
@@ -209,7 +207,10 @@ exhaustive = true
 # ontology while the store they serve sits outside the hierarchy
 # entirely. Placing them in the layer list would force a position that
 # says something untrue about what depends on what.
-exhaustive_ignores = ["adapter_roles", "concurrency", "config", "deployment_loader", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
+# count_condition sits ABOVE filters -- it imports FieldFilter to run a
+# saved view -- and outside the hierarchy otherwise: it is trigger
+# machinery, not a layer anything else builds on.
+exhaustive_ignores = ["adapter_roles", "count_condition", "concurrency", "config", "deployment_loader", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
 
 # Contract 3 of 3 -- the single most repeatedly-stated architectural
 # principle throughout this project's own history: authentication

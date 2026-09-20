@@ -114,7 +114,9 @@ class MirrorReadAdapter(ExternalReadAdapter):
         arrow = self._scan(
             table_name,
             selected_fields=(id_column,),
-            row_filter=self._conditions_to_filter(conditions),
+            row_filter=self._conditions_to_filter(
+                conditions, self._decimal_columns(table_name),
+            ),
             limit=limit,
         )
         if arrow is None:
@@ -311,7 +313,25 @@ class MirrorReadAdapter(ExternalReadAdapter):
             scan_kwargs["snapshot_id"] = snapshot_id
         return table.scan(**scan_kwargs).to_arrow()
 
-    def _conditions_to_filter(self, conditions: list):
+    def _decimal_columns(self, table_name: str) -> set:
+        """Which columns of one mirrored table are decimals.
+
+        READ FROM THE TABLE, not from the ontology. The scale that
+        matters is the one the data is STORED at, and a filter has to
+        match it exactly -- pyiceberg refuses a mismatch rather than
+        widening.
+        """
+        try:
+            table = self._catalog.load_table(f"{self.silo_name}.{table_name}")
+            return {
+                column.name for column in table.schema().fields
+                if str(column.field_type).startswith("decimal")
+            }
+        except Exception:  # noqa: BLE001 - a filter still works unquantized
+            return set()
+
+    def _conditions_to_filter(self, conditions: list,
+                              decimal_columns: set | None = None):
         """Filter conditions as an Iceberg expression.
 
         Iceberg has In, NotIn and range comparisons natively, so most
@@ -327,20 +347,64 @@ class MirrorReadAdapter(ExternalReadAdapter):
         if not conditions:
             return None
 
+        # WHICH COLUMNS ARE DECIMALS, from the MIRROR'S OWN schema
+        # rather than the ontology's. The scale that matters is the
+        # one the data is stored at, and this adapter reads the
+        # table anyway.
+        decimal_columns = decimal_columns or set()
         terms: list[BooleanExpression] = []
         for condition in conditions:
-            terms.append(self._term_for(condition))
+            terms.append(self._term_for(condition, decimal_columns))
 
         combined = terms[0]
         for term in terms[1:]:
             combined = And(combined, term)
         return combined
 
-    def _term_for(self, condition):
+    def _decimal_literal(self, field: str, value, decimal_columns: set):
+        """A decimal comparison at the SCALE THE COLUMN USES.
+
+        PyIceberg refuses a mismatch outright: filtering `amount ==
+        49.99` against a decimal(38, 9) column raised "could not
+        convert 49.99 into a decimal(38, 9), scales differ 9 <> 2".
+
+        So a person filtering on a price had to type NINE DECIMAL
+        PLACES, or get an error naming a storage detail they never
+        chose. Found by a test of the trigger evaluator, not by the
+        decimal work that introduced it -- the live path coerces on
+        READ and nothing coerced on FILTER.
+
+        UNRECOGNISED VALUES PASS THROUGH UNCHANGED. A value that is
+        not a number is somebody else's error to report, and
+        swallowing it here would turn a clear message into an empty
+        result.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        from core.ontology.field_types import DECIMAL_SCALE
+
+        if field not in decimal_columns:
+            return str(value)
+        try:
+            return str(Decimal(str(value)).quantize(
+                Decimal(1).scaleb(-DECIMAL_SCALE),
+            ))
+        except (InvalidOperation, ValueError, ArithmeticError):
+            return str(value)
+
+    def _term_for(self, condition, decimal_columns: set | None = None):
+        # DEFAULTS TO NONE so a caller that knows of no decimal columns
+        # -- including the vocabulary test, which checks every operator
+        # is handled or declined -- can build a term without inventing
+        # a schema.
+        decimal_columns = decimal_columns or set()
         field, operator, value = condition.field, condition.operator, condition.value
 
         if operator == "equals":
-            return EqualTo(term=field, literal=str(value))  # type: ignore[call-arg]
+            return EqualTo(  # type: ignore[call-arg]
+                term=field,
+                literal=self._decimal_literal(field, value, decimal_columns),
+            )
         if operator == "in":
             return In(term=field, literals=[str(item) for item in value])  # type: ignore[call-arg]
         if operator == "not_in":
@@ -348,7 +412,10 @@ class MirrorReadAdapter(ExternalReadAdapter):
         if operator in ("range", "date_range"):
             low = value.get("min") if operator == "range" else value.get("start")
             high = value.get("max") if operator == "range" else value.get("end")
-            bounds = []
+            # ANNOTATED because the two bounds are different types and
+            # mypy otherwise infers the list from whichever is appended
+            # first.
+            bounds: list[BooleanExpression] = []
             if low is not None:
                 bounds.append(GreaterThanOrEqual(term=field, literal=low))  # type: ignore[call-arg]
             if high is not None:

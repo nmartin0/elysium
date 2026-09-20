@@ -1208,6 +1208,110 @@ class MirrorStateResponse(BaseModel):
     problems: list[str]
 
 
+class SavedViewResponse(BaseModel):
+    view_id: str
+    name: str
+    object_type: str
+    query_text: str
+    conditions: list[dict[str, Any]]
+    created_at: str
+
+
+class SavedViewsResponse(BaseModel):
+    views: list[SavedViewResponse]
+
+
+class SaveViewRequest(BaseModel):
+    name: str
+    object_type: str
+    query_text: str = ""
+    conditions: list[dict[str, Any]] = []
+
+
+def _saved_view_store(request: Request):
+    from core.saved_views import SavedViewStore
+
+    return SavedViewStore(
+        request.app.state.runtime_paths.data_dir / "saved_views.db",
+    )
+
+
+@router.get("/saved-views", dependencies=[Depends(_no_store)],
+            response_model=SavedViewsResponse)
+def saved_views_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """The caller's own saved views.
+
+    NO GRANT REQUIRED: these are the caller's own searches, and the
+    store scopes by owner IN THE QUERY. There is no call that returns
+    everybody's.
+    """
+    return {
+        "views": [
+            {
+                "view_id": view.view_id,
+                "name": view.name,
+                "object_type": view.object_type,
+                "query_text": view.query_text,
+                "conditions": view.conditions,
+                "created_at": view.created_at,
+            }
+            for view in _saved_view_store(request).for_owner(
+                current_user.user_id,
+            )
+        ],
+    }
+
+
+@router.post("/saved-views", dependencies=[Depends(_no_store)])
+def save_view_route(
+    body: SaveViewRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Saves one, replacing any of the same name.
+
+    THE OBJECT TYPE IS CHECKED AGAINST WHAT THE CALLER MAY SEE. A view
+    naming a type they cannot discover would be a view that always
+    matches nothing -- and the refusal says so at the moment they can
+    fix it.
+    """
+    visible = _generation(request).mediator.visible_schema(current_user)
+    if body.object_type not in visible:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No object type {body.object_type!r}",
+        )
+
+    view_id = _saved_view_store(request).save(
+        current_user.user_id, body.name, body.object_type,
+        body.query_text, body.conditions,
+    )
+    if view_id is None:
+        raise HTTPException(status_code=500, detail="Could not save that view")
+    return {"view_id": view_id}
+
+
+@router.delete("/saved-views/{view_id}", dependencies=[Depends(_no_store)])
+def delete_saved_view_route(
+    view_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Deletes one, if it belongs to the caller.
+
+    A 404 FOR SOMEBODY ELSE'S, not a 403: the DELETE matches no row,
+    which is the same answer as "no such view", and telling a caller
+    that one exists but is not theirs says more than refusing to say
+    anything.
+    """
+    if not _saved_view_store(request).delete(current_user.user_id, view_id):
+        raise HTTPException(status_code=404, detail="No such saved view")
+    return {"deleted": True}
+
+
 class NotificationResponse(BaseModel):
     notification_id: str
     created_at: str
