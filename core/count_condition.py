@@ -129,17 +129,6 @@ def count_for_each(mediator, view, user_records: list) -> dict:
     a silo unreachable for their partition, a grant mid-change --
     should not stop the others being told.
     """
-    from core.filters import FieldFilter
-
-    conditions = [
-        FieldFilter(
-            field=condition["field"],
-            operator=condition["operator"],
-            value=condition.get("value"),
-        )
-        for condition in view.conditions
-    ]
-
     counts: dict = {}
 
     # A VIEW WHOSE TYPE IS GONE CANNOT BE EVALUATED FOR ANYBODY, and
@@ -161,15 +150,10 @@ def count_for_each(mediator, view, user_records: list) -> dict:
 
     for user_record in user_records:
         try:
-            if view.query_text:
-                matched = mediator.search_object_free_text(
-                    user_record, view.object_type, view.query_text,
-                    conditions=conditions,
-                )
-            else:
-                matched = mediator.search_object(
-                    user_record, view.object_type, conditions,
-                )
+            # ONE HELPER, SHARED WITH THE ACTION EFFECT. A second copy
+            # of this translation would be two places for a filter
+            # shape to drift.
+            matched = _matches_for(mediator, view, user_record)
         except Exception as e:  # noqa: BLE001 - see the docstring
             logger.warning(
                 "could not evaluate view %r as %s: %s",
@@ -178,6 +162,66 @@ def count_for_each(mediator, view, user_records: list) -> dict:
             continue
         counts[user_record.user_id] = len(matched)
     return counts
+
+
+def propose_action_effect(write_mediator, mediator, view, owner_record,
+                          action_type_name: str, parameter_name: str,
+                          extra_parameters: dict | None = None):
+    """Proposes an action on whatever the view matches NOW.
+
+    AS THE OWNER, which is Foundry's split and the one this file
+    already states: "action effects execute AS the owner. Submission
+    criteria are evaluated against the owner; the audit log records
+    the owner." A notification is evaluated per RECIPIENT; an action
+    is not, because an action is a write and a write has one author.
+
+    RE-RUN RATHER THAN REMEMBERED, and that is the resolution of a
+    tension this design created. Conditions compare COUNTS -- no
+    alerting system worth copying stores last time's result set -- so
+    when one fires, nothing knows WHICH objects matched.
+
+    So the effect asks again. The set may differ slightly from the one
+    that tripped the count, and that is the RIGHT answer rather than a
+    compromise: an action should operate on what matches when it runs,
+    not on what matched when somebody noticed.
+
+    IT PROPOSES, IT DOES NOT EXECUTE. The pending write lands in the
+    approvals queue like any other, with `origin="automation"` so
+    whoever reviews it can tell a condition proposed it. An action
+    declaring `automatable: false` refuses here, before the queue.
+
+    RETURNS THE PendingWrite, or None if nothing matched. An action
+    proposed over an empty set is a decision somebody has to read and
+    dismiss.
+    """
+    matched = _matches_for(mediator, view, owner_record)
+    if not matched:
+        return None
+
+    parameters = {parameter_name: matched, **(extra_parameters or {})}
+    return write_mediator.propose_action(
+        owner_record, action_type_name, parameters, origin="automation",
+    )
+
+
+def _matches_for(mediator, view, user_record) -> list:
+    """The ids one saved view matches, for one person."""
+    from core.filters import FieldFilter
+
+    conditions = [
+        FieldFilter(
+            field=condition["field"],
+            operator=condition["operator"],
+            value=condition.get("value"),
+        )
+        for condition in view.conditions
+    ]
+    if view.query_text:
+        return mediator.search_object_free_text(
+            user_record, view.object_type, view.query_text,
+            conditions=conditions,
+        )
+    return mediator.search_object(user_record, view.object_type, conditions)
 
 
 def evaluate_for_recipients(condition: CountCondition, counts: dict,

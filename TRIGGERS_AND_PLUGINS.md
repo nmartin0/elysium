@@ -356,7 +356,27 @@ the moment to decide whether somebody should be told.
    ran.
 2. A notification effect, evaluated PER RECIPIENT. In-product first;
    email and webhooks later, each a place data leaves the deployment.
-3. An action effect, using the action's own `auto_execute`.
+3. ~~An action effect~~ **BUILT.** `propose_action_effect` in
+   `core/count_condition.py`.
+
+   **AS THE OWNER**, per the permission split above. A notification is
+   evaluated per RECIPIENT; an action is not, because an action is a
+   write and a write has one author.
+
+   **RE-RUN RATHER THAN REMEMBERED**, which resolves a tension this
+   design created. Conditions compare COUNTS, so when one fires
+   nothing knows WHICH objects matched. The effect asks again -- and
+   the set may differ slightly from the one that tripped the count,
+   which is the RIGHT answer rather than a compromise: an action
+   should operate on what matches when it RUNS, not on what matched
+   when somebody noticed.
+
+   **IT PROPOSES, IT DOES NOT EXECUTE.** The pending write lands in
+   the approvals queue with `origin="automation"`, and an action
+   declaring `automatable: false` refuses before the queue.
+
+   **AN EMPTY SET PROPOSES NOTHING**, because an action over no
+   objects is a decision somebody has to read and dismiss.
 4. `automatable: false` on action types that must never fire unattended.
 
 ---
