@@ -18,7 +18,7 @@ which would be a guess presented as a plan.
 
 ## Where this stands, September 19
 
-**PHASES 0 AND 1 ARE COMPLETE.** The four blockers the commercial
+**PHASES 0, 1 AND 3.5 ARE COMPLETE.** The four blockers the commercial
 audit named -- no real database adapter, unbounded search, unbounded
 cache, no query timeout -- are closed, along with the live-read
 coercion that had to precede them and the four items of phase 0.5.
@@ -31,14 +31,28 @@ coercion that had to precede them and the four items of phase 0.5.
     0.5  the mirror becomes the read path           DONE
     1.1  persist the pending write store            DONE
     1.2  fsync before the catalog pointer swap      DONE
-    1.3  backup                                     DONE (restore: cp -a)
+    1.3  backup and restore                         DONE
     1.4  secret indirection                         DONE
 
-**TWO ENTRIES WERE WRONG ON INSPECTION** and are corrected in place
+    3.5  non-user-derived constraints               DONE
+         trace id, write-down check, attenuation,
+         and the grant algebra as universal tests
+
+**FOUR ENTRIES WERE WRONG ON INSPECTION** and are corrected in place
 rather than deleted, because the mistake is more useful than the
-absence: 0.3's caches were already bounded, and 0.5.5's sync already
-reported every drifted column. Both were wrong in the same direction
--- describing a defect that reading the code would have ruled out.
+absence:
+
+    0.3    the caches were already bounded
+    0.5.5  the sync already reported every drifted column
+    3.5    "ordered or incomparable" was a false choice -- a
+           Bell-LaPadula label has BOTH, and Elysium's values are
+           compartments
+    3.5    "intersection for action authority" had nothing to
+           intersect: an action declares no authority of its own
+
+**ALL FOUR WERE WRONG IN THE SAME DIRECTION** -- describing a defect
+that reading the code carefully would have ruled out. That is a
+prior worth carrying into the remaining design documents.
 
 **WHAT REMAINS IS ORDERED BY DEPENDENCY BELOW.** Phase 2 needs
 nothing. Phase 3 needs research. Phases 3.5 and 3.6 are designed and
@@ -918,55 +932,83 @@ since un-merging is another write.
 
 ## What to build next, in dependency order
 
-The phases below are grouped by SUBJECT. This is the same work
-grouped by WHAT BLOCKS WHAT, which is the more useful question once a
-phase is half-done.
+The phases above are grouped by SUBJECT. This is the same work grouped
+by WHAT BLOCKS WHAT, which is the more useful question once several
+phases are half-done.
+
+**Rewritten September 19, after phases 0, 1 and 3.5 closed.** The
+previous version had become a list of DONE markers, which is a record
+rather than a plan.
 
 ### Ready now — nothing blocks these
 
-    R1   cap search_around            DONE
-    R4   a restore script             DONE
-    2.1  Query's buildable parts      DEFERRED -- a starter naming an
-                                      id leaks that it exists; see
-                                      QUERY_PLAN.md
-    2.3  json_each for the write log  DONE
-    0.5.4 snapshot history            DONE
-    0.5.4 a Sync now button           DONE
+    R3    runtime role editing   UNBLOCKED: 3.5 is done, and its
+                                 question -- whether a grant edit
+                                 should itself pass through the
+                                 approvals queue -- is now answerable
+                                 against a settled model
+    2.4   the remaining UI       vertex-lite's second half, the
+          halves                 view-state matrix, and which screens
+                                 show the checkbox-above-the-row
+                                 problem. Each small, each verifiable
+                                 now that browser tests exist
+    1.3   restore verification   the script checks an inventory; only
+                                 a real restore into a stopped
+                                 deployment proves one
 
-### Ready, but each needs one decision first
+### Ready, but each needs ONE decision from a person
 
-    R2   context rot          MEASURED; the fix is still a decision
-    2.2  measurement's        same harness, same session
-         remaining questions
-    3.0  triggers             mirror health first, per its own note
-    0.5.35 source column      DONE for a real database; SQLite
-           types                cannot say, and says so
-
-### Blocked on design that is written but unbuilt
-
-    3.1  the plugin API       THIRD_PARTY_EXTENSIONS.md: the channel
-                              comes before the boundary
-    3.5  write-down check     DONE for compartments. An action that
-                              reads one and writes another is refused
-                              at PROPOSAL. Levels deferred, following
-                              Foundry, and they cost nothing to defer
-    3.6  fusion               needs the gold layer, which nothing has
+    R2    the context-rot fix    MEASURED: the loop can exceed its own
+                                 4096-token window at HOP FOUR. Three
+                                 paths -- summarise older hops, cap
+                                 what enters `gathered`, raise the
+                                 window -- with different costs
+    3.0   triggers               mirror health first, notification
+                                 effects only, because that condition
+                                 admits no action effect. Needs a
+                                 DELIVERY CHANNEL, which does not
+                                 exist at all
+    2.1   Query's starters       DEFERRED on a leak: a starter naming
+                                 an id says it exists. The shape of an
+                                 answer is in QUERY_PLAN.md
 
 ### Blocked on something genuinely absent
 
-    R3   runtime role editing  belongs after 3.5, not before
-    1.3  restore VERIFICATION  a script can check an inventory; only a
-                               real restore proves it
-    3.2  multiple workers      pending writes now persist, so this is
-                               closer than it was
+    2.2   the measurement        A MODEL. phi4-mini is ~3.8B, and the
+          session's questions    published floor for reliable
+                                 multi-step tool use is 14B -- or a
+                                 small model with real tool-call
+                                 training (Qwen 3.5 4B scored 97.5%)
+    3.0   object-set conditions  SAVED VIEWS SERVER-SIDE. They are
+                                 {name, url} in a browser today, where
+                                 nothing scheduled can reach them
+    3.6   fusion                 THE GOLD LAYER, which nothing has
+    3.2   multiple workers       closer than it was -- pending writes
+                                 now persist -- but still a storage
+                                 question
 
-**THE HONEST READING:** eight items are ready now or near it, and
-nothing in the first group depends on anything in the last. The
-temptation with a roadmap this size is to take the interesting item;
-the dependency order says take R1, which is small, measured, and
-closes a hole phase 0.2 left open.
+### Designed, unbuilt, and worth VERIFYING before building
 
----
+    3.1   the plugin API         THIRD_PARTY_EXTENSIONS.md
+    3.6   fusion and identity    FUSION_AND_IDENTITY.md
+    3.3   schema migrations      no design yet
+
+**THE REASON THAT LAST GROUP IS SEPARATE:** of the last several design
+entries picked up and built, MOST WERE SMALLER THAN WRITTEN -- 0.3's
+cache bound, 0.5.5's drift report, 3.5's ordered-vs-incomparable
+question, and 3.5's intersection item. Each described a defect that
+reading the code carefully ruled out.
+
+So a design document is a claim like any other. Verify it against the
+code before building from it, and expect the work to be smaller.
+
+**THE HONEST READING:** three items are ready now, three need one
+decision each, and four are blocked on something real. Nothing in the
+first group depends on anything in the last.
+
+The largest single unlock is **saved views server-side** -- it is the
+prerequisite for object-set triggers, and the same machinery is what a
+notification's per-recipient evaluation would run.
 
 ## Found on review, September 19 — four things no phase held
 
