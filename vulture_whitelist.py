@@ -309,3 +309,15 @@ view_id
 object_type
 query_text
 conditions
+
+# trigger routes and their models (api/routes.py) -- FastAPI routes.
+triggers_route
+create_trigger_route
+set_trigger_enabled_route
+delete_trigger_route
+triggers
+trigger_id
+above
+gained
+fell
+enabled

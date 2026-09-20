@@ -164,6 +164,70 @@ def count_for_each(mediator, view, user_records: list) -> dict:
     return counts
 
 
+def evaluate_user_triggers(mediator, trigger_store, view_store,
+                           notification_store, user_records: dict,
+                           config_digest: str | None = None) -> int:
+    """Runs every enabled trigger as its owner. Returns how many fired.
+
+    AS THE OWNER, AND ONLY FOR THE OWNER. A UI-created trigger
+    notifies the person who made it -- which is what makes it safe to
+    offer without a new grant. Naming somebody else would be a
+    capability its creator does not otherwise have.
+
+    `user_records` IS {user_id: UserRecord}, resolved by the caller.
+    This function does not know how to look somebody up, and a
+    trigger whose owner has since been removed is skipped rather than
+    run as a guess.
+
+    ONE FAILURE COSTS ONE TRIGGER. A view that was deleted, an owner
+    who lost a grant, a silo that is down for one partition -- none
+    should stop the others.
+    """
+    fired = 0
+    for trigger in trigger_store.all_enabled():
+        owner = user_records.get(trigger.owner_user_id)
+        if owner is None:
+            # AN OWNER WHO NO LONGER EXISTS. Running their trigger as
+            # anybody else would be the confused deputy this project
+            # spends its security budget avoiding.
+            continue
+
+        view = view_store.get(trigger.view_id)
+        if view is None:
+            logger.warning(
+                "trigger %r watches a view that no longer exists",
+                trigger.name,
+            )
+            continue
+
+        try:
+            counts = count_for_each(mediator, view, [owner])
+        except Exception as e:  # noqa: BLE001 - see the docstring
+            logger.warning("could not evaluate trigger %r: %s", trigger.name, e)
+            continue
+        if not counts:
+            continue
+
+        condition = CountCondition(
+            key=trigger.condition_key,
+            description=describe_trigger(trigger),
+            above=trigger.above,
+            gained=trigger.gained,
+            fell=trigger.fell,
+        )
+        fired += evaluate_for_recipients(
+            condition, counts, notification_store, config_digest,
+        )
+    return fired
+
+
+def describe_trigger(trigger) -> str:
+    """Imported lazily so this module stays independent of the store."""
+    from core.triggers import describe
+
+    return describe(trigger)
+
+
 def propose_action_effect(write_mediator, mediator, view, owner_record,
                           action_type_name: str, parameter_name: str,
                           extra_parameters: dict | None = None):

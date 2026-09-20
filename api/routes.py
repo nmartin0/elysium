@@ -1208,6 +1208,144 @@ class MirrorStateResponse(BaseModel):
     problems: list[str]
 
 
+class TriggerResponse(BaseModel):
+    trigger_id: str
+    name: str
+    view_id: str
+    above: int | None
+    gained: int | None
+    fell: int | None
+    enabled: bool
+    created_at: str
+
+
+class TriggersResponse(BaseModel):
+    triggers: list[TriggerResponse]
+
+
+class CreateTriggerRequest(BaseModel):
+    name: str
+    view_id: str
+    above: int | None = None
+    gained: int | None = None
+    fell: int | None = None
+
+
+def _trigger_store(request: Request):
+    from core.triggers import TriggerStore
+
+    return TriggerStore(
+        request.app.state.runtime_paths.data_dir / "triggers.db",
+    )
+
+
+@router.get("/triggers", dependencies=[Depends(_no_store)],
+            response_model=TriggersResponse)
+def triggers_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """The caller's own triggers.
+
+    NO GRANT REQUIRED. A trigger runs as its owner and notifies only
+    its owner, so making one grants nothing somebody did not already
+    have -- which is what makes it safe to offer here rather than in
+    configuration.
+    """
+    return {
+        "triggers": [
+            {
+                "trigger_id": trigger.trigger_id,
+                "name": trigger.name,
+                "view_id": trigger.view_id,
+                "above": trigger.above,
+                "gained": trigger.gained,
+                "fell": trigger.fell,
+                "enabled": trigger.enabled,
+                "created_at": trigger.created_at,
+            }
+            for trigger in _trigger_store(request).for_owner(
+                current_user.user_id,
+            )
+        ],
+    }
+
+
+@router.post("/triggers", dependencies=[Depends(_no_store)])
+def create_trigger_route(
+    body: CreateTriggerRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Creates one, watching a view the caller owns."""
+    thresholds = [body.above, body.gained, body.fell]
+    if all(value is None for value in thresholds):
+        # A TRIGGER WITH NO CONDITION would evaluate forever and never
+        # fire, which reads as broken rather than as quiet.
+        raise HTTPException(
+            status_code=400,
+            detail="A trigger needs one of above, gained or fell.",
+        )
+    if sum(value is not None for value in thresholds) > 1:
+        # ONE QUESTION PER TRIGGER. Two thresholds on one row would
+        # need an answer about which wins, and two triggers say it
+        # plainly instead.
+        raise HTTPException(
+            status_code=400,
+            detail="A trigger watches one of above, gained or fell, not several.",
+        )
+
+    # THE VIEW MUST BE THE CALLER'S OWN, checked by looking in THEIR
+    # list rather than by fetching and comparing. `get` takes no owner
+    # -- it is the scheduler's call -- so using it here would be the
+    # one place this store's scoping could be bypassed.
+    owned = {
+        view.view_id
+        for view in _saved_view_store(request).for_owner(current_user.user_id)
+    }
+    if body.view_id not in owned:
+        raise HTTPException(status_code=404, detail="No such saved view")
+
+    trigger_id = _trigger_store(request).create(
+        current_user.user_id, body.name, body.view_id,
+        body.above, body.gained, body.fell,
+    )
+    if trigger_id is None:
+        raise HTTPException(status_code=500, detail="Could not create that trigger")
+    return {"trigger_id": trigger_id}
+
+
+@router.post("/triggers/{trigger_id}/enabled", dependencies=[Depends(_no_store)])
+def set_trigger_enabled_route(
+    trigger_id: str,
+    enabled: bool,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Turns one on or off.
+
+    ENABLED RATHER THAN DELETED is the common case: somebody
+    silencing a noisy trigger usually wants it back.
+    """
+    if not _trigger_store(request).set_enabled(
+        current_user.user_id, trigger_id, enabled,
+    ):
+        raise HTTPException(status_code=404, detail="No such trigger")
+    return {"enabled": enabled}
+
+
+@router.delete("/triggers/{trigger_id}", dependencies=[Depends(_no_store)])
+def delete_trigger_route(
+    trigger_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """A 404 FOR SOMEBODY ELSE'S: the DELETE matches no row."""
+    if not _trigger_store(request).delete(current_user.user_id, trigger_id):
+        raise HTTPException(status_code=404, detail="No such trigger")
+    return {"deleted": True}
+
+
 class SavedViewResponse(BaseModel):
     view_id: str
     name: str

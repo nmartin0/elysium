@@ -198,6 +198,8 @@ layers = [
     "notifications",
     # saved_views imports only sqlite_connection, like notifications.
     "saved_views",
+    # triggers imports only sqlite_connection, like saved_views.
+    "triggers",
 ]
 containers = ["core"]
 exhaustive = true

@@ -102,6 +102,54 @@ def _single_writer(lock_path: Path):
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
+def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
+    """Runs everybody's triggers, each as its own owner.
+
+    AFTER THE SYNC, like the mirror-health condition, because that is
+    when the data changed. A trigger says WHAT to watch; the sync says
+    when to look.
+
+    NEVER RAISES INTO THE SYNC. The sync has done its work; failing to
+    notice something about that work must not turn a successful sync
+    into a failed one.
+    """
+    try:
+        from core.count_condition import evaluate_user_triggers
+        from core.notifications import NotificationStore
+        from core.saved_views import SavedViewStore
+        from core.triggers import TriggerStore
+        from core.user_directory import UserDirectory
+
+        triggers = TriggerStore(runtime_paths.data_dir / "triggers.db")
+        enabled = triggers.all_enabled()
+        if not enabled:
+            return
+
+        # ONLY THE OWNERS THAT ACTUALLY HAVE A TRIGGER. Resolving every
+        # user would cost a lookup per account on a deployment where
+        # nobody uses triggers at all.
+        directory = UserDirectory(
+            runtime_paths.data_dir / "credentials.db", config.roles,
+        )
+        owners = {}
+        for owner_id in {trigger.owner_user_id for trigger in enabled}:
+            try:
+                owners[owner_id] = directory.get_user_record(owner_id)
+            except Exception:  # noqa: BLE001 - a removed owner is skipped
+                continue
+
+        fired = evaluate_user_triggers(
+            mediator, triggers,
+            SavedViewStore(runtime_paths.data_dir / "saved_views.db"),
+            NotificationStore(runtime_paths.data_dir / "notifications.db"),
+            owners, config.source_digest,
+        )
+        if fired:
+            print(f"{fired} trigger(s) fired")
+    except Exception as e:  # noqa: BLE001 - see the docstring
+        print(f"could not evaluate triggers: {e}", file=sys.stderr)
+
+
 def _notify_mirror_health(runtime_paths, config, attempts, targets) -> None:
     """Tells whoever can fix the mirror that it needs fixing.
 
@@ -281,6 +329,7 @@ def run_sync(runtime_paths=None) -> int:
         # exist; a sync already runs on whatever schedule the
         # deployment chose.
         _notify_mirror_health(runtime_paths, config, attempts, targets)
+        _evaluate_user_triggers(runtime_paths, config, mediator)
 
         return failures
 
