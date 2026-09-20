@@ -243,14 +243,37 @@ compartment) and SYSTEM_LOW is dominated by everything (lowest level,
 no compartments). Without them a lattice has no top or bottom, and
 code that needs one invents a special case.
 
-### 3. Intersection for action authority
+### 3. ~~Intersection for action authority~~ ALREADY ATTENUATED
 
-An action declares at most what it may touch; effective authority is
-the intersection with the user's. Attenuation only.
+**VERIFIED, AND THERE IS NOTHING TO INTERSECT.** The entry assumed an
+action "declares at most what it may touch". It declares
+`affected_object_types`, `description`, `parameters` and `sub_writes`
+-- and NO AUTHORITY OF ITS OWN. There is no second authority to
+intersect the user's with.
 
-Partly exists already: `_validate_effects_are_reachable` bounds an
-action's effects by its parameters. This makes the bound explicit and
-composable rather than derived.
+**AND EVERY ACTION WRITE IS ALREADY CHECKED AGAINST THE CALLER.**
+`_security_allowed(object_type, object_id, user_record.security_value)`
+-- the caller's own value, at every write. Nothing impersonates,
+nothing synthesises a UserRecord, nothing runs as a service account.
+Confirmed by search rather than by reading.
+
+**SO THE CONFUSED-DEPUTY RISK IS ALREADY CLOSED** on the axis that
+matters. What remains is the RBAC side, and that is deliberate rather
+than missing: a user needs `execute:ActionName` and NOT a write grant
+on the underlying type, because an action IS the capability. Granting
+"may transfer funds" without granting "may write Account" is the
+reason named actions exist, and Foundry's model is the same.
+
+**WHAT THE ENTRY WAS REACHING FOR**, if anything: making the bound
+`_validate_effects_are_reachable` computes at config load into
+something composable -- a declared capability rather than a derived
+one. That is a refactor with a design benefit, not a hole, and it
+should be labelled as such rather than sitting in a security list
+where it reads as a gap.
+
+**THE THIRD SECURITY ENTRY TO BE SMALLER THAN WRITTEN**, after 0.3's
+cache bound and 3.5's ordered-vs-incomparable question. All three
+described a defect that reading the code carefully ruled out.
 
 ### 4. The grant algebra, specified
 
