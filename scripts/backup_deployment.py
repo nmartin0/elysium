@@ -9,8 +9,8 @@ credentials database is one nobody can log into.
 `sqlite3.Connection.backup()` takes a CONSISTENT snapshot of a
 database being written to, which is the whole reason this exists.
 
-WHAT IT CAPTURES: the seven databases Elysium owns, plus the Iceberg
-warehouse.
+WHAT IT CAPTURES: every database Elysium owns (OWNED_DATABASES), plus
+the Iceberg warehouse.
 
 WHAT IT DELIBERATELY DOES NOT: the data silos. `dev_fixtures/` stands
 in for a CUSTOMER'S databases, and backing those up would be copying
@@ -39,14 +39,25 @@ from core.deployment_loader import resolve_runtime_paths
 
 # THE DATABASES ELYSIUM OWNS, relative to the data directory.
 #
-# SEVEN, NOT THE FIVE THE ROADMAP LISTED. It named credentials,
-# write_log, config_history, metrics and artifacts; it missed the
-# mirror's own catalog.db, and sync_attempts.db did not exist when it
-# was written.
+# THIS LIST HAS FALLEN BEHIND THE CODE TWICE, and the second time is
+# why a test now compares it with what the code actually creates.
 #
-# MISSING IS NOT AN ERROR. artifacts.db and sync_attempts.db are
-# created lazily on first use, so a young deployment genuinely has
-# fewer than seven and a backup should say so rather than fail.
+#   FIRST: "seven, not the five the roadmap listed" -- it missed the
+#   mirror's catalog.db, and sync_attempts.db did not exist yet.
+#
+#   SECOND: pending_writes.db was added in the commit AFTER this
+#   script, and saved_views, triggers and notifications arrived later.
+#   None were listed. A restore would have dropped every waiting
+#   approval, saved view, trigger and notification -- and the restore
+#   check would have passed, because it checks against this same list.
+#
+# tests/unit/test_backup_inventory.py now finds every `<name>.db`
+# opened under the data directory and fails if one is neither listed
+# here nor excluded there with a reason.
+#
+# MISSING IS NOT AN ERROR. Several are created lazily on first use, so
+# a young deployment genuinely has fewer and a backup should say so
+# rather than fail.
 OWNED_DATABASES = (
     "credentials.db",
     "write_log.db",
@@ -55,6 +66,12 @@ OWNED_DATABASES = (
     "artifacts.db",
     "mirror/catalog.db",
     "mirror/sync_attempts.db",
+    # The approvals queue -- database-authoritative since patch 276,
+    # so there is no other copy of a waiting decision.
+    "pending_writes.db",
+    "saved_views.db",
+    "triggers.db",
+    "notifications.db",
 )
 
 # THE WAREHOUSE, copied as files rather than snapshotted.

@@ -73,7 +73,7 @@ class TestWhatItCaptures:
 
     def test_absent_databases_are_reported_not_fatal(self, data_dir, tmp_path):
         """artifacts.db AND sync_attempts.db ARE CREATED LAZILY, so a
-        young deployment genuinely has fewer than seven. Failing would
+        young deployment genuinely has fewer than all of them. Failing would
         make a backup impossible until every feature had been used
         once."""
         result = backup(data_dir, tmp_path / "out")
@@ -141,9 +141,17 @@ def test_it_snapshots_rather_than_copying():
 
 
 def test_the_inventory_matches_what_a_deployment_has():
-    """THE ROADMAP SAID FIVE AND MISSED TWO. Pinned so the list cannot
-    quietly fall behind: a database added without being backed up is a
-    database lost on the first restore."""
+    """THE ROADMAP SAID FIVE AND MISSED TWO -- those two stay pinned.
+
+    THIS TEST ALSO ASSERTED `len(OWNED_DATABASES) == 7`, "so the list
+    cannot quietly fall behind". It could not do that. A count detects
+    an EDIT to the list, never an entry MISSING from it: four databases
+    were added to the code while the list stayed at seven, and this
+    passed throughout. It guarded the list against growing -- close to
+    the opposite of its purpose.
+
+    test_backup_inventory.py is the guard this meant to be: it compares
+    the list with the databases the code actually opens.
+    """
     assert "mirror/catalog.db" in OWNED_DATABASES
     assert "mirror/sync_attempts.db" in OWNED_DATABASES
-    assert len(OWNED_DATABASES) == 7
