@@ -620,6 +620,41 @@ export interface MirrorState {
   problems: string[]
 }
 
+export interface ServerSavedView {
+  view_id: string
+  name: string
+  object_type: string
+  query_text: string
+  conditions: Array<Record<string, unknown>>
+  presentation: Record<string, unknown>
+  created_at: string
+}
+
+export async function getSavedViews(): Promise<ServerSavedView[]> {
+  const response = await apiFetchOrThrow('/saved-views')
+  return (await response.json()).views as ServerSavedView[]
+}
+
+export async function saveSavedView(body: {
+  name: string
+  object_type: string
+  query_text?: string
+  conditions?: Array<Record<string, unknown>>
+  presentation?: Record<string, unknown>
+}): Promise<string> {
+  const response = await apiFetchOrThrow('/saved-views', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  return (await response.json()).view_id as string
+}
+
+export async function deleteSavedView(viewId: string): Promise<void> {
+  await apiFetchOrThrow(`/saved-views/${encodeURIComponent(viewId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export interface Notification {
   notification_id: string
   created_at: string

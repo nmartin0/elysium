@@ -1,16 +1,48 @@
 /**
- * Name the thing you are looking at, and come back to it.
+ * SavedViews, now that they live on the server.
  *
- * The store is tested in shell-api/savedViews.test.ts. This is about
- * the two things only the component decides: that saving captures the
- * CURRENT url, and that opening one navigates there.
+ * THESE TESTS EXERCISE THE TWO THINGS ONLY THE COMPONENT DECIDES:
+ * that saving captures the CURRENT search as a query, and that
+ * opening one navigates back to it.
+ *
+ * THE SPLIT IS THE PART WORTH PINNING. `type`, `q` and `filters` go
+ * to the server as a QUERY a condition can evaluate; `sort` and
+ * `view` go as PRESENTATION, kept so restoring a view does not lose
+ * somebody's sort order but out of the way of anything counting rows.
  */
-
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@elysium/shell-api/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
+  return {
+    ...actual,
+    getSavedViews: vi.fn(),
+    saveSavedView: vi.fn(),
+    deleteSavedView: vi.fn(),
+  }
+})
+
+import { deleteSavedView, getSavedViews, saveSavedView } from '@elysium/shell-api/api'
 import SavedViews from './SavedViews'
+
+const mockedList = vi.mocked(getSavedViews)
+const mockedSave = vi.mocked(saveSavedView)
+const mockedDelete = vi.mocked(deleteSavedView)
+
+function aView(overrides = {}) {
+  return {
+    view_id: 'v1',
+    name: 'High value',
+    object_type: 'Transaction',
+    query_text: '',
+    conditions: [],
+    presentation: {},
+    created_at: '2026-01-01T00:00:00+00:00',
+    ...overrides,
+  }
+}
 
 function Where() {
   const location = useLocation()
@@ -20,107 +52,113 @@ function Where() {
 function renderAt(url: string) {
   return render(
     <MemoryRouter initialEntries={[url]}>
+      <Where />
       <Routes>
-        <Route
-          path="/browse"
-          element={
-            <>
-              <SavedViews username="alice" />
-              <Where />
-            </>
-          }
-        />
+        <Route path="/browse" element={<SavedViews username="alice" />} />
       </Routes>
     </MemoryRouter>,
   )
 }
 
-beforeEach(() => window.localStorage.clear())
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockedList.mockResolvedValue([])
+  mockedSave.mockResolvedValue('v-new')
+})
 
-describe('SavedViews', () => {
-  it('saves the view you are actually looking at', () => {
+describe('saving the current search', () => {
+  it('sends what matches as a query', async () => {
     renderAt('/browse?type=Transaction&q=refund')
-
-    fireEvent.click(screen.getByRole('button', { name: /Saved views|refunds|scratch/ }))
-    fireEvent.change(screen.getByPlaceholderText('Name this view…'), {
-      target: { value: 'refunds' },
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.change(screen.getByPlaceholderText(/name this view/i), {
+      target: { value: 'Refunds' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    // Scoped to the menu: the trigger button also shows the current
-    // view's name, which is deliberate and makes a bare getByText
-    // ambiguous.
-    expect(screen.getByRole('menuitem', { name: /refunds/ })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(mockedSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Refunds',
+          object_type: 'Transaction',
+          query_text: 'refund',
+        }),
+      ),
+    )
   })
 
-  it('navigates back to a saved view', () => {
-    // THE POINT OF THE FEATURE. Storing a URL is worth nothing if
-    // opening it does not go there.
-    renderAt('/browse?type=Transaction&q=refund')
-    fireEvent.click(screen.getByRole('button', { name: /Saved views|refunds|scratch/ }))
-    fireEvent.change(screen.getByPlaceholderText('Name this view…'), {
-      target: { value: 'refunds' },
+  it('sends sort and view separately, as presentation', async () => {
+    /** KEPT, BUT OUT OF THE QUERY. An earlier design dropped these --
+     *  right about what a CONDITION needs, wrong about what a SAVED
+     *  VIEW is. Somebody restoring one would have lost their sort. */
+    renderAt('/browse?type=Transaction&sort=amount&view=chart')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.change(screen.getByPlaceholderText(/name this view/i), {
+      target: { value: 'By amount' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    fireEvent.click(screen.getByRole('menuitem', { name: /refunds/ }))
-
-    expect(screen.getByTestId('where')).toHaveTextContent('q=refund')
+    await waitFor(() =>
+      expect(mockedSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          presentation: { sort: 'amount', view: 'chart' },
+        }),
+      ),
+    )
   })
 
-  it('will not save an unnamed view', () => {
-    // An unfindable entry is worse than none: it occupies the list and
-    // cannot be described.
-    renderAt('/browse?type=Transaction')
-
-    fireEvent.click(screen.getByRole('button', { name: /Saved views|refunds|scratch/ }))
+  it('refuses to save a search with no object type', async () => {
+    // A VIEW WITH NO TYPE matches nothing and the server refuses it.
+    // Disabling here says so before the round trip.
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.change(screen.getByPlaceholderText(/name this view/i), {
+      target: { value: 'Nothing' },
+    })
 
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
+})
 
-  it('offers to UPDATE a view you are already on', () => {
-    // Re-opening the popover on a saved view prefills its name, so the
-    // obvious action is to update rather than silently make a second
-    // copy under a new name.
-    renderAt('/browse?type=Transaction&q=refund')
-    fireEvent.click(screen.getByRole('button', { name: /Saved views|refunds|scratch/ }))
-    fireEvent.change(screen.getByPlaceholderText('Name this view…'), {
-      target: { value: 'refunds' },
+describe('opening a saved view', () => {
+  it('navigates back to what it matched', async () => {
+    mockedList.mockResolvedValue([aView({ query_text: 'refund', presentation: { sort: 'amount' } })])
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    fireEvent.click(await screen.findByText('High value'))
+
+    await waitFor(() => {
+      const where = screen.getByTestId('where').textContent ?? ''
+      expect(where).toContain('type=Transaction')
+      expect(where).toContain('q=refund')
+      expect(where).toContain('sort=amount')
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-
-    // Reopened: clicking a menu item navigates AND closes the
-    // popover, so the prefilled name is only visible on the next open.
-    fireEvent.click(screen.getByRole('button', { name: 'refunds' }))
-
-    expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
   })
+})
 
-  it('forgetting a view does not navigate to it', () => {
-    // THE CONTROL. The cross sits inside a MenuItem, so without
-    // stopping propagation the click would open the view it is
-    // deleting -- leaving the person somewhere they did not ask to be.
+describe('forgetting one', () => {
+  it('deletes it without navigating there first', async () => {
+    mockedList.mockResolvedValue([aView()])
+    mockedDelete.mockResolvedValue(undefined)
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /forget high value/i }))
+
+    await waitFor(() => expect(mockedDelete).toHaveBeenCalledWith('v1'))
+    expect(screen.getByTestId('where').textContent).toBe('/browse')
+  })
+})
+
+describe('when the server cannot be reached', () => {
+  it('still offers to save', async () => {
+    /** A POPOVER THAT CANNOT LIST is still one that can save. An
+     *  error banner over a search that is working would be worse. */
+    mockedList.mockRejectedValue(new Error('unreachable'))
     renderAt('/browse?type=Transaction')
-    fireEvent.click(screen.getByRole('button', { name: /Saved views|refunds|scratch/ }))
-    fireEvent.change(screen.getByPlaceholderText('Name this view…'), {
-      target: { value: 'scratch' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    fireEvent.click(screen.getByLabelText('Forget scratch'))
 
-    // ASSERTED ON THE ROUTE, not on the menu. Blueprint keeps popover
-    // content mounted in jsdom after a close, so a DOM assertion about
-    // the item disappearing tests the popover rather than the delete
-    // -- and removal is already covered in savedViews.test.ts.
-    //
-    // HONEST LIMIT, found by a control that did not fire. Removing
-    // stopPropagation from the component fails nothing here: in jsdom
-    // the nested button's click does not bubble to the MenuItem the
-    // way it does in a browser, so this cannot actually catch the bug
-    // it is named for. The guard in the component is still right --
-    // without it, forgetting a view would open it first and leave the
-    // person somewhere they did not ask to be -- and it is verified by
-    // using the app, not by this.
-    expect(screen.getByTestId('where')).toHaveTextContent('/browse?type=Transaction')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    expect(screen.getByPlaceholderText(/name this view/i)).toBeInTheDocument()
   })
 })

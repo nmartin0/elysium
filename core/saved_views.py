@@ -44,6 +44,19 @@ CREATE TABLE IF NOT EXISTS saved_views (
     object_type TEXT NOT NULL,
     query_text TEXT NOT NULL DEFAULT '',
     conditions TEXT NOT NULL DEFAULT '[]',
+    -- HOW THE OWNER LIKES TO LOOK AT IT: sort order, table or chart.
+    --
+    -- SEPARATE FROM THE QUERY, not discarded. An earlier version of
+    -- this file argued that `sort` and `view` "describe how a person
+    -- likes to look at it" and left them out -- right about what a
+    -- CONDITION needs, wrong about what a SAVED VIEW is. Somebody
+    -- restoring one and finding their sort gone would have lost
+    -- something the browser-local version kept.
+    --
+    -- A CONDITION NEVER READS THIS. It is opaque to the evaluator,
+    -- which is what "separate" is for: the query stays clean without
+    -- the presentation being thrown away.
+    presentation TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
 );
 -- Every read is "mine, by name". One index on the pair.
@@ -59,6 +72,7 @@ class SavedView:
     object_type: str
     query_text: str
     conditions: list
+    presentation: dict
     created_at: str
 
 
@@ -72,7 +86,8 @@ class SavedViewStore:
         return connection_with_schema(self._db_path, SCHEMA)
 
     def save(self, owner_user_id: str, name: str, object_type: str,
-             query_text: str = "", conditions: list | None = None) -> str | None:
+             query_text: str = "", conditions: list | None = None,
+             presentation: dict | None = None) -> str | None:
         """Stores one view. Replaces an existing one of the same name.
 
         BY NAME, NOT BY ID, because that is how a person thinks about
@@ -89,10 +104,11 @@ class SavedViewStore:
                 )
                 conn.execute(
                     "INSERT INTO saved_views (view_id, owner_user_id, name, "
-                    "object_type, query_text, conditions, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "object_type, query_text, conditions, presentation, "
+                    "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (view_id, owner_user_id, name, object_type, query_text,
                      json.dumps(conditions or []),
+                     json.dumps(presentation or {}),
                      datetime.now(UTC).isoformat()),
                 )
                 conn.commit()
@@ -112,7 +128,7 @@ class SavedViewStore:
             with self._connection() as conn:
                 rows = conn.execute(
                     "SELECT view_id, name, object_type, query_text, "
-                    "conditions, created_at FROM saved_views "
+                    "conditions, presentation, created_at FROM saved_views "
                     "WHERE owner_user_id = ? ORDER BY created_at DESC",
                     (owner_user_id,),
                 ).fetchall()
@@ -136,7 +152,8 @@ class SavedViewStore:
             with self._connection() as conn:
                 row = conn.execute(
                     "SELECT view_id, name, object_type, query_text, "
-                    "conditions, created_at FROM saved_views WHERE view_id = ?",
+                    "conditions, presentation, created_at FROM saved_views "
+                    "WHERE view_id = ?",
                     (view_id,),
                 ).fetchone()
         except Exception as e:  # noqa: BLE001
@@ -175,7 +192,11 @@ class SavedViewStore:
             # notice, where a missing view they would simply blame on
             # the product.
             conditions = []
+        try:
+            presentation = json.loads(row["presentation"])
+        except (TypeError, json.JSONDecodeError):
+            presentation = {}
         return SavedView(
             row["view_id"], row["name"], row["object_type"],
-            row["query_text"], conditions, row["created_at"],
+            row["query_text"], conditions, presentation, row["created_at"],
         )

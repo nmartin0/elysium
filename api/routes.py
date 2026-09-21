@@ -1352,6 +1352,7 @@ class SavedViewResponse(BaseModel):
     object_type: str
     query_text: str
     conditions: list[dict[str, Any]]
+    presentation: dict[str, Any]
     created_at: str
 
 
@@ -1364,6 +1365,7 @@ class SaveViewRequest(BaseModel):
     object_type: str
     query_text: str = ""
     conditions: list[dict[str, Any]] = []
+    presentation: dict[str, Any] = {}
 
 
 def _saved_view_store(request: Request):
@@ -1394,6 +1396,7 @@ def saved_views_route(
                 "object_type": view.object_type,
                 "query_text": view.query_text,
                 "conditions": view.conditions,
+                "presentation": view.presentation,
                 "created_at": view.created_at,
             }
             for view in _saved_view_store(request).for_owner(
@@ -1425,7 +1428,7 @@ def save_view_route(
 
     view_id = _saved_view_store(request).save(
         current_user.user_id, body.name, body.object_type,
-        body.query_text, body.conditions,
+        body.query_text, body.conditions, body.presentation,
     )
     if view_id is None:
         raise HTTPException(status_code=500, detail="Could not save that view")

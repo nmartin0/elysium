@@ -39,7 +39,7 @@ def mediator():
 def _view(object_type="Transaction", conditions=None, query_text=""):
     return SavedView(
         "v1", "All transactions", object_type, query_text,
-        conditions or [], "2026-01-01T00:00:00+00:00",
+        conditions or [], {}, "2026-01-01T00:00:00+00:00",
     )
 
 

@@ -47,7 +47,7 @@ def owner():
 def _view(conditions=None):
     return SavedView(
         "v1", "All transactions", "Transaction", "",
-        conditions or [], "2026-01-01T00:00:00+00:00",
+        conditions or [], {}, "2026-01-01T00:00:00+00:00",
     )
 
 
