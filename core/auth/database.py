@@ -39,7 +39,7 @@ raises if the column already exists.
 import sqlite3
 from pathlib import Path
 
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS credentials (
@@ -60,7 +60,10 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
     mac_value TEXT,
     role_name TEXT NOT NULL,
-    disabled INTEGER NOT NULL DEFAULT 0
+    disabled INTEGER NOT NULL DEFAULT 0,
+    -- SET BY AN ADMINISTRATOR'S RESET, cleared by the owner choosing
+    -- their own. While set, the account may only change its password.
+    must_change_password INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS login_attempts (
     username TEXT PRIMARY KEY,
@@ -103,5 +106,14 @@ def _migrate_destroy_raw_session_tokens(conn: sqlite3.Connection) -> None:
 def connection(db_path: Path):
     return connection_with_schema(
         db_path, SCHEMA,
-        migrations=(_migrate_add_disabled_column, _migrate_destroy_raw_session_tokens),
+        migrations=(
+            _migrate_add_disabled_column,
+            _migrate_destroy_raw_session_tokens,
+            # THROUGH add_column_if_missing, which checks the table's
+            # columns, rather than swallowing an ALTER's OperationalError
+            # as the disabled migration does -- an error swallowed for
+            # "already exists" is also swallowed for "read-only" or
+            # "locked".
+            add_column_if_missing("users", "must_change_password", "INTEGER NOT NULL DEFAULT 0"),
+        ),
     )

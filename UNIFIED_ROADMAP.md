@@ -77,9 +77,12 @@ Each checked in the code; corrected here, pointed to elsewhere.
       it wrong, which is the argument for re-checking it
     - ~~session tokens stored RAW~~ FIXED, patch 301: SHA-256 at rest,
       and the raw rows destroyed by the upgrade rather than left
-    - an administrator's reset does not force a change at next login,
-      so the administrator knows the password until the owner changes
-      it
+    - ~~a reset did not force a change at next login~~ FIXED, patch
+      302: until the owner chooses, only /me and changing the password
+      are allowed -- and the shell shows the form, not the apps
+    - NO UI yet for changing your own password voluntarily, or for an
+      administrator's reset: the API exists, the form exists (302), the
+      profile entry and the Admin -> Users action do not
 
 **Needs a capable model -- 2.2 first:**
 

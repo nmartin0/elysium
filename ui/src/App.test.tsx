@@ -24,6 +24,9 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     logout: vi.fn(),
+    // The change-password screen's call. Mocked by RESOLVED FILE, so
+    // the form's own relative '../api' import sees this mock too.
+    changeOwnPassword: vi.fn(),
     getCurrentUser: vi.fn(),
     getMyVisibleSchema: vi.fn(),
     getVisibleApps: vi.fn(),
@@ -42,7 +45,14 @@ vi.mock('@elysium/app-browse/ObjectSearchPanel', () => ({ default: () => <p>brow
 vi.mock('@elysium/app-browse/ObjectDetailPanel', () => ({ default: () => <p>object detail screen</p> }))
 vi.mock('@elysium/app-admin/AdminPanel', () => ({ default: () => <p>admin screen</p> }))
 
-import { logout, getCurrentUser, getMyVisibleSchema, getVisibleApps, ApiError } from '@elysium/shell-api/api'
+import {
+  logout,
+  changeOwnPassword,
+  getCurrentUser,
+  getMyVisibleSchema,
+  getVisibleApps,
+  ApiError,
+} from '@elysium/shell-api/api'
 import App from './App'
 
 const mockedLogout = vi.mocked(logout)
@@ -70,7 +80,7 @@ describe('App -- the three-state boot sequence (checking / loggedOut / loggedIn)
     // Deliberately never resolved within this test -- observing the
     // FIRST, synchronous render, before any microtask/effect has had
     // a chance to run at all.
-    mockedGetMyVisibleSchema.mockReturnValue(new Promise(() => {}))
+    mockedGetCurrentUser.mockReturnValue(new Promise(() => {}))
     render(<App />)
     expect(screen.getByText('Loading…')).toBeInTheDocument()
     expect(screen.queryByText('login screen')).not.toBeInTheDocument()
@@ -78,14 +88,14 @@ describe('App -- the three-state boot sequence (checking / loggedOut / loggedIn)
   })
 
   it('shows the login screen, not the route tree, when no session exists yet (a 401 from the initial check)', async () => {
-    mockedGetMyVisibleSchema.mockRejectedValue(new ApiError(401, 'no session'))
+    mockedGetCurrentUser.mockRejectedValue(new ApiError(401, 'no session'))
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
     expect(screen.queryByText('query screen')).not.toBeInTheDocument()
   })
 
   it('also shows the login screen on a NON-401 failure from the initial check -- fails closed, never assumes logged in', async () => {
-    mockedGetMyVisibleSchema.mockRejectedValue(new Error('network down'))
+    mockedGetCurrentUser.mockRejectedValue(new Error('network down'))
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
   })
@@ -101,7 +111,9 @@ describe('App -- the three-state boot sequence (checking / loggedOut / loggedIn)
   it('transitions from login to the route tree on a successful login', async () => {
     // First call (the initial check) rejects -- no session yet.
     // Every call after that (the real, post-login fetch) succeeds.
-    mockedGetMyVisibleSchema.mockRejectedValueOnce(new ApiError(401, 'no session')).mockResolvedValue({})
+    mockedGetCurrentUser
+      .mockRejectedValueOnce(new ApiError(401, 'no session'))
+      .mockResolvedValue({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' })
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
 
@@ -142,14 +154,16 @@ describe('App -- fetching visibleSchema/visibleApps/currentUser once logged in',
   })
 
   it('does not fetch visibleApps while the initial session check is still pending or has failed', async () => {
-    mockedGetMyVisibleSchema.mockRejectedValue(new ApiError(401, 'no session'))
+    mockedGetCurrentUser.mockRejectedValue(new ApiError(401, 'no session'))
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
     expect(mockedGetVisibleApps).not.toHaveBeenCalled()
   })
 
   it('fetches visibleApps again after a fresh login, since the initial check already ran once before it', async () => {
-    mockedGetMyVisibleSchema.mockRejectedValueOnce(new ApiError(401, 'no session')).mockResolvedValue({})
+    mockedGetCurrentUser
+      .mockRejectedValueOnce(new ApiError(401, 'no session'))
+      .mockResolvedValue({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' })
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
     expect(mockedGetVisibleApps).not.toHaveBeenCalled()
@@ -167,15 +181,20 @@ describe('App -- fetching visibleSchema/visibleApps/currentUser once logged in',
     // actually renders the real username it received.
     mockedGetMyVisibleSchema.mockResolvedValue({})
     render(<App />)
-    await waitFor(() => expect(mockedGetCurrentUser).toHaveBeenCalledTimes(1))
+    // TWICE: the probe asks /me, then the post-login effect asks again --
+    // the redundant fetch App.tsx's comment accepts. A first version
+    // waited for ONE call, which passes the instant the probe's lands.
+    await waitFor(() => expect(mockedGetCurrentUser).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByRole('button', { name: 'testuser' })).toBeInTheDocument())
   })
 
-  it('does not fetch currentUser while the initial session check is still pending or has failed', async () => {
-    mockedGetMyVisibleSchema.mockRejectedValue(new ApiError(401, 'no session'))
+  it('asks /me only once -- the probe -- while the initial session check has failed', async () => {
+    // THE PROBE IS /me NOW (resolveSession in App.tsx), so "not at all"
+    // is no longer the claim. The post-login effect must not ALSO fire.
+    mockedGetCurrentUser.mockRejectedValue(new ApiError(401, 'no session'))
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
-    expect(mockedGetCurrentUser).not.toHaveBeenCalled()
+    expect(mockedGetCurrentUser).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -184,7 +203,8 @@ describe('App -- a 401 mid-session returns to the login screen', () => {
     // Initial check succeeds (already logged in) -- but the SEPARATE,
     // real fetch right after fails with 401, simulating a session
     // that expired between the initial check and that second call.
-    mockedGetMyVisibleSchema.mockResolvedValueOnce({}).mockRejectedValue(new ApiError(401, 'session expired'))
+    // The probe (/me) succeeds by default; the post-login schema fetch 401s.
+    mockedGetMyVisibleSchema.mockRejectedValue(new ApiError(401, 'session expired'))
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
   })
@@ -208,5 +228,65 @@ describe('App -- a 401 mid-session returns to the login screen', () => {
     render(<App />)
     await waitFor(() => expect(screen.getByText('query screen')).toBeInTheDocument())
     expect(screen.queryByText('login screen')).not.toBeInTheDocument()
+  })
+})
+
+describe('App -- after an administrator reset your password', () => {
+  /** THE ADMINISTRATOR KNOWS IT, so until you choose your own the
+   *  server refuses everything but /me, changing it, and logging out.
+   *  A STATE OF ITS OWN: nothing else is fetched -- it would all be
+   *  refused -- and everything is fetched fresh once you have chosen. */
+  const RESET = { username: 'testuser', role_name: 'editor', mac_value: 'us-west', must_change_password: true }
+
+  it('asks for a new password instead of showing the apps, and says why', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(RESET)
+    render(<App />)
+
+    expect(await screen.findByText(/An administrator reset your password/)).toBeInTheDocument()
+    expect(screen.queryByText('query screen')).not.toBeInTheDocument()
+  })
+
+  it('fetches nothing the server would refuse', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(RESET)
+    render(<App />)
+    await screen.findByText(/An administrator reset your password/)
+
+    expect(vi.mocked(getVisibleApps)).not.toHaveBeenCalled()
+    expect(vi.mocked(getMyVisibleSchema)).not.toHaveBeenCalled()
+  })
+
+  it('carries on into the apps once the password is chosen', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(RESET)
+    vi.mocked(changeOwnPassword).mockResolvedValue(undefined)
+    render(<App />)
+    await screen.findByText(/An administrator reset your password/)
+
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'the-reset-one-given' } })
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'my-own-choice-at-last' } })
+    fireEvent.change(screen.getByLabelText('New password, again'), { target: { value: 'my-own-choice-at-last' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }))
+
+    await waitFor(() => expect(vi.mocked(getVisibleApps)).toHaveBeenCalled())
+  })
+
+  it('a fresh login lands here too', async () => {
+    /** THE LOOP THIS STATE PREVENTS: a probe refused as "logged out"
+     *  sent a reset account to the login form, and logging in again
+     *  tripped the same refusal. */
+    vi.mocked(getCurrentUser).mockRejectedValueOnce(new ApiError(401, 'no session')).mockResolvedValue(RESET)
+    render(<App />)
+    await screen.findByText('login screen')
+
+    fireEvent.click(screen.getByRole('button', { name: 'fake login submit' }))
+
+    expect(await screen.findByText(/An administrator reset your password/)).toBeInTheDocument()
+  })
+
+  it('offers a way out', async () => {
+    /** A REQUIRED STEP WITH NO EXIT traps somebody not ready to choose. */
+    vi.mocked(getCurrentUser).mockResolvedValue(RESET)
+    render(<App />)
+
+    expect(await screen.findByRole('button', { name: 'Log out' })).toBeInTheDocument()
   })
 })

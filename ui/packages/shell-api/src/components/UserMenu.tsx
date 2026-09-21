@@ -39,6 +39,9 @@ export interface CurrentUser {
   username: string
   role_name: string | null
   mac_value: string | null
+  /** True after an administrator's reset, until the owner chooses
+   *  their own password. The shell asks for it before anything else. */
+  must_change_password?: boolean
 }
 
 interface UserMenuProps {

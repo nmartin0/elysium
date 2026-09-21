@@ -163,6 +163,25 @@ class UserDirectory:
 
         return UserRecord(username, row["mac_value"], row["role_name"])
 
+    def must_change_password(self, username: str) -> bool:
+        """Whether an administrator reset this account's password and its
+        owner has not yet chosen their own."""
+        with connection(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT must_change_password FROM users WHERE username = ?", (username,)
+            ).fetchone()
+        return bool(row and row["must_change_password"])
+
+    def set_must_change_password(self, username: str, required: bool) -> None:
+        """SET by an administrator's reset -- the administrator knows the
+        password until its owner replaces it. CLEARED when they do."""
+        with connection(self._db_path) as conn:
+            conn.execute(
+                "UPDATE users SET must_change_password = ? WHERE username = ?",
+                (1 if required else 0, username),
+            )
+            conn.commit()
+
     def is_user_disabled(self, username: str) -> bool:
         # False for an unknown username too -- "doesn't exist" and
         # "disabled" are different facts, and this method only answers

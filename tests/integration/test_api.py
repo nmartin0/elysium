@@ -312,7 +312,13 @@ def test_my_profile_returns_the_callers_own_username_role_and_mac_value(client):
     response = client.get("/api/me")
 
     assert response.status_code == 200
-    assert response.json() == {"username": "alice", "role_name": "customer_service", "mac_value": "us-west"}
+    # EXACT, deliberately: an unexpected field in /me is exposure, so a new
+    # one is added HERE on purpose rather than the check loosened.
+    # must_change_password (patch 302) is the account's own state.
+    assert response.json() == {
+        "username": "alice", "role_name": "customer_service", "mac_value": "us-west",
+        "must_change_password": False,
+    }
 
 
 def test_my_profile_differs_by_which_user_is_logged_in(client):

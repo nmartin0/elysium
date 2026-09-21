@@ -39,6 +39,23 @@ from core.intermediate_layer.auth import UserRecord
 
 _INVALID_SESSION_DETAIL = "Invalid or expired session"
 
+# AFTER AN ADMINISTRATOR'S RESET, the account may do only these until its
+# owner chooses their own password. The administrator knows the reset
+# password; until it is replaced, they could be the one using it --
+# Keycloak's and GitLab's "update password" required action.
+#
+# EXACT PATHS, a short fixed list: reading who you are (so the UI knows
+# to ask) and changing the password.
+#
+# NOT /api/logout, though leaving must stay possible: logout reads its
+# cookie directly and never comes through here, so listing it did
+# nothing -- a control removing it changed no test. A dead entry in an
+# allow-list is worse than none; it suggests a dependency that is not
+# there. test_passwords pins that a reset account CAN log out, so if
+# logout ever starts depending on this function, that test says so.
+PASSWORD_CHANGE_REQUIRED = "password_change_required"
+_ALLOWED_BEFORE_A_CHANGE = frozenset({"/api/me", "/api/me/password"})
+
 
 def get_current_user(
     request: Request, session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME)
@@ -55,5 +72,13 @@ def get_current_user(
 
     if user_directory.is_user_disabled(username):
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
+    if (
+        request.url.path not in _ALLOWED_BEFORE_A_CHANGE
+        and user_directory.must_change_password(username)
+    ):
+        # 403 WITH A REASON THE UI READS, not a 401: the session is
+        # valid, and logging out would not help. The only way forward is
+        # choosing a password.
+        raise HTTPException(status_code=403, detail=PASSWORD_CHANGE_REQUIRED)
 
     return user_directory.get_user_record(username)

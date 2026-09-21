@@ -2024,4 +2024,16 @@
   .link-trail__separator {
     color: var(--text-secondary);
   }
+
+  /* CHOOSING A PASSWORD, in the pre-login layout -- after an administrator
+   reset, before anything else. */
+  .change-password {
+    max-inline-size: 28rem;
+  }
+
+  .change-password__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+  }
 }

@@ -81,3 +81,25 @@ class TestTheUpgradeDestroysRawTokens:
             left = {row[0] for row in live.execute("SELECT token FROM sessions")}
 
         assert left == {hashed}
+
+
+class TestAnOlderUsersTableGainsTheColumn:
+    def test_must_change_password_is_added_on_open(self, tmp_path):
+        """A DEPLOYMENT FROM BEFORE THE FLAG has a users table without
+        it. Patch 274 was a new column with no migration; this pins that
+        the flag is not another."""
+        path = tmp_path / "credentials.db"
+        conn = sqlite3.connect(path)
+        conn.execute(
+            "CREATE TABLE users (username TEXT PRIMARY KEY, mac_value TEXT, "
+            "role_name TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0)",
+        )
+        conn.execute("INSERT INTO users VALUES ('old', 'us-west', 'admin', 0)")
+        conn.commit()
+        conn.close()
+
+        from core.user_directory import UserDirectory
+
+        directory = UserDirectory(path, {"admin": {"allowed_actions": []}})
+
+        assert directory.must_change_password("old") is False

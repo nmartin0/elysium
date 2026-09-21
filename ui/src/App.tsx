@@ -1,5 +1,6 @@
 import { lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import Shell, { type VisibleApp } from './Shell'
@@ -63,7 +64,34 @@ const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
 const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'))
 const NotificationsPanel = lazy(() => import('@elysium/app-notifications/NotificationsPanel'))
 
-type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn'
+// mustChangePassword: logged in, after an administrator's reset, and not
+// yet allowed anything but choosing a password. A STATE OF ITS OWN, not
+// 'loggedIn' with a flag, so the effects gated on 'loggedIn' never fire
+// for it -- every one of their fetches would be refused -- and they all
+// fire, fresh, once the password is chosen.
+type AuthStatus = 'checking' | 'loggedOut' | 'loggedIn' | 'mustChangePassword'
+
+/** Where a session stands -- ONE ANSWER for page load and fresh login.
+ *
+ *  THROUGH /me, which a reset account may still reach: the probe used
+ *  to be the visible-schema call, which such an account is refused --
+ *  and a refusal read as "logged out" sent it back to the login form,
+ *  and logging in again tripped the same refusal. */
+async function resolveSession(): Promise<AuthStatus> {
+  try {
+    const me = (await getCurrentUser()) as CurrentUser
+    return me.must_change_password === true ? 'mustChangePassword' : 'loggedIn'
+  } catch {
+    // A 401 here is the NORMAL, expected "no session yet" case on a
+    // fresh page load -- not a session that WAS valid and stopped being
+    // so mid-use, so this deliberately does NOT go through
+    // handleIfSessionExpired() (that exists for the different case).
+    // Any OTHER error (network failure, server unreachable) is treated
+    // IDENTICALLY to "not logged in" -- fails closed, never renders the
+    // route tree when this cannot confirm a real session exists.
+    return 'loggedOut'
+  }
+}
 
 // SECURITY, not just structure: the auth-gated render below is an
 // EARLY RETURN, before <BrowserRouter>/<Routes> ever mounts -- not a
@@ -175,8 +203,8 @@ export default function App() {
   const [visibleApps, setVisibleApps] = useState<VisibleApp[]>([])
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
 
-  function handleLoginSuccess() {
-    setAuthStatus('loggedIn')
+  async function handleLoginSuccess() {
+    setAuthStatus(await resolveSession())
   }
 
   async function handleLogout() {
@@ -222,21 +250,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
     async function checkSession() {
-      try {
-        await getMyVisibleSchema()
-        if (!cancelled) setAuthStatus('loggedIn')
-      } catch {
-        // A 401 here is the NORMAL, expected "no session yet" case on
-        // a fresh page load -- not a session that WAS valid and
-        // stopped being so mid-use, so this deliberately does NOT go
-        // through handleIfSessionExpired()/handleSessionExpired()
-        // (those exist for that different case). Any OTHER error
-        // (network failure, server unreachable) is treated
-        // IDENTICALLY to "not logged in" here too -- fails closed,
-        // never accidentally renders the route tree when this
-        // genuinely can't confirm a real session exists.
-        if (!cancelled) setAuthStatus('loggedOut')
-      }
+      // FAILS CLOSED -- see resolveSession(), which now carries the
+      // reasoning that lived here.
+      const status = await resolveSession()
+      if (!cancelled) setAuthStatus(status)
     }
     checkSession()
     return () => {
@@ -336,6 +353,19 @@ export default function App() {
         </header>
         <main>
           <p>Loading…</p>
+        </main>
+      </div>
+    )
+  }
+
+  if (authStatus === 'mustChangePassword') {
+    return (
+      <div className="app__pre-auth">
+        <header className="app__pre-auth-header">
+          <h1>Elysium</h1>
+        </header>
+        <main>
+          <ChangePasswordForm required onChanged={() => setAuthStatus('loggedIn')} onLogout={handleLogout} />
         </main>
       </div>
     )

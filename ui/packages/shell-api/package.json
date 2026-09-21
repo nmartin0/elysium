@@ -13,6 +13,7 @@
     "./components/FilterBar": "./src/components/FilterBar.tsx",
     "./components/FilterBox": "./src/components/FilterBox.tsx",
     "./components/LoadingState": "./src/components/LoadingState.tsx",
+    "./components/ChangePasswordForm": "./src/components/ChangePasswordForm.tsx",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",
     "./components/UserMenu": "./src/components/UserMenu.tsx",

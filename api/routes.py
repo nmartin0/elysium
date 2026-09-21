@@ -239,6 +239,9 @@ class ProfileResponse(BaseModel):
     username: str
     role_name: str | None
     mac_value: str | None
+    # TRUE AFTER AN ADMINISTRATOR'S RESET, until the owner chooses their
+    # own. The UI reads it and asks for a new password before anything.
+    must_change_password: bool = False
 
 
 class DataFreshnessResponse(BaseModel):
@@ -648,6 +651,7 @@ def change_own_password_route(
     _refuse_weak_password(body.new_password, username)
 
     request.app.state.credential_store.update_credential(username, body.new_password)
+    request.app.state.user_directory.set_must_change_password(username, False)
     tracker.record_success(username)
     ended = request.app.state.session_store.invalidate_other_sessions(username, session_token)
     _audit_account(request, current_user, "change_password", username,
@@ -687,6 +691,9 @@ def reset_password_route(
     _refuse_weak_password(body.new_password, username)
 
     request.app.state.credential_store.update_credential(username, body.new_password)
+    # THE ADMINISTRATOR KNOWS THIS PASSWORD, so its owner must replace it
+    # before doing anything else.
+    directory.set_must_change_password(username, True)
     request.app.state.session_store.invalidate_all_sessions(username)
     _audit_account(request, current_user, "reset_password", username,
                    detail="every session of the target ended")
@@ -2676,7 +2683,8 @@ def _require_manage_users(request: Request, current_user: UserRecord) -> None:
 
 
 @router.get("/me", dependencies=[Depends(_no_store)], response_model=ProfileResponse)
-def my_profile_route(current_user: UserRecord = Depends(get_current_user)) -> dict:
+def my_profile_route(request: Request,
+                     current_user: UserRecord = Depends(get_current_user)) -> dict:
     # A real "who am I" endpoint -- confirmed directly against how
     # established identity platforms do this (OpenID Connect's own
     # UserInfo endpoint; Palantir Foundry's own real, documented GET
@@ -2699,6 +2707,9 @@ def my_profile_route(current_user: UserRecord = Depends(get_current_user)) -> di
         "username": current_user.user_id,
         "role_name": current_user.role_name,
         "mac_value": current_user.security_value,
+        "must_change_password": request.app.state.user_directory.must_change_password(
+            current_user.user_id,
+        ),
     }
 
 

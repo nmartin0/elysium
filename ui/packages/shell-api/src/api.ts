@@ -492,6 +492,15 @@ export async function getVisibleSchema(username: string): Promise<unknown> {
 // (see api/routes.py's own _no_store dependency) -- session-specific
 // data a shared browser or intermediate cache must never persist and
 // later hand back to a different person on the same machine.
+/** Changes the caller's own password. Needs the current one; every
+ *  other session of theirs ends. */
+export async function changeOwnPassword(currentPassword: string, newPassword: string): Promise<void> {
+  await apiFetchOrThrow('/me/password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+}
+
 export async function getCurrentUser(): Promise<unknown> {
   const response = await apiFetchOrThrow('/me')
   return response.json()

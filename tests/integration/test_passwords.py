@@ -201,3 +201,64 @@ class TestAnAdministratorsReset:
 
         (entry,) = _audit(client, "reset_password")
         assert entry["actor"] == "ann" and entry["target"] == "cy"
+
+
+class TestAfterAResetTheOwnerMustChoose:
+    """THE ADMINISTRATOR KNOWS A RESET PASSWORD, so until its owner
+    replaces it the account may only read who it is, change the
+    password, and log out -- Keycloak's and GitLab's required action."""
+
+    def _reset_then_log_in(self, client):
+        from fastapi.testclient import TestClient
+
+        _user(client, "cy", "customer_service")
+        _as(client, "ann", "admin")
+        client.post("/api/users/cy/password", json={"new_password": NEWER},
+                     headers=_csrf_headers(client))
+        owner = TestClient(client.app)
+        _login(owner, "cy", NEWER)
+        return owner
+
+    def test_everything_else_is_refused_with_a_reason(self, client):
+        owner = self._reset_then_log_in(client)
+
+        response = owner.get("/api/me/visible-schema")
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "password_change_required"
+
+    def test_me_says_so(self, client):
+        """THE UI READS THIS to know which screen to show."""
+        owner = self._reset_then_log_in(client)
+
+        profile = owner.get("/api/me")
+
+        assert profile.status_code == 200
+        assert profile.json()["must_change_password"] is True
+
+    def test_logging_out_is_still_allowed(self, client):
+        """A RESTRICTION THAT BLOCKED THE WAY OUT would trap people.
+
+        IT HOLDS because logout never goes through get_current_user --
+        which is why /api/logout is not on the allow-list. If logout ever
+        starts depending on it, this is the test that fails."""
+        owner = self._reset_then_log_in(client)
+
+        assert owner.post("/api/logout", headers=_csrf_headers(owner)).is_success
+
+    def test_choosing_a_password_lifts_it(self, client):
+        owner = self._reset_then_log_in(client)
+
+        changed = owner.post("/api/me/password", json={
+            "current_password": NEWER, "new_password": "the-owners-own-choice-now",
+        }, headers=_csrf_headers(owner))
+
+        assert changed.status_code == 200
+        assert owner.get("/api/me").json()["must_change_password"] is False
+        assert owner.get("/api/me/visible-schema").status_code == 200
+
+    def test_an_ordinary_account_is_not_restricted(self, client):
+        _as(client, "cy", "customer_service")
+
+        assert client.get("/api/me").json()["must_change_password"] is False
+        assert client.get("/api/me/visible-schema").status_code == 200
