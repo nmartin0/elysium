@@ -1058,11 +1058,11 @@ rather than a plan.
                                  should itself pass through the
                                  approvals queue -- is now answerable
                                  against a settled model
-    2.4   the remaining UI       vertex-lite's second half, the
-          halves                 view-state matrix, and which screens
-                                 show the checkbox-above-the-row
-                                 problem. Each small, each verifiable
-                                 now that browser tests exist
+    2.4   the remaining UI       view-state matrix: reopened by my own
+          halves                 patch 280, closed in 289. Checkboxes:
+                                 new e2e checks, AUTHORED BLIND -- run
+                                 `npm run e2e`. Vertex-lite's second
+                                 half: still open
     1.3   ~~restore verification~~  DONE, patch 288 -- and a real
                                  restore found that restore only ADDED
                                  and replayed leftover logs

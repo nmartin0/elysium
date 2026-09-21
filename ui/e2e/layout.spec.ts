@@ -177,3 +177,51 @@ test.describe('Blueprint controls keep their own layout', () => {
     expect(height).toBeLessThan(40)
   })
 })
+
+// THE CHECKBOXES ADDED SINCE THE SWEEP. BACKLOG item 2.4 asked "which
+// other screens show the checkbox-above-the-row problem"; the sweep
+// found two Checkbox elements, and patches 280 and 286 have added more
+// -- the Watch dialog's recipients and the Roles screen's grants.
+//
+// AUTHORED BLIND, like the rest of this file: written in a container
+// that cannot download a browser, never seen to pass. The measurements
+// are the two above, reused rather than reinvented.
+//
+// THE WATCH CHECK SAVES A VIEW named "e2e layout check" in the
+// deployment it runs against. Saving the same name REPLACES it, so
+// repeated runs leave one, not many.
+
+test.describe('the checkboxes added since the sweep', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page, DEV_USER)
+  })
+
+  test('a Roles grant sits on one line with its label', async ({ page }) => {
+    /** DEV_USER holds manage:roles in the shipped policy.yaml, so the
+     *  Roles screen loads rather than refusing. */
+    await page.goto('/admin')
+    await page.getByRole('button', { name: 'Roles' }).click()
+    await page.getByLabel('Role to change').selectOption('customer_service')
+
+    const control = page.locator('.roles__group .bp6-control').first()
+    await expect(control).toBeVisible()
+
+    expect(await control.evaluate((element) => getComputedStyle(element).flexDirection)).not.toBe('column')
+    expect((await control.boundingBox())!.height).toBeLessThan(40)
+  })
+
+  test('a Watch recipient sits on one line with its label', async ({ page }) => {
+    await page.goto('/browse?type=Customer')
+    await page.getByRole('button', { name: /saved views/i }).click()
+    await page.getByPlaceholder(/name this view/i).fill('e2e layout check')
+    await page.getByRole('button', { name: /^(save|update)$/i }).click()
+    await page.getByRole('button', { name: /saved views/i }).click()
+    await page.getByRole('button', { name: 'Watch e2e layout check' }).click()
+
+    const control = page.locator('.bp6-dialog .bp6-control').first()
+    await expect(control).toBeVisible()
+
+    expect(await control.evaluate((element) => getComputedStyle(element).flexDirection)).not.toBe('column')
+    expect((await control.boundingBox())!.height).toBeLessThan(40)
+  })
+})

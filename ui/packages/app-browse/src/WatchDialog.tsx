@@ -30,6 +30,7 @@ import {
   NumericInput,
 } from '@blueprintjs/core'
 import {
+  ApiError,
   createTrigger,
   getCurrentUser,
   getDeploymentConfig,
@@ -59,6 +60,12 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   const [target, setTarget] = useState('')
   const [values, setValues] = useState<Record<string, string>>({})
   const [refusal, setRefusal] = useState<string | null>(null)
+  // WHAT COULD NOT BE LOADED, named rather than hidden. The dialog stays
+  // usable -- a trigger that only notifies is still worth making -- but
+  // an empty "And propose" would say "no action fits this view" when the
+  // truth is "we could not find out". A quiet partial is a wrong answer
+  // reporting success, which is the view-state matrix's one rule.
+  const [unloaded, setUnloaded] = useState<string[]>([])
 
   useEffect(() => {
     if (view === null) return
@@ -66,32 +73,37 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
     setActionName('')
     setRecipients([])
     setValues({})
+    setUnloaded([])
     void (async () => {
+      const failed: string[] = []
       try {
         const visible = (await getVisibleActionTypes()) as Record<string, VisibleAction>
         setActions(actionsFor(visible, view.object_type))
-      } catch {
-        // NO ACTIONS OFFERED rather than an error: a trigger that
-        // only notifies is still worth making.
+      } catch (caught: unknown) {
         setActions([])
+        failed.push(`actions (${getErrorMessage(caught)})`)
       }
       let ownRole: string | null = null
       try {
         const me = (await getCurrentUser()) as { role_name?: string | null }
         ownRole = me.role_name ?? null
-      } catch {
-        ownRole = null
+      } catch (caught: unknown) {
+        failed.push(`your role (${getErrorMessage(caught)})`)
       }
       let allRoles: string[] | null = null
       try {
         const config = (await getDeploymentConfig()) as { role_names?: string[] }
         allRoles = config.role_names ?? null
-      } catch {
-        // REFUSED FOR ANYBODY WITHOUT manage:users, which is the rule
-        // working: they may name only their own role.
-        allRoles = null
+      } catch (caught: unknown) {
+        // A 403 IS THE RULE WORKING, not a failure: without
+        // manage:users a person may name only their own role, so it is
+        // not reported. Anything else is.
+        if (!(caught instanceof ApiError && caught.status === 403)) {
+          failed.push(`the list of roles (${getErrorMessage(caught)})`)
+        }
       }
       setRoles(rolesFor(ownRole, allRoles))
+      setUnloaded(failed)
     })()
   }, [view])
 
@@ -206,6 +218,12 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
             role="alert", so the refusal is ANNOUNCED as well as shown.
             A bare Callout is silent to a screen reader -- and
             tokens.test.ts refused it, which is how this was caught. */}
+        {unloaded.length > 0 && (
+          <ErrorState>
+            {`Could not load ${unloaded.join('; ')} -- so some choices are missing. `}
+            {'A trigger that only notifies you can still be made.'}
+          </ErrorState>
+        )}
         {refusal !== null && <ErrorState>{refusal}</ErrorState>}
       </DialogBody>
       <DialogFooter

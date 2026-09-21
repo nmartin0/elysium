@@ -243,6 +243,19 @@ sweep found exactly two Checkbox elements and the other renders
 correctly, so either the report was about Browse specifically or it is
 a control I have not recognised as the same problem.
 
+**TWO PROBLEMS, NOT ONE -- read in patch 289.** A checkbox above its OWN
+TEXT was a global `label` rule, fixed app-wide and guarded by a
+tripwire on bare element selectors. A checkbox above the ROW it selects
+is per-screen: one placed directly in a block container takes its own
+line. The second is what this asks.
+
+Patches 280 and 286 added checkboxes the sweep never saw -- Watch
+recipients, Roles grants. Each is its own row (box and label), so the
+per-row fault cannot arise; the global fix covers the label. Browser
+checks for both are in e2e/layout.spec.ts -- AUTHORED BLIND, like the
+rest of that file: this container cannot download a browser, so they
+have never been seen to pass. `npm run e2e` against a running server.
+
 ### Needs research, then a plan, then building
 
 ~~**What Query should contain.**~~ RESEARCHED AND PLANNED -- see
@@ -1168,6 +1181,21 @@ quiet partial would be a wrong answer reporting success.
 The view-state matrix is complete. No other panel loads more than one
 thing at a time, checked rather than assumed, so there is nowhere else
 for a partial state to arise today.
+
+**TRUE WHEN WRITTEN, NOT BY PATCH 280, AND CLOSED AGAIN IN 289.** The
+Watch dialog loads three things, and swallowed two failures: if actions
+could not be fetched it showed no "And propose" at all -- saying no
+action fits, when the truth was it could not find out. Exactly the
+quiet partial above. It now NAMES what did not load, and stays usable
+for a trigger that only notifies. A 403 on the role list stays silent:
+without manage:users that is the visibility rule working, not a failure.
+
+The Roles screen (286) also loads two things, but fails LOUDLY -- the
+whole screen shows the error -- and both share one gate, so a real
+partial there is transient. Loud is not the fault this matrix names.
+
+**THE LESSON FOR THIS ENTRY:** "complete" is a claim with a date on it.
+Every panel added afterwards can quietly reopen it.
 
 ---
 

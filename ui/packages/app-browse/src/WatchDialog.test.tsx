@@ -20,7 +20,13 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   }
 })
 
-import { createTrigger, getCurrentUser, getDeploymentConfig, getVisibleActionTypes } from '@elysium/shell-api/api'
+import {
+  ApiError,
+  createTrigger,
+  getCurrentUser,
+  getDeploymentConfig,
+  getVisibleActionTypes,
+} from '@elysium/shell-api/api'
 import WatchDialog from './WatchDialog'
 
 const mockedCreate = vi.mocked(createTrigger)
@@ -49,7 +55,12 @@ beforeEach(() => {
     },
   })
   vi.mocked(getCurrentUser).mockResolvedValue({ role_name: 'analyst' })
-  vi.mocked(getDeploymentConfig).mockRejectedValue(new Error('forbidden'))
+  // A REAL 403, as the server sends for anybody without manage:users.
+  // A first version rejected with a plain Error, which the dialog now
+  // correctly treats as a FAILURE -- so every test ran under a failure
+  // nobody asserted on. A mock that is not the real refusal hides
+  // exactly the distinction being tested.
+  vi.mocked(getDeploymentConfig).mockRejectedValue(new ApiError(403, 'forbidden'))
 })
 
 function open() {
@@ -133,5 +144,43 @@ describe('when the server refuses', () => {
 
     await screen.findByText('refused')
     expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('what could not be loaded', () => {
+  it('is named, not hidden', async () => {
+    /** A QUIET PARTIAL IS A WRONG ANSWER REPORTING SUCCESS. An empty
+     *  "And propose" would say no action fits, when the truth is the
+     *  actions could not be fetched. */
+    vi.mocked(getVisibleActionTypes).mockRejectedValue(new Error('server unavailable'))
+    open()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Could not load actions/)
+  })
+
+  it('leaves the dialog usable', async () => {
+    vi.mocked(getVisibleActionTypes).mockRejectedValue(new Error('server unavailable'))
+    open()
+    await screen.findByRole('alert')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }))
+
+    await waitFor(() => expect(mockedCreate).toHaveBeenCalled())
+  })
+
+  it('does not report a 403 from the role list', async () => {
+    /** THE RULE WORKING, not a failure: without manage:users a person
+     *  names only their own role. */
+    open()
+    await screen.findByLabelText('analyst')
+
+    expect(screen.queryByText(/Could not load/)).toBeNull()
+  })
+
+  it('does report any other failure of the role list', async () => {
+    vi.mocked(getDeploymentConfig).mockRejectedValue(new ApiError(500, 'broken'))
+    open()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/the list of roles/)
   })
 })
