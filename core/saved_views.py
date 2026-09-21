@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,17 @@ class SavedViewStore:
         self._db_path = db_path
 
     def _connection(self):
-        return connection_with_schema(self._db_path, SCHEMA)
+        # THE MIGRATION IS THE FIX FOR A BUG THIS FILE SHIPPED. The
+        # `presentation` column was added to SCHEMA alone, and a
+        # database created before that returned no views at all.
+        return connection_with_schema(
+            self._db_path, SCHEMA,
+            migrations=(
+                add_column_if_missing(
+                    "saved_views", "presentation", "TEXT NOT NULL DEFAULT '{}'",
+                ),
+            ),
+        )
 
     def save(self, owner_user_id: str, name: str, object_type: str,
              query_text: str = "", conditions: list | None = None,

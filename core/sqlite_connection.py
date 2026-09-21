@@ -324,6 +324,37 @@ def _enable_wal(conn: sqlite3.Connection, db_path: Path) -> None:
         )
 
 
+def add_column_if_missing(table: str, column: str, declaration: str):
+    """A migration adding one column, for `connection_with_schema`.
+
+    WHY THIS EXISTS: `CREATE TABLE IF NOT EXISTS` does not add a column
+    to a table that already exists. A column added to a SCHEMA string
+    reaches fresh databases and silently misses every existing one --
+    and a store that reads the new column then fails on each read.
+
+    THAT SHIPPED ONCE. `saved_views.presentation` was added to the
+    schema alone, and a database created before it returned NO VIEWS
+    AT ALL: "no such column: presentation", swallowed by the store's
+    best-effort handling and returned as an empty list. Silent, and
+    the kind of data loss nobody reports because nothing looks broken.
+
+    NARROWER THAN THE PRECEDENT IT FOLLOWS. `database.py`'s own
+    migration catches every OperationalError, which would also swallow
+    a locked or full database. This catches only "duplicate column",
+    which is the one it means.
+    """
+    def migrate(conn: sqlite3.Connection) -> None:
+        try:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {declaration}"  # noqa: S608 - constants only
+            )
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+    migrate.__name__ = f"add_{table}_{column}"
+    return migrate
+
+
 @contextmanager
 def connection_with_schema(db_path: Path, schema: str,
                             migrations: tuple[Callable[[sqlite3.Connection], None], ...] = ()):
