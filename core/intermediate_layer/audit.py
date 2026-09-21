@@ -342,6 +342,28 @@ class AuditLog:
             "object_id": object_id,
         })
 
+    def log_account(self, actor: str, action: str, target: str,
+                    outcome: str = "applied", detail: str | None = None) -> None:
+        """An account was created, disabled, enabled, deleted, or had its
+        password changed or reset.
+
+        NONE OF THESE WERE AUDITED -- create, disable, enable and delete
+        wrote nothing, found while adding password reset, which would
+        have been two more. An administrator resetting somebody's
+        password, then logging in as them, must leave a record.
+
+        NEVER THE PASSWORD, in any form. `detail` is for what happened
+        around it -- sessions ended, a refusal's reason.
+        """
+        self._write({
+            "event": "account",
+            "actor": actor,
+            "action": action,
+            "target": target,
+            "outcome": outcome,
+            "detail": detail,
+        })
+
     def log_reload(self, user_id: str, outcome: str, from_generation: int,
                     to_generation: int | None, source_digest: str | None,
                     detail: str | None = None) -> None:

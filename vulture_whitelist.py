@@ -350,3 +350,9 @@ grants
 
 # follow_reload (api/app.py) -- registered by @app.middleware, called by Starlette.
 follow_reload
+
+# Password routes and models (api/routes.py) -- FastAPI routes.
+change_own_password_route
+reset_password_route
+current_password
+new_password

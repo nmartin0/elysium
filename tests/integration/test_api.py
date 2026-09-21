@@ -1182,7 +1182,7 @@ def test_create_user_with_manage_users_grant_succeeds_and_new_user_can_log_in(cl
         "/api/users",
         json={
             "username": "newperson",
-            "password": "newpass123",
+            "password": "a-new-long-passphrase",
             "mac_value": "us-west",
             "role_name": "customer_service",
         },
@@ -1190,7 +1190,7 @@ def test_create_user_with_manage_users_grant_succeeds_and_new_user_can_log_in(cl
     )
     assert create_response.status_code == 201
 
-    login_response = _login(client, "newperson", "newpass123")
+    login_response = _login(client, "newperson", "a-new-long-passphrase")
     assert login_response.status_code == 204
 
 

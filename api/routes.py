@@ -117,7 +117,7 @@ import logging
 import threading
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pyiceberg.catalog.sql import SqlCatalog
@@ -174,6 +174,15 @@ def _generation(request: Request):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class ChangeOwnPasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
 
 
 class CreateUserRequest(BaseModel):
@@ -590,6 +599,8 @@ def disable_user_route(username: str, request: Request,
         request.app.state.user_directory.disable_user(username)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    # AFTER IT SUCCEEDED: a refused action is not recorded as done.
+    _audit_account(request, current_user, 'disable', username)
 
 
 @router.post("/users/{username}/enable", status_code=204)
@@ -600,6 +611,86 @@ def enable_user_route(username: str, request: Request,
         request.app.state.user_directory.enable_user(username)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    # AFTER IT SUCCEEDED: a refused action is not recorded as done.
+    _audit_account(request, current_user, 'enable', username)
+
+
+@router.post("/me/password", dependencies=[Depends(_no_store)])
+def change_own_password_route(
+    body: ChangeOwnPasswordRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict:
+    """Changes the caller's own password. Needs the CURRENT one.
+
+    THE CURRENT PASSWORD, because a session is not the person: a laptop
+    left unlocked would otherwise be enough to take the account for
+    good. And a wrong guess counts toward LOCKOUT exactly as a failed
+    login does -- otherwise this endpoint is an unthrottled way to test
+    passwords for anybody holding a session.
+
+    EVERY OTHER SESSION ENDS; THIS ONE STAYS. Somebody who suspects their
+    password is known wants their other devices logged out, and to stay
+    signed in on the one they are fixing it from.
+    """
+    username = current_user.user_id
+    tracker = request.app.state.login_attempt_tracker
+    if tracker.is_locked_out(username):
+        raise HTTPException(status_code=429, detail="Too many failed attempts; try again later.")
+    if not request.app.state.credential_store.verify_credential(username, body.current_password):
+        tracker.record_failure(username)
+        _audit_account(request, current_user, "change_password", username,
+                       detail="refused: current password wrong")
+        raise HTTPException(status_code=400, detail="The current password is not right.")
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="The new password must differ from the current one.")
+    _refuse_weak_password(body.new_password, username)
+
+    request.app.state.credential_store.update_credential(username, body.new_password)
+    tracker.record_success(username)
+    ended = request.app.state.session_store.invalidate_other_sessions(username, session_token)
+    _audit_account(request, current_user, "change_password", username,
+                   detail=f"{ended} other session(s) ended")
+    return {"changed": True, "other_sessions_ended": ended}
+
+
+@router.post("/users/{username}/password", dependencies=[Depends(_no_store)])
+def reset_password_route(
+    username: str,
+    body: ResetPasswordRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """An administrator sets somebody else's password.
+
+    IMPERSONATION, and treated as such -- Kubernetes lists it among its
+    escalation verbs. Whoever sets a password can log in as its owner,
+    so resetting the password of somebody whose role carries a manage:*
+    grant the administrator lacks is refused: the same rule as putting
+    somebody in that role.
+
+    NOT FOR YOURSELF. Your own goes through /me/password, which asks for
+    the current one; an administrator resetting their own would skip it.
+
+    EVERY SESSION OF THE TARGET ENDS, so whoever may have been using the
+    old password is logged out as it stops working.
+    """
+    _require_manage_users(request, current_user)
+    if username == current_user.user_id:
+        raise HTTPException(status_code=400,
+                            detail="Change your own password from your profile; it asks for the current one.")
+    directory = request.app.state.user_directory
+    if not directory.user_exists(username):
+        raise HTTPException(status_code=404, detail="No such user")
+    _refuse_escalation(request, current_user, directory.get_user_record(username).role_name or "")
+    _refuse_weak_password(body.new_password, username)
+
+    request.app.state.credential_store.update_credential(username, body.new_password)
+    request.app.state.session_store.invalidate_all_sessions(username)
+    _audit_account(request, current_user, "reset_password", username,
+                   detail="every session of the target ended")
+    return {"reset": True}
 
 
 @router.delete("/users/{username}", status_code=204)
@@ -610,6 +701,8 @@ def delete_user_route(username: str, request: Request,
         request.app.state.user_directory.delete_user(username)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    # AFTER IT SUCCEEDED: a refused action is not recorded as done.
+    _audit_account(request, current_user, 'delete', username)
 
 
 async def _watch_for_disconnect(request: Request, cancel_event: threading.Event) -> None:
@@ -2491,6 +2584,7 @@ def create_user_route(body: CreateUserRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:
     _require_manage_users(request, current_user)
     _refuse_escalation(request, current_user, body.role_name)
+    _refuse_weak_password(body.password, body.username)
 
     # UNDER THE ROLE-CHANGE LOCK, so an account cannot be created in a
     # role at the instant an approval deletes it -- between the approval
@@ -2510,7 +2604,26 @@ def create_user_route(body: CreateUserRequest, request: Request,
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
+    _audit_account(request, current_user, "create", body.username,
+                   detail=f"role {body.role_name}")
     return {"status": "created", "username": body.username}
+
+
+def _refuse_weak_password(password: str, username: str) -> None:
+    """NIST SP 800-63B-4, at the boundary where a PERSON chooses one --
+    see core/auth/password_policy.py for what, and why not deeper."""
+    from core.auth.password_policy import password_problem
+
+    problem = password_problem(password, username)
+    if problem is not None:
+        raise HTTPException(status_code=400, detail=problem)
+
+
+def _audit_account(request: Request, current_user: UserRecord, action: str,
+                   target: str, detail: str | None = None) -> None:
+    _generation(request).mediator.audit_log.log_account(
+        current_user.user_id, action, target, detail=detail,
+    )
 
 
 def _refuse_escalation(request: Request, current_user: UserRecord,

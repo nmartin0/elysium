@@ -89,6 +89,22 @@ class SessionStore:
             conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
             conn.commit()
 
+    def invalidate_other_sessions(self, username: str, keep_token: str | None) -> int:
+        """Ends every session of `username` but the one making the request.
+
+        FOR CHANGING YOUR OWN PASSWORD. Somebody who suspects their
+        password is known wants every OTHER device logged out -- and to
+        stay signed in on the one they are using to fix it. Returns how
+        many were ended, so the response can say so.
+        """
+        with connection(self._db_path) as conn:
+            ended = conn.execute(
+                "DELETE FROM sessions WHERE username = ? AND token != ?",
+                (username, keep_token or ""),
+            ).rowcount
+            conn.commit()
+        return ended
+
     def invalidate_all_sessions(self, username: str) -> None:
         with connection(self._db_path) as conn:
             conn.execute("DELETE FROM sessions WHERE username = ?", (username,))

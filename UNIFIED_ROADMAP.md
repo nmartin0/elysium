@@ -68,9 +68,18 @@ Each checked in the code; corrected here, pointed to elsewhere.
     - ~~role EDITS could add a grant their author lacks~~ FIXED, patch
       299: Kubernetes' role-update rule, with manage:escalation as its
       `escalate` verb -- needed, because a new grant is held by nobody.
-    - password reset, and setting a known password (ROADMAP)
-    - a password policy -- any string is accepted (ROADMAP)
-    - a generated first-run password (UI 26)
+    - ~~password reset, a password policy~~ BUILT, patch 300: NIST
+      SP 800-63B-4, changing your own, an administrator's reset under
+      the escalation rule -- and every account action audited, which
+      none had been
+    - ~~a generated first-run password~~ WAS ALREADY BUILT --
+      bootstrap_root.py makes 32 random characters. This inventory had
+      it wrong, which is the argument for re-checking it
+    - session tokens are stored RAW in credentials.db: anybody who can
+      read the file can use a live session. Store a hash of the token
+    - an administrator's reset does not force a change at next login,
+      so the administrator knows the password until the owner changes
+      it
 
 **Needs a capable model -- 2.2 first:**
 
