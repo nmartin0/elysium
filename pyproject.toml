@@ -270,7 +270,7 @@ type = "layers"
 layers = [
     "write_mediator",
     "mediator",
-    "interface | schema | write_log | submission_criteria | action_types | object_type_validation",
+    "interface | schema | write_log | submission_criteria | action_types | object_type_validation | constraints",
     # Real leaves, below everything. object_type_validation imports
     # field_types (to reject an unknown declared data_type at load
     # time), and mediator imports filters; neither imports anything in

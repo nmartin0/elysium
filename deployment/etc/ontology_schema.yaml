@@ -93,6 +93,18 @@ object_types:
         type: data
       category:
         type: data
+        # CONSTRAINTS on the values a field may hold -- none ship, so
+        # this deployment behaves as it always has. Declared on the
+        # FIELD, so every action that sets it is checked, at proposal
+        # and again at confirm:
+        #
+        #   constraints:
+        #     one_of: [food, travel, rent]    # any type
+        #     # min / max            -- integer, number, decimal, dates
+        #     # min_length / max_length, pattern -- strings; pattern
+        #     #                         must match the WHOLE value
+        #
+        # A malformed block stops the deployment starting.
       transaction_date:
         type: data
         # A DATE, NOT A STRING, and not a timestamp: the source

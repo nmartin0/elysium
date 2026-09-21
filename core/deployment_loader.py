@@ -44,6 +44,7 @@ from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
 from core.declared_triggers import load_declared_triggers
+from core.ontology.constraints import validate_constraints
 from core.secret_references import expand_secrets
 
 if TYPE_CHECKING:
@@ -418,6 +419,9 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     object_types_raw = schema_raw.get("object_types", {})
     link_types_raw = schema_raw.get("link_types", {})
     validate_link_types(link_types_raw, object_types_raw)
+    # A MALFORMED CONSTRAINT STOPS THE LOAD: one that silently never
+    # fires, or fires on everything, is worse than none.
+    validate_constraints(object_types_raw)
     schema_raw["object_types"] = expand_link_types(link_types_raw, object_types_raw)
 
     validate_function_declarations(enabled_tools, schema_raw["object_types"])

@@ -92,11 +92,9 @@ THIRD_PARTY_EXTENSIONS); the help assistant (3.25); fusion and
 identity -- the gold layer (3.6); bootstrapping a deployment from a
 manifest (LAKE_METADATA_NOTE); something that READS the ELT changelog.
 
-**Its trigger has already fired:** field-VALUE validation -- ranges,
-patterns, enum membership (ROADMAP). Nothing in the ontology declares a
-constraint. Its entry named its trigger as "an action form", and action
-forms now exist -- the bulk form, the Watch dialog's parameters -- so
-this is due rather than deferred.
+~~**Its trigger has already fired:** field-VALUE validation~~ BUILT,
+patch 297. Constraints on the FIELD -- min/max, lengths, a whole-value
+pattern, one_of -- checked at proposal and again at confirm.
 
 **Deliberately held, with the trigger named:** PostgreSQL row-level
 security for MAC; column GRANT with SET ROLE; the table-size ELT item.

@@ -286,6 +286,15 @@ class NotAutomatable(ValueError):
     """
 
 
+class ConstraintViolation(ValueError):
+    """A value a field's declared constraints refuse.
+
+    ITS OWN TYPE, and NOT a PermissionError: nobody's grants are wrong.
+    The value is, and the message names the field, the rule and the
+    value so the person proposing it can choose another.
+    """
+
+
 class CrossCompartmentWrite(ValueError):
     """An action would move data between security compartments.
 
@@ -1304,6 +1313,9 @@ class WriteMediator:
                     SubWrite(object_type, object_id, operation, changes, expected_current_values)
                 )
 
+        # AT PROPOSAL, so a value no field accepts never reaches a queue
+        # looking like a decision somebody could make.
+        self._refuse_constraint_violations(resolved_sub_writes)
         self._refuse_cross_compartment(
             user_record, action_type_name, action_def, parameters,
             resolved_sub_writes,
@@ -1431,6 +1443,10 @@ class WriteMediator:
             self._check_approver_criteria(pending, approver)
 
         if approved:
+            # AGAIN AT CONFIRM, against the CURRENT schema. A proposal
+            # made before a constraint existed must not slip through by
+            # being approved after it -- re-evaluated at the point of use.
+            self._refuse_constraint_violations(pending.sub_writes)
             unapplyable = self._fields_no_longer_declared(pending)
             if unapplyable:
                 self.audit_log.log_write_unapplyable(
@@ -1520,6 +1536,35 @@ class WriteMediator:
         One function, two callers, no second opinion.
         """
         return self._fields_no_longer_declared(pending)
+
+    def _refuse_constraint_violations(self, sub_writes) -> None:
+        """Raises if any change breaks its field's declared constraints.
+
+        EVERY VIOLATION AT ONCE, not the first. Somebody fixing a form
+        should not discover the second problem only after fixing the
+        first.
+
+        A type or field that no longer exists is not this check's
+        concern -- _fields_no_longer_declared reports it, with its own
+        message.
+        """
+        from core.ontology.constraints import violation
+
+        problems = []
+        for sub_write in sub_writes:
+            try:
+                declared = self._adapter_mediator._type_schema(sub_write.object_type)
+            except (KeyError, ValueError):
+                continue
+            fields = declared.get("fields") or {}
+            for field_name, value in sub_write.changes.items():
+                if field_name not in fields:
+                    continue
+                reason = violation(fields[field_name], value)
+                if reason is not None:
+                    problems.append(f"{sub_write.object_type}.{field_name}: {reason}")
+        if problems:
+            raise ConstraintViolation("; ".join(problems))
 
     def _fields_no_longer_declared(self, pending: PendingWrite) -> list[str]:
         """Fields this write targets that the current ontology lacks.
