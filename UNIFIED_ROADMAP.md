@@ -80,9 +80,9 @@ Each checked in the code; corrected here, pointed to elsewhere.
     - ~~a reset did not force a change at next login~~ FIXED, patch
       302: until the owner chooses, only /me and changing the password
       are allowed -- and the shell shows the form, not the apps
-    - NO UI yet for changing your own password voluntarily, or for an
-      administrator's reset: the API exists, the form exists (302), the
-      profile entry and the Admin -> Users action do not
+    - ~~no UI for changing your own password, or for a reset~~ BUILT,
+      patch 304: the user menu's Change password, and Admin -> Users'
+      Reset password on every row but your own
 
 **Needs a capable model -- 2.2 first:**
 

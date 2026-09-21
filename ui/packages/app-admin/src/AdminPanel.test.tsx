@@ -14,6 +14,10 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     deleteUser: vi.fn(),
     logoutAllForUser: vi.fn(),
     getVisibleSchema: vi.fn(),
+    // WHO IS SIGNED IN, which the panel now reads to hide the reset on
+    // their own row. Unmocked, every test here made a real network
+    // request for it, which failed and was swallowed.
+    getCurrentUser: vi.fn().mockResolvedValue({ username: 'adminuser' }),
   }
 })
 
@@ -476,5 +480,35 @@ describe('the configuration pane swaps with the view', () => {
     fireEvent.click(screen.getByRole('button', { name: /Deployment/ }))
 
     expect(screen.getByRole('button', { name: /Users/ })).toBeInTheDocument()
+  })
+})
+
+describe('AdminPanel -- resetting a password', () => {
+  it('is offered on somebody else', async () => {
+    mockedListUsers.mockResolvedValue([activeUser({ username: 'editoruser' })])
+    render(<AdminPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByRole('button', { name: 'Reset password' })).toBeInTheDocument()
+  })
+
+  it('is not offered on yourself', async () => {
+    /** YOUR OWN goes through your profile, which asks for the current
+     *  one. The server refuses anyway; hiding it is kinder. */
+    mockedListUsers.mockResolvedValue([activeUser({ username: 'adminuser' }), activeUser({ username: 'editoruser' })])
+    render(<AdminPanel onSessionExpired={vi.fn()} />)
+    await screen.findByText('editoruser')
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Reset password' })).toHaveLength(1))
+    const own = screen.getByText('adminuser').closest('tr')!
+    expect(within(own).queryByRole('button', { name: 'Reset password' })).toBeNull()
+  })
+
+  it('opens the dialog for that person', async () => {
+    mockedListUsers.mockResolvedValue([activeUser({ username: 'editoruser' })])
+    render(<AdminPanel onSessionExpired={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset password' }))
+
+    expect(await screen.findByText(/Every session of editoruser's ends now/)).toBeInTheDocument()
   })
 })

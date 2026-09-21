@@ -4,6 +4,7 @@ import {
   listUsers,
   createUser,
   disableUser,
+  getCurrentUser,
   enableUser,
   deleteUser,
   logoutAllForUser,
@@ -21,6 +22,7 @@ import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/Vie
 import DeploymentConfig from './DeploymentConfig'
 import MetricsPanel from './MetricsPanel'
 import MirrorPanel from './MirrorPanel'
+import ResetPasswordDialog from './ResetPasswordDialog'
 import RolesPanel from './RolesPanel'
 import Silos from './Silos'
 
@@ -57,6 +59,13 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState('users')
   const [schemaByUsername, setSchemaByUsername] = useState<Record<string, unknown>>({})
+  // WHOSE PASSWORD IS BEING RESET, or null when the dialog is closed.
+  const [resetFor, setResetFor] = useState<string | null>(null)
+  // WHO IS SIGNED IN, so their own row offers no reset: your own goes
+  // through your profile, which asks for the current one. The server
+  // refuses a self-reset anyway; hiding the button is kinder than a
+  // refusal.
+  const [me, setMe] = useState<string | null>(null)
 
   async function loadUsers() {
     setError(null)
@@ -75,6 +84,13 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
 
   useEffect(() => {
     loadUsers()
+    void (async () => {
+      try {
+        setMe(((await getCurrentUser()) as { username?: string }).username ?? null)
+      } catch {
+        setMe(null)
+      }
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -189,49 +205,55 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
           // second, full-width schema row directly beneath its own row
           // (see the schemaByUsername block below) -- striping helps
           // keep a user's own two rows visually paired at a glance.
-          <HTMLTable className="user-table" interactive striped>
-            <thead>
-              <tr>
-                <th>Username</th>
-                <th>Role</th>
-                <th>MAC value</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <Fragment key={user.username}>
-                  <tr>
-                    <td>{user.username}</td>
-                    <td>{user.role_name}</td>
-                    <td>{user.mac_value ?? '—'}</td>
-                    <td>{user.disabled ? 'Disabled' : 'Active'}</td>
-                    <td className="user-table__actions">
-                      {user.disabled ? (
-                        <Button small onClick={() => handleAction(enableUser, user.username)}>
-                          Enable
+          <>
+            <HTMLTable className="user-table" interactive striped>
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th>MAC value</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <Fragment key={user.username}>
+                    <tr>
+                      <td>{user.username}</td>
+                      <td>{user.role_name}</td>
+                      <td>{user.mac_value ?? '—'}</td>
+                      <td>{user.disabled ? 'Disabled' : 'Active'}</td>
+                      <td className="user-table__actions">
+                        {user.disabled ? (
+                          <Button small onClick={() => handleAction(enableUser, user.username)}>
+                            Enable
+                          </Button>
+                        ) : (
+                          <Button small onClick={() => handleAction(disableUser, user.username)}>
+                            Disable
+                          </Button>
+                        )}
+                        <Button small onClick={() => handleAction(logoutAllForUser, user.username)}>
+                          Log out sessions
                         </Button>
-                      ) : (
-                        <Button small onClick={() => handleAction(disableUser, user.username)}>
-                          Disable
+                        <Button small onClick={() => handleToggleSchema(user.username)}>
+                          {schemaByUsername[user.username] ? 'Hide schema' : 'View schema'}
                         </Button>
-                      )}
-                      <Button small onClick={() => handleAction(logoutAllForUser, user.username)}>
-                        Log out sessions
-                      </Button>
-                      <Button small onClick={() => handleToggleSchema(user.username)}>
-                        {schemaByUsername[user.username] ? 'Hide schema' : 'View schema'}
-                      </Button>
-                      {/* intent="danger", not a `danger` class: Blueprint
+                        {/* intent="danger", not a `danger` class: Blueprint
                           already HAS a destructive intent, and its own is
                           theme-aware where the class was a fixed red. */}
-                      <Button small intent="danger" onClick={() => setPendingDeleteUsername(user.username)}>
-                        Delete
-                      </Button>
-                    </td>
-                  </tr>
-                  {/* !== undefined, not a bare truthy check -- schemaByUsername's
+                        {user.username !== me && (
+                          <Button small onClick={() => setResetFor(user.username)}>
+                            Reset password
+                          </Button>
+                        )}
+                        <Button small intent="danger" onClick={() => setPendingDeleteUsername(user.username)}>
+                          Delete
+                        </Button>
+                      </td>
+                    </tr>
+                    {/* !== undefined, not a bare truthy check -- schemaByUsername's
                     own values are typed unknown (Record<string, unknown>),
                     and `unknown && <jsx>` is not assignable to ReactNode
                     (confirmed directly via tsc, not assumed): TypeScript
@@ -241,17 +263,23 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
                     always a real, truthy object from the backend, never
                     null/0/''/false, so the only two real states are
                     "absent" (undefined) or "a real object" either way. */}
-                  {schemaByUsername[user.username] !== undefined && (
-                    <tr>
-                      <td colSpan={5}>
-                        <pre>{JSON.stringify(schemaByUsername[user.username], null, 2)}</pre>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </HTMLTable>
+                    {schemaByUsername[user.username] !== undefined && (
+                      <tr>
+                        <td colSpan={5}>
+                          <pre>{JSON.stringify(schemaByUsername[user.username], null, 2)}</pre>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </HTMLTable>
+            <ResetPasswordDialog
+              username={resetFor}
+              onClose={() => setResetFor(null)}
+              onSessionExpired={onSessionExpired}
+            />
+          </>
         ))}
 
       {/* One, shared Alert, not one per row -- see pendingDeleteUsername's

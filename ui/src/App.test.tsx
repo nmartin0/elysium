@@ -257,7 +257,7 @@ describe('App -- after an administrator reset your password', () => {
 
   it('carries on into the apps once the password is chosen', async () => {
     vi.mocked(getCurrentUser).mockResolvedValue(RESET)
-    vi.mocked(changeOwnPassword).mockResolvedValue(undefined)
+    vi.mocked(changeOwnPassword).mockResolvedValue(0)
     render(<App />)
     await screen.findByText(/An administrator reset your password/)
 

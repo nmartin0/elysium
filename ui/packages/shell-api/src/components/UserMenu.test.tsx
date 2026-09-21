@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api')>()
+  return { ...actual, changeOwnPassword: vi.fn() }
+})
+
+import { changeOwnPassword } from '../api'
 import UserMenu, { type CurrentUser } from './UserMenu'
 
 const REAL_USER: CurrentUser = { username: 'alice', role_name: 'customer_service', mac_value: 'us-west' }
@@ -150,5 +156,47 @@ describe('UserMenu -- logging out', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
 
     await expectMenuToClose()
+  })
+})
+
+describe('UserMenu -- changing your own password', () => {
+  const ME: CurrentUser = { username: 'alice', role_name: 'editor', mac_value: 'us-west' }
+
+  async function changeIt(otherSessions: number) {
+    vi.mocked(changeOwnPassword).mockResolvedValue(otherSessions)
+    render(<UserMenu currentUser={ME} onLogout={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'alice' }))
+    fireEvent.click(await screen.findByText('Change password'))
+    fireEvent.change(await screen.findByLabelText('Current password'), { target: { value: 'the-old-one' } })
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'a-long-enough-passphrase' } })
+    fireEvent.change(screen.getByLabelText('New password, again'), { target: { value: 'a-long-enough-passphrase' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }))
+  }
+
+  it('is in the menu that holds your name', async () => {
+    render(<UserMenu currentUser={ME} onLogout={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'alice' }))
+
+    expect(await screen.findByText('Change password')).toBeInTheDocument()
+  })
+
+  it('says how many other sessions were logged out', async () => {
+    /** WHAT SOMEBODY SECURING THEIR ACCOUNT WANTS TO HEAR: the other
+     *  devices are out -- not a dialog that just closes. */
+    await changeIt(2)
+
+    expect(await screen.findByText(/2 other sessions were logged out/)).toBeInTheDocument()
+  })
+
+  it('says so plainly when there were none', async () => {
+    await changeIt(0)
+
+    expect(await screen.findByText(/You had no other sessions/)).toBeInTheDocument()
+  })
+
+  it('agrees in number with one', async () => {
+    await changeIt(1)
+
+    expect(await screen.findByText(/1 other session was logged out/)).toBeInTheDocument()
   })
 })

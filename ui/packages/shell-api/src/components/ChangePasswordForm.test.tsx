@@ -20,7 +20,7 @@ const mocked = vi.mocked(changeOwnPassword)
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocked.mockResolvedValue(undefined)
+  mocked.mockResolvedValue(0)
 })
 
 function fill(current: string, next: string, again = next) {

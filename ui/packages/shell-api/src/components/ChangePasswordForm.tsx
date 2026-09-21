@@ -26,7 +26,8 @@ const MIN_LENGTH = 15
 interface ChangePasswordFormProps {
   /** After an administrator's reset: explains why, and offers logout. */
   required: boolean
-  onChanged: () => void
+  /** Given how many OTHER sessions the change ended. */
+  onChanged: (otherSessionsEnded: number) => void
   onLogout?: () => void
 }
 
@@ -47,8 +48,7 @@ export default function ChangePasswordForm({ required, onChanged, onLogout }: Ch
     setError(null)
     setSubmitting(true)
     try {
-      await changeOwnPassword(current, next)
-      onChanged()
+      onChanged(await changeOwnPassword(current, next))
     } catch (caught: unknown) {
       setError(getErrorMessage(caught))
     } finally {

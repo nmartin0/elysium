@@ -493,11 +493,23 @@ export async function getVisibleSchema(username: string): Promise<unknown> {
 // data a shared browser or intermediate cache must never persist and
 // later hand back to a different person on the same machine.
 /** Changes the caller's own password. Needs the current one; every
- *  other session of theirs ends. */
-export async function changeOwnPassword(currentPassword: string, newPassword: string): Promise<void> {
-  await apiFetchOrThrow('/me/password', {
+ *  other session of theirs ends -- and the count is returned, because
+ *  "your other sessions were logged out" is what somebody securing
+ *  their account wants to hear. */
+export async function changeOwnPassword(currentPassword: string, newPassword: string): Promise<number> {
+  const response = await apiFetchOrThrow('/me/password', {
     method: 'POST',
     body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+  return ((await response.json()) as { other_sessions_ended: number }).other_sessions_ended
+}
+
+/** An administrator sets somebody else's password. They must choose
+ *  their own at next login, and every session of theirs ends. */
+export async function resetUserPassword(username: string, newPassword: string): Promise<void> {
+  await apiFetchOrThrow(`/users/${encodeURIComponent(username)}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword }),
   })
 }
 

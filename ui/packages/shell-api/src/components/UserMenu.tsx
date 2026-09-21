@@ -1,4 +1,7 @@
-import { Button, Menu, MenuItem, PopoverNext } from '@blueprintjs/core'
+import { Button, Dialog, DialogBody, DialogFooter, Menu, MenuItem, PopoverNext } from '@blueprintjs/core'
+import { useState } from 'react'
+
+import ChangePasswordForm from './ChangePasswordForm'
 
 // UserMenu.tsx  (#3 of the shell/launcher upgrade plan, rebuilt on
 // Blueprint -- see the Blueprint migration's own roadmap discussion)
@@ -50,6 +53,17 @@ interface UserMenuProps {
 }
 
 export default function UserMenu({ currentUser, onLogout }: UserMenuProps) {
+  // CHANGING YOUR OWN PASSWORD, from the menu that already holds your
+  // name. Two states: the form, then what happened -- how many OTHER
+  // sessions were ended, because somebody securing their account wants
+  // to know the other devices are out, not a dialog that just closes.
+  const [changing, setChanging] = useState(false)
+  const [ended, setEnded] = useState<number | null>(null)
+
+  function closeChange() {
+    setChanging(false)
+    setEnded(null)
+  }
   // currentUser starts null for the brief window before GET /me
   // resolves (matching visibleApps'/visibleSchema's own established
   // "safe default while loading, no spinner" convention elsewhere in
@@ -59,7 +73,7 @@ export default function UserMenu({ currentUser, onLogout }: UserMenuProps) {
   const initial = currentUser ? currentUser.username.charAt(0).toUpperCase() : '…'
   const triggerLabel = currentUser ? currentUser.username : 'Account'
 
-  return (
+  const menu = (
     <PopoverNext
       placement="top-start"
       content={
@@ -71,6 +85,7 @@ export default function UserMenu({ currentUser, onLogout }: UserMenuProps) {
             </div>
           )}
           <Menu>
+            <MenuItem text="Change password" onClick={() => setChanging(true)} />
             <MenuItem text="Log out" onClick={onLogout} />
           </Menu>
         </>
@@ -83,5 +98,30 @@ export default function UserMenu({ currentUser, onLogout }: UserMenuProps) {
         {triggerLabel}
       </Button>
     </PopoverNext>
+  )
+
+  return (
+    <>
+      {menu}
+      <Dialog isOpen={changing} onClose={closeChange} title="Change password">
+        {ended === null ? (
+          <DialogBody>
+            <ChangePasswordForm required={false} onChanged={setEnded} />
+          </DialogBody>
+        ) : (
+          <>
+            <DialogBody>
+              <p>
+                Your password is changed.{' '}
+                {ended === 0
+                  ? 'You had no other sessions.'
+                  : `${ended} other session${ended === 1 ? ' was' : 's were'} logged out.`}
+              </p>
+            </DialogBody>
+            <DialogFooter actions={<Button onClick={closeChange}>Close</Button>} />
+          </>
+        )}
+      </Dialog>
+    </>
   )
 }
