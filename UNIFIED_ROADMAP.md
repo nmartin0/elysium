@@ -16,6 +16,107 @@ which would be a guess presented as a plan.
 
 ---
 
+## WHAT IS LEFT -- every planning document, checked against the code
+
+**September 21, after patch 295.** Every `.md` plan was read and each
+open item checked against the CODE rather than taken at its word --
+because this roadmap, the one meant to be read, described seven built
+things as open and omitted most of what the other documents hold.
+
+### Built, but some document still says open
+
+Each checked in the code; corrected here, pointed to elsewhere.
+
+    UNIFIED   0.5.2 decimal, 0.5.3 dates (f9b76be), 0.5.35 source types
+              (258), 1.3 restore (288), 2.4 (289-291), 3.0 triggers
+              (264-280), the pending-write store (276) -- all corrected
+    ROADMAP   "a persistent PendingWriteStore" (245, 276); a statement
+              timeout on writes (the progress handler covers them)
+    BACKLOG   json_each (254); the metrics retention sweep -- it runs,
+              api/app.py:376
+    UI_ROAD   1 config view, 2 FHS paths, 4 silo view, 5 schema graph,
+              10 untrusted-text delimiting, 17 metrics, 21 backup,
+              22 object views, 24 watch-to-notify, 27 change over time,
+              29 per-request snapshot, 30 approvals, 33 role editing,
+              34 notes
+    HOT_REL   4a re-resolve the user per hop -- refresh_user, per step
+    SECURITY  2 the write-down check (260), 4 the grant algebra (262)
+    OBJ_EXPL  phases 3-5: the table, the charts, saving and acting
+
+### Open, and verified absent in the code
+
+**Operation -- a deployment surviving its own running:**
+
+    - graceful shutdown on SIGTERM; the request executor is never shut
+      down (UI 7, ROADMAP)
+    - log rotation (UI 3)
+    - startup checks: silo reachability, mirror schema drift (UI 8)
+    - a sync that FAILS when catalog and warehouse disagree, rather
+      than leaving it to check_mirror (BACKLOG)
+    - sync fan-out over a bounded pool (UI 11)
+    - schema migrations beyond add-a-column (3.3, UI 16)
+    - pending writes marked unapplyable AT RELOAD, so the inbox never
+      offers one that cannot be approved (HOT_RELOAD 6)
+    - mirror roll-back (0.5.4's second half)
+    - whether one request pins one mirror snapshot (0.5.6) -- a question
+
+**Accounts:**
+
+    - password reset, and setting a known password (ROADMAP)
+    - a password policy -- any string is accepted (ROADMAP)
+    - a generated first-run password (UI 26)
+
+**Needs a capable model -- 2.2 first:**
+
+    - token counts from chat(), a wall-clock deadline, measuring the
+      loop, capping what a step returns (= R2's fix), where the
+      effective window ends (UI 12-15, 23)
+    - an eval harness with baselines (UI 25); the labelling
+      experiment, then query with memory (UI 40, 41)
+    - every model-behaviour question in IDEAS.md
+    - an OpenAI-compatible adapter (UI 19)
+
+**Query:** reading the question back, follow-on questions, history
+(QUERY_PLAN 2-4). Starters (part 1) stay deferred on the MAC leak.
+
+**Product features:** the search bar's five unbuilt operators (UI 18);
+saved SELECTIONS, a set of objects rather than a question (BACKLOG);
+parallel multi-silo reads (UI 20); watch-to-ask (31); the instance
+graph beyond one hop -- "full Vertex" (32); silo editing (35); a
+scheduler (36); explaining a result (37); watch-to-run-the-agent (38);
+scenarios (39); an agent-audit view -- scripts/agent_trace.py exists,
+nothing shows it (28); interfaces and shared properties (ROADMAP).
+
+**Larger designs, written and unbuilt:** the plugin API (3.1,
+THIRD_PARTY_EXTENSIONS); the help assistant (3.25); fusion and
+identity -- the gold layer (3.6); bootstrapping a deployment from a
+manifest (LAKE_METADATA_NOTE); something that READS the ELT changelog.
+
+**Its trigger has already fired:** field-VALUE validation -- ranges,
+patterns, enum membership (ROADMAP). Nothing in the ontology declares a
+constraint. Its entry named its trigger as "an action form", and action
+forms now exist -- the bulk form, the Watch dialog's parameters -- so
+this is due rather than deferred.
+
+**Deliberately held, with the trigger named:** PostgreSQL row-level
+security for MAC; column GRANT with SET ROLE; the table-size ELT item.
+
+### Waiting on a run, not on code
+
+    - --workers for real: 292-295 fixed all four blockers
+    - the Watch layout check in e2e/layout.spec.ts (patch 290)
+
+### Why this section exists
+
+Seven of this document's own headings described finished work, found
+only by checking. That is the backup inventory's failure (281) in
+prose: a hand-kept list with nothing comparing it to the code. Prose
+cannot be tested the way OWNED_DATABASES now is, so the substitute is
+this -- re-check against the code before trusting any entry, and keep
+the check's date on it.
+
+---
+
 ## Where this stands, September 19
 
 **PHASES 0, 1 AND 3.5 ARE COMPLETE.** The four blockers the commercial
@@ -284,7 +385,7 @@ those tests predate the mirror and assert against real silo data
 without syncing. When the live path is deprecated, that line is the
 list of what has to change.
 
-### 0.5.2 A `decimal` type, alongside `number`
+### 0.5.2 ~~A `decimal` type, alongside `number`~~ BUILT, verified
 
 **MEASURED LOSS.** `coerce()` sends `number` through `float()`, so
 `'1234.56789012345678901'` becomes `1234.567890123457`. Money silently
@@ -307,7 +408,7 @@ scale, a float does not. Floats for measurement, decimals for money.
 when a field named like money -- amount, price, total, balance -- is
 declared `number`. The mistake is cheap to make and expensive to find.
 
-### 0.5.3 Dates are strings, and range filters on them are wrong
+### 0.5.3 ~~Dates are strings, range filters wrong~~ BUILT, f9b76be
 
 **A BUG, NOT A MISSING FEATURE.** The ontology has no date type;
 `field_types.py` defers it deliberately and names the reasons
@@ -382,7 +483,7 @@ cannot accidentally convert a birthday.
 **DISPLAY CONVERSION BELONGS IN THE UI, NOT THE MIRROR.** If the
 mirror converted, what is stored would depend on who is looking.
 
-### 0.5.35 Record what the SOURCE said its types were
+### 0.5.35 ~~Record what the SOURCE said its types were~~ BUILT, patch 258
 
 **A GAP FOUND BY ASKING, then measured.** Coercion asks only "can this
 value become the declared type?" -- never "is the source still saying
@@ -670,7 +771,7 @@ than closing it — worth stating in the code.
 
 `scripts/repair_catalog.py` already makes the damage survivable.
 
-### 1.3 ~~Backup and restore~~ BACKUP DONE
+### 1.3 ~~Backup and restore~~ DONE -- restore verified for real, patch 288
 
 **THE INVENTORY WAS WRONG: SEVEN, NOT FIVE.** The entry named
 credentials, write_log, config_history, metrics and artifacts, and
@@ -755,7 +856,7 @@ Deferred by decision, not forgotten. Removes two `S608` suppressions,
 the chunking loop and the variable limit, in exchange for a minimum
 SQLite of 3.38 (2022). Verified working.
 
-### 2.4 The remaining UI halves
+### 2.4 ~~The remaining UI halves~~ DONE, patches 289-291
 
 Vertex-lite's second half, the view-state matrix's other half, and
 which other screens show the checkbox-above-the-row problem. Each
@@ -765,7 +866,7 @@ small, each verifiable now that browser tests exist.
 
 ## Phase 3 — Needs research, then a plan, then building
 
-### 3.0 Triggers -- a condition on data, an effect when it is met
+### 3.0 ~~Triggers~~ DONE, patches 264-280
 
 **DESIGNED, NOT BUILT** -- see TRIGGERS_AND_PLUGINS.md.
 
@@ -963,7 +1064,7 @@ inference. Inference is off by default and its proposals always go
 through the approvals queue -- which answers unresolution natively,
 since un-merging is another write.
 
-## FIRST, NEXT SESSION: the pending-write store is not multi-process safe
+## ~~The pending-write store is not multi-process safe~~ FIXED, 276
 
 **FOUND WHILE WIRING TRIGGER ACTIONS, and it blocks them.** Recorded
 before anything else so it is the first thing picked up.
