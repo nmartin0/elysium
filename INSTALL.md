@@ -141,7 +141,14 @@ repository) sets up a genuine production install:
   `/var/log/elysium` (logs).
 - A **systemd service** (`install/elysium.service`) running
   `uvicorn api.app:app` under the `elysium` user, bound to
-  `127.0.0.1` by default.
+  `127.0.0.1` by default, with least-privilege settings: it can write
+  only `/var/lib/elysium` and `/var/log/elysium`. On stop, requests in
+  flight get 30 seconds to finish before they are cut.
+- **Log rotation** (`/etc/logrotate.d/elysium`) for the audit log.
+  **Review its retention**: `rotate 90` keeps 90 days and is a
+  placeholder. How long to keep a record of who read what is a
+  compliance decision, and an operator under a real requirement must
+  set it deliberately.
 - **Root bootstrap** — a real, cryptographically random password,
   generated once, printed once (never a hardcoded default).
 

@@ -47,9 +47,13 @@ Each checked in the code; corrected here, pointed to elsewhere.
 
 **Operation -- a deployment surviving its own running:**
 
-    - graceful shutdown on SIGTERM; the request executor is never shut
-      down (UI 7, ROADMAP)
-    - log rotation (UI 3)
+    - ~~graceful shutdown on SIGTERM~~ WAS ALREADY CLOSED -- this
+      inventory listed a finished item. Its measurement was wrong,
+      though, and is corrected; patch 305 bounds it: uvicorn 30 s,
+      systemd 45 s
+    - ~~log rotation~~ BUILT, BUT INSTALLED BY NOTHING -- and so was the
+      hardened systemd unit. One unit now, hardened, installing its log
+      rotation, with a guard against a second (patch 305)
     - startup checks: silo reachability, mirror schema drift (UI 8)
     - a sync that FAILS when catalog and warehouse disagree, rather
       than leaving it to check_mirror (BACKLOG)

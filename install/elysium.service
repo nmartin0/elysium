@@ -1,41 +1,83 @@
 # elysium.service  (systemd unit -- LINUX-SPECIFIC, no POSIX equivalent)
 #
+# THE ONE UNIT. There used to be two: this one, which install.sh
+# installs, and deployment/systemd/elysium.service, which carried every
+# least-privilege setting below and was installed by NOTHING. A real
+# install therefore ran unhardened while the hardening sat unused in the
+# repository. They are merged here, and tests/unit/test_one_service_unit.py
+# refuses a second .service file and checks the settings below survive.
+#
 # systemd itself is not part of POSIX and has no portable equivalent --
 # a non-Linux POSIX system would need an entirely different service
 # supervision mechanism here, not just a translated version of this file.
 #
-# RuntimeDirectory=elysium is systemd's own built-in mechanism for
-# managing /run/elysium -- it creates the directory (with the given
-# mode, owned by User=/Group=) when the service starts and removes it
-# when the service stops. This is the idiomatic systemd way to handle
-# /run/<name>, which is why scripts/install.sh does NOT create
-# /run/elysium itself.
+# THE APPLICATION DOES NOT GUESS WHERE IT IS INSTALLED. It reads the three
+# ELYSIUM_*_DIR variables below and falls back to project-relative paths
+# for a development checkout; this unit is what makes a real install use
+# FHS locations.
+#
+# RuntimeDirectory=elysium is systemd's own mechanism for /run/elysium:
+# created when the service starts, removed when it stops, and writable
+# even under ProtectSystem=strict. install.sh does not create it.
+#
+# LOG ROTATION IS NOT OPTIONAL, and install.sh installs it: an audit entry
+# is written per field access, and when the disk fills WRITES fail while
+# READS keep working -- the application looks healthy and quietly stops
+# recording who read what. Its `rotate 90` is a placeholder: audit
+# retention is a compliance decision an operator must make deliberately.
 
 [Unit]
-Description=Elysium LLM Data Mediator
+Description=Elysium ontology service
 After=network.target
 
 [Service]
-Type=simple
+# `exec`, not `simple`: systemd reports a failure if the program cannot
+# even start, where `simple` reports success the moment it forks.
+Type=exec
 User=elysium
 Group=elysium
 WorkingDirectory=/opt/elysium
 
-# Local by default -- binding beyond 127.0.0.1 (a real network
-# interface, 0.0.0.0) is a deliberate choice for whoever operates this
-# service to make explicitly, typically behind a reverse proxy that
-# terminates TLS; not something this unit does by default.
-ExecStart=/opt/elysium/venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000
-
 Environment=ELYSIUM_CONFIG_DIR=/etc/elysium
 Environment=ELYSIUM_DATA_DIR=/var/lib/elysium
 Environment=ELYSIUM_LOG_DIR=/var/log/elysium
+
+# 127.0.0.1 deliberately. Elysium has no TLS of its own and its session
+# cookies assume a trusted transport, so it belongs behind a reverse
+# proxy rather than on a public interface.
+#
+# --timeout-graceful-shutdown 30: on stop, requests in flight get thirty
+# seconds to finish. MEASURED, not assumed: uvicorn does wait for them,
+# and when its timeout passes it ends the process itself -- a request
+# still running is cut, a write cut mid-apply is what the write log's
+# resume path recovers. Thirty, because a restart should not hang for the
+# ten minutes a slow model call can take.
+ExecStart=/opt/elysium/venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --timeout-graceful-shutdown 30
+
+# LONGER THAN uvicorn's thirty, so uvicorn ends the process -- cleanly,
+# "Application shutdown complete" -- rather than systemd's SIGKILL at its
+# default ninety, which would cut whatever uvicorn was still waiting on.
+TimeoutStopSec=45
 
 RuntimeDirectory=elysium
 RuntimeDirectoryMode=0750
 
 Restart=on-failure
 RestartSec=5
+
+# LEAST PRIVILEGE. The service reads configuration, writes data and logs,
+# and needs nothing else -- so everything else is taken away rather than
+# left available and unused. Checked before enabling: the application
+# writes nothing under /etc/elysium or /opt/elysium.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/elysium /var/log/elysium
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
 [Install]
 WantedBy=multi-user.target

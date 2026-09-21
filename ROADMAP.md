@@ -229,13 +229,16 @@ is a different kind of blocked from this.
 - **The request executor is never explicitly shut down.** No lifespan
   handler calls `shutdown()` on `app.state.executor`.
 
-  ALSO INVESTIGATED AND ALSO A NON-ISSUE, measured rather than
-  assumed. A `/query` handler awaits `run_in_executor`, so the ASGI
-  request stays pending and uvicorn's own graceful shutdown already
-  waits for it. On SIGTERM the process exits immediately -- verified
-  directly, 0.0s with a 30-second task in flight -- and an in-flight
-  WRITE killed that way is exactly what the write log's resume path
-  exists to recover.
+  ALSO INVESTIGATED AND ALSO A NON-ISSUE -- but THE MEASUREMENT BELOW
+  WAS WRONG, re-measured in patch 305. A `/query` handler awaits
+  `run_in_executor`, so the ASGI request stays pending and uvicorn's own
+  graceful shutdown already waits for it: TRUE. "On SIGTERM the process
+  exits immediately -- 0.0s with a 30-second task in flight": FALSE, and
+  the same slip reproduced exactly -- a request that had not CONNECTED
+  yet, so there was nothing to wait for. With the request confirmed in
+  flight, uvicorn waited and it finished. With --timeout-graceful-
+  shutdown set, uvicorn cuts it at the timeout and ends the process
+  itself. The unit now sets that timeout, and systemd's longer one.
 
   Recorded rather than fixed: adding `shutdown()` would duplicate what
   uvicorn already does and change nothing observable.

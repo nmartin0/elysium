@@ -155,6 +155,17 @@ systemctl daemon-reload
 systemctl enable elysium.service
 echo "Installed and enabled the elysium systemd service (not started yet)."
 
+# LOG ROTATION, installed with the service it belongs to. It existed in
+# the repository and was installed by nothing -- and without it the audit
+# log fills the disk, after which WRITES fail while READS keep working.
+# Only audit.log is written to /var/log/elysium, and it is reopened on
+# every entry, so logrotate's rename-then-create is safe for it.
+#
+# `rotate 90` is a PLACEHOLDER: audit retention is a compliance decision,
+# and an operator under a real requirement must set it deliberately.
+cp "$SOURCE_DIR/deployment/logrotate/elysium" /etc/logrotate.d/elysium
+echo "Installed log rotation for /var/log/elysium (review its retention)."
+
 # --- 8. Bootstrap the first admin user ------------------------------------
 #
 # Skipped if a credentials database already exists -- this script is
