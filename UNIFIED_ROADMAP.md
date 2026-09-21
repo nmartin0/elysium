@@ -1063,9 +1063,9 @@ rather than a plan.
                                  show the checkbox-above-the-row
                                  problem. Each small, each verifiable
                                  now that browser tests exist
-    1.3   restore verification   the script checks an inventory; only
-                                 a real restore into a stopped
-                                 deployment proves one
+    1.3   ~~restore verification~~  DONE, patch 288 -- and a real
+                                 restore found that restore only ADDED
+                                 and replayed leftover logs
 
 ### Ready, but each needs ONE decision from a person
 

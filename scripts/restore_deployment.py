@@ -133,6 +133,11 @@ def restore(backup_dir: Path, data_dir: Path, *, force: bool = False) -> dict:
         )
 
     data_dir.mkdir(parents=True, exist_ok=True)
+
+    # MOVE WHAT IS THERE ASIDE FIRST, so the result is the backup's state
+    # exactly -- and nothing is deleted.
+    report["replaced_into"] = str(_move_aside(data_dir))
+
     for name in OWNED_DATABASES:
         source = backup_dir / name
         if not source.exists():
@@ -143,9 +148,52 @@ def restore(backup_dir: Path, data_dir: Path, *, force: bool = False) -> dict:
 
     warehouse = backup_dir / WAREHOUSE
     if warehouse.is_dir():
-        shutil.copytree(warehouse, data_dir / WAREHOUSE, dirs_exist_ok=True)
+        shutil.copytree(warehouse, data_dir / WAREHOUSE)
 
     return report
+
+
+# SQLite's companions to a database in WAL mode. Moved with it, or they
+# are replayed onto whatever takes its place.
+_SIDECARS = ("-wal", "-shm", "-journal")
+
+
+def _move_aside(data_dir: Path) -> Path:
+    """Moves everything Elysium owns out of the way. Returns where to.
+
+    RESTORE USED TO ONLY ADD. It copied the databases IN the backup and
+    left the rest, so two kinds of post-backup data survived:
+
+      A DATABASE ABSENT FROM THE BACKUP. roles.db created after it --
+      so a restore made to UNDO a bad role change left that change in
+      force.
+
+      A LEFTOVER LOG. Every store runs in WAL mode; a deployment that
+      crashed or was not fully stopped leaves x.db-wal beside x.db, and
+      SQLite replays it onto whatever x.db is restored -- bringing back
+      rows written after the backup.
+
+    So every owned database, its sidecars, and the warehouse are moved
+    here first. MOVED, NOT DELETED: a restore run by mistake can be
+    undone by hand. The silos are never touched -- they are customer
+    data, not Elysium's.
+    """
+    from datetime import UTC, datetime
+
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    aside = data_dir / f"replaced-by-restore-{stamp}"
+    for name in OWNED_DATABASES:
+        for suffix in ("", *_SIDECARS):
+            present = data_dir / f"{name}{suffix}"
+            if present.exists():
+                target = aside / f"{name}{suffix}"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(present, target)
+    warehouse = data_dir / WAREHOUSE
+    if warehouse.exists():
+        aside.mkdir(parents=True, exist_ok=True)
+        shutil.move(warehouse, aside / WAREHOUSE)
+    return aside
 
 
 def main() -> int:
@@ -186,12 +234,15 @@ def main() -> int:
 
     data_dir = args.into or Path(resolve_runtime_paths().data_dir)
     try:
-        restore(args.backup, data_dir, force=args.force)
+        restored = restore(args.backup, data_dir, force=args.force)
     except UnusableBackup as e:
         print(f"\n{e}", file=sys.stderr)
         return 1
 
     print(f"\nRestored into {data_dir}")
+    # SAID OUT LOUD, because "nothing is deleted" helps only somebody
+    # who knows where to look.
+    print(f"What it replaced was moved, not deleted: {restored['replaced_into']}")
     print("THE DATA SILOS ARE NOT IN THIS BACKUP. Point the deployment at "
           "them before starting it.")
     return 0
