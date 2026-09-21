@@ -424,18 +424,21 @@ class TestDuplicateProposals:
         # reviewer to look for rows that are not there.
         from datetime import timedelta
 
-        store = PendingWriteStore(ttl=timedelta(hours=1))
-        first = store.store(_pending())
+        # A CLOCK, NOT A REACH-IN. This test used to rewrite the store's
+        # private dict to age one write; the store now keeps nothing in
+        # memory, and an injectable clock is the honest seam for "time
+        # passed". The second write is stored LATER, so it outlives the
+        # first -- which is what makes aging only the other one possible.
+        now = [datetime.now(UTC)]
+        store = PendingWriteStore(ttl=timedelta(hours=1), clock=lambda: now[0])
         store.store(_pending())
+        now[0] += timedelta(minutes=30)
+        first = store.store(_pending())
         assert store.duplicates_of(first) == 1
 
-        store._writes = {
-            write_id: dataclasses.replace(
-                stored, expires_at=datetime.now(UTC) - timedelta(seconds=1),
-            )
-            if write_id != first else stored
-            for write_id, stored in store._writes.items()
-        }
+        # 45 minutes on: the earlier write (stored at +0) has expired,
+        # the later one (stored at +30) has 45 minutes left.
+        now[0] += timedelta(minutes=45)
 
         assert store.duplicates_of(first) == 0
 

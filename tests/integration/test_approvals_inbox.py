@@ -269,17 +269,15 @@ def _age_everything(client):
     version of these tests did that and watched them fail. Rewriting
     expires_at is what actually ages one.
     """
-    import dataclasses
     from datetime import UTC, datetime, timedelta
 
+    # MOVING THE CLOCK, not rewriting the store. This used to replace
+    # the private dict wholesale; the store now keeps nothing in memory,
+    # and its injectable clock is the seam for "time passed". A day on
+    # is past any TTL a test deployment configures.
     store = client.app.state.pending_writes
-    with store._lock:
-        store._writes = {
-            write_id: dataclasses.replace(
-                stored, expires_at=datetime.now(UTC) - timedelta(seconds=1),
-            )
-            for write_id, stored in store._writes.items()
-        }
+    later = datetime.now(UTC) + timedelta(days=1)
+    store._clock = lambda: later
 
 
 class TestExpiry:

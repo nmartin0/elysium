@@ -152,7 +152,7 @@ class TestWhatDoesNotSurvive:
         assert awaiting[0][1].description == "readable"
 
 
-class TestPersistenceIsOptional:
+class TestTheDatabaseIsTheStore:
     def test_a_store_without_it_works_exactly_as_before(self):
         """EVERY TEST PREDATING THIS GETS None, and the store behaves
         as it always did -- which is what makes this additive rather
@@ -163,17 +163,27 @@ class TestPersistenceIsOptional:
         assert store.awaiting(lambda p: True)
         assert store.task_decisions(write_id) == {}
 
-    def test_a_broken_persistence_does_not_break_the_store(self, tmp_path):
-        """BEST-EFFORT, DELIBERATELY. A proposal that cannot be written
-        to disk is still a proposal somebody made; refusing it would
-        turn a storage problem into a service outage. The accepted
-        failure is losing that one write on a restart -- which is what
-        happens today for all of them."""
+    def test_a_database_that_cannot_be_written_refuses_the_write(self, tmp_path):
+        """THE PREMISE OF THIS TEST INVERTED, ON PURPOSE.
+
+        It used to assert the opposite -- "best-effort, deliberately. A
+        proposal that cannot be written to disk is still a proposal
+        somebody made". True when memory was the truth and the file was
+        a mirror.
+
+        THE DATABASE IS THE TRUTH NOW. A write that cannot be stored
+        has no other copy, so it does not exist -- and the caller must
+        hear that rather than be told it was queued. A proposer seeing
+        an error beats one who believes their request is waiting for a
+        reviewer who will never see it.
+        """
+        import sqlite3
+
         unwritable = tmp_path / "no" / "such" / "dir" / "pending.db"
         store = PendingWriteStore(
             ttl=timedelta(minutes=15),
             persistence=PendingWritePersistence(unwritable),
         )
 
-        assert store.store(_a_write())
-        assert len(store.awaiting(lambda p: True)) == 1
+        with pytest.raises(sqlite3.OperationalError):
+            store.store(_a_write())
