@@ -40,6 +40,24 @@ from core.auth.database import connection
 SESSION_LIFETIME = timedelta(hours=24)
 
 
+def _digest(token: str) -> str:
+    """What is stored for a session token: its SHA-256, never itself.
+
+    A RAW TOKEN IN THE DATABASE IS A LIVE SESSION for anybody who can
+    read the file -- a backup, a copy, a misplaced permission. Stored as
+    a hash, a leaked file yields nothing usable.
+
+    SHA-256, NOT ARGON2, following Lucia: "while SHA-256 is unsuitable
+    for user passwords, because the secret has 120 bits of entropy and
+    already unguessable as is, we can use a fast hashing algorithm
+    here". These tokens carry 256 bits. A slow hash protects a GUESSABLE
+    secret; this one cannot be guessed, and is hashed on every request.
+    """
+    import hashlib
+
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 class SessionStore:
     """Creates, validates and invalidates login sessions.
 
@@ -60,7 +78,7 @@ class SessionStore:
     def validate_session(self, token: str) -> str | None:
         with connection(self._db_path) as conn:
             row = conn.execute(
-                "SELECT username, expires_at FROM sessions WHERE token = ?", (token,)
+                "SELECT username, expires_at FROM sessions WHERE token = ?", (_digest(token),)
             ).fetchone()
 
         if row is None:
@@ -79,14 +97,14 @@ class SessionStore:
         with connection(self._db_path) as conn:
             conn.execute(
                 "INSERT INTO sessions (token, username, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                (token, username, now.isoformat(), expires_at.isoformat()),
+                (_digest(token), username, now.isoformat(), expires_at.isoformat()),
             )
             conn.commit()
         return token
 
     def invalidate_session(self, token: str) -> None:
         with connection(self._db_path) as conn:
-            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            conn.execute("DELETE FROM sessions WHERE token = ?", (_digest(token),))
             conn.commit()
 
     def invalidate_other_sessions(self, username: str, keep_token: str | None) -> int:
@@ -100,7 +118,7 @@ class SessionStore:
         with connection(self._db_path) as conn:
             ended = conn.execute(
                 "DELETE FROM sessions WHERE username = ? AND token != ?",
-                (username, keep_token or ""),
+                (username, _digest(keep_token) if keep_token else ""),
             ).rowcount
             conn.commit()
         return ended

@@ -75,8 +75,8 @@ Each checked in the code; corrected here, pointed to elsewhere.
     - ~~a generated first-run password~~ WAS ALREADY BUILT --
       bootstrap_root.py makes 32 random characters. This inventory had
       it wrong, which is the argument for re-checking it
-    - session tokens are stored RAW in credentials.db: anybody who can
-      read the file can use a live session. Store a hash of the token
+    - ~~session tokens stored RAW~~ FIXED, patch 301: SHA-256 at rest,
+      and the raw rows destroyed by the upgrade rather than left
     - an administrator's reset does not force a change at next login,
       so the administrator knows the password until the owner changes
       it

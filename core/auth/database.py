@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS credentials (
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- `token` HOLDS THE SHA-256 OF THE SESSION TOKEN, never the token --
+-- see core/auth/session_store.py. The name is kept so the table need
+-- not be rebuilt; this comment is what stops anybody inserting a raw one.
 CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     username TEXT NOT NULL,
@@ -80,5 +83,25 @@ def _migrate_add_disabled_column(conn: sqlite3.Connection) -> None:
               # included it) or a previously-migrated one
 
 
+def _migrate_destroy_raw_session_tokens(conn: sqlite3.Connection) -> None:
+    """Deletes every session stored as its RAW token.
+
+    THE RAW ROWS ARE THE LEAK. After tokens began to be stored hashed, a
+    raw row could no longer be USED -- a lookup by hash cannot match it
+    -- but it would still sit in credentials.db, readable by anybody
+    with the file, until it expired. So it is destroyed, not left.
+
+    TOLD APART BY LENGTH: a raw token_urlsafe(32) is 43 characters, a
+    SHA-256 hex digest 64. So this deletes exactly the raw rows, and on
+    every later start finds none -- safe to run each time. Everybody is
+    logged out ONCE, by the upgrade that introduces hashing.
+    """
+    conn.execute("DELETE FROM sessions WHERE length(token) != 64")
+    conn.commit()
+
+
 def connection(db_path: Path):
-    return connection_with_schema(db_path, SCHEMA, migrations=(_migrate_add_disabled_column,))
+    return connection_with_schema(
+        db_path, SCHEMA,
+        migrations=(_migrate_add_disabled_column, _migrate_destroy_raw_session_tokens),
+    )
