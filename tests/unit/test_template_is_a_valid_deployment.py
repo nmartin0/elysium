@@ -115,6 +115,11 @@ def test_the_debug_role_invents_no_permission():
     rather than quietly allowed: a deployment that wants role editing
     should grant manage:roles to a NAMED administrator role, not leave
     it reachable only through the convenience account.
+
+    manage:escalation IS A THIRD, for the same reason and more so: it
+    lets a role edit hand out grants its author does not hold. Held here
+    because otherwise a new action's grant, held by nobody, could never
+    be granted in a development deployment.
     """
     policy = yaml.safe_load((DEPLOYMENT / "policy.yaml").read_text())
     roles = policy["roles"]
@@ -124,6 +129,7 @@ def test_the_debug_role_invents_no_permission():
 
     assert debug - others == {
         "manage:deployment", "discover:action_types", "manage:roles",
+        "manage:escalation",
     }
 
 

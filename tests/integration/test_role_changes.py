@@ -365,3 +365,46 @@ class TestApprovalsWaitForOtherWorkers:
 
         worker.join(timeout=15)
         assert outcome["status"] == 200
+
+
+class TestAProposalCannotHandOutWhatItsAuthorLacks:
+    """KUBERNETES' RULE FOR EDITING A ROLE: you may only put into a role
+    what you already hold, unless you hold the explicit escalate verb --
+    here, manage:escalation. The fixture's debug role holds manage:roles
+    but not manage:escalation, and not read:Account.currency."""
+
+    def test_adding_a_grant_you_lack_is_refused(self, client):
+        """THE HOLE. Without this a manage:roles holder could add any
+        grant to their own role -- or an alt account's -- and four-eyes
+        would be all that stood in the way."""
+        _as(client, "dana")
+        grants = _grants(client, "customer_service")
+
+        response = _propose(client, "customer_service", sorted({*grants, "read:Account.currency"}))
+
+        assert response.status_code == 400
+        assert "do not hold" in response.json()["detail"]
+
+    def test_removing_a_grant_is_never_an_escalation(self, client):
+        _as(client, "dana")
+        grants = _grants(client, "customer_service")
+
+        # A FIELD grant, not whichever sorts first: removing a TYPE grant a
+        # field grant depends on is refused by the coherence validator --
+        # rightly -- which a first version of this test ran into.
+        field_grant = [grant for grant in grants if "." in grant][-1]
+
+        response = _propose(client, "customer_service",
+                            sorted(set(grants) - {field_grant}))
+
+        assert response.status_code == 200, response.text
+
+    def test_the_ladder_counts(self, client):
+        """HELD MEANS WHAT authorize() SAYS, ladder included: read:Account
+        implies discover:Account, so debug may hand out the latter."""
+        _as(client, "dana")
+        grants = _grants(client, "customer_service")
+
+        response = _propose(client, "customer_service", sorted({*grants, "discover:Account"}))
+
+        assert response.status_code == 200, response.text

@@ -135,6 +135,7 @@ def _validate_field_grants_have_their_type(role_name: str, granted: set) -> None
 EXACT_GRANTS = (
     "manage:users",
     "manage:roles",
+    "manage:escalation",
     "manage:deployment",
     "discover:action_types",
 )
@@ -176,6 +177,14 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
     if grant == "discover:action_types":
         return
 
+    if grant == "manage:escalation":
+        # ADDING A GRANT TO A ROLE THAT YOU DO NOT HOLD YOURSELF.
+        # Kubernetes' `escalate` verb, and for its reason: a role edit
+        # may otherwise only add grants its author already holds -- which
+        # leaves a brand-new grant (an action just added to the ontology)
+        # grantable by NOBODY, and once the role store governs,
+        # policy.yaml cannot help. This is the explicit way through.
+        return
     if grant == "manage:roles":
         # EDITING WHAT A ROLE MAY DO, while the application runs. A
         # SEPARATE grant from manage:users, following both Foundry --

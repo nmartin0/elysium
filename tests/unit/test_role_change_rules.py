@@ -16,6 +16,13 @@ from core.role_changes import (
     resulting_roles,
 )
 
+
+# THESE TESTS ARE ABOUT FOUR-EYES AND STALENESS, not escalation -- so
+# the proposer holds everything, and escalation is tested on its own.
+def _HOLDS_ALL(_grant):
+    return True
+
+
 ROLES = {
     "owner": {"allowed_actions": ["manage:roles", "manage:users"]},
     "second": {"allowed_actions": ["manage:roles"]},
@@ -84,7 +91,8 @@ def _change(**overrides):
 class TestApproval:
     def test_four_eyes_is_not_recorded(self):
         """SOMEBODY ELSE MAY STILL APPROVE IT, so it stays pending."""
-        status, _ = approval_problem(_change(), "alice", ROLES, {"owner": 1}, {"owner": 1}, _valid)
+        status, _ = approval_problem(_change(), "alice", ROLES, {"owner": 1}, {"owner": 1}, _valid,
+            proposer_holds=_HOLDS_ALL)
 
         assert status == ""
 
@@ -92,12 +100,14 @@ class TestApproval:
         """THE TRAIL SAYS WHY IT NEVER TOOK EFFECT."""
         changed = {**ROLES, "reader": {"allowed_actions": ["read:Z"]}}
 
-        status, _ = approval_problem(_change(), "bob", changed, {"owner": 1}, {"owner": 1}, _valid)
+        status, _ = approval_problem(_change(), "bob", changed, {"owner": 1}, {"owner": 1}, _valid,
+            proposer_holds=_HOLDS_ALL)
 
         assert status == "stale"
 
     def test_a_clean_approval_passes(self):
-        assert approval_problem(_change(), "bob", ROLES, {"owner": 1}, {"owner": 1}, _valid) is None
+        assert approval_problem(_change(), "bob", ROLES, {"owner": 1}, {"owner": 1}, _valid,
+            proposer_holds=_HOLDS_ALL) is None
 
 
 class TestTwoStoresMayShareAFile:
@@ -138,3 +148,66 @@ class TestTwoCountsTwoQuestions:
 
         assert "no active user could edit roles" in problem
 
+
+
+class TestEscalation:
+    """ONLY WHAT A CHANGE ADDS, checked against its AUTHOR -- as
+    Kubernetes checks the requester."""
+
+    def _holds(self, *grants):
+        return lambda grant: grant in grants
+
+    def test_adding_a_lacked_grant_is_named(self):
+        from core.role_changes import escalation_problem
+
+        problem = escalation_problem(["read:X"], ["read:X", "read:Y"], self._holds("read:X"))
+
+        assert "read:Y" in problem
+
+    def test_adding_a_held_grant_passes(self):
+        from core.role_changes import escalation_problem
+
+        assert escalation_problem([], ["read:X"], self._holds("read:X")) is None
+
+    def test_removal_passes(self):
+        from core.role_changes import escalation_problem
+
+        assert escalation_problem(["read:X", "read:Y"], ["read:X"], self._holds()) is None
+
+    def test_a_new_role_checks_every_grant(self):
+        """NO `before` MEANS EVERYTHING IS BEING ADDED."""
+        from core.role_changes import escalation_problem
+
+        assert escalation_problem(None, ["read:X"], self._holds())
+
+    def test_manage_escalation_lets_anything_through(self):
+        """THE WAY THROUGH, and it must exist: a grant added to the
+        ontology today is held by nobody."""
+        from core.role_changes import ESCALATE, escalation_problem
+
+        assert escalation_problem([], ["execute:New"], self._holds(ESCALATE)) is None
+
+
+class TestTheAuthorIsReCheckedAtApproval:
+    def test_a_proposer_who_lost_the_grant_cannot_have_it_handed_out(self):
+        """RE-EVALUATED AT THE POINT OF USE: what the proposer holds when
+        the change takes effect, not when they asked."""
+        change = _change(before=["read:X"], after=["read:X", "read:Y"])
+
+        status, reason = approval_problem(
+            change, "bob", ROLES, {"owner": 1}, {"owner": 1}, _valid,
+            proposer_holds=lambda grant: grant == "read:X",
+        )
+
+        assert status == "stale"
+        assert "read:Y" in reason
+
+    def test_a_proposer_who_is_gone_cannot_have_anything_handed_out(self):
+        change = _change(before=["read:X"], after=["read:X", "read:Y"])
+
+        status, _ = approval_problem(
+            change, "bob", ROLES, {"owner": 1}, {"owner": 1}, _valid,
+            proposer_holds=None,
+        )
+
+        assert status == "stale"

@@ -108,6 +108,12 @@ roles:
       # role is edited, this file stays in force; after, the role store
       # does, and loading says so.
       - manage:roles
+      # ADDING TO A ROLE A GRANT YOU DO NOT HOLD. Without it, a role
+      # edit may only hand out what its author already holds -- so a
+      # grant added to the ontology today, held by nobody, could never
+      # be given to anyone. Kubernetes' `escalate` verb; held here so a
+      # development deployment can grant its own new actions.
+      - manage:escalation
       - manage:deployment
       - discover:action_types
       - read:Customer

@@ -1321,6 +1321,21 @@ def _holders(request: Request) -> tuple[dict[str, int], dict[str, int]]:
     return every, active
 
 
+def _current_authority(request: Request, username: str, roles):
+    """What `username` may do NOW, as `holds(grant)`, or None if they no
+    longer have an active account.
+
+    FOR THE PROPOSER OF A ROLE CHANGE, at approval: whether they may
+    hand out a grant is decided by what they hold when it takes effect,
+    not when they asked. A disabled account holds nothing.
+    """
+    directory = request.app.state.user_directory
+    if not directory.user_exists(username) or directory.is_user_disabled(username):
+        return None
+    record = directory.get_user_record(username)
+    return lambda grant: authorize(record, roles, grant)
+
+
 def _role_validator(config):
     """The SAME validators loading runs, so nothing approved here can
     fail to load afterwards."""
@@ -1357,9 +1372,11 @@ def propose_role_change_route(
 
     _require_manage_roles(request, current_user)
     config = _generation(request).config
+    every, active = _holders(request)
     problem = proposal_problem(
         config.roles, body.role_name, body.grants, current_user.role_name,
-        *_holders(request), _role_validator(config),
+        every, active, _role_validator(config),
+        holds=lambda grant: authorize(current_user, config.roles, grant),
     )
     if problem is not None:
         raise HTTPException(status_code=400, detail=problem)
@@ -1421,9 +1438,11 @@ def approve_role_change_route(
         # Authorization above still uses the pin, which is right: this
         # request was allowed to decide under the rules it arrived with.
         config = latest_generation(request).config
+        every, active = _holders(request)
         problem = approval_problem(
             change, current_user.user_id, config.roles,
-            *_holders(request), _role_validator(config),
+            every, active, _role_validator(config),
+            proposer_holds=_current_authority(request, change.proposed_by, config.roles),
         )
         if problem is not None:
             status, reason = problem

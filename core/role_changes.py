@@ -45,6 +45,8 @@ from pathlib import Path
 from core.sqlite_connection import connection_with_schema
 
 MANAGE_ROLES = "manage:roles"
+# KUBERNETES' `escalate` VERB: may add to a role a grant you do not hold.
+ESCALATE = "manage:escalation"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS role_changes (
@@ -222,9 +224,46 @@ def change_problem(roles, role_name: str, after: list | None,
     return None
 
 
+def escalation_problem(before: list | None, after: list | None,
+                       holds: Callable[[str], bool]) -> str | None:
+    """Why this change hands out a grant its author does not hold.
+
+    KUBERNETES' RULE FOR EDITING A ROLE: "you can only create/update a
+    role if you already have all the permissions contained in the role
+    ... or you are granted explicit permission to perform the escalate
+    verb". Without it a manage:roles holder could add to their own role
+    -- or an alt account's -- any grant at all, and four-eyes would be
+    the only thing between them and it.
+
+    ONLY WHAT THE CHANGE ADDS. Removing a grant is never an escalation,
+    and a grant the role already had is not being handed out.
+
+    THE AUTHOR IS CHECKED, as Kubernetes checks the requester. A holder
+    of a grant proposing it for another role escalates nobody -- they
+    had it. The hole is proposing a grant you lack.
+
+    manage:escalation IS THE WAY THROUGH, and must exist: a grant added
+    to the ontology today is held by NOBODY, so without it that grant
+    could never be given to anyone -- and once the role store governs,
+    policy.yaml cannot help.
+    """
+    if after is None or holds(ESCALATE):
+        return None
+    added = sorted(set(after) - set(before or ()))
+    lacking = [grant for grant in added if not holds(grant)]
+    if not lacking:
+        return None
+    return (
+        f"This adds {', '.join(lacking)}, which you do not hold yourself. "
+        f"Only somebody holding a grant -- or holding {ESCALATE} -- may give "
+        f"it to a role."
+    )
+
+
 def proposal_problem(roles, role_name: str, after: list | None, proposer_role: str | None,
                      holders: dict[str, int], active_holders: dict[str, int],
-                     validate: Callable[[dict], None]) -> str | None:
+                     validate: Callable[[dict], None],
+                     holds: Callable[[str], bool]) -> str | None:
     """change_problem, plus what only the PROPOSER is refused."""
     if (
         role_name == proposer_role
@@ -236,12 +275,16 @@ def proposal_problem(roles, role_name: str, after: list | None, proposer_role: s
         )
     if after is not None and grants_of(roles, role_name) == sorted(after):
         return f"{role_name!r} already has exactly these grants."
+    escalation = escalation_problem(grants_of(roles, role_name), after, holds)
+    if escalation is not None:
+        return escalation
     return change_problem(roles, role_name, after, holders, active_holders, validate)
 
 
 def approval_problem(change: RoleChange, approver: str, roles, holders: dict[str, int],
                      active_holders: dict[str, int],
-                     validate: Callable[[dict], None]) -> tuple[str, str] | None:
+                     validate: Callable[[dict], None],
+                     proposer_holds: Callable[[str], bool] | None) -> tuple[str, str] | None:
     """Why this approval may not happen, as (status_to_record, reason).
 
     The STATUS matters: a stale change is recorded as stale, so the
@@ -259,6 +302,15 @@ def approval_problem(change: RoleChange, approver: str, roles, holders: dict[str
             f"{change.role_name!r} has changed since this was proposed. Propose "
             f"it again against what is in force now.",
         )
+    # THE AUTHOR'S AUTHORITY, AS IT IS NOW -- re-evaluated at the point
+    # of use. A proposer who has since lost a grant, or no longer exists,
+    # cannot have it handed out on their behalf by an approval.
+    if proposer_holds is None:
+        return ("stale", f"{change.proposed_by!r}, who proposed this, no longer "
+                         f"has an active account.")
+    escalation = escalation_problem(change.before, change.after, proposer_holds)
+    if escalation is not None:
+        return ("stale", f"Proposed by {change.proposed_by!r}: {escalation}")
     problem = change_problem(
         roles, change.role_name, change.after, holders, active_holders, validate,
     )
