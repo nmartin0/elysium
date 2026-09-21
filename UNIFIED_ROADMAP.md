@@ -62,6 +62,11 @@ Each checked in the code; corrected here, pointed to elsewhere.
 
 **Accounts:**
 
+    - ~~an administrator could reach manage:roles by creating an
+      account~~ FIXED, patch 298 -- found while designing password
+      reset, which would have been a second path to the same place.
+      Role EDITS are not covered by that rule: a manage:roles holder
+      may add a grant they lack, and four-eyes is the control there.
     - password reset, and setting a known password (ROADMAP)
     - a password policy -- any string is accepted (ROADMAP)
     - a generated first-run password (UI 26)

@@ -41,10 +41,19 @@
 security_attribute: region
 
 roles:
-  # Deliberately minimal -- manage:users is the ONLY
-  # grants an admin needs; nothing about data access is implied by
-  # being able to create other users,
-  # matching the fully-explicit philosophy above.
+  # Deliberately minimal -- manage:users is the only grant an admin
+  # needs, matching the fully-explicit philosophy above.
+  #
+  # WHAT manage:users REACHES, stated plainly -- this comment used to
+  # say "nothing about data access is implied", which was not true. An
+  # admin who creates an account chooses its password, so can log in as
+  # it: creating an analyst reaches that analyst's DATA. That is the
+  # nature of account administration, and is why it is granted
+  # sparingly.
+  #
+  # WHAT IT DOES NOT REACH: administrative grants. Putting somebody in
+  # a role that carries manage:roles or manage:deployment requires
+  # holding that grant yourself -- Kubernetes' escalation rule.
   # scripts/install.sh bootstraps the very first user with this role.
   admin:
     allowed_actions:

@@ -2471,6 +2471,7 @@ def silos_route(request: Request,
 def create_user_route(body: CreateUserRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:
     _require_manage_users(request, current_user)
+    _refuse_escalation(request, current_user, body.role_name)
 
     # UNDER THE ROLE-CHANGE LOCK, so an account cannot be created in a
     # role at the instant an approval deletes it -- between the approval
@@ -2491,6 +2492,47 @@ def create_user_route(body: CreateUserRequest, request: Request,
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     return {"status": "created", "username": body.username}
+
+
+def _refuse_escalation(request: Request, current_user: UserRecord,
+                       role_name: str) -> None:
+    """Refuses putting somebody in a role that carries an ADMINISTRATIVE
+    grant the actor does not hold.
+
+    A REAL HOLE, MEASURED. `admin` holds only manage:users and is
+    refused /roles -- and could create an account in the `debug` role,
+    log in as it, and reach /roles. Patch 283 made manage:roles its own
+    grant; this path undid that for anybody who could create accounts.
+
+    KUBERNETES' RULE, and its reason: "you can only create/update a role
+    binding if you already have all the permissions contained in the
+    referenced role". Creating an account in a role IS a binding -- and
+    setting its password means the actor can then log in as it.
+
+    APPLIED TO THE ADMINISTRATIVE PLANE, not to every grant. The shipped
+    `admin` exists to create analysts whose DATA grants it does not
+    hold; Kubernetes would demand an explicit `bind` for that. So data
+    grants stay assignable by manage:users -- and policy.yaml now says
+    plainly what that means -- while manage:* grants must be held to be
+    handed out.
+    """
+    roles = _generation(request).config.roles
+    target = roles.get(role_name)
+    if target is None:
+        # UNKNOWN ROLES ARE THE DIRECTORY'S REFUSAL, with its own words.
+        return
+    missing = sorted(
+        grant for grant in target.get("allowed_actions", ())
+        if grant.startswith("manage:") and not authorize(current_user, roles, grant)
+    )
+    if missing:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"The {role_name!r} role carries {', '.join(missing)}, which you "
+                f"do not hold -- so you cannot put anybody in it."
+            ),
+        )
 
 
 def _require_manage_users(request: Request, current_user: UserRecord) -> None:
