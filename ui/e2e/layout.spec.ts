@@ -184,8 +184,11 @@ test.describe('Blueprint controls keep their own layout', () => {
 // -- the Watch dialog's recipients and the Roles screen's grants.
 //
 // AUTHORED BLIND, like the rest of this file: written in a container
-// that cannot download a browser, never seen to pass. The measurements
-// are the two above, reused rather than reinvented.
+// that cannot download a browser. The measurements are the two above,
+// reused rather than reinvented.
+//
+// FIRST REAL RUN: the Roles check passed as written. The Watch check
+// failed in its STEPS, not its measurement -- see the comment in it.
 //
 // THE WATCH CHECK SAVES A VIEW named "e2e layout check" in the
 // deployment it runs against. Saving the same name REPLACES it, so
@@ -215,7 +218,21 @@ test.describe('the checkboxes added since the sweep', () => {
     await page.getByRole('button', { name: /saved views/i }).click()
     await page.getByPlaceholder(/name this view/i).fill('e2e layout check')
     await page.getByRole('button', { name: /^(save|update)$/i }).click()
-    await page.getByRole('button', { name: /saved views/i }).click()
+
+    // WAIT FOR THE SAVE, by the one thing that proves it finished: the
+    // popover's button takes the SAVED VIEW'S NAME once the current URL
+    // matches a saved view. Saving also closes the popover.
+    //
+    // THE FIRST RUN FAILED HERE. It clicked /saved views/i straight
+    // after Save -- a label that exists only BEFORE the save completes
+    // -- so the click raced the save, and the Watch button was never
+    // on screen. Its first real run is how that was found.
+    //
+    // EXACT, because names match as substrings by default and
+    // "e2e layout check" is inside "Watch e2e layout check".
+    const trigger = page.getByRole('button', { name: 'e2e layout check', exact: true })
+    await expect(trigger).toBeVisible()
+    await trigger.click()
     await page.getByRole('button', { name: 'Watch e2e layout check' }).click()
 
     const control = page.locator('.bp6-dialog .bp6-control').first()
