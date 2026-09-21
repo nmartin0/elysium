@@ -140,3 +140,55 @@ def test_the_probe_finds_anything_at_all():
     """
     assert len(_verbs_the_validator_accepts()) >= 5
     assert len(_verbs_the_code_asks_for()) >= 5
+
+
+def _exact_grants_the_validator_accepts() -> set[str]:
+    source = (ROOT / "core" / "intermediate_layer" / "policy_validation.py").read_text()
+    return set(re.findall(r'grant == "([a-z_]+:[a-z_]+)"', source))
+
+
+def _exact_grants_the_code_uses() -> set[str]:
+    """Every string constant that is exactly `verb:name`, outside the
+    validator -- an authorize() argument, or a module constant passed
+    to one (health_condition's RECIPIENT_GRANT is that shape)."""
+    import ast
+
+    found = set()
+    validator = ROOT / "core" / "intermediate_layer" / "policy_validation.py"
+    for path in list((ROOT / "core").rglob("*.py")) + list((ROOT / "api").rglob("*.py")):
+        if path == validator:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                    and re.fullmatch(r"[a-z_]+:[a-z_]+", node.value):
+                found.add(node.value)
+    return found
+
+
+def test_every_exact_grant_the_validator_accepts_is_used():
+    """THE DEAD-VOCABULARY DIRECTION, PER GRANT RATHER THAN PER VERB.
+
+    The test above reduces exact grants to their VERB -- `manage:users`
+    becomes "manage" -- so a new `manage:<anything>` would pass it
+    merely because manage:users is checked somewhere. A deployment could
+    grant it, and it would grant nothing.
+
+    Found while adding manage:roles, which is exactly the grant that
+    would have slipped through. Each exact literal must now appear, in
+    full, somewhere that uses it.
+    """
+    unused = _exact_grants_the_validator_accepts() - _exact_grants_the_code_uses()
+
+    assert not unused, (
+        f"policy_validation.py accepts {sorted(unused)}, which nothing uses -- "
+        f"a deployment can grant them and they grant nothing"
+    )
+
+
+def test_the_exact_grant_probe_finds_the_known_ones():
+    """THE CONTROL ON THE PROBE: a pattern matching nothing would make
+    the test above pass vacuously."""
+    accepted = _exact_grants_the_validator_accepts()
+
+    assert {"manage:users", "manage:deployment", "discover:action_types"} <= accepted
+    assert accepted <= _exact_grants_the_code_uses()

@@ -93,6 +93,12 @@ roles:
   debug:
     allowed_actions:
       - manage:users
+      # CHANGING WHAT ROLES MAY DO, while the application runs. Held
+      # here, not by `admin` above: a fresh install gains the power to
+      # change grants only when somebody grants it on purpose. Until a
+      # role is edited, this file stays in force; after, the role store
+      # does, and loading says so.
+      - manage:roles
       - manage:deployment
       - discover:action_types
       - read:Customer

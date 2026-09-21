@@ -329,3 +329,8 @@ recipient_roles
 # VisibleActionTypeResponse.automatable (api/routes.py) -- a response
 # field, read by the Watch dialog rather than by Python.
 automatable
+
+# GET /roles and its model (api/routes.py) -- a FastAPI route.
+roles_route
+source
+grantable

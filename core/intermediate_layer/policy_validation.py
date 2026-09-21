@@ -131,6 +131,43 @@ def _validate_field_grants_have_their_type(role_name: str, granted: set) -> None
         )
 
 
+# THE GRANTS THAT ARE EXACT LITERALS, in the order an editor lists them.
+EXACT_GRANTS = (
+    "manage:users",
+    "manage:roles",
+    "manage:deployment",
+    "discover:action_types",
+)
+
+
+def grantable(object_types: dict, action_types: dict, enabled_tools: list[str]) -> list[str]:
+    """Every grant a role in this deployment could hold.
+
+    DERIVED FROM THE ONTOLOGY, not listed, so it cannot fall behind it:
+    a new object type, field, action or tool appears here the moment it
+    is declared. The role editor offers exactly this list.
+
+    BESIDE THE VALIDATOR ON PURPOSE, and a test holds them together --
+    every grant listed here must pass `_validate_one_grant`. An editor
+    offering a grant the validator refuses would let somebody build a
+    role that cannot be saved.
+    """
+    grants = list(EXACT_GRANTS)
+    grants += [f"execute:{name}" for name in sorted(action_types)]
+    grants += [f"tool:{name}" for name in sorted(enabled_tools)]
+    for type_name in sorted(object_types):
+        # THE VALIDATOR'S OWN NOTION OF A FIELD, not a second one. A
+        # first version read `fields` alone and missed the id_field --
+        # so an editor built on it could not grant `read:Customer.
+        # customer_id`, which real roles hold. A test comparing this
+        # list with the shipped policy caught it.
+        fields = sorted(_valid_field_names(object_types[type_name]))
+        for verb in ("read", "discover"):
+            grants.append(f"{verb}:{type_name}")
+            grants += [f"{verb}:{type_name}.{field}" for field in fields]
+    return grants
+
+
 def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_types: dict,
                          enabled_tools: list[str]) -> None:
     if grant == "manage:users":
@@ -139,6 +176,18 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
     if grant == "discover:action_types":
         return
 
+    if grant == "manage:roles":
+        # EDITING WHAT A ROLE MAY DO, while the application runs. A
+        # SEPARATE grant from manage:users, following both Foundry --
+        # "Manage permissions" is distinct from "Manage membership", and
+        # customising roles needs an administrator of its own -- and this
+        # file's own precedent for manage:deployment below: different
+        # powers, which a deployment should be able to hand out apart.
+        #
+        # MORE POWERFUL THAN manage:users. Moving somebody between roles
+        # is bounded by what the roles already allow; changing a role
+        # changes what everybody holding it can do.
+        return
     if grant == "manage:deployment":
         # Reloading configuration while running. A SEPARATE grant from
         # manage:users, deliberately: creating an account and replacing

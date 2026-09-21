@@ -105,6 +105,16 @@ def test_the_debug_role_invents_no_permission():
     manage:deployment is the exception and is asserted separately
     below: it is held by no other role because reload testing is the
     only thing that needs it yet.
+
+    manage:roles IS A SECOND EXCEPTION, and deliberately the same
+    shape. It changes what every holder of a role may do -- the most
+    powerful grant there is -- so no template role holds it: a fresh
+    install gains it only when an operator grants it on purpose.
+
+    THE CONCERN ABOVE STILL APPLIES, and is why this is written down
+    rather than quietly allowed: a deployment that wants role editing
+    should grant manage:roles to a NAMED administrator role, not leave
+    it reachable only through the convenience account.
     """
     policy = yaml.safe_load((DEPLOYMENT / "policy.yaml").read_text())
     roles = policy["roles"]
@@ -112,7 +122,9 @@ def test_the_debug_role_invents_no_permission():
     others = {grant for name, role in roles.items() if name != "debug"
               for grant in role["allowed_actions"]}
 
-    assert debug - others == {"manage:deployment", "discover:action_types"}
+    assert debug - others == {
+        "manage:deployment", "discover:action_types", "manage:roles",
+    }
 
 
 def test_the_debug_script_refuses_without_the_flag():

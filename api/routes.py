@@ -1214,6 +1214,52 @@ class MirrorStateResponse(BaseModel):
     problems: list[str]
 
 
+class RolesResponse(BaseModel):
+    # WHERE THE ROLES IN FORCE CAME FROM: "policy.yaml" until somebody
+    # edits one, "role store" after. An editor saying which is how an
+    # administrator learns that editing policy.yaml has stopped working.
+    source: str
+    roles: dict[str, list[str]]
+    grantable: list[str]
+
+
+@router.get("/roles", dependencies=[Depends(_no_store)],
+            response_model=RolesResponse)
+def roles_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Every role and its grants, for somebody who may change them.
+
+    GATED ON manage:roles, NOT manage:users. Seeing exactly what every
+    role may do is the first half of changing it, and it reveals the
+    whole permission model -- a manage:users holder already sees role
+    NAMES through /config, not their contents.
+
+    `grantable` IS DERIVED FROM THE ONTOLOGY, so the editor offers every
+    grant this deployment could hold and no grant it could not.
+    """
+    from core.intermediate_layer.policy_validation import grantable
+    from core.role_store import RoleStore
+
+    generation = _generation(request)
+    config = generation.config
+    if not authorize(current_user, config.roles, "manage:roles"):
+        raise HTTPException(status_code=403, detail="Not authorized to manage roles")
+
+    stored = RoleStore(request.app.state.runtime_paths.data_dir / "roles.db").load()
+    return {
+        "source": "role store" if stored is not None else "policy.yaml",
+        "roles": {
+            name: sorted(role.get("allowed_actions", ()))
+            for name, role in sorted(config.roles.items())
+        },
+        "grantable": grantable(
+            config.schema, config.action_types, config.enabled_tools,
+        ),
+    }
+
+
 class TriggerResponse(BaseModel):
     trigger_id: str
     name: str
