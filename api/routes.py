@@ -1260,6 +1260,184 @@ def roles_route(
     }
 
 
+class ProposeRoleChangeRequest(BaseModel):
+    role_name: str
+    # The role's COMPLETE grants after the change; null deletes it.
+    grants: list[str] | None
+
+
+class RoleChangeResponse(BaseModel):
+    change_id: str
+    role_name: str
+    before: list[str] | None
+    after: list[str] | None
+    proposed_by: str
+    proposed_at: str
+    status: str
+
+
+class RoleChangesResponse(BaseModel):
+    changes: list[RoleChangeResponse]
+
+
+# APPROVALS ARE SERIALISED. Two approvals of DIFFERENT roles each pass
+# their own stale check -- each touches only its role -- and the second
+# save would silently overwrite the first. One lock across compute,
+# save and reload makes them take turns.
+_role_change_lock = threading.Lock()
+
+
+def _role_paths(request: Request):
+    from core.role_changes import RoleChangeStore
+    from core.role_store import RoleStore
+
+    path = request.app.state.runtime_paths.data_dir / "roles.db"
+    return RoleStore(path), RoleChangeStore(path)
+
+
+def _require_manage_roles(request: Request, current_user: UserRecord) -> None:
+    if not authorize(current_user, _generation(request).config.roles, "manage:roles"):
+        raise HTTPException(status_code=403, detail="Not authorized to manage roles")
+
+
+def _active_holders(request: Request) -> dict[str, int]:
+    """How many ACTIVE users hold each role. A disabled account cannot
+    edit anything, so it does not count against a lockout."""
+    counts: dict[str, int] = {}
+    for user in request.app.state.user_directory.list_users():
+        if not user["disabled"]:
+            counts[user["role_name"]] = counts.get(user["role_name"], 0) + 1
+    return counts
+
+
+def _role_validator(config):
+    """The SAME validators loading runs, so nothing approved here can
+    fail to load afterwards."""
+    from core.deployment_loader import _freeze_roles, deep_freeze
+    from core.intermediate_layer.policy_validation import (
+        validate_role_coherence,
+        validate_roles,
+    )
+
+    def validate(result: dict) -> None:
+        frozen = deep_freeze(_freeze_roles(result))
+        validate_roles(frozen, config.schema, config.action_types, config.enabled_tools)
+        validate_role_coherence(frozen)
+    return validate
+
+
+def _change_response(change) -> dict:
+    return {
+        "change_id": change.change_id, "role_name": change.role_name,
+        "before": change.before, "after": change.after,
+        "proposed_by": change.proposed_by, "proposed_at": change.proposed_at,
+        "status": change.status,
+    }
+
+
+@router.post("/roles/changes", dependencies=[Depends(_no_store)])
+def propose_role_change_route(
+    body: ProposeRoleChangeRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Proposes one role's new grants. Somebody ELSE must approve it."""
+    from core.role_changes import grants_of, proposal_problem
+
+    _require_manage_roles(request, current_user)
+    config = _generation(request).config
+    problem = proposal_problem(
+        config.roles, body.role_name, body.grants, current_user.role_name,
+        _active_holders(request), _role_validator(config),
+    )
+    if problem is not None:
+        raise HTTPException(status_code=400, detail=problem)
+
+    _, changes = _role_paths(request)
+    change_id = changes.propose(
+        body.role_name, grants_of(config.roles, body.role_name), body.grants,
+        current_user.user_id,
+    )
+    return {"change_id": change_id}
+
+
+@router.get("/roles/changes", dependencies=[Depends(_no_store)],
+            response_model=RoleChangesResponse)
+def role_changes_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Role changes waiting for a decision."""
+    _require_manage_roles(request, current_user)
+    _, changes = _role_paths(request)
+    return {"changes": [_change_response(change) for change in changes.pending()]}
+
+
+@router.post("/roles/changes/{change_id}/approve", dependencies=[Depends(_no_store)])
+def approve_role_change_route(
+    change_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Applies a change somebody else proposed, and reloads.
+
+    SAVE, RELOAD, AND UNDO THE SAVE IF THE RELOAD FAILS. The reload
+    rebuilds everything, so it can fail for a reason unrelated to roles
+    -- somebody broke an unrelated YAML file. Leaving the store saved
+    would make the next restart load roles nobody saw take effect.
+    """
+    from core.role_changes import approval_problem, resulting_roles
+
+    _require_manage_roles(request, current_user)
+    roles_store, changes = _role_paths(request)
+
+    with _role_change_lock:
+        change = changes.get(change_id)
+        if change is None:
+            raise HTTPException(status_code=404, detail="No such role change")
+        config = _generation(request).config
+        problem = approval_problem(
+            change, current_user.user_id, config.roles,
+            _active_holders(request), _role_validator(config),
+        )
+        if problem is not None:
+            status, reason = problem
+            if status:
+                changes.decide(change_id, status, current_user.user_id, reason)
+            raise HTTPException(status_code=409, detail=reason)
+
+        previous = roles_store.load()
+        roles_store.save(resulting_roles(config.roles, change.role_name, change.after))
+        try:
+            reload_generation(request.app, requested_by=current_user.user_id)
+        except Exception as e:
+            if previous is None:
+                roles_store.unseed()
+            else:
+                roles_store.save(previous)
+            changes.decide(change_id, "failed", current_user.user_id, str(e))
+            raise HTTPException(
+                status_code=500,
+                detail=f"The change was not applied: the configuration would not reload ({e}).",
+            ) from e
+        changes.decide(change_id, "applied", current_user.user_id)
+    return {"applied": True}
+
+
+@router.post("/roles/changes/{change_id}/reject", dependencies=[Depends(_no_store)])
+def reject_role_change_route(
+    change_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Declines a change. Its author may withdraw it this way too."""
+    _require_manage_roles(request, current_user)
+    _, changes = _role_paths(request)
+    if not changes.decide(change_id, "rejected", current_user.user_id):
+        raise HTTPException(status_code=404, detail="No such pending role change")
+    return {"rejected": True}
+
+
 class TriggerResponse(BaseModel):
     trigger_id: str
     name: str

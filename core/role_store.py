@@ -111,6 +111,19 @@ class RoleStore:
             conn.commit()
 
 
+    def unseed(self) -> None:
+        """Hands authority back to policy.yaml. FOR ROLLBACK ONLY.
+
+        An approved change that saves the store and then fails to
+        reload -- because something ELSE in the configuration broke --
+        must leave things exactly as they were. If the store was not
+        seeded before, "as they were" means not seeded.
+        """
+        with self._connection() as conn:
+            conn.execute("DELETE FROM roles")
+            conn.execute("DELETE FROM role_store_meta WHERE key = 'seeded_at'")
+            conn.commit()
+
 def _raw(definition: dict) -> dict:
     """A role definition as policy.yaml would write it.
 

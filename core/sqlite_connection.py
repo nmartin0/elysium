@@ -269,7 +269,13 @@ def immediate_transaction(conn: sqlite3.Connection):
         conn.isolation_level = previous
 
 
-_schema_verified: set[Path] = set()
+# KEYED BY PATH AND SCHEMA, not path alone. Two stores can share one
+# database file with different tables -- roles.db holds both the roles
+# and the changes proposed to them. Keyed by path, whichever store
+# opened the file first marked it "verified", and the second store's
+# CREATE TABLE statements never ran: "no such table: role_store_meta".
+# Nothing hit it before because no two stores had shared a file.
+_schema_verified: set[tuple[Path, str]] = set()
 _schema_verified_lock = threading.Lock()
 logger = logging.getLogger(__name__)
 
@@ -386,13 +392,13 @@ def connection_with_schema(db_path: Path, schema: str,
         # have warned anyone. Holding the lock costs a brief
         # serialization once per database and removes the trap.
         with _schema_verified_lock:
-            if db_path not in _schema_verified:
+            if (db_path, schema) not in _schema_verified:
                 _enable_wal(conn, db_path)
                 conn.executescript(schema)
                 for migrate in migrations:
                     migrate(conn)
                 conn.commit()
-                _schema_verified.add(db_path)
+                _schema_verified.add((db_path, schema))
         yield conn
     finally:
         conn.close()

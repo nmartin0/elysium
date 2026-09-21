@@ -334,3 +334,16 @@ automatable
 roles_route
 source
 grantable
+
+# Role-change routes and models (api/routes.py) -- FastAPI routes.
+propose_role_change_route
+role_changes_route
+approve_role_change_route
+reject_role_change_route
+changes
+change_id
+before
+after
+proposed_by
+proposed_at
+grants
