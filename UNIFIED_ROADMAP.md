@@ -841,6 +841,29 @@ abstraction is not single-use.
 
 ### 3.2 Multiple workers, and the storage question under it
 
+**RE-CHECKED AGAINST THE CODE, patch 292.** The entry is right that
+the concurrency limiter is per-process, and misleading elsewhere:
+
+  ALREADY SHARED -- sessions, login lockout and the query rate limiter
+  all live in credentials.db with atomic transactions. Pending writes
+  became database-authoritative in 276.
+
+  NOT SHARED, AND NOT IN THIS ENTRY -- the CONFIGURATION. A reload
+  swapped it in the one worker that handled it, so an approved role
+  change reached one worker and the rest kept enforcing the old roles,
+  withdrawn grants included. FIXED in 292: a shared reload epoch every
+  worker follows before its next request.
+
+  STILL OPEN, each small:
+    - the role-approval lock is a threading.Lock -- per process, so two
+      workers approving at once bring back the lost update fixed in
+      285. It belongs in the database, like the pending-write claim.
+    - generation numbers come from a per-process counter, so two
+      workers both record "generation 1" in the config history.
+    - the concurrency limiter's cap applies per worker, so N workers
+      allow N times the model calls it meant to.
+
+
 UI_ROADMAP.md states it: `--workers` breaks SQLite's single-writer
 assumption and the concurrency limiter's per-process state. One
 uvicorn, one core, no horizontal scale, and a deploy is downtime.

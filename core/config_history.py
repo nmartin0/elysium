@@ -58,6 +58,22 @@ CREATE TABLE IF NOT EXISTS config_generations (
 );
 CREATE INDEX IF NOT EXISTS config_generations_by_digest
     ON config_generations (source_digest);
+
+-- THE RELOAD EPOCH: how many times somebody has ASKED for a reload.
+--
+-- EVERY WORKER READS IT, which is the point. A reload used to swap the
+-- configuration in the one process that handled it, so with several
+-- workers an approved role change reached one of them -- and the rest
+-- kept enforcing the old roles, withdrawn grants included. Now an
+-- explicit reload raises this, and each worker reloads itself before
+-- its next request once it sees it has fallen behind.
+--
+-- ONE ROW, id pinned to 1, so "the epoch" is never ambiguous.
+CREATE TABLE IF NOT EXISTS reload_epoch (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    epoch INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO reload_epoch (id, epoch) VALUES (1, 0);
 """
 
 
@@ -83,6 +99,30 @@ class ConfigHistory:
 
     def _connection(self):
         return connection_with_schema(self._db_path, SCHEMA)
+
+    def reload_epoch(self) -> int:
+        """How many reloads have been asked for, across every worker."""
+        with self._connection() as conn:
+            return conn.execute("SELECT epoch FROM reload_epoch WHERE id = 1").fetchone()[0]
+
+    def announce_reload(self) -> int:
+        """Records that a reload happened, so every OTHER worker follows.
+
+        ONE STATEMENT, incremented in the database rather than read and
+        written back, so two workers announcing at once each get their
+        own epoch rather than both writing the same one.
+
+        Called only by an EXPLICIT reload -- the admin button, a role
+        approval, SIGHUP in a single worker. A worker FOLLOWING an epoch
+        must not announce, or each would set the others off again,
+        forever.
+        """
+        with self._connection() as conn:
+            epoch = conn.execute(
+                "UPDATE reload_epoch SET epoch = epoch + 1 WHERE id = 1 RETURNING epoch",
+            ).fetchone()[0]
+            conn.commit()
+        return epoch
 
     def record(self, generation: int, loaded_at: str, source_digest: str,
                files: dict[str, str]) -> None:

@@ -86,10 +86,11 @@ from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from starlette.concurrency import run_in_threadpool
 
 from api.csrf_middleware import csrf_protect
 from api.generation_header_middleware import GenerationHeaderMiddleware
-from api.reload import install_sighup_handler
+from api.reload import follow_reload_epoch, install_sighup_handler
 from api.request_metrics_middleware import RequestMetricsMiddleware
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.artifact_store import ArtifactStore
@@ -227,6 +228,17 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         )
         return response
 
+    # FOLLOW ANY RELOAD ANOTHER WORKER ANNOUNCED, before this request
+    # reads the configuration -- registered LAST, so it runs FIRST.
+    #
+    # ON THE THREAD POOL, like the SIGHUP handler's reload: the check is
+    # one SELECT, but catching up is a ~22 ms rebuild, and on the event
+    # loop that would stall every request in flight in this worker.
+    @app.middleware("http")
+    async def follow_reload(request: Request, call_next):
+        await run_in_threadpool(follow_reload_epoch, app)
+        return await call_next(request)
+
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
@@ -263,6 +275,11 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # retention story from credentials, and mixing them means a restore
     # or a purge cannot treat them differently.
     app.state.config_history = ConfigHistory(runtime_paths.data_dir / "config_history.db")
+    # THE EPOCH THIS WORKER STARTED AT. A fresh worker builds from the
+    # latest configuration, so it is already current with every reload
+    # announced before it began.
+    app.state.reload_epoch = app.state.config_history.reload_epoch()
+    app.state.failed_reload_epoch = None
     record_generation(app.state.config_history, generation)
     app.state.generation = generation
     config = generation.config

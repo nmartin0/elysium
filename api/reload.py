@@ -64,7 +64,8 @@ def _audit_writes_invalidated_by(app, before, after, audit_log, requested_by: st
         logger.exception("could not audit writes invalidated by the reload")
 
 
-def reload_generation(app, requested_by: str = "unknown") -> DeploymentGeneration:
+def reload_generation(app, requested_by: str = "unknown",
+                      announce: bool = True) -> DeploymentGeneration:
     """Replaces the running configuration with a freshly loaded one.
 
     BUILD FULLY, VALIDATE FULLY, THEN SWAP. build_generation() either
@@ -168,9 +169,67 @@ def reload_generation(app, requested_by: str = "unknown") -> DeploymentGeneratio
             f"configuration reloaded by {requested_by}: generation "
             f"{current.generation} -> {new.generation}, digest {new.source_digest[:12]}"
         )
+        # TELL THE OTHER WORKERS, after the swap succeeded. A reload that
+        # failed announces nothing, so no worker follows it into a
+        # configuration that did not build. A worker FOLLOWING an epoch
+        # passes announce=False -- announcing would set the others off
+        # again, forever.
+        if announce:
+            app.state.reload_epoch = app.state.config_history.announce_reload()
         return new
     finally:
         _reload_lock.release()
+
+
+# ONE FOLLOWER AT A TIME PER WORKER, and BLOCKING, unlike _reload_lock.
+# A request that finds its worker behind must not be served under the
+# old configuration while another request rebuilds it -- that would be
+# the stale-roles window this exists to close, moved inside a worker.
+# So followers wait, then look again.
+_follow_lock = threading.Lock()
+
+
+def follow_reload_epoch(app) -> None:
+    """Brings this worker up to the latest ASKED-FOR reload, if behind.
+
+    WHY. With several workers, a reload swapped the configuration only
+    in the process that handled it. An approved role change reached one
+    worker; the others kept enforcing the old roles -- a withdrawn grant
+    still honoured by most of the deployment. Every worker now compares
+    its epoch with the shared one before each request, one SELECT, and
+    rebuilds itself when behind: about 22 ms, once per reload.
+
+    ONLY WHAT SOMEBODY ASKED FOR. The epoch rises on an explicit reload,
+    never because a file changed on disk -- so a half-finished YAML edit
+    is not picked up by the next request. When an edit takes effect
+    stays the operator's decision.
+
+    A FAILED FOLLOW IS REMEMBERED, NOT RETRIED EVERY REQUEST. If the
+    configuration will not build -- a broken file -- retrying would cost
+    a failed build per request and change nothing. This worker keeps its
+    working configuration, logs, and waits for the NEXT epoch, which is
+    the next time anything could have changed.
+    """
+    shared = app.state.config_history.reload_epoch()
+    if shared <= app.state.reload_epoch or shared == app.state.failed_reload_epoch:
+        return
+    with _follow_lock:
+        if shared <= app.state.reload_epoch:
+            return
+        try:
+            reload_generation(app, requested_by="follow", announce=False)
+        except ReloadInProgress:
+            # AN EXPLICIT RELOAD IS RUNNING HERE ALREADY, and will leave
+            # this worker current and announce its own epoch.
+            return
+        except Exception as e:
+            app.state.failed_reload_epoch = shared
+            logger.error(
+                f"could not follow reload epoch {shared}; this worker keeps "
+                f"its previous configuration until the next reload: {e}"
+            )
+            return
+        app.state.reload_epoch = shared
 
 
 def install_sighup_handler(app, thread_factory=threading.Thread) -> None:
