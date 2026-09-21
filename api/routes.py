@@ -1283,8 +1283,12 @@ class RoleChangesResponse(BaseModel):
 # APPROVALS ARE SERIALISED. Two approvals of DIFFERENT roles each pass
 # their own stale check -- each touches only its role -- and the second
 # save would silently overwrite the first. One lock across compute,
-# save and reload makes them take turns.
-_role_change_lock = threading.Lock()
+# save and reload makes them take turns -- ACROSS WORKERS, not only
+# threads; see core/role_changes.role_change_lock.
+def _role_change_lock(request: Request):
+    from core.role_changes import role_change_lock
+
+    return role_change_lock(request.app.state.runtime_paths.data_dir)
 
 
 def _role_paths(request: Request):
@@ -1398,7 +1402,7 @@ def approve_role_change_route(
     _require_manage_roles(request, current_user)
     roles_store, changes = _role_paths(request)
 
-    with _role_change_lock:
+    with _role_change_lock(request):
         change = changes.get(change_id)
         if change is None:
             raise HTTPException(status_code=404, detail="No such role change")
@@ -2479,7 +2483,7 @@ def create_user_route(body: CreateUserRequest, request: Request,
     # closed -- an unknown role is denied everything -- but an account
     # that can do nothing and no error explaining why is still wrong.
     try:
-        with _role_change_lock:
+        with _role_change_lock(request):
             request.app.state.user_directory.create_user(
                 body.username, body.password, body.mac_value, body.role_name
             )

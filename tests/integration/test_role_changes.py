@@ -271,8 +271,6 @@ class TestAccountCreationWaitsForAnApproval:
         """
         import threading
 
-        import api.routes as routes
-
         _as(client, "ann", "admin")
         headers = _csrf_headers(client)
         outcome = {}
@@ -285,12 +283,85 @@ class TestAccountCreationWaitsForAnApproval:
                 headers=headers,
             ).status_code
 
-        with routes._role_change_lock:
+        # HELD BY ANOTHER PROCESS, not a thread here -- which is what
+        # the lock must now cover. A threading.Lock would not see this
+        # holder at all, and the creation would go straight through.
+        import subprocess
+        import sys
+
+        data_dir = client.app.state.runtime_paths.data_dir
+        holder = subprocess.Popen(
+            [sys.executable, "-c",
+             "import sys\n"
+             "from pathlib import Path\n"
+             "from core.role_changes import role_change_lock\n"
+             f"with role_change_lock(Path({str(data_dir)!r})):\n"
+             "    print('held', flush=True)\n"
+             "    sys.stdin.readline()\n"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+        )
+        try:
+            assert holder.stdout.readline().strip() == "held"
             worker = threading.Thread(target=create)
             worker.start()
             worker.join(timeout=1.0)
-            assert worker.is_alive(), "creation did not wait for the lock"
+            assert worker.is_alive(), "creation did not wait for another process's lock"
             assert "status" not in outcome
+        finally:
+            holder.stdin.write("release\n")
+            holder.stdin.flush()
+            holder.wait(timeout=10)
 
         worker.join(timeout=10)
         assert outcome["status"] == 201
+
+
+class TestApprovalsWaitForOtherWorkers:
+    def test_an_approval_waits_while_another_process_holds_the_lock(self, client):
+        """THE LOST UPDATE, ACROSS WORKERS. Two workers approving changes
+        to different roles at once each computed from the same roles, and
+        the second save undid the first. The approval lock now spans
+        processes, so an approval here waits while another process --
+        another worker -- holds it."""
+        import subprocess
+        import sys
+        import threading
+
+        _as(client, "dana")
+        change_id = _propose(
+            client, "customer_service", _widened_customer_service(client),
+        ).json()["change_id"]
+        _as(client, "erin")
+        headers = _csrf_headers(client)
+        outcome = {}
+
+        def approve():
+            outcome["status"] = client.post(
+                f"/api/roles/changes/{change_id}/approve", headers=headers,
+            ).status_code
+
+        data_dir = client.app.state.runtime_paths.data_dir
+        holder = subprocess.Popen(
+            [sys.executable, "-c",
+             "import sys\n"
+             "from pathlib import Path\n"
+             "from core.role_changes import role_change_lock\n"
+             f"with role_change_lock(Path({str(data_dir)!r})):\n"
+             "    print('held', flush=True)\n"
+             "    sys.stdin.readline()\n"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            line = holder.stdout.readline().strip()
+            assert line == "held", holder.stderr.read()[-600:]
+            worker = threading.Thread(target=approve)
+            worker.start()
+            worker.join(timeout=1.0)
+            assert worker.is_alive(), "the approval did not wait for another worker"
+        finally:
+            holder.stdin.write("release\n")
+            holder.stdin.flush()
+            holder.wait(timeout=10)
+
+        worker.join(timeout=15)
+        assert outcome["status"] == 200

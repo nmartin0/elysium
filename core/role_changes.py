@@ -33,9 +33,11 @@ THE TABLE IS THE AUDIT TRAIL: who proposed, who decided, the grants
 before and after, and how it ended. Rows are never deleted.
 """
 
+import fcntl
 import json
 import uuid
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -263,3 +265,36 @@ def approval_problem(change: RoleChange, approver: str, roles, holders: dict[str
     if problem is not None:
         return ("stale", problem)
     return None
+
+
+@contextmanager
+def role_change_lock(data_dir: Path):
+    """Exclusive while roles are changed or an account joins a role.
+
+    ACROSS PROCESSES, not just threads. It was a threading.Lock, which
+    serialised approvals within one worker -- and nothing between
+    workers, so two workers approving changes to different roles at once
+    brought back the lost update fixed in patch 285: each computed from
+    the same roles and the second save silently undid the first.
+
+    A LOCK FILE, NOT THE DATABASE. SQLite's own write lock -- BEGIN
+    IMMEDIATE on roles.db -- would DEADLOCK here: the approval would
+    hold it, then call RoleStore.save(), which opens its own connection
+    and waits for the lock the approval holds. The lock must be
+    something other than the data it protects.
+
+    flock, FOLLOWING run_sync.py's own lock, and for its reason: it is
+    "released automatically when the process dies, so a crash leaves
+    nothing stale to clean up". BLOCKING where the sync's is not -- a
+    second approval must wait its turn, not be dropped. On Linux two
+    separate opens of one file conflict even inside one process, so this
+    one lock covers threads and workers alike.
+    """
+    data_dir.mkdir(parents=True, exist_ok=True)
+    with open(data_dir / "roles.lock", "a") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+

@@ -177,5 +177,5 @@ def test_the_one_read_past_the_pin_stays_one():
 
     assert source.count("latest_generation(request)") == 1
 
-    locked = source.split("with _role_change_lock:", 1)[1].split("\ndef ", 1)[0]
+    locked = source.split("with _role_change_lock(request):", 1)[1].split("\ndef ", 1)[0]
     assert "latest_generation(request)" in locked

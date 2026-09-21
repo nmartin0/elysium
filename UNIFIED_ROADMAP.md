@@ -855,9 +855,10 @@ the concurrency limiter is per-process, and misleading elsewhere:
   worker follows before its next request.
 
   STILL OPEN, each small:
-    - the role-approval lock is a threading.Lock -- per process, so two
-      workers approving at once bring back the lost update fixed in
-      285. It belongs in the database, like the pending-write claim.
+    - ~~the role-approval lock is per process~~ FIXED, patch 293: a
+      flock on data_dir/roles.lock, following run_sync.py's own lock.
+      NOT the database -- BEGIN IMMEDIATE on roles.db would deadlock
+      against RoleStore.save()'s own connection.
     - generation numbers come from a per-process counter, so two
       workers both record "generation 1" in the config history.
     - the concurrency limiter's cap applies per worker, so N workers
