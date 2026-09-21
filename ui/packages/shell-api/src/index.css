@@ -1960,4 +1960,26 @@
   .notifications__detail {
     margin-block-start: var(--space-tight);
   }
+
+  /* THE WATCH DIALOG'S two controls, side by side: a comparison and a
+   number read as one sentence. */
+  .saved-views__watch {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+    margin-block-start: var(--space-tight);
+  }
+
+  /* A WATCHED CONDITION: the switch carries the name, the condition
+   sits beside it, and the remove control ends the row. */
+  .watch-list__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+  }
+
+  .watch-list__condition {
+    color: var(--text-secondary);
+    margin-inline-start: auto;
+  }
 }

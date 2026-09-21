@@ -655,6 +655,46 @@ export async function deleteSavedView(viewId: string): Promise<void> {
   })
 }
 
+export interface Trigger {
+  trigger_id: string
+  name: string
+  view_id: string
+  above: number | null
+  gained: number | null
+  fell: number | null
+  enabled: boolean
+  created_at: string
+}
+
+export async function getTriggers(): Promise<Trigger[]> {
+  const response = await apiFetchOrThrow('/triggers')
+  return (await response.json()).triggers as Trigger[]
+}
+
+export async function createTrigger(body: {
+  name: string
+  view_id: string
+  above?: number | null
+  gained?: number | null
+  fell?: number | null
+}): Promise<string> {
+  const response = await apiFetchOrThrow('/triggers', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  return (await response.json()).trigger_id as string
+}
+
+export async function setTriggerEnabled(triggerId: string, enabled: boolean): Promise<void> {
+  await apiFetchOrThrow(`/triggers/${encodeURIComponent(triggerId)}/enabled?enabled=${enabled}`, { method: 'POST' })
+}
+
+export async function deleteTrigger(triggerId: string): Promise<void> {
+  await apiFetchOrThrow(`/triggers/${encodeURIComponent(triggerId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export interface Notification {
   notification_id: string
   created_at: string

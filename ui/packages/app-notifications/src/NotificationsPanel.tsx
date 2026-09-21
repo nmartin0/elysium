@@ -1,3 +1,4 @@
+import type React from 'react'
 /**
  * NotificationsPanel -- what the deployment has told this person.
  *
@@ -16,7 +17,7 @@
  * glanced at the tab would lose the one thing it is for.
  */
 
-import { Button, Callout, Card, CardList, NonIdealState, Tag } from '@blueprintjs/core'
+import { Button, Callout, Card, CardList, NonIdealState, Tab, Tabs, Tag } from '@blueprintjs/core'
 import {
   getErrorMessage,
   getNotifications,
@@ -28,6 +29,8 @@ import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatTimestamp } from '@elysium/shell-api/format'
 import { useCallback, useEffect, useState } from 'react'
+
+import WatchList from './WatchList'
 
 interface NotificationsPanelProps {
   onSessionExpired: () => void
@@ -71,20 +74,30 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
     }
   }
 
-  if (error !== null) return <ErrorState>{error}</ErrorState>
-  if (notifications === null) return <LoadingState />
+  // TWO ENDS OF ONE QUESTION: what have I been told, and what will
+  // tell me. Somebody silencing a noisy trigger arrives here from the
+  // notice it sent, and a separate screen would make them go looking.
+  const withTabs = (inbox: React.ReactNode) => (
+    <Tabs id="notifications" defaultSelectedTabId="inbox">
+      <Tab id="inbox" title="Notifications" panel={<>{inbox}</>} />
+      <Tab id="watching" title="Watching" panel={<WatchList onSessionExpired={onSessionExpired} />} />
+    </Tabs>
+  )
+
+  if (error !== null) return withTabs(<ErrorState>{error}</ErrorState>)
+  if (notifications === null) return withTabs(<LoadingState />)
 
   if (notifications.length === 0) {
-    return (
+    return withTabs(
       <NonIdealState
         icon="notifications"
         title="Nothing to report"
         description="Conditions you are watching will appear here when they change."
-      />
+      />,
     )
   }
 
-  return (
+  return withTabs(
     <div className="notifications">
       <CardList>
         {notifications.map((notification) => (
@@ -105,6 +118,6 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
           </Card>
         ))}
       </CardList>
-    </div>
+    </div>,
   )
 }

@@ -319,6 +319,24 @@ the moment to decide whether somebody should be told.
    **VERIFIED ON THE SHIPPED DEPLOYMENT:** the same "All
    transactions" view counts 4 for a us-west reader and 2 for a
    us-east one.
+
+0.75 ~~A TRIGGER SOMEBODY MAKES~~ **BUILT.** `core/triggers.py`, its
+   endpoints, and the UI.
+
+   **MADE WHERE THE VIEWS ARE:** each saved view carries a Watch
+   control, and a dialog asks what to watch for -- a dialog rather
+   than another menu level, because a threshold needs a number and a
+   choice, and a submenu asking for both is a form pretending not to
+   be one.
+
+   **MANAGED WHERE THE NOTIFICATIONS ARRIVE.** The Notifications
+   panel has two tabs -- what you have been told, and what will tell
+   you -- because those are one question from two ends, and somebody
+   silencing a noisy trigger arrives from the notice it sent.
+
+   **DISABLE BEFORE DELETE.** Somebody quieting a trigger usually
+   wants it back, so the switch comes first and removing is separate.
+
 1. A condition: a saved exploration plus a check. **HALF BUILT** --
    `core/count_condition.py` holds the check; the saved exploration
    is what 0.5 is for.

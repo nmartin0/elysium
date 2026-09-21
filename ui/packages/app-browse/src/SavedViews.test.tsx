@@ -19,17 +19,19 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     getSavedViews: vi.fn(),
+    createTrigger: vi.fn(),
     saveSavedView: vi.fn(),
     deleteSavedView: vi.fn(),
   }
 })
 
-import { deleteSavedView, getSavedViews, saveSavedView } from '@elysium/shell-api/api'
+import { createTrigger, deleteSavedView, getSavedViews, saveSavedView } from '@elysium/shell-api/api'
 import SavedViews from './SavedViews'
 
 const mockedList = vi.mocked(getSavedViews)
 const mockedSave = vi.mocked(saveSavedView)
 const mockedDelete = vi.mocked(deleteSavedView)
+const mockedWatch = vi.mocked(createTrigger)
 
 function aView(overrides = {}) {
   return {
@@ -64,6 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockedList.mockResolvedValue([])
   mockedSave.mockResolvedValue('v-new')
+  mockedWatch.mockResolvedValue('t-new')
 })
 
 describe('saving the current search', () => {
@@ -160,5 +163,56 @@ describe('when the server cannot be reached', () => {
     fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
 
     expect(screen.getByPlaceholderText(/name this view/i)).toBeInTheDocument()
+  })
+})
+
+describe('watching a saved view', () => {
+  it('asks what to watch for, then creates it', async () => {
+    /** A DIALOG RATHER THAN ANOTHER MENU LEVEL. A threshold needs a
+     *  number and a choice, and a submenu asking for both is a form
+     *  pretending not to be one. */
+    mockedList.mockResolvedValue([aView()])
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /watch high value/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
+
+    await waitFor(() =>
+      expect(mockedWatch).toHaveBeenCalledWith(expect.objectContaining({ name: 'High value', view_id: 'v1' })),
+    )
+  })
+
+  it('sends exactly one threshold', async () => {
+    /** THE SERVER REFUSES TWO -- they would need an answer about
+     *  which wins, and two triggers say it plainly instead. */
+    mockedList.mockResolvedValue([aView()])
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /watch high value/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
+
+    await waitFor(() => expect(mockedWatch).toHaveBeenCalled())
+    // NON-NULL ASSERTED after the waitFor above proves the call
+    // happened -- TypeScript cannot see that the assertion ran.
+    const body = mockedWatch.mock.calls[0]![0]
+    const set = [body.above, body.gained, body.fell].filter((v) => v !== null)
+
+    expect(set).toHaveLength(1)
+  })
+
+  it('watches what was chosen, not always the default', async () => {
+    mockedList.mockResolvedValue([aView()])
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /watch high value/i }))
+    fireEvent.change(await screen.findByLabelText('When to notify'), {
+      target: { value: 'gained' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }))
+
+    await waitFor(() =>
+      expect(mockedWatch).toHaveBeenCalledWith(expect.objectContaining({ above: null, gained: expect.any(Number) })),
+    )
   })
 })
