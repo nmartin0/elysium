@@ -930,6 +930,94 @@ inference. Inference is off by default and its proposals always go
 through the approvals queue -- which answers unresolution natively,
 since un-merging is another write.
 
+## FIRST, NEXT SESSION: the pending-write store is not multi-process safe
+
+**FOUND WHILE WIRING TRIGGER ACTIONS, and it blocks them.** Recorded
+before anything else so it is the first thing picked up.
+
+### The problem
+
+`PendingWriteStore` keeps writes in a locked dict and MIRRORS them to
+`pending_writes.db`. The API reads that file ONCE, at startup
+(`_restore_locked`), and every read after answers from memory.
+
+The sync runs as a SEPARATE PROCESS when cron starts it. So a trigger
+firing during a cron-run sync would propose a write into
+`pending_writes.db` -- and the running API would never see it until
+restarted. The proposal would sit on disk, absent from Approvals.
+
+"Sync now" is unaffected: it runs the sync on a thread INSIDE the API
+process. The cron path is the one that breaks, and it is the one that
+matters for anything happening while everybody is asleep.
+
+### What precedent says, and it says my design was backwards
+
+Every SQLite-backed queue researched states it the same way: "the
+database is still the source of truth. The queue only stores candidate
+job IDs", with "the claim logic checks the database before starting a
+job and skips anything that is no longer pending". A queue library
+explaining what multi-process support would require names it
+directly: "removal of the in memory caches".
+
+**`PendingWriteStore` INVERTS THIS.** Memory is the truth and SQLite
+is a mirror, which is exactly why a second process cannot be seen.
+
+Its concurrency was described in this project as "getting it right".
+That was true of THREADS in one process. It was never multi-process
+safe, and nothing said so.
+
+### The fix
+
+**MAKE THE DATABASE AUTHORITATIVE.** Reads come from SQLite; the dict
+goes. WAL mode lets the API read while the sync writes -- readers get
+snapshots that are not blocked by the writer.
+
+**RESERVING BECOMES A DATABASE-BACKED CLAIM:** `UPDATE ... SET
+reserved = 1 WHERE write_id = ? AND reserved = 0`, which either claims
+the row atomically or matches nothing because somebody else did.
+SQLite serialises writers, so that is safe across processes by
+construction.
+
+### What it dissolves
+
+The obvious patch -- have `awaiting()` merge in rows another process
+added -- would need a TOMBSTONE set: deciding a write removes it from
+memory and then deletes the row best-effort, so a failed delete would
+bring a DECIDED write back. A zombie approval somebody already acted on
+is worse than a missing one.
+
+**WITH THE DATABASE AUTHORITATIVE, THAT CANNOT HAPPEN.** Deciding
+deletes the row, and there is no second copy to disagree with. The
+complexity the merge needed was a symptom of the inversion, not a
+property of the problem.
+
+### Why it is a session of its own
+
+It rewrites the store under the approvals queue, where a mistake loses
+or duplicates DECISIONS. It deserves its own commit, its own controls,
+and a concurrency test that runs two real processes rather than two
+threads -- the test that would have caught this in the first place.
+
+### What is parked behind it
+
+Trigger ACTION effects, step 1 of four. Built, tested and discarded
+rather than committed inert, because it called `pending_store.store()`
+and that call changes with this fix. What it was, for redoing:
+
+    triggers table   action_type, action_parameter, action_values
+                     columns, added through add_column_if_missing so
+                     a triggers.db from patch 271 survives -- verified
+    evaluator        proposes ONLY when `told` is non-zero, so never
+                     on a baseline or a suppressed repeat; as the
+                     owner; never raising, so a refused proposal costs
+                     one trigger its action
+
+Still to do after it: the endpoint validating an action config, role
+recipients, YAML triggers naming an owner (which may be a service
+user), and the UI for the first two.
+
+---
+
 ## What to build next, in dependency order
 
 The phases above are grouped by SUBJECT. This is the same work grouped
