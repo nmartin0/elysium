@@ -27,6 +27,7 @@ Called by: scripts/run_deployment.py, scripts/serve_requests.py,
 
 import hashlib
 import itertools
+import logging
 import os
 import threading
 from collections.abc import Mapping
@@ -195,6 +196,8 @@ class DeploymentConfig:
     # ordinary case. See core/declared_triggers.py.
     declared_triggers: tuple = ()
 
+
+logger = logging.getLogger(__name__)
 
 # Assigned by the loader, never by a caller, so two callers cannot mint
 # the same number. Guarded because a reload triggered by a signal
@@ -933,6 +936,56 @@ def build_generation(
     )
 
 
+def _with_effective_roles(config: DeploymentConfig, data_dir: Path) -> DeploymentConfig:
+    """The configuration with the roles actually in force.
+
+    UNCHANGED UNTIL SOMEBODY EDITS A ROLE. The store does not exist
+    before the first edit, so this returns `config` as policy.yaml
+    produced it -- same roles, same digest, nothing written.
+
+    ONCE THE STORE IS SEEDED IT GOVERNS, and its roles go through the
+    SAME freeze and the SAME two validators policy.yaml's do. A role
+    that would be refused in a file is refused here, and refused at
+    load, so a bad edit cannot become the running generation.
+
+    THE DIGEST COVERS THE EFFECTIVE ROLES. Trigger baselines reset when
+    the digest changes, because a count taken under different grants
+    answers a different question; hashing policy.yaml's bytes alone
+    would stop seeing grant changes the moment roles live in the store.
+    """
+    import dataclasses
+
+    from core.role_store import RoleStore, canonical
+
+    stored = RoleStore(data_dir / "roles.db").load()
+    if stored is None:
+        return config
+
+    roles = deep_freeze(_freeze_roles(stored))
+    validate_roles(roles, config.schema, config.action_types, config.enabled_tools)
+    validate_role_coherence(roles)
+
+    if canonical(config.roles) != canonical(stored):
+        # LOUD, BECAUSE THE FAILURE IT PREVENTS IS SILENT. Somebody
+        # edits policy.yaml, reloads, and their change does nothing --
+        # with no hint why. Naming both sources says where to look.
+        logger.warning(
+            "roles come from the role store (%s), which somebody has "
+            "edited; the `roles:` section of policy.yaml differs and is "
+            "NOT in effect -- it is only the bootstrap for a store that "
+            "has never been edited",
+            data_dir / "roles.db",
+        )
+
+    return dataclasses.replace(
+        config,
+        roles=roles,
+        source_digest=hashlib.sha256(
+            (config.source_digest + canonical(stored)).encode(),
+        ).hexdigest(),
+    )
+
+
 def load_deployment_bundle(
     config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None
 ) -> tuple[DeploymentConfig, DataMediator, dict[str, ExternalWriteAdapter]]:
@@ -950,7 +1003,7 @@ def load_deployment_bundle(
     if data_dir is None:
         data_dir = config_dir
 
-    config = load_deployment(config_dir)
+    config = _with_effective_roles(load_deployment(config_dir), data_dir)
 
     # database.path-equivalent connection fields (e.g. SQLite's "path")
     # resolve against data_dir, NOT config_dir -- the one place those

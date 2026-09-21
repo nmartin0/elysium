@@ -200,6 +200,8 @@ layers = [
     "saved_views",
     # triggers imports only sqlite_connection, like saved_views.
     "triggers",
+    # role_store imports only sqlite_connection, like the other stores.
+    "role_store",
 ]
 containers = ["core"]
 exhaustive = true

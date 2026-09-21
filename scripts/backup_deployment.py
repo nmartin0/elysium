@@ -72,6 +72,11 @@ OWNED_DATABASES = (
     "saved_views.db",
     "triggers.db",
     "notifications.db",
+    # ONCE SOMEBODY EDITS A ROLE, THE ONLY COPY OF THE GRANTS. Losing it
+    # on restore would silently fall back to policy.yaml -- restoring
+    # every grant that had been deliberately withdrawn. The backup
+    # guard caught this the moment the store was written.
+    "roles.db",
 )
 
 # THE WAREHOUSE, copied as files rather than snapshotted.
