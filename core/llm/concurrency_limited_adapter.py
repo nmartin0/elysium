@@ -14,7 +14,15 @@ from core.llm.interface import LLMAdapter
 class ConcurrencyLimitedLLMAdapter:
     def __init__(self, wrapped: LLMAdapter):
         self._wrapped = wrapped
-        self._limiter = ConcurrencyLimiter(wrapped.max_concurrent_requests)
+        # NAMED BY THE SERVER, not the model: the cap is the server's.
+        # The step and synthesis models usually share one Ollama, and
+        # each wrapper used to hold its own semaphore -- two requests at
+        # once to a server capped at 1, even in a single worker.
+        server = getattr(wrapped, "base_url", None) or getattr(wrapped, "executable", "")
+        self._limiter = ConcurrencyLimiter(
+            wrapped.max_concurrent_requests,
+            name=f"llm/{type(wrapped).__name__}/{server}",
+        )
         # Re-exposed, not just consumed internally -- this class is
         # itself typed (and used) as an LLMAdapter, which DECLARES
         # max_concurrent_requests as a required attribute (see

@@ -384,7 +384,10 @@ class DataMediator:
         # holds nothing.
         adapter = cast(ExternalWriteAdapter, self.adapters[silo_name])
         return self._write_limiters.setdefault(
-            silo_name, ConcurrencyLimiter(adapter.max_concurrent_writes)
+            # NAMED BY SILO, so every worker writing it shares its cap --
+            # a SQLite silo's 1 is a property of the file, not the worker.
+            silo_name, ConcurrencyLimiter(adapter.max_concurrent_writes,
+                                          name=f"silo-write/{silo_name}")
         )
 
     def _adapter_for(self, object_type: str) -> ExternalReadAdapter:

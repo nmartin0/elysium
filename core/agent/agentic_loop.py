@@ -260,7 +260,8 @@ class AgentLoop:
         self.tools = tools if tools is not None else []
         self._tools_by_name = {tool.name: tool for tool in self.tools}
         self._tool_limiters = {
-            tool.name: ConcurrencyLimiter(tool.max_concurrent_calls) for tool in self.tools
+            tool.name: ConcurrencyLimiter(tool.max_concurrent_calls, name=f"tool/{tool.name}")
+            for tool in self.tools
         }
         self.write_mediator = write_mediator
         self.max_hops = max_hops

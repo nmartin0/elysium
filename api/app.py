@@ -99,6 +99,7 @@ from core.auth.database import connection
 from core.auth.login_attempt_tracker import LoginAttemptTracker
 from core.auth.query_rate_limiter import QueryRateLimiter
 from core.auth.session_store import SessionStore
+from core.concurrency import share_limits_under
 from core.config_history import ConfigHistory, record_generation
 from core.deployment_loader import (
     RuntimePaths,
@@ -274,6 +275,10 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # than inside credentials.db: configuration history has a different
     # retention story from credentials, and mixing them means a restore
     # or a purge cannot treat them differently.
+    # CAPS ARE SHARED BY EVERY WORKER using this data directory -- a
+    # model server's or a silo's capacity does not multiply with the
+    # worker count. Before anything that limits is used.
+    share_limits_under(runtime_paths.data_dir)
     app.state.config_history = ConfigHistory(runtime_paths.data_dir / "config_history.db")
     # THE EPOCH THIS WORKER STARTED AT. A fresh worker builds from the
     # latest configuration, so it is already current with every reload

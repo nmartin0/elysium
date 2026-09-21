@@ -864,8 +864,14 @@ the concurrency limiter is per-process, and misleading elsewhere:
       worker restarting reused 1, 2, 3, and INSERT OR IGNORE silently
       dropped the new records under numbers already taken. Numbers now
       come from a shared sequence in config_history.db.
-    - the concurrency limiter's cap applies per worker, so N workers
-      allow N times the model calls it meant to.
+    - ~~the concurrency cap applies per worker~~ FIXED, patch 295.
+      Named caps are shared through flock slot files. Dividing by the
+      worker count could not work: every declared cap defaults to 1.
+      And a single worker was already wrong -- the step and synthesis
+      models each held their own semaphore for one server.
+
+  ALL FOUR BLOCKERS FIXED (292-295). --workers is safe to try; running
+  it for real is the verification that remains.
 
 
 UI_ROADMAP.md states it: `--workers` breaks SQLite's single-writer
