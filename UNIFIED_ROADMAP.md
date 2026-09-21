@@ -1012,9 +1012,17 @@ and that call changes with this fix. What it was, for redoing:
                      owner; never raising, so a refused proposal costs
                      one trigger its action
 
-Still to do after it: the endpoint validating an action config, role
-recipients, YAML triggers naming an owner (which may be a service
-user), and the UI for the first two.
+**ALL DONE, patches 276-280.** The store became database-authoritative
+first (276), then: action effects proposed as the owner (277), role
+recipients each counted as themselves with the action hanging on the
+owner alone (278), triggers declared in config.yaml naming an owner
+that may be a service account (279), and the Watch dialog choosing an
+action and recipients (280).
+
+TRIGGERS ARE COMPLETE: made in the product or declared in
+configuration, notifying the owner and named roles, proposing actions
+into Approvals -- all through one evaluator, all attenuated to the
+owner.
 
 ---
 

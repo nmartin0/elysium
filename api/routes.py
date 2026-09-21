@@ -355,6 +355,12 @@ class VisibleActionTypeResponse(BaseModel):
     affected_object_types: list[str]
     parameters: dict[str, ActionParameterResponse]
     executable: bool
+    # DECLARED HERE OR IT NEVER ARRIVES. The route set it and this
+    # model silently dropped it -- so the Watch dialog would have
+    # received undefined, matched nothing against `false`, and offered
+    # every action. Every frontend test passed regardless, because
+    # they mock the API; an integration test found it.
+    automatable: bool
 
 
 class UserSummaryResponse(BaseModel):
@@ -2751,6 +2757,11 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
             "affected_object_types": action_def["affected_object_types"],
             "parameters": action_def["parameters"],
             "executable": authorize(current_user, roles, f"execute:{action_name}"),
+            # WHETHER A TRIGGER MAY PROPOSE IT. Exposed so the Watch
+            # dialog offers only actions the server will accept, rather
+            # than offering one and showing a refusal afterwards.
+            # Absent means true -- the validator's own default.
+            "automatable": action_def.get("automatable") is not False,
         }
         for action_name, action_def in visible.items()
     }

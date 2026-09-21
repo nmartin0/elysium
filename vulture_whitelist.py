@@ -325,3 +325,7 @@ presentation
 action_parameter
 action_values
 recipient_roles
+
+# VisibleActionTypeResponse.automatable (api/routes.py) -- a response
+# field, read by the Watch dialog rather than by Python.
+automatable

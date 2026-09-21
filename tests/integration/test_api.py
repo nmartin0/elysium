@@ -872,7 +872,15 @@ def test_visible_action_types_never_leaks_sub_writes_or_mutations(client):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body["CreateCustomer"].keys()) == {"affected_object_types", "parameters", "executable"}
+    # `automatable` ADDED DELIBERATELY, which is what an allowlist is
+    # for: a new key has to be argued for here rather than slipping
+    # through. It is one boolean the action's AUTHOR declared -- whether
+    # a trigger may propose it -- and reveals nothing of sub_writes,
+    # mutations or which objects an action touches. The Watch dialog
+    # needs it to offer only actions the server will accept.
+    assert set(body["CreateCustomer"].keys()) == {
+        "affected_object_types", "parameters", "executable", "automatable",
+    }
     assert "sub_writes" not in body["CreateCustomer"]
     assert "sub_writes" not in body["UpdateCustomerName"]
 

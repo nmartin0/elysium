@@ -151,3 +151,23 @@ class TestTurningOneOff:
 class TestAnonymousCallers:
     def test_cannot_list(self, client):
         assert client.get("/api/triggers").status_code in (401, 403)
+
+
+class TestTheDialogIsToldWhatATriggerMayPropose:
+    def test_visible_action_types_say_whether_each_is_automatable(self, client):
+        """THE WATCH DIALOG FILTERS ON THIS, so it offers only actions
+        the server will accept rather than offering one and refusing it
+        afterwards. Absent from an action's definition means true --
+        the validator's own default.
+
+        AS `debug`, which holds discover:action_types. A first version
+        used customer_service, which discovers none -- so the list was
+        empty and `all()` over nothing would have passed vacuously had
+        the test not also asserted the list was non-empty.
+        """
+        _as(client, "dana", role="debug")
+
+        actions = client.get("/api/me/visible-action-types").json()
+
+        assert actions
+        assert all(entry["automatable"] is True for entry in actions.values())

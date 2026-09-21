@@ -126,3 +126,21 @@ describe('when the request fails', () => {
     expect(await screen.findByText(/unreachable/)).toBeInTheDocument()
   })
 })
+
+describe('saying what a trigger does', () => {
+  it('names an action it proposes', async () => {
+    /** A trigger that proposes writes must not look like one that only
+     *  notifies -- that is the fact a reviewer of their list needs. */
+    mockedList.mockResolvedValue([aTrigger({ action_type: 'Recategorise' })])
+    render(<WatchList onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/proposes Recategorise/)).toBeInTheDocument()
+  })
+
+  it('names the roles it also tells', async () => {
+    mockedList.mockResolvedValue([aTrigger({ recipient_roles: ['reviewer'] })])
+    render(<WatchList onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/also tells reviewer/)).toBeInTheDocument()
+  })
+})

@@ -664,6 +664,8 @@ export interface Trigger {
   fell: number | null
   enabled: boolean
   created_at: string
+  action_type?: string | null
+  recipient_roles?: string[]
 }
 
 export async function getTriggers(): Promise<Trigger[]> {
@@ -677,6 +679,10 @@ export async function createTrigger(body: {
   above?: number | null
   gained?: number | null
   fell?: number | null
+  action_type?: string | null
+  action_parameter?: string | null
+  action_values?: Record<string, unknown>
+  recipient_roles?: string[]
 }): Promise<string> {
   const response = await apiFetchOrThrow('/triggers', {
     method: 'POST',

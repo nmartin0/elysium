@@ -17,21 +17,8 @@
  * where something lives should not move where somebody clicks.
  */
 
+import { Button, InputGroup, Menu, MenuDivider, MenuItem, Popover } from '@blueprintjs/core'
 import {
-  Button,
-  Dialog,
-  DialogBody,
-  DialogFooter,
-  HTMLSelect,
-  InputGroup,
-  Menu,
-  MenuDivider,
-  MenuItem,
-  NumericInput,
-  Popover,
-} from '@blueprintjs/core'
-import {
-  createTrigger,
   deleteSavedView,
   getSavedViews,
   handleIfSessionExpired,
@@ -40,6 +27,8 @@ import {
 } from '@elysium/shell-api/api'
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+
+import WatchDialog from './WatchDialog'
 
 interface SavedViewsProps {
   /** Only to tell one person's popover from another's in a test; the
@@ -74,8 +63,6 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
   // another menu level: a threshold needs a number and a choice, and
   // a submenu that asks for both is a form pretending not to be one.
   const [watching, setWatching] = useState<ServerSavedView | null>(null)
-  const [thresholdKind, setThresholdKind] = useState('above')
-  const [threshold, setThreshold] = useState(10)
 
   const params = new URLSearchParams(location.search)
   const objectType = params.get('type') ?? ''
@@ -138,25 +125,6 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
     }
   }
 
-  async function watch() {
-    if (watching === null) return
-    try {
-      await createTrigger({
-        name: watching.name,
-        view_id: watching.view_id,
-        // ONE THRESHOLD, because the server refuses two -- they would
-        // need an answer about which wins, and two triggers say it
-        // plainly instead.
-        above: thresholdKind === 'above' ? threshold : null,
-        gained: thresholdKind === 'gained' ? threshold : null,
-        fell: thresholdKind === 'fell' ? threshold : null,
-      })
-      setWatching(null)
-    } catch (caught: unknown) {
-      if (onSessionExpired) handleIfSessionExpired(caught, onSessionExpired)
-    }
-  }
-
   async function forget(viewId: string) {
     try {
       await deleteSavedView(viewId)
@@ -166,52 +134,9 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
     }
   }
 
-  const dialog = (
-    <Dialog
-      isOpen={watching !== null}
-      onClose={() => setWatching(null)}
-      title={watching === null ? '' : `Watch ${watching.name}`}
-    >
-      <DialogBody>
-        <p>
-          {/* WHAT IT WILL DO, in the words of what it will do.
-              "Notify me" rather than "create a trigger": the second
-              names the machinery, which is not what somebody is
-              asking for. */}
-          Notify me when this view is
-        </p>
-        <div className="saved-views__watch">
-          <HTMLSelect
-            value={thresholdKind}
-            aria-label="When to notify"
-            onChange={(event) => setThresholdKind(event.currentTarget.value)}
-            options={[
-              { value: 'above', label: 'above' },
-              { value: 'gained', label: 'gaining' },
-              { value: 'fell', label: 'losing' },
-            ]}
-          />
-          <NumericInput
-            value={threshold}
-            min={1}
-            aria-label="How many"
-            onValueChange={(value) => setThreshold(Number.isNaN(value) ? 1 : value)}
-          />
-        </div>
-      </DialogBody>
-      <DialogFooter
-        actions={
-          <Button intent="primary" onClick={() => void watch()}>
-            Watch
-          </Button>
-        }
-      />
-    </Dialog>
-  )
-
   return (
     <>
-      {dialog}
+      <WatchDialog view={watching} onClose={() => setWatching(null)} onSessionExpired={onSessionExpired} />
       <Popover
         isOpen={open}
         onInteraction={(next) => {

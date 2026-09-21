@@ -31,12 +31,23 @@ interface WatchListProps {
   onSessionExpired: () => void
 }
 
-/** What a trigger watches for, in the words it was made with. */
+/** What a trigger watches for, and what it does -- in the words it
+ *  was made with.
+ *
+ *  WHAT IT DOES IS SAID, NOT JUST WHAT IT WATCHES. A trigger that
+ *  proposes writes looking identical to one that only notifies would
+ *  hide the one fact somebody reviewing their list most needs. */
 function describe(trigger: Trigger): string {
-  if (trigger.above !== null) return `above ${trigger.above}`
-  if (trigger.gained !== null) return `gaining ${trigger.gained} or more`
-  if (trigger.fell !== null) return `losing ${trigger.fell} or more`
-  return 'watching'
+  let condition = 'watching'
+  if (trigger.above !== null) condition = `above ${trigger.above}`
+  else if (trigger.gained !== null) condition = `gaining ${trigger.gained} or more`
+  else if (trigger.fell !== null) condition = `losing ${trigger.fell} or more`
+
+  const parts = [condition]
+  const roles = trigger.recipient_roles ?? []
+  if (roles.length > 0) parts.push(`also tells ${roles.join(', ')}`)
+  if (trigger.action_type) parts.push(`proposes ${trigger.action_type}`)
+  return parts.join(' · ')
 }
 
 export default function WatchList({ onSessionExpired }: WatchListProps) {
