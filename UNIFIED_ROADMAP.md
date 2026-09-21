@@ -16,7 +16,7 @@ which would be a guess presented as a plan.
 
 ---
 
-## WHAT IS LEFT -- every planning document, checked against the code
+## WHAT IS LEFT -- the one list, checked against the code
 
 **September 21, after patch 295.** Every `.md` plan was read and each
 open item checked against the CODE rather than taken at its word --
@@ -43,88 +43,99 @@ Each checked in the code; corrected here, pointed to elsewhere.
     SECURITY  2 the write-down check (260), 4 the grant algebra (262)
     OBJ_EXPL  phases 3-5: the table, the charts, saving and acting
 
-### Open, and verified absent in the code
+### READ THIS FIRST: every entry below is "probably open"
 
-**Operation -- a deployment surviving its own running:**
+Checked against the code on September 21 -- and FOUR entries were still
+wrong when built against: the first-run password and graceful shutdown
+were already done; log rotation and the hardened systemd unit existed
+but were installed by nothing. So each entry is re-checked against the
+code BEFORE it is built, and corrected here if it was wrong.
 
-    - ~~graceful shutdown on SIGTERM~~ WAS ALREADY CLOSED -- this
-      inventory listed a finished item. Its measurement was wrong,
-      though, and is corrected; patch 305 bounds it: uvicorn 30 s,
-      systemd 45 s
-    - ~~log rotation~~ BUILT, BUT INSTALLED BY NOTHING -- and so was the
-      hardened systemd unit. One unit now, hardened, installing its log
-      rotation, with a guard against a second (patch 305)
-    - startup checks: silo reachability, mirror schema drift (UI 8)
-    - a sync that FAILS when catalog and warehouse disagree, rather
-      than leaving it to check_mirror (BACKLOG)
-    - sync fan-out over a bounded pool (UI 11)
-    - schema migrations beyond add-a-column (3.3, UI 16)
-    - pending writes marked unapplyable AT RELOAD, so the inbox never
-      offers one that cannot be approved (HOT_RELOAD 6)
-    - mirror roll-back (0.5.4's second half)
-    - whether one request pins one mirror snapshot (0.5.6) -- a question
+### Build next, in this order -- no decision and no model needed
 
-**Accounts:**
+    1. A SYNC THAT FAILS when the catalog and warehouse disagree,
+       instead of leaving it to check_mirror (BACKLOG). First because it
+       is nearest to data integrity: today a mismatch is found only if
+       somebody happens to run the check.
+    2. PENDING WRITES MARKED UNAPPLYABLE AT RELOAD, so the inbox never
+       offers one that cannot be approved (HOT_RELOAD 6). Confirm
+       already refuses them; this tells people sooner.
+    3. STARTUP CHECKS: silo reachability, mirror schema drift (UI 8).
+    4. SYNC FAN-OUT over a bounded pool (UI 11).
+    5. MIRROR ROLL-BACK, 0.5.4's second half.
+    6. SCHEMA MIGRATIONS beyond add-a-column (3.3, UI 16).
 
-    - ~~an administrator could reach manage:roles by creating an
-      account~~ FIXED, patch 298 -- found while designing password
-      reset, which would have been a second path to the same place.
-    - ~~role EDITS could add a grant their author lacks~~ FIXED, patch
-      299: Kubernetes' role-update rule, with manage:escalation as its
-      `escalate` verb -- needed, because a new grant is held by nobody.
-    - ~~password reset, a password policy~~ BUILT, patch 300: NIST
-      SP 800-63B-4, changing your own, an administrator's reset under
-      the escalation rule -- and every account action audited, which
-      none had been
-    - ~~a generated first-run password~~ WAS ALREADY BUILT --
-      bootstrap_root.py makes 32 random characters. This inventory had
-      it wrong, which is the argument for re-checking it
-    - ~~session tokens stored RAW~~ FIXED, patch 301: SHA-256 at rest,
-      and the raw rows destroyed by the upgrade rather than left
-    - ~~a reset did not force a change at next login~~ FIXED, patch
-      302: until the owner chooses, only /me and changing the password
-      are allowed -- and the shell shows the form, not the apps
-    - ~~no UI for changing your own password, or for a reset~~ BUILT,
-      patch 304: the user menu's Change password, and Admin -> Users'
-      Reset password on every row but your own
+### Needs a decision from a person
 
-**Needs a capable model -- 2.2 first:**
+    - Whether one request pins one mirror snapshot (0.5.6).
+    - Query's starter questions -- deferred because a starter can leak
+      what MAC hides (QUERY_PLAN part 1).
+    - The context-rot fix (R2): three paths, measured, none chosen.
 
-    - token counts from chat(), a wall-clock deadline, measuring the
+### Needs a capable model -- 2.2 first
+
+    - Token counts from chat(), a wall-clock deadline, measuring the
       loop, capping what a step returns (= R2's fix), where the
-      effective window ends (UI 12-15, 23)
-    - an eval harness with baselines (UI 25); the labelling
-      experiment, then query with memory (UI 40, 41)
-    - every model-behaviour question in IDEAS.md
-    - an OpenAI-compatible adapter (UI 19)
+      effective window ends (UI 12-15, 23).
+    - An eval harness with baselines (UI 25); the labelling experiment,
+      then query with memory (UI 40, 41).
+    - Every model-behaviour question in IDEAS.md.
+    - An OpenAI-compatible adapter (UI 19).
 
-**Query:** reading the question back, follow-on questions, history
-(QUERY_PLAN 2-4). Starters (part 1) stay deferred on the MAC leak.
+### Product features
 
-**Product features:** the search bar's five unbuilt operators (UI 18);
-saved SELECTIONS, a set of objects rather than a question (BACKLOG);
-parallel multi-silo reads (UI 20); watch-to-ask (31); the instance
-graph beyond one hop -- "full Vertex" (32); silo editing (35); a
-scheduler (36); explaining a result (37); watch-to-run-the-agent (38);
-scenarios (39); an agent-audit view -- scripts/agent_trace.py exists,
-nothing shows it (28); interfaces and shared properties (ROADMAP).
+    - Query: reading the question back, follow-on questions, history
+      (QUERY_PLAN 2-4).
+    - Saved SELECTIONS -- a set of objects rather than a question
+      (BACKLOG).
+    - The search bar's five unbuilt operators (UI 18).
+    - The instance graph beyond one hop, "full Vertex" (UI 32).
+    - Parallel multi-silo reads (UI 20); silo editing (35); a scheduler
+      (36); explaining a result (37); scenarios (39).
+    - Watch-to-ask (31); watch-to-run-the-agent (38).
+    - An agent-audit view -- scripts/agent_trace.py exists, nothing
+      shows it (28).
+    - Interfaces and shared properties (ROADMAP).
 
-**Larger designs, written and unbuilt:** the plugin API (3.1,
-THIRD_PARTY_EXTENSIONS); the help assistant (3.25); fusion and
-identity -- the gold layer (3.6); bootstrapping a deployment from a
-manifest (LAKE_METADATA_NOTE); something that READS the ELT changelog.
+### Larger designs, written and unbuilt
 
-~~**Its trigger has already fired:** field-VALUE validation~~ BUILT,
-patch 297. Constraints on the FIELD -- min/max, lengths, a whole-value
-pattern, one_of -- checked at proposal and again at confirm.
+    - The plugin API (3.1, THIRD_PARTY_EXTENSIONS).
+    - The help assistant (3.25).
+    - Fusion and identity -- the gold layer (3.6).
+    - Bootstrapping a deployment from a manifest (LAKE_METADATA_NOTE).
+    - Something that READS the ELT changelog.
 
-**Deliberately held, with the trigger named:** PostgreSQL row-level
-security for MAC; column GRANT with SET ROLE; the table-size ELT item.
+### Deliberately held, with the trigger named
 
-### Waiting on a run, not on code
+    - PostgreSQL row-level security for MAC; column GRANT with SET ROLE;
+      the table-size ELT item.
 
-    - --workers for real: 292-295 fixed all four blockers
-    - the Watch layout check in e2e/layout.spec.ts (patch 290)
+### Waiting on a person running something, not on code
+
+    - --workers FOR REAL. Patches 292-295 fixed all four blockers; it has
+      only ever run as two apps inside one test process.
+    - THE WATCH LAYOUT CHECK, rewritten in patch 290 and never seen to
+      pass:  cd ui && npx playwright test -g "Watch recipient"
+
+### Done since this inventory was written -- patches 297-305
+
+    - Field-VALUE constraints on the field, checked at proposal and at
+      confirm (297).
+    - An administrator could reach manage:roles by creating an account
+      (298) or by a role edit adding a grant they lack (299) -- both
+      closed, Kubernetes' rules, with manage:escalation as `escalate`.
+    - NIST SP 800-63B-4 password policy; change your own; an
+      administrator's reset; every account action audited (300).
+    - Session tokens stored as SHA-256, raw rows destroyed (301).
+    - A reset forces a change at next login (302).
+    - The frontend lint, failing unseen since 280, fixed -- and the gate
+      is now `npm run lint`'s EXIT STATUS, not a count of one step's
+      output (303).
+    - The password UI: Change password in the user menu, Reset password
+      in Admin -> Users (304).
+    - ONE systemd unit, hardened, installing its log rotation, with a
+      guard against a second; shutdown bounded, uvicorn 30 s and
+      systemd 45 s (305).
 
 ### Why this section exists
 
