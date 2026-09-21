@@ -24,8 +24,8 @@ THE GUARDS, and what each prevents:
   NO LOCKOUT     some ACTIVE user must still hold a role granting
                  manage:roles. Once the store governs, policy.yaml
                  cannot rescue a deployment that locked itself out
-  NOT STRANDED   a role somebody holds cannot be deleted, or they
-                 would hold a role that does not exist
+  NOT STRANDED   a role ANY account holds cannot be deleted -- a
+                 disabled one included, since it can be re-enabled
   OWN GRANT      a proposer cannot remove manage:roles from their own
                  role -- the commonest way to lock yourself out
 
@@ -174,16 +174,32 @@ def resulting_roles(roles, role_name: str, after: list | None) -> dict:
 
 
 def change_problem(roles, role_name: str, after: list | None,
-                   holders: dict[str, int], validate: Callable[[dict], None]) -> str | None:
+                   holders: dict[str, int], active_holders: dict[str, int],
+                   validate: Callable[[dict], None]) -> str | None:
     """Why this change may not happen, or None. Asked at BOTH ends.
 
-    `holders` is {role: how many ACTIVE users hold it}. `validate` runs
-    the same validators loading uses, and raises ValueError.
+    TWO COUNTS OF HOLDERS, because they answer two questions.
+
+      `holders` counts EVERY account holding a role, disabled ones
+      included -- for STRANDING. A disabled account can be re-enabled,
+      and would come back holding a role that no longer exists.
+
+      `active_holders` counts only enabled ones -- for LOCKOUT. A
+      disabled account cannot edit anything, so it cannot keep a
+      deployment able to edit roles.
+
+    One map used to answer both, and the active-only count let a role
+    held only by disabled accounts be deleted: re-enable one and it was
+    stranded. Not a race -- it happened every time.
+
+    `validate` runs the same validators loading uses, and raises
+    ValueError.
     """
     if after is None and holders.get(role_name, 0) > 0:
         return (
-            f"{holders[role_name]} active user(s) hold {role_name!r}; move them "
-            f"to another role before deleting it."
+            f"{holders[role_name]} account(s) hold {role_name!r}, counting "
+            f"disabled ones -- which can be re-enabled. Move them to another "
+            f"role before deleting it."
         )
 
     result = resulting_roles(roles, role_name, after)
@@ -193,7 +209,7 @@ def change_problem(roles, role_name: str, after: list | None,
         return str(e)
 
     if not any(
-        MANAGE_ROLES in role["allowed_actions"] and holders.get(name, 0) > 0
+        MANAGE_ROLES in role["allowed_actions"] and active_holders.get(name, 0) > 0
         for name, role in result.items()
     ):
         return (
@@ -205,7 +221,8 @@ def change_problem(roles, role_name: str, after: list | None,
 
 
 def proposal_problem(roles, role_name: str, after: list | None, proposer_role: str | None,
-                     holders: dict[str, int], validate: Callable[[dict], None]) -> str | None:
+                     holders: dict[str, int], active_holders: dict[str, int],
+                     validate: Callable[[dict], None]) -> str | None:
     """change_problem, plus what only the PROPOSER is refused."""
     if (
         role_name == proposer_role
@@ -217,10 +234,11 @@ def proposal_problem(roles, role_name: str, after: list | None, proposer_role: s
         )
     if after is not None and grants_of(roles, role_name) == sorted(after):
         return f"{role_name!r} already has exactly these grants."
-    return change_problem(roles, role_name, after, holders, validate)
+    return change_problem(roles, role_name, after, holders, active_holders, validate)
 
 
 def approval_problem(change: RoleChange, approver: str, roles, holders: dict[str, int],
+                     active_holders: dict[str, int],
                      validate: Callable[[dict], None]) -> tuple[str, str] | None:
     """Why this approval may not happen, as (status_to_record, reason).
 
@@ -239,7 +257,9 @@ def approval_problem(change: RoleChange, approver: str, roles, holders: dict[str
             f"{change.role_name!r} has changed since this was proposed. Propose "
             f"it again against what is in force now.",
         )
-    problem = change_problem(roles, change.role_name, change.after, holders, validate)
+    problem = change_problem(
+        roles, change.role_name, change.after, holders, active_holders, validate,
+    )
     if problem is not None:
         return ("stale", problem)
     return None

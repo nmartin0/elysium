@@ -32,7 +32,7 @@ class TestNoLockout:
         """ONCE THE STORE GOVERNS, policy.yaml cannot restore this."""
         holders = {"owner": 1, "second": 0}
 
-        problem = change_problem(ROLES, "owner", ["manage:users"], holders, _valid)
+        problem = change_problem(ROLES, "owner", ["manage:users"], holders, holders, _valid)
 
         assert "no active user could edit roles" in problem
 
@@ -40,13 +40,13 @@ class TestNoLockout:
         """HOLDING THE GRANT IS NOT ENOUGH -- somebody active must hold
         the role. `second` has manage:roles and no members."""
         assert change_problem(
-            ROLES, "owner", ["manage:users"], {"owner": 1}, _valid,
+            ROLES, "owner", ["manage:users"], {"owner": 1}, {"owner": 1}, _valid,
         )
 
     def test_another_active_holder_is_enough(self):
         holders = {"owner": 1, "second": 1}
 
-        assert change_problem(ROLES, "owner", ["manage:users"], holders, _valid) is None
+        assert change_problem(ROLES, "owner", ["manage:users"], holders, holders, _valid) is None
 
 
 class TestTheValidatorDecides:
@@ -54,7 +54,7 @@ class TestTheValidatorDecides:
         def refuses(_result):
             raise ValueError("grant 'read:Nope' references unknown type")
 
-        problem = change_problem(ROLES, "reader", ["read:Nope"], {"owner": 1}, refuses)
+        problem = change_problem(ROLES, "reader", ["read:Nope"], {"owner": 1}, {"owner": 1}, refuses)
 
         assert "unknown type" in problem
 
@@ -84,7 +84,7 @@ def _change(**overrides):
 class TestApproval:
     def test_four_eyes_is_not_recorded(self):
         """SOMEBODY ELSE MAY STILL APPROVE IT, so it stays pending."""
-        status, _ = approval_problem(_change(), "alice", ROLES, {"owner": 1}, _valid)
+        status, _ = approval_problem(_change(), "alice", ROLES, {"owner": 1}, {"owner": 1}, _valid)
 
         assert status == ""
 
@@ -92,12 +92,12 @@ class TestApproval:
         """THE TRAIL SAYS WHY IT NEVER TOOK EFFECT."""
         changed = {**ROLES, "reader": {"allowed_actions": ["read:Z"]}}
 
-        status, _ = approval_problem(_change(), "bob", changed, {"owner": 1}, _valid)
+        status, _ = approval_problem(_change(), "bob", changed, {"owner": 1}, {"owner": 1}, _valid)
 
         assert status == "stale"
 
     def test_a_clean_approval_passes(self):
-        assert approval_problem(_change(), "bob", ROLES, {"owner": 1}, _valid) is None
+        assert approval_problem(_change(), "bob", ROLES, {"owner": 1}, {"owner": 1}, _valid) is None
 
 
 class TestTwoStoresMayShareAFile:
@@ -117,3 +117,24 @@ class TestTwoStoresMayShareAFile:
         tables = {row[0] for row in sqlite3.connect(path).execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert {"role_changes", "roles", "role_store_meta"} <= tables
+
+
+class TestTwoCountsTwoQuestions:
+    def test_a_disabled_holder_blocks_deletion(self):
+        """STRANDING COUNTS DISABLED ACCOUNTS -- they can be re-enabled."""
+        problem = change_problem(
+            ROLES, "reader", None, {"reader": 1, "owner": 1}, {"owner": 1}, _valid,
+        )
+
+        assert "counting disabled" in problem
+
+    def test_but_a_disabled_holder_cannot_prevent_a_lockout(self):
+        """LOCKOUT COUNTS ONLY ACTIVE ONES -- a disabled account cannot
+        edit anything, so it cannot keep roles editable."""
+        problem = change_problem(
+            ROLES, "owner", ["manage:users"],
+            {"owner": 1, "second": 1}, {"owner": 1}, _valid,
+        )
+
+        assert "no active user could edit roles" in problem
+

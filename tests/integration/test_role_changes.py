@@ -135,7 +135,9 @@ class TestWhatIsRefusedAtProposal:
         response = _propose(client, "customer_service", None)
 
         assert response.status_code == 400
-        assert "active user" in response.json()["detail"]
+        # "ACCOUNT(S)", no longer "active user": disabled holders count
+        # too, since they can be re-enabled into a missing role.
+        assert "account(s) hold" in response.json()["detail"]
 
     def test_a_grant_the_validator_refuses(self, client):
         _as(client, "dana")
@@ -230,3 +232,65 @@ class TestApprovalsDoNotLoseEachOther:
             "the second approval, computed from an older pinned generation, "
             "overwrote the first"
         )
+
+
+class TestNobodyIsStranded:
+    def test_a_role_held_only_by_a_disabled_account_cannot_be_deleted(self, client):
+        """A DISABLED ACCOUNT CAN BE RE-ENABLED. Counting only ACTIVE
+        holders is right for the lockout check -- a disabled account
+        cannot edit anything -- and wrong for this one: delete the role,
+        re-enable the account, and it holds a role that does not exist.
+
+        One map of holders was answering two questions.
+        """
+        directory = client.app.state.user_directory
+        _as(client, "cy", "customer_service")
+        directory.disable_user("cy")
+        _as(client, "dana")
+
+        response = _propose(client, "customer_service", None)
+
+        assert response.status_code == 400
+        assert "hold" in response.json()["detail"]
+
+
+class TestAccountCreationWaitsForAnApproval:
+    def test_it_waits_while_an_approval_holds_the_lock(self, client):
+        """THE RACE RECORDED IN PATCH 285, now closed.
+
+        An account created in a role at the instant an approval deletes
+        it -- between the approval counting holders and saving -- would
+        hold a role that no longer exists. Account creation now takes
+        the same lock, so it waits for the approval to finish.
+
+        BEHAVIOURAL, NOT SEQUENTIAL. A test that approved and then
+        created would pass without the lock too; the race needs both in
+        flight. So this holds the lock itself, starts a creation on
+        another thread, and checks the creation is WAITING before
+        letting it go.
+        """
+        import threading
+
+        import api.routes as routes
+
+        _as(client, "ann", "admin")
+        headers = _csrf_headers(client)
+        outcome = {}
+
+        def create():
+            outcome["status"] = client.post(
+                "/api/users",
+                json={"username": "newcomer", "password": "a-long-password-1",
+                      "mac_value": "us-west", "role_name": "customer_service"},
+                headers=headers,
+            ).status_code
+
+        with routes._role_change_lock:
+            worker = threading.Thread(target=create)
+            worker.start()
+            worker.join(timeout=1.0)
+            assert worker.is_alive(), "creation did not wait for the lock"
+            assert "status" not in outcome
+
+        worker.join(timeout=10)
+        assert outcome["status"] == 201

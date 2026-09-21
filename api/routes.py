@@ -1300,14 +1300,21 @@ def _require_manage_roles(request: Request, current_user: UserRecord) -> None:
         raise HTTPException(status_code=403, detail="Not authorized to manage roles")
 
 
-def _active_holders(request: Request) -> dict[str, int]:
-    """How many ACTIVE users hold each role. A disabled account cannot
-    edit anything, so it does not count against a lockout."""
-    counts: dict[str, int] = {}
+def _holders(request: Request) -> tuple[dict[str, int], dict[str, int]]:
+    """How many accounts hold each role: (every one, active ones).
+
+    TWO COUNTS, TWO QUESTIONS -- see core/role_changes.change_problem.
+    Stranding counts disabled accounts, which can be re-enabled; lockout
+    counts only active ones, which are the only ones that can edit.
+    """
+    every: dict[str, int] = {}
+    active: dict[str, int] = {}
     for user in request.app.state.user_directory.list_users():
+        role = user["role_name"]
+        every[role] = every.get(role, 0) + 1
         if not user["disabled"]:
-            counts[user["role_name"]] = counts.get(user["role_name"], 0) + 1
-    return counts
+            active[role] = active.get(role, 0) + 1
+    return every, active
 
 
 def _role_validator(config):
@@ -1348,7 +1355,7 @@ def propose_role_change_route(
     config = _generation(request).config
     problem = proposal_problem(
         config.roles, body.role_name, body.grants, current_user.role_name,
-        _active_holders(request), _role_validator(config),
+        *_holders(request), _role_validator(config),
     )
     if problem is not None:
         raise HTTPException(status_code=400, detail=problem)
@@ -1412,7 +1419,7 @@ def approve_role_change_route(
         config = latest_generation(request).config
         problem = approval_problem(
             change, current_user.user_id, config.roles,
-            _active_holders(request), _role_validator(config),
+            *_holders(request), _role_validator(config),
         )
         if problem is not None:
             status, reason = problem
@@ -2461,10 +2468,21 @@ def create_user_route(body: CreateUserRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> dict:
     _require_manage_users(request, current_user)
 
+    # UNDER THE ROLE-CHANGE LOCK, so an account cannot be created in a
+    # role at the instant an approval deletes it -- between the approval
+    # counting that role's holders and saving the change. The directory
+    # checks the role exists against the NEWEST roles, and inside this
+    # lock any approval has finished saving and reloading, so a role
+    # just deleted is already gone and the creation is refused.
+    #
+    # Recorded as a known race in patch 285 and fixed here. It failed
+    # closed -- an unknown role is denied everything -- but an account
+    # that can do nothing and no error explaining why is still wrong.
     try:
-        request.app.state.user_directory.create_user(
-            body.username, body.password, body.mac_value, body.role_name
-        )
+        with _role_change_lock:
+            request.app.state.user_directory.create_user(
+                body.username, body.password, body.mac_value, body.role_name
+            )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

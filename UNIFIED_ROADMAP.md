@@ -1026,18 +1026,18 @@ owner.
 
 ---
 
-## Known and deliberately left: a narrow race in role deletion
+## ~~A narrow race in role deletion~~ FIXED, patch 287
 
-**RECORDED RATHER THAN FIXED, patch 285.** Creating a user is not under
-the role-change lock. So an account created IN a role at the instant
-an approval deletes that role -- after the approval counted the role's
-holders as zero -- would hold a role that no longer exists.
+**THE RACE.** Account creation now takes the role-change lock, so it
+waits for any approval to finish saving and reloading -- and a role
+just deleted is already gone when it checks. A test holds the lock and
+checks a creation WAITS; a sequential test would pass without the fix.
 
-**IT FAILS CLOSED.** authorize() denies an unknown role everything, so
-the stranded account can do nothing rather than too much. It is a
-support problem, not a security one, and the fix -- taking the lock in
-user creation, which lives in core rather than routes -- is worth doing
-when user management is next touched, not in a commit about pinning.
+**AND FIXING IT FOUND A WORSE PATH, WHICH WAS NOT A RACE.** The stranded
+check counted only ACTIVE holders -- the lockout check's count, reused.
+So a role held only by DISABLED accounts could be deleted, and
+re-enabling one stranded it. Every time, not by timing. Stranding now
+counts every account; lockout still counts only active ones.
 
 ---
 
