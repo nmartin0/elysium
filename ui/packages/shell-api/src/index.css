@@ -1982,4 +1982,34 @@
     color: var(--text-secondary);
     margin-inline-start: auto;
   }
+
+  /* ROLES. A change reads as its DIFFERENCE -- added and removed grants,
+   each on its own line -- because an approver comparing two long lists
+   by eye misses the one line that matters. */
+  .roles > * + * {
+    margin-block-start: var(--space-normal);
+  }
+
+  .roles__change-head,
+  .roles__decide,
+  .roles__propose {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+  }
+
+  .roles__by,
+  .roles__empty {
+    color: var(--text-secondary);
+  }
+
+  .roles__added,
+  .roles__removed {
+    font-family: var(--font-mono);
+  }
+
+  .roles__group {
+    border: none;
+    padding: 0;
+  }
 }

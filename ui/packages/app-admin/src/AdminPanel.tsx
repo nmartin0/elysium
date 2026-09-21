@@ -21,6 +21,7 @@ import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/Vie
 import DeploymentConfig from './DeploymentConfig'
 import MetricsPanel from './MetricsPanel'
 import MirrorPanel from './MirrorPanel'
+import RolesPanel from './RolesPanel'
 import Silos from './Silos'
 
 export interface User {
@@ -48,6 +49,7 @@ const ADMIN_VIEWS: readonly ViewOption[] = [
   { id: 'silos', label: 'Silos', icon: 'database' },
   { id: 'metrics', label: 'Metrics', icon: 'timeline-line-chart' },
   { id: 'mirror', label: 'Mirror', icon: 'database' },
+  { id: 'roles', label: 'Roles', icon: 'key' },
 ]
 
 export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
@@ -168,6 +170,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       {view === 'silos' && <Silos onSessionExpired={onSessionExpired} />}
       {view === 'metrics' && <MetricsPanel onSessionExpired={onSessionExpired} />}
       {view === 'mirror' && <MirrorPanel onSessionExpired={onSessionExpired} />}
+      {view === 'roles' && <RolesPanel onSessionExpired={onSessionExpired} />}
 
       {view === 'users' &&
         (users === null ? (

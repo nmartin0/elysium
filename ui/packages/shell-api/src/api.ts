@@ -655,6 +655,59 @@ export async function deleteSavedView(viewId: string): Promise<void> {
   })
 }
 
+export interface RolesView {
+  /** Where the roles in force come from: "policy.yaml" until somebody
+   *  edits one, "role store" after. */
+  source: string
+  roles: Record<string, string[]>
+  /** Every grant a role in this deployment could hold. */
+  grantable: string[]
+}
+
+export interface RoleChange {
+  change_id: string
+  role_name: string
+  /** null when the change creates the role. */
+  before: string[] | null
+  /** null when the change deletes the role. */
+  after: string[] | null
+  proposed_by: string
+  proposed_at: string
+  status: string
+}
+
+export async function getRoles(): Promise<RolesView> {
+  const response = await apiFetchOrThrow('/roles')
+  return (await response.json()) as RolesView
+}
+
+export async function getRoleChanges(): Promise<RoleChange[]> {
+  const response = await apiFetchOrThrow('/roles/changes')
+  return (await response.json()).changes as RoleChange[]
+}
+
+/** Proposes one role's COMPLETE new grants; null deletes the role.
+ *  Somebody else must approve it. */
+export async function proposeRoleChange(roleName: string, grants: string[] | null): Promise<string> {
+  const response = await apiFetchOrThrow('/roles/changes', {
+    method: 'POST',
+    body: JSON.stringify({ role_name: roleName, grants }),
+  })
+  return (await response.json()).change_id as string
+}
+
+export async function approveRoleChange(changeId: string): Promise<void> {
+  await apiFetchOrThrow(`/roles/changes/${encodeURIComponent(changeId)}/approve`, {
+    method: 'POST',
+  })
+}
+
+export async function rejectRoleChange(changeId: string): Promise<void> {
+  await apiFetchOrThrow(`/roles/changes/${encodeURIComponent(changeId)}/reject`, {
+    method: 'POST',
+  })
+}
+
 export interface Trigger {
   trigger_id: string
   name: string

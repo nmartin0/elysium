@@ -1191,7 +1191,23 @@ enters `gathered`, or raise the window. That is a separate decision,
 and it needed this measurement first -- a fix without one is a guess
 about a threshold nobody had found.
 
-### R3. Runtime role editing — DEPENDS ON HOT RELOAD, WHICH EXISTS
+### R3. ~~Runtime role editing~~ DONE, patches 281-286
+
+**BUILT, FOLLOWING FOUNDRY.** Roles live in a store once somebody edits
+one, with policy.yaml as the bootstrap (282). `manage:roles` is its own
+grant, separate from manage:users (283). An edit is a PROPOSAL that
+somebody else must approve, with stale, lockout and stranded-user
+guards, applied by reload and undone if the reload fails (284). Inside
+the approval lock it reads the NEWEST roles, because the per-request
+pin was silently undoing concurrent approvals (285). Admin -> Roles
+shows a change as what it adds and removes (286).
+
+**FOUND ON THE WAY:** four databases missing from the backup (281), a
+dead-vocabulary guard that checked verbs rather than grants (283), and
+a schema cache keyed by path that broke two stores sharing a file (284).
+
+(Original entry, kept for its reasoning:)
+
 
 UI_ROADMAP item 13: policy.yaml becomes editable while the
 application runs. The reload machinery it needs is built and has its
