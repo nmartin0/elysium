@@ -9,7 +9,7 @@
  * rather than offering everything and showing a refusal afterwards.
  */
 
-export interface ActionParameter {
+interface ActionParameter {
   type?: string
   object_type?: string
   required?: boolean
