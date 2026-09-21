@@ -155,3 +155,27 @@ def test_runtime_state_is_still_assigned_on_app_state():
                  "login_attempt_tracker", "query_rate_limiter", "pending_writes",
                  "artifact_store", "executor"):
         assert f"app.state.{kept} =" in source, f"runtime state app.state.{kept} was removed"
+
+
+def test_the_one_read_past_the_pin_stays_one():
+    """latest_generation() IS THE SINGLE SANCTIONED EXCEPTION, and this
+    keeps it single.
+
+    Approving a role change must read the NEWEST roles inside its lock:
+    its pin is taken before it waits, and saving from a stale pin
+    silently undoes whichever approval landed during the wait. That was
+    a real lost update, found by checking the pin rather than assuming
+    it helped.
+
+    Everything else must still use the pin. So the exception is named,
+    counted, and confined to the lock it exists for -- a second caller
+    fails here and has to argue for itself.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent.parent / "api" / "routes.py").read_text()
+
+    assert source.count("latest_generation(request)") == 1
+
+    locked = source.split("with _role_change_lock:", 1)[1].split("\ndef ", 1)[0]
+    assert "latest_generation(request)" in locked

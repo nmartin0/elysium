@@ -1026,6 +1026,21 @@ owner.
 
 ---
 
+## Known and deliberately left: a narrow race in role deletion
+
+**RECORDED RATHER THAN FIXED, patch 285.** Creating a user is not under
+the role-change lock. So an account created IN a role at the instant
+an approval deletes that role -- after the approval counted the role's
+holders as zero -- would hold a role that no longer exists.
+
+**IT FAILS CLOSED.** authorize() denies an unknown role everything, so
+the stranded account can do nothing rather than too much. It is a
+support problem, not a security one, and the fix -- taking the lock in
+user creation, which lives in core rather than routes -- is worth doing
+when user management is next touched, not in a commit about pinning.
+
+---
+
 ## What to build next, in dependency order
 
 The phases above are grouped by SUBJECT. This is the same work grouped

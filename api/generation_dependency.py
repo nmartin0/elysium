@@ -46,3 +46,24 @@ def get_generation(request: Request) -> DeploymentGeneration:
     generation = request.app.state.generation
     request.state.generation = generation
     return generation
+
+
+def latest_generation(request: Request) -> DeploymentGeneration:
+    """The NEWEST generation, past this request's pin. Use once, knowingly.
+
+    THE ONE SANCTIONED READ PAST THE PIN. Everywhere else a request must
+    see one generation for its whole life -- that is the pin's job, and
+    tests/unit/test_generation_pin.py forbids reaching past it.
+
+    THE EXCEPTION IS A CRITICAL SECTION THAT WRITES FROM WHAT IT READS.
+    Approving a role change computes the new role set from the roles in
+    force and saves it. Its pin is taken before it waits for the lock;
+    if another approval lands during that wait, the pinned roles are
+    stale, and saving from them silently undoes the other approval. So
+    inside the lock it must read the newest roles.
+
+    A NAMED FUNCTION rather than a raw read, so the exception is
+    greppable and bounded: a test pins that it is called exactly once,
+    inside that lock. A second caller has to argue for itself there.
+    """
+    return request.app.state.generation

@@ -193,3 +193,40 @@ class TestAFailedReloadIsUndone:
 
         assert _approve(client, change_id).status_code == 500
         assert client.get("/api/roles").json()["source"] == "policy.yaml"
+
+
+class TestApprovalsDoNotLoseEachOther:
+    def test_a_request_pinned_before_another_approval_keeps_it(self, client, monkeypatch):
+        """THE PER-REQUEST PIN DEFEATED THE APPROVAL LOCK.
+
+        An approve request pins its generation when it first checks
+        manage:roles -- BEFORE taking the lock. If another approval
+        finishes while it waits, it computes the new role set from its
+        pinned, OLDER roles and saves that -- silently undoing the other
+        approval. The lock existed to stop exactly that lost update.
+
+        Staged by pinning the second approval to the generation from
+        BEFORE the first one applied, which is what the wait produces.
+        """
+        import api.routes as routes
+
+        _as(client, "dana")
+        base_cs = _grants(client, "customer_service")
+        first = _propose(client, "customer_service", sorted({*base_cs, "read:Account"}))
+        base_ed = _grants(client, "editor")
+        second = _propose(client, "editor", sorted({*base_ed, "discover:Account"}))
+        _as(client, "erin")
+        before_first = client.app.state.generation
+
+        assert _approve(client, first.json()["change_id"]).status_code == 200
+
+        monkeypatch.setattr(routes, "_generation", lambda request: before_first)
+        assert _approve(client, second.json()["change_id"]).status_code == 200
+        monkeypatch.undo()
+
+        roles = client.get("/api/roles").json()["roles"]
+        assert "discover:Account" in roles["editor"]
+        assert "read:Account" in roles["customer_service"], (
+            "the second approval, computed from an older pinned generation, "
+            "overwrote the first"
+        )

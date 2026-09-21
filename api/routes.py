@@ -124,7 +124,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
-from api.generation_dependency import get_generation
+from api.generation_dependency import get_generation, latest_generation
 from api.reload import ReloadInProgress, reload_generation
 from core.agent.agentic_loop import AgentLoop
 from core.auth.auth_cookies import (
@@ -1395,7 +1395,21 @@ def approve_role_change_route(
         change = changes.get(change_id)
         if change is None:
             raise HTTPException(status_code=404, detail="No such role change")
-        config = _generation(request).config
+        # THE LATEST GENERATION, NOT THIS REQUEST'S PIN -- the one
+        # sanctioned read past it; see latest_generation().
+        #
+        # The pin is taken at the FIRST _generation() call, which is the
+        # manage:roles check above -- before this lock. If another
+        # approval finished while this one waited, the pin holds the
+        # roles from BEFORE it; computing the new set from those and
+        # saving would silently undo the other approval. That lost
+        # update is what the lock exists to prevent, and the pin was
+        # quietly defeating it. Found by checking the per-request pin
+        # rather than assuming it helped here.
+        #
+        # Authorization above still uses the pin, which is right: this
+        # request was allowed to decide under the rules it arrived with.
+        config = latest_generation(request).config
         problem = approval_problem(
             change, current_user.user_id, config.roles,
             _active_holders(request), _role_validator(config),
