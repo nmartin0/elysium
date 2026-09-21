@@ -936,6 +936,26 @@ def build_generation(
     )
 
 
+def _with_shared_generation(config: DeploymentConfig, data_dir: Path) -> DeploymentConfig:
+    """The configuration, numbered from the SHARED sequence.
+
+    load_deployment() numbers from a per-process counter because it
+    knows only the configuration directory. That number restarts at 1 on
+    every start and is duplicated by every worker, and config history
+    keys on it -- so a restart's generation 1 was silently dropped.
+    Here, where the data directory is known, the number is replaced by
+    one allocated from config_history.db before anything reads it.
+    """
+    import dataclasses
+
+    from core.config_history import ConfigHistory
+
+    return dataclasses.replace(
+        config,
+        generation=ConfigHistory(data_dir / "config_history.db").allocate_generation(),
+    )
+
+
 def _with_effective_roles(config: DeploymentConfig, data_dir: Path) -> DeploymentConfig:
     """The configuration with the roles actually in force.
 
@@ -1004,6 +1024,7 @@ def load_deployment_bundle(
         data_dir = config_dir
 
     config = _with_effective_roles(load_deployment(config_dir), data_dir)
+    config = _with_shared_generation(config, data_dir)
 
     # database.path-equivalent connection fields (e.g. SQLite's "path")
     # resolve against data_dir, NOT config_dir -- the one place those

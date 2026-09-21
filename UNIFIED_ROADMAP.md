@@ -859,8 +859,11 @@ the concurrency limiter is per-process, and misleading elsewhere:
       flock on data_dir/roles.lock, following run_sync.py's own lock.
       NOT the database -- BEGIN IMMEDIATE on roles.db would deadlock
       against RoleStore.save()'s own connection.
-    - generation numbers come from a per-process counter, so two
-      workers both record "generation 1" in the config history.
+    - ~~generation numbers per process~~ FIXED, patch 294 -- and it
+      was WORSE than recorded: not only a multi-worker problem. A single
+      worker restarting reused 1, 2, 3, and INSERT OR IGNORE silently
+      dropped the new records under numbers already taken. Numbers now
+      come from a shared sequence in config_history.db.
     - the concurrency limiter's cap applies per worker, so N workers
       allow N times the model calls it meant to.
 

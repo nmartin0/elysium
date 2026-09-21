@@ -74,6 +74,25 @@ CREATE TABLE IF NOT EXISTS reload_epoch (
     epoch INTEGER NOT NULL
 );
 INSERT OR IGNORE INTO reload_epoch (id, epoch) VALUES (1, 0);
+
+-- WHERE GENERATION NUMBERS COME FROM, shared by every process.
+--
+-- THEY CAME FROM itertools.count(1) -- per process, starting at 1 on
+-- every start. config_generations is keyed by generation and written
+-- with INSERT OR IGNORE, so after a RESTART the new generation 1 hit
+-- the old row and was SILENTLY DROPPED: the history went on showing
+-- the previous run's configuration under that number while a different
+-- one ran. One worker was enough; several made it immediate.
+--
+-- SEEDED FROM THE HIGHEST GENERATION ALREADY RECORDED, so an existing
+-- deployment carries on after its own history rather than colliding
+-- with it.
+CREATE TABLE IF NOT EXISTS generation_sequence (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    value INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO generation_sequence (id, value)
+    SELECT 1, COALESCE(MAX(generation), 0) FROM config_generations;
 """
 
 
@@ -104,6 +123,29 @@ class ConfigHistory:
         """How many reloads have been asked for, across every worker."""
         with self._connection() as conn:
             return conn.execute("SELECT epoch FROM reload_epoch WHERE id = 1").fetchone()[0]
+
+    def allocate_generation(self) -> int:
+        """The next generation number, unique across every process and
+        every restart.
+
+        ONE STATEMENT, so two workers loading at once each get their own.
+
+        A GENERATION IS ONE LOAD, which is this table's own definition --
+        "one configuration load, as it was on disk". Two workers loading
+        the same files get two numbers with the SAME digest: the number
+        says which load, the digest says what was loaded.
+
+        A FAILED BUILD LEAVES A GAP. The number is taken before the
+        configuration is known to build; a gap in the sequence is an
+        honest record that a load was attempted.
+        """
+        with self._connection() as conn:
+            value = conn.execute(
+                "UPDATE generation_sequence SET value = value + 1 WHERE id = 1 "
+                "RETURNING value",
+            ).fetchone()[0]
+            conn.commit()
+        return value
 
     def announce_reload(self) -> int:
         """Records that a reload happened, so every OTHER worker follows.
