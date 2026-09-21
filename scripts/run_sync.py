@@ -114,14 +114,21 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
     into a failed one.
     """
     try:
-        from core.count_condition import evaluate_user_triggers
+        from core.count_condition import (
+            evaluate_one_trigger,
+            evaluate_user_triggers,
+        )
         from core.notifications import NotificationStore
         from core.saved_views import SavedViewStore
         from core.triggers import TriggerStore
         from core.user_directory import UserDirectory
 
         triggers = TriggerStore(runtime_paths.data_dir / "triggers.db")
-        enabled = triggers.all_enabled()
+        # BOTH KINDS: made in the product, and declared in config.yaml.
+        # They share owner resolution, the write mediator and the
+        # evaluator -- a declared trigger is never a second code path.
+        declared = list(config.declared_triggers)
+        enabled = [*triggers.all_enabled(), *declared]
         if not enabled:
             return
 
@@ -186,13 +193,22 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
                 ),
             )
 
+        notifications = NotificationStore(
+            runtime_paths.data_dir / "notifications.db",
+        )
         fired = evaluate_user_triggers(
             mediator, triggers,
             SavedViewStore(runtime_paths.data_dir / "saved_views.db"),
-            NotificationStore(runtime_paths.data_dir / "notifications.db"),
-            owners, config.source_digest,
+            notifications, owners, config.source_digest,
             write_mediator, pending_store,
         )
+        # DECLARED TRIGGERS carry their view inline, so they skip the
+        # saved-view lookup and go straight to the shared path.
+        for trigger in declared:
+            fired += evaluate_one_trigger(
+                trigger, trigger.view, mediator, notifications, owners,
+                config.source_digest, write_mediator, pending_store,
+            )
         if fired:
             print(f"{fired} trigger(s) fired")
     except Exception as e:  # noqa: BLE001 - see the docstring

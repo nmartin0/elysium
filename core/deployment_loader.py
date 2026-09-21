@@ -42,6 +42,7 @@ from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from core.config import load_yaml
+from core.declared_triggers import load_declared_triggers
 from core.secret_references import expand_secrets
 
 if TYPE_CHECKING:
@@ -188,6 +189,11 @@ class DeploymentConfig:
     generation: int               # monotonic within one process, first load is 1
     loaded_at: datetime           # when this configuration was read, UTC and aware
     source_digest: str            # sha256 over the four files' bytes -- see _source_digest()
+    # TRIGGERS THE DEPLOYMENT DECLARES in config.yaml's `triggers:`
+    # block, validated at load. LAST AND DEFAULTED because every field
+    # above is required, and a deployment without the block is the
+    # ordinary case. See core/declared_triggers.py.
+    declared_triggers: tuple = ()
 
 
 # Assigned by the loader, never by a caller, so two callers cannot mint
@@ -495,6 +501,14 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.
             read_from_mirror=(config.get("mirror") or {}).get("read_from_mirror", True),
+            # VALIDATED HERE, at load, so a mistake in a declared
+            # trigger stops the deployment starting -- where whoever
+            # wrote it is looking -- rather than surfacing when it was
+            # meant to fire.
+            declared_triggers=load_declared_triggers(
+                config.get("triggers"), schema_raw["object_types"],
+                action_types_raw, policy_raw["roles"],
+            ),
         )
     except KeyError as e:
         raise ValueError(f"Missing expected key {e} in config.yaml/ontology_schema.yaml/policy.yaml.") from e

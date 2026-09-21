@@ -186,13 +186,6 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
     """
     fired = 0
     for trigger in trigger_store.all_enabled():
-        owner = user_records.get(trigger.owner_user_id)
-        if owner is None:
-            # AN OWNER WHO NO LONGER EXISTS. Running their trigger as
-            # anybody else would be the confused deputy this project
-            # spends its security budget avoiding.
-            continue
-
         view = view_store.get(trigger.view_id)
         if view is None:
             logger.warning(
@@ -200,63 +193,91 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
                 trigger.name,
             )
             continue
-
-        # THE OWNER, AND EVERY MEMBER OF EVERY NAMED ROLE -- each
-        # counted with THEIR OWN authority by count_for_each, so no
-        # privileged number exists to leak from. A disabled account is
-        # absent from `user_records`, so it is not notified.
-        others = [
-            record for user_id, record in user_records.items()
-            if user_id != owner.user_id
-            and record.role_name in trigger.recipient_roles
-        ]
-        try:
-            counts = count_for_each(mediator, view, [owner, *others])
-        except Exception as e:  # noqa: BLE001 - see the docstring
-            logger.warning("could not evaluate trigger %r: %s", trigger.name, e)
-            continue
-        if not counts:
-            continue
-
-        condition = CountCondition(
-            key=trigger.condition_key,
-            description=describe_trigger(trigger),
-            above=trigger.above,
-            gained=trigger.gained,
-            fell=trigger.fell,
+        fired += evaluate_one_trigger(
+            trigger, view, mediator, notification_store, user_records,
+            config_digest, write_mediator, pending_store,
         )
-        # THE OWNER SEPARATELY, because two things hang on the owner's
-        # count and only one on the others'. Foundry: "Condition
-        # evaluation: Uses automation owner's permissions" -- while
-        # "notification effects use each recipient's".
-        #
-        # So a recipient who can see MORE than the owner may cross while
-        # the owner has not. They are told; no write is proposed in the
-        # owner's name, because the owner's condition did not fire.
-        owner_counts = {
-            user_id: count for user_id, count in counts.items()
-            if user_id == owner.user_id
-        }
-        other_counts = {
-            user_id: count for user_id, count in counts.items()
-            if user_id != owner.user_id
-        }
-        owner_told = evaluate_for_recipients(
-            condition, owner_counts, notification_store, config_digest,
-        )
-        fired += owner_told + evaluate_for_recipients(
-            condition, other_counts, notification_store, config_digest,
-        )
-
-        # PROPOSED ONLY WHEN THE OWNER'S CONDITION FIRED -- never on a
-        # baseline, never on a suppressed repeat, never because
-        # somebody else's count crossed.
-        if owner_told and trigger.action_type and write_mediator is not None:
-            _propose_for(
-                trigger, view, owner, mediator, write_mediator, pending_store,
-            )
     return fired
 
+
+def evaluate_one_trigger(trigger, view, mediator, notification_store,
+                         user_records: dict, config_digest: str | None,
+                         write_mediator, pending_store) -> int:
+    """One trigger, run as its owner. Returns how many were told.
+
+    SHARED BY BOTH KINDS OF TRIGGER. One a person made in the product,
+    whose view lives in the saved-view store; and one a deployment
+    declared in config.yaml, whose query is written inline. They differ
+    only in where the VIEW comes from -- so there is one path, and a
+    declared trigger cannot quietly be more powerful than a made one.
+    """
+    owner = user_records.get(trigger.owner_user_id)
+    if owner is None:
+        # AN OWNER WHO DOES NOT EXIST, or is disabled. Running the
+        # trigger as anybody else would be the confused deputy this
+        # project spends its security budget avoiding -- and for a
+        # declared trigger it usually means the service account named
+        # in config.yaml was never created.
+        logger.warning(
+            "trigger %r names owner %r, who does not exist or is disabled",
+            trigger.name, trigger.owner_user_id,
+        )
+        return 0
+    # THE OWNER, AND EVERY MEMBER OF EVERY NAMED ROLE -- each
+    # counted with THEIR OWN authority by count_for_each, so no
+    # privileged number exists to leak from. A disabled account is
+    # absent from `user_records`, so it is not notified.
+    others = [
+        record for user_id, record in user_records.items()
+        if user_id != owner.user_id
+        and record.role_name in trigger.recipient_roles
+    ]
+    try:
+        counts = count_for_each(mediator, view, [owner, *others])
+    except Exception as e:  # noqa: BLE001 - see the docstring
+        logger.warning("could not evaluate trigger %r: %s", trigger.name, e)
+        return 0
+    if not counts:
+        return 0
+
+    condition = CountCondition(
+        key=trigger.condition_key,
+        description=describe_trigger(trigger),
+        above=trigger.above,
+        gained=trigger.gained,
+        fell=trigger.fell,
+    )
+    # THE OWNER SEPARATELY, because two things hang on the owner's
+    # count and only one on the others'. Foundry: "Condition
+    # evaluation: Uses automation owner's permissions" -- while
+    # "notification effects use each recipient's".
+    #
+    # So a recipient who can see MORE than the owner may cross while
+    # the owner has not. They are told; no write is proposed in the
+    # owner's name, because the owner's condition did not fire.
+    owner_counts = {
+        user_id: count for user_id, count in counts.items()
+        if user_id == owner.user_id
+    }
+    other_counts = {
+        user_id: count for user_id, count in counts.items()
+        if user_id != owner.user_id
+    }
+    owner_told = evaluate_for_recipients(
+        condition, owner_counts, notification_store, config_digest,
+    )
+    told_others = evaluate_for_recipients(
+        condition, other_counts, notification_store, config_digest,
+    )
+
+    # PROPOSED ONLY WHEN THE OWNER'S CONDITION FIRED -- never on a
+    # baseline, never on a suppressed repeat, never because
+    # somebody else's count crossed.
+    if owner_told and trigger.action_type and write_mediator is not None:
+        _propose_for(
+            trigger, view, owner, mediator, write_mediator, pending_store,
+        )
+    return owner_told + told_others
 
 def _propose_for(trigger, view, owner, mediator, write_mediator,
                  pending_store) -> None:

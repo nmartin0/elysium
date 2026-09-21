@@ -86,3 +86,30 @@ mirror:
   #   s3.access-key-id: "..."
   #   s3.secret-access-key: "..."
   #   s3.region: "us-east-1"
+
+# TRIGGERS THIS DEPLOYMENT DECLARES. Commented out: none ship. People
+# can also make their own in the product (Browse -> Saved views ->
+# Watch); these are for conditions the deployment itself should watch.
+#
+# EACH NAMES AN OWNER and runs as that owner -- counting with its
+# authority, proposing actions in its name. It is NOT more powerful
+# than a trigger a person makes. The owner may be a person, or a
+# service account created for the purpose so the trigger keeps running
+# when people leave; either way it must be a real account.
+#
+# A MISTAKE HERE STOPS THE DEPLOYMENT STARTING, deliberately -- where
+# you are looking, rather than when the trigger was meant to fire.
+#
+# triggers:
+#   - name: Large uncategorised transactions
+#     owner: ops-bot                  # a real account; see above
+#     object_type: Transaction
+#     query_text: ""                  # optional free text
+#     conditions: []                  # optional, as in a saved view
+#     above: 10                       # exactly one of above/gained/fell
+#     recipient_roles: [reviewer]     # optional; each member is counted
+#                                     # with their OWN authority
+#     action:                         # optional; PROPOSED, never run --
+#       type: RecategorizeTransactions  # it waits in Approvals
+#       parameter: transaction_ids    # receives what matched
+#       values: {new_category: review}
