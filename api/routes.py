@@ -1217,6 +1217,7 @@ class TriggerResponse(BaseModel):
     fell: int | None
     enabled: bool
     created_at: str
+    action_type: str | None = None
 
 
 class TriggersResponse(BaseModel):
@@ -1229,6 +1230,11 @@ class CreateTriggerRequest(BaseModel):
     above: int | None = None
     gained: int | None = None
     fell: int | None = None
+    # AN ACTION TO PROPOSE when the condition fires. Absent means the
+    # trigger only notifies.
+    action_type: str | None = None
+    action_parameter: str | None = None
+    action_values: dict[str, Any] = {}
 
 
 def _trigger_store(request: Request):
@@ -1263,6 +1269,7 @@ def triggers_route(
                 "fell": trigger.fell,
                 "enabled": trigger.enabled,
                 "created_at": trigger.created_at,
+                "action_type": trigger.action_type,
             }
             for trigger in _trigger_store(request).for_owner(
                 current_user.user_id,
@@ -1306,9 +1313,29 @@ def create_trigger_route(
     if body.view_id not in owned:
         raise HTTPException(status_code=404, detail="No such saved view")
 
+    if body.action_type is not None:
+        from core.triggers import action_problem
+
+        view = next(
+            view for view in _saved_view_store(request).for_owner(
+                current_user.user_id,
+            )
+            if view.view_id == body.view_id
+        )
+        generation = _generation(request)
+        problem = action_problem(
+            generation.config.action_types, view.object_type,
+            body.action_type, body.action_parameter, body.action_values,
+            authorize(current_user, generation.config.roles,
+                      f"execute:{body.action_type}"),
+        )
+        if problem is not None:
+            raise HTTPException(status_code=400, detail=problem)
+
     trigger_id = _trigger_store(request).create(
         current_user.user_id, body.name, body.view_id,
         body.above, body.gained, body.fell,
+        body.action_type, body.action_parameter, body.action_values,
     )
     if trigger_id is None:
         raise HTTPException(status_code=500, detail="Could not create that trigger")

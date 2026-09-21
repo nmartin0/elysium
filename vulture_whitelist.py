@@ -322,3 +322,5 @@ gained
 fell
 enabled
 presentation
+action_parameter
+action_values

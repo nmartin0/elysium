@@ -166,7 +166,8 @@ def count_for_each(mediator, view, user_records: list) -> dict:
 
 def evaluate_user_triggers(mediator, trigger_store, view_store,
                            notification_store, user_records: dict,
-                           config_digest: str | None = None) -> int:
+                           config_digest: str | None = None,
+                           write_mediator=None, pending_store=None) -> int:
     """Runs every enabled trigger as its owner. Returns how many fired.
 
     AS THE OWNER, AND ONLY FOR THE OWNER. A UI-created trigger
@@ -215,10 +216,52 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
             gained=trigger.gained,
             fell=trigger.fell,
         )
-        fired += evaluate_for_recipients(
+        told = evaluate_for_recipients(
             condition, counts, notification_store, config_digest,
         )
+        fired += told
+
+        # PROPOSED ONLY WHEN THE CONDITION ACTUALLY FIRED -- never on a
+        # baseline, never on a repeat the notification suppressed.
+        # `told` already means exactly that, and a second definition of
+        # "fired" here would be two places to disagree.
+        if told and trigger.action_type and write_mediator is not None:
+            _propose_for(
+                trigger, view, owner, mediator, write_mediator, pending_store,
+            )
     return fired
+
+
+def _propose_for(trigger, view, owner, mediator, write_mediator,
+                 pending_store) -> None:
+    """Proposes the trigger's action, as its owner, into the queue.
+
+    FOUNDRY EXECUTES; THIS PROPOSES. Their automations run the action
+    outright -- "the action will be run on behalf of the owner of the
+    automation". Elysium puts it in the approvals queue, where somebody
+    still decides. Strictly more conservative than what it follows.
+
+    INTO THE DATABASE-AUTHORITATIVE STORE, which is why this waited:
+    run from a cron-started sync, a proposal written to the old
+    in-memory store was invisible to the running API until restart.
+
+    NEVER RAISES. A refused proposal -- `automatable: false`, criteria
+    the owner no longer meets, a grant withdrawn since the trigger was
+    made -- costs this trigger its action and nothing else.
+    """
+    try:
+        pending = propose_action_effect(
+            write_mediator, mediator, view, owner,
+            trigger.action_type, trigger.action_parameter,
+            trigger.action_values,
+        )
+        if pending is not None and pending_store is not None:
+            pending_store.store(pending)
+    except Exception as e:  # noqa: BLE001 - see the docstring
+        logger.warning(
+            "trigger %r could not propose %r: %s",
+            trigger.name, trigger.action_type, e,
+        )
 
 
 def describe_trigger(trigger) -> str:

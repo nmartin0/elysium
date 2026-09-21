@@ -138,11 +138,42 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
             except Exception:  # noqa: BLE001 - a removed owner is skipped
                 continue
 
+        # A WRITE MEDIATOR ONLY IF SOME TRIGGER CAN PROPOSE. A sync
+        # otherwise reads the source and nothing else -- that stays
+        # true in the common case, and even here a proposal writes
+        # nothing to the SOURCE, only a row to the approvals queue.
+        write_mediator = pending_store = None
+        if any(trigger.action_type for trigger in enabled):
+            from datetime import timedelta
+
+            from core.deployment_loader import build_generation
+            from core.pending_write_persistence import PendingWritePersistence
+            from core.pending_write_store import PendingWriteStore
+
+            generation = build_generation(
+                runtime_paths.config_dir, runtime_paths.data_dir,
+                runtime_paths.log_dir,
+            )
+            write_mediator = generation.write_mediator
+            mediator = generation.mediator
+            # THE SAME DATABASE THE API READS, which is the whole reason
+            # the store had to become database-authoritative first: a
+            # proposal from this process now appears in Approvals
+            # without the API restarting.
+            pending_store = PendingWriteStore(
+                ttl=timedelta(minutes=config.pending_write_ttl_minutes),
+                audit_log=generation.mediator.audit_log,
+                persistence=PendingWritePersistence(
+                    runtime_paths.data_dir / "pending_writes.db",
+                ),
+            )
+
         fired = evaluate_user_triggers(
             mediator, triggers,
             SavedViewStore(runtime_paths.data_dir / "saved_views.db"),
             NotificationStore(runtime_paths.data_dir / "notifications.db"),
             owners, config.source_digest,
+            write_mediator, pending_store,
         )
         if fired:
             print(f"{fired} trigger(s) fired")

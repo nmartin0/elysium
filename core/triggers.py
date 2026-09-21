@@ -30,13 +30,14 @@ NOT WHEN IT RUNS. A trigger says what to watch and what to do; the
 sync decides when to look, because that is when the data changed.
 """
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,13 @@ CREATE TABLE IF NOT EXISTS triggers (
     above INTEGER,
     gained INTEGER,
     fell INTEGER,
+    -- AN ACTION TO PROPOSE when the condition fires, or NULL for a
+    -- trigger that only notifies.
+    action_type TEXT,
+    -- Which of that action's parameters receives the matched objects.
+    action_parameter TEXT,
+    -- The action's OTHER parameters, fixed when the trigger was made.
+    action_values TEXT NOT NULL DEFAULT '{}',
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
@@ -69,6 +77,9 @@ class Trigger:
     fell: int | None
     enabled: bool
     created_at: str
+    action_type: str | None = None
+    action_parameter: str | None = None
+    action_values: dict | None = None
 
     @property
     def condition_key(self) -> str:
@@ -97,21 +108,38 @@ class TriggerStore:
         self._db_path = db_path
 
     def _connection(self):
-        return connection_with_schema(self._db_path, SCHEMA)
+        # MIGRATED, so a triggers.db made before action effects keeps
+        # its triggers rather than losing every one to "no such column"
+        # -- the saved-views bug this helper was written after.
+        return connection_with_schema(
+            self._db_path, SCHEMA,
+            migrations=(
+                add_column_if_missing("triggers", "action_type", "TEXT"),
+                add_column_if_missing("triggers", "action_parameter", "TEXT"),
+                add_column_if_missing(
+                    "triggers", "action_values", "TEXT NOT NULL DEFAULT '{}'",
+                ),
+            ),
+        )
 
     def create(self, owner_user_id: str, name: str, view_id: str,
                above: int | None = None, gained: int | None = None,
-               fell: int | None = None) -> str | None:
+               fell: int | None = None, action_type: str | None = None,
+               action_parameter: str | None = None,
+               action_values: dict | None = None) -> str | None:
         """Makes one. Returns its id, or None if it could not be made."""
         trigger_id = str(uuid.uuid4())
         try:
             with self._connection() as conn:
                 conn.execute(
                     "INSERT INTO triggers (trigger_id, owner_user_id, name, "
-                    "view_id, above, gained, fell, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "view_id, above, gained, fell, action_type, "
+                    "action_parameter, action_values, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (trigger_id, owner_user_id, name, view_id, above, gained,
-                     fell, datetime.now(UTC).isoformat()),
+                     fell, action_type, action_parameter,
+                     json.dumps(action_values or {}),
+                     datetime.now(UTC).isoformat()),
                 )
                 conn.commit()
         except Exception as e:  # noqa: BLE001
@@ -169,14 +197,19 @@ class TriggerStore:
         except Exception as e:  # noqa: BLE001
             logger.warning("could not read triggers: %s", e)
             return []
-        return [
-            Trigger(
+        triggers = []
+        for row in rows:
+            try:
+                values = json.loads(row["action_values"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                values = {}
+            triggers.append(Trigger(
                 row["trigger_id"], row["owner_user_id"], row["name"],
                 row["view_id"], row["above"], row["gained"],
                 row["fell"], bool(row["enabled"]), row["created_at"],
-            )
-            for row in rows
-        ]
+                row["action_type"], row["action_parameter"], values,
+            ))
+        return triggers
 
     def _write(self, sql: str, params: tuple) -> bool:
         try:
@@ -203,3 +236,63 @@ def describe(trigger: Trigger) -> str:
     if trigger.fell is not None:
         return f"{trigger.name} losing {trigger.fell} or more"
     return trigger.name
+
+
+# PARAMETER TYPES THAT CAN RECEIVE THE OBJECTS A VIEW MATCHED.
+_OBJECT_PARAMETERS = frozenset({"object_reference", "object_reference_list"})
+
+
+def action_problem(action_types, view_object_type: str, action_type: str,
+                   action_parameter: str | None, action_values: dict | None,
+                   owner_may_execute: bool) -> str | None:
+    """Why this action cannot be attached to this trigger, or None.
+
+    CHECKED WHEN THE TRIGGER IS MADE, not when it fires. A trigger
+    that could never propose would sit silently failing at 3am, with
+    its creator long gone; refusing now puts the reason in front of the
+    one person who can fix it.
+
+    THE SAME GATES A PROPOSAL MEETS LATER, checked early rather than
+    replaced: `propose_action` still runs every one of them at fire
+    time, because the owner's grants and the action's definition can
+    change after the trigger is made.
+
+    Foundry's rule is the model: "the owner configuring an action must
+    pass the submission criteria for that action". So the owner must
+    hold `execute:` for it -- a trigger grants nothing its owner lacks.
+    """
+    definition = action_types.get(action_type)
+    if definition is None:
+        return f"No action type {action_type!r}."
+    if not owner_may_execute:
+        # THE SAME WORDS AS AN UNKNOWN ACTION would leak less, but the
+        # owner can already see which actions exist in the Actions
+        # menu, so naming the grant costs nothing and helps.
+        return f"You cannot run {action_type!r} yourself, so a trigger cannot run it for you."
+    if definition.get("automatable") is False:
+        return f"{action_type!r} declares automatable: false, so a trigger may not propose it."
+
+    parameters = definition.get("parameters") or {}
+    target = parameters.get(action_parameter or "")
+    if target is None:
+        return f"{action_type!r} has no parameter {action_parameter!r}."
+    if target.get("type") not in _OBJECT_PARAMETERS:
+        return (
+            f"{action_parameter!r} does not take objects, so it cannot receive "
+            f"what this view matches."
+        )
+    if target.get("object_type") != view_object_type:
+        return (
+            f"{action_parameter!r} takes {target.get('object_type')} objects, "
+            f"and this view matches {view_object_type}."
+        )
+
+    unknown = sorted(set(action_values or {}) - set(parameters))
+    if unknown:
+        return f"{action_type!r} has no parameter(s) {unknown}."
+    if action_parameter in (action_values or {}):
+        # THE MATCHED OBJECTS FILL THIS ONE. A fixed value as well
+        # would be silently overwritten at fire time.
+        return f"{action_parameter!r} is filled by the view's matches; do not also give it a value."
+    return None
+
