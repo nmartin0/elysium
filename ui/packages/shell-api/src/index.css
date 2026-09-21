@@ -2012,4 +2012,16 @@
     border: none;
     padding: 0;
   }
+
+  /* HOW YOU GOT HERE, above a view reached by following a link. */
+  .link-trail {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-tight);
+    flex-wrap: wrap;
+  }
+
+  .link-trail__separator {
+    color: var(--text-secondary);
+  }
 }

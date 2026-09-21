@@ -118,7 +118,12 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
             ) : (
               <Link
                 className="explore-related__go"
-                to={`/browse?type=${link.target}&filters=${encodeURIComponent(
+                // `from` CARRIES THE ORIGIN, so Browse can say how you got
+                // there -- Foundry's link filter, distinct from a property
+                // filter. JSON, because ids may contain `/`.
+                to={`/browse?type=${link.target}&from=${encodeURIComponent(
+                  JSON.stringify({ type: objectType, id: objectId, field: reverse }),
+                )}&filters=${encodeURIComponent(
                   JSON.stringify([{ field: reverse, values: [objectId], mode: 'keep' }]),
                 )}`}
               >

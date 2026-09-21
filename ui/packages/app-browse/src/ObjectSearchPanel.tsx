@@ -27,6 +27,8 @@ import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/use
 import ActiveFilters from './ActiveFilters'
 import BulkActionForm from './BulkActionForm'
 import BulkActionsMenu, { type BulkAction } from './BulkActionsMenu'
+import LinkTrail from './LinkTrail'
+import { activeTrail } from './linkTrail'
 import SavedViews from './SavedViews'
 import SelectionBar from './SelectionBar'
 import { applyClick } from './rangeSelection'
@@ -223,6 +225,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // for it. A malformed value falls back to no filter rather than
   // throwing -- see useUrlJson.
   const [crossFilter, setCrossFilter] = useUrlJson<ChartFilter[]>('filters', [])
+  // WHERE THIS VIEW CAME FROM, when it came by a link -- see linkTrail.ts.
+  // Read as unknown and validated there: the URL is editable by hand.
+  const [linkOrigin] = useUrlJson<unknown>('from', null)
 
   // Whether the user narrowed anything, which is what separates "your
   // filters matched nothing" from "there is nothing here". Text search
@@ -252,7 +257,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     // ONE navigation, not two. Each URL setter navigates rather than
     // queueing, so calling both in sequence made the second discard
     // the first and only half the filters cleared.
-    clearUrlKeys(['q', 'filters'])
+    // `from` WITH THE FILTER IT DESCRIBES: a trail whose filter is gone
+    // would never show anyway, and a stale one should not linger.
+    clearUrlKeys(['q', 'filters', 'from'])
   }
   /**
    * Filters built in the filter bar, kept SEPARATE from the chart
@@ -419,6 +426,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // The current type's field metadata, for rendering hints the
   // ontology declares -- decimal places today.
   const typeSchemaFields = visibleSchema?.[currentType]?.fields
+  // ONLY WHILE THE FILTER IT DESCRIBES IS UNTOUCHED -- otherwise it
+  // would be a claim about results that are no longer on screen.
+  const trail = activeTrail(linkOrigin, crossFilter)
 
   return (
     // Workspace supplies the two-pane shape; this passes what goes in
@@ -432,6 +442,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               controls below it apply to -- and in the same place
               Schema and Admin put theirs, so the shell reads one way
               throughout. */}
+          {trail !== null && <LinkTrail origin={trail} targetType={currentType} visibleSchema={visibleSchema} />}
+
           <ViewSelector views={BROWSE_VIEWS} selected={view} onSelect={setView} />
 
           <SavedViews username={username} />

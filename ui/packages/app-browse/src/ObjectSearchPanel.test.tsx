@@ -9,6 +9,9 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     searchObjects: vi.fn(),
+    // The link trail fetches its origin's title. Unmocked, a view
+    // reached by a link would hit a real fetch for it.
+    getObjectDetail: vi.fn(),
     // The panel now asks which actions exist, for the bulk menu.
     // Unmocked, every test here would hit a real fetch and the menu
     // would never appear.
@@ -29,6 +32,7 @@ import {
   getDataFreshness,
   getVisibleActionTypesCached,
   searchObjects,
+  getObjectDetail,
 } from '@elysium/shell-api/api'
 import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -1656,5 +1660,35 @@ describe('the panel knows no ontology nouns of its own', () => {
     fireEvent.click(await screen.findByLabelText('Select Northern Star'))
 
     expect(await screen.findByText('1 selected')).toBeInTheDocument()
+  })
+})
+
+describe('a view reached by following a link', () => {
+  /** VERTEX-LITE'S SECOND HALF: Browse says how you got here, instead
+   *  of showing a bare filter with no memory of the object you left. */
+  const ORIGIN = JSON.stringify({ type: 'Account', id: 'acc_1', field: 'region' })
+  const LINK_FILTER = JSON.stringify([{ field: 'region', values: ['acc_1'], mode: 'keep' }])
+
+  it('shows the trail while its filter is active', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    vi.mocked(getObjectDetail).mockResolvedValue({ fields: {} })
+    renderPanel(
+      CUSTOMER_SCHEMA,
+      vi.fn(),
+      `/browse?type=Customer&from=${encodeURIComponent(ORIGIN)}&filters=${encodeURIComponent(LINK_FILTER)}`,
+    )
+
+    expect(await screen.findByRole('navigation', { name: 'How you got here' })).toBeInTheDocument()
+  })
+
+  it('shows none once the filter is gone', async () => {
+    /** THE TRAIL DESCRIBES THE CURRENT FILTER. Without it the trail
+     *  would be a claim about results no longer on screen. */
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    vi.mocked(getObjectDetail).mockResolvedValue({ fields: {} })
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), `/browse?type=Customer&from=${encodeURIComponent(ORIGIN)}`)
+
+    await screen.findByLabelText('Object type')
+    expect(screen.queryByRole('navigation', { name: 'How you got here' })).toBeNull()
   })
 })

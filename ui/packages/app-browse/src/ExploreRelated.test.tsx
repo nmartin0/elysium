@@ -54,6 +54,26 @@ describe('ExploreRelated', () => {
     expect(await screen.findByText('47 Transaction')).toBeInTheDocument()
   })
 
+  it('carries an origin that brings up the trail in Browse', async () => {
+    /** WRITER AND READER, TESTED AGAINST EACH OTHER. This builds the
+     *  link; linkTrail.ts reads it. If either drifted -- a renamed key,
+     *  a changed filter shape -- the trail would silently never show,
+     *  and each side's own tests would still pass. So the link's own
+     *  URL is fed to the reader and must produce a trail. */
+    const { activeTrail } = await import('./linkTrail')
+    mockedGetLinkCounts.mockResolvedValue({
+      transactions: { target: 'Transaction', count: 2, cardinality: 'many' },
+    })
+    renderPanel()
+
+    const link = await screen.findByRole('link', { name: /2 Transaction/ })
+    const params = new URLSearchParams(link.getAttribute('href')!.split('?')[1])
+
+    const trail = activeTrail(JSON.parse(params.get('from')!), JSON.parse(params.get('filters')!))
+
+    expect(trail).toEqual({ type: 'Customer', id: 'cust_001', field: 'customer_id' })
+  })
+
   it('links through the REVERSE field, not the forward one', async () => {
     /** THE BUG THIS TEST EXISTS FOR.
      *

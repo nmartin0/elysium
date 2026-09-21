@@ -1041,7 +1041,7 @@ operate on. The UI must not conflate the two.
 Shared explorations, if ever wanted, are a separate feature with a
 permission model rather than a flag on this one.
 
-**Vertex-lite: a read-only link explorer. FIRST HALF DONE.**
+**Vertex-lite: a read-only link explorer. DONE -- both halves.**
 link_counts() and its route answer how far each link leads BEFORE
 anything expands, and an "Related" section on the object detail page
 shows them, each linking through to a filtered Browse view.
@@ -1051,10 +1051,21 @@ multi-hop expansion. Those are the "full Vertex" item, and reaching
 them by accident is how a read-only explorer becomes something nobody
 can reason about on a real ontology.
 
-STILL OPEN: following a link should arguably keep the trail visible --
-"Customer cust_001 > its 47 Transactions" -- rather than landing in
-Browse with a filter applied and no memory of how you got there. That
-is a navigation question worth answering before adding more hops.
+~~STILL OPEN: following a link should arguably keep the trail visible~~
+**SECOND HALF DONE, patch 291.** Following a link lands in Browse under
+"Customer Ada Okafor › Transaction", linking back to where you came from.
+
+THE QUESTION WAS ANSWERED BY PRECEDENT before building. Foundry carries
+"how you got here" as a LINK FILTER in the URL, distinct from a property
+filter -- "many PROPERTY filters, but only 1 LINK filter" -- and shows
+linked objects by title. So the origin travels in the URL beside the
+filter: shareable, and it survives Back. One origin, not a chain, which
+keeps ExploreRelated's one hop at a time.
+
+THE TRAIL DESCRIBES THE CURRENT FILTER, NOT HISTORY. Remove it, widen
+it to a second id, or flip it to exclude, and the trail goes -- because
+"Ada Okafor's transactions" would then be a claim about results no
+longer on screen.
 
 ~~**Bulk actions.**~~ DONE, mechanism AND interface: checkboxes
 with shift-ranges,
