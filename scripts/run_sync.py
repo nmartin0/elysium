@@ -131,11 +131,29 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
         directory = UserDirectory(
             runtime_paths.data_dir / "credentials.db", config.roles,
         )
+        # OWNERS, PLUS EVERY ACTIVE MEMBER OF A NAMED ROLE. Resolved
+        # only for roles some trigger actually names, so a deployment
+        # where nobody notifies a role pays for owners and no more.
+        # A DISABLED ACCOUNT IS LEFT OUT, and so is never notified.
+        named_roles = {
+            role for trigger in enabled for role in trigger.recipient_roles
+        }
+        wanted = {trigger.owner_user_id for trigger in enabled}
+        if named_roles:
+            wanted |= {
+                row["username"] for row in directory.list_users()
+                # `role_name`, NOT `role` -- read from list_users()
+                # rather than guessed. The guess matched nobody, and
+                # would have notified no role member, silently.
+                if row["role_name"] in named_roles and not row["disabled"]
+            }
         owners = {}
-        for owner_id in {trigger.owner_user_id for trigger in enabled}:
+        for user_id in wanted:
             try:
-                owners[owner_id] = directory.get_user_record(owner_id)
-            except Exception:  # noqa: BLE001 - a removed owner is skipped
+                if directory.is_user_disabled(user_id):
+                    continue
+                owners[user_id] = directory.get_user_record(user_id)
+            except Exception:  # noqa: BLE001 - a removed account is skipped
                 continue
 
         # A WRITE MEDIATOR ONLY IF SOME TRIGGER CAN PROPOSE. A sync

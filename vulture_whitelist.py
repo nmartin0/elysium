@@ -324,3 +324,4 @@ enabled
 presentation
 action_parameter
 action_values
+recipient_roles

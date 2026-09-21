@@ -1218,6 +1218,7 @@ class TriggerResponse(BaseModel):
     enabled: bool
     created_at: str
     action_type: str | None = None
+    recipient_roles: list[str] = []
 
 
 class TriggersResponse(BaseModel):
@@ -1235,6 +1236,9 @@ class CreateTriggerRequest(BaseModel):
     action_type: str | None = None
     action_parameter: str | None = None
     action_values: dict[str, Any] = {}
+    # ROLES TO NOTIFY as well as the owner, each member counted with
+    # their own authority.
+    recipient_roles: list[str] = []
 
 
 def _trigger_store(request: Request):
@@ -1270,6 +1274,7 @@ def triggers_route(
                 "enabled": trigger.enabled,
                 "created_at": trigger.created_at,
                 "action_type": trigger.action_type,
+                "recipient_roles": list(trigger.recipient_roles),
             }
             for trigger in _trigger_store(request).for_owner(
                 current_user.user_id,
@@ -1313,6 +1318,18 @@ def create_trigger_route(
     if body.view_id not in owned:
         raise HTTPException(status_code=404, detail="No such saved view")
 
+    if body.recipient_roles:
+        from core.triggers import recipient_problem
+
+        generation = _generation(request)
+        problem = recipient_problem(
+            body.recipient_roles, generation.config.roles,
+            current_user.role_name,
+            authorize(current_user, generation.config.roles, "manage:users"),
+        )
+        if problem is not None:
+            raise HTTPException(status_code=400, detail=problem)
+
     if body.action_type is not None:
         from core.triggers import action_problem
 
@@ -1336,6 +1353,7 @@ def create_trigger_route(
         current_user.user_id, body.name, body.view_id,
         body.above, body.gained, body.fell,
         body.action_type, body.action_parameter, body.action_values,
+        body.recipient_roles,
     )
     if trigger_id is None:
         raise HTTPException(status_code=500, detail="Could not create that trigger")

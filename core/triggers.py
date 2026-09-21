@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS triggers (
     action_parameter TEXT,
     -- The action's OTHER parameters, fixed when the trigger was made.
     action_values TEXT NOT NULL DEFAULT '{}',
+    -- ROLES TO NOTIFY as well as the owner, each member counted with
+    -- THEIR OWN authority. A JSON list; empty means the owner only.
+    recipient_roles TEXT NOT NULL DEFAULT '[]',
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
@@ -80,6 +83,7 @@ class Trigger:
     action_type: str | None = None
     action_parameter: str | None = None
     action_values: dict | None = None
+    recipient_roles: tuple = ()
 
     @property
     def condition_key(self) -> str:
@@ -119,6 +123,9 @@ class TriggerStore:
                 add_column_if_missing(
                     "triggers", "action_values", "TEXT NOT NULL DEFAULT '{}'",
                 ),
+                add_column_if_missing(
+                    "triggers", "recipient_roles", "TEXT NOT NULL DEFAULT '[]'",
+                ),
             ),
         )
 
@@ -126,7 +133,8 @@ class TriggerStore:
                above: int | None = None, gained: int | None = None,
                fell: int | None = None, action_type: str | None = None,
                action_parameter: str | None = None,
-               action_values: dict | None = None) -> str | None:
+               action_values: dict | None = None,
+               recipient_roles: list | None = None) -> str | None:
         """Makes one. Returns its id, or None if it could not be made."""
         trigger_id = str(uuid.uuid4())
         try:
@@ -134,11 +142,12 @@ class TriggerStore:
                 conn.execute(
                     "INSERT INTO triggers (trigger_id, owner_user_id, name, "
                     "view_id, above, gained, fell, action_type, "
-                    "action_parameter, action_values, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "action_parameter, action_values, recipient_roles, "
+                    "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (trigger_id, owner_user_id, name, view_id, above, gained,
                      fell, action_type, action_parameter,
                      json.dumps(action_values or {}),
+                     json.dumps(sorted(set(recipient_roles or []))),
                      datetime.now(UTC).isoformat()),
                 )
                 conn.commit()
@@ -203,11 +212,18 @@ class TriggerStore:
                 values = json.loads(row["action_values"] or "{}")
             except (TypeError, json.JSONDecodeError):
                 values = {}
+            try:
+                roles = tuple(json.loads(row["recipient_roles"] or "[]"))
+            except (TypeError, json.JSONDecodeError):
+                # UNREADABLE MEANS THE OWNER ONLY. Guessing at who else
+                # was meant would notify people nobody chose.
+                roles = ()
             triggers.append(Trigger(
                 row["trigger_id"], row["owner_user_id"], row["name"],
                 row["view_id"], row["above"], row["gained"],
                 row["fell"], bool(row["enabled"]), row["created_at"],
                 row["action_type"], row["action_parameter"], values,
+                roles,
             ))
         return triggers
 
@@ -294,5 +310,36 @@ def action_problem(action_types, view_object_type: str, action_type: str,
         # THE MATCHED OBJECTS FILL THIS ONE. A fixed value as well
         # would be silently overwritten at fire time.
         return f"{action_parameter!r} is filled by the view's matches; do not also give it a value."
+    return None
+
+
+def recipient_problem(roles, existing_roles, creator_role: str | None,
+                      creator_may_see_all_roles: bool) -> str | None:
+    """Why the creator may not name these roles, or None.
+
+    FOUNDRY'S RULE, TRANSLATED. Its recipient picker "will only display
+    users and groups for which the person configuring the Action has
+    adequate permissions". In Elysium a group is a ROLE, and role names
+    are visible only to `manage:users` holders, through /config.
+
+    So anybody may name a role THEY HOLD, which they can plainly see,
+    and a `manage:users` holder may name ANY role, which they already
+    can. Nobody names a role they could not otherwise learn exists.
+
+    A CREATOR WITH NO ROLE holds none to name, so without
+    `manage:users` they may notify only themselves -- `None` never
+    equals a role name, which is what makes that fall out.
+
+    AN UNKNOWN ROLE IS REFUSED rather than accepted and matched against
+    nobody: silently notifying no one reads as a quiet trigger rather
+    than a mistyped name.
+    """
+    for role in roles:
+        # THE SAME WORDS for "does not exist" and "hidden from you":
+        # saying which would reveal that a role by that name exists.
+        if role not in existing_roles:
+            return f"You cannot notify the role {role!r}."
+        if role != creator_role and not creator_may_see_all_roles:
+            return f"You cannot notify the role {role!r}."
     return None
 
