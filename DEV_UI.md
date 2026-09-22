@@ -672,3 +672,40 @@ system is doing to the data underneath.
 
 That is what the earlier schematics were missing, and why they felt
 interchangeable: they had panels but no subject.
+
+---
+
+# 12. Three canvases, two inboxes, one settings area
+
+Elysium has six apps -- browse, query, approvals, notifications,
+schema, admin -- which is a decomposition BY FEATURE, the way software
+gets built, not BY WHAT THE USER IS WORKING ON. That is why moving
+between them feels like changing tools rather than changing view.
+
+Sorted by SUBJECT there are only three things a person works on:
+
+  1. A SET OF OBJECTS -- instances. Narrow, understand, act. Today
+     that is browse, charts, explore-related, saved views and the
+     agent's answers: five surfaces over ONE subject. It should be one
+     workspace with MODES -- table, graph, chart -- and switching mode
+     must not lose the set, which today it does, because they are
+     different apps.
+  2. THE ONTOLOGY -- types, not instances. What a Customer IS, what
+     links to what, which rules apply. Going from "1,284 customers" to
+     "the Customer type" is a change of KIND, not of filter.
+  3. THE PIPELINE -- the process that produces both.
+
+And two things that are not subjects at all:
+
+  INBOXES. Approvals and notifications are about EVENTS THAT ARRIVED,
+  not something being explored. They deserve their own place -- and
+  every row in them must be a DOOR into subject 1 or 3, landing on the
+  object or the build in question. Today they are terminal: you read
+  the notification, then navigate by hand to whatever it was about.
+
+  SETTINGS. Admin is the system's own configuration, visited rarely,
+  and fine where it is.
+
+SO THE LEFT RAIL IS NOT AN APP SWITCHER. It is a SUBJECT switcher,
+with three entries plus the inboxes -- far fewer than today.
+

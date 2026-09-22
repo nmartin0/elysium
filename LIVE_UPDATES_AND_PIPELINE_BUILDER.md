@@ -150,3 +150,139 @@ produces.
     ontology, in the same files, reviewable as a diff.
   - Not a place where a source's shape silently becomes the ontology
     (GOLD-3c): it PROPOSES from what it sees, and a person accepts.
+
+---
+
+# Part 3. The pipeline builder, designed (September 22)
+
+The owner's picture: create a database visually, choose its adapter,
+give it the details to find it, watch a heartbeat; then click to
+create bronze for it, draw arrows, configure cleaning on the way to
+silver, and finally connect silvers to gold -- with every
+transformation, merge and field resolution possible on the canvas.
+
+Researched before designing, and the research changes the shape in
+four useful ways.
+
+## 3.1 The law: the canvas edits DECLARATIONS, never a program
+
+THE DOCUMENTED FAILURE of every visual ETL tool is the same one.
+No-code platforms "lack essential software engineering practices such
+as version control, modularization, and comprehensive testing", and
+what starts easy "can give way to a tangled web of dependencies and
+configurations". Matillion's own users name the specific gap: no
+version control for the pipeline logic.
+
+ELYSIUM ESCAPES THIS, but only because of a decision already made
+(CONFIG_ROUND_TRIP_AND_UI_KIT.md): the canvas writes the same YAML a
+person would write, round-tripped byte-identically, validated by the
+loader before it lands, recorded as a generation in config_history,
+and rollback-able. A drag produces A REVIEWABLE DIFF IN GIT.
+
+  SO THE LAW IS: the canvas is an EDITOR OF DECLARATIONS. The moment
+  somebody can draw logic that exists only on the canvas -- a box
+  whose behaviour is not in the files -- we have built the thing the
+  research warns about.
+
+## 3.2 Draw the topology; CONFIGURE the logic
+
+  DRAWN, because it is genuinely graph-shaped:
+    which source tables are ingested at all, and which silvers
+    combine into which object type.
+
+  CONFIGURED IN THE INSPECTOR, because it is form-shaped:
+    standardisation rules, expectations and their policies,
+    duplicate-key policy, field mapping, survivorship.
+
+Per-field logic drawn as boxes on a canvas IS the hairball the
+research describes. The inspector already exists in the shell for
+exactly this: select a node or an edge, configure it on the right.
+
+## 3.3 MOST ARROWS DRAW THEMSELVES
+
+In Elysium's shape the graph is not free-form:
+
+    source table -> bronze     1:1 BY CONSTRUCTION
+    bronze -> silver           1:1 BY CONSTRUCTION
+    silver -> gold             many-to-one, and the interesting one
+
+So asking a person to draw the first two is busywork that can only be
+done one way, and every hand-drawn arrow is a chance to draw it wrong.
+THEY APPEAR AUTOMATICALLY the moment a source table is chosen for
+ingestion. What a person actually draws is which tables to ingest, and
+how silvers combine into a type -- and every arrow they do draw then
+carries a real decision.
+
+## 3.4 Honest status per layer, not theatre
+
+PRECEDENT: Dagster ships asset-graph nodes with health overlays, and
+Fivetran-style tooling gates on connector freshness. Live status on
+nodes is well trodden.
+
+THE CAVEAT: ONLY A SOURCE HAS A HEARTBEAT. A bronze table is not a
+connection; it has a last-written time and a row count. A pulsing
+"live" dot on a table would be theatre, and theatre in a status
+display is worse than no display, because it is believed.
+
+WHAT EACH LAYER CAN HONESTLY SAY, all of which Elysium already
+computes:
+
+    source   reachable now (the startup check, patch 325), and when
+             it was last read successfully
+    bronze   last written, row count, which snapshot
+    silver   rules declared, rows warned, rows QUARANTINED and the
+             rule that caught them (OPEN_RISKS.md item 1 -- this is
+             the display that makes quarantine visible)
+    gold     last publication, the audit's verdict, row count
+
+## 3.5 Credentials: the mechanism already exists, and the canvas must
+    use it rather than route around it
+
+AUDITED, AND MY FIRST INSTINCT WAS WRONG. I assumed credentials never
+touch the YAML. They do: data_silos.yaml holds "hosts, credentials,
+paths", split from config.yaml precisely because connection details
+"are often owned or secured differently in a real deployment". The
+file is tracked in git.
+
+BUT THE INDIRECTION EXISTS TOO, at deployment_loader.py's one place
+where a connection block becomes live: ${VAR} is resolved from the
+process environment, because a credential "belongs in the process
+environment -- where systemd's EnvironmentFile=, a container's secret
+mount and every CI system already put them -- rather than in a file
+that lands in every backup and usually in version control".
+
+  SO THE RULE FOR THE BUILDER: it may write an adapter choice, a host,
+  a path, a database name and a ${VAR} REFERENCE. It must never write
+  a literal secret, because it would be writing it into a tracked
+  file. The node shows "credential: configured" or "missing", and
+  offers TEST CONNECTION, which proves the secret works without
+  revealing it.
+
+## 3.6 Lanes, not a free canvas
+
+The DAG is strictly layered, so position carries no meaning that the
+layer does not already carry. Swimlanes -- sources, bronze, silver,
+gold -- make the picture legible, make "which layer is this"
+unambiguous, and remove the spaghetti a free canvas invites. Semantic
+zoom (Dagster's "deeper zoom") shows fewer details as you pull back.
+
+## 3.7 The dry run is already built
+
+Gold writes to an audit branch and publishes only if the audit passes
+(patch 341). A proposed pipeline change can therefore be BUILT on a
+branch and shown -- sample rows, quarantine counts, audit verdict --
+with nothing published until a person accepts. The builder does not
+need a simulator; it needs to show what the audit branch produces.
+
+## 3.8 And it stays separate from the ontology
+
+The pipeline's subject is a PROCESS; the ontology's subject is
+MEANING. They change at different rates and for different reasons --
+a source migration touches one, a business definition the other.
+Foundry keeps Pipeline Builder and Ontology Manager apart for the same
+reason, with hydration tying them together.
+
+CROSS-LINKED, THOUGH: a gold node opens its object type, and each
+property in the ontology shows the silver column it came from -- which
+the lineage columns (patch 340) now make possible.
+
