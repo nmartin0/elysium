@@ -184,3 +184,31 @@ def _clean(field_info: dict) -> dict:
     """Drops keys whose value is None, so an undeclared display_name
     falls back to humanize() rather than overriding it with null."""
     return {key: value for key, value in field_info.items() if value is not None}
+
+def is_reverse_link(field_info: dict) -> bool:
+    """A link whose value is COMPUTED from the other table, not stored
+    on this row: cardinality "many", or resolved through a via_table.
+
+    THE PRIMITIVE, because two questions need it and they are not the
+    same question:
+
+      - "can this be a search key?" (schema.is_searchable_field) wants
+        a link that DECLARES cardinality "one" -- an undeclared link is
+        not offered to the agent as a filter.
+      - "can a security chain follow this?" (security.via_field) only
+        needs the value to be HERE. Anything not demonstrably reverse
+        has a column on this row to read.
+
+    Requiring an explicit "one" for the second rejected valid
+    deployments -- cardinality is optional, and most schemas that omit
+    it mean a plain foreign key (001's F-19, found by the tests this
+    broke first).
+    """
+    if field_info.get("type") != "link":
+        return False
+    return field_info.get("cardinality") == "many" or "via_table" in field_info
+
+
+def is_forward_link(field_info: dict) -> bool:
+    """A link this row holds the value of -- the opposite of reverse."""
+    return field_info.get("type") == "link" and not is_reverse_link(field_info)

@@ -18,6 +18,8 @@ Used by: core/ontology/mediator.py, and core/llm/agent_step_prompt.py
 """
 
 
+
+
 def sort_key(value):
     """A total ordering across mixed id types.
 
@@ -126,6 +128,7 @@ def get_link_target(field_info: dict) -> str:
     return field_info["target"]
 
 
+
 def is_searchable_field(field_info: dict) -> bool:
     # A field can be used as a search_object() filter key if it's plain
     # data, OR a forward link (cardinality "one" -- a real column on this
@@ -139,6 +142,9 @@ def is_searchable_field(field_info: dict) -> bool:
     # independently, which risked the two drifting out of sync.
     if field_info["type"] == "data":
         return True
+    # A DECLARED "one", deliberately stricter than is_reverse_link(): an
+    # undeclared link is not offered to the agent as a filter key. See
+    # link_types.is_reverse_link for why the two rules differ.
     return field_info["type"] == "link" and field_info.get("cardinality") == "one"
 
 

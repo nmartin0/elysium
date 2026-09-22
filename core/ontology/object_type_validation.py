@@ -80,6 +80,7 @@ place.
 import zoneinfo
 
 from core.ontology.field_types import FIELD_DATA_TYPES
+from core.ontology.link_types import is_reverse_link
 
 
 def validate_object_types(object_types: dict, only: str | None = None) -> None:
@@ -454,6 +455,22 @@ def _validate_security(object_type_name: str, object_types: dict, visited: froze
         raise ValueError(
             f"Object type {object_type_name!r}: security.via_field {via_field!r} must be a link field, "
             f"not plain data."
+        )
+
+    if is_reverse_link(field_info):
+        # A REVERSE LINK IS NOT A CHAIN (001's F-19). Security resolves
+        # by reading a value stored ON this row and following it; a
+        # reverse link (cardinality "many") is computed by querying the
+        # OTHER table, so there is nothing here to follow. Accepted,
+        # the deployment loaded and every read of the type then failed
+        # with "Could not find column" -- an object type nobody could
+        # read, discovered one request at a time.
+        raise ValueError(
+            f"Object type {object_type_name!r}: security.via_field {via_field!r} is a reverse "
+            f"link (cardinality {field_info.get('cardinality')!r}, via_table "
+            f"{field_info.get('via_table')!r}), which is computed from the other table "
+            f"rather than stored here. Use the forward link on "
+            f"{field_info.get('target')!r} that points back, or a field of this type."
         )
 
     target_type = field_info.get("target")
