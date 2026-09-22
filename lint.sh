@@ -60,7 +60,11 @@ echo "--- lock files ---"
 # A lock that has drifted from its requirements reads as a guarantee
 # and is not one. Cheap, offline, and catches the failure that actually
 # happens: a dependency added or removed without regenerating.
-python3 -m scripts.check_lockfiles || FAILED=1
+# STATUS, like every other step. This set FAILED=1, which nothing read:
+# drift printed its warning directly above "All checks passed." and the
+# script exited 0 (004-F1). tests/unit/test_lint_script.py now checks
+# every step sets the variable the script exits with.
+python3 -m scripts.check_lockfiles || STATUS=1
 
 echo "--- import-linter ---"
 lint-imports || STATUS=1
