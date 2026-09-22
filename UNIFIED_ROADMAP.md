@@ -51,6 +51,66 @@ were already done; log rotation and the hardened systemd unit existed
 but were installed by nothing. So each entry is re-checked against the
 code BEFORE it is built, and corrected here if it was wrong.
 
+### THE GOLD LAYER, FRONT AND CENTER -- the owner's direction, September 22
+
+    source -> BRONZE -> SILVER (standardise, validate, quarantine,
+    deduplicate, history, lineage) -> GOLD (conform, identity,
+    survivorship, audit, publish) -> ontology reads PUBLISHED gold
+
+Researched and designed in MEDALLION_PIPELINE.md, which extends
+ELT_ROADMAP.md and FUSION_AND_IDENTITY.md. MEASURED first: the ontology
+reads SILVER (`<silo>.<table>`); bronze is never read; gold does not
+exist. PyIceberg 0.12 does Write-Audit-Publish -- branch writes, then
+set_current_snapshot and a tag in one commit -- tested here.
+
+THIS ORDER GOES FIRST, and in it. The ontology reaches gold at GOLD-3,
+before fusion: a single-source object type needs no identity
+resolution, so gold for it is a straight conform.
+
+  GOLD-0. PREREQUISITES -- gold builds on silver and on the overlay, so
+          their open bugs come first, pulled forward from B1 and item 8:
+          F-01 booleans never sync; F-20 decimal in/not_in raise; F-19
+          reverse link as security.via_field; F-26 WITH F-29, the
+          overlay keeping only the latest edit and the sync's blind
+          window; item 8, a sync that fails when catalog and warehouse
+          disagree. And the owner's decisions D1-D5 (MEDALLION_PIPELINE.md
+          -- gold vs live mode, MAC on a fused entity, write target,
+          default expectation policy, DuckDB), with F-28, which decides
+          how deletes reach gold.
+  GOLD-1. SILVER, HARDENED (S1-S4, S6): meaning-preserving
+          standardisation, declared per column; patch 297's constraints
+          evaluated as expectations with warn/quarantine/fail;
+          quarantine tables, never a silent drop; duplicate keys
+          quarantined and named; lineage columns on every row; quality
+          counts per run, shown in Admin.
+  GOLD-2. GOLD FOR SINGLE-SOURCE TYPES (G1, G4): gold.<object_type>,
+          conformed from silver; audited on a branch -- key unique and
+          non-null, link targets exist, required properties, row count
+          within bounds -- and published atomically. A failed audit
+          moves nothing.
+  GOLD-3. THE ONTOLOGY READS PUBLISHED GOLD (G5): storage bound by
+          object TYPE, not (silo, table) -- the mirror adapter,
+          security.via_field and link resolution re-keyed; the overlay
+          mapping source writes onto gold rows; each generation pinning
+          the published snapshot. Mirror roll-back (item 11) becomes
+          re-publishing an earlier tag.
+  GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
+          rows by snapshot diff, deletions included; DuckDB if D5 says
+          so. Needed by most_recent survivorship.
+  GOLD-5. MULTI-SOURCE GOLD (G2, G3): FUSION_AND_IDENTITY.md's build
+          order -- declared identity rules, a crosswalk table,
+          per-property survivorship, every contributing value kept in a
+          provenance table.
+  GOLD-6. INFERRED IDENTITY: Fellegi-Sunter (Splink, on DuckDB), off by
+          default; the uncertain middle zone to a person through the
+          approval queue.
+  GOLD-7. SCALE: batching, when a table outgrows memory (ELT_ROADMAP,
+          "the limit that actually binds").
+
+EVERYTHING BELOW CONTINUES AROUND THIS, not ahead of it: B0 and the
+rest are fitted between GOLD stages where they touch nothing gold
+depends on.
+
 ### Build next, in this order -- the external audit first
 
 AGREED WITH THE OWNER, September 21. Two external audit reports
