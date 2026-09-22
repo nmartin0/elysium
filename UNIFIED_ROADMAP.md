@@ -170,6 +170,32 @@ resolution, so gold for it is a straight conform.
           mapping source writes onto gold rows; each generation pinning
           the published snapshot. Mirror roll-back (item 11) becomes
           re-publishing an earlier tag.
+  GOLD-3b. AN INTERNAL CONNECTOR FOR GOLD, not an adapter (the owner,
+          September 22): adapters stay the boundary to the customer's
+          systems -- ingestion reads and the write path; a CONNECTOR
+          reads gold, asked in the ontology's terms (object type,
+          property, link) and needing none of an adapter's apparatus --
+          no credentials, no network, no drift, a pinned snapshot and
+          the E-10 cache. This SUPERSEDES the survey's "reuse the
+          mirror adapter over a gold view". Costs a second read
+          implementation and the parity test the plan already needed.
+  GOLD-3c. SPLIT THE ONTOLOGY FILE, and generate gold's shape from it:
+          declaration (what an object IS -- types, links, security,
+          constraints, actions) apart from source bindings (silo,
+          table, column, via_*), which demote to an INGESTION detail
+          once reads are gold. NOT "generate the ontology from gold":
+          the pipeline is driven BY the declaration -- it standardises,
+          quarantines and conforms because the ontology says so -- and
+          a derived ontology would let a source's rename silently
+          redefine meaning, which is what a data contract exists to
+          stop. Worth building instead: a command that PROPOSES types
+          and bindings from a source for a person to accept.
+  GOLD-3d. WHAT THE UI SAYS ABOUT GOLD: freshness reading "published
+          at" rather than the silver sync; provenance on an object,
+          from the lineage silver carries; quarantine counts visible,
+          since rows held back are absent by design and absence reads
+          as loss; Admin keeping the silo panel (it is about SOURCES)
+          and gaining the publication beside it.
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.

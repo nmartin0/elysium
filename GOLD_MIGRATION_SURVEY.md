@@ -169,3 +169,123 @@ the reporting that says which layer a reader is seeing.
      health report the publication.
   4. Make gold the default read path; keep the source view for writes,
      the sync, and a type gold skips (multi-source, until GOLD-5).
+
+---
+
+# Three directions from the owner, September 22 (evening)
+
+## 1. The web UI should show GOLD objects, and it nearly already does
+
+The UI receives PROPERTIES, not columns: api/routes.py strips storage,
+column, via_table and via_column from every schema response. So once
+the read path is gold (GOLD-3), Browse, Explore, the object detail and
+the charts are showing gold objects without a line changing.
+
+WHAT DOES CHANGE IS WHAT THE UI SAYS ABOUT WHAT IT IS SHOWING:
+
+  - Freshness must read "published at", the gold publication the
+    reader is pinned to -- not the silver sync, which is a different
+    instant and a different fact.
+  - An object's detail should be able to show its PROVENANCE: the
+    source and bronze snapshot its values came from, which silver's
+    lineage columns now carry through conform.
+  - Quarantine needs somewhere to be seen. Rows held back are absent
+    from gold BY DESIGN, and an operator who cannot see the count and
+    the reason will read the absence as data loss.
+  - Admin's silo panel keeps meaning what it means -- it is about
+    SOURCES -- and gains the publication beside it.
+
+## 2. The YAML: the logic has not inverted, it has SPLIT
+
+The owner: "it hardly makes sense that we have a YAML file saying what
+the ontology should be, when the data pipelines are cleaning the data
+to naturally present the ontology."
+
+WHAT THE FILE ACTUALLY HOLDS, counted: two kinds of statement mixed
+together in one block per type.
+
+  DECLARATION -- what an object IS: id_field, title_field, each
+  field's type and data_type, link targets and cardinality, security,
+  constraints, required, on_violation, standardise, duplicate_keys,
+  and the action types.
+
+  MAPPING -- where the bytes are: storage (silo, table, id_column),
+  each field's column, and a reverse link's via_table/via_column.
+
+THE PIPELINE IS DRIVEN BY THE DECLARATION, not the other way round.
+Silver standardises because a field declared it; it quarantines
+against constraints the ontology states; it refuses duplicate keys
+because id_field says what identity means; gold conforms to the
+declared properties and its audit checks the declared contract. The
+data does not "naturally present" an ontology -- it presents whatever
+the source happens to hold, and the declaration is what turns that
+into meaning.
+
+THE PRECEDENT AGREES, and is blunt about it. Foundry's own pipeline
+tool has you "start by defining endpoint schema for Ontology object
+types and properties and describing the pipeline to match inputs to
+endpoints" -- the ontology is the TARGET the pipeline is built to
+hit. They call it hydration. And the wider practice is a data
+CONTRACT: a producer renaming a column must break a check, not
+silently redefine what the consumer means. Derive the ontology from
+the data and that rename becomes a new ontology, with nothing to fail.
+
+SO THE CHANGE IS NOT "GENERATE THE ONTOLOGY FROM GOLD". It is:
+
+  a. SPLIT THE FILE. Declaration and source bindings are different
+     documents with different audiences and different change rules:
+     the ontology changes when the business does; a binding changes
+     when a source system does. Mixing them is what makes the file
+     read as though it were describing storage.
+  b. DERIVE GOLD'S SHAPE FROM THE DECLARATION -- gold table per type,
+     column per property -- so after GOLD-3 the READ path needs no
+     mapping at all. The mapping demotes to an INGESTION detail,
+     used only by the pipeline.
+  c. LET THE PIPELINE PROPOSE, NEVER DECIDE. A command that reads a
+     source and PROPOSES object types, properties and bindings for a
+     person to accept is worth building -- the tedious half is real.
+     It writes a proposal; it does not change the ontology.
+  d. KEEP THE AUDIT AS THE ENFORCEMENT. Gold already refuses to
+     publish when the declared contract is not met. That is the
+     contract being checked, which is what makes the declaration
+     worth having.
+
+## 3. Adapters for the outside; connectors for the inside
+
+The owner: adapters should be strictly for reading source databases as
+the first step of the pipeline; reading gold should use INTERNAL
+CONNECTORS of a similar shape but designed to run inside Elysium,
+because the concerns are different.
+
+THIS SUPERSEDES WHAT THIS SURVEY PROPOSED ABOVE -- reusing the mirror
+adapter against a "gold view" of the schema. That would have worked,
+and it would have carried source-shaped assumptions into the one place
+that no longer has them. The concerns genuinely differ:
+
+  AN EXTERNAL ADAPTER faces a system Elysium does not control:
+  credentials, a network, per-silo concurrency limits, health checks,
+  unknown column types, schema drift, and data that must be treated as
+  untrusted. It is READ-ONLY by construction, and that is a security
+  property (Phase 1's own wording: structurally incapable of writing).
+
+  AN INTERNAL CONNECTOR faces data Elysium wrote itself: no
+  credentials, no network, no drift -- the schema is ours, generated
+  from the declaration -- a snapshot PINNED per generation, a cache
+  keyed by that snapshot (E-10), and answers in the ontology's own
+  terms: object type, property, id. It needs none of the adapter's
+  apparatus and should not inherit it.
+
+  AND THE INTERFACES DIFFER WHERE IT MATTERS: an adapter is asked for
+  `table_name`, `id_column`, `columns` and a via_table; a connector is
+  asked for an OBJECT TYPE, its PROPERTIES and its LINKS. Handing a
+  connector a via_table would be handing it a fact that no longer
+  exists.
+
+THE COST, stated honestly: a second read implementation, and a parity
+test between the two paths while both exist. The parity test is one
+this plan already needed to make "gold is the default" a measured
+claim rather than a hope.
+
+WHERE THE LINE FALLS: adapters/ stays the boundary to the customer's
+systems -- reads for ingestion, and the WRITE path, which keeps going
+to the source. The connector reads gold, and nothing else reads gold.
