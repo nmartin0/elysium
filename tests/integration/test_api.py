@@ -2280,12 +2280,21 @@ def test_health_leaks_nothing_about_the_data(client):
         assert silo_name not in serialized, f"/health exposed silo name {silo_name!r}"
 
 
+def _source_adapter(client, name=None):
+    """The adapter the routes CHECK for a source -- built per generation,
+    separate from the mediator's, which with read_from_mirror on are the
+    mirror's (E-13). Breaking the mediator's no longer breaks the check."""
+    client.get("/api/health")  # builds this generation's source adapters
+    adapters = client.app.state.live_source_adapters[1]
+    return adapters[name] if name else next(iter(adapters.values()))
+
+
 def test_health_reports_degraded_rather_than_failing(client, monkeypatch):
     # 200 even when degraded, with the detail in the body. A caller
     # distinguishing "the service is down" from "the service is up but
     # its database is not" needs both answers to arrive, and a non-200
     # collapses them into one.
-    adapter = next(iter(mediator_of(client.app).adapters.values()))
+    adapter = _source_adapter(client)
 
     def unreachable():
         raise OSError("database is gone")
@@ -2648,8 +2657,7 @@ def test_silos_route_reports_the_failure_KIND_not_the_message(client, tmp_path):
     report or a browser cache.
     """
     _admin_user(client, "silofail")
-    mediator = mediator_of(client.app)
-    adapter = mediator.adapters["primary_sql"]
+    adapter = _source_adapter(client, "primary_sql")
     original = adapter.db_path
     adapter.db_path = str(tmp_path / "gone.db")
     try:

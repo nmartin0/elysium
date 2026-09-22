@@ -212,7 +212,11 @@ checking it found NOW.
        test can be made reliable.
        E-05 -- no Permissions-Policy header; deny camera, microphone,
        geolocation, payment, usb.
-    5. E-13 -- sources are not checked at startup: nothing calls
+    5. ~~E-13~~ FIXED, patch 325: every source checked at startup and
+       named in the log; /api/silos and /api/health check the SOURCES --
+       they checked the mirror, and a deleted source read healthy.
+       E-12, E-11 and E-10 remain, in that order.
+       E-13 -- sources are not checked at startup: nothing calls
        health_check(). Report each failure by name; do not refuse to
        start. (This IS the "startup checks" item this list already held.)
        E-12 -- graceful shutdown is MOSTLY DONE (patch 305: uvicorn waits

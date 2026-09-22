@@ -136,6 +136,7 @@ from core.auth.auth_cookies import (
     set_session_cookie,
 )
 from core.auth.limits import MAX_LOGIN_PASSWORD_LENGTH, MAX_USERNAME_LENGTH
+from core.deployment_loader import build_live_read_adapters
 from core.filters import FieldFilter, as_equality_conditions, parse_filters
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
@@ -149,6 +150,7 @@ from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import MAX_BULK_OBJECTS, WriteMediator
 from core.pending_write_store import PendingWriteStore
 from core.request_context import RequestContext
+from core.source_health import source_failures
 
 logger = logging.getLogger(__name__)
 
@@ -2468,6 +2470,20 @@ def create_note_route(object_type: str, object_id: str, body: CreateNoteRequest,
     }
 
 
+def live_source_adapters(request: Request) -> dict:
+    """The adapters that reach each SOURCE, for the generation serving
+    this request -- built once per generation, not per request (/health
+    may be polled), and rebuilt when a reload changes the generation."""
+    app = request.app
+    generation = _generation(request)
+    cached = getattr(app.state, "live_source_adapters", None)
+    if cached is None or cached[0] is not generation:
+        adapters = build_live_read_adapters(app.state.runtime_paths, generation.config)
+        app.state.live_source_adapters = (generation, adapters)
+        return adapters
+    return cached[1]
+
+
 @router.get("/silos", response_model=list[SiloStatusResponse])
 def silos_route(request: Request,
                  current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
@@ -2567,16 +2583,11 @@ def silos_route(request: Request,
                 })
 
     statuses = []
+    # THE SOURCES, not the mediator's adapters: with read_from_mirror on,
+    # those are mirror adapters, and a deleted source reported healthy.
+    failures = source_failures(config.silo_configs, live_source_adapters(request))
     for silo_name in sorted(config.silo_configs):
-        adapter = (getattr(mediator, "adapters", {}) or {}).get(silo_name)
-        failure = None
-        if adapter is None:
-            failure = "NotConfigured"
-        else:
-            try:
-                adapter.health_check()
-            except Exception as e:
-                failure = type(e).__name__
+        failure = failures.get(silo_name)
         statuses.append({
             "name": silo_name,
             "adapter": config.silo_configs[silo_name].get("adapter", "unknown"),
@@ -3777,19 +3788,23 @@ def health_route(request: Request) -> dict:
     # indicator needs to know the deployment is degraded, not which
     # part; anyone entitled to the detail has GET /silos, which is
     # authenticated and already backs the Silos screen.
-    unreachable = 0
-    adapters = getattr(mediator, "adapters", {}) or {}
-    for adapter in adapters.values():
-        try:
-            adapter.health_check()
-        except Exception:
-            # The reason is deliberately NOT reported. This endpoint is
-            # unauthenticated, and a connection error routinely carries
-            # a host, a path, or a username.
-            unreachable += 1
-
-    if adapters:
-        checks["silos"] = "unreachable" if unreachable else "reachable"
+    # THE SOURCES THEMSELVES (E-13). This checked the mediator's adapters,
+    # which with read_from_mirror on are the MIRROR's: a deleted source
+    # database still read "reachable". The mirror is reported beside
+    # them, since reads come from it -- a source down with the mirror up
+    # still serves its last synced contents, and the two differ.
+    #
+    # The reason is deliberately NOT reported. This endpoint is
+    # unauthenticated, and a connection error routinely carries a host, a
+    # path, or a username -- so only "reachable" or "unreachable".
+    generation = _generation(request)
+    silo_names = list(getattr(getattr(generation, "config", None), "silo_configs", {}) or {})
+    if silo_names:
+        down = source_failures(silo_names, live_source_adapters(request))
+        checks["silos"] = "unreachable" if down else "reachable"
+    if mediator is not None and getattr(generation.config, "read_from_mirror", False):
+        mirror_down = source_failures(mediator.adapters, mediator.adapters)
+        checks["mirror"] = "unreachable" if mirror_down else "reachable"
 
     degraded = any(value == "unreachable" for value in checks.values())
     return {"status": "degraded" if degraded else "ok", "checks": checks}

@@ -592,7 +592,8 @@ def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | No
     return min(timestamps) if timestamps else None
 
 
-def build_live_read_adapters(runtime_paths: "RuntimePaths | None" = None) -> dict:
+def build_live_read_adapters(runtime_paths: "RuntimePaths | None" = None,
+                             config: "DeploymentConfig | None" = None) -> dict:
     """Read adapters that always talk to the SOURCE, never the mirror.
 
     THE SYNC NEEDS THESE AND CANNOT USE THE MEDIATOR'S. When
@@ -622,7 +623,9 @@ def build_live_read_adapters(runtime_paths: "RuntimePaths | None" = None) -> dic
     building a synced deployment for the tests (E-08).
     """
     paths = runtime_paths or resolve_runtime_paths()
-    config = load_deployment(paths.config_dir)
+    # A GENERATION'S OWN config, when given -- the one it serves -- rather
+    # than whatever the files say now (E-13's health checks).
+    config = config or load_deployment(paths.config_dir)
 
     # THE SAME RESOLUTION build_generation() DOES, which is inline
     # there rather than a function. A relative silo path is relative to

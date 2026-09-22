@@ -107,12 +107,14 @@ from core.config_history import ConfigHistory, record_generation
 from core.deployment_loader import (
     RuntimePaths,
     build_generation,
+    build_live_read_adapters,
     resolve_runtime_paths,
 )
 from core.ontology.mediator import security_cache_scope
 from core.pending_write_persistence import PendingWritePersistence
 from core.pending_write_store import PendingWriteStore
 from core.request_metrics import RETENTION_SECONDS, RequestMetrics
+from core.source_health import source_failures
 from core.sqlite_connection import (
     require_assertions_enabled,
     require_json_each,
@@ -324,6 +326,19 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.failed_reload_epoch = None
     record_generation(app.state.config_history, generation)
     app.state.generation = generation
+
+    # EVERY SOURCE CHECKED AT STARTUP, each failure reported BY NAME
+    # (E-13). Nothing called health_check() before, so an unreachable
+    # database surfaced only as the first request that needed it failed.
+    # NOT a refusal to start: the mirror may still serve its last synced
+    # contents, and an operator needs the service up to see the failure
+    # in Admin. Logged, and to journald under systemd.
+    for silo_name, failure in source_failures(
+        generation.config.silo_configs,
+        build_live_read_adapters(runtime_paths, generation.config),
+    ).items():
+        logger.warning("Source %r failed its startup check: %s. The service is starting "
+                       "anyway; reads needing it will fail until it answers.", silo_name, failure)
     config = generation.config
     # Kept alongside the three stores below for tests/integration/
     # test_api.py's own direct, HTTP-bypassing test-setup DB access --

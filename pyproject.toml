@@ -204,6 +204,9 @@ layers = [
     "role_store",
     # role_changes imports only sqlite_connection, like role_store.
     "role_changes",
+    # source_health imports nothing from core: it is handed the
+    # adapters it checks (E-13).
+    "source_health",
 ]
 containers = ["core"]
 exhaustive = true
