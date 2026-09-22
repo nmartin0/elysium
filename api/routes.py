@@ -135,6 +135,7 @@ from core.auth.auth_cookies import (
     set_csrf_cookie,
     set_session_cookie,
 )
+from core.auth.limits import MAX_LOGIN_PASSWORD_LENGTH, MAX_USERNAME_LENGTH
 from core.filters import FieldFilter, as_equality_conditions, parse_filters
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
@@ -1019,6 +1020,14 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
     session_store = request.app.state.session_store
     user_directory = request.app.state.user_directory
     login_attempt_tracker = request.app.state.login_attempt_tracker
+
+    # OVERSIZED: THE SAME 401, AND NOTHING WRITTEN OR HASHED (E-02). Before
+    # any lookup, so a 20,000-character username writes no
+    # login_attempts row and a 200,000-character password never reaches
+    # argon2. Skipping the hash does make this answer faster -- but it
+    # reveals only the length of what the caller sent, which they know.
+    if len(body.username) > MAX_USERNAME_LENGTH or len(body.password) > MAX_LOGIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
 
     # Checked BEFORE the real password verification below, but NEVER
     # used to short-circuit it -- see login_attempt_tracker.py's own

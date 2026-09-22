@@ -81,6 +81,7 @@ from pathlib import Path
 
 from core.auth.credential_store import insert_credential_using_connection
 from core.auth.database import connection
+from core.auth.limits import MAX_USERNAME_LENGTH
 from core.auth.password_hashing import hash_password
 from core.intermediate_layer.auth import UserRecord
 
@@ -122,6 +123,10 @@ class UserDirectory:
         return self._roles() if callable(self._roles) else self._roles
 
     def create_user(self, username: str, password: str, mac_value: str | None, role_name: str) -> None:
+        # THE SAME LIMIT LOGIN ENFORCES (core/auth/limits.py): an account
+        # whose name login would refuse could never log in.
+        if len(username) > MAX_USERNAME_LENGTH:
+            raise ValueError(f"A username can be at most {MAX_USERNAME_LENGTH} characters.")
         if role_name not in self.roles:
             # Fails loudly at creation time, not silently later as a user
             # with a role name that matches nothing in policy.yaml -- such

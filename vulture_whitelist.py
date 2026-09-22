@@ -363,3 +363,7 @@ security_cache_per_request
 # __getattr__ (api/app.py) -- a module-level __getattr__ (PEP 562), called
 # by Python for `api.app.app`; uvicorn reaches it by name.
 __getattr__
+
+# validation_errors_without_values (api/app.py) -- registered by
+# @app.exception_handler.
+validation_errors_without_values

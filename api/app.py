@@ -86,6 +86,9 @@ from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.csrf_middleware import csrf_protect
@@ -152,6 +155,20 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # than this app genuinely needs, for a feature with no real
     # audience here at all.
     app = FastAPI(title="LLM Data Mediator", docs_url=None, redoc_url=None, openapi_url=None)
+
+    # VALIDATION ERRORS WITHOUT THE VALUES (E-01). FastAPI's default 422
+    # returns each error's `input` -- the value that failed -- and `ctx`.
+    # Measured: a login missing its username echoed the PASSWORD, and
+    # /me/password echoed the caller's CURRENT one. `loc` and `msg` say
+    # what was wrong and where; nothing in ui/ reads the other two
+    # (checked). The owner's decision, September 21.
+    @app.exception_handler(RequestValidationError)
+    async def validation_errors_without_values(request: Request, exc: RequestValidationError):
+        errors = [
+            {key: value for key, value in error.items() if key not in ("input", "ctx")}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
     # CSRF validation -- registered BEFORE add_security_headers below,
     # deliberately: Starlette's own middleware stack makes the LAST-

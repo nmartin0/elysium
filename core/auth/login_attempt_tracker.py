@@ -109,6 +109,17 @@ class LoginAttemptTracker:
             ).fetchone()
 
             now = datetime.now(UTC)
+            # EXPIRED ROWS GO, as each failure is recorded (E-02). They
+            # were never deleted, so every username ever tried stayed for
+            # good -- a table anyone could grow without logging in. An
+            # expired row changes no decision (is_locked_out treats a
+            # window past WINDOW as over), so deleting it changes none.
+            # Text comparison orders them: every timestamp here is written
+            # by the same isoformat(), in UTC.
+            conn.execute(
+                "DELETE FROM login_attempts WHERE window_started_at <= ?",
+                ((now - WINDOW).isoformat(),),
+            )
             if row is None or now - datetime.fromisoformat(row["window_started_at"]) >= WINDOW:
                 # No record yet, or the previous window has fully
                 # expired -- start a genuinely fresh one, not an

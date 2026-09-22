@@ -182,7 +182,12 @@ checking it found NOW.
        non-model integration tests, and in ui/ npm ci, npm run lint and
        npm test -- plus a job on a checkout with NO seeded data, so
        E-08 cannot return. Written here; only the owner can run it.
-    3. E-01 WITH E-02 -- pre-authentication, together because the second
+    3. ~~E-01 WITH E-02~~ FIXED, patch 321: validation errors drop input
+       and ctx (the owner's decision); login refuses a username over 128
+       or a password over 1,024 with the same 401, writing and hashing
+       nothing; creation refuses the same usernames; expired attempt rows
+       are deleted as failures are recorded.
+       E-01 WITH E-02 -- pre-authentication, together because the second
        depends on the first.
        E-01: validation errors echo the request body. Measured: a login
        with only a password returns 422 with that password in it --
