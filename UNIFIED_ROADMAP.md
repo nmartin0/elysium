@@ -134,6 +134,25 @@ resolution, so gold for it is a straight conform.
           it gives up, INSTALL.md and config.yaml corrected -- the
           comment there still calls live reads the conservative
           default, which the code has not done for some time.
+  GOLD-3. THE ONTOLOGY READS PUBLISHED GOLD -- AND SO DOES THE AGENT
+          (the owner, September 22): "redirect the LLM agent machinery
+          to read from the gold layer and not the lower layers ... the
+          LLM will now be able to follow objects in the gold layer,
+          links in the gold layer, with the gold layer actually
+          providing the real, distilled objects and relationships."
+          CHECKED: the agent reads ENTIRELY through the mediator --
+          search_object, get_object, get_field, search_around,
+          aggregate_by_field, visible_schema -- so repointing the
+          mediator repoints the agent, with ONE exception that is real
+          work: LINK TRAVERSAL. A reverse link today queries the TARGET
+          type's adapter using the SOURCE's physical via_table and
+          via_column (mediator.py's own comment records the cross-silo
+          bug that taught this). On gold the target's table IS
+          gold.<Type> and the foreign key is the target's PROPERTY
+          name, so link resolution must be RE-KEYED, not merely
+          repointed. Same for search_around and the reverse-link
+          batch. visible_schema must describe gold's properties, since
+          it is what the agent is told it may search by.
   GOLD-3. THE ONTOLOGY READS PUBLISHED GOLD (G5): storage bound by
           object TYPE, not (silo, table) -- the mirror adapter,
           security.via_field and link resolution re-keyed; the overlay

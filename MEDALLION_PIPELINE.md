@@ -191,6 +191,19 @@ declared bound of the last publication. Pass: one commit moves main
 and tags `published-<n>`. Fail: nothing moves; the last published gold
 keeps serving; the failure is reported by name.
 
+**G5. The ontology reads published gold -- AND SO DOES THE AGENT.**
+The owner, September 22: the agent must follow objects and links in
+GOLD, not the lower layers, because gold is where the real,
+distilled objects and relationships are. Checked rather than
+assumed: the agent reads only through the mediator, so repointing
+the mediator repoints the agent -- EXCEPT link traversal. A reverse
+link is resolved today by querying the target type's adapter with
+the SOURCE's via_table and via_column; in gold the target's table is
+gold.<Type> and the key is a PROPERTY name. That is a re-keying, not
+a repointing, and it covers search_around and the reverse-link batch
+too. visible_schema must describe gold's properties, since it is
+what the agent is told it may search by.
+
 **G5. The ontology reads published gold.** The mirror adapter reads
 `gold.<object_type>` instead of `<silo>.<table>`; each generation pins
 the published snapshot. Roll-back (ELT item 11) becomes re-publishing
