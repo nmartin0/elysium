@@ -54,6 +54,7 @@ Used by: scripts/run_sync.py
 
 from dataclasses import dataclass, field
 
+from core.mirror.duplicates import DuplicatePolicy, policy_for_storage
 from core.mirror.expectations import expectations_for
 from core.mirror.standardise import rules_for
 
@@ -84,6 +85,9 @@ class SyncTarget:
     # column -> what silver checks on every row and what a failure does
     # (GOLD-1). Absent for a column that declares no constraints.
     expectations: dict[str, dict] = field(default_factory=dict)
+    # What to do when two rows claim the same id (GOLD-1). Declared on
+    # the storage block, because it is a property of the TABLE.
+    duplicate_policy: DuplicatePolicy = field(default_factory=DuplicatePolicy)
 
 
 def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
@@ -100,12 +104,14 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
     for type_def in schema.get("object_types", {}).values():
         for (silo_name, table_name, id_column, columns,
              column_types, fields_by_column,
-             standardisation, expectations) in _targets_for_type(type_def):
+             standardisation, expectations,
+             duplicate_policy) in _targets_for_type(type_def):
             key = (silo_name, table_name)
             if key not in by_table:
                 by_table[key] = {"id_column": id_column, "columns": [], "column_types": {},
                              "fields_by_column": {}, "standardisation": {},
-                             "expectations": {}}
+                             "expectations": {},
+                             "duplicate_policy": duplicate_policy}
             existing = by_table[key]["columns"]
             for column in columns:
                 if column not in existing:
@@ -113,6 +119,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             by_table[key]["column_types"].update(column_types)
             by_table[key]["standardisation"].update(standardisation)
             by_table[key]["expectations"].update(expectations)
+            by_table[key]["duplicate_policy"] = duplicate_policy
             # FIRST DECLARATION WINS on a shared table. Two object
             # types can back onto one table, and if both map the same
             # column the field names are interchangeable for the
@@ -150,6 +157,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             fields_by_column=entry["fields_by_column"],
             standardisation=entry["standardisation"],
             expectations=entry["expectations"],
+            duplicate_policy=entry["duplicate_policy"],
         )
         for (silo_name, table_name), entry in by_table.items()
     ]
@@ -189,7 +197,12 @@ def _targets_for_type(type_def: dict):
     # customer_id in primary but cust_ref in risk_db). See
     # core/ontology/object_type_validation.py's own _validate_id_types()
     # for the fuller reasoning.
+    duplicate_by_storage: dict[str | None, DuplicatePolicy] = {}
     for storage_key, storage in storages.items():
+        try:
+            duplicate_by_storage[storage_key] = policy_for_storage(storage)
+        except ValueError as e:
+            raise ValueError(f"{storage.get('table', storage_key)!r}: {e}") from None
         columns_by_storage[storage_key].append(storage["id_column"])
         id_type = storage.get("id_type")
         if id_type is not None:
@@ -262,4 +275,5 @@ def _targets_for_type(type_def: dict):
             fields_by_storage[storage_key],
             standardisation_by_storage[storage_key],
             expectations_by_storage[storage_key],
+            duplicate_by_storage[storage_key],
         )

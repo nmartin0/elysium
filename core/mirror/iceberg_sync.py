@@ -61,8 +61,9 @@ from core.mirror.drift_policy import (
     verdict_for_removed_column,
     verdict_for_type_change,
 )
+from core.mirror.duplicates import DuplicatePolicy, split_duplicates
 from core.mirror.durability import force_table_metadata_to_disk
-from core.mirror.expectations import apply_expectations
+from core.mirror.expectations import Violation, apply_expectations
 from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.transform import describe_drift, transform_rows
@@ -304,7 +305,8 @@ class IcebergMirrorSync(MirrorSync):
                     columns: list[str], column_types: dict[str, str] | None = None,
                     fields_by_column: dict[str, str] | None = None,
                     standardisation: dict[str, dict] | None = None,
-                    expectations: dict[str, dict] | None = None) -> SyncResult:
+                    expectations: dict[str, dict] | None = None,
+                    duplicate_policy: DuplicatePolicy | None = None) -> SyncResult:
         adapter = self.adapters.get(silo_name)
         if adapter is None:
             raise ValueError(
@@ -449,7 +451,24 @@ class IcebergMirrorSync(MirrorSync):
         for rule, count in checked.counts.items():
             logger.warning(f"{silo_name}.{table_name}: {count} row(s) failed {rule}")
 
-        arrow_table = self._to_arrow(checked.kept, columns, column_types)
+        # TWO ROWS CLAIMING ONE IDENTITY (GOLD-1). After the per-row
+        # checks, so a row already held back is not also counted as a
+        # duplicate.
+        kept_rows, duplicated = split_duplicates(
+            checked.kept, id_column, duplicate_policy or DuplicatePolicy(),
+        )
+        if duplicated:
+            self._write_quarantine(
+                silo_name, table_name, id_column,
+                [(row, Violation(id_column, id_column, why, key, "quarantine"))
+                 for row, key, why in duplicated],
+            )
+            logger.warning(
+                f"{silo_name}.{table_name}: {len(duplicated)} row(s) held back "
+                f"for duplicate {id_column}"
+            )
+
+        arrow_table = self._to_arrow(kept_rows, columns, column_types)
 
         self._ensure_namespace(silo_name)
         identifier = f"{silo_name}.{table_name}"
@@ -562,7 +581,7 @@ class IcebergMirrorSync(MirrorSync):
             table_name=table_name,
             row_count=arrow_table.num_rows,
             synced_at=datetime.now(UTC),
-            quarantined=len(checked.quarantined),
+            quarantined=len(checked.quarantined) + len(duplicated),
             violations=checked.counts,
         )
 

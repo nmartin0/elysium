@@ -105,8 +105,10 @@ resolution, so gold for it is a straight conform.
           ~~S2-S3 expectations and quarantine~~ DONE, patch 338: a
           field's constraints evaluated per row, warn/quarantine/fail
           per rule, quarantine tables that record the rule and leave
-          the row in bronze. NEXT: duplicate keys (S4), then lineage
-          columns (S6).
+          the row in bronze. ~~S4 duplicate keys~~ DONE, patch 339:
+          every copy held and the key named by default; fail or a
+          declared keep_last_by as the alternatives. NEXT: lineage
+          columns (S6), and then GOLD-2.
           S1-S4, S6: meaning-preserving
           standardisation, declared per column; patch 297's constraints
           evaluated as expectations with warn/quarantine/fail;
