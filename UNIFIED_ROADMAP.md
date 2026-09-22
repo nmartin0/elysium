@@ -67,6 +67,26 @@ THIS ORDER GOES FIRST, and in it. The ontology reaches gold at GOLD-3,
 before fusion: a single-source object type needs no identity
 resolution, so gold for it is a straight conform.
 
+  DECIDED BY THE OWNER, September 22 (reasoning and precedent in
+  MEDALLION_PIPELINE.md): D1 gold requires mirror mode and LIVE-READ
+  MODE IS DEMOTED -- a documented fallback, warned about at startup;
+  D2 a MAC conflict REFUSES the merge and sends it for review; D3 an
+  edit to a fused object is recorded against the gold entity in the
+  write log and layered over gold -- Foundry's writeback model, which
+  Elysium's write log already is -- and reaches a silo only where an
+  object type declares a write-back target per property; D4 per-row
+  expectations default to WARN, gold's audit checks default to FAIL,
+  with a quarantine-rate threshold that fails a build; D5 DuckDB
+  accepted.
+
+  AND FROM D3's SECOND HALF, the mirror changing while it is read:
+  Iceberg readers are pinned to the snapshot they loaded and never see
+  a partial change, which Elysium already gets by pinning per
+  generation. Two hazards become work: published gold snapshots are
+  TAGGED so expiry cannot delete files a pinned generation still
+  reads; and 0.5.6 -- one request, one snapshot -- is settled, a
+  request pinning its generation at arrival.
+
   GOLD-0. PREREQUISITES -- gold builds on silver and on the overlay, so
           their open bugs come first, pulled forward from B1 and item 8:
           F-01 booleans never sync; F-20 decimal in/not_in raise; F-19
@@ -88,6 +108,10 @@ resolution, so gold for it is a straight conform.
           non-null, link targets exist, required properties, row count
           within bounds -- and published atomically. A failed audit
           moves nothing.
+  GOLD-2b. LIVE-READ MODE DEMOTED (D1): a startup warning naming what
+          it gives up, INSTALL.md and config.yaml corrected -- the
+          comment there still calls live reads the conservative
+          default, which the code has not done for some time.
   GOLD-3. THE ONTOLOGY READS PUBLISHED GOLD (G5): storage bound by
           object TYPE, not (silo, table) -- the mirror adapter,
           security.via_field and link resolution re-keyed; the overlay

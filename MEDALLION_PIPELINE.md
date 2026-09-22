@@ -232,21 +232,93 @@ an earlier tag.
    Batching, and DuckDB -- already an expected dependency for the diff,
    and Splink's engine -- become necessary at size, not before.
 
-## Decisions for the owner
+## The owner's decisions, September 22 -- ANSWERED
 
-- D1. Does gold REQUIRE mirror mode? (Recommended: yes; live mode kept
-  only for types marked single-source.)
-- D2. MAC field conflict on a fused entity: most restrictive wins, or
-  refuse the merge? (Recommended: refuse, surfaced for review --
-  silently raising restriction hides a real disagreement.)
-- D3. Write target for a property of a fused entity: the survivorship
-  source, or declared per action? (Recommended: survivorship source,
-  overridable per action.)
-- D4. Default expectation policy where none is declared:
-  quarantine or warn? (Recommended: warn -- nothing held back that
-  nobody asked to hold back -- with quarantine opt-in per rule.)
-- D5. Accept DuckDB as a dependency when the changelog lands?
-  (Recommended: yes; measured 76 ms for a 200,000-row diff.)
+**D1. Gold requires mirror mode. YES, and live-read mode is DEMOTED.**
+The owner: "Demote live reading mode as it will be incompatible with
+using the enriched data." Gold exists only in the lake; a live read
+goes to the customer's database, which holds no standardised,
+validated, deduplicated, fused rows. So `read_from_mirror: false`
+becomes a documented fallback for a deployment with no gold -- warned
+about at startup, not offered as an equal choice -- and config.yaml's
+comment claiming live reads are the conservative default (already
+false: the code defaults to the mirror) is corrected with it.
+
+**D2. A MAC conflict on a fused entity REFUSES the merge and sends it
+for review.** Each property keeps its source's classification; if the
+sources disagree about the value MAC decides on, the entity is not
+merged. It goes to the same queue an inferred merge goes to, with both
+values shown. Quietly taking the most restrictive would hide a real
+disagreement between systems and silently change who can see what.
+
+**D3. Where a write to a fused object goes -- ANSWERED BY FOUNDRY'S
+OWN MODEL, and it is not "pick a source".** In Foundry, edits made
+through actions are written to a separate WRITEBACK dataset and never
+overwrite the backing dataset; what the ontology serves is the
+combination of the input datasources and the user edits -- its
+materializations are defined as exactly that. Their training material
+tells downstream consumers to read the `_edited` dataset rather than
+the original backing one.
+
+ELYSIUM ALREADY HAS THIS SHAPE: the write log plus the mirror overlay
+IS a writeback dataset layered over derived data. So:
+
+  - An edit to a fused object is recorded against the GOLD ENTITY in
+    the write log and layered over gold on read. No source is picked.
+  - Pushing an edit into a source silo stays possible, but only where
+    an object type DECLARES a write-back target -- per property, since
+    survivorship is per property. Undeclared, the edit lives in the
+    overlay and is never invented into somebody's database.
+  - A single-source object type declares its one source as the target,
+    which is exactly today's behaviour. Nothing regresses.
+  - Foundry's warning is inherited: a destructive change to a backing
+    dataset can LOSE edits. Gold's audit therefore checks that every
+    pending edit's entity still exists before publishing.
+
+**D3 (second half). The mirror changing WHILE it is being read.**
+Iceberg answers it: a reader uses the snapshot that was current when
+it loaded the table, readers take no locks, and table changes are
+atomic -- a reader never sees a partial or uncommitted change. Elysium
+already pins snapshot ids per generation, so a sync or a gold publish
+during a read cannot disturb it; the reader sees the whole old state or,
+after a reload, the whole new one.
+
+TWO REAL HAZARDS REMAIN, and both are design work, not luck:
+
+  1. SNAPSHOT EXPIRY UNDER A PINNED READER. Expiring snapshots deletes
+     files a pinned generation may still be reading. Iceberg's own
+     answer is tags: they retain important historical snapshots.
+     Every published gold snapshot is TAGGED, and expiry must never
+     remove a tagged snapshot or one pinned by a live generation.
+  2. ONE REQUEST, ONE SNAPSHOT (roadmap 0.5.6, still open). A request
+     that outlives a reload could read half from each generation. With
+     gold the answer is settled: a request pins its generation at
+     arrival, and the generation pins its snapshots.
+
+**D4. Default policy: WARN, with quarantine opt-in -- and the split
+matters.** Precedent divides by WHAT the check guards:
+  - PER-ROW checks: Databricks expectations default to keeping
+    invalid records and counting them -- warn.
+  - BUILD-LEVEL checks: dbt's tests default to error, which stops the
+    build, with warn available per test and thresholds (warn_if /
+    error_if) for "one duplicate is a warning, ten are an error".
+  The tiering practice both feed into: critical checks fail, important
+  ones warn, informational ones only report.
+
+  SO ELYSIUM SPLITS THE SAME WAY:
+  - Silver's per-row expectations default to WARN (the row lands, the
+    violation is counted and shown), with `quarantine` and `fail`
+    declared per rule.
+  - Gold's AUDIT checks -- the Foundry contract: key unique and
+    non-null, link targets exist, required properties present -- default
+    to FAIL, because a gold table that breaks them cannot back an
+    object type at all.
+  - A declared quarantine RATE threshold fails a build the way dbt's
+    error_if does: a rule quarantining 0.1% of rows is a data problem;
+    one quarantining 40% is a pipeline problem.
+
+**D5. DuckDB accepted** as a dependency when the changelog lands --
+the 76 ms diff over 200,000 rows, and Splink's engine for GOLD-6.
 
 ## Sources
 
