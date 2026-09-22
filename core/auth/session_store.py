@@ -95,6 +95,13 @@ class SessionStore:
         now = datetime.now(UTC)
         expires_at = now + SESSION_LIFETIME
         with connection(self._db_path) as conn:
+            # EXPIRED SESSIONS GO, as each new one is made (E-03). They were
+            # never deleted, so every session ever issued stayed for good.
+            # An expired one already fails validation -- its expires_at is
+            # checked on every read -- so deleting it changes no decision.
+            # Text comparison orders them: every expires_at here is written
+            # by the same isoformat(), in UTC.
+            conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now.isoformat(),))
             conn.execute(
                 "INSERT INTO sessions (token, username, created_at, expires_at) VALUES (?, ?, ?, ?)",
                 (_digest(token), username, now.isoformat(), expires_at.isoformat()),
