@@ -225,6 +225,35 @@ resolution, so gold for it is a straight conform.
           a proposal can be built, shown and accepted. Depends on
           GOLD-3c (the file split) and UI-LIVE (a build finishing is an
           event).
+  CONFIG-WRITE. UI EDITS REFLECTED INTO THE YAML (the owner,
+          September 22; CONFIG_ROUND_TRIP_AND_UI_KIT.md). MEASURED: the
+          shipped files are 104 comment lines of 127 and 90 of 162, and
+          PyYAML's safe_dump keeps ZERO of them; ruamel round-trip
+          keeps ALL and, with indent(mapping=2, sequence=4, offset=2),
+          is BYTE-IDENTICAL to both -- so a write touches only the
+          lines it changes. YAML stays the source of truth; no second
+          copy in a database; the agent and outside programs keep
+          reading the same files. Must hold: validate through the
+          loader BEFORE writing (a file that cannot load must never
+          reach disk), compare-and-set against the file on disk, a new
+          GENERATION adopted at an epoch boundary rather than a live
+          mutation (the read-only panel's stated reason stands), no
+          secret ever written, an audit entry per write.
+  UI-KIT. OWN THE COMPONENTS, don't swap one library for a bigger one
+          (the owner, September 22). The risk is NOT a rug-pull --
+          Blueprint is Apache-2.0, so what we have stays usable and
+          forkable -- it is ABANDONMENT and design lock-in. MEASURED:
+          49 import sites, 22 components, dominated by Button (62),
+          Tag (42), Callout (28), InputGroup (19), FormGroup (17),
+          HTMLTable (12); no grids, date pickers or comboboxes at all.
+          So: a ui-kit in the repository for the twelve simple ones,
+          and VENDORED headless primitives for the six where focus,
+          ARIA and keyboard behaviour live (Dialog, Popover, Menu,
+          Tabs, Checkbox/Switch, Alert) -- copied in, so an upstream
+          change cannot strand us, as shadcn/ui switching Radix for
+          Base UI demonstrated. Migrate panel by panel against the
+          ~920 frontend tests, then a lint rule refusing new
+          @blueprintjs imports.
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.
