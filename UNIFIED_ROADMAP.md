@@ -60,6 +60,52 @@ at 926ff1a. The reports are not committed -- they say so -- so each item
 is recorded here in its own words, with its audit number, and what
 checking it found NOW.
 
+    THE SECOND AUDIT BATCH, September 22: 001FINDINGS (F-01..F-33,
+    N-01..N-03, ten passes), 004FINDINGS (findings 1-8, S1-S3), AUDIT-09
+    (CSS) and AUDIT-10 (ui/ closeout), all read in full and every item
+    checked against dev at 4935b6a. Its items are labelled A and B so the
+    numbers 1-12 below keep meaning what they meant. IDs: "004-F6" is
+    004's finding 6; "F-27" is 001's; "09-S1-01" and "10-S1-01" are the
+    audits'.
+
+   A1. 004-F6 -- A LIVE MAC BYPASS, REPRODUCED ON CURRENT dev. The
+       security cache (_security_value_cache, _security_link_cache) is an
+       instance attribute of the ONE DataMediator per generation, shared
+       by every user and thread, cleared only when anybody's next
+       prefetch runs. Reproduced over HTTP: a us-west user reads
+       cust_001; the source moves it to us-east; the us-west user reads
+       EVERYTHING again -- the response even says region 'us-east', the
+       value that should have denied it -- while the rightful us-east user
+       is DENIED. Scope the cache to one request. Regression test: warm
+       the cache, change the security field, read directly with NO
+       intervening search -- the existing test clears it by searching,
+       which is why it passes.
+   A2. F-27, THEN F-28 -- WRITE-LOG INTEGRITY, REPRODUCED. Crash recovery
+       dispatches two ways over three operations, so a DELETE falls into
+       the create branch: the delete is lost, recovery reports
+       {'resumed': 1}, and the log gains a FABRICATED 'create' with empty
+       changes. Make both dispatches exhaustive, raising on the unknown
+       case; add _resume_one_delete_entry; order record_delete before
+       mark_applied. BEFORE DEPLOYING: query each live deployment for
+       applied 'create' entries whose changes are {} -- they are the
+       fabrications. Then F-28: rebuild_deleted_index(), the documented
+       recovery, has no caller (every hit is a comment) -- see the
+       decision below.
+   A3. THE GATES THAT CANNOT SEE WHAT THEY GUARD, all measured:
+       004-F1 -- lint.sh's lockfile step sets FAILED=1, which nothing
+         reads, so drift can never fail the build. STATUS=1, and a test
+         that introduces drift and expects lint.sh to exit non-zero.
+       oxlint RUNS NO REACT HOOK RULES -- a conditional useState scored
+         "0 warnings and 0 errors". Enable rules-of-hooks and
+         exhaustive-deps, and fix what they find (10-S1-04's note).
+       09-S3-01 -- the CSS duplicate-selector test now sees 1 of 204 rule
+         blocks: the @layer wrapping indented every rule past its
+         column-0 pattern. Match any selector, normalise whitespace, track
+         media context. (Stylelint's no-duplicate-selectors is the
+         audit's better answer; it is a new dependency.)
+       09-S3-02 -- the !important check (now in layers.test.ts) lists
+         three files by hand and misses layers.css; glob every .css.
+
     1. E-08 -- 30 UNIT TESTS FAIL ON A FRESH CLONE, not the 17 reported.
        They read the repository's own seeded deployment and fail as
        "assert 0 > 0" on a clean checkout. THIRTEEN WERE WRITTEN AFTER
@@ -114,6 +160,46 @@ checking it found NOW.
        E-10 -- the mirror read path is 8-10x slower than live (audit's
        measurement; re-measure before and after). No table cache exists:
        cache per (table, snapshot id), which the generation already pins.
+   B1. THE SECOND BATCH'S CORRECTNESS FINDINGS, each reproduced unless
+       marked:
+       F-26 WITH F-29 -- mirror read-your-writes. get_applied_changes_since
+         keeps only the LATEST edit (reproduced: two edits, the first
+         lost); the merging version has no production caller. And
+         last_synced_at still reports the COMMIT time, not when the source
+         read began -- a blind window (by reading the code). One combined
+         test: several edits across a sync boundary, the sync taking
+         measurable time.
+       F-01 -- coerce("true", "boolean") raises, and the mirror calls that
+         schema drift; the table can never sync.
+       F-15 -- valid JSON that is not an object ([1,2], "finish", 42,
+         null) crashes next_step, a 500 that discards the whole run. A test
+         per shape.
+       F-22 WITH F-23 -- the Ollama adapter leaks HTTPError and KeyError
+         instead of LLMUnavailable, and synthesis catches
+         RequestException, so a real outage propagates. One change.
+       F-14 -- a parameter used only in a sub-write's criteria is rejected
+         at load (reproduced); two defects in one function.
+       F-19 -- a REVERSE link accepted as security.via_field (reproduced),
+         then a raw OperationalError on the read path.
+       F-20 -- the mirror stringifies literals for equals/in/not_in but
+         not range; the parity tests use only TEXT columns. Inspection
+         only: verify PyIceberg's coercion before choosing.
+   B2. THE SECOND BATCH'S MEDIUM FINDINGS:
+       F-04 the limiter's chat(*args, **kwargs) erases the typed
+         signature; F-05 the rate limit checks then records in separate
+         transactions; F-06 DeploymentConfigResponse duplicates
+         DeploymentConfig with nothing checking them against each other;
+         F-21 entries_for_request readlines() the whole audit log; F-24
+         the Claude adapter passes the system prompt in argv (~128 KB,
+         then an untranslated OSError); F-30 create_colleague_user makes
+         the same debug/'a' account with no guard; F-33 the pending-write
+         ownership check and session expiry are each defended by one test
+         -- add a second at a different layer (counts not re-measured).
+       004-F7's LEFTOVER: confirming is re-authorised now (verified: a
+         customer moved out of region is not written) -- but the proposer
+         is then told "awaiting_other_reviewers" when nobody can approve
+         it. Say so, instead of stranding it until expiry.
+
     6. THE OWNER'S DECISIONS, built as decided below: E-06, E-07, E-14.
     7. DOCUMENTATION THAT SAYS WHAT IS NO LONGER TRUE, one commit each:
        E-15 requirements.txt calls lockfiles "deliberately deferred";
@@ -135,6 +221,46 @@ checking it found NOW.
          boundary -- the synthesis call has no tools, every step is
          re-authorised against the caller's grants -- is stated nowhere,
          so nobody later "improves" the synthesis call by giving it one.
+   B3. THE SECOND BATCH'S DOCUMENTATION, alongside item 7:
+       004-F2 references to paths and symbols that do not exist
+         (core/tools/, DataSiloAdapter, _ADAPTER_REGISTRY, App.jsx and
+         more), including README section 5's extension table and the
+         shipped config.yaml -- plus a check that every path the docs
+         name exists; 004-F4 Shell.tsx still reasons about "only three
+         real nav items"; 004-F5 the README never mentions app-schema or
+         ChartsPanel; 004-F8 access_control.py claims to be the ONLY
+         enforcement point while the write path calls _security_allowed
+         directly -- route it through check_access(), or correct the
+         claim; F-12a policy_validation's "SEVEN REAL GRANT PATTERNS" --
+         worse now, with manage:roles and manage:escalation added.
+       ui/README.md (10-S1-01..04): "no design system" on a Blueprint UI;
+         app-schema missing; package contents a snapshot of an older
+         codebase; "five separate checks", then four listed.
+       ui/index.html (10-S2-01, 10-S2-02): no <noscript>, no favicon.
+   B4. CSS (AUDIT-09):
+       09-S1-01 the collapsed sidebar is defined twice, index.css:609
+         and :1283, same layer, no media query: :609 is dead and its
+         comment cites an aria-hidden Shell.tsx removed on purpose.
+         Delete it. 09-S3-03 a duplicated dvh comment block, citing "the
+         vh line above", which is not there.
+       09-S1-02's follow-up: layers ARE in use now (fixed), so the three
+         specificity-stacked Blueprint overrides (index.css :277, :340,
+         :959) can go.
+       09-S2-01 four rules for markup the Blueprint migration removed;
+         09-S2-02 three tokens defined and never used -- delete them and
+         add the converse assertion to tokens.test.ts.
+   B5. THE SECOND BATCH'S LOW FINDINGS: F-07 one via_table destructuring
+       at four sites -- a helper in core/; F-08 state the precondition
+       submission_criteria's skip depends on; F-10 _generation(request)
+       by hand 51 times (was 31) where get_generation is a dependency;
+       F-11 the mediator() fixture duplicated (18 files define one); F-13
+       get_object() audit entries carry no request_id; F-17 every action
+       parameter shown to the model as a quoted string; F-31
+       ObjectNotes.submit ignores session expiry; F-32 api.ts reads an
+       untyped body.detail. F-16 (regraded LOW): its real remedy is the
+       fixtures -- a cross-type action, a numeric mirror column, a
+       delete in the resume fixtures -- and belongs with item 1.
+
     8. A SYNC THAT FAILS when the catalog and warehouse disagree,
        instead of leaving it to check_mirror (BACKLOG).
     9. PENDING WRITES MARKED UNAPPLYABLE AT RELOAD, so the inbox never
@@ -160,6 +286,21 @@ checking it found NOW.
 
 ### Needs a decision from a person
 
+    - F-02, WITH F-03 IN THE SAME CHANGE -- no valid policy can authorise
+      a cross-TYPE action: the validator rejects every write: grant, and
+      the write path demands one per field (reproduced). Restore write:
+      as a grant, or drop the demand and rely on execute: alone -- the
+      second changes the authorisation model. F-12c -- the rejection
+      message claims write: is "not enforced anywhere" -- goes with it.
+      F-03's KeyError on a delete
+      surfaces the moment either lands.
+    - F-28 -- rebuild the deleted index at startup, or by an operator
+      script. The audit recommends the script, given the scan's cost.
+    - F-18 -- the agent can emit only equality filters; widening it is a
+      feature, not a fix.
+    - 004-F3 -- "tools" at the config and API boundary, "functions" in
+      the core. Renaming the boundary changes a config key and an API
+      field; documenting the mapping does not.
     - E-21 -- repository visibility. LICENSE describes unpublished
       proprietary source; the repository is publicly readable. Only the
       owner can decide this.
@@ -233,6 +374,35 @@ checking it found NOW.
       guard against a second; shutdown bounded, uvicorn 30 s and
       systemd 45 s (305).
 
+### The second batch: already fixed, checked
+
+    - 004-F7 confirm re-authorises now (verified; leftover in B2).
+    - F-25 generation numbers: fixed by patch 294, including numbers no
+      longer consumed by loads that fail validation.
+    - 004-S1 session tokens stored raw: fixed by patch 301.
+    - F-12b the false "STRUCTURALLY read-only" claim: gone.
+    - 09-S1-02 cascade layers declared and unused: used now.
+    - 004-F4's api/app.py comment: gone. (Its requirements.txt line is
+      E-15; its Shell.tsx line is in B3.)
+    - Overlaps: 004-S2 expired sessions = E-03; F-09 is moot once
+      MemoryGuard is deleted (E-14).
+
+### Deliberately NOT to be fixed (the second batch's N-01..N-03)
+
+    - N-01 the duplicated denial-logging block in mediator.py: two
+      occurrences; the rule of three says wait.
+    - N-02 user_directory.py's bare commit(): a convention split, not a
+      bug -- one connection, one commit.
+    - N-03 Protocol vs ABC: document the Protocol side; do not unify.
+
+### Not verified by this check -- say so rather than assume
+
+    - F-33's mutation counts (needs a mutation run).
+    - F-20's actual PyIceberg literal coercion (the audit graded it
+      reading-only too).
+    - AUDIT-09 and -10 cite Audits 01-08, which were not provided; only
+      the React-rules claim was measured here.
+
 ### The audit verified these correct -- do not re-litigate
 
     - SQL injection through field and type names: blocked -- a closed
@@ -245,6 +415,12 @@ checking it found NOW.
     - CSRF as middleware: missing, wrong and absent all the same 403.
     - No dangerouslySetInnerHTML, innerHTML, eval or new Function in ui/.
     - import-linter's contracts: enforced, not aspirational.
+    - The second batch: 9 of 9 security mutations caught (disabling MAC
+      fails 48 tests; authorize() always-grant, 42); concurrent audit
+      writes do not corrupt; argon2 with a dummy hash; CSRF
+      double-submit (004-S3); zero XSS sinks, zero credentials in browser
+      storage, zero type escapes in ui/; zero !important and no colour
+      literals outside tokens.css; two z-index values in all the CSS.
     - NOT A FINDING, and agreed: no idle session timeout, only the 24-hour
       absolute cap -- unless a compliance requirement arrives.
 
@@ -254,6 +430,10 @@ checking it found NOW.
       apply. Applying there and testing in a seeded working copy is how
       thirteen tests were reported green that fail for anybody else.
     - `npm run lint` is judged by its EXIT STATUS (patch 303).
+    - A GATE IS CHECKED FOR WHAT IT CAN SEE, not only that it passes:
+      lint.sh could not fail on lockfile drift, oxlint ran no hook rules,
+      and the CSS duplicate check saw 1 of 204 rules -- each green while
+      blind.
     - Anything larger than one commit gets agreement on its shape first,
       as CLAUDE.md asks.
 
