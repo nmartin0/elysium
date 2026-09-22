@@ -564,3 +564,111 @@ the first screen.
   4. Does the screen ask the person to remember anything it knows?
   5. Does it stay legible at compact density after an hour?
   6. Does every wait, empty and failure have a designed state?
+
+---
+
+# 11. The set — the subject the whole interface is about
+
+Decided September 22. The layout schematics could not be judged
+because they were missing the thing a shell exists to carry: the work
+in Elysium is not "look at a graph", it is NARROW A SET DOWN,
+UNDERSTAND IT, ACT ON IT. Four questions, researched, then AUDITED
+AGAINST THE CODE -- which changed two of the answers.
+
+## 11.1 A set exists the moment you search (implicit)
+
+Foundry's object set exists as soon as a query does; saving is a
+separate, deliberate act -- "import saved object set" is its own card
+in Quiver. Same here: everything on screen IS a set, named by how it
+was built (`Customer · 3 filters · 1,284`), so the interface always
+has a subject and saving is a PROMOTION rather than a creation.
+
+## 11.2 Following a link produces a NEW set, with provenance
+
+Foundry is explicit: search-around on an object set returns another
+OBJECT SET, and traversing from a single object gives a "MultiLink"
+that MUST BE CONVERTED to a set before you can pivot again. Sets
+compose; single objects do not.
+
+AUDIT FINDING -- THIS IS A CHANGE, NOT A DESCRIPTION. Elysium's
+mediator is conditions-in, ids-out: search_around(user, object_type,
+conditions, link_field) -> list of ids. There is no set object in the
+backend at all. So this decision creates work: a set needs a
+REPRESENTATION (object type + conditions + the traversal chain that
+produced it), and search_around has to accept and return that shape
+rather than a list. The existing LinkTrail in Browse is the UI half of
+this already.
+
+## 11.3 Live by default, frozen deliberately -- and both are named
+
+Every mature product that met this shipped two kinds. HubSpot: an
+ACTIVE list "updates itself automatically as contacts meet or stop
+meeting your criteria"; a STATIC list is "a fixed snapshot of who
+matched at the moment you created it". Amplitude: dynamic vs static
+cohorts. Foundry: object set vs materialization.
+
+THE TWO FAILURE MODES ARE FAQ ENTRIES, which is how much the naming
+matters: "why are contacts dropping off my list?" (it is active) and
+"why isn't my list updating?" (it is static). Whichever a person is
+looking at must say so on its face.
+
+TWO RULES WORTH INHERITING:
+  - YOU CANNOT MANUALLY ADD TO A LIVE SET. HubSpot forbids it, and is
+    right: membership is either derived from criteria or it is not.
+    Half-and-half is a bug factory.
+  - CONVERSION BOTH WAYS. Frozen -> live hands membership back to the
+    criteria; live -> frozen can be scheduled, which HubSpot notes is
+    "handy for campaign snapshots" -- and here is what an approval or
+    a bulk action needs.
+
+AND WHERE ELYSIUM CAN BEAT THE PRECEDENT: HubSpot's static list
+freezes MEMBERSHIP and nothing else -- it cannot tell you what those
+records looked like then. Because gold pins and tags published
+snapshots, a frozen set here is the definition PLUS the gold snapshot
+id, so it reproduces not only who matched but the data as it was. That
+is an audit artefact the precedent cannot offer.
+
+## 11.4 The words
+
+AUDIT FINDING -- MY FIRST NAMING WAS WRONG. I proposed calling a
+frozen set a "snapshot", on the grounds that the word already means
+this in the lake. It does -- api/routes.py already exposes Iceberg
+table snapshots to the admin UI -- which makes it AMBIGUOUS, not
+elegant: "the snapshot" would mean a table version in one screen and a
+frozen set in another, and the two appear together in exactly the
+place that matters (a frozen set is pinned TO a table snapshot).
+
+  set          the live thing you are looking at; implicit, named by
+               how it was built.
+  view         a SAVED set definition, still live. AUDITED: this
+               matches what saved_views already stores -- object type,
+               query text, conditions, presentation -- so the existing
+               feature IS this, and no migration is needed.
+  frozen set   membership fixed at an instant, pinned to the gold
+               snapshot it was taken from. Shown as "frozen 14:22 ·
+               publication 7", never as "snapshot".
+
+## 11.5 An open question the audit surfaced
+
+BULK ACTION ON A SET IS NOT A UI FEATURE. propose_action takes an
+action type and parameters; the objects acted on are parameters, one
+proposal at a time. Acting on 200 objects therefore means either 200
+proposals or an action type whose parameter is a list -- and that
+decides what the approvals queue shows: one approval covering 200
+changes, or 200 rows.
+
+The second is unusable; the first needs a way to review a change that
+is stated once and applied many times. That is a WRITE-PATH design
+question, not a screen, and it should be answered before the set UI is
+built on top of it.
+
+## 11.6 What this settles about the shell
+
+The set is the SUBJECT, so it belongs in the top bar, where a
+document's name sits. Everything else is about it: left is ways to
+change the set, centre is the set viewed somehow, right is about one
+member, the agent is "ask about this set", the bottom is what the
+system is doing to the data underneath.
+
+That is what the earlier schematics were missing, and why they felt
+interchangeable: they had panels but no subject.
