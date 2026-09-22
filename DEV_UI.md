@@ -820,4 +820,145 @@ AND IT MUST NOT INVENT MEANING. GOLD-3c already settled that the
 ontology is DECLARED and the pipeline is built to match it, not
 derived from what the data happens to hold. The canvas is a better
 pen, not a different author.
+---
+
+# 14. The ontology canvas: layout, and where presentation lives
+
+Researched September 22. Three doubts from the design discussion, each
+with precedent, and two with a documented FAILURE attached -- which is
+the part worth keeping.
+
+## 14.1 The graph layout itself
+
+WHAT THE STUDIES SAY:
+
+  - FORCE-DIRECTED DEGRADES WITH SIZE. One comparison found it
+    "performed better at graphs with 20 nodes but become less readable
+    as the amount of nodes increased". The shipped ontology has 2
+    types; a real deployment will have 10 to 120. So force-directed is
+    fine early and wrong later.
+  - FOR ONTOLOGIES, LAYERED WINS: "in ontology graphs, where hierarchy
+    and semantic depth are critical, layered or hierarchical layouts
+    tend to offer the clearest structure", drawn with ORTHOGONAL EDGE
+    ROUTING -- and "edge crossings and poor structural organisation
+    can significantly hinder graph comprehension".
+  - BUT HIERARCHY COSTS PATH-FOLLOWING. An eye-tracking study found
+    that for path-following tasks, orthogonal and force-directed
+    layouts need LESS link-tracing effort than hierarchical, because
+    hierarchical layouts draw attention to line crossings. Following a
+    chain of links is exactly what a person does here.
+
+  SO: layered for structure, orthogonal routing, and crossing
+  minimisation treated as a first-class requirement rather than a
+  nicety -- because the layout that reads best statically is the one
+  that fights the task it exists for.
+
+AND THE FINDING THAT SETTLES A DESIGN DETAIL: a poor layout makes
+users spend "up to 25 percent of their time on manual layout
+adjustments". So auto-layout must be good, AND once a person moves a
+node that position must stick forever. A graph that re-jiggles on
+reload destroys spatial memory, which is most of why a canvas beats a
+list.
+
+## 14.2 Positions live APART from the declaration -- settled in 2010,
+     by people who got it wrong first
+
+BPMN 2.0 "separates the semantic model from its diagrammatic
+representation": each visual shape points at a semantic element by id.
+The payoff is exactly what we want -- "purely visual changes in the
+diagram, such as adjusting the layout of elements, have no impact on
+execution behaviour", and engines "will happily execute a BPMN file
+that contains no <bpmndi:BPMNDiagram> at all".
+
+THE COUNTER-EXAMPLE IS XPDL, which BPMN replaced: there, each node
+represented BOTH the semantic element and its visual one, so the same
+element appearing in several views became several XML elements, and
+"it is up to the tool -- or the modeler -- to maintain consistency
+between their definitions".
+
+  FOR ELYSIUM: a PRESENTATION file, separate from
+  ontology_schema.yaml, holding positions keyed by type name. The
+  ontology never depends on it. Nothing breaks without it. It matches
+  the split this deployment already uses -- one file per concern,
+  data_silos.yaml apart from config.yaml apart from policy.yaml.
+
+AND THE WARNING THAT COMES WITH THE PRECEDENT: for UML, "the usage of
+Diagram Interchange is almost nonexistent", and in practice a model
+imported elsewhere means "the diagram must be reconstructed from
+scratch". The separation succeeded; the attempt to STANDARDISE the
+presentation format failed. So: separate the file, and keep it small
+and private. It is ours, not an interchange format.
+
+THE FALLBACK PATTERN, from a BPMN tool that documents it plainly:
+generate a layered layout when none exists, and offer an explicit
+auto-layout that regenerates it, where "only shape and edge
+coordinates change -- the semantic model is untouched".
+
+AND A CONSEQUENCE WE HAD NOT PLANNED FOR: because presentation is
+separate, TWO PEOPLE CAN HOLD DIFFERENT VIEWS OF THE SAME ONTOLOGY --
+which BPMN supports by design and XPDL could not.
+
+## 14.3 Action types: on the node, not as nodes
+
+EVENT STORMING PUTS COMMANDS ON THE CANVAS, as their own colour,
+attached to aggregates, with bounded contexts drawn as boxes. So
+"verbs belong on a model canvas" has standing.
+
+BUT THE CONTEXT DIFFERS, and that is the whole argument: Event
+Storming's canvas is about BEHAVIOUR OVER TIME -- commands sit to the
+left of the events they cause, arranged on a timeline. An ontology
+canvas is about STRUCTURE and has no time axis. Putting action types
+on as separate nodes imports a second grammar into a picture that
+cannot express it.
+
+  SO: actions appear ON the type node -- a count and a badge, expanded
+  in the inspector. That keeps something genuinely useful visible at a
+  glance (which types are writable and which are read-only) without
+  turning a structure diagram into a process diagram.
+
+## 14.4 Grouping: it is called a SUBJECT AREA, and it is older than
+     all of this
+
+From the ER modelling literature: "subject areas help reduce larger
+models into smaller, more manageable subsets of entities that can be
+more easily defined and maintained", existing "for easier navigation
+as well as comprehension of the model". A cited real case: a
+healthcare system with OVER 2,000 TABLES broken into subject areas --
+members, plan, network providers.
+
+Two details matter for us:
+
+  - ERwin's interface puts a SUBJECT AREAS PANE BESIDE the model pane.
+    The grouping is a navigational overlay, not a change to the model.
+  - DDD's bounded contexts are the same idea with a stronger claim,
+    partitioning the solution space so each context may have its own
+    model.
+
+  SO YES, the ontology needs a concept it does not have -- and it is a
+  PRESENTATION concept. A subject area is a named subset of types, for
+  navigation. It lives beside the positions, not in the declaration,
+  so ontology_schema.yaml never acquires a grouping that changes what
+  anything MEANS.
+
+AND THE CAVEAT FROM THE SAME SOURCE: "there is no wrong way of
+grouping and categorizing". People will regroup constantly, so this
+has to be cheap to change and incapable of breaking anything --
+which it is, precisely because it is not in the declaration.
+
+## 14.5 What this adds up to
+
+  ontology_schema.yaml   what the types MEAN. Unchanged.
+  presentation file      positions, subject areas, collapsed state.
+                         Optional, regenerable, per view.
+  the canvas             layered, orthogonally routed, crossing-
+                         minimised, with saved positions honoured and
+                         an auto-layout button that only moves
+                         coordinates.
+  the node               type name, key, counts, health, security
+                         badge, action badge; properties at close
+                         zoom.
+  the edges              data links in one visual language, SECURITY
+                         CHAINS in another, on a layer that can be
+                         switched on -- the view that would have made
+                         F-19 obvious at a glance.
 
