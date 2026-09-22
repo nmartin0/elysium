@@ -407,15 +407,25 @@ class WriteLogReader(InternalReadAdapter):
             return None
 
         with self._connection() as conn:
-            row = conn.execute(
+            # EVERY entry since, merged oldest-first -- not LIMIT 1
+            # (001's F-26). An edit carries only the fields it changed,
+            # so the latest entry alone LOSES an earlier edit to a
+            # different field: change a name, then a region, and the
+            # name reverted on read until the next sync. The flat-list
+            # counterpart below already merged; this is the same rule,
+            # in the same order, for one object.
+            rows = conn.execute(
                 "SELECT changes FROM write_log WHERE object_type = ? AND object_id = ? "
                 "AND status = 'applied' AND created_at > ? "
-                "ORDER BY created_at DESC LIMIT 1",
+                "ORDER BY created_at, id",
                 (object_type, str(object_id), since),
-            ).fetchone()
-        if row is not None:
-            return json.loads(row["changes"])
-        return None
+            ).fetchall()
+        if not rows:
+            return None
+        merged: dict = {}
+        for row in rows:
+            merged.update(json.loads(row["changes"]))
+        return merged
 
     def get_all_applied_changes_since(self, since: str | None) -> list[dict]:
         """Every object with applied-but-not-yet-mirrored changes -- the

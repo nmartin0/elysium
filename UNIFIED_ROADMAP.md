@@ -92,9 +92,8 @@ resolution, so gold for it is a straight conform.
           ~~F-01~~ FIXED, patch 332 (coerce reads the words every other
           database writes); ~~F-20~~ FIXED, patch 333;
           ~~F-19~~ FIXED, patch 334; F-19
-          reverse link as security.via_field; F-26 WITH F-29, the
-          overlay keeping only the latest edit and the sync's blind
-          window; item 8, a sync that fails when catalog and warehouse
+          reverse link as security.via_field; ~~F-26 WITH F-29~~ FIXED, patch
+          335; item 8, a sync that fails when catalog and warehouse
           disagree. And the owner's decisions D1-D5 (MEDALLION_PIPELINE.md
           -- gold vs live mode, MAC on a fused entity, write target,
           default expectation policy, DuckDB), with F-28, which decides
@@ -342,6 +341,7 @@ checking it found NOW.
 
    B1. THE SECOND BATCH'S CORRECTNESS FINDINGS, each reproduced unless
        marked:
+       ~~F-26 WITH F-29~~ FIXED, patch 335.
        F-26 WITH F-29 -- mirror read-your-writes. get_applied_changes_since
          keeps only the LATEST edit (reproduced: two edits, the first
          lost); the merging version has no production caller. And

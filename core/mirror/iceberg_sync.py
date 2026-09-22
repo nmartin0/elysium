@@ -114,6 +114,11 @@ logger = logging.getLogger(__name__)
 # cannot leave a table with nothing to diff against.
 RETENTION_MARGIN_MS = 7 * 24 * 60 * 60 * 1000
 
+# When the sync last READ THE SOURCE for this table, ISO-8601 (F-29).
+# The overlay's `since`: every write after it is still overlaid.
+SOURCE_READ_PROPERTY = "elysium.source_read_started_at"
+
+
 BRONZE_RETENTION = {
     "history.expire.min-snapshots-to-keep": "2",
     "history.expire.max-snapshot-age-ms": str(RETENTION_MARGIN_MS),
@@ -316,6 +321,14 @@ class IcebergMirrorSync(MirrorSync):
         #
         # The rows come back so they can serve as silver's fallback
         # when bronze is unavailable, without a second trip.
+        # WHEN THE SOURCE WAS READ, recorded before reading it (001's
+        # F-29). last_synced_at() reported the snapshot's COMMIT time,
+        # which is later -- so a write applied while the sync ran was
+        # in neither the mirror (read before it) nor the overlay
+        # (excluded as older than the commit). Measured: a 2 s source
+        # read left a 2.08 s window. The read's START is the honest
+        # answer: everything after it is still overlaid.
+        read_started_at = datetime.now(UTC).isoformat()
         raw_rows = self._write_bronze(adapter, silo_name, table_name, id_column, columns)
 
         # BRONZE: what the source said, before anything was done to it.
@@ -472,6 +485,14 @@ class IcebergMirrorSync(MirrorSync):
                 )
             else:
                 table.overwrite(arrow_table)
+                # AFTER THE DATA COMMIT, never before (001's F-29): a
+                # crash between the two leaves the OLDER timestamp, so
+                # the overlay stays wider than it needs to be. The
+                # other order would move the timestamp forward over
+                # data that was never written, and lose the overlay
+                # entries it covered.
+                with table.transaction() as tx:
+                    tx.set_properties({SOURCE_READ_PROPERTY: read_started_at})
                 # FORCED TO DISK BEFORE THE POINTER IS TRUSTED.
                 #
                 # pyiceberg writes metadata through an UNSYNCED
@@ -509,6 +530,12 @@ class IcebergMirrorSync(MirrorSync):
         except (NoSuchTableError, NoSuchNamespaceError):
             return None
 
+        # WHEN THE SOURCE WAS READ, if this table records it (F-29).
+        # A table synced before that property existed has none, and the
+        # commit time is the best available answer for it.
+        recorded = table.properties.get(SOURCE_READ_PROPERTY)
+        if recorded:
+            return datetime.fromisoformat(recorded)
         snapshot = table.current_snapshot()
         if snapshot is None:
             return None
