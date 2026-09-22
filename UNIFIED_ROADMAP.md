@@ -98,7 +98,10 @@ checking it found NOW.
        fabrications. Then F-28: rebuild_deleted_index(), the documented
        recovery, has no caller (every hit is a comment) -- see the
        decision below.
-   A3. THE GATES THAT CANNOT SEE WHAT THEY GUARD, all measured:
+   A3. THE GATES THAT CANNOT SEE WHAT THEY GUARD, all measured. FIXED in
+       patches 312-314: lint.sh (004-F1), the !important check
+       (09-S3-02), the duplicate check (09-S3-01, and 09-S1-01 with it).
+       oxlint's React rules remain -- patch 315.
        004-F1 -- lint.sh's lockfile step sets FAILED=1, which nothing
          reads, so drift can never fail the build. STATUS=1, and a test
          that introduces drift and expects lint.sh to exit non-zero.

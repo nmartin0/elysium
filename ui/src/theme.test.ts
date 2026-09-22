@@ -1,11 +1,83 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
+import { readdirSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import path from 'path'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(path.resolve(__dirname, '../packages/shell-api/src/index.css'), 'utf8')
 const TOKENS = readFileSync(path.resolve(__dirname, '../packages/shell-api/src/tokens.css'), 'utf8')
+
+// THE STYLESHEETS THAT HOLD RULES, for the duplicate check below.
+const RULE_STYLESHEETS = [
+  'packages/app-schema/src/SchemaPanel.css',
+  'packages/shell-api/src/index.css',
+  'packages/shell-api/src/tokens.css',
+]
+
+/** Every rule: its selectors, each prefixed with the at-rules enclosing
+ *  it, and the properties the rule sets.
+ *
+ *  A WALK OVER THE BRACES, not a pattern: comments stripped, each `{`
+ *  classified by what precedes it -- an at-rule opens a context, anything
+ *  else is a rule recorded under that context. So `.a` inside `@media (x)`
+ *  and `.a` outside it are different rules, as they are to the browser.
+ *  Selector lists split on TOP-LEVEL commas only, so `:is(.a, .b)` stays
+ *  whole. */
+function cssRules(css: string): { selector: string; properties: Set<string> }[] {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  const found: { selector: string; properties: Set<string> }[] = []
+  const contexts: string[] = []
+  const open: { kind: 'at' | 'rule'; selectors: string[]; bodyStart: number }[] = []
+  let start = 0
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]
+    if (ch === '{') {
+      const prelude = text.slice(start, i).trim().replace(/\s+/g, ' ')
+      if (prelude.startsWith('@')) {
+        contexts.push(prelude)
+        open.push({ kind: 'at', selectors: [], bodyStart: i + 1 })
+      } else {
+        const prefix = contexts.length > 0 ? `${contexts.join(' > ')} > ` : ''
+        open.push({ kind: 'rule', selectors: splitTopLevel(prelude).map((s) => prefix + s), bodyStart: i + 1 })
+      }
+      start = i + 1
+    } else if (ch === '}') {
+      const block = open.pop()
+      if (block?.kind === 'at') contexts.pop()
+      if (block?.kind === 'rule') {
+        const body = text.slice(block.bodyStart, i)
+        const properties = new Set([...body.matchAll(/(?:^|;)\s*(-{0,2}[a-zA-Z][\w-]*)\s*:/g)].map((m) => m[1] ?? ''))
+        for (const selector of block.selectors) found.push({ selector, properties })
+      }
+      start = i + 1
+    } else if (ch === ';') {
+      start = i + 1
+    }
+  }
+  return found
+}
+
+function ruleSelectors(css: string): string[] {
+  return cssRules(css).map((rule) => rule.selector)
+}
+
+function splitTopLevel(selectorList: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let current = ''
+  for (const ch of selectorList) {
+    if (ch === '(') depth += 1
+    if (ch === ')') depth -= 1
+    if (ch === ',' && depth === 0) {
+      parts.push(current.trim())
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  if (current.trim()) parts.push(current.trim())
+  return parts
+}
 
 /**
  * Dark mode was unreadable, and the cause was a dozen colours written
@@ -149,16 +221,79 @@ describe('the stylesheet has one rule per selector', () => {
      * leaves the rest, which makes a comment describe something the
      * CSS does not do.
      */
-    const selectors = [...CSS.matchAll(/^(\.[a-z_-][a-z_ -]*)\{/gm)].map((match) => match[1]?.trim())
-    const seen = new Set<string>()
-    const duplicated = selectors.filter((selector) => {
-      if (selector === undefined) return false
-      if (seen.has(selector)) return true
-      seen.add(selector)
-      return false
-    })
+    //
+    // WHAT IS CHECKED: A PROPERTY SET TWICE FOR ONE SELECTOR, in one
+    // context. That is the bug class above -- the later block silently
+    // overriding the earlier -- and it is what 09-S1-01's two collapsed-
+    // sidebar rules were. Two blocks setting DIFFERENT properties are
+    // not it: `html, body, #root` share the viewport lock and `body`
+    // adds its own margin, with no property in both, and forcing those
+    // into one rule would merge unrelated concerns.
+    for (const file of RULE_STYLESHEETS) {
+      const bySelector = new Map<string, Set<string>[]>()
+      for (const rule of cssRules(readFileSync(path.resolve(__dirname, '..', file), 'utf8'))) {
+        bySelector.set(rule.selector, [...(bySelector.get(rule.selector) ?? []), rule.properties])
+      }
+      const overridden: string[] = []
+      for (const [selector, blocks] of bySelector) {
+        const seen = new Set<string>()
+        for (const properties of blocks) {
+          for (const property of properties) {
+            if (seen.has(property)) overridden.push(`${selector} { ${property} }`)
+            seen.add(property)
+          }
+        }
+      }
 
-    expect(duplicated).toEqual([])
+      expect(overridden, file).toEqual([])
+    }
+  })
+
+  it('sees every rule, not a fraction of them', () => {
+    /**
+     * 09-S3-01: THE PREVIOUS PATTERN SAW 1 OF 204 RULES. It matched a
+     * selector only at column 0, containing no dot after the first and
+     * no digit -- so compound selectors, every bp6- override, every
+     * pseudo-class, and everything inside a media query were invisible.
+     * Then @layer wrapping indented every rule, and it saw one. A green
+     * duplicate check that sees nothing is how 09-S1-01's contradictory
+     * sidebar rules went unnoticed.
+     */
+    const selectors = ruleSelectors(CSS)
+
+    expect(selectors.length).toBeGreaterThan(200)
+    expect(selectors).toContain('@layer components > .app-frame--sidebar-collapsed .app__sidebar')
+    expect(selectors.some((s) => s.includes('.bp6-'))).toBe(true)
+    expect(selectors.some((s) => s.startsWith('@layer components > @media'))).toBe(true)
+    // AND ITS PROPERTIES. A first version of the property pattern read
+    // `--?[a-zA-Z]` -- which REQUIRES a leading hyphen -- so it saw only
+    // custom properties, and the overridden-property check passed with
+    // 09-S1-01's contradiction still in the file. The same vacuity as the
+    // pattern this replaced.
+    const sidebar = cssRules(CSS).filter(
+      (r) => r.selector === '@layer components > .app-frame--sidebar-collapsed .app__sidebar',
+    )
+    expect(sidebar.length).toBeGreaterThan(0)
+    expect(sidebar.every((r) => r.properties.has('width'))).toBe(true)
+  })
+
+  it('covers every stylesheet that holds rules', () => {
+    /** THE LIST ABOVE IS EXPLICIT, so this keeps it honest: a stylesheet
+     *  added later fails here until it is added there. layers.css holds
+     *  only @layer and @import statements. */
+    const onDisk = [
+      ...readdirSync(path.resolve(__dirname, '..', 'packages')).flatMap((pkg) => {
+        const dir = path.resolve(__dirname, '..', 'packages', pkg, 'src')
+        return readdirSync(dir)
+          .filter((f) => f.endsWith('.css'))
+          .map((f) => `packages/${pkg}/src/${f}`)
+      }),
+      ...readdirSync(__dirname)
+        .filter((f) => f.endsWith('.css'))
+        .map((f) => `src/${f}`),
+    ].sort()
+
+    expect(onDisk).toEqual([...RULE_STYLESHEETS, 'src/layers.css'].sort())
   })
 
   it('lets the workspace panes fill the shell so they can scroll', () => {

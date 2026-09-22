@@ -601,18 +601,6 @@
     }
   }
 
-  /* Collapsed: the sidebar itself is unmounted from layout flow (see
-   Shell.tsx's own aria-hidden on <aside>) -- width and padding both
-   collapse to zero rather than just visually hiding it, so the
-   content pane genuinely reclaims the full width, not just an empty
-   dark strip. */
-  .app-frame--sidebar-collapsed .app__sidebar {
-    width: 0;
-    padding-left: 0;
-    padding-right: 0;
-    overflow: hidden;
-  }
-
   /* No @media (max-width: 640px) rule here anymore -- this used to give
    an OPEN .app__sidebar `position: fixed` etc. below this width, but
    that selector can no longer match anything at all: on a narrow
