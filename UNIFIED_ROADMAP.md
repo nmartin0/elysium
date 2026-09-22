@@ -215,7 +215,9 @@ checking it found NOW.
     5. ~~E-13~~ FIXED, patch 325: every source checked at startup and
        named in the log; /api/silos and /api/health check the SOURCES --
        they checked the mirror, and a deleted source read healthy.
-       E-12, E-11 and E-10 remain, in that order.
+       ~~E-12~~ TESTED, patch 326: a real server, shut down mid-confirm,
+       finishes it -- the write and both audit entries. E-11 and E-10
+       remain, in that order.
        E-13 -- sources are not checked at startup: nothing calls
        health_check(). Report each failure by name; do not refuse to
        start. (This IS the "startup checks" item this list already held.)

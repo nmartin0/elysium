@@ -367,3 +367,7 @@ __getattr__
 # validation_errors_without_values (api/app.py) -- registered by
 # @app.exception_handler.
 validation_errors_without_values
+
+# should_exit (tests/integration/test_graceful_shutdown.py) -- read by
+# uvicorn.Server itself; setting it is what its SIGTERM handler does.
+should_exit
