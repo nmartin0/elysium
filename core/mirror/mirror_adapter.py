@@ -474,10 +474,24 @@ class MirrorReadAdapter(ExternalReadAdapter):
                 term=field,
                 literal=self._decimal_literal(field, value, decimal_columns),
             )
+        # THROUGH _decimal_literal, LIKE equals (001's F-20). These used
+        # str(item), so on a decimal column pyiceberg refused the
+        # literal outright -- "could not convert 49.99 into a
+        # decimal(38, 9), scales differ 9 <> 2". Reproduced on the
+        # shipped deployment: `amount equals 49.99` returned 2 rows
+        # while `amount in [49.99]` raised. A chart's "keep"
+        # cross-filter IS an `in`, so clicking a bar on a money chart
+        # was an error.
         if operator == "in":
-            return In(term=field, literals=[str(item) for item in value])  # type: ignore[call-arg]
+            return In(  # type: ignore[call-arg]
+                term=field,
+                literals=[self._decimal_literal(field, item, decimal_columns) for item in value],
+            )
         if operator == "not_in":
-            return NotIn(term=field, literals=[str(item) for item in value])  # type: ignore[call-arg]
+            return NotIn(  # type: ignore[call-arg]
+                term=field,
+                literals=[self._decimal_literal(field, item, decimal_columns) for item in value],
+            )
         if operator in ("range", "date_range"):
             low = value.get("min") if operator == "range" else value.get("start")
             high = value.get("max") if operator == "range" else value.get("end")
@@ -485,10 +499,21 @@ class MirrorReadAdapter(ExternalReadAdapter):
             # mypy otherwise infers the list from whichever is appended
             # first.
             bounds: list[BooleanExpression] = []
+            # AND THE BOUNDS TOO: a raw bound against a decimal column
+            # is refused the same way. Nothing reaches this today --
+            # validate_filter declines `range` on a decimal field (see
+            # the roadmap's open question about filtering money by
+            # amount) -- so this is the operator being made correct
+            # before that question is answered, not a fix for a live
+            # path.
             if low is not None:
-                bounds.append(GreaterThanOrEqual(term=field, literal=low))  # type: ignore[call-arg]
+                bounds.append(GreaterThanOrEqual(  # type: ignore[call-arg]
+                    term=field, literal=self._decimal_literal(field, low, decimal_columns),
+                ))
             if high is not None:
-                bounds.append(LessThanOrEqual(term=field, literal=high))  # type: ignore[call-arg]
+                bounds.append(LessThanOrEqual(  # type: ignore[call-arg]
+                    term=field, literal=self._decimal_literal(field, high, decimal_columns),
+                ))
             return bounds[0] if len(bounds) == 1 else And(bounds[0], bounds[1])
 
         # `contains` and anything added later that Iceberg cannot

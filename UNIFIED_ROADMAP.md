@@ -90,7 +90,7 @@ resolution, so gold for it is a straight conform.
   GOLD-0. PREREQUISITES -- gold builds on silver and on the overlay, so
           their open bugs come first, pulled forward from B1 and item 8:
           ~~F-01~~ FIXED, patch 332 (coerce reads the words every other
-          database writes); F-20 decimal in/not_in raise; F-19
+          database writes); ~~F-20~~ FIXED, patch 333; F-19
           reverse link as security.via_field; F-26 WITH F-29, the
           overlay keeping only the latest edit and the sync's blind
           window; item 8, a sync that fails when catalog and warehouse
@@ -362,6 +362,8 @@ checking it found NOW.
          at load (reproduced); two defects in one function.
        F-19 -- a REVERSE link accepted as security.via_field (reproduced),
          then a raw OperationalError on the read path.
+       ~~F-20~~ FIXED, patch 333: every operator's literals go through
+       _decimal_literal.
        F-20 -- MEASURED, and narrower and worse than reported. PyIceberg
          binds a string literal to the column's type, so on integer, float
          and date columns the asymmetry is harmless. On DECIMAL columns it

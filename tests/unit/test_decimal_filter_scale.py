@@ -103,3 +103,82 @@ class TestNonDecimalFieldsAreUntouched:
         assert adapter._decimal_literal(
             "amount", "not a number", {"amount"},
         ) == "not a number"
+
+
+class TestEveryOperatorThatCarriesALiteral:
+    """001's F-20: only `equals` was fixed. `in` and `not_in` still sent
+    str(value), so pyiceberg refused the literal outright -- reproduced
+    on the shipped deployment, `amount equals 49.99` returning rows
+    while `amount in [49.99]` raised. A chart's "keep" cross-filter IS
+    an `in`, so clicking a bar on a money chart was an error."""
+
+    def _search(self, mediator, user, operator, value):
+        return mediator.search_object(
+            user, "Transaction",
+            [FieldFilter(field="amount", operator=operator, value=value)],
+        )
+
+    def test_in_matches_what_equals_matches(self, mediator, user):
+        equal = _amount_equals(mediator, user, "49.99")
+
+        assert self._search(mediator, user, "in", ["49.99"]) == equal
+
+    def test_in_at_the_storage_scale_agrees_too(self, mediator, user):
+        assert (self._search(mediator, user, "in", ["49.990000000"])
+                == self._search(mediator, user, "in", ["49.99"]))
+
+    def test_not_in_is_the_complement_of_in(self, mediator, user):
+        everything = mediator.search_object(user, "Transaction", [])
+        matched = self._search(mediator, user, "in", ["49.99"])
+
+        excluded = self._search(mediator, user, "not_in", ["49.99"])
+
+        assert sorted(excluded + matched) == sorted(everything)
+
+    def test_several_values_at_human_scale(self, mediator, user):
+        both = self._search(mediator, user, "in", ["49.99", "120.50"])
+
+        assert len(both) >= len(self._search(mediator, user, "in", ["49.99"]))
+
+    def test_a_string_column_is_unaffected(self, mediator, user):
+        """_decimal_literal quantises only decimal columns; everything
+        else keeps the behaviour it had."""
+        west = mediator.search_object(
+            user, "Customer",
+            [FieldFilter(field="region", operator="in", value=["us-west"])],
+        )
+
+        assert west == mediator.search_object(
+            user, "Customer",
+            [FieldFilter(field="region", operator="equals", value="us-west")],
+        )
+
+
+class TestTheRangeBounds:
+    """NOT REACHABLE TODAY: validate_filter declines `range` on a decimal
+    field, which is the roadmap's open question about filtering money by
+    amount. The operator is made correct before that question is
+    answered -- and pinned here, since nothing else exercises it."""
+
+    def _term(self, value, decimal_columns=frozenset({"amount"})):
+        from core.mirror.mirror_adapter import MirrorReadAdapter
+        adapter = MirrorReadAdapter.__new__(MirrorReadAdapter)
+        return adapter._term_for(
+            FieldFilter(field="amount", operator="range", value=value), set(decimal_columns),
+        )
+
+    def test_a_bound_is_quantised_to_the_storage_scale(self):
+        term = self._term({"min": 10})
+
+        assert str(term.literal.value) == "10.000000000"
+
+    def test_both_bounds_are(self):
+        term = self._term({"min": 10, "max": 50})
+
+        assert [str(bound.literal.value) for bound in (term.left, term.right)] \
+            == ["10.000000000", "50.000000000"]
+
+    def test_a_column_that_is_not_a_decimal_is_left_alone(self):
+        term = self._term({"min": 10}, decimal_columns=frozenset())
+
+        assert str(term.literal.value) == "10"
