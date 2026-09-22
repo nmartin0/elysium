@@ -16,10 +16,10 @@ from core.intermediate_layer.policy_validation import (
 
 
 @pytest.fixture
-def config():
-    from core.deployment_loader import build_generation, resolve_runtime_paths
+def config(private_deployment):
+    from core.deployment_loader import build_generation
 
-    paths = resolve_runtime_paths()
+    paths = private_deployment  # E-08: never the developer's deployment
     return build_generation(paths.config_dir, paths.data_dir, paths.log_dir).config
 
 

@@ -29,10 +29,10 @@ from core.mirror.mirror_adapter import MirrorReadAdapter
 
 
 @pytest.fixture
-def generation(tmp_path):
-    from core.deployment_loader import build_generation, resolve_runtime_paths
+def generation(tmp_path, private_deployment):
+    from core.deployment_loader import build_generation
 
-    paths = resolve_runtime_paths()
+    paths = private_deployment  # E-08: never the developer's deployment
     return build_generation(
         paths.config_dir, data_dir=tmp_path, log_dir=tmp_path / "log",
     )

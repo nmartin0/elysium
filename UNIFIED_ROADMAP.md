@@ -117,7 +117,25 @@ checking it found NOW.
        09-S3-02 -- the !important check (now in layers.test.ts) lists
          three files by hand and misses layers.css; glob every .css.
 
-    1. E-08 -- 30 UNIT TESTS FAIL ON A FRESH CLONE, not the 17 reported.
+    1. ~~E-08~~ FIXED, patches 316-317: every unit test passes on a fresh
+       clone (2,041), over a deployment of its own -- synced_deployment
+       or private_deployment in tests/unit/conftest.py -- and an AST
+       tripwire refuses any bare call that falls back to the developer's.
+       Found on the way: the sync read one deployment's silos while
+       writing another's mirror (patch 316); and TEN more tests that
+       read or wrote the developer's deployment -- credentials.db,
+       triggers.db, write_log.db, a mirror -- while passing.
+   1b. E-08b -- THE AUDIT LOG STILL GETS TEST ENTRIES. On a fresh clone
+       the full unit suite leaves deployment/var/log/audit.log behind:
+       DataMediator and PendingWriteStore default to a bare AuditLog(),
+       whose default path is the REPOSITORY'S audit log -- "each
+       defaulting one for tests", its docstring says. Production always
+       passes one (build_generation), so live deployments are unaffected;
+       every test building a mediator directly writes into the
+       developer's audit trail. Fix the default (no path into the
+       repository), which touches the ~18 hand-built mediator fixtures
+       -- F-11's consolidation belongs with it.
+       E-08 -- 30 UNIT TESTS FAIL ON A FRESH CLONE, not the 17 reported.
        They read the repository's own seeded deployment and fail as
        "assert 0 > 0" on a clean checkout. THIRTEEN WERE WRITTEN AFTER
        THE AUDIT, in this project's own patches, and reported green from

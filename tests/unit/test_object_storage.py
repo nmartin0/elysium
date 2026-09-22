@@ -245,7 +245,7 @@ class TestReachableFromConfig:
         assert config.mirror_storage["s3.region"] == "eu-west-2"
 
 
-def test_run_sync_passes_the_storage_setting_to_the_mirror(tmp_path, monkeypatch):
+def test_run_sync_passes_the_storage_setting_to_the_mirror(tmp_path, monkeypatch, private_deployment):
     """THE LAST LINK, and a control caught it missing.
 
     The config now carries the setting and the class now accepts it --
@@ -271,6 +271,8 @@ def test_run_sync_passes_the_storage_setting_to_the_mirror(tmp_path, monkeypatch
     monkeypatch.setattr(run_sync, "IcebergMirrorSync", Recording)
     monkeypatch.setattr(run_sync, "resolve_sync_targets", lambda schema: [])
 
-    run_sync.run_sync()
+    # WITH PATHS: bare, it fell back to the developer's deployment and
+    # created credentials.db and triggers.db there (E-08).
+    run_sync.run_sync(private_deployment)
 
     assert "storage" in seen, "run_sync must pass the deployment's storage setting"

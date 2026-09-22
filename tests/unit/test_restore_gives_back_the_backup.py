@@ -124,17 +124,18 @@ class TestARestoredDeploymentWorks:
     uses it -- the account logs in, the roles are the backup's, and the
     mirror answers a search."""
 
-    def test_end_to_end(self, tmp_path):
-        import shutil
-
-        from core.deployment_loader import build_generation, resolve_runtime_paths
+    def test_end_to_end(self, tmp_path, synced_deployment):
+        from core.deployment_loader import build_generation
         from core.intermediate_layer.auth import UserRecord
         from core.triggers import TriggerStore
         from core.user_directory import UserDirectory
 
-        real = resolve_runtime_paths()
-        data, saved = tmp_path / "data", tmp_path / "backup"
-        shutil.copytree(real.data_dir, data)
+        # E-08: a deployment of its own. This COPIED the developer's data
+        # directory -- whose copied warehouse still read the developer's
+        # mirror files, the catalog's paths being absolute -- and was
+        # empty on a fresh clone.
+        real = synced_deployment
+        data, saved = real.data_dir, tmp_path / "backup"
 
         def generation():
             return build_generation(real.config_dir, data, real.log_dir)

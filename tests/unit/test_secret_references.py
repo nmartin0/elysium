@@ -110,14 +110,14 @@ class TestAMissingVariableIsFatal:
 
 
 class TestAgainstARealDeployment:
-    def test_a_silo_path_can_come_from_the_environment(self, monkeypatch, tmp_path):
+    def test_a_silo_path_can_come_from_the_environment(self, monkeypatch, tmp_path, private_deployment):
         """END TO END, because the function working says nothing about
         whether the loader calls it."""
         import shutil
 
-        from core.deployment_loader import build_generation, resolve_runtime_paths
+        from core.deployment_loader import build_generation
 
-        paths = resolve_runtime_paths()
+        paths = private_deployment  # E-08: never the developer's deployment
         config = tmp_path / "etc"
         shutil.copytree(paths.config_dir, config)
         silos = config / "data_silos.yaml"

@@ -10,17 +10,19 @@ resolved into the other deployment, where SQLite created an empty
 database, and the sync refused every table with a column "gone".
 """
 
+from pathlib import Path
+
 import pytest
 
 import scripts.seed_dev_silos as seed
-from core.deployment_loader import RuntimePaths, resolve_runtime_paths
+from core.deployment_loader import RuntimePaths
 from scripts.run_sync import run_sync
 
 
 @pytest.fixture
 def seeded(tmp_path):
     paths = RuntimePaths(
-        config_dir=resolve_runtime_paths().config_dir,
+        config_dir=Path(__file__).resolve().parents[2] / "deployment" / "etc",
         data_dir=tmp_path / "data", log_dir=tmp_path / "log",
     )
     paths.data_dir.mkdir()

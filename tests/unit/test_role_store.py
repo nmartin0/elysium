@@ -12,7 +12,6 @@ generation untouched.
 """
 
 import logging
-import shutil
 
 import pytest
 
@@ -20,13 +19,11 @@ from core.role_store import RoleStore, canonical
 
 
 @pytest.fixture
-def paths(tmp_path):
-    from core.deployment_loader import resolve_runtime_paths
-
-    real = resolve_runtime_paths()
-    data = tmp_path / "data"
-    shutil.copytree(real.data_dir, data)
-    return real.config_dir, data, real.log_dir
+def paths(private_deployment):
+    # E-08: this COPIED the developer's data directory, credentials and
+    # all. The test's own private deployment is all it ever needed.
+    real = private_deployment
+    return real.config_dir, real.data_dir, real.log_dir
 
 
 def _generation(paths):

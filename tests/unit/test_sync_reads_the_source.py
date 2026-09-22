@@ -20,44 +20,45 @@ import pathlib
 from core.deployment_loader import (
     build_live_read_adapters,
     load_deployment_bundle,
-    resolve_runtime_paths,
 )
 
 
-def test_the_sync_and_the_mediator_read_different_things():
+def test_the_sync_and_the_mediator_read_different_things(private_deployment):
     """THE WHOLE POINT, stated as one assertion.
 
     The mediator serves reads and obeys the deployment's choice. The
     sync FILLS what those reads come from and has no choice to obey.
     """
-    paths = resolve_runtime_paths()
+    paths = private_deployment  # E-08: never the developer's deployment
     _, mediator, _ = load_deployment_bundle(
         paths.config_dir, paths.data_dir, paths.log_dir,
     )
 
     serving = {type(a).__name__ for a in mediator.adapters.values()}
-    filling = {type(a).__name__ for a in build_live_read_adapters().values()}
+    filling = {type(a).__name__ for a in build_live_read_adapters(paths).values()}
 
     assert serving == {"MirrorReadAdapter"}
     assert filling == {"SQLiteReadAdapter"}
 
 
-def test_live_adapters_never_include_a_mirror_adapter():
+def test_live_adapters_never_include_a_mirror_adapter(private_deployment):
     # The property that matters, independent of which adapter a
     # deployment happens to configure.
-    for adapter in build_live_read_adapters().values():
+    for adapter in build_live_read_adapters(private_deployment).values():
         assert "Mirror" not in type(adapter).__name__
 
 
-def test_a_relative_silo_path_is_resolved_against_the_data_directory():
+def test_a_relative_silo_path_is_resolved_against_the_data_directory(private_deployment):
     """build_generation() does this inline rather than in a function,
     so the live builder has to repeat it. An adapter built without the
     resolution opens a file that is not there -- which reads as an
     empty silo rather than as a missing one.
     """
-    paths = resolve_runtime_paths()
+    # THE CALLER'S data directory -- the question build_live_read_adapters()
+    # used to get wrong, given anything but the default (E-08).
+    paths = private_deployment
 
-    for adapter in build_live_read_adapters().values():
+    for adapter in build_live_read_adapters(paths).values():
         db_path = getattr(adapter, "db_path", None)
         if db_path is None:
             continue

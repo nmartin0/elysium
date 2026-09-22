@@ -25,7 +25,7 @@ from core.request_context import RequestContext
 
 
 @pytest.fixture
-def mediator(tmp_path):
+def mediator(tmp_path, private_deployment):
     """Built against the SHIPPED deployment, deliberately.
 
     Correlation is a property of the real wiring -- mediator, audit
@@ -33,9 +33,9 @@ def mediator(tmp_path):
     test the stub. A fresh data directory keeps the audit log empty,
     which is what lets a count mean what it says.
     """
-    from core.deployment_loader import build_generation, resolve_runtime_paths
+    from core.deployment_loader import build_generation
 
-    paths = resolve_runtime_paths()
+    paths = private_deployment  # E-08: never the developer's deployment
     generation = build_generation(
         paths.config_dir, data_dir=tmp_path, log_dir=tmp_path / "log",
     )

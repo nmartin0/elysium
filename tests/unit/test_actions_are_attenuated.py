@@ -60,7 +60,7 @@ class TestEveryWriteChecksTheCaller:
 
 
 class TestAnActionDeclaresNoAuthority:
-    def test_its_declared_keys_carry_none(self):
+    def test_its_declared_keys_carry_none(self, private_deployment):
         """IF AN ACTION COULD DECLARE AUTHORITY, intersection would be
         needed. It cannot, which is why it is not.
 
@@ -68,9 +68,9 @@ class TestAnActionDeclaresNoAuthority:
         `run_as`, `allowed_actions` -- would need the intersection
         this test's absence currently makes unnecessary.
         """
-        from core.deployment_loader import build_generation, resolve_runtime_paths
+        from core.deployment_loader import build_generation
 
-        paths = resolve_runtime_paths()
+        paths = private_deployment  # E-08: never the developer's deployment
         generation = build_generation(
             paths.config_dir, paths.data_dir, paths.log_dir,
         )

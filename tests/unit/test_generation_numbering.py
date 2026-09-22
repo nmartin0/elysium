@@ -14,7 +14,6 @@ NOW THEY ARE ALLOCATED from config_history.db, shared by every process,
 seeded from the highest generation already recorded.
 """
 
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -25,13 +24,10 @@ from core.config_history import ConfigHistory
 
 
 @pytest.fixture
-def data_dir(tmp_path):
-    from core.deployment_loader import resolve_runtime_paths
-
-    data = tmp_path / "data"
-    shutil.copytree(resolve_runtime_paths().data_dir, data)
-    (data / "config_history.db").unlink(missing_ok=True)
-    return data
+def data_dir(private_deployment):
+    # E-08: this COPIED the developer's data directory, credentials and
+    # all. A private, empty one has no config history to remove.
+    return private_deployment.data_dir
 
 
 def _one_process_lifetime(data_dir, tag):
@@ -96,7 +92,7 @@ class TestAnExistingHistoryIsContinued:
 
 
 class TestALoadIsWhatIsNumbered:
-    def test_the_same_files_loaded_twice_get_two_numbers(self, data_dir):
+    def test_the_same_files_loaded_twice_get_two_numbers(self, data_dir, private_deployment):
         """TWO LOADS, TWO NUMBERS -- even of the same files. The number
         says which load; the digest says what was loaded.
 
@@ -105,9 +101,9 @@ class TestALoadIsWhatIsNumbered:
         gave distinct numbers -- a control restoring it passed this test.
         The restart tests above run separate interpreters, and those are
         what failed under the old counter."""
-        from core.deployment_loader import build_generation, resolve_runtime_paths
+        from core.deployment_loader import build_generation
 
-        real = resolve_runtime_paths()
+        real = private_deployment  # E-08: never the developer's deployment
         one = build_generation(real.config_dir, data_dir, real.log_dir)
         two = build_generation(real.config_dir, data_dir, real.log_dir)
 

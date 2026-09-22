@@ -26,10 +26,10 @@ from core.intermediate_layer.auth import UserRecord
 
 
 @pytest.fixture
-def mediator(tmp_path):
-    from core.deployment_loader import build_generation, resolve_runtime_paths
+def mediator(tmp_path, private_deployment):
+    from core.deployment_loader import build_generation
 
-    paths = resolve_runtime_paths()
+    paths = private_deployment  # E-08: never the developer's deployment
     return build_generation(
         paths.config_dir, data_dir=tmp_path, log_dir=tmp_path / "log",
     ).mediator
