@@ -17,6 +17,7 @@ import pytest
 
 from adapters.sqlite_adapter import SQLiteReadAdapter
 from core.mirror.iceberg_sync import IcebergMirrorSync
+from core.mirror.lineage import LINEAGE_COLUMNS
 
 COLUMNS = ["customer_id", "name", "region"]
 
@@ -44,6 +45,12 @@ def sync(tmp_path, source_db):
     return IcebergMirrorSync(tmp_path / "mirror", adapters)
 
 
+def _source_columns(names):
+    """The mirrored columns that came from the SOURCE -- silver also
+    carries lineage columns, which these tests are not about (GOLD-1)."""
+    return [name for name in names if name not in LINEAGE_COLUMNS]
+
+
 def _mirror_rows(sync, silo, table):
     return sync._catalog.load_table(f"{silo}.{table}").scan().to_arrow().to_pydict()
 
@@ -68,7 +75,8 @@ def test_sync_copies_only_the_requested_columns(sync):
     sync.sync_table("primary", "customers", "customer_id", ["customer_id", "name"])
 
     rows = _mirror_rows(sync, "primary", "customers")
-    assert set(rows.keys()) == {"customer_id", "name"}
+    # Lineage columns excluded: they are Elysium's, not the source's (GOLD-1).
+    assert set(_source_columns(rows.keys())) == {"customer_id", "name"}
     assert "region" not in rows
 
 

@@ -107,8 +107,11 @@ resolution, so gold for it is a straight conform.
           per rule, quarantine tables that record the rule and leave
           the row in bronze. ~~S4 duplicate keys~~ DONE, patch 339:
           every copy held and the key named by default; fail or a
-          declared keep_last_by as the alternatives. NEXT: lineage
-          columns (S6), and then GOLD-2.
+          declared keep_last_by as the alternatives. ~~S6 lineage~~
+          DONE, patch 340: _silo, _source_table and _row_hash per row;
+          the bronze snapshot as a table property, since a per-row
+          timestamp would defeat the unchanged-source skip. GOLD-1 IS
+          DONE; next is GOLD-2.
           S1-S4, S6: meaning-preserving
           standardisation, declared per column; patch 297's constraints
           evaluated as expectations with warn/quarantine/fail;

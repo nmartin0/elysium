@@ -40,6 +40,7 @@ import pytest
 
 from adapters.sqlite_adapter import SQLiteReadAdapter
 from core.mirror.iceberg_sync import IcebergMirrorSync
+from core.mirror.lineage import LINEAGE_COLUMNS
 
 
 @pytest.fixture
@@ -58,6 +59,12 @@ def source(tmp_path):
 @pytest.fixture
 def sync(tmp_path, source):
     return IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": source})})
+
+
+def _source_columns(names):
+    """The mirrored columns that came from the SOURCE -- silver also
+    carries lineage columns, which these tests are not about (GOLD-1)."""
+    return [name for name in names if name not in LINEAGE_COLUMNS]
 
 
 def _mirror(sync, identifier="primary.widgets"):
@@ -130,7 +137,8 @@ def test_a_failed_read_leaves_the_last_good_mirror_intact(sync, source):
 
     mirrored = _mirror(sync)
     assert mirrored.num_rows == 5
-    assert mirrored.column_names == ["widget_id", "label"]
+    # Lineage columns excluded: they are Elysium's, not the source's (GOLD-1).
+    assert _source_columns(mirrored.column_names) == ["widget_id", "label"]
 
 
 def test_a_crash_during_the_write_leaves_the_previous_snapshot_readable(sync, source):
@@ -192,7 +200,7 @@ def test_a_new_source_column_the_ontology_does_not_know_is_ignored(sync, source)
 
     _sync(sync)
 
-    assert _mirror(sync).column_names == ["widget_id", "label"]
+    assert _source_columns(_mirror(sync).column_names) == ["widget_id", "label"]
 
 
 def test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_writes(tmp_path):

@@ -24,6 +24,7 @@ import pytest
 
 from adapters.sqlite_adapter import SQLiteReadAdapter
 from core.mirror.iceberg_sync import IcebergMirrorSync
+from core.mirror.lineage import LINEAGE_COLUMNS
 
 TYPES = {"customer_id": "string", "name": "string", "region": "string"}
 
@@ -44,6 +45,12 @@ def sync(tmp_path):
     return IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": source})})
 
 
+def _source_columns(names):
+    """The mirrored columns that came from the SOURCE -- silver also
+    carries lineage columns, which these tests are not about (GOLD-1)."""
+    return [name for name in names if name not in LINEAGE_COLUMNS]
+
+
 def _sync(sync, columns):
     return sync.sync_table(
         "primary", "customers", "customer_id", columns,
@@ -59,7 +66,8 @@ def test_a_newly_declared_field_widens_the_mirror(sync):
     # THE DEFECT. Before this, the second sync raised and the table
     # kept its old shape and old contents indefinitely.
     _sync(sync, ["customer_id", "name"])
-    assert _mirrored(sync).schema().column_names == ["customer_id", "name"]
+    # Lineage columns excluded: they are Elysium's, not the source's (GOLD-1).
+    assert _source_columns(_mirrored(sync).schema().column_names) == ["customer_id", "name"]
 
     _sync(sync, ["customer_id", "name", "region"])
 
@@ -96,7 +104,7 @@ def test_an_unchanged_sync_still_works(sync):
     result = _sync(sync, ["customer_id", "name"])
 
     assert result.row_count == 2
-    assert _mirrored(sync).schema().column_names == ["customer_id", "name"]
+    assert _source_columns(_mirrored(sync).schema().column_names) == ["customer_id", "name"]
 
 
 def test_a_first_sync_of_a_new_table_is_unaffected(sync):

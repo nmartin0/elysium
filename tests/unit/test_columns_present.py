@@ -90,6 +90,7 @@ def test_the_mirror_reports_what_IT_holds(tmp_path):
     # means something else.
     from adapters.sqlite_adapter import SQLiteReadAdapter as Source
     from core.mirror.iceberg_sync import IcebergMirrorSync
+    from core.mirror.lineage import LINEAGE_COLUMNS
     from core.mirror.mirror_adapter import MirrorReadAdapter
 
     path = tmp_path / "src.db"
@@ -103,7 +104,8 @@ def test_the_mirror_reports_what_IT_holds(tmp_path):
     sync.sync_table("primary", "customers", "customer_id", ["customer_id", "name"],
                     {"customer_id": "string", "name": "string"})
 
-    assert MirrorReadAdapter(sync._catalog, "primary").columns_present("customers") == {
+    # Lineage columns excluded: they are Elysium's, not the source's.
+    assert MirrorReadAdapter(sync._catalog, "primary").columns_present("customers") - set(LINEAGE_COLUMNS) == {
         "customer_id", "name",
     }
 

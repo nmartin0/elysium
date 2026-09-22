@@ -66,6 +66,7 @@ from core.mirror.durability import force_table_metadata_to_disk
 from core.mirror.expectations import Violation, apply_expectations
 from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
+from core.mirror.lineage import BRONZE_SNAPSHOT_PROPERTY, LINEAGE_COLUMNS, with_lineage
 from core.mirror.transform import describe_drift, transform_rows
 from core.ontology.field_types import (
     DEFAULT_FIELD_DATA_TYPE,
@@ -361,6 +362,7 @@ class IcebergMirrorSync(MirrorSync):
         # answer: everything after it is still overlaid.
         read_started_at = datetime.now(UTC).isoformat()
         raw_rows = self._write_bronze(adapter, silo_name, table_name, id_column, columns)
+        bronze_snapshot = self._bronze_snapshot_id(silo_name, table_name)
 
         # BRONZE: what the source said, before anything was done to it.
         #
@@ -468,7 +470,15 @@ class IcebergMirrorSync(MirrorSync):
                 f"for duplicate {id_column}"
             )
 
-        arrow_table = self._to_arrow(kept_rows, columns, column_types)
+        # WHERE EACH ROW CAME FROM (GOLD-1). Added after every rule has
+        # run, so a row that never lands is never given a provenance;
+        # and only the STABLE facts, since the "source unchanged, no new
+        # snapshot" skip compares the rows -- see lineage.py.
+        arrow_table = self._to_arrow(
+            with_lineage(kept_rows, columns, silo_name, table_name),
+            [*columns, *LINEAGE_COLUMNS],
+            {**(column_types or {}), **{column: "string" for column in LINEAGE_COLUMNS}},
+        )
 
         self._ensure_namespace(silo_name)
         identifier = f"{silo_name}.{table_name}"
@@ -551,7 +561,13 @@ class IcebergMirrorSync(MirrorSync):
                 # data that was never written, and lose the overlay
                 # entries it covered.
                 with table.transaction() as tx:
-                    tx.set_properties({SOURCE_READ_PROPERTY: read_started_at})
+                    tx.set_properties({
+                        SOURCE_READ_PROPERTY: read_started_at,
+                        # WHICH BRONZE SILVER CAME FROM: a fact about the
+                        # run, so a property rather than a column.
+                        **({BRONZE_SNAPSHOT_PROPERTY: str(bronze_snapshot)}
+                           if bronze_snapshot is not None else {}),
+                    })
                 # FORCED TO DISK BEFORE THE POINTER IS TRUSTED.
                 #
                 # pyiceberg writes metadata through an UNSYNCED
@@ -584,6 +600,17 @@ class IcebergMirrorSync(MirrorSync):
             quarantined=len(checked.quarantined) + len(duplicated),
             violations=checked.counts,
         )
+
+    def _bronze_snapshot_id(self, silo_name: str, table_name: str):
+        """The bronze snapshot silver is about to be derived from, or
+        None when bronze could not be written (which _write_bronze
+        tolerates, with a warning)."""
+        try:
+            table = self._catalog.load_table(f"bronze_{silo_name}.{table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return None
+        snapshot = table.current_snapshot()
+        return None if snapshot is None else snapshot.snapshot_id
 
     def _write_quarantine(self, silo_name: str, table_name: str, id_column: str,
                            held: list) -> None:
