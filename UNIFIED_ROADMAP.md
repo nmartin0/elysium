@@ -68,7 +68,9 @@ checking it found NOW.
     004's finding 6; "F-27" is 001's; "09-S1-01" and "10-S1-01" are the
     audits'.
 
-   A1. 004-F6 -- A LIVE MAC BYPASS, REPRODUCED ON CURRENT dev. The
+   A1. ~~004-F6~~ FIXED, patch 310: the cache is scoped -- a ContextVar,
+       one per request, per agent query, per call; none on the mediator.
+       004-F6 -- A LIVE MAC BYPASS, REPRODUCED ON CURRENT dev. The
        security cache (_security_value_cache, _security_link_cache) is an
        instance attribute of the ONE DataMediator per generation, shared
        by every user and thread, cleared only when anybody's next

@@ -78,7 +78,7 @@ from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.agent_step_prompt import next_step
 from core.llm.interface import LLMAdapter
-from core.ontology.mediator import DataMediator
+from core.ontology.mediator import DataMediator, security_cache_scope
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
 from core.request_context import RequestContext
@@ -654,6 +654,23 @@ class AgentLoop:
             return new_count, consecutive_business_rule, should_stop, None
 
     def run(self, user_record: UserRecord, query_text: str,
+            cancel_event: threading.Event | None = None,
+            context: RequestContext | None = None,
+            refresh_user: "Callable[[], UserRecord | None] | None" = None) -> AgentLoopResult:
+        """One agent query, inside ONE security cache scope.
+
+        The loop runs on an executor thread, which the per-request
+        middleware's scope does not reach. Scoping here keeps a query's
+        hops sharing one resolution -- a search, then reads of what it
+        found -- and discards it when the query ends. See
+        core/ontology/mediator._SECURITY_CACHE.
+        """
+        # THE REAL SIGNATURE, not *args: a wrapper that erases the
+        # typed signature is 001's F-04, and this would have been one.
+        with security_cache_scope():
+            return self._run(user_record, query_text, cancel_event, context, refresh_user)
+
+    def _run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None,
             context: RequestContext | None = None,
             refresh_user: "Callable[[], UserRecord | None] | None" = None) -> AgentLoopResult:

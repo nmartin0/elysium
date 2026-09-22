@@ -45,20 +45,23 @@ def user():
 
 
 def _cache_size(mediator):
-    return (
-        len(mediator._security_value_cache)
-        + len(mediator._security_link_cache)
-    )
+    """The ACTIVE SCOPE's cache -- there is no mediator-level one now
+    (004-F6). These tests run their searches inside one scope, as a long
+    request or an agent query does, because the bound still matters
+    there: many searches, one scope."""
+    values, links = mediator_module._SECURITY_CACHE.get()
+    return len(values) + len(links)
 
 
 def test_repeated_searches_do_not_accumulate(mediator, user):
-    mediator.search_object(user, "Transaction", [])
-    after_one = _cache_size(mediator)
-
-    for _ in range(20):
+    with mediator_module.security_cache_scope():
         mediator.search_object(user, "Transaction", [])
+        after_one = _cache_size(mediator)
 
-    assert _cache_size(mediator) == after_one
+        for _ in range(20):
+            mediator.search_object(user, "Transaction", [])
+
+        assert _cache_size(mediator) == after_one
 
 
 def test_a_different_type_replaces_rather_than_adds(mediator, user):
@@ -71,13 +74,12 @@ def test_a_different_type_replaces_rather_than_adds(mediator, user):
     plausible. The keys carry their object type, so asking WHOSE
     entries these are answers it exactly.
     """
-    mediator.search_object(user, "Transaction", [])
-    mediator.search_object(user, "Customer", [])
+    with mediator_module.security_cache_scope():
+        mediator.search_object(user, "Transaction", [])
+        mediator.search_object(user, "Customer", [])
 
-    keys = [
-        *mediator._security_value_cache,
-        *mediator._security_link_cache,
-    ]
+        values, links = mediator_module._SECURITY_CACHE.get()
+        keys = [*values, *links]
     assert keys
     assert not [key for key in keys if key[0] == "Transaction"]
 
@@ -85,11 +87,13 @@ def test_a_different_type_replaces_rather_than_adds(mediator, user):
 def test_the_cache_is_bounded_by_the_scan_ceiling(mediator, user):
     """THE PROPERTY THAT MATTERS, and the reason phase 0.3 needed no
     code: whatever bounds a search's candidate set bounds this too."""
-    with patch.object(mediator_module, "MAX_SEARCH_SCAN", 1):
+    with patch.object(mediator_module, "MAX_SEARCH_SCAN", 1), \
+            mediator_module.security_cache_scope():
         mediator.search_object(user, "Transaction", [])
         small = _cache_size(mediator)
 
-    with patch.object(mediator_module, "MAX_SEARCH_SCAN", 10_000):
+    with patch.object(mediator_module, "MAX_SEARCH_SCAN", 10_000), \
+            mediator_module.security_cache_scope():
         mediator.search_object(user, "Transaction", [])
         large = _cache_size(mediator)
 
@@ -111,7 +115,10 @@ def test_every_write_happens_inside_the_prefetch(mediator):
         mediator_module.DataMediator._prefetch_security_values,
     )
 
-    for cache in ("_security_value_cache[", "_security_link_cache["):
+    # The writes are `value_cache[...] =` and `link_cache[...] =` on the
+    # SCOPE's dicts now; the property -- every write inside the prefetch,
+    # which clears first -- is unchanged.
+    for cache in ("value_cache[", "link_cache["):
         assert source.count(cache) == prefetch.count(cache), (
             f"{cache} is written outside _prefetch_security_values, "
             f"which clears first -- the cache's bound depends on that."

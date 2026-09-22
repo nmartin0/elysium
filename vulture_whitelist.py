@@ -356,3 +356,6 @@ change_own_password_route
 reset_password_route
 current_password
 new_password
+
+# security_cache_per_request (api/app.py) -- registered by @app.middleware.
+security_cache_per_request

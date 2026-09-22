@@ -32,6 +32,7 @@ import sqlite3
 import pytest
 import yaml
 
+import core.ontology.mediator as mediator_module
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.filters import as_equality_conditions
 from core.intermediate_layer.auth import UserRecord
@@ -97,8 +98,7 @@ def test_batching_returns_the_same_objects_as_the_unbatched_path(tmp_path):
     batched = mediator.search_object(WEST, "Transaction", as_equality_conditions({}))
 
     mediator._prefetch_security_values = lambda object_type, object_ids: None
-    mediator._security_value_cache.clear()
-    mediator._security_link_cache.clear()
+    # NO CLEAR NEEDED: each call starts in a scope of its own, empty.
     unbatched = mediator.search_object(WEST, "Transaction", as_equality_conditions({}))
 
     assert sorted(map(str, batched)) == sorted(map(str, unbatched))
@@ -122,9 +122,7 @@ def test_batching_still_denies_what_mac_denies(tmp_path):
 def test_a_cache_miss_falls_through_to_the_per_object_path(mediator):
     # Correctness must never depend on the cache being warm. A direct
     # get_field() with no prefetch at all still resolves security
-    # correctly.
-    mediator._security_value_cache.clear()
-    mediator._security_link_cache.clear()
+    # correctly. (Nothing to clear: no cache outlives a call now.)
 
     assert mediator.get_field(WEST, "Customer", "cust_001", "name") is not None
     assert mediator.get_field(EAST, "Customer", "cust_001", "name") is None
@@ -142,19 +140,24 @@ def test_the_cache_is_cleared_between_operations(tmp_path):
     # object cached by one operation and NOT re-fetched by the next:
     # without it, that stale value would survive indefinitely and be
     # served to a later direct read.
+    #
+    # AND IT DID NOT GUARD IT (004-F6). This test used to search AGAIN
+    # between the change and the read -- and that search's prefetch was
+    # what cleared the cache. Without it the stale value WAS served: a
+    # MAC bypass, reproduced over HTTP, that this test passed straight
+    # past. So there is no intervening call now: warm, change, read.
     mediator = _mediator(tmp_path)
-    mediator.search_object(WEST, "Customer", as_equality_conditions({}))
-    assert mediator._security_value_cache, "prefetch should have populated something"
+    with mediator_module.security_cache_scope():
+        mediator.search_object(WEST, "Customer", as_equality_conditions({}))
+        warmed = mediator_module._SECURITY_CACHE.get()
+        assert warmed and warmed[0], "prefetch should have populated something"
 
     conn = sqlite3.connect(mediator.adapters["primary_sql"].db_path)
     conn.execute("UPDATE customers SET region = 'us-east' WHERE customer_id = 'cust_001'")
     conn.commit()
     conn.close()
 
-    # An operation that prefetches NOTHING -- cust_001 is not in its
-    # result set, so nothing overwrites the stale entry.
-    mediator.search_object(WEST, "Customer", as_equality_conditions({"region": "nowhere"}))
-
+    # NOTHING IN BETWEEN -- the read comes straight after the change.
     # The now-us-east customer must be denied to this us-west caller.
     assert mediator.get_field(WEST, "Customer", "cust_001", "name") is None, (
         "a stale cached security value was served after the row changed"
@@ -324,13 +327,12 @@ def test_a_cache_cleared_mid_lookup_does_not_raise(tmp_path):
 
     cleared = threading.Event()
     mediator = _mediator(tmp_path)
-    mediator._security_value_cache = RacingCache(
-        {("Customer", "cust_001"): "us-west"}
-    )
+    racing = RacingCache({("Customer", "cust_001"): "us-west"})
+    token = mediator_module._SECURITY_CACHE.set((racing, {}))
 
     def clearer():
         checked.wait(2)
-        mediator._security_value_cache.clear()
+        racing.clear()
         cleared.set()
 
     thread = threading.Thread(target=clearer)
@@ -341,6 +343,7 @@ def test_a_cache_cleared_mid_lookup_does_not_raise(tmp_path):
         mediator._get_security_value("Customer", "cust_001")
     finally:
         thread.join()
+        mediator_module._SECURITY_CACHE.reset(token)
 
 
 def test_a_cached_none_is_not_treated_as_a_cache_miss(tmp_path):
@@ -349,9 +352,11 @@ def test_a_cached_none_is_not_treated_as_a_cache_miss(tmp_path):
     # absent, sending every such object down the slow path forever and
     # making a genuine None indistinguishable from no entry at all.
     mediator = _mediator(tmp_path)
-    mediator._security_value_cache[("Customer", "phantom")] = None
-
-    assert mediator._get_security_value("Customer", "phantom") is None
+    token = mediator_module._SECURITY_CACHE.set(({("Customer", "phantom"): None}, {}))
+    try:
+        assert mediator._get_security_value("Customer", "phantom") is None
+    finally:
+        mediator_module._SECURITY_CACHE.reset(token)
 
 
 def test_the_cached_value_does_not_depend_on_who_populated_it(tmp_path):
@@ -360,13 +365,14 @@ def test_the_cached_value_does_not_depend_on_who_populated_it(tmp_path):
     # the same.
     mediator = _mediator(tmp_path)
 
-    mediator.search_object(EAST, "Customer", as_equality_conditions({}))
-    east_warmed = mediator._get_security_value("Customer", "cust_001")
+    # TWO SEPARATE SCOPES, each warmed by a different user.
+    with mediator_module.security_cache_scope():
+        mediator.search_object(EAST, "Customer", as_equality_conditions({}))
+        east_warmed = mediator._get_security_value("Customer", "cust_001")
 
-    mediator._security_value_cache.clear()
-    mediator._security_link_cache.clear()
-    mediator.search_object(WEST, "Customer", as_equality_conditions({}))
-    west_warmed = mediator._get_security_value("Customer", "cust_001")
+    with mediator_module.security_cache_scope():
+        mediator.search_object(WEST, "Customer", as_equality_conditions({}))
+        west_warmed = mediator._get_security_value("Customer", "cust_001")
 
     assert east_warmed == west_warmed
 
@@ -396,19 +402,14 @@ def test_get_object_resolves_security_once_not_per_field(tmp_path):
     sqlite_adapter_module._run_query = counting(real_run_query)
     sqlite_adapter_module._run_query_one = counting(real_run_query_one)
     try:
-        # Each measurement from a COLD cache. Without the clear the
-        # second call finds the first's security value already there
-        # and skips the prefetch, so the two are not comparable -- a
-        # first version of this test asserted arithmetic that only held
-        # because of that shared state.
-        mediator._security_value_cache.clear()
-        mediator._security_link_cache.clear()
+        # Each measurement from a COLD cache -- which every call now gets
+        # by construction: each runs in its own scope. A first version of
+        # this test needed explicit clears, because the cache used to
+        # outlive the call; that shared state is what 004-F6 exploited.
         counted["n"] = 0
         one = mediator.get_object(WEST, "Customer", "cust_001", ["name"])
         one_field = counted["n"]
 
-        mediator._security_value_cache.clear()
-        mediator._security_link_cache.clear()
         counted["n"] = 0
         three = mediator.get_object(WEST, "Customer", "cust_001", ["name", "email", "region"])
         three_fields = counted["n"]
@@ -473,11 +474,18 @@ def test_reading_a_page_of_objects_shares_one_security_resolution(tmp_path):
     sqlite_adapter_module._run_query = counting(real_run_query)
     sqlite_adapter_module._run_query_one = counting(real_run_query_one)
     try:
-        page = mediator.search_object(WEST, "Customer", as_equality_conditions({}))[:50]
-        counted["n"] = 0
-        for object_id in page:
-            mediator.get_object(WEST, "Customer", object_id, ["name", "email", "region"])
-        page_queries = counted["n"]
+        # ONE SCOPE, AS ONE REQUEST: the middleware opens one per HTTP
+        # request and AgentLoop.run one per query -- and
+        # test_security_cache_scope_per_request proves a real request's
+        # calls share it. Outside any scope each call starts empty, which
+        # is the fix for 004-F6; sharing across a page is what a scope
+        # is for.
+        with mediator_module.security_cache_scope():
+            page = mediator.search_object(WEST, "Customer", as_equality_conditions({}))[:50]
+            counted["n"] = 0
+            for object_id in page:
+                mediator.get_object(WEST, "Customer", object_id, ["name", "email", "region"])
+            page_queries = counted["n"]
     finally:
         sqlite_adapter_module._run_query = real_run_query
         sqlite_adapter_module._run_query_one = real_run_query_one

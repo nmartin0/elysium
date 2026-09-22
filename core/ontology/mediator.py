@@ -108,7 +108,9 @@ import logging
 import threading
 from collections.abc import Callable
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from typing import Any, cast
 
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
@@ -211,6 +213,62 @@ class SearchOutcome:
 MAX_SEARCH_SCAN = 10_000
 
 
+
+# THE SECURITY CACHE, SCOPED -- never an attribute of the mediator.
+#
+# IT WAS AN ATTRIBUTE, AND THAT WAS A MAC BYPASS (004-F6, reproduced).
+# One DataMediator serves every user and thread of a generation, and the
+# cache was cleared only by the NEXT prefetch anybody made. A us-west
+# user read a customer; the source moved it to us-east; the same user
+# read everything again -- the response itself saying 'us-east' -- while
+# the rightful us-east user was denied, all until somebody searched.
+#
+# NOW IT LIVES IN A CONTEXTVAR, set by an explicit scope and RESET when
+# the scope ends:
+#
+#   NO SCOPE, NO CACHE. With none active, every security check reads
+#   live and a prefetch stores nothing. So correctness never depends on
+#   a scope being remembered: an entry point that forgot one is slower,
+#   not wrong. (Remembering at every site is the incomplete-migration
+#   pattern the audits kept finding.)
+#
+#   SCOPES ARE ADDED ONLY WHERE SHARING PAYS: per HTTP request
+#   (middleware), per agent query (AgentLoop.run), per public mediator
+#   call. A nested scope REUSES the outer one, so a search followed by a
+#   page of get_object() calls in one request still shares -- the
+#   measured 4-queries-per-row regression get_object's comment records
+#   stays gone.
+#
+#   ALWAYS RESET. Executor threads keep their own context between tasks;
+#   a cache set and never reset would bring the bug back one thread at a
+#   time.
+_SECURITY_CACHE: ContextVar[tuple[dict, dict] | None] = ContextVar(
+    "elysium_security_cache", default=None,
+)
+
+
+@contextmanager
+def security_cache_scope():
+    """A security cache for the duration, or the enclosing one if any."""
+    if _SECURITY_CACHE.get() is not None:
+        yield
+        return
+    token = _SECURITY_CACHE.set(({}, {}))
+    try:
+        yield
+    finally:
+        _SECURITY_CACHE.reset(token)
+
+
+def _security_scoped(method):
+    """Runs a public mediator call inside security_cache_scope()."""
+    @wraps(method)
+    def scoped(*args, **kwargs):
+        with security_cache_scope():
+            return method(*args, **kwargs)
+    return scoped
+
+
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
                  silo_for_type: dict[str, str], roles: dict,
@@ -268,12 +326,8 @@ class DataMediator:
         # class's own __init__ docstring) -- never by a real, ordinary,
         # read-only DataMediator instance at all.
         self._write_limiters: dict[str, ConcurrencyLimiter] = {}
-        # Security-value caches, populated by _prefetch_security_values()
-        # and read by _get_security_value(). Cleared at the start of every
-        # prefetch rather than persisting across operations: a security
-        # value that changed between requests must never be served stale.
-        self._security_value_cache: dict[tuple, Any] = {}
-        self._security_link_cache: dict[tuple, tuple] = {}
+        # NO SECURITY CACHE HERE. It was one, shared by every user and
+        # thread, and that was a MAC bypass -- see _SECURITY_CACHE above.
         self._object_locks = KeyedLockManager()
 
     def _lock_for_object(self, object_type: str, object_id: Any) -> threading.Lock:
@@ -492,10 +546,13 @@ class DataMediator:
         # would make a genuine None indistinguishable from an absent
         # entry.
         cache_key = (object_type, str(object_id))
-        cached = self._security_value_cache.get(cache_key, _MISSING)
+        scoped = _SECURITY_CACHE.get()
+        # NO SCOPE, NO CACHE: read live -- slower, never stale.
+        value_cache, link_cache = scoped if scoped is not None else ({}, {})
+        cached = value_cache.get(cache_key, _MISSING)
         if cached is not _MISSING:
             return cached
-        link = self._security_link_cache.get(cache_key)
+        link = link_cache.get(cache_key)
         if link is not None:
             target_type, linked_id = link
             if linked_id is None:
@@ -608,8 +665,14 @@ class DataMediator:
         if a bulk read fails for any reason, every caller still gets
         the correct answer from the per-object path, just slower.
         """
-        self._security_value_cache.clear()
-        self._security_link_cache.clear()
+        scoped = _SECURITY_CACHE.get()
+        if scoped is None:
+            # NOTHING TO WARM: outside a scope there is no cache to fill,
+            # and filling a stray one is how the bypass began.
+            return
+        value_cache, link_cache = scoped
+        value_cache.clear()
+        link_cache.clear()
         pending = {object_type: [str(object_id) for object_id in object_ids]}
         seen_types = set()
 
@@ -636,14 +699,14 @@ class DataMediator:
 
             if "field" in security:
                 for object_id, value in rows.items():
-                    self._security_value_cache[(current_type, str(object_id))] = value
+                    value_cache[(current_type, str(object_id))] = value
                 continue
 
             # A via_field hop: remember which linked id each object
             # resolves through, then batch the NEXT level.
             target_type = type_schema["fields"][field_name]["target"]
             for object_id, linked_id in rows.items():
-                self._security_link_cache[(current_type, str(object_id))] = (target_type, linked_id)
+                link_cache[(current_type, str(object_id))] = (target_type, linked_id)
             next_ids = [str(linked) for linked in rows.values() if linked is not None]
             if next_ids:
                 pending[target_type] = next_ids
@@ -998,6 +1061,7 @@ class DataMediator:
                 columns.add(field_name)
         return columns
 
+    @_security_scoped
     def search_object(self, user_record: UserRecord, object_type: str,
                        conditions: "list[FieldFilter] | None" = None,
                        visible_schema: dict | None = None,
@@ -1206,6 +1270,7 @@ class DataMediator:
             if field_info["type"] == "data" and get_field_storage_name(field_info) is None
         ]
 
+    @_security_scoped
     def search_object_free_text(self, user_record: UserRecord, object_type: str, query_text: str,
                                  visible_schema: dict | None = None,
                                  conditions: list | None = None,
@@ -1610,6 +1675,7 @@ class DataMediator:
                 result_by_str.pop(object_id, None)
         return list(result_by_str.values())
 
+    @_security_scoped
     def search_around(self, user_record: UserRecord, object_type: str, conditions: list,
                        link_field: str,
                       context: RequestContext | None = None,
@@ -1711,6 +1777,7 @@ class DataMediator:
                 allowed.append(target_id)
         return allowed
 
+    @_security_scoped
     def link_counts(self, user_record: UserRecord, object_type: str,
                      object_id: Any) -> dict:
         """How many objects sit on the far side of each link, per link.
@@ -2005,6 +2072,7 @@ class DataMediator:
             }
         return by_id
 
+    @_security_scoped
     def get_field(self, user_record: UserRecord, object_type: str, object_id: Any, field_name: str,
                    context: RequestContext | None = None):
         # NEVER raises for "field/type doesn't exist" or "not authorized"
@@ -2071,6 +2139,7 @@ class DataMediator:
         adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
         return self._read_field_with_log_check(object_type, object_id, field_name, adapter, resolved_type_config)
 
+    @_security_scoped
     def get_object(self, user_record: UserRecord, object_type: str, object_id: Any,
                    field_names: list[str],
                    context: RequestContext | None = None) -> dict:
@@ -2117,9 +2186,10 @@ class DataMediator:
         # each re-resolve their own. The unconditional version was
         # committed and measured at exactly 4 queries per row, with no
         # sharing across the page at all.
-        if (object_type, str(object_id)) not in self._security_value_cache and (
+        values_cached, links_cached = _SECURITY_CACHE.get() or ({}, {})
+        if (object_type, str(object_id)) not in values_cached and (
             object_type, str(object_id)
-        ) not in self._security_link_cache:
+        ) not in links_cached:
             self._prefetch_security_values(object_type, [object_id])
 
         return {

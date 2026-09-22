@@ -106,6 +106,7 @@ from core.deployment_loader import (
     build_generation,
     resolve_runtime_paths,
 )
+from core.ontology.mediator import security_cache_scope
 from core.pending_write_persistence import PendingWritePersistence
 from core.pending_write_store import PendingWriteStore
 from core.request_metrics import RETENTION_SECONDS, RequestMetrics
@@ -235,6 +236,16 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # ON THE THREAD POOL, like the SIGHUP handler's reload: the check is
     # one SELECT, but catching up is a ~22 ms rebuild, and on the event
     # loop that would stall every request in flight in this worker.
+    # ONE SECURITY CACHE PER REQUEST, and none shared between requests.
+    # A handler that searches and then reads a page of objects shares
+    # one resolution; the next request starts empty. Starlette copies
+    # this context into the thread that runs a synchronous handler, so
+    # the scope reaches it. See core/ontology/mediator._SECURITY_CACHE.
+    @app.middleware("http")
+    async def security_cache_per_request(request: Request, call_next):
+        with security_cache_scope():
+            return await call_next(request)
+
     @app.middleware("http")
     async def follow_reload(request: Request, call_next):
         await run_in_threadpool(follow_reload_epoch, app)
