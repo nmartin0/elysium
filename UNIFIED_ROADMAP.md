@@ -157,8 +157,10 @@ checking it found NOW.
        E-11 -- chat() has no deadline and drops the provider's token
        counts. Moved out of "needs a capable model": a stalled FAKE
        adapter tests it.
-       E-10 -- the mirror read path is 8-10x slower than live (audit's
-       measurement; re-measure before and after). No table cache exists:
+       E-10 -- the mirror read path is 8-11x slower than live.
+       RE-MEASURED on dev, the "before" any fix must beat: search_object
+       1.04 ms live against 11.61 ms mirror; get_field 0.63 against 4.87.
+       No table cache exists:
        cache per (table, snapshot id), which the generation already pins.
    B1. THE SECOND BATCH'S CORRECTNESS FINDINGS, each reproduced unless
        marked:
@@ -166,7 +168,8 @@ checking it found NOW.
          keeps only the LATEST edit (reproduced: two edits, the first
          lost); the merging version has no production caller. And
          last_synced_at still reports the COMMIT time, not when the source
-         read began -- a blind window (by reading the code). One combined
+         read began -- MEASURED: a 2 s source read left a 2.08 s blind
+         window. One combined
          test: several edits across a sync boundary, the sync taking
          measurable time.
        F-01 -- coerce("true", "boolean") raises, and the mirror calls that
@@ -181,9 +184,14 @@ checking it found NOW.
          at load (reproduced); two defects in one function.
        F-19 -- a REVERSE link accepted as security.via_field (reproduced),
          then a raw OperationalError on the read path.
-       F-20 -- the mirror stringifies literals for equals/in/not_in but
-         not range; the parity tests use only TEXT columns. Inspection
-         only: verify PyIceberg's coercion before choosing.
+       F-20 -- MEASURED, and narrower and worse than reported. PyIceberg
+         binds a string literal to the column's type, so on integer, float
+         and date columns the asymmetry is harmless. On DECIMAL columns it
+         is not: the scale fix (_decimal_literal) reaches only `equals`,
+         so `in` and `not_in` RAISE "scales differ". Reproduced end to end
+         on the shipped mirror: amount equals 49.99 -> 2 results; amount
+         in [49.99] -> ValueError. A chart's "keep" cross-filter IS an
+         `in`. Quantise in/not_in literals and range bounds too.
    B2. THE SECOND BATCH'S MEDIUM FINDINGS:
        F-04 the limiter's chat(*args, **kwargs) erases the typed
          signature; F-05 the rate limit checks then records in separate
@@ -194,7 +202,12 @@ checking it found NOW.
          then an untranslated OSError); F-30 create_colleague_user makes
          the same debug/'a' account with no guard; F-33 the pending-write
          ownership check and session expiry are each defended by one test
-         -- add a second at a different layer (counts not re-measured).
+         -- MEASURED by mutation over both suites: the ownership check
+         F-33 named was REPLACED by the approvals work's may_claim, which
+         8 tests catch at two layers (5 store, 3 route) -- resolved. Session
+         expiry is caught by exactly ONE test,
+         test_session_store.py::test_expired_session_returns_none -- add a
+         second at get_current_user.
        004-F7's LEFTOVER: confirming is re-authorised now (verified: a
          customer moved out of region is not written) -- but the proposer
          is then told "awaiting_other_reviewers" when nobody can approve
@@ -235,7 +248,14 @@ checking it found NOW.
          worse now, with manage:roles and manage:escalation added.
        ui/README.md (10-S1-01..04): "no design system" on a Blueprint UI;
          app-schema missing; package contents a snapshot of an older
-         codebase; "five separate checks", then four listed.
+         codebase -- MEASURED WORSE: api.ts exports 49 functions (the
+         audit counted 30) and the README names none of notes, history,
+         aggregate, trace, silos, deployment config or freshness, and five
+         of app-browse's seven components; "five separate checks", then
+         four listed.
+       config.yaml's mirror block says both keys "default to the
+         conservative answer ... reads going to the customer's own
+         databases"; the code defaults read_from_mirror to TRUE.
        ui/index.html (10-S2-01, 10-S2-02): no <noscript>, no favicon.
    B4. CSS (AUDIT-09):
        09-S1-01 the collapsed sidebar is defined twice, index.css:609
@@ -298,6 +318,9 @@ checking it found NOW.
       script. The audit recommends the script, given the scan's cost.
     - F-18 -- the agent can emit only equality filters; widening it is a
       feature, not a fix.
+    - `range` on a DECIMAL field is refused outright, so money cannot be
+      filtered by amount. Found while measuring F-20; no report raised it.
+      Deliberate, or a gap?
     - 004-F3 -- "tools" at the config and API boundary, "functions" in
       the core. Renaming the boundary changes a config key and an API
       field; documenting the mapping does not.
@@ -395,13 +418,23 @@ checking it found NOW.
       bug -- one connection, one commit.
     - N-03 Protocol vs ABC: document the Protocol side; do not unify.
 
-### Not verified by this check -- say so rather than assume
+### Checked afterwards -- what was first recorded as unverified
 
-    - F-33's mutation counts (needs a mutation run).
-    - F-20's actual PyIceberg literal coercion (the audit graded it
-      reading-only too).
-    - AUDIT-09 and -10 cite Audits 01-08, which were not provided; only
-      the React-rules claim was measured here.
+    Each of these was listed here as unverified, then measured, and the
+    entries above carry the results: F-33 (mutation run over both
+    suites), F-20 (PyIceberg on integer, float, date and decimal
+    columns, then end to end on the shipped mirror), F-29 (a slowed
+    source read), E-10 (re-timed), and 10-S1-03 (every component and
+    endpoint family counted).
+
+    FOUND WHILE DOING IT, and not in any report: `range` is refused
+    outright on decimal fields ("Operator 'range' cannot be used on field
+    'amount'"), so money cannot be filtered by amount -- "transactions
+    over $500". Deliberate or not is a question for the owner.
+
+    STILL UNVERIFIABLE: AUDIT-09 and -10 cite Audits 01-08, which were
+    never provided. Only the one claim measured here -- that oxlint runs
+    no React hook rules -- is known to hold.
 
 ### The audit verified these correct -- do not re-litigate
 
