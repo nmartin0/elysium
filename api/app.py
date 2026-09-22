@@ -327,6 +327,20 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     record_generation(app.state.config_history, generation)
     app.state.generation = generation
 
+    # LIVE READS ARE A FALLBACK, and the service says so (GOLD-2b, the
+    # owner's decision of September 22). Everything silver and gold do --
+    # standardisation, the declared expectations and their quarantine,
+    # duplicate-key handling, lineage, and gold itself -- lives in the
+    # lake. A live read sees none of it, so a deployment running this way
+    # is not running the pipeline it declared.
+    if not generation.config.read_from_mirror:
+        logger.warning(
+            "read_from_mirror is off: reads go straight to the source databases, "
+            "so standardisation, the declared expectations and their quarantine, "
+            "duplicate-key handling, lineage and gold are all bypassed. This is a "
+            "fallback for a deployment that has not synced yet.",
+        )
+
     # EVERY SOURCE CHECKED AT STARTUP, each failure reported BY NAME
     # (E-13). Nothing called health_check() before, so an unreachable
     # database surfaced only as the first request that needed it failed.

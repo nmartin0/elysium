@@ -127,7 +127,10 @@ resolution, so gold for it is a straight conform.
           non-null, link targets exist, required properties, row count
           within bounds -- and published atomically. A failed audit
           moves nothing.
-  GOLD-2b. LIVE-READ MODE DEMOTED (D1): a startup warning naming what
+  GOLD-2b. ~~LIVE-READ MODE DEMOTED~~ DONE, patch 342: a startup
+          warning naming what it bypasses, config.yaml's contradictory
+          comment corrected, INSTALL.md saying it plainly. NEXT: GOLD-3.
+          LIVE-READ MODE DEMOTED (D1): a startup warning naming what
           it gives up, INSTALL.md and config.yaml corrected -- the
           comment there still calls live reads the conservative
           default, which the code has not done for some time.

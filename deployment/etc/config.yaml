@@ -54,10 +54,19 @@ tools:
 
 # WHERE THE MIRROR LIVES, and whether reads come from it.
 #
-# Both keys are optional and both default to the conservative answer:
-# a local warehouse, and reads going to the customer's own databases.
+# BOTH KEYS ARE OPTIONAL. The warehouse defaults to a local one; reads
+# default to COMING FROM THE MIRROR. (This said both defaulted to the
+# conservative answer, with reads going to the customer's own
+# databases, which the code stopped doing some time ago.)
 mirror:
-  # read_from_mirror: false     # serve reads DIRECTLY from the silos
+  # read_from_mirror: false     # a FALLBACK, not an equal choice
+  #
+  # LIVE READS GIVE UP THE PIPELINE. Standardisation, the declared
+  # expectations and their quarantine, duplicate-key handling, lineage
+  # and gold all live in the lake; a live read goes straight to the
+  # customer's database and sees none of them. It remains for a
+  # deployment that has not synced yet, or one diagnosing the mirror
+  # itself. The service warns at startup when it is on.
   #
   # THE DEFAULT IS NOW true -- reads come from the local Iceberg
   # mirror. That is what makes reads independent of a source's

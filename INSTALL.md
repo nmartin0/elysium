@@ -168,6 +168,16 @@ POSIX-specified), and **`$SUDO_USER`** (`sudo`-specific).
 
 ## 8. Keeping the local mirror in sync
 
+**Reads come from the mirror, and that is not an optional nicety.**
+Everything the pipeline does to your data -- standardising values,
+checking them against the rules your ontology declares, quarantining
+what fails, refusing to guess between duplicate keys, recording where
+each row came from, and building the gold tables the ontology reads --
+happens in the lake. Setting `read_from_mirror: false` sends reads
+straight to your databases and bypasses all of it. It exists for a
+deployment that has not synced yet, or for diagnosing the mirror
+itself; the service warns at startup whenever it is on.
+
 Elysium can serve reads from a local mirror of your data rather than
 querying your databases on every request. The mirror is populated by
 a sync, which you run on a schedule.
