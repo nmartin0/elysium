@@ -62,6 +62,7 @@ from core.mirror.drift_policy import (
     verdict_for_type_change,
 )
 from core.mirror.durability import force_table_metadata_to_disk
+from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.transform import describe_drift, transform_rows
 from core.ontology.field_types import (
@@ -321,6 +322,18 @@ class IcebergMirrorSync(MirrorSync):
         #
         # The rows come back so they can serve as silver's fallback
         # when bronze is unavailable, without a second trip.
+        # BEFORE ANYTHING ELSE: does the catalog still agree with the
+        # warehouse? A sync that writes on top of a table the catalog
+        # can no longer read fails deep inside pyiceberg, after reading
+        # the source for nothing, with a bare FileNotFoundError naming a
+        # path (roadmap item 8). Asked here, it costs one table load
+        # this sync was going to do anyway.
+        broken = unreadable_tables(
+            self._catalog, (f"{silo_name}.{table_name}", f"bronze_{silo_name}.{table_name}"),
+        )
+        if broken:
+            raise ValueError(describe_disagreement(broken))
+
         # WHEN THE SOURCE WAS READ, recorded before reading it (001's
         # F-29). last_synced_at() reported the snapshot's COMMIT time,
         # which is later -- so a write applied while the sync ran was

@@ -43,6 +43,8 @@ report and raise its own.
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
 
 @dataclass
 class IntegrityReport:
@@ -57,6 +59,49 @@ class IntegrityReport:
 
     def note(self, problem: str) -> None:
         self.problems.append(problem)
+
+
+def unreadable_tables(catalog, identifiers) -> dict[str, str]:
+    """{identifier: why} for each table the catalog NAMES but cannot be
+    read -- the catalog and the warehouse disagreeing.
+
+    A table that is simply not there yet is not a disagreement: the
+    first sync of a table finds nothing and that is normal.
+
+    WHY THE SYNC ASKS THIS FIRST. Iceberg commits by writing a metadata
+    file and then swapping the catalog's pointer, and pyiceberg does
+    not fsync the file -- so a full disk or a power cut can leave the
+    pointer naming content that never landed. It happened to this
+    project's own development mirror: the catalog named metadata file
+    00008 and only 00007 existed. Until now the sync discovered that
+    by dying inside pyiceberg with a bare FileNotFoundError naming a
+    path, after reading the source for nothing.
+    """
+    broken: dict[str, str] = {}
+    for identifier in identifiers:
+        try:
+            catalog.load_table(identifier)
+        except (NoSuchTableError, NoSuchNamespaceError):
+            continue
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            broken[identifier] = str(exc)
+    return broken
+
+
+def describe_disagreement(broken: dict[str, str]) -> str:
+    """What to tell an operator, including how to repair it."""
+    lines = [
+        "The catalog and the warehouse disagree, so this sync has done "
+        "nothing and the mirror is unchanged:",
+    ]
+    for identifier, why in sorted(broken.items()):
+        lines.append(f"  {identifier}: {why}")
+    lines.append(
+        "\nThe catalog names metadata that is not on disk -- a full disk or a "
+        "power cut between the write and the pointer swap. Repair it with: "
+        "python -m scripts.repair_catalog"
+    )
+    return "\n".join(lines)
 
 
 def check_mirror(catalog, schema: dict | None = None,

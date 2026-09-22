@@ -93,8 +93,9 @@ resolution, so gold for it is a straight conform.
           database writes); ~~F-20~~ FIXED, patch 333;
           ~~F-19~~ FIXED, patch 334; F-19
           reverse link as security.via_field; ~~F-26 WITH F-29~~ FIXED, patch
-          335; item 8, a sync that fails when catalog and warehouse
-          disagree. And the owner's decisions D1-D5 (MEDALLION_PIPELINE.md
+          335; ~~item 8~~ FIXED, patch 336: the sync refuses,
+          before reading the source. GOLD-0's bug list is DONE. And the owner's
+          decisions D1-D5 (MEDALLION_PIPELINE.md
           -- gold vs live mode, MAC on a fused entity, write target,
           default expectation policy, DuckDB), with F-28, which decides
           how deletes reach gold.
@@ -464,7 +465,8 @@ checking it found NOW.
        fixtures -- a cross-type action, a numeric mirror column, a
        delete in the resume fixtures -- and belongs with item 1.
 
-    8. A SYNC THAT FAILS when the catalog and warehouse disagree,
+    8. ~~A SYNC THAT FAILS~~ DONE, patch 336.
+       A SYNC THAT FAILS when the catalog and warehouse disagree,
        instead of leaving it to check_mirror (BACKLOG).
     9. PENDING WRITES MARKED UNAPPLYABLE AT RELOAD, so the inbox never
        offers one that cannot be approved (HOT_RELOAD 6).
