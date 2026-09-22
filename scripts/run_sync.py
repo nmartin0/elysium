@@ -368,6 +368,7 @@ def run_sync(runtime_paths=None) -> int:
                     target.silo_name, target.table_name, target.id_column,
                     target.columns, target.column_types,
                     target.fields_by_column, target.standardisation,
+                    target.expectations,
                 )
             except Exception as exc:
                 # Per-table, deliberately -- see this module's docstring.

@@ -62,6 +62,7 @@ from core.mirror.drift_policy import (
     verdict_for_type_change,
 )
 from core.mirror.durability import force_table_metadata_to_disk
+from core.mirror.expectations import apply_expectations
 from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.transform import describe_drift, transform_rows
@@ -117,6 +118,19 @@ RETENTION_MARGIN_MS = 7 * 24 * 60 * 60 * 1000
 
 # When the sync last READ THE SOURCE for this table, ISO-8601 (F-29).
 # The overlay's `since`: every write after it is still overlaid.
+# What a quarantine table holds: the id, the rule that caught the row,
+# and when. The row itself stays in bronze (GOLD-1).
+QUARANTINE_SCHEMA = pa.schema([
+    ("object_id", pa.string()),
+    ("column", pa.string()),
+    ("field", pa.string()),
+    ("reason", pa.string()),
+    ("value", pa.string()),
+    ("policy", pa.string()),
+    ("detected_at", pa.string()),
+])
+
+
 SOURCE_READ_PROPERTY = "elysium.source_read_started_at"
 
 
@@ -289,7 +303,8 @@ class IcebergMirrorSync(MirrorSync):
     def sync_table(self, silo_name: str, table_name: str, id_column: str,
                     columns: list[str], column_types: dict[str, str] | None = None,
                     fields_by_column: dict[str, str] | None = None,
-                    standardisation: dict[str, dict] | None = None) -> SyncResult:
+                    standardisation: dict[str, dict] | None = None,
+                    expectations: dict[str, dict] | None = None) -> SyncResult:
         adapter = self.adapters.get(silo_name)
         if adapter is None:
             raise ValueError(
@@ -423,7 +438,18 @@ class IcebergMirrorSync(MirrorSync):
                 f"{describe_drift(silo_name, table_name, transformed.drift)}"
             )
 
-        arrow_table = self._to_arrow(transformed.rows, columns, column_types)
+        # THE EXPECTATIONS, on coerced values (GOLD-1). warn keeps the
+        # row and counts it; quarantine holds it back and writes it to
+        # the quarantine table -- never a silent drop, and bronze still
+        # holds what the source said; fail stops the build here, before
+        # anything is written, so the mirror is unchanged.
+        checked = apply_expectations(transformed.rows, expectations or {})
+        if checked.quarantined:
+            self._write_quarantine(silo_name, table_name, id_column, checked.quarantined)
+        for rule, count in checked.counts.items():
+            logger.warning(f"{silo_name}.{table_name}: {count} row(s) failed {rule}")
+
+        arrow_table = self._to_arrow(checked.kept, columns, column_types)
 
         self._ensure_namespace(silo_name)
         identifier = f"{silo_name}.{table_name}"
@@ -536,7 +562,46 @@ class IcebergMirrorSync(MirrorSync):
             table_name=table_name,
             row_count=arrow_table.num_rows,
             synced_at=datetime.now(UTC),
+            quarantined=len(checked.quarantined),
+            violations=checked.counts,
         )
+
+    def _write_quarantine(self, silo_name: str, table_name: str, id_column: str,
+                           held: list) -> None:
+        """The rows an expectation held back, with the rule that caught
+        each one -- so a person can see what was refused and why.
+
+        THE ROW ITSELF STAYS IN BRONZE, exactly as the source wrote it,
+        so this records the id and the finding rather than copying the
+        row: one place holds the data, and this says what happened to
+        it. Appended, never overwritten: a run's findings do not erase
+        the last run's.
+        """
+        namespace = f"quarantine_{silo_name}"
+        identifier = f"{namespace}.{table_name}"
+        detected_at = datetime.now(UTC).isoformat()
+        rows = [
+            {
+                "object_id": str(row.get(id_column)),
+                "column": finding.column,
+                "field": finding.field_name,
+                "reason": finding.reason,
+                "value": None if finding.value is None else str(finding.value),
+                "policy": finding.policy,
+                "detected_at": detected_at,
+            }
+            for row, finding in held
+        ]
+        arrow_table = pa.Table.from_pylist(rows, schema=QUARANTINE_SCHEMA)
+        try:
+            self._catalog.create_namespace(namespace)
+        except NamespaceAlreadyExistsError:
+            pass
+        try:
+            table = self._catalog.load_table(identifier)
+        except (NoSuchTableError, NoSuchNamespaceError):
+            table = self._catalog.create_table(identifier, schema=QUARANTINE_SCHEMA)
+        table.append(arrow_table)
 
     def last_synced_at(self, silo_name: str, table_name: str) -> datetime | None:
         try:

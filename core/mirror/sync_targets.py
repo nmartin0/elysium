@@ -54,6 +54,7 @@ Used by: scripts/run_sync.py
 
 from dataclasses import dataclass, field
 
+from core.mirror.expectations import expectations_for
 from core.mirror.standardise import rules_for
 
 
@@ -80,6 +81,9 @@ class SyncTarget:
     # for a column whose field opted out (GOLD-1). Read from the same
     # field declaration as the type above, in the same walk.
     standardisation: dict[str, dict] = field(default_factory=dict)
+    # column -> what silver checks on every row and what a failure does
+    # (GOLD-1). Absent for a column that declares no constraints.
+    expectations: dict[str, dict] = field(default_factory=dict)
 
 
 def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
@@ -96,17 +100,19 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
     for type_def in schema.get("object_types", {}).values():
         for (silo_name, table_name, id_column, columns,
              column_types, fields_by_column,
-             standardisation) in _targets_for_type(type_def):
+             standardisation, expectations) in _targets_for_type(type_def):
             key = (silo_name, table_name)
             if key not in by_table:
                 by_table[key] = {"id_column": id_column, "columns": [], "column_types": {},
-                             "fields_by_column": {}, "standardisation": {}}
+                             "fields_by_column": {}, "standardisation": {},
+                             "expectations": {}}
             existing = by_table[key]["columns"]
             for column in columns:
                 if column not in existing:
                     existing.append(column)
             by_table[key]["column_types"].update(column_types)
             by_table[key]["standardisation"].update(standardisation)
+            by_table[key]["expectations"].update(expectations)
             # FIRST DECLARATION WINS on a shared table. Two object
             # types can back onto one table, and if both map the same
             # column the field names are interchangeable for the
@@ -143,6 +149,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             column_types=entry["column_types"],
             fields_by_column=entry["fields_by_column"],
             standardisation=entry["standardisation"],
+            expectations=entry["expectations"],
         )
         for (silo_name, table_name), entry in by_table.items()
     ]
@@ -171,6 +178,7 @@ def _targets_for_type(type_def: dict):
     # looking for a declaration that does not exist.
     fields_by_storage: dict[str | None, dict[str, str]] = {name: {} for name in storages}
     standardisation_by_storage: dict[str | None, dict[str, dict]] = {name: {} for name in storages}
+    expectations_by_storage: dict[str | None, dict[str, dict]] = {name: {} for name in storages}
 
     # The id column of each storage is always needed -- it is what rows
     # are matched on, both during the sync itself and by every read
@@ -215,6 +223,12 @@ def _targets_for_type(type_def: dict):
             raise ValueError(f"Field {field_name!r}: {e}") from None
         if rules is not None:
             standardisation_by_storage[storage_key][column] = rules
+        try:
+            expected = expectations_for(field_config)
+        except ValueError as e:
+            raise ValueError(f"Field {field_name!r}: {e}") from None
+        if expected is not None:
+            expectations_by_storage[storage_key][column] = {**expected, "field_name": field_name}
             # THE SOURCE ZONE TRAVELS WITH THE TYPE, because it is part
             # of what the type means: a `timestamptz` whose source is
             # naive cannot be read without it. Carried on the same
@@ -247,4 +261,5 @@ def _targets_for_type(type_def: dict):
             types_by_storage[storage_key],
             fields_by_storage[storage_key],
             standardisation_by_storage[storage_key],
+            expectations_by_storage[storage_key],
         )

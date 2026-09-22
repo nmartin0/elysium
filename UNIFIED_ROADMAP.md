@@ -102,8 +102,11 @@ resolution, so gold for it is a straight conform.
   GOLD-1. SILVER, HARDENED (S1-S4, S6). ~~S1 standardisation~~ DONE,
           patch 337: NFC, trim and collapse on every string; sentinels
           declared per field; opt-out per field; a typo refused at load.
-          NEXT: the expectations and quarantine (S2-S3), then duplicate
-          keys (S4) and lineage columns (S6).
+          ~~S2-S3 expectations and quarantine~~ DONE, patch 338: a
+          field's constraints evaluated per row, warn/quarantine/fail
+          per rule, quarantine tables that record the rule and leave
+          the row in bronze. NEXT: duplicate keys (S4), then lineage
+          columns (S6).
           S1-S4, S6: meaning-preserving
           standardisation, declared per column; patch 297's constraints
           evaluated as expectations with warn/quarantine/fail;

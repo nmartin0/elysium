@@ -40,6 +40,7 @@ Used by: scripts/run_sync.py (the real, only entry point)
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import datetime
 
 
@@ -53,6 +54,10 @@ class SyncResult:
     table_name: str
     row_count: int
     synced_at: datetime
+    # Rows held back by an expectation, and what each rule caught
+    # (GOLD-1). Zero and empty for a table that declares none.
+    quarantined: int = 0
+    violations: dict = dataclass_field(default_factory=dict)
 
 
 class MirrorSync(ABC):
