@@ -86,16 +86,45 @@ Used by: core/ontology/mediator.py (owns the instance directly,
          from)
 """
 
+import atexit
 import json
+import shutil
+import tempfile
+import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-_DEFAULT_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "deployment" / "var" / "log" / "audit.log"
+# NO DEFAULT PATH INTO THE REPOSITORY (E-08b). This was
+# deployment/var/log/audit.log -- the developer's own audit trail -- and
+# DataMediator and PendingWriteStore default a bare AuditLog() "for
+# tests", so every unit test building one directly wrote its entries
+# there: measured on a fresh clone, the unit suite left that file behind.
+#
+# NOW a bare AuditLog() writes to a file of its OWN in a private temporary
+# directory: never the developer's, and never another instance's -- a
+# test counting entries in its log sees only its own.
+#
+# PRODUCTION NEVER RELIES ON IT. Every construction there passes a log
+# built under the deployment's log directory, and
+# tests/unit/test_production_passes_its_audit_log.py refuses one that
+# does not: an audit trail silently written to /tmp would be worse than
+# the bug this replaced.
+_PRIVATE_DIRECTORY: Path | None = None
+
+
+def _private_log_path() -> Path:
+    global _PRIVATE_DIRECTORY
+    if _PRIVATE_DIRECTORY is None:
+        _PRIVATE_DIRECTORY = Path(tempfile.mkdtemp(prefix="elysium-audit-"))
+        # Removed when the process exits: one directory per process, not
+        # one per instance, so a test run leaves nothing behind in /tmp.
+        atexit.register(shutil.rmtree, _PRIVATE_DIRECTORY, True)
+    return _PRIVATE_DIRECTORY / f"audit-{uuid.uuid4().hex}.log"
 
 
 class AuditLog:
-    def __init__(self, log_path: Path = _DEFAULT_LOG_PATH, generation: int | None = None):
+    def __init__(self, log_path: Path | None = None, generation: int | None = None):
         """`generation` identifies WHICH configuration load produced
         these entries -- see HOT_RELOAD_PLAN.md step 1.
 
@@ -112,7 +141,7 @@ class AuditLog:
         that looks like an answer.
         """
         self._generation = generation
-        self._log_path = log_path
+        self._log_path = log_path if log_path is not None else _private_log_path()
         # Set once the directory is known to exist -- see _write().
         # A plain bool rather than a lock: two threads both creating it
         # is harmless (mkdir is exist_ok) and both then setting True is

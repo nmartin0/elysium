@@ -125,7 +125,14 @@ checking it found NOW.
        writing another's mirror (patch 316); and TEN more tests that
        read or wrote the developer's deployment -- credentials.db,
        triggers.db, write_log.db, a mirror -- while passing.
-   1b. E-08b -- THE AUDIT LOG STILL GETS TEST ENTRIES. On a fresh clone
+   1b. ~~E-08b~~ FIXED, patch 318: a bare AuditLog() writes to a private
+       temporary file of its own, removed at exit; an AST tripwire
+       refuses any production construction relying on that default.
+       Measured on a fresh clone: the whole unit suite now leaves NOTHING
+       in deployment/. (Chosen over making the log required: production
+       already passes one everywhere, and 29 of the 58 test sites have no
+       temporary directory in scope.)
+       E-08b -- THE AUDIT LOG STILL GETS TEST ENTRIES. On a fresh clone
        the full unit suite leaves deployment/var/log/audit.log behind:
        DataMediator and PendingWriteStore default to a bare AuditLog(),
        whose default path is the REPOSITORY'S audit log -- "each
