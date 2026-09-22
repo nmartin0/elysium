@@ -51,22 +51,118 @@ were already done; log rotation and the hardened systemd unit existed
 but were installed by nothing. So each entry is re-checked against the
 code BEFORE it is built, and corrected here if it was wrong.
 
-### Build next, in this order -- no decision and no model needed
+### Build next, in this order -- the external audit first
 
-    1. A SYNC THAT FAILS when the catalog and warehouse disagree,
-       instead of leaving it to check_mirror (BACKLOG). First because it
-       is nearest to data integrity: today a mismatch is found only if
-       somebody happens to run the check.
-    2. PENDING WRITES MARKED UNAPPLYABLE AT RELOAD, so the inbox never
-       offers one that cannot be approved (HOT_RELOAD 6). Confirm
-       already refuses them; this tells people sooner.
-    3. STARTUP CHECKS: silo reachability, mirror schema drift (UI 8).
-    4. SYNC FAN-OUT over a bounded pool (UI 11).
-    5. MIRROR ROLL-BACK, 0.5.4's second half.
-    6. SCHEMA MIGRATIONS beyond add-a-column (3.3, UI 16).
+AGREED WITH THE OWNER, September 21. Two external audit reports
+(ELYSIUM-FLAWS-2, pinned to cb94943, and the review it superseded,
+pinned to f4ea94e) were read in full and every item checked against dev
+at 926ff1a. The reports are not committed -- they say so -- so each item
+is recorded here in its own words, with its audit number, and what
+checking it found NOW.
+
+    1. E-08 -- 30 UNIT TESTS FAIL ON A FRESH CLONE, not the 17 reported.
+       They read the repository's own seeded deployment and fail as
+       "assert 0 > 0" on a clean checkout. THIRTEEN WERE WRITTEN AFTER
+       THE AUDIT, in this project's own patches, and reported green from
+       a seeded working copy:
+         test_action_effect (5), test_constraints_enforced (5, patch
+         297), test_decimal_filter_scale (3), test_declared_triggers
+         (2, 279), test_restore_gives_back_the_backup (1, 288),
+         test_saved_view_evaluation (3), test_search_around_is_capped
+         (2), test_security_cache_is_bounded (2), test_trigger_actions
+         (3, 277), test_trigger_evaluation (2), test_trigger_recipients
+         (2, 278).
+       Fix: a fixture building a seeded, synced deployment in a
+       temporary directory, so they keep proving something. Never
+       depend on deployment/var/lib. The integration tier is clean on a
+       fresh clone (403 pass) -- it already builds its own.
+    2. E-09 -- NO CI. A workflow running lint.sh, the unit and
+       non-model integration tests, and in ui/ npm ci, npm run lint and
+       npm test -- plus a job on a checkout with NO seeded data, so
+       E-08 cannot return. Written here; only the owner can run it.
+    3. E-01 WITH E-02 -- pre-authentication, together because the second
+       depends on the first.
+       E-01: validation errors echo the request body. Measured: a login
+       with only a password returns 422 with that password in it --
+       AND /me/password (patch 300) echoes the caller's CURRENT
+       password. A global handler; see the owner's decision below.
+       E-02: login fields are unbounded and expired login_attempts rows
+       are never deleted. Measured: a 20,000-character username wrote a
+       row; a 200,000-character password was accepted for hashing. Bound
+       both -- an oversized field gets the SAME 401 and writes NOTHING --
+       and delete expired rows inside record_failure(). Keying by the
+       RAW username stays: it stops throttling revealing which accounts
+       exist. Tests assert the ROW COUNT, not only the status.
+    4. E-03's second half -- expired sessions are never deleted. (The
+       first half, hashing, is done: patch 301.) Delete them inside
+       create_session().
+       E-04 -- the CSRF token is compared with `!=`; use
+       secrets.compare_digest, pinned at source level, since no timing
+       test can be made reliable.
+       E-05 -- no Permissions-Policy header; deny camera, microphone,
+       geolocation, payment, usb.
+    5. E-13 -- sources are not checked at startup: nothing calls
+       health_check(). Report each failure by name; do not refuse to
+       start. (This IS the "startup checks" item this list already held.)
+       E-12 -- graceful shutdown is MOSTLY DONE (patch 305: uvicorn waits
+       30 s, systemd 45 s). Still missing: the test that begins a
+       confirm, shuts down, and asserts the write and both audit entries
+       completed.
+       E-11 -- chat() has no deadline and drops the provider's token
+       counts. Moved out of "needs a capable model": a stalled FAKE
+       adapter tests it.
+       E-10 -- the mirror read path is 8-10x slower than live (audit's
+       measurement; re-measure before and after). No table cache exists:
+       cache per (table, snapshot id), which the generation already pins.
+    6. THE OWNER'S DECISIONS, built as decided below: E-06, E-07, E-14.
+    7. DOCUMENTATION THAT SAYS WHAT IS NO LONGER TRUE, one commit each:
+       E-15 requirements.txt calls lockfiles "deliberately deferred";
+         both lockfiles exist and lint.sh checks them.
+       E-16 README's "Single OS process" limitation -- WORSE than the
+         audit says: patches 292-295 made reloads, role approvals,
+         generation numbers and capacity caps work across processes.
+         Write down exactly what is now guaranteed, and no more.
+       E-17 README says links cannot cross silos; they can, and
+         test_cross_silo_links records it.
+       E-18 SECURITY_ARCHITECTURE.md still heads a closed hole "THE
+         REAL HOLE"; the write-down check was built in patch 260.
+       E-19 UI_ROADMAP.md lists log rotation as missing -- it ships and,
+         since 305, is installed -- and says there is no migration
+         mechanism; there is one, ad hoc. The true gap is narrower: no
+         store records a schema version (see item 12).
+       From the earlier report: INSTALL.md never puts the seed and sync
+         steps beside the test command; and the prompt-injection
+         boundary -- the synthesis call has no tools, every step is
+         re-authorised against the caller's grants -- is stated nowhere,
+         so nobody later "improves" the synthesis call by giving it one.
+    8. A SYNC THAT FAILS when the catalog and warehouse disagree,
+       instead of leaving it to check_mirror (BACKLOG).
+    9. PENDING WRITES MARKED UNAPPLYABLE AT RELOAD, so the inbox never
+       offers one that cannot be approved (HOT_RELOAD 6).
+   10. SYNC FAN-OUT over a bounded pool (UI 11).
+   11. MIRROR ROLL-BACK, 0.5.4's second half.
+   12. SCHEMA MIGRATIONS -- narrowed by E-19: per-store migration
+       callables exist; no store records a schema version (3.3, UI 16).
+
+### Decided by the owner, September 21
+
+    - E-01, the error shape: drop `input` and `ctx` from validation
+      errors, keep `loc` and `msg` -- after checking what ui/ reads.
+    - E-06: silo failures reported in a closed vocabulary --
+      unreachable, missing, empty, refused, misconfigured, unknown --
+      not the runtime's exception class names.
+    - E-07: every id is a string, on both read paths.
+    - E-14: delete MemoryGuard -- built, tested, used by nothing, and
+      PRINCIPLES.md 7 says nothing is built for a caller that does not
+      exist.
+    - E-20: PROPOSE a consolidation of the roadmap files; do not
+      perform one.
 
 ### Needs a decision from a person
 
+    - E-21 -- repository visibility. LICENSE describes unpublished
+      proprietary source; the repository is publicly readable. Only the
+      owner can decide this.
     - Whether one request pins one mirror snapshot (0.5.6).
     - Query's starter questions -- deferred because a starter can leak
       what MAC hides (QUERY_PLAN part 1).
@@ -74,9 +170,9 @@ code BEFORE it is built, and corrected here if it was wrong.
 
 ### Needs a capable model -- 2.2 first
 
-    - Token counts from chat(), a wall-clock deadline, measuring the
-      loop, capping what a step returns (= R2's fix), where the
-      effective window ends (UI 12-15, 23).
+    - Measuring the loop, capping what a step returns (= R2's fix),
+      where the effective window ends (UI 14-15, 23). Token counts and
+      a deadline moved to E-11: a fake adapter tests them.
     - An eval harness with baselines (UI 25); the labelling experiment,
       then query with memory (UI 40, 41).
     - Every model-behaviour question in IDEAS.md.
@@ -136,6 +232,30 @@ code BEFORE it is built, and corrected here if it was wrong.
     - ONE systemd unit, hardened, installing its log rotation, with a
       guard against a second; shutdown bounded, uvicorn 30 s and
       systemd 45 s (305).
+
+### The audit verified these correct -- do not re-litigate
+
+    - SQL injection through field and type names: blocked -- a closed
+      filter vocabulary, validated against the caller's own schema.
+    - The read-only connection: engine-enforced; UPDATE, INSERT, DELETE,
+      DROP, ATTACH and writable_schema all denied.
+    - The login timing side channel: closed, within noise.
+    - Lockout at exactly 5, with the same generic 401.
+    - Uniform 401 on every protected route, unauthenticated.
+    - CSRF as middleware: missing, wrong and absent all the same 403.
+    - No dangerouslySetInnerHTML, innerHTML, eval or new Function in ui/.
+    - import-linter's contracts: enforced, not aspirational.
+    - NOT A FINDING, and agreed: no idle session timeout, only the 24-hour
+      absolute cap -- unless a compliance requirement arrives.
+
+### Process changes the audit forced
+
+    - THE TESTS RUN ON A FRESH CLONE for every patch, not only the patch
+      apply. Applying there and testing in a seeded working copy is how
+      thirteen tests were reported green that fail for anybody else.
+    - `npm run lint` is judged by its EXIT STATUS (patch 303).
+    - Anything larger than one commit gets agreement on its shape first,
+      as CLAUDE.md asks.
 
 ### Why this section exists
 
