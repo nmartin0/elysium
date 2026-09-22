@@ -38,6 +38,9 @@ llm:
 
 agent:
   max_hops: 8
+  # How long one query may spend gathering before it answers from what it
+  # has. The synthesis call after it keeps its own timeout. Default 300.
+  # query_deadline_seconds: 300
   max_consecutive_duplicates: 2
   max_consecutive_invalid_steps: 2
 

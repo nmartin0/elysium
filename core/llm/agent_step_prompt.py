@@ -35,7 +35,7 @@ import json
 import logging
 
 from core.functions.interface import Function
-from core.llm.interface import LLMAdapter, LLMUnavailable
+from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 from core.ontology.schema import is_searchable_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation, evaluate_submission_criteria
 
@@ -464,7 +464,8 @@ a list and silently skip others.
 
 def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
               gathered_so_far: list[dict], tools: list[Function], writes_enabled: bool,
-              visible_action_types: dict) -> dict:
+              visible_action_types: dict, *, deadline: float | None = None,
+              usage: TokenUsage | None = None) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that
     # object_type/field_name are real entries in the ontology schema
@@ -489,7 +490,7 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         raw_content = client.chat(
             _build_system_prompt(visible_schema, tools, writes_enabled, visible_action_types, gathered_so_far),
             user_message,
-            json_mode=True, temperature=0,
+            json_mode=True, temperature=0, deadline=deadline, usage=usage,
         )
         # Logs the model's raw response BEFORE any parsing/validation --
         # silent by default (DEBUG), but genuinely valuable when a step's

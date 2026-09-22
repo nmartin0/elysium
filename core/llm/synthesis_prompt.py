@@ -65,7 +65,7 @@ import re
 
 import requests
 
-from core.llm.interface import LLMAdapter
+from core.llm.interface import LLMAdapter, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,11 @@ def _has_only_verified_emails(answer: str, records: list[dict]) -> bool:
 
 
 def synthesize_insight(client: LLMAdapter, original_query: str, records: list[dict],
-                        possibly_incomplete: bool = False) -> str:
+                        possibly_incomplete: bool = False, *,
+                        usage: TokenUsage | None = None) -> str:
+    # NO DEADLINE, deliberately (E-11): the query's deadline bounds the
+    # gathering. A query that spent it gathering must still be able to
+    # answer from what it has -- its own timeout bounds this one call.
     # No records at all -- don't even call the model, the answer is known.
     if not records:
         return (
@@ -144,7 +148,7 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
     system_prompt = SYSTEM_PROMPT + _INCOMPLETE_SEARCH_NOTE if possibly_incomplete else SYSTEM_PROMPT
 
     try:
-        answer = client.chat(system_prompt, user_message, json_mode=False, temperature=0)
+        answer = client.chat(system_prompt, user_message, json_mode=False, temperature=0, usage=usage)
     except requests.RequestException as e:
         # A real, confirmed leak, fixed here: the raw exception STRING
         # itself was returned directly as the user-facing "answer" --

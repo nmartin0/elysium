@@ -65,6 +65,7 @@ Used by: scripts/run_deployment.py, api/routes.py, and directly by
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -77,7 +78,7 @@ from core.functions.ontology_access import OntologyAccess
 from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.agent_step_prompt import next_step
-from core.llm.interface import LLMAdapter
+from core.llm.interface import LLMAdapter, LLMUnavailable
 from core.ontology.mediator import DataMediator, security_cache_scope
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
@@ -110,6 +111,9 @@ class AgentLoopResult:
     # stopped. Distinct from cancelled: nobody asked for this, and the
     # caller should say something different about it.
     authority_changed: bool = False
+    # E-11: the query's deadline passed. Like hit_max_hops, what was
+    # gathered is kept, and synthesis is told it may be incomplete.
+    ran_out_of_time: bool = False
 
 
 def _object_ids_in(step: dict) -> list:
@@ -707,9 +711,14 @@ class AgentLoop:
         visible_schema = self.mediator.visible_schema(user_record, for_agent=True)
         visible_action_types = self.write_mediator.visible_action_types(user_record) if self.write_mediator else {}
 
+        deadline = context.deadline if context is not None else None
+        usage = context.token_usage if context is not None else None
         for _ in range(1, self.max_hops + 1):
             if cancel_event is not None and cancel_event.is_set():
                 return AgentLoopResult(gathered=gathered, cancelled=True)
+            if deadline is not None and time.monotonic() >= deadline:
+                logger.warning("query deadline passed, answering from what was gathered")
+                return AgentLoopResult(gathered=gathered, ran_out_of_time=True)
 
             # THE ACTING USER IS RE-RESOLVED EVERY HOP, not once per
             # request. Identity is resolved once when the request
@@ -739,9 +748,19 @@ class AgentLoop:
                     # information the user was entitled to.
                     return AgentLoopResult(gathered=gathered, authority_changed=True)
 
-            step = next_step(
-                self.client, query_text, visible_schema, gathered, self.tools, writes_enabled, visible_action_types
-            )
+            try:
+                step = next_step(
+                    self.client, query_text, visible_schema, gathered, self.tools, writes_enabled,
+                    visible_action_types, deadline=deadline, usage=usage,
+                )
+            except LLMUnavailable:
+                # MID-CALL: the adapter waited only what the deadline left.
+                # Out of time, that is the same ending as between hops; any
+                # other unavailability is still the error it always was.
+                if deadline is not None and time.monotonic() >= deadline:
+                    logger.warning("query deadline passed during a model call")
+                    return AgentLoopResult(gathered=gathered, ran_out_of_time=True)
+                raise
 
             if step["step"] == "finish":
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)

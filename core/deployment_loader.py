@@ -119,6 +119,9 @@ class DeploymentConfig:
     step_model: str
     synthesis_model: str
     max_hops: int
+    # How long one query may spend GATHERING (E-11): the hop loop, not
+    # the one synthesis call after it, which keeps its own timeout.
+    query_deadline_seconds: float
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
     max_concurrent_requests: int   # dispatch-layer thread pool size
@@ -459,6 +462,9 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             step_model=step_model,
             synthesis_model=synthesis_model,
             max_hops=config["agent"]["max_hops"],
+            # 300 s, the owner's default "until we can test on better
+            # hardware" (September 22).
+            query_deadline_seconds=config["agent"].get("query_deadline_seconds", 300),
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
             max_concurrent_requests=config["agent"].get("max_concurrent_requests", 4),

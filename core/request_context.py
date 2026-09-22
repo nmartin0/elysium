@@ -44,8 +44,40 @@ separate ones, each needing its own propagation.
 
 from __future__ import annotations
 
+import threading
+import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass
+class TokenUsage:
+    """What the provider REPORTED it consumed, summed over calls (E-11).
+
+    chat() returns only text, so the counts every provider sends back
+    were dropped. A caller that wants them passes one of these, and each
+    adapter adds what its provider reported. `unreported` counts calls
+    whose provider reported nothing -- so "no tokens" is never mistaken
+    for "not told".
+
+    Thread-safe: one query's calls may run on more than one thread.
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    calls: int = 0
+    unreported: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    def add(self, input_tokens: int | None, output_tokens: int | None) -> None:
+        with self._lock:
+            self.calls += 1
+            if input_tokens is None and output_tokens is None:
+                self.unreported += 1
+                return
+            self.input_tokens += input_tokens or 0
+            self.output_tokens += output_tokens or 0
+
 
 
 @dataclass(frozen=True)
@@ -64,13 +96,22 @@ class RequestContext:
     """
 
     request_id: str
+    # E-11: when the request must be done by (a time.monotonic() value),
+    # and what the model providers reported it consumed. The two fields
+    # this docstring always planned.
+    deadline: float | None = None
+    token_usage: TokenUsage | None = None
 
     @classmethod
-    def new(cls) -> RequestContext:
+    def new(cls, deadline_seconds: float | None = None) -> RequestContext:
         """A context for a request that has just arrived.
 
         uuid4 rather than a counter: a counter needs shared state,
         which is the thing this design exists to avoid, and it would
         leak how many requests a deployment has served.
         """
-        return cls(request_id=str(uuid.uuid4()))
+        return cls(
+            request_id=str(uuid.uuid4()),
+            deadline=None if deadline_seconds is None else time.monotonic() + deadline_seconds,
+            token_usage=TokenUsage(),
+        )

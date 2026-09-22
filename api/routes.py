@@ -3353,7 +3353,10 @@ async def query(body: QueryRequest, request: Request,
         # Created at the ROUTE rather than inside the loop: the request
         # is the unit of work, and the loop is one thing that happens
         # during it.
-        request_context = RequestContext.new()
+        # E-11: a deadline for the gathering, and a tally of tokens.
+        request_context = RequestContext.new(
+            deadline_seconds=_generation(request).config.query_deadline_seconds,
+        )
         # refresh_user lets the loop notice a changed or revoked
         # authority BETWEEN HOPS rather than only at the end. The
         # post-query re-verification below still runs and still
@@ -3472,8 +3475,19 @@ async def query(body: QueryRequest, request: Request,
 
     real_data = AgentLoop.filter_real_data(result.gathered)
     insight = await event_loop.run_in_executor(
-        executor, synthesize_insight, synthesis_client, body.query, real_data, result.hit_max_hops
+        executor,
+        functools.partial(
+            synthesize_insight, synthesis_client, body.query, real_data,
+            result.hit_max_hops or result.ran_out_of_time,
+            usage=request_context.token_usage,
+        ),
     )
+    usage = request_context.token_usage
+    if usage is not None:
+        # E-11: the counts providers sent back, no longer dropped.
+        logger.info("query %s used %d model calls: %d input and %d output tokens reported, "
+                    "%d calls unreported", request_context.request_id, usage.calls,
+                    usage.input_tokens, usage.output_tokens, usage.unreported)
     return QueryResponse(answer=insight, request_id=request_context.request_id)
 
 

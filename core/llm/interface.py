@@ -7,10 +7,10 @@ concurrency fields) -- core/llm/concurrency_limited_adapter.py enforces
 it, adapters don't self-protect.
 """
 
-import threading
 import time
-from dataclasses import dataclass, field
 from typing import Protocol
+
+from core.request_context import TokenUsage
 
 
 class LLMUnavailable(Exception):
@@ -30,34 +30,8 @@ class LLMUnavailable(Exception):
     """
 
 
-@dataclass
-class TokenUsage:
-    """What the provider REPORTED it consumed, summed over calls (E-11).
-
-    chat() returns only text, so the counts every provider sends back
-    were dropped. A caller that wants them passes one of these, and each
-    adapter adds what its provider reported. `unreported` counts calls
-    whose provider reported nothing -- so "no tokens" is never mistaken
-    for "not told".
-
-    Thread-safe: one query's calls may run on more than one thread.
-    """
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-    calls: int = 0
-    unreported: int = 0
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
-
-    def add(self, input_tokens: int | None, output_tokens: int | None) -> None:
-        with self._lock:
-            self.calls += 1
-            if input_tokens is None and output_tokens is None:
-                self.unreported += 1
-                return
-            self.input_tokens += input_tokens or 0
-            self.output_tokens += output_tokens or 0
-
+# TokenUsage lives in core/request_context.py -- the context carries one,
+# and sits BELOW this layer -- and is imported here for adapters to use.
 
 def call_timeout(deadline: float | None, configured: float) -> float:
     """How long ONE call may wait: its adapter's own timeout, or the time

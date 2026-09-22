@@ -217,10 +217,11 @@ checking it found NOW.
        they checked the mirror, and a deleted source read healthy.
        ~~E-12~~ TESTED, patch 326: a real server, shut down mid-confirm,
        finishes it -- the write and both audit entries.
-       E-11 HALF DONE, patch 327: chat() takes a deadline and a TokenUsage;
-       both adapters honour them. NEXT: the wiring -- RequestContext
-       carries both, the loop and synthesis pass them, a configured query
-       deadline. Then E-10.
+       ~~E-11~~ FIXED, patches 327-328: chat() takes a deadline and a
+       TokenUsage (327); each query gathers under a deadline --
+       agent.query_deadline_seconds, the owner's 300 s default "until we
+       can test on better hardware" -- and its token counts are logged
+       (328). E-10 remains.
        E-13 -- sources are not checked at startup: nothing calls
        health_check(). Report each failure by name; do not refuse to
        start. (This IS the "startup checks" item this list already held.)
