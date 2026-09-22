@@ -196,6 +196,35 @@ resolution, so gold for it is a straight conform.
           since rows held back are absent by design and absence reads
           as loss; Admin keeping the silo panel (it is about SOURCES)
           and gaining the publication beside it.
+  UI-LIVE. LIVE UPDATES, no manual refresh and no page reload (the
+          owner, September 22; design in
+          LIVE_UPDATES_AND_PIPELINE_BUILDER.md). MEASURED TODAY: one
+          panel polls (MirrorPanel, 30 s) and everything else uses
+          useFetchOnce, which never refetches; there is no streaming
+          endpoint at all. Server-sent events, not websockets: one-way
+          is the shape, plain HTTP keeps the cookie auth and the
+          proxies, and EventSource reconnects with Last-Event-ID for
+          free. THE SECURITY DECISION: an event carries NO DATA -- it
+          says what KIND of thing changed, and the client refetches
+          through the same authorised endpoints, so MAC and roles apply
+          unchanged and no second read path exists to leak through.
+          Fan-out across workers reuses the reload_epoch pattern: a
+          monotonic table in SQLite, read by each stream, which also
+          gives Last-Event-ID resume. Constraints to hold: no
+          generation or connection held open across a hot reload, close
+          within E-12's grace, caps and heartbeats, the table pruned.
+  PIPELINE-BUILDER. A sub-app to build the pipeline visually (the
+          owner, September 22): sources, bronze, silver rules per
+          column, gold object types, links drawn as lines, with REAL
+          ROWS shown at every stage and the quarantine count and
+          reasons beside them. It edits the DECLARATION through the
+          existing config path -- validation, config_history, the
+          reload epoch, rollback -- never data, and never a second
+          ontology authority. The dry run already exists: gold builds
+          on an audit branch and publishes only if the audit passes, so
+          a proposal can be built, shown and accepted. Depends on
+          GOLD-3c (the file split) and UI-LIVE (a build finishing is an
+          event).
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.
