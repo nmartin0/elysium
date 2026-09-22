@@ -254,6 +254,27 @@ resolution, so gold for it is a straight conform.
           Base UI demonstrated. Migrate panel by panel against the
           ~920 frontend tests, then a lint rule refusing new
           @blueprintjs imports.
+  ACCESS-1..6. CLASSIFY THE DATA, NOT THE GRANTS -- agreed by the
+          owner, September 22; the model and its audit are in
+          ACCESS_CONTROL_PROPOSAL.md. Measured burden today: a role
+          needs one grant string PER FIELD PER TYPE -- 1,050 for a
+          50-type deployment. The model: tags carrying policy
+          (read:tag:pii), fields inheriting their type's tags,
+          classification PROPAGATING ALONG LINEAGE so a gold property
+          keeps the classification of the source column it came from,
+          and a scanner that PROPOSES tags. MAC is untouched and tags
+          are kept away from it -- MAC answers which OBJECTS, tags
+          answer which PROPERTIES. Most-restrictive-wins is stated and
+          tested, `classify:` is its own permission, and per-field
+          grants stay valid so nothing migrates. Build order:
+          (1) tags as metadata only, enforcing nothing;
+          (2) read:tag:X grants beside the existing ones;
+          (3) inheritance type -> field;
+          (4) propagation along lineage, with a report showing what
+              inherited what, since a classification that arrives by
+              derivation must be visible or it is magic;
+          (5) the scanner, proposing only;
+          (6) `classify:` before any of it is exposed in an editor.
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.

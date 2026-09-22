@@ -4,6 +4,10 @@ Researched and audited September 22, after the owner asked whether
 there are better ways -- or better defaults -- to secure sensitive
 data while reducing what an administrator has to do.
 
+**AGREED BY THE OWNER, September 22.** What follows is therefore the
+intended model, not a suggestion. The build order in Part 6 is the
+commitment; the audit in Part 1 is what it was measured against.
+
 ---
 
 # Part 1. What Elysium does today (AUDITED, not remembered)

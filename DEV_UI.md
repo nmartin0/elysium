@@ -709,3 +709,115 @@ And two things that are not subjects at all:
 SO THE LEFT RAIL IS NOT AN APP SWITCHER. It is a SUBJECT switcher,
 with three entries plus the inboxes -- far fewer than today.
 
+---
+
+# 13. The ontology UI
+
+The pipeline is visual; the ontology should be too. Researched
+September 22 against Foundry's Ontology Manager and the academic
+lineage (Protégé, VOWL/WebVOWL), and against the very different
+tradition of visual POLICY editors -- which turned out to matter more.
+
+## 13.1 The canvas: types and links, not instances
+
+  - TYPES AS NODES, LINKS AS LABELLED EDGES, which is the VOWL
+    convention that three user studies found comprehensible. Colour
+    carries kind, not decoration.
+  - A SCHEMA-ONLY VIEW is the default and the point: this canvas is
+    about what a Customer IS, never about the 1,284 of them.
+  - SELECT A TYPE, and the inspector holds its identity field, title
+    field, properties with their declared types, links, constraints,
+    action types -- everything ontology_schema.yaml declares about it.
+  - VALIDATION AS CANVAS WARNINGS. Elysium already refuses to load a
+    broken ontology; the canvas should show the same findings as
+    marks on the node BEFORE the file is saved, which is the
+    difference between a linter and a stack trace. Newer ontology
+    tools do this as "quality analysis with a score and annotated
+    anti-patterns".
+  - HEALTH, as Foundry's own Ontology Manager carries -- it exists
+    partly for "investigating whether data is updating in user
+    applications". A type that no gold table populates is a type
+    nobody can query, and the canvas should say so rather than
+    leaving it to be discovered.
+  - CROSS-LINK TO THE PIPELINE: a type opens its gold node; a
+    property shows the silver column it came from, which the lineage
+    columns make possible.
+
+## 13.2 Permissions: the EDITOR is the less valuable half
+
+This is the finding that changed the design. AWS ships a visual policy
+editor and its own documentation says "always test your policies with
+the policy simulator" -- the editor alone is not trusted. Google went
+further and built two separate tools:
+
+  POLICY TROUBLESHOOTER: given a principal, a resource and a
+  permission, it says whether access is allowed, "lists the relevant
+  policies and explains how they affect the principal's access".
+
+  POLICY SIMULATOR: shows how a proposed change WOULD alter access,
+  baseline versus simulated -- and can replay recent real access
+  against the new policy.
+
+THE ADMINISTRATOR'S BURDEN IS NOT WRITING THE POLICY. IT IS NOT
+KNOWING WHAT THE POLICY DOES. So the three screens below matter more
+than any editor, and two of them are read-only.
+
+## 13.3 "Who can see this?"
+
+Select a type or a field: which roles hold the grant (or the tag that
+carries it), and for MAC, which security value a person must hold --
+traced THROUGH THE CHAIN when the type borrows its classification via
+a via_field.
+
+Chains are where the surprises live. F-19 was a chain bug that loaded
+happily and failed every read; the gold migration's one dangerous line
+is a chain comparison that would silently widen. A picture of the
+chain is the cheapest defence either would have had.
+
+## 13.4 "What would this person see?"
+
+Pick a user; render the ontology as they see it -- types absent,
+fields marked "not permitted", the partial state from the specimens
+(E4) applied to the schema rather than to rows. This is Google's
+troubleshooter aimed at a person rather than a resource, and it is the
+fastest way to answer the question administrators actually get asked,
+which is never "what does the policy say" but "why can't Bob see
+this".
+
+## 13.5 "What would this change do?" -- the highest-value screen
+
+Before saving, the diff stated in ACCESS TERMS rather than config
+terms:
+
+    this newly exposes 412 objects and 3 properties to role analyst
+    this removes read of Customer.email from 2 roles
+
+That is Policy Simulator's baseline-versus-simulated, and it converts
+an invisible consequence into a sentence. Everything needed to compute
+it already exists: the ontology, the roles, the tags and the counts.
+
+## 13.6 Widening access is the rare case for a heavier confirmation
+
+The ergonomics research (section 10) says confirmation dialogs should
+be reserved, because too many of them INCREASE errors. This is the
+case worth reserving one for -- and possibly the one place Elysium
+takes Don Norman's suggestion, quoted by NN/g, of "requiring a
+different user to confirm the most dangerous actions".
+
+A change that WIDENS access -- more roles, more fields, a
+declassification -- is exactly that shape, and Elysium already has the
+machinery: it is a proposal, reviewed and approved, through the queue
+that exists. A change that NARROWS access needs no second person.
+
+## 13.7 What the ontology UI edits, and what it must not
+
+It edits the DECLARATION -- the same law as the pipeline builder
+(LIVE_UPDATES_AND_PIPELINE_BUILDER.md part 3.1): ontology_schema.yaml
+and policy.yaml, round-tripped, validated before landing, recorded as
+a generation, rollback-able.
+
+AND IT MUST NOT INVENT MEANING. GOLD-3c already settled that the
+ontology is DECLARED and the pipeline is built to match it, not
+derived from what the data happens to hold. The canvas is a better
+pen, not a different author.
+
