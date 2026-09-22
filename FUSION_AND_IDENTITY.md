@@ -174,3 +174,83 @@ makes a wrong merge reviewable and reversible, which is a different
 and lesser claim.
 
 **THE CLASSIFICATION OF THE LINK ITSELF**, noted above and unanswered.
+
+---
+
+# Presenting a probable match to a person (researched September 22)
+
+The design above says an inferred merge is a proposal that needs
+approval. It does not say what the approver SEES, and that is most of
+whether this works.
+
+## Two thresholds, not one
+
+THE MDM PRECEDENT splits the score range in three with an AUTO-LINK
+threshold and a CLERICAL-REVIEW threshold: above the first, merge
+without asking; between the two, send for review; below, leave apart.
+The thresholds are derived from stated error tolerances -- the
+auto-link threshold from an allowable false-positive rate, the review
+threshold from a desired false-negative rate -- rather than picked.
+
+THAT MAPS ONTO ELYSIUM DIRECTLY, with one change: the owner's decision
+(D2) already says a MAC conflict refuses the merge and sends it for
+review regardless of score. So the review queue has two sources -- the
+uncertain band, and the certain-but-conflicting.
+
+## Review is expensive, and the cost is the design constraint
+
+Published linkage work treats clerical review as a BUDGET: a study
+using Splink on ~478,000 candidate pairs compares a baseline design
+reviewing ~23% of pairs against a "budget" design reviewing ~7%, by
+stratifying on match weight, agreement pattern and record ambiguity.
+The lesson for us is that "send the uncertain ones for review" is not
+a plan until somebody says how many a person can do in a day.
+
+Another finding worth heeding: the DIVERSITY of the pairs shown
+affects linkage quality, not just their number. A queue sorted purely
+by score gives a reviewer twenty near-identical decisions in a row,
+which is how attention fails.
+
+## What the reviewer actually needs on screen
+
+From the research, and from what Elysium can already produce:
+
+  - THE TWO RECORDS SIDE BY SIDE, field by field, with agreements and
+    disagreements marked -- the reviewer's decision is made on the
+    agreement PATTERN, not the score.
+  - THE SCORE, and what drove it: which fields contributed, and how
+    much. A number alone cannot be argued with.
+  - PROVENANCE PER FIELD, which silver's lineage now carries: which
+    source said what, and when. Two records disagreeing about a
+    surname is a different question when one source is six months
+    stale.
+  - THE CONSEQUENCE: what merging would do to the object, its links
+    and its security classification -- stated before the click, since
+    a merge is a write.
+
+## The problem that is ours specifically
+
+A REVIEWER MAY NOT BE CLEARED TO SEE THE FIELDS THAT DECIDE THE MATCH.
+Elysium is MAC-governed; the person best placed to judge whether two
+customers are the same may not be permitted to read the email address
+that settles it.
+
+THERE IS PRECEDENT, from privacy-preserving record linkage: masked
+clerical review, where the display "conceal[s] the plaintext by
+default, present[s] categorical value frequencies, and gradually
+disclose[s] selected information". A reviewer can be told that two
+values AGREE, or that a value is rare, without being shown it.
+
+That is a genuinely good fit for a MAC system and worth building
+rather than working around: the comparison a reviewer needs is usually
+"do these agree", and agreement can be shown without disclosure. Where
+disclosure is genuinely required, the queue should route the pair to
+somebody cleared for it rather than degrading quietly.
+
+## What this means for the build order
+
+GOLD-6's review queue is not a list with two buttons. It is a
+side-by-side comparison, a score explanation, per-field provenance, a
+disclosure policy, and a routing rule. Worth knowing before GOLD-5
+starts, because the matcher's output has to carry all of it.
+
