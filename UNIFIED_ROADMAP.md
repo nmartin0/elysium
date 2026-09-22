@@ -89,7 +89,8 @@ resolution, so gold for it is a straight conform.
 
   GOLD-0. PREREQUISITES -- gold builds on silver and on the overlay, so
           their open bugs come first, pulled forward from B1 and item 8:
-          F-01 booleans never sync; F-20 decimal in/not_in raise; F-19
+          ~~F-01~~ FIXED, patch 332 (coerce reads the words every other
+          database writes); F-20 decimal in/not_in raise; F-19
           reverse link as security.via_field; F-26 WITH F-29, the
           overlay keeping only the latest edit and the sync's blind
           window; item 8, a sync that fails when catalog and warehouse
@@ -348,6 +349,7 @@ checking it found NOW.
          window. One combined
          test: several edits across a sync boundary, the sync taking
          measurable time.
+       ~~F-01~~ FIXED, patch 332.
        F-01 -- coerce("true", "boolean") raises, and the mirror calls that
          schema drift; the table can never sync.
        F-15 -- valid JSON that is not an object ([1,2], "finish", 42,

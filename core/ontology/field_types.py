@@ -188,6 +188,14 @@ def _parse_temporal(value, data_type: str):
         ) from None
 
 
+# HOW SOURCES SPELL BOOLEANS (001's F-01). Lower-cased and stripped
+# before the comparison, so 'TRUE' and ' t ' are the same word. A value
+# outside these and outside the numbers still RAISES: the docstring
+# below means it -- an honest mismatch is not silently defaulted.
+_TRUE_WORDS = frozenset({"true", "t", "yes", "y", "on"})
+_FALSE_WORDS = frozenset({"false", "f", "no", "n", "off"})
+
+
 def coerce(value, data_type: str, source_timezone: str | None = None):
     """A raw source value, converted to what its declared type says it
     is. None stays None -- a real NULL is not a type error.
@@ -317,7 +325,27 @@ def coerce(value, data_type: str, source_timezone: str | None = None):
         # bool() on the string "0" would be WRONG (non-empty strings
         # are truthy). Going through int() first is what makes a
         # round-tripped "0" correctly become False.
+        #
+        # AND THE WORDS, which int() could not read (001's F-01). Every
+        # other database writes booleans as text: Postgres gives
+        # 't'/'f' and 'true'/'false', MySQL and CSV exports give
+        # 'TRUE'/'FALSE' or 'yes'/'no'. Each raised here, and a raise
+        # in coerce is reported by the sync as SCHEMA DRIFT -- so a
+        # perfectly consistent boolean column could never sync, and
+        # said the source had changed shape instead.
         if isinstance(value, str):
-            return bool(int(value))
+            spelled = value.strip().lower()
+            if spelled in _TRUE_WORDS:
+                return True
+            if spelled in _FALSE_WORDS:
+                return False
+            try:
+                return bool(int(spelled))
+            except ValueError:
+                raise ValueError(
+                    f"{value!r} is not a boolean. Accepted: "
+                    f"{', '.join(sorted(_TRUE_WORDS | _FALSE_WORDS))}, "
+                    f"or a number, in any case."
+                ) from None
         return bool(value)
     raise ValueError(f"Unknown field data_type {data_type!r}")
