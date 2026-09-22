@@ -454,3 +454,113 @@ apply a change optimistically and reconcile later. Elysium's writes
 are proposed, reviewed and approved, so the interface shows the field,
 its current value, the proposed value, and the approval state -- and
 nothing moves until the write is applied.
+
+---
+
+# 10. Ergonomics: how it should feel to use
+
+Researched September 22. The question is not "is it usable" -- it is
+whether somebody doing this eight hours a day gets faster or gets
+tired.
+
+## 10.1 Speed is a feature, and the keyboard is where it lives
+
+The precedent is unanimous for tools where people repeat a task:
+enterprise interfaces need keyboard-first workflows because for a
+daily user "saved seconds compound into saved hours". Superhuman
+holds its command palette under 100ms and reports users hitting inbox
+zero 40% faster after about two weeks of muscle memory.
+
+A COMMAND PALETTE, ON Cmd/Ctrl-K, which is what Linear, Slack and
+Superhuman all use -- so it is already in the hands of anyone who
+would use Elysium. Superhuman's own guidance: pick a binding that does
+not clash with typing, and make the palette available EVERYWHERE.
+
+WHY IT MATTERS HERE SPECIFICALLY: menus do not scale. Elysium has
+object types, saved views, actions per type, admin functions and an
+agent. A sidebar cannot hold that, and a submenu tree is a memory
+test. A palette turns the whole product into search -- and people
+prefer search to menus, which only help if you already understand how
+the menus were organised.
+
+THE REGISTRY PATTERN, from a keyboard-first design done properly: ONE
+command registry as the single source of truth for id, label, default
+binding, availability and help text. Buttons, shortcuts and the
+palette all invoke the SAME command. Then shortcut help is generated
+and cannot drift, and a command that is unavailable is shown disabled
+WITH THE REASON rather than hidden.
+
+  RULES THAT COME WITH IT:
+    - never fire a global shortcut while the person is typing;
+    - never override a browser or system binding without an
+      alternative;
+    - multi-key sequences only with a visible timeout;
+    - the palette opens in under 100ms or it will not be used;
+    - every destructive command needs confirmation or a documented
+      undo.
+
+## 10.2 Error prevention beats error messages
+
+Nielsen's fifth heuristic, and the one Elysium's domain makes
+load-bearing: the best interface eliminates the error-prone condition
+rather than apologising afterwards. Constraints first -- disable what
+is invalid, validate inline, make the wrong thing unavailable rather
+than merely regretted.
+
+CONFIRMATION DIALOGS ARE A LAST RESORT, NOT A DEFAULT. NN/g is blunt:
+too many dialogs paradoxically INCREASE errors, because people learn
+to dismiss them without reading. The guidance worth following:
+
+    - reserve heavy confirmation for genuinely serious, rare actions;
+    - do not give a confirmation a default "yes";
+    - make the dialog say what will happen, specifically -- "delete 92
+      objects" not "are you sure?";
+    - use progressive disclosure for the detail, so the dialog stays
+      scannable;
+    - keep confirmatory and destructive actions FAR APART on screen,
+      with redundant visual signals, because consequential options
+      placed next to benign ones is a known error generator.
+
+AND PREFER UNDO WHERE THE ACTION PERMITS IT. NN/g's own example is
+Gmail's undo after deleting 92 emails: a safety net makes people
+confident enough to work quickly, which is the whole point of
+ergonomics.
+
+## 10.3 What Elysium's own shape changes
+
+UNDO IS OFTEN NOT AVAILABLE HERE, and pretending otherwise would be
+worse than a dialog. A write goes to the customer's real database
+through an approved action; there is no universal reverse. So:
+
+    - APPROVAL IS THE SAFETY NET, and it is already built. The
+      proposal step is where a mistake is caught, which is why the
+      proposed-write view (specimen G3) shows current value, proposed
+      value and state rather than applying anything.
+    - WHERE A REVERSE ACTION EXISTS, offer it as an action, named
+      honestly -- "create the compensating change", not "undo".
+    - WHERE NOTHING CAN BE REVERSED, say so IN the confirmation.
+
+BULK ACTIONS NEED A COUNT AND A SAMPLE. Acting on a set is the point
+of object sets, and it is also where one mis-clicked filter becomes
+200 changes. The confirmation names the number, shows a few of the
+objects, and states what cannot be undone.
+
+RECOGNITION OVER RECALL, which in a product with a declared ontology
+means the interface should never ask somebody to remember a field
+name, an object type or a filter operator that it could offer.
+
+PROGRESSIVE DISCLOSURE, because the surface is genuinely large: a new
+person should see search, results and an object. Quarantine rules,
+lineage, snapshots and policies appear where they are relevant, not on
+the first screen.
+
+## 10.4 The ergonomics test for any screen we build
+
+  1. Can a daily user do the common thing without the mouse?
+  2. Does the command that does it appear in the palette, with the
+     same label as its button?
+  3. If it is destructive, is it prevented, undoable, or confirmed
+     with specifics -- in that order of preference?
+  4. Does the screen ask the person to remember anything it knows?
+  5. Does it stay legible at compact density after an hour?
+  6. Does every wait, empty and failure have a designed state?

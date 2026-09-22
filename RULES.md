@@ -49,6 +49,14 @@ Re-verify before building from a note you wrote a month ago.
 **After the work is done and before the patch is handed over, read
 what you actually changed as though somebody else wrote it.**
 
+**The tests passing is not the audit. It is an input to the audit.**
+The audit also asks whether the message's claim matches what the code
+does, whether a control was run (rule 4), and what was NOT checked --
+which belongs in the hand-over rather than in the author's head. This
+rule caught its own restatement: an attempt to add "research precedent
+and audit your work" as a NEW rule 18 was a duplicate of this rule and
+rule 5, found by grepping this file before committing.
+
 Specifically:
 
 - `git diff` the whole change. Not the parts you remember editing --
@@ -150,6 +158,26 @@ principle of least authority.
 
 Reversals belong in the record. A design document that hides its
 wrong turns teaches nobody.
+
+### It applies to DESIGN and to PATCHES, always, not when convenient
+
+The owner made this explicit on September 22: research precedent
+before any answer that requires designing, and before code patches
+too. It is not a step for unfamiliar problems only.
+
+The evidence for making it unconditional is that every design decision
+in this project that held up came from somebody else's written
+experience, and it was consistently NARROWER than the principle that
+would have been reasoned out -- twice it contradicted the plan
+outright. Foundry's writeback dataset settled where an edit to a fused
+object goes. Iceberg's reader semantics settled what happens when the
+mirror changes mid-read. Databricks and dbt between them settled
+warn-versus-fail. APCA settled a palette that WCAG had already passed.
+
+So: prefer the source that says what WENT WRONG -- a postmortem beats
+a feature page. Say plainly when the precedent contradicts the plan.
+And say plainly when there is NO precedent, because that is a real
+finding and it changes how confident the design should sound.
 
 ### And check the precedent applies
 
@@ -323,3 +351,4 @@ Order work by what depends on what, and write that ordering down
 separately from the grouping by subject -- they are different
 questions and the dependency one is more useful once a phase is
 half-done.
+
