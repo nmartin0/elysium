@@ -1,5 +1,10 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // THE REACT PLUGIN, and with it the hook rules -- which never ran
+  // before: a conditional useState scored "0 warnings and 0 errors"
+  // (AUDIT-10). The plugins list replaces oxlint's defaults, so they
+  // are named again beside it.
+  "plugins": ["react", "typescript", "unicorn", "oxc"],
   "rules": {
     "no-restricted-imports": [
       "error",
@@ -11,6 +16,16 @@
           }
         ]
       }
-    ]
+    ],
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    // OFF, AND RECORDED, NOT FORGOTTEN. The plugin turns these on by
+    // default; they found 12 sites (10 and 2) when first run. Each fix
+    // is a behavioural change to a component -- derive the state, or
+    // reset with a key -- needing its own review and tests, so they are
+    // an item of their own in UNIFIED_ROADMAP.md rather than folded into
+    // the commit that made the hook rules run.
+    "react/set-state-in-effect": "off",
+    "react/refs": "off"
   }
 }

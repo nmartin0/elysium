@@ -101,7 +101,8 @@ checking it found NOW.
    A3. THE GATES THAT CANNOT SEE WHAT THEY GUARD, all measured. FIXED in
        patches 312-314: lint.sh (004-F1), the !important check
        (09-S3-02), the duplicate check (09-S3-01, and 09-S1-01 with it).
-       oxlint's React rules remain -- patch 315.
+       And oxlint's React hook rules, patch 315: they run now, proven by a
+       planted violation; the codebase has none.
        004-F1 -- lint.sh's lockfile step sets FAILED=1, which nothing
          reads, so drift can never fail the build. STATUS=1, and a test
          that introduces drift and expects lint.sh to exit non-zero.
@@ -172,6 +173,20 @@ checking it found NOW.
        1.04 ms live against 11.61 ms mirror; get_field 0.63 against 4.87.
        No table cache exists:
        cache per (table, snapshot id), which the generation already pins.
+   B0. FOUND BY A3 ITSELF, once oxlint's React plugin ran: two rules it
+       turns on by default, switched OFF in .oxlintrc.json with this
+       entry as the reason. Each fix changes a component's behaviour, so
+       each needs its own review and tests:
+       react/set-state-in-effect, 10 sites -- setState called
+         synchronously in an effect (usually `setLoading(true)` at a
+         fetch's start, or state reset when a prop changes): RolesPanel
+         (2), WatchDialog (2), ApprovalsPanel, NotificationsPanel,
+         WatchList, LinkTrail, SavedViews, ExploreRelated. Derive the
+         state, or reset with a key; then turn the rule on.
+       react/refs, 2 sites -- a ref read during render, in the custom
+         hooks useFetchOnce and useDeferredValue. Possibly intentional;
+         decide, then turn it on or say why not.
+
    B1. THE SECOND BATCH'S CORRECTNESS FINDINGS, each reproduced unless
        marked:
        F-26 WITH F-29 -- mirror read-your-writes. get_applied_changes_since
