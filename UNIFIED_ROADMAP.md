@@ -134,6 +134,17 @@ resolution, so gold for it is a straight conform.
           it gives up, INSTALL.md and config.yaml corrected -- the
           comment there still calls live reads the conservative
           default, which the code has not done for some time.
+          SURVEYED IN THE CODE -- GOLD_MIGRATION_SURVEY.md, patch 344:
+          the blast radius is one wiring point (build_generation), the
+          translation layer inside the mediator, TWO reverse-link call
+          sites, ONE security comparison ("same silo and table" becomes
+          "same type"), and the reporting that says which layer a
+          reader sees. The shape: a GOLD VIEW of the schema handed to
+          the read mediator, since adapters already answer in terms of
+          the type config they are given. Already ontology-shaped, so
+          needing nothing: the mediator's public surface, the agent,
+          the API's schema responses, the write overlay, the write
+          log, pending writes, saved views, triggers.
   GOLD-3. THE ONTOLOGY READS PUBLISHED GOLD -- AND SO DOES THE AGENT
           (the owner, September 22): "redirect the LLM agent machinery
           to read from the gold layer and not the lower layers ... the
