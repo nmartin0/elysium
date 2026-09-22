@@ -15,14 +15,33 @@
  * since the block already established it first.
  */
 
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 // Relative to the vitest root (ui/), not to this file: import.meta.url
 // is not a file URL under vitest's transform.
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8')
+
+// Every .css under src/ and each package's src/, relative to ui/. (A
+// block comment here once ended early: "packages/*" + "/src" is "*/".)
+function allStylesheets(): string[] {
+  const found: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(resolve(process.cwd(), dir), { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') walk(path)
+      } else if (entry.name.endsWith('.css')) {
+        found.push(path)
+      }
+    }
+  }
+  walk('src')
+  for (const pkg of readdirSync(resolve(process.cwd(), 'packages'))) walk(join('packages', pkg, 'src'))
+  return found.sort()
+}
 
 const layers = read('src/layers.css')
 const app = read('src/App.tsx')
@@ -59,13 +78,25 @@ describe('cascade layers', () => {
     // The reason layers are worth having. Zero today; a layer order is
     // what lets that stay true while sitting beside a library with
     // high-specificity selectors.
-    const cssFiles = [
-      'packages/shell-api/src/tokens.css',
-      'packages/shell-api/src/index.css',
-      'packages/app-schema/src/SchemaPanel.css',
-    ]
+    // EVERY STYLESHEET, found rather than listed (09-S3-02). The list
+    // named three files and missed layers.css -- the one whose purpose
+    // is making !important unnecessary -- and would have missed any
+    // stylesheet added later.
+    const cssFiles = allStylesheets()
+    // AND IT MUST FIND THEM: an empty search passes vacuously.
+    expect(cssFiles).toEqual(
+      expect.arrayContaining([
+        'src/layers.css',
+        'packages/shell-api/src/index.css',
+        'packages/shell-api/src/tokens.css',
+        'packages/app-schema/src/SchemaPanel.css',
+      ]),
+    )
     for (const file of cssFiles) {
-      expect(read(file)).not.toContain('!important')
+      // Comments may DISCUSS !important -- layers.css explains why it
+      // has none. Only declarations count.
+      const withoutComments = read(file).replace(/\/\*[\s\S]*?\*\//g, '')
+      expect(withoutComments, file).not.toContain('!important')
     }
   })
 })
