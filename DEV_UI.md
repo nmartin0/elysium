@@ -174,3 +174,141 @@ UI-KIT and UI-LIVE are foundations: the first makes "finished"
 possible, the second makes the product feel alive. The spine work
 (items 1-4) is what fixes disjointed. The builder and the graph
 canvas are large, and both want the kit underneath them first.
+
+---
+
+# 8. The palette
+
+Decided September 22, after the owner asked for navy and off-white
+rather than black and white, and confirmed it against a rendered
+sample. Everything below was measured, not eyeballed, and the
+measurements are recorded so nobody has to re-derive them -- or
+"correct" them back to a familiar reference that is worse.
+
+## 8.1 Why not black and white
+
+  HALATION. White on pure black bleeds across the corneal lens,
+  blurring letterforms. It is worst for readers with astigmatism, and
+  it gets worse the longer the session. 21:1 is not a target; it is
+  more contrast than reading wants.
+
+  NO ELEVATION. Shadows barely register on black, so the usual way of
+  saying "this panel sits above that one" stops working. Dark
+  interfaces separate surfaces by LIGHTNESS STEP instead, which needs
+  a canvas that is not already at the floor.
+
+  OLED SMEAR. A true black pixel is switched off; scrolling white text
+  across it makes pixels switch fully on and off, which smears.
+
+  AND GREY IS FLAT. A blue cast in the darks gives depth that users do
+  not consciously notice. Cool, slate-family neutrals are the
+  convention for data-heavy interfaces -- which is what Elysium is.
+
+## 8.2 How it was built
+
+ONE HUE SPINE (255°), in OKLCH. OKLCH's lightness channel matches
+perceived brightness, so equal numeric steps look equal -- which HSL
+does not manage, and which is why hand-picked ramps drift bright and
+dark across hues. Every neutral and the accent share the hue; only
+lightness and chroma move.
+
+Status colours break that rule deliberately: they are not supposed to
+feel like comfortable siblings, they are supposed to be instantly
+identifiable. They sit at EQUAL LIGHTNESS to each other so none shouts
+louder than its neighbour, with chroma pulled back about 20%, since
+saturated colour vibrates on a dark background.
+
+## 8.3 The tokens
+
+  DARK (the default)
+    --canvas    #0c1723
+    --surface   #182230      one lightness step up
+    --raised    #242f3d      two steps up
+    --border    #384352
+    --text      #eef2f7      Lc 98   16.07:1
+    --text-2    #c8d2de      Lc 78   11.81:1   secondary reading
+    --text-3    #adb9c8      Lc 63    9.08:1   muted reading
+    --dim       #8893a2      Lc 43    5.80:1   ICONS, BORDERS,
+                                               DISABLED -- NOT TEXT
+    --accent    #5fa1f3               6.78:1   buttons, chips, focus
+    --link      #77baff      Lc 62    8.82:1   inline link text
+    --success   #66ba7a               7.63:1
+    --warning   #c89e3a               7.23:1
+    --danger    #e88479               6.89:1
+    --info      #6da7f1               7.27:1
+
+  LIGHT (same hues, inverted lightness)
+    --canvas    #f8fafd
+    --surface   #edf0f4
+    --border    #cdd5e0
+    --text      #1d2a3a      Lc 98   13.90:1
+    --text-2    #525f6f      Lc 79    6.23:1
+    --text-3    #6b7787
+    --accent    #1762b6      Lc 77    5.81:1
+    --success   #1f7a3d
+    --warning   #8a6100
+    --danger    #b23b2e
+
+## 8.4 Measured BOTH ways, and why that mattered
+
+WCAG 2's ratio OVERSTATES contrast for dark colours -- its own authors
+say it "cannot be used for guidance designing dark mode", because 4.5:1
+can be functionally unreadable near black. So every pair was measured
+again with APCA, the perceptual model behind WCAG 3, which is polarity-
+aware and reports Lc rather than a ratio.
+
+THAT CHECK CHANGED THE PALETTE. The first version's supporting greys
+passed WCAG comfortably and failed perceptually:
+
+    secondary  #b5bfcb   9.70:1  but Lc 66  -- large text only
+    muted      #8893a2   5.80:1  but Lc 43  -- too low for text at all
+
+Both were lifted one step, to Lc 78 and Lc 63. The old muted value
+survives as `--dim`, for the roles that are not reading: icons,
+borders, disabled states.
+
+FOR REFERENCE, AND AS A WARNING: GitHub's dark theme -- the closest
+prior art, and where most of this convention comes from -- has muted
+text at Lc 44 and link blue at Lc 37, both below the perceptual
+threshold for body text. They pass WCAG. If someone later compares our
+greys to GitHub's and finds ours "too light", this is the reason they
+are.
+
+  THRESHOLDS USED: Lc 90 preferred for body text, Lc 75 the minimum
+  where reading matters, Lc 60 for larger or UI text, Lc 45 for large
+  text only, below Lc 30 not text at all.
+
+## 8.5 Precedent
+
+GitHub dark: canvas #0d1117, surface #161b22, border #30363d, text
+#e6edf3, muted #8b949e, accent #2f81f7. Cool near-black with a blue
+tint; blue reserved for links and navigation; green, red, yellow and
+purple used only for semantics. Ours was derived independently and
+landed within a few points of every one of those, a little more navy.
+
+The same shape appears across developer tools -- Linear, Supabase,
+Sentry all use a near-black canvas with one signature accent. Vercel's
+pure black is the outlier, and it is a marketing aesthetic rather than
+a data-tool one.
+
+## 8.6 Rules that come with the palette
+
+  1. COLOUR NEVER CARRIES A STATE ALONE. Success and danger collapse
+     together under red-green colour blindness (8% of men). Every
+     state carries a dot and a word as well as a hue. This matters
+     most exactly where Elysium uses colour hardest: quarantine,
+     drift, approval states.
+  2. ELEVATION BY SURFACE STEP, never by shadow.
+  3. --dim IS NOT A TEXT COLOUR. If text needs to recede, use
+     --text-3; --dim is for icons, borders and disabled controls.
+  4. THE ACCENT IS NOT THE LINK COLOUR. A filled button carries its
+     own background, so Lc 49 is fine there; inline link text has to
+     stand on the canvas, which is what --link is for.
+  5. CHARTS GET THEIR OWN RAMP. Status colours are tuned to be
+     unmistakable; series colours must be distinguishable FROM EACH
+     OTHER, which is a different job. Same hue spine, higher chroma,
+     checked in greyscale and under the three colour-blindness
+     simulations.
+  6. DARK IS THE DEFAULT, light is a real theme and not an
+     afterthought: both were generated from the same hues, and both
+     were measured.
