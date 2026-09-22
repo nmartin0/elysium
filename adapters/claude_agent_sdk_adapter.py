@@ -51,7 +51,7 @@ import os
 import shutil
 import subprocess
 
-from core.llm.interface import LLMUnavailable
+from core.llm.interface import LLMUnavailable, TokenUsage, call_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,8 @@ class ClaudeAgentSDKAdapter:
         return command
 
     def chat(self, system_prompt: str, user_message: str,
-              json_mode: bool = False, temperature: float | None = None) -> str:
+              json_mode: bool = False, temperature: float | None = None, *,
+              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         # TEMPERATURE IS NOT SUPPORTED, and that is a real behavioural
         # difference rather than a detail. Both of Elysium's callers ask
         # for temperature=0 because they want deterministic output --
@@ -149,20 +150,23 @@ class ClaudeAgentSDKAdapter:
                 type(self).__name__, temperature,
             )
 
+        # NO LONGER THAN THE REQUEST HAS LEFT (E-11); subprocess.run's
+        # timeout bounds the whole run, and kills the process at it.
+        timeout = call_timeout(deadline, self.timeout_seconds)
         try:
             completed = subprocess.run(
                 self._command(system_prompt, json_mode),
                 input=user_message,
                 capture_output=True,
                 text=True,
-                timeout=self.timeout_seconds,
+                timeout=timeout,
                 env=self._environment(),
                 check=False,
             )
         except subprocess.TimeoutExpired as e:
             raise LLMUnavailable(
                 f"The {self.executable!r} command did not respond within "
-                f"{self.timeout_seconds}s."
+                f"{timeout:.0f}s."
             ) from e
 
         if completed.returncode != 0:
@@ -174,7 +178,23 @@ class ClaudeAgentSDKAdapter:
                 f"{completed.stderr.strip() or 'no error output'}"
             )
 
+        if usage is not None:
+            usage.add(*self._extract_usage(completed.stdout))
         return self._extract_text(completed.stdout)
+
+    @staticmethod
+    def _extract_usage(stdout: str) -> tuple[int | None, int | None]:
+        """(input, output) tokens from the CLI's JSON envelope's `usage`,
+        or (None, None) when it is not there -- reported as unreported,
+        never as zero."""
+        try:
+            envelope = json.loads(stdout)
+        except json.JSONDecodeError:
+            return None, None
+        reported = envelope.get("usage") if isinstance(envelope, dict) else None
+        if not isinstance(reported, dict):
+            return None, None
+        return reported.get("input_tokens"), reported.get("output_tokens")
 
     @staticmethod
     def _extract_text(stdout: str) -> str:

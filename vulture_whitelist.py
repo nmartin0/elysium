@@ -371,3 +371,11 @@ validation_errors_without_values
 # should_exit (tests/integration/test_graceful_shutdown.py) -- read by
 # uvicorn.Server itself; setting it is what its SIGTERM handler does.
 should_exit
+
+# TokenUsage.unreported (core/llm/interface.py) -- read by the tests now,
+# and by the query wiring of E-11's second commit.
+unreported
+
+# claude_on_path (tests/unit/test_model_deadline_and_usage.py) -- a fixture
+# named in @pytest.mark.usefixtures, which vulture cannot see.
+claude_on_path

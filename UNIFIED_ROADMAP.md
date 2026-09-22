@@ -216,8 +216,11 @@ checking it found NOW.
        named in the log; /api/silos and /api/health check the SOURCES --
        they checked the mirror, and a deleted source read healthy.
        ~~E-12~~ TESTED, patch 326: a real server, shut down mid-confirm,
-       finishes it -- the write and both audit entries. E-11 and E-10
-       remain, in that order.
+       finishes it -- the write and both audit entries.
+       E-11 HALF DONE, patch 327: chat() takes a deadline and a TokenUsage;
+       both adapters honour them. NEXT: the wiring -- RequestContext
+       carries both, the loop and synthesis pass them, a configured query
+       deadline. Then E-10.
        E-13 -- sources are not checked at startup: nothing calls
        health_check(). Report each failure by name; do not refuse to
        start. (This IS the "startup checks" item this list already held.)
@@ -278,6 +281,7 @@ checking it found NOW.
          in [49.99] -> ValueError. A chart's "keep" cross-filter IS an
          `in`. Quantise in/not_in literals and range bounds too.
    B2. THE SECOND BATCH'S MEDIUM FINDINGS:
+       ~~F-04~~ fixed in patch 327, with E-11's contract.
        F-04 the limiter's chat(*args, **kwargs) erases the typed
          signature; F-05 the rate limit checks then records in separate
          transactions; F-06 DeploymentConfigResponse duplicates

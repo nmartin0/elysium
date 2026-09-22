@@ -8,7 +8,7 @@ it constructs in this, so callers never need to know it exists.
 """
 
 from core.concurrency import ConcurrencyLimiter
-from core.llm.interface import LLMAdapter
+from core.llm.interface import LLMAdapter, TokenUsage
 
 
 class ConcurrencyLimitedLLMAdapter:
@@ -34,6 +34,13 @@ class ConcurrencyLimitedLLMAdapter:
         # satisfy, not by any runtime path exercising it yet.
         self.max_concurrent_requests = wrapped.max_concurrent_requests
 
-    def chat(self, *args, **kwargs) -> str:
+    # THE REAL SIGNATURE, not *args/**kwargs (001's F-04): that erased
+    # the Protocol's types at the one layer every call passes through, and
+    # a keyword misspelled here -- `deadlin=` -- would have reached the
+    # adapter unchecked.
+    def chat(self, system_prompt: str, user_message: str,
+              json_mode: bool = False, temperature: float | None = None, *,
+              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         with self._limiter.limit():
-            return self._wrapped.chat(*args, **kwargs)
+            return self._wrapped.chat(system_prompt, user_message, json_mode, temperature,
+                                      deadline=deadline, usage=usage)

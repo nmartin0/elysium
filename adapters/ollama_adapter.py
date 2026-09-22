@@ -15,7 +15,7 @@ from typing import Any
 
 import requests
 
-from core.llm.interface import LLMUnavailable
+from core.llm.interface import LLMUnavailable, TokenUsage, call_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,8 @@ class OllamaAdapter:
         )
 
     def chat(self, system_prompt: str, user_message: str,
-              json_mode: bool = False, temperature: float | None = None) -> str:
+              json_mode: bool = False, temperature: float | None = None, *,
+              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         # Raises requests.RequestException on network/timeout failure --
         # callers decide what "failure" should mean for them (e.g. the
         # agent loop fails closed to "finish"; synthesis returns an
@@ -193,11 +194,21 @@ class OllamaAdapter:
         if options:
             payload["options"] = options
 
+        # NO LONGER THAN THE REQUEST HAS LEFT (E-11). requests' timeout
+        # bounds each wait on the socket, not the whole exchange -- a
+        # server trickling bytes could exceed it -- but a stalled server,
+        # the case that matters, is cut off at it.
+        timeout = call_timeout(deadline, self.timeout_seconds)
         try:
-            response = requests.post(self.base_url, json=payload, timeout=self.timeout_seconds)
+            response = requests.post(self.base_url, json=payload, timeout=timeout)
         except requests.RequestException as e:
             # Translated at the boundary so callers never need to know
             # this adapter uses `requests` -- see LLMUnavailable.
             raise LLMUnavailable(f"Could not reach the model at {self.base_url}: {e}") from e
         response.raise_for_status()
-        return response.json()["message"]["content"]
+        body = response.json()
+        if usage is not None:
+            # Ollama's own names: prompt_eval_count is the input,
+            # eval_count the output. Absent on some cached answers.
+            usage.add(body.get("prompt_eval_count"), body.get("eval_count"))
+        return body["message"]["content"]
