@@ -1,0 +1,100 @@
+# CONTINUOUS INTEGRATION (E-09).
+#
+# Every job starts from a FRESH CHECKOUT -- no seeded deployment, no
+# synced mirror, nothing a developer's working copy accumulates. That is
+# the condition E-08 needed and never had: thirty unit tests passed only
+# where a server had once seeded deployment/var/lib, and reported green
+# from exactly those working copies.
+#
+# WHAT IT DOES NOT RUN: tests marked `integration` in pytest.ini, which
+# need a real Ollama server. They are deselected here as they are by
+# default locally.
+
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12: what the lock files were generated for and every test has
+      # run on. INSTALL.md claims 3.10 or later; nothing tests that yet
+      # (recorded in UNIFIED_ROADMAP.md rather than asserted here).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # FROM THE HASHED LOCK: CI installs exactly what is pinned, and
+      # refuses anything whose hash differs.
+      - name: Install dependencies
+        run: pip install --require-hashes -r requirements-dev.lock
+
+      - name: Lint (ruff, mypy, vulture, lock files, import-linter)
+        run: ./lint.sh
+
+      - name: Unit tests
+        run: python -m pytest tests/unit -q
+
+      # THE WRITING HALF OF E-08, checked behaviourally. Tests that write
+      # into the developer's deployment PASS, so no test result shows it;
+      # the tripwires in tests/unit find the calls, and this finds the
+      # effect. Exact here and only here: on a developer's machine a
+      # running server writes into deployment/ too.
+      #
+      # BEFORE THE INTEGRATION TESTS, for now: they still write there --
+      # credentials.db, write_log.db, metrics.db, config_history.db, a
+      # mirror -- measured on a fresh checkout. E-08c in
+      # UNIFIED_ROADMAP.md; once fixed, this moves after them.
+      - name: The tests created nothing in deployment/
+        run: |
+          created="$(git status --porcelain --ignored deployment/ | grep -v __pycache__ || true)"
+          if [ -n "$created" ]; then
+            echo "The test suite created files in the deployment directory:"
+            echo "$created"
+            exit 1
+          fi
+
+      - name: Integration tests (no model server)
+        run: python -m pytest tests/integration -q -m "not integration"
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ui/.nvmrc
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # JUDGED BY EXIT STATUS, which is all a CI step can be judged by --
+      # the lesson of patch 303, where counting "error TS" missed a
+      # broken lint for twenty-three patches.
+      - name: Lint (oxlint, typecheck, format, knip)
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build

@@ -158,7 +158,22 @@ checking it found NOW.
        temporary directory, so they keep proving something. Never
        depend on deployment/var/lib. The integration tier is clean on a
        fresh clone (403 pass) -- it already builds its own.
-    2. E-09 -- NO CI. A workflow running lint.sh, the unit and
+   1c. E-08c -- THE INTEGRATION TESTS WRITE INTO deployment/var/lib.
+       Found by E-09's own check: on a fresh checkout, the non-model
+       integration suite leaves credentials.db, write_log.db, metrics.db,
+       config_history.db and a mirror there. "Clean on a fresh clone"
+       above meant it PASSES, not that it writes nothing. The same fix as
+       E-08: find the writers (run each file alone, list what appears),
+       give them their own directories -- then move CI's "created
+       nothing" step after the integration tests.
+   1d. PYTHON 3.10: INSTALL.md says "3.10 or later"; the locks were
+       generated on 3.12 and nothing has ever run on 3.10. Test it (a CI
+       matrix, with locks valid for both) or say 3.12.
+    2. ~~E-09~~ WRITTEN, patch 319 -- .github/workflows/ci.yml, every
+       step's command run in a clean 3.12 venv on a fresh clone and
+       passing. NOT RUNNING until the owner pushes it and enables
+       Actions; only the owner can.
+       E-09 -- NO CI. A workflow running lint.sh, the unit and
        non-model integration tests, and in ui/ npm ci, npm run lint and
        npm test -- plus a job on a checkout with NO seeded data, so
        E-08 cannot return. Written here; only the owner can run it.
