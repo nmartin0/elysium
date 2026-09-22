@@ -653,10 +653,22 @@ class WriteMediator:
                     object_type, object_id, sub_write_def["operation"],
                     sub_write_def["changes"], sub_write_def["expected_current_values"],
                 )
+                # EXHAUSTIVE, AND RAISING ON THE UNKNOWN (001's F-27). This
+                # was two-way -- update, else create -- written when there
+                # were two operations. A DELETE then fell into create: the
+                # delete was lost, recovery reported success, and the log
+                # gained a 'create' nobody asked for, because a delete's
+                # empty changes passed through create without raising.
                 if sub_write.operation == "update":
                     self._apply_one_update(sub_write, batch["id"], batch["user_id"], batch["description"])
-                else:
+                elif sub_write.operation == "delete":
+                    self._apply_one_delete(sub_write, batch["id"], batch["user_id"], batch["description"])
+                elif sub_write.operation == "create":
                     self._apply_one_create(sub_write, batch["id"], batch["user_id"], batch["description"])
+                else:
+                    raise ValueError(
+                        f"unknown operation {sub_write.operation!r} resuming batch {batch['id']}"
+                    )
                 any_applied_here = True
                 continue
 
@@ -681,9 +693,36 @@ class WriteMediator:
         # for why). resume_pending_writes() itself stays completely
         # unaware of the distinction, same per-object-locked call
         # either way.
+        #
+        # EXHAUSTIVE (001's F-27): this was two-way, so a DELETE fell into
+        # the update branch, iterated zero storage groups, and was marked
+        # applied without its index row ever being written.
         if entry["operation"] == "create":
             return self._resume_one_create_entry(entry)
-        return self._resume_one_update_entry(entry)
+        if entry["operation"] == "delete":
+            return self._resume_one_delete_entry(entry)
+        if entry["operation"] == "update":
+            return self._resume_one_update_entry(entry)
+        raise ValueError(f"unknown operation {entry['operation']!r} resuming entry {entry['id']}")
+
+    def _resume_one_delete_entry(self, entry: dict) -> str:
+        """Finishes a delete whose log entry exists but is still pending.
+
+        IDEMPOTENT: the index row may or may not have been written before
+        the crash; it is written if missing, then the entry is marked.
+
+        AND NEVER REORDERED. If a create or update for the object was
+        applied AFTER this delete was logged, the later operation already
+        decides the object's state; recording the delete now would undo
+        it. The entry is marked applied without touching the index, which
+        leaves the log's order -- the authority -- intact.
+        """
+        object_type, object_id = entry["object_type"], entry["object_id"]
+        if not self.write_log.superseded(object_type, object_id, entry["id"]) \
+                and not self.write_log.is_deleted(object_type, object_id):
+            self.write_log.record_delete(object_type, object_id, entry["id"])
+        self.write_log.mark_applied(entry["id"])
+        return "resumed"
 
     def _resume_one_update_entry(self, entry: dict) -> str:
         # Returns "resumed" (at least one group was freshly applied
@@ -1823,30 +1862,34 @@ class WriteMediator:
             never existed -- but this record lives in storage this
             project owns and can simply be read.
 
-        Marked applied immediately, because writing the log entry IS
-        the whole operation. There is no second step that could fail
-        partway.
+        THREE STEPS, IN THIS ORDER: the pending log entry, the index row,
+        then the entry marked applied. (This said there was "no second
+        step that could fail partway". There was -- the index row -- and
+        001's F-27 found the window: marked applied FIRST, a crash before
+        the index row left an applied delete that resume SKIPS, and an
+        object that stayed visible with nothing pending to fix it.)
         """
         log_id = self.write_log.log_pending_update(
             sub_write.object_type, sub_write.object_id,
             {}, sub_write.expected_current_values,
             user_id, description, batch_id=batch_id, operation="delete",
         )
-        self.write_log.mark_applied(log_id)
 
         # The DERIVED INDEX, updated as part of applying the delete.
         # Reads consult this rather than resolving deleted-ness by
         # scanning the log, which cost 47.2 ms per search at 55,000
         # log rows and grew with edit history forever.
         #
-        # The log entry is written FIRST and is the authority. If the
-        # process dies between these two, the index is stale but
-        # RECOVERABLE -- rebuild_deleted_index() regenerates it from
-        # the log. The reverse order would leave an index entry with
-        # no log record behind it, which nothing could reconcile.
+        # The log entry is written FIRST, still -- an index row always
+        # has a log record behind it. What moved is MARKING it applied,
+        # to last: a crash anywhere before that leaves a PENDING entry,
+        # which _resume_one_delete_entry finishes. (The old comment said
+        # rebuild_deleted_index() would recover a stale index; nothing
+        # calls it -- 001's F-28.)
         self.write_log.record_delete(
             sub_write.object_type, sub_write.object_id, log_id
         )
+        self.write_log.mark_applied(log_id)
         return sub_write.object_id
 
     def _apply_one_create(self, sub_write: SubWrite, batch_id: str, user_id: str, description: str) -> Any:

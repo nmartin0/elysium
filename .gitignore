@@ -16,6 +16,12 @@ venv/
 # debugging a patch that was correct the whole time.
 deployment/var/log/
 deployment/var/lib/**/*.db
+# SQLITE'S SIDECARS. A database in WAL mode makes -wal and -shm files
+# whenever it is open -- even for a READ-ONLY connection, which cannot
+# remove them on close (found by scripts/find_fabricated_creates.py).
+deployment/var/lib/**/*.db-wal
+deployment/var/lib/**/*.db-shm
+deployment/var/lib/**/*.db-journal
 # AND THE WHOLE MIRROR, which the rule above missed. The Iceberg
 # warehouse is Parquet, Avro and JSON -- not a single .db -- so 29
 # generated files were tracked, every sync rewrote them under new

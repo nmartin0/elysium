@@ -635,6 +635,22 @@ class WriteLogReader(InternalReadAdapter):
             deleted.update(row["object_id"] for row in rows)
         return deleted
 
+    def superseded(self, object_type: str, object_id: Any, log_id: str) -> bool:
+        """Whether an APPLIED entry for this object is newer than `log_id`.
+
+        FOR RESUMING A PENDING DELETE. Recording it blindly would undo a
+        create or update applied after it -- the latest applied operation
+        is what decides deleted-ness, and resuming must not reorder them.
+        """
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM write_log WHERE object_type = ? AND object_id = ? "
+                "AND status = 'applied' AND id != ? "
+                "AND created_at > (SELECT created_at FROM write_log WHERE id = ?) LIMIT 1",
+                (object_type, str(object_id), log_id, log_id),
+            ).fetchone()
+        return row is not None
+
     def is_deleted(self, object_type: str, object_id: Any) -> bool:
         """Whether this one object's latest applied write is a delete."""
         with self._connection() as conn:

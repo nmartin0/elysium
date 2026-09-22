@@ -82,7 +82,12 @@ checking it found NOW.
        the cache, change the security field, read directly with NO
        intervening search -- the existing test clears it by searching,
        which is why it passes.
-   A2. F-27, THEN F-28 -- WRITE-LOG INTEGRITY, REPRODUCED. Crash recovery
+   A2. ~~F-27~~ FIXED, patch 311 -- exhaustive dispatch, a delete resume
+       that never undoes a later operation, marked applied LAST -- with
+       scripts/find_fabricated_creates.py, READ-ONLY, for the entries it
+       already fabricated. RUN IT ON EVERY LIVE DEPLOYMENT. F-28 still
+       awaits the decision below, and must come after that check.
+       F-27, THEN F-28 -- WRITE-LOG INTEGRITY, REPRODUCED. Crash recovery
        dispatches two ways over three operations, so a DELETE falls into
        the create branch: the delete is lost, recovery reports
        {'resumed': 1}, and the log gains a FABRICATED 'create' with empty
