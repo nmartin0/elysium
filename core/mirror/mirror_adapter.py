@@ -64,9 +64,17 @@ from pyiceberg.expressions import (
     LessThanOrEqual,
     NotIn,
 )
+from pyiceberg.expressions.visitors import bind
+from pyiceberg.io.pyarrow import expression_to_pyarrow
 
 from core.filters import UnsupportedFilter
+from core.mirror.snapshot_cache import SnapshotCache
 from core.ontology.interface import ExternalReadAdapter
+
+# A table is read whole into the cache only up to this many rows, judged
+# from its snapshot summary BEFORE reading. Beyond it, reads scan directly,
+# with any limit pushed into the scan.
+MAX_CACHED_ROWS = 200_000
 
 
 class MirrorReadAdapter(ExternalReadAdapter):
@@ -98,6 +106,9 @@ class MirrorReadAdapter(ExternalReadAdapter):
         # publishing new configuration, rather than a second mechanism
         # with its own timing -- see HOT_RELOAD_PLAN.md step 5.
         self._snapshot_ids = dict(snapshot_ids or {})
+        # E-10: whole tables, by the snapshot read -- see snapshot_cache.py.
+        self._snapshot_cache = SnapshotCache()
+        self._too_large_to_cache: set[tuple[str, int]] = set()
 
     # Iceberg has In, NotIn and range comparisons natively. It has NO
     # substring predicate -- StartsWith is the closest and is not the
@@ -275,8 +286,64 @@ class MirrorReadAdapter(ExternalReadAdapter):
             return []
         return arrow.column(target_id_column).to_pylist()
 
+    def _cached_table(self, table_name: str):
+        """(arrow table, iceberg schema) for this table at the snapshot
+        this adapter reads, from the cache or read whole into it -- or None
+        when it cannot be served that way, and _scan reads directly.
+
+        A PINNED snapshot already cached needs no catalog access at all.
+        A table whose snapshot reports more than MAX_CACHED_ROWS rows is
+        never read whole: its summary is consulted BEFORE any data, so the
+        limit pushed into a direct scan keeps meaning what it says.
+        """
+        pinned = self._snapshot_ids.get(table_name)
+        if pinned is not None:
+            hit = self._snapshot_cache.get((table_name, pinned))
+            if hit is not None:
+                return hit
+        try:
+            table = self._catalog.load_table(f"{self.silo_name}.{table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return None
+        snapshot = table.snapshot_by_id(pinned) if pinned is not None else table.current_snapshot()
+        if snapshot is None:
+            return None
+        key = (table_name, snapshot.snapshot_id)
+        hit = self._snapshot_cache.get(key)
+        if hit is not None:
+            return hit
+        if key in self._too_large_to_cache:
+            return None
+        summary = snapshot.summary
+        records = summary.get("total-records") if summary is not None else None
+        if records is None or int(records) > MAX_CACHED_ROWS:
+            self._too_large_to_cache.add(key)
+            return None
+        # The schema the snapshot was WRITTEN with, not today's.
+        schema = next((s for s in table.schemas().values() if s.schema_id == snapshot.schema_id),
+                      table.schema())
+        arrow = table.scan(snapshot_id=snapshot.snapshot_id).to_arrow()
+        if not self._snapshot_cache.put(key, (arrow, schema), arrow.nbytes):
+            self._too_large_to_cache.add(key)
+        return arrow, schema
+
     def _scan(self, table_name: str, selected_fields: tuple[str, ...], row_filter=None,
               limit: int | None = None):
+        cached = self._cached_table(table_name)
+        if cached is not None:
+            arrow, schema = cached
+            names = {field.name for field in schema.fields}
+            if set(selected_fields) <= names:
+                # PYICEBERG'S OWN CONVERSION -- what its reader applies to
+                # every batch -- so the rows are the ones a scan returns;
+                # checked filter by filter in tests/unit/test_mirror_cache.py.
+                if row_filter is not None:
+                    arrow = arrow.filter(expression_to_pyarrow(bind(schema, row_filter, case_sensitive=True)))
+                # The TABLE's column order, as a scan returns them.
+                arrow = arrow.select([field.name for field in schema.fields if field.name in selected_fields])
+                if limit is not None and limit > 0:
+                    arrow = arrow.slice(0, limit)
+                return arrow
         try:
             table = self._catalog.load_table(f"{self.silo_name}.{table_name}")
         except (NoSuchTableError, NoSuchNamespaceError):
@@ -322,9 +389,11 @@ class MirrorReadAdapter(ExternalReadAdapter):
         widening.
         """
         try:
-            table = self._catalog.load_table(f"{self.silo_name}.{table_name}")
+            cached = self._cached_table(table_name)
+            schema = cached[1] if cached is not None else \
+                self._catalog.load_table(f"{self.silo_name}.{table_name}").schema()
             return {
-                column.name for column in table.schema().fields
+                column.name for column in schema.fields
                 if str(column.field_type).startswith("decimal")
             }
         except Exception:  # noqa: BLE001 - a filter still works unquantized

@@ -221,7 +221,10 @@ checking it found NOW.
        TokenUsage (327); each query gathers under a deadline --
        agent.query_deadline_seconds, the owner's 300 s default "until we
        can test on better hardware" -- and its token counts are logged
-       (328). E-10 remains.
+       (328).
+       ~~E-10~~ FIXED, patch 329: whole tables cached by snapshot. Mirror
+       search_object 15.31 -> 0.99 ms (live 1.35); get_field 11.82 ->
+       2.51 (live 1.46). ITEM 5 DONE.
        E-13 -- sources are not checked at startup: nothing calls
        health_check(). Report each failure by name; do not refuse to
        start. (This IS the "startup checks" item this list already held.)
