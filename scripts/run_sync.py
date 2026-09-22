@@ -330,7 +330,11 @@ def run_sync(runtime_paths=None) -> int:
             # flipping: dropping silver and re-syncing reported a
             # source column "gone", because the thing being read was
             # the empty silver table.
-            runtime_paths.data_dir / "mirror", build_live_read_adapters(),
+            #
+            # AND FROM THE SAME PATHS. Called without them, the adapters
+            # resolved the DEFAULT data directory while the mirror went to
+            # runtime_paths.data_dir: read one deployment, write another.
+            runtime_paths.data_dir / "mirror", build_live_read_adapters(runtime_paths),
             write_log=mediator.write_log,
             # WHERE THE WAREHOUSE LIVES, from config.yaml's mirror.storage.
             # Empty means local, which is what every deployment does today.

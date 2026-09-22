@@ -90,5 +90,7 @@ def test_run_sync_does_not_take_its_adapters_from_the_mediator():
         pathlib.Path(__file__).resolve().parents[2] / "scripts" / "run_sync.py"
     ).read_text()
 
-    assert "build_live_read_adapters()" in source
+    # WITH run_sync's OWN PATHS: called bare, it read the default
+    # deployment's silos while writing this one's mirror (E-08).
+    assert "build_live_read_adapters(runtime_paths)" in source
     assert "mediator.adapters" not in source

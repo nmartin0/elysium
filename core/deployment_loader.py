@@ -592,7 +592,7 @@ def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | No
     return min(timestamps) if timestamps else None
 
 
-def build_live_read_adapters(config_dir: Path | None = None) -> dict:
+def build_live_read_adapters(runtime_paths: "RuntimePaths | None" = None) -> dict:
     """Read adapters that always talk to the SOURCE, never the mirror.
 
     THE SYNC NEEDS THESE AND CANNOT USE THE MEDIATOR'S. When
@@ -610,9 +610,19 @@ def build_live_read_adapters(config_dir: Path | None = None) -> dict:
     answer different questions. The mediator serves reads and should
     obey the deployment's choice; the sync FILLS what those reads come
     from and has no choice to obey.
+
+    THE PATHS ARE THE CALLER'S. This took only a config directory and
+    resolved the DATA directory itself, so run_sync(runtime_paths) wrote
+    its mirror under the paths it was given and read the silos from the
+    default ones. In production both come from one environment and agree,
+    which is why it went unnoticed. Given anything else, the silo path
+    resolved into the OTHER deployment -- where SQLite, opening a file
+    that is not there, created an empty one -- and the sync reported
+    every column "gone": the symptom above, by a different road. Found
+    building a synced deployment for the tests (E-08).
     """
-    paths = resolve_runtime_paths()
-    config = load_deployment(config_dir or paths.config_dir)
+    paths = runtime_paths or resolve_runtime_paths()
+    config = load_deployment(paths.config_dir)
 
     # THE SAME RESOLUTION build_generation() DOES, which is inline
     # there rather than a function. A relative silo path is relative to
