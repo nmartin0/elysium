@@ -200,7 +200,11 @@ checking it found NOW.
        and delete expired rows inside record_failure(). Keying by the
        RAW username stays: it stops throttling revealing which accounts
        exist. Tests assert the ROW COUNT, not only the status.
-    4. E-03's second half -- expired sessions are never deleted. (The
+    4. ~~E-03, E-04, E-05~~ FIXED, patches 322-324: expired sessions are
+       deleted as new ones are made; the CSRF token is compared with
+       compare_digest, as bytes, pinned at source; every response denies
+       camera, microphone, geolocation, payment and usb.
+       E-03's second half -- expired sessions are never deleted. (The
        first half, hashing, is done: patch 301.) Delete them inside
        create_session().
        E-04 -- the CSRF token is compared with `!=`; use

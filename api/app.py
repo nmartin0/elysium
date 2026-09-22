@@ -124,6 +124,11 @@ logger = logging.getLogger(__name__)
 UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
 
 
+# The features denied by every response's Permissions-Policy (E-05); `()`
+# is the empty allowlist -- not even this origin.
+PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
+
 def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # BEFORE anything else, including config loading. Several
     # data-integrity invariants in this project are enforced by
@@ -245,6 +250,10 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         )
+        # POWERFUL FEATURES, DENIED OUTRIGHT (E-05): nothing here uses a
+        # camera, microphone, location, payment or USB device, so no page
+        # -- nor anything injected into one -- may ask for them.
+        response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
         return response
 
     # FOLLOW ANY RELOAD ANOTHER WORKER ANNOUNCED, before this request
