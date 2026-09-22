@@ -312,3 +312,145 @@ a data-tool one.
   6. DARK IS THE DEFAULT, light is a real theme and not an
      afterthought: both were generated from the same hues, and both
      were measured.
+
+---
+
+# 9. Type, density and the rest of the foundations
+
+Chosen September 22 from the labelled specimens, on the owner's stated
+criteria: EASY ON THE EYES FIRST, presenting a lot of data without
+strain SECOND, and commercially usable.
+
+## 9.1 Typeface — IBM Plex Sans, with IBM Plex Mono (specimen A2)
+
+Both are SIL OFL 1.1, which permits bundling, embedding, redistributing
+and SELLING the fonts as part of software. The only conditions: they
+may not be sold on their own, and a derivative may not reuse the
+reserved name "Plex". Inter (also OFL) was the runner-up.
+
+WHY PLEX OVER INTER: it was drawn for interfaces where data accuracy
+matters, and it separates 1 / l / I and 0 / O at 13px, which is the
+size our tables actually run at. Inter's taller x-height packs
+marginally more in, but its 1 and l are closer together -- a bad trade
+in a product whose whole job is identifiers and amounts.
+
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI",
+               Roboto, Helvetica, Arial, sans-serif
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
+               monospace
+
+SELF-HOSTED, NOT FROM A CDN. Elysium runs on the customer's own
+infrastructure, sometimes with no outbound internet; a CDN font is an
+external dependency AND a privacy leak on every page load. The OFL
+permits bundling, and the licence file ships beside the woff2 files.
+Weights kept to three -- 400, 500, 600 -- because each one is bytes an
+operator waits for.
+
+WHERE MONO IS USED: identifiers, hashes, paths, code, and anything a
+person might copy. NOT amounts -- those use the sans with tabular
+numerals, since a column of mono numbers beside mono ids turns the
+whole table into a terminal.
+
+## 9.2 Type scale — 1.2, base 14px (specimen B2)
+
+    28px  600  page title           (1.2^5, rounded)
+    20px  600  section
+    17px  600  panel heading
+    14px  400  body, table cells
+    13px  400  dense table cells
+    11px  600  uppercase labels, +0.06em letter-spacing
+
+Capped deliberately: nothing above 28px. A tool that shows tables does
+not need display type, and every heading step costs rows.
+
+LINE HEIGHTS BY CONTEXT, which is the part most systems get wrong by
+using one number: 1.5 body, 1.4 table rows, 1.25 headings. Tabular
+numerals globally (font-variant-numeric: tabular-nums) so columns of
+figures align without manual work.
+
+## 9.3 Density — middle as the default, compact one click away (C2)
+
+Row heights: compact ~30px, middle ~38px, roomy ~48px.
+
+MIDDLE IS THE DEFAULT because the owner's first criterion is eye
+comfort, and 38px is the height at which a 13.5px row has air without
+halving what fits on screen. COMPACT IS ONE CLICK AWAY and persisted
+per user, because the person scanning two hundred rows a shift should
+not pay for the comfort of the person reading ten.
+
+Roomy stays available for touch. WCAG 2.2 sets 24x24 CSS px as the
+floor for an interactive target, so even in compact a checkbox or a
+row action keeps its hit area regardless of the row's height.
+
+## 9.4 Row separation — hairlines and hover (D3)
+
+Rules at 45% of the border colour, plus a hover wash of the accent at
+7%. Full rules (D1) fence every row and make a long table feel like a
+grid of cells; zebra (D2) adds a second background that muddies a navy
+canvas and fights the surface steps that carry elevation.
+
+Sticky header, always. Left-align text, RIGHT-ALIGN NUMBERS, centre
+status. Sort indicator on the active column, subtle on the other
+sortable ones. Pagination rather than infinite scroll, because this is
+data people refer back to -- "page 3, row 7" has to mean something.
+
+## 9.5 Spacing, radius, elevation
+
+SPACING: one 4px scale -- 4, 8, 12, 16, 24, 32, 48 -- used for padding,
+margin and gap alike. No value outside it; a 13px padding is not a
+decision, it is a slip.
+
+RADIUS: 6px controls (buttons, inputs, chips), 10px panels and cards,
+999px tags and pills. Small radii read as precise, which suits a tool;
+large ones read as soft, which suits marketing.
+
+ELEVATION: by LIGHTNESS STEP, not shadow -- canvas, surface, raised.
+Shadows barely register on a dark canvas, which the specimen showed
+directly. The one exception is genuinely floating layers -- menus,
+popovers, dialogs -- which get a step AND a shadow, because they must
+read as detached from everything beneath.
+
+## 9.6 Motion
+
+Durations 100 / 200 / 300ms only; ease-out entering, ease-in leaving;
+at most two properties animated. Anything longer is a progress
+indicator's job, not an animation's.
+
+prefers-reduced-motion is respected everywhere, and specifically kills
+the skeleton shimmer, which is the canonical vestibular trigger.
+
+## 9.7 The four states (specimens E1-E4)
+
+  LOADING, chosen by expected wait, not by taste:
+    under 100ms   nothing. An indicator that flashes is worse than none.
+    100ms - 1s    an inline cue: the button itself, no layout change.
+    over 1s       a skeleton IN THE SHAPE OF THE INCOMING LAYOUT when
+                  it is known; a spinner only when it is not.
+  Skeletons are aria-hidden; a polite live region says "loading".
+
+  EMPTY: icon, title, the REASON it is empty, and an action. "No
+  objects match these filters" with a clear-filters button, never a
+  blank panel.
+
+  ERROR: plain language, what is unchanged, and a way out. Never a
+  code, never a stack trace.
+
+  PARTIAL -- the state that is ours alone (E4). "Not permitted",
+  "restricted" and a real NULL must look like three different things.
+  A hidden field is not an empty field, and neither is an absent one.
+  Plain words chosen over a hatched chip: at 13px the hatching reads
+  as a rendering fault.
+
+## 9.8 The agent surface (specimen G2, and G3 for writes)
+
+STEPS VISIBLE AS IT WORKS, with the answer beneath and a quiet readout
+of steps, tokens and elapsed time against the deadline. The steps are
+collapsible but shown by default: an agent that traverses an ontology
+is making claims about YOUR data, and the traversal is the evidence.
+Hiding it by default (G1) makes the answer look like an oracle's.
+
+AND A PROPOSED WRITE IS NEVER SHOWN AS DONE (G3). Most applications
+apply a change optimistically and reconcile later. Elysium's writes
+are proposed, reviewed and approved, so the interface shows the field,
+its current value, the proposed value, and the approval state -- and
+nothing moves until the write is applied.
