@@ -52,7 +52,9 @@ ordinary column.
 Used by: scripts/run_sync.py
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from core.mirror.standardise import rules_for
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,10 @@ class SyncTarget:
     # leaves them grepping ontology_schema.yaml to find out which
     # declaration cares.
     fields_by_column: dict[str, str]
+    # column -> the rules silver canonicalises its values with, absent
+    # for a column whose field opted out (GOLD-1). Read from the same
+    # field declaration as the type above, in the same walk.
+    standardisation: dict[str, dict] = field(default_factory=dict)
 
 
 def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
@@ -89,23 +95,25 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
 
     for type_def in schema.get("object_types", {}).values():
         for (silo_name, table_name, id_column, columns,
-             column_types, fields_by_column) in _targets_for_type(type_def):
+             column_types, fields_by_column,
+             standardisation) in _targets_for_type(type_def):
             key = (silo_name, table_name)
             if key not in by_table:
                 by_table[key] = {"id_column": id_column, "columns": [], "column_types": {},
-                             "fields_by_column": {}}
+                             "fields_by_column": {}, "standardisation": {}}
             existing = by_table[key]["columns"]
             for column in columns:
                 if column not in existing:
                     existing.append(column)
             by_table[key]["column_types"].update(column_types)
+            by_table[key]["standardisation"].update(standardisation)
             # FIRST DECLARATION WINS on a shared table. Two object
             # types can back onto one table, and if both map the same
             # column the field names are interchangeable for the
             # purpose this serves -- naming either one tells the
             # operator where to look.
-            for column, field in fields_by_column.items():
-                by_table[key]["fields_by_column"].setdefault(column, field)
+            for column, backing_field in fields_by_column.items():
+                by_table[key]["fields_by_column"].setdefault(column, backing_field)
 
     for (silo_name, table_name), entry in by_table.items():
         # INVARIANT: the id column is always synced, and every typed
@@ -134,6 +142,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             columns=entry["columns"],
             column_types=entry["column_types"],
             fields_by_column=entry["fields_by_column"],
+            standardisation=entry["standardisation"],
         )
         for (silo_name, table_name), entry in by_table.items()
     ]
@@ -161,6 +170,7 @@ def _targets_for_type(type_def: dict):
     # declared field, and claiming one is would send an operator
     # looking for a declaration that does not exist.
     fields_by_storage: dict[str | None, dict[str, str]] = {name: {} for name in storages}
+    standardisation_by_storage: dict[str | None, dict[str, dict]] = {name: {} for name in storages}
 
     # The id column of each storage is always needed -- it is what rows
     # are matched on, both during the sync itself and by every read
@@ -196,6 +206,15 @@ def _targets_for_type(type_def: dict):
         declared = field_config.get("data_type")
         if declared is not None:
             types_by_storage[storage_key][column] = declared
+        # THE STANDARDISATION RULES travel with the types: both are
+        # per column, and both are read from the field that declares
+        # the column (GOLD-1).
+        try:
+            rules = rules_for(field_config)
+        except ValueError as e:
+            raise ValueError(f"Field {field_name!r}: {e}") from None
+        if rules is not None:
+            standardisation_by_storage[storage_key][column] = rules
             # THE SOURCE ZONE TRAVELS WITH THE TYPE, because it is part
             # of what the type means: a `timestamptz` whose source is
             # naive cannot be read without it. Carried on the same
@@ -227,4 +246,5 @@ def _targets_for_type(type_def: dict):
             columns_by_storage[storage_key],
             types_by_storage[storage_key],
             fields_by_storage[storage_key],
+            standardisation_by_storage[storage_key],
         )

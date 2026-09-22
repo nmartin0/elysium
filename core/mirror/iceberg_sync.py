@@ -288,7 +288,8 @@ class IcebergMirrorSync(MirrorSync):
 
     def sync_table(self, silo_name: str, table_name: str, id_column: str,
                     columns: list[str], column_types: dict[str, str] | None = None,
-                    fields_by_column: dict[str, str] | None = None) -> SyncResult:
+                    fields_by_column: dict[str, str] | None = None,
+                    standardisation: dict[str, dict] | None = None) -> SyncResult:
         adapter = self.adapters.get(silo_name)
         if adapter is None:
             raise ValueError(
@@ -405,7 +406,7 @@ class IcebergMirrorSync(MirrorSync):
         if source_rows is None:
             source_rows = raw_rows
 
-        transformed = transform_rows(source_rows, columns, column_types)
+        transformed = transform_rows(source_rows, columns, column_types, standardisation)
         if transformed.has_drift:
             # THROUGH THE POLICY, not straight to a raise. The outcome
             # is the same -- refuse -- but it now comes from a module

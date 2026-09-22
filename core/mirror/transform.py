@@ -58,6 +58,7 @@ Used by: core/mirror/iceberg_sync.py (the sync applies this stage
 
 from dataclasses import dataclass, field
 
+from core.mirror.standardise import standardise
 from core.ontology.field_types import (
     DEFAULT_FIELD_DATA_TYPE,
     coerce,
@@ -96,7 +97,8 @@ class TransformResult:
 
 
 def transform_rows(rows: list[dict], columns: list[str],
-                    column_types: dict[str, str] | None = None) -> TransformResult:
+                    column_types: dict[str, str] | None = None,
+                    standardisation: dict[str, dict] | None = None) -> TransformResult:
     """Casts every column to its ontology-declared type, reporting any
     column whose real data does not fit.
 
@@ -120,8 +122,13 @@ def transform_rows(rows: list[dict], columns: list[str],
         for column in columns:
             declared = resolved[column]
             declared, source_timezone = split_declared_type(declared)
+            # STANDARDISED FIRST, then coerced (GOLD-1): trimming " 42 "
+            # is what lets it coerce as an integer at all, and a
+            # declared sentinel becomes a real NULL rather than a
+            # string that fails to coerce and reads as drift.
+            value = standardise(row[column], (standardisation or {}).get(column))
             try:
-                cleaned_row[column] = coerce(row[column], declared, source_timezone)
+                cleaned_row[column] = coerce(value, declared, source_timezone)
             except (ValueError, TypeError):
                 # The FIRST offending value for this column is the one
                 # reported -- later ones are almost always the same
@@ -132,7 +139,7 @@ def transform_rows(rows: list[dict], columns: list[str],
                         DriftedColumn(
                             column=column,
                             declared_type=declared,
-                            example_value=row[column],
+                            example_value=value,
                             row_count_checked=len(rows),
                         )
                     )
