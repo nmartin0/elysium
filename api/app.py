@@ -474,4 +474,28 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+
+def __getattr__(name: str) -> FastAPI:
+    """`api.app.app`, built the first time something asks for it.
+
+    IT WAS BUILT AT IMPORT: `app = create_app()` on the last line. So
+    importing this module -- which every integration test does, for
+    create_app -- started a whole application against the DEFAULT
+    deployment, creating credentials.db, write_log.db, metrics.db,
+    config_history.db and a mirror in the developer's data directory.
+    Measured on a fresh clone: `python -c "import api.app"` alone made
+    all five (E-08c).
+
+    NOW LAZY (PEP 562): `uvicorn api.app:app` looks the attribute up by
+    name, which lands here and builds it once; importing create_app
+    never does. Chosen over uvicorn's --factory, which would change
+    every command that starts the server -- the systemd unit, the docs,
+    and the one typed each time.
+    """
+    if name != "app":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    built = create_app()
+    # Cached as a real module attribute, so later lookups never reach
+    # here again and every one returns the same app.
+    globals()["app"] = built
+    return built

@@ -13,17 +13,19 @@ pytest.ini for both markers' registered descriptions.
 """
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.agent.agentic_loop import AgentLoopResult
+from core.deployment_loader import RuntimePaths
 from scripts.serve_requests import serve
 
 pytestmark = pytest.mark.mocked_llm
 
 
-def test_serve_dispatches_multiple_users_concurrently_without_crashing():
+def test_serve_dispatches_multiple_users_concurrently_without_crashing(tmp_path):
     seq = [{"step": "finish"}]
 
     def fake_post(*args, **kwargs):
@@ -33,7 +35,16 @@ def test_serve_dispatches_multiple_users_concurrently_without_crashing():
         return response
 
     with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post):
-        results = serve([("user_alice", "q1"), ("user_carol", "q2"), ("user_alice", "q3")])
+        # A DEPLOYMENT OF ITS OWN (E-08c). Called without paths, serve()
+        # falls back to the developer's and wrote config_history.db,
+        # write_log.db and a mirror there -- the last integration test to.
+        paths = RuntimePaths(
+            config_dir=Path(__file__).resolve().parents[2] / "deployment" / "etc",
+            data_dir=tmp_path / "data", log_dir=tmp_path / "log",
+        )
+        paths.data_dir.mkdir()
+        paths.log_dir.mkdir()
+        results = serve([("user_alice", "q1"), ("user_carol", "q2"), ("user_alice", "q3")], paths)
 
     assert len(results) == 3
     for result in results:

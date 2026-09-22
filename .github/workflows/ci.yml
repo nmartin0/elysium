@@ -48,16 +48,18 @@ jobs:
       - name: Unit tests
         run: python -m pytest tests/unit -q
 
+      - name: Integration tests (no model server)
+        run: python -m pytest tests/integration -q -m "not integration"
+
       # THE WRITING HALF OF E-08, checked behaviourally. Tests that write
       # into the developer's deployment PASS, so no test result shows it;
       # the tripwires in tests/unit find the calls, and this finds the
       # effect. Exact here and only here: on a developer's machine a
       # running server writes into deployment/ too.
       #
-      # BEFORE THE INTEGRATION TESTS, for now: they still write there --
-      # credentials.db, write_log.db, metrics.db, config_history.db, a
-      # mirror -- measured on a fresh checkout. E-08c in
-      # UNIFIED_ROADMAP.md; once fixed, this moves after them.
+      # AFTER BOTH TIERS. It sat between them at first: the integration
+      # tests wrote there too -- importing api.app built a whole
+      # application against the default deployment (E-08c).
       - name: The tests created nothing in deployment/
         run: |
           created="$(git status --porcelain --ignored deployment/ | grep -v __pycache__ || true)"
@@ -66,9 +68,6 @@ jobs:
             echo "$created"
             exit 1
           fi
-
-      - name: Integration tests (no model server)
-        run: python -m pytest tests/integration -q -m "not integration"
 
   frontend:
     runs-on: ubuntu-24.04

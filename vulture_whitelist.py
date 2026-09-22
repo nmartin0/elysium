@@ -359,3 +359,7 @@ new_password
 
 # security_cache_per_request (api/app.py) -- registered by @app.middleware.
 security_cache_per_request
+
+# __getattr__ (api/app.py) -- a module-level __getattr__ (PEP 562), called
+# by Python for `api.app.app`; uvicorn reaches it by name.
+__getattr__

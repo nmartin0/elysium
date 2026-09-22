@@ -158,7 +158,12 @@ checking it found NOW.
        temporary directory, so they keep proving something. Never
        depend on deployment/var/lib. The integration tier is clean on a
        fresh clone (403 pass) -- it already builds its own.
-   1c. E-08c -- THE INTEGRATION TESTS WRITE INTO deployment/var/lib.
+   1c. ~~E-08c~~ FIXED, patch 320: api.app's module-level app is built
+       lazily (PEP 562), so importing the module builds nothing; and
+       test_serve_requests gives serve() paths. CI's "created nothing"
+       step now runs after BOTH tiers. Measured on a fresh clone: 2,051
+       unit and 415 integration tests, and nothing in deployment/.
+       E-08c -- THE INTEGRATION TESTS WRITE INTO deployment/var/lib.
        Found by E-09's own check: on a fresh checkout, the non-model
        integration suite leaves credentials.db, write_log.db, metrics.db,
        config_history.db and a mirror there. "Clean on a fresh clone"
