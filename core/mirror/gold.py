@@ -1,0 +1,257 @@
+"""Gold: one table per OBJECT TYPE, audited before anyone can read it
+(GOLD-2, MEDALLION_PIPELINE.md's G1 and G4).
+
+WHAT CHANGES FROM SILVER. Silver is one table per SOURCE TABLE, at the
+source's grain, with the source's column names. Gold is one table per
+object type, keyed by the object's id, with the ONTOLOGY'S property
+names -- the shape the ontology actually asks for. For a type with one
+source that is a conform and nothing more, which is why the ontology
+can move to gold before any identity resolution exists.
+
+WRITE, AUDIT, PUBLISH. New rows go to a branch; the audit runs there;
+only if it passes does one commit move `main` and tag the result. A
+reader on main sees the previous publication until that instant, and
+then sees all of the new one -- Iceberg readers are pinned to the
+snapshot they loaded, so nothing sees half a build. A failed audit
+moves nothing and says what failed.
+
+WHAT THE AUDIT CHECKS is the contract an ontology needs from the table
+behind an object type:
+
+  the key         unique and non-null. Foundry fails an indexing run
+                  over a duplicate primary key, because the ontology
+                  cannot say which row the object is. Silver already
+                  holds duplicates back; this is the promise, restated
+                  where it is relied on.
+  required        a property declared required is present.
+  link targets    every forward link points at an object that exists,
+                  when that target's gold table exists to check
+                  against.
+  row count       a publication that loses more than half its rows
+                  against the last one is refused -- the same bound,
+                  and the same reasoning, as the changelog's
+                  MAX_DELETED_FRACTION: a source that emptied is
+                  usually a broken export, not a business event.
+"""
+
+from dataclasses import dataclass, field
+
+import pyarrow as pa
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+from core.mirror.changelog import MAX_DELETED_FRACTION
+from core.mirror.lineage import LINEAGE_COLUMNS
+from core.ontology.link_types import is_reverse_link
+
+GOLD_NAMESPACE = "gold"
+AUDIT_BRANCH = "audit"
+PUBLISHED_TAG = "published"
+
+
+@dataclass
+class GoldResult:
+    """What one object type's build did."""
+
+    object_type: str
+    rows: int = 0
+    published: bool = False
+    problems: list[str] = field(default_factory=list)
+    skipped: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.published or self.skipped is not None
+
+
+def conform(type_def: dict, silver_rows: list[dict]) -> list[dict]:
+    """Silver's rows in the ontology's own shape: property names, the
+    object's id, and the lineage silver carried."""
+    id_column = type_def["storage"]["id_column"]
+    id_field = type_def["id_field"]
+    mapping = {id_column: id_field}
+    for field_name, field_config in (type_def.get("fields") or {}).items():
+        if field_config.get("type") == "link" and is_reverse_link(field_config):
+            # Computed from the other table; nothing on this row holds it.
+            continue
+        mapping[field_config.get("column", field_name)] = field_name
+    conformed = []
+    for row in silver_rows:
+        shaped = {field_name: row.get(column) for column, field_name in mapping.items()}
+        shaped.update({column: row.get(column) for column in LINEAGE_COLUMNS if column in row})
+        conformed.append(shaped)
+    return conformed
+
+
+def audit(type_def: dict, rows: list[dict], previous_count: int | None,
+          known_ids: dict[str, set] | None = None) -> list[str]:
+    """Everything wrong with this build, in the order it was checked."""
+    problems = []
+    id_field = type_def["id_field"]
+
+    ids = [row.get(id_field) for row in rows]
+    missing = sum(1 for value in ids if value is None)
+    if missing:
+        problems.append(f"{missing} row(s) have no {id_field}")
+    seen, duplicated = set(), set()
+    for value in ids:
+        if value in seen:
+            duplicated.add(value)
+        seen.add(value)
+    if duplicated:
+        shown = ", ".join(repr(value) for value in sorted(duplicated, key=repr)[:5])
+        problems.append(f"{len(duplicated)} duplicate {id_field}(s): {shown}")
+
+    for field_name, field_config in (type_def.get("fields") or {}).items():
+        if not field_config.get("required"):
+            continue
+        absent = sum(1 for row in rows if row.get(field_name) is None)
+        if absent:
+            problems.append(f"{absent} row(s) are missing required {field_name}")
+
+    for field_name, field_config in (type_def.get("fields") or {}).items():
+        if field_config.get("type") != "link" or is_reverse_link(field_config):
+            continue
+        target = field_config.get("target")
+        available = (known_ids or {}).get(target)
+        if available is None:
+            # The target's gold table does not exist yet -- a first
+            # build, or a type not yet conformed. Not a finding: a
+            # check that cannot run must not pretend to have passed
+            # OR to have failed.
+            continue
+        dangling = {row.get(field_name) for row in rows
+                    if row.get(field_name) is not None and row.get(field_name) not in available}
+        if dangling:
+            shown = ", ".join(repr(value) for value in sorted(dangling, key=repr)[:5])
+            problems.append(
+                f"{len(dangling)} {field_name} value(s) point at no {target}: {shown}"
+            )
+
+    if previous_count and len(rows) < previous_count * (1 - MAX_DELETED_FRACTION):
+        problems.append(
+            f"{len(rows)} rows, down from {previous_count}: more than "
+            f"{MAX_DELETED_FRACTION:.0%} of the last publication is gone"
+        )
+    return problems
+
+
+def _arrow(rows: list[dict], type_def: dict) -> pa.Table:
+    """Gold's columns, all as strings for now: gold is read through the
+    ontology, which coerces on read, and a type per property arrives
+    with the declared-type work in GOLD-3."""
+    id_field = type_def["id_field"]
+    names = [id_field]
+    names += [
+        field_name for field_name, field_config in (type_def.get("fields") or {}).items()
+        if field_name != id_field
+        and not (field_config.get("type") == "link" and is_reverse_link(field_config))
+    ]
+    names += [column for column in LINEAGE_COLUMNS]
+    schema = pa.schema([(name, pa.string()) for name in names])
+    return pa.Table.from_pylist(
+        [{name: None if row.get(name) is None else str(row.get(name)) for name in names}
+         for row in rows],
+        schema=schema,
+    )
+
+
+def published_ids(catalog, object_type: str, id_field: str) -> set | None:
+    """Every id in the PUBLISHED gold table for a type, or None when it
+    has none yet -- what a link check compares against."""
+    try:
+        table = catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
+    except (NoSuchTableError, NoSuchNamespaceError, FileNotFoundError):
+        return None
+    if table.current_snapshot() is None:
+        return None
+    return set(table.scan(selected_fields=(id_field,)).to_arrow()[id_field].to_pylist())
+
+
+def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict],
+               known_ids: dict[str, set] | None = None) -> GoldResult:
+    """Conform, audit and -- only if it passes -- publish one type.
+
+    A TABLE THAT ALREADY HAS A PUBLICATION is written on a branch, so
+    what readers see does not move until the audit passes. A FIRST
+    build has nothing to protect: it writes to main and, if the audit
+    fails, the table is dropped, leaving no gold rather than unaudited
+    gold.
+    """
+    if type_def.get("additional_storage"):
+        return GoldResult(object_type, skipped="more than one source: GOLD-5")
+
+    result = GoldResult(object_type)
+    rows = conform(type_def, silver_rows)
+    result.rows = len(rows)
+    arrow_table = _arrow(rows, type_def)
+    identifier = f"{GOLD_NAMESPACE}.{object_type}"
+
+    try:
+        catalog.create_namespace(GOLD_NAMESPACE)
+    except Exception:  # noqa: BLE001 - already there is the normal case
+        pass
+
+    try:
+        table = catalog.load_table(identifier)
+        first_build = table.current_snapshot() is None
+    except (NoSuchTableError, NoSuchNamespaceError):
+        table = catalog.create_table(identifier, schema=arrow_table.schema)
+        first_build = True
+
+    previous_count = None
+    if not first_build:
+        previous_count = table.scan().to_arrow().num_rows
+
+    if first_build:
+        # APPEND, not overwrite: the table is empty, and an overwrite
+        # there warns "Delete operation did not match any records" --
+        # noise that would teach a reader to ignore pyiceberg's
+        # warnings.
+        table.append(arrow_table)
+        result.problems = audit(type_def, rows, previous_count, known_ids)
+        if result.problems:
+            # NO GOLD RATHER THAN UNAUDITED GOLD.
+            catalog.drop_table(identifier)
+            return result
+        table = catalog.load_table(identifier)
+        _tag_publication(table)
+        result.published = True
+        return result
+
+    table.manage_snapshots().create_branch(
+        table.current_snapshot().snapshot_id, AUDIT_BRANCH,
+    ).commit()
+    table = catalog.load_table(identifier)
+    table.overwrite(arrow_table, branch=AUDIT_BRANCH)
+    table = catalog.load_table(identifier)
+
+    result.problems = audit(type_def, rows, previous_count, known_ids)
+    if result.problems:
+        # NOTHING MOVES. The branch is removed so the next build starts
+        # from what is published, not from a refused attempt.
+        table.manage_snapshots().remove_branch(AUDIT_BRANCH).commit()
+        return result
+
+    audited = table.snapshot_by_name(AUDIT_BRANCH).snapshot_id
+    _publish(table, audited)
+    result.published = True
+    return result
+
+
+def _publish(table, audited_snapshot: int) -> None:
+    """One commit: main moves to the audited snapshot, which is tagged,
+    and the branch is removed."""
+    number = 1 + sum(1 for ref in table.metadata.refs if ref.startswith(f"{PUBLISHED_TAG}-"))
+    table.manage_snapshots().set_current_snapshot(
+        snapshot_id=audited_snapshot,
+    ).create_tag(audited_snapshot, f"{PUBLISHED_TAG}-{number}").remove_branch(
+        AUDIT_BRANCH,
+    ).commit()
+
+
+def _tag_publication(table) -> None:
+    number = 1 + sum(1 for ref in table.metadata.refs if ref.startswith(f"{PUBLISHED_TAG}-"))
+    snapshot = table.current_snapshot()
+    table.manage_snapshots().create_tag(
+        snapshot.snapshot_id, f"{PUBLISHED_TAG}-{number}",
+    ).commit()

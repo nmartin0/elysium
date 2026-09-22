@@ -57,6 +57,7 @@ from core.deployment_loader import (
     load_deployment_bundle,
     resolve_runtime_paths,
 )
+from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
 from core.mirror.sync_attempts import SyncAttempts
@@ -278,6 +279,39 @@ def _notify_mirror_health(runtime_paths, config, attempts, targets) -> None:
         print(f"could not evaluate mirror health: {e}", file=sys.stderr)
 
 
+def _build_gold(sync, config) -> int:
+    """One gold table per object type, audited before it is published.
+    Returns how many were refused."""
+    refused = 0
+    for object_type, type_def in (config.schema or {}).items():
+        storage = type_def.get("storage") or {}
+        identifier = f"{storage.get('silo')}.{storage.get('table')}"
+        try:
+            silver = sync._catalog.load_table(identifier).scan().to_arrow().to_pylist()
+        except Exception as exc:  # noqa: BLE001 - reported per type, like a sync
+            print(f"FAILED  gold.{object_type}: its silver table could not be read: {exc}",
+                  file=sys.stderr)
+            refused += 1
+            continue
+        known = {
+            target: ids
+            for target, ids in (
+                (name, published_ids(sync._catalog, name, other.get("id_field", "")))
+                for name, other in (config.schema or {}).items()
+            )
+            if ids is not None
+        }
+        result = build_gold(sync._catalog, object_type, type_def, silver, known)
+        if result.skipped:
+            print(f"skipped gold.{object_type}: {result.skipped}")
+        elif result.published:
+            print(f"published gold.{object_type}: {result.rows} rows")
+        else:
+            refused += 1
+            print(f"REFUSED gold.{object_type}: " + "; ".join(result.problems), file=sys.stderr)
+    return refused
+
+
 def run_sync(runtime_paths=None) -> int:
     """Syncs every ontology-referenced table. Returns the number of
     tables that FAILED -- 0 meaning a fully successful run, so a
@@ -392,6 +426,13 @@ def run_sync(runtime_paths=None) -> int:
             print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
+
+        # GOLD, FROM THE SILVER JUST WRITTEN (GOLD-2). Only when every
+        # table synced: gold built from a half-synced mirror would
+        # publish a partial picture, and the audit's row-count bound
+        # would refuse it anyway, more confusingly.
+        if failures == 0:
+            failures += _build_gold(sync, config)
 
         # THE CONDITION IS CHECKED AFTER THE SYNC, which is the only
         # moment the facts are current. A separate scheduler would need

@@ -118,7 +118,11 @@ resolution, so gold for it is a straight conform.
           quarantine tables, never a silent drop; duplicate keys
           quarantined and named; lineage columns on every row; quality
           counts per run, shown in Admin.
-  GOLD-2. GOLD FOR SINGLE-SOURCE TYPES (G1, G4): gold.<object_type>,
+  GOLD-2. ~~GOLD FOR SINGLE-SOURCE TYPES~~ DONE, patch 341: built at
+          the end of every sync, audited on a branch, published by one
+          commit and tagged. NEXT: GOLD-2b (demote live mode) and
+          GOLD-3 (the ontology reads gold).
+          GOLD FOR SINGLE-SOURCE TYPES (G1, G4): gold.<object_type>,
           conformed from silver; audited on a branch -- key unique and
           non-null, link targets exist, required properties, row count
           within bounds -- and published atomically. A failed audit
