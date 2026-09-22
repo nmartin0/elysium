@@ -54,6 +54,8 @@ Used by: api/app.py, registered as real middleware alongside
          both live as module-level functions there.
 """
 
+import secrets
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
@@ -84,7 +86,15 @@ async def csrf_protect(request: Request, call_next: RequestResponseEndpoint) -> 
     # error handling (api.js's own apiFetchOrThrow()) reads
     # body.detail regardless of which layer actually rejected the
     # request, and shouldn't need to know or care which one did.
-    if not cookie_value or not header_value or cookie_value != header_value:
+    #
+    # IN CONSTANT TIME (E-04). `!=` stops at the first differing
+    # character, so how long a rejection takes says how much of a guess
+    # was right. compare_digest does not. As BYTES: given str it raises
+    # TypeError on anything non-ASCII -- which a caller controls in the
+    # header -- and a 500 there would be its own leak.
+    if not cookie_value or not header_value or not secrets.compare_digest(
+        cookie_value.encode(), header_value.encode()
+    ):
         return JSONResponse(status_code=403, content={"detail": "CSRF token missing or invalid"})
 
     return await call_next(request)
