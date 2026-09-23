@@ -254,3 +254,122 @@ side-by-side comparison, a score explanation, per-field provenance, a
 disclosure policy, and a routing rule. Worth knowing before GOLD-5
 starts, because the matcher's output has to carry all of it.
 
+---
+
+# GOLD-6: which library, decided by installing them (September 23)
+
+The owner asked for thorough research into probabilistic identity
+resolution, including what the canonical Python libraries actually
+provide. So they were installed and run, not just read about.
+
+## The field, and why Splink is the one to consider
+
+SPLINK (Ministry of Justice, MIT): Fellegi-Sunter, the model this
+design already committed to. A 2026 comparison of four libraries on
+three datasets found it "the fastest at 6.9s and the most
+memory-efficient at 10.0 MB -- its DuckDB backend handles blocking and
+comparison in SQL". It is also the one whose vocabulary matches ours:
+m and u probabilities, match weights, blocking rules.
+
+DEDUPE: active learning -- "you label pairs interactively, it trains a
+classifier". Powerful, and the interactive labelling "makes automation
+harder", which for an unattended nightly pipeline is disqualifying.
+
+RECORDLINKAGE: a clean scikit-learn-style API, and the same comparison
+notes "the project hasn't been updated since July 2023". It also won
+on the hardest dataset (0.923 F1 against Splink's 0.728), which is
+worth remembering: FELLEGI-SUNTER IS NOT UNIVERSALLY BEST. It suits
+PII-shaped data, which is what an ontology's entities usually are.
+
+ZINGG: Spark. Wrong shape for an on-prem single-node deployment.
+
+## What Splink actually gives us, read from the installed package
+
+  linker.training.estimate_u_using_random_sampling
+  linker.training.estimate_parameters_using_expectation_maximisation
+  linker.training.estimate_m_from_pairwise_labels
+  linker.inference.predict
+  linker.inference.compare_two_records
+  linker.inference.find_matches_to_new_records
+  linker.inference.deterministic_link
+  linker.clustering.cluster_pairwise_predictions_at_threshold
+  linker.visualisations.waterfall_chart / match_weights_chart
+
+THREE OF THOSE MATTER MORE THAN THE REST, for what this design says it
+needs:
+
+  compare_two_records SCORES ONE PAIR ON DEMAND. That is the review
+  screen: a reviewer opens a proposed merge and the score is computed
+  for that pair, without a batch job.
+
+  predict RETURNS gamma_<field> PER PAIR -- which comparison level
+  each field landed in -- alongside match_weight and match_probability.
+  So the "what drove the score" explanation the review needs is DATA,
+  not their Altair chart. Verified by running it.
+
+  find_matches_to_new_records matches new records against an existing
+  set, which is what a nightly pipeline does after the first build.
+
+## What it costs, measured
+
+186 MB across seven transitive dependencies -- duckdb 61, numpy 57,
+pandas 39, igraph 16, altair 6, sqlglot 3, jinja2 0.5. Elysium today
+declares TEN dependencies in total and none of those seven.
+
+For an on-prem product that sometimes installs air-gapped, that is not
+a detail. It is also, for most deployments, WEIGHT FOR A FEATURE THEY
+WILL NEVER TURN ON: this design already says inference is off by
+default and only ever ADDS PROPOSALS.
+
+## A REPRODUCED BUG, and it changes the recommended path
+
+estimate_u_using_random_sampling raises
+
+    ValueError: Salting partitions must be specified and > 1
+
+MEASURED ACROSS SIX COMBINATIONS: splink 4.0.8 and 4.0.17, duckdb
+1.1.3 and 1.5.5, pandas 2.3.3 and 3.0.2. It fails in all of them, so
+it is Splink's, not a version-matching problem we could pin our way
+out of. (duckdb 1.1.3 with pandas 3 fails earlier still, on the new
+string dtype.)
+
+AND THE PATH THAT AVOIDS IT IS THE ONE WE SHOULD WANT ANYWAY.
+Declaring m and u probabilities outright -- no EM, no random sampling
+-- works: verified end to end, 1,400 pairs predicted, and a single
+pair scored on demand at match_weight 0.212 / probability 0.537 with
+its per-field levels returned.
+
+Declared weights are also the auditable choice. A governed system
+should be able to tell a reviewer WHY two records scored as they did
+in terms somebody chose, rather than in terms an unsupervised
+algorithm inferred from data nobody inspected. Unsupervised training
+remains available later as a way to PROPOSE weights for a person to
+accept -- the same rule as everywhere else here.
+
+## The decision
+
+  1. A MATCHER INTERFACE in core, with two implementations behind it.
+  2. THE DETERMINISTIC MATCHER IS BUILT IN and has no dependencies:
+     declared keys, normalised, compared exactly. It is what
+     FUSION_AND_IDENTITY calls the primary path, and it must keep
+     working with nothing installed.
+  3. SPLINK IS AN OPTIONAL EXTRA (`pip install elysium[identity]`),
+     loaded only when a deployment declares probabilistic matching.
+     A deployment that never turns inference on never pays the 186 MB.
+  4. WEIGHTS ARE DECLARED, not estimated, for the reasons above --
+     which also routes around the bug rather than waiting on it.
+  5. TWO THRESHOLDS, as the MDM precedent says: above the auto-link
+     threshold a merge is proposed automatically; between the two it
+     goes to review; below, nothing. Both are declared, per type.
+  6. EVERY MERGE IS STILL A PROPOSAL through the write queue, and a
+     MAC conflict still refuses it (decision D2). The library scores;
+     it never decides.
+
+## What is checked before any of it is built
+
+The bug above should be re-tested on each Splink release, and the
+version pinned to one where either the declared-weights path or the
+whole training path is known to work. The test belongs in the suite,
+skipped when the extra is not installed, so a deployment that DOES
+enable identity resolution finds out at CI time rather than at 2am.
+

@@ -375,6 +375,25 @@ resolution, so gold for it is a straight conform.
           order -- declared identity rules, a crosswalk table,
           per-property survivorship, every contributing value kept in a
           provenance table.
+  GOLD-6. TECHNOLOGY DECIDED, September 23, by installing and running
+          the candidates (FUSION_AND_IDENTITY.md). Splink is the right
+          model -- Fellegi-Sunter, MIT, and its predict() returns
+          gamma_<field> per pair, so the "why did these score" the
+          review needs is DATA rather than a chart; compare_two_records
+          scores ONE pair on demand, which is the review screen itself.
+          BUT it costs 186 MB across seven transitive dependencies
+          (duckdb, numpy, pandas, igraph, altair, sqlglot, jinja2)
+          against Elysium's current TEN direct ones -- weight most
+          deployments would carry for a feature that is off by default.
+          AND estimate_u_using_random_sampling IS BROKEN: "Salting
+          partitions must be specified and > 1", reproduced across
+          splink 4.0.8/4.0.17, duckdb 1.1.3/1.5.5 and pandas 2/3. The
+          path that avoids it is the one we should want anyway --
+          DECLARED m and u probabilities, verified working end to end.
+          So: a matcher INTERFACE; a deterministic matcher built in
+          with no dependencies; Splink as an OPTIONAL extra; declared
+          weights; two thresholds; every merge still a proposal, and a
+          MAC conflict still refusing it (D2).
   GOLD-6. INFERRED IDENTITY: Fellegi-Sunter (Splink, on DuckDB), off by
           default; the uncertain middle zone to a person through the
           approval queue.
