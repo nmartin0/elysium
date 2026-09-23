@@ -34,6 +34,7 @@ behind an object type:
                   usually a broken export, not a business event.
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -45,6 +46,8 @@ from core.mirror.lineage import LINEAGE_COLUMNS
 from core.ontology.field_types import arrow_type_for
 from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
+
+logger = logging.getLogger(__name__)
 
 AUDIT_BRANCH = "audit"
 PUBLISHED_TAG = "published"
@@ -59,6 +62,9 @@ class GoldResult:
     published: bool = False
     problems: list[str] = field(default_factory=list)
     skipped: str | None = None
+    # How many changes this publication recorded (GOLD-4). Zero on a
+    # first publication, which has no previous state to differ from.
+    history_rows: int = 0
 
     @property
     def ok(self) -> bool:
@@ -280,8 +286,15 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         first_build = True
 
     previous_count = None
+    previous_rows = None
     if not first_build:
-        previous_count = table.scan().to_arrow().num_rows
+        # READ ONCE, used twice: the audit needs the count and the
+        # changelog needs the rows themselves, and reading the
+        # publication twice would let them disagree if a build landed
+        # between (GOLD-4).
+        published_now = table.scan().to_arrow().to_pylist()
+        previous_count = len(published_now)
+        previous_rows = published_now
 
     if first_build:
         # APPEND, not overwrite: the table is empty, and an overwrite
@@ -297,6 +310,11 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         table = catalog.load_table(identifier)
         _tag_publication(table)
         result.published = True
+        # A FIRST PUBLICATION HAS NO HISTORY, and writing every row as
+        # an INSERT would claim one that did not happen. Called anyway,
+        # so the decision lives in one place (gold_history).
+        result.history_rows = _record_history(catalog, object_type, type_def,
+                                               previous_rows, rows)
         return result
 
     table.manage_snapshots().create_branch(
@@ -316,7 +334,36 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     audited = table.snapshot_by_name(AUDIT_BRANCH).snapshot_id
     _publish(table, audited)
     result.published = True
+    # AFTER THE PUBLICATION, never before: history describes what was
+    # published, and a changelog entry for a build that was refused
+    # would be a record of something that did not happen.
+    result.history_rows = _record_history(catalog, object_type, type_def,
+                                           previous_rows, rows)
     return result
+
+
+def _record_history(catalog, object_type: str, type_def: dict,
+                     previous_rows: "list[dict] | None", rows: list[dict]) -> int:
+    """What changed since the last publication, appended. 0 if nothing.
+
+    NEVER RAISES INTO A PUBLICATION. Gold is published; failing to
+    describe the change afterwards must not undo that, any more than
+    failing to write a notification turns a successful sync into a
+    failed one. The failure is logged and the count is zero.
+    """
+    from core.mirror.gold_history import record_publication
+
+    table = catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
+    snapshot = table.current_snapshot()
+    published_at = datetime.fromtimestamp(snapshot.timestamp_ms / 1000, tz=UTC).isoformat()
+    try:
+        return record_publication(
+            catalog, object_type, type_def["id_field"], previous_rows, rows,
+            published_at, snapshot.snapshot_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - reported, never raised into the publish
+        logger.warning(f"gold.{object_type} published, but its history was not recorded: {exc}")
+        return 0
 
 
 def _publish(table, audited_snapshot: int) -> None:

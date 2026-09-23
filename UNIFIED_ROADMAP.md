@@ -350,6 +350,14 @@ resolution, so gold for it is a straight conform.
           client behind the existing LLMAdapter protocol -- which makes
           the engine a per-deployment choice: Ollama for a laptop or a
           small team, vLLM where concurrency is real.
+  GOLD-4. ~~HISTORY~~ DONE, patch 373: every publication diffed
+          against the last and appended to gold_history.<Type>, keyed
+          by the object's id. A first publication records nothing; a
+          suspected partial read records nothing; a failing changelog
+          never breaks a publication. AND NO DUCKDB, though D5 accepted
+          one: measured before adding it, the pure-Python diff already
+          in the tree takes 377 ms for 200,000 rows against DuckDB's
+          76 -- irrelevant beside a sync that takes seconds.
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.
