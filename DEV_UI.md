@@ -1190,4 +1190,82 @@ quarantined half the rows.
      approvals: how many fired, how many were acted on, how many
      recurred. An alert nobody acts on is a bug in the rule, and
      without the count nobody ever finds out.
+## 16.6 How fresh an object should be -- decided from precedent
+
+The owner asked for the numbers and left the choice to precedent. What
+follows is therefore a decision, with the reasoning kept so it can be
+argued with later.
+
+### The rule everyone converges on
+
+FRESHNESS IS DERIVED FROM THE DECISION THE DATA FEEDS, not from what
+the pipeline can manage -- "a freshness number without a threshold is
+trivia" -- and the published tiers are by consequence: HOURS for
+things feeding live action, DAILY for dashboards and reporting, WEEKLY
+for cohort analyses and anything read monthly.
+
+TWO WINDOWS, NOT ONE. Dagster's policy declares a fail_window and a
+shorter warn_window -- 24 hours and 12 in their example -- and the
+wider practice agrees: "it is more practical to set two tiers rather
+than a single threshold", warning first, then blocking or explicitly
+propagating the stale state.
+
+AND ANCHOR TO THE CADENCE, not to a number from nowhere. dbt declares
+warn_after and error_after against a source's expected refresh;
+Dagster's cron policies declare the schedule the asset is meant to
+keep. Datadog's example for a critical table is 6 hours to alert, 4 to
+warn -- a tight pair, for a table that loads hourly.
+
+### What is specific to Elysium, and narrows the question
+
+  - YOUR OWN WRITES ARE NEVER STALE. The overlay shows applied
+    changes immediately, whatever the sync did. Freshness therefore
+    governs only changes made in the SOURCE systems by other people or
+    other software -- a narrower question than "how fresh is my data".
+  - TWO CLOCKS, AND THE USER-VISIBLE ONE IS THE PUBLICATION. Silver
+    records when the source was READ; gold records when a publication
+    was MADE. A source read hourly but published daily is a day stale
+    to a reader, and no source-side number catches that.
+  - 25 HOURS ALREADY EXISTS as the mirror's staleness judgement,
+    chosen to catch "the nightly sync did not run" without crying
+    wolf on a weekly table.
+
+### The decision
+
+  1. THE DEPLOYMENT DECLARES ITS EXPECTED SYNC INTERVAL -- one number,
+     default 24 HOURS, since INSTALL.md leaves scheduling to the
+     operator and nightly is what an unattended on-prem deployment
+     does. Everything else is derived from it, so an operator who runs
+     hourly changes ONE number and every threshold follows.
+
+  2. THRESHOLDS ARE MULTIPLES OF THAT INTERVAL, not absolutes:
+         warn  at 1.1 x interval   (26 hours nightly)
+         fail  at 2.1 x interval   (50 hours nightly)
+     WARN IS ONE LATE RUN; FAIL IS TWO CONSECUTIVE MISSES. That keeps
+     the existing 25-hour judgement almost exactly, and it is the
+     honest reading of a daily pipeline: a run that slips by an hour
+     is not an incident, and two missed nights is.
+
+  3. MEASURED FROM THE PUBLICATION, per object type -- the clock a
+     reader actually experiences.
+
+  4. AN OBJECT TYPE MAY DECLARE ITS OWN PAIR, for the handful where
+     being a day behind costs something: warn 2 hours, fail 6, on an
+     hourly sync -- Datadog's ratio for a critical table.
+
+  5. REFERENCE DATA MAY DECLARE ITSELF EXEMPT. A type that genuinely
+     changes quarterly generates nothing but false alarms otherwise,
+     and a channel with false alarms in it is a channel nobody reads
+     (section 16.2).
+
+  6. AND A TARGET TIGHTER THAN THE SYNC INTERVAL IS REFUSED AT LOAD,
+     naming both numbers. A type declaring two hours on a nightly
+     deployment is not ambitious, it is guaranteed to alert forever --
+     which is a configuration error, and Elysium already refuses
+     configuration errors at load rather than discovering them in
+     production.
+
+  7. SHOWN, NOT ONLY ALERTED ON. Every object view carries "published
+     14:22", so staleness is visible before it becomes an alert. The
+     alert fires at the window; the timestamp is always there.
 

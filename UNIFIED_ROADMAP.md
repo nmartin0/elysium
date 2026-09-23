@@ -275,6 +275,17 @@ resolution, so gold for it is a straight conform.
               derivation must be visible or it is magic;
           (5) the scanner, proposing only;
           (6) `classify:` before any of it is exposed in an editor.
+  ALERT-1. FRESHNESS, DECIDED (DEV_UI.md 16.6): the deployment
+          declares one expected sync interval, default 24 hours;
+          thresholds are multiples of it -- warn at 1.1x, fail at 2.1x,
+          which is one late run and two consecutive misses -- measured
+          from the PUBLICATION, which is the clock a reader
+          experiences, not the source read. A type may declare its own
+          pair or declare itself exempt; a target tighter than the sync
+          interval is REFUSED AT LOAD, naming both numbers, since it is
+          guaranteed to alert forever. And the publication time is
+          shown on every object, so staleness is visible before it is
+          an alert.
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.
