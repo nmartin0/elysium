@@ -43,7 +43,9 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.changelog import MAX_DELETED_FRACTION
 from core.mirror.fusion import FUSED_FROM_COLUMN, fuse
+from core.mirror.identity import resolve, rule_for
 from core.mirror.lineage import LINEAGE_COLUMNS
+from core.mirror.survivorship import fuse_entities
 from core.ontology.field_types import arrow_type_for
 from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
@@ -63,6 +65,13 @@ class GoldResult:
     published: bool = False
     problems: list[str] = field(default_factory=list)
     skipped: str | None = None
+    # Identity resolution's own counts (GOLD-6), zero for a type that
+    # declares no rule: entities formed from more than one source,
+    # merges refused by D2, and disagreements recorded rather than
+    # discarded.
+    merged: int = 0
+    refused_merges: int = 0
+    conflicts: int = 0
     # How many changes this publication recorded (GOLD-4). Zero on a
     # first publication, which has no previous state to differ from.
     history_rows: int = 0
@@ -172,7 +181,7 @@ def _arrow(rows: list[dict], type_def: dict) -> pa.Table:
     names += list(LINEAGE_COLUMNS)
     # Present only on a fused type, naming the storages that
     # contributed to each row (GOLD-5).
-    if type_def.get("additional_storage"):
+    if type_def.get("additional_storage") or type_def.get("identity"):
         names.append(FUSED_FROM_COLUMN)
 
     def _type_for(name: str) -> pa.DataType:
@@ -271,7 +280,28 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     gold.
     """
     result = GoldResult(object_type)
-    if type_def.get("additional_storage"):
+    unresolved: list = []
+    identity_rule = rule_for(type_def)
+    if identity_rule is not None:
+        # IDENTITY RESOLUTION (GOLD-6): the sources do not agree on the
+        # object's id, so a declared rule decides who is who, and
+        # survivorship decides which version of each property wins.
+        # A merge refused by D2 leaves its rows unmerged and is
+        # recorded as a conflict rather than silently resolved.
+        if additional_rows is None and type_def.get("additional_storage"):
+            return GoldResult(
+                object_type,
+                skipped="resolves identity across sources, and their rows were not supplied",
+            )
+        resolution = resolve(type_def, {None: silver_rows, **(additional_rows or {})},
+                              identity_rule)
+        fused = fuse_entities(type_def, resolution)
+        rows = fused.rows
+        result.conflicts = len(fused.conflicts)
+        unresolved = fused.conflicts
+        result.merged = resolution.merged_count
+        result.refused_merges = len(resolution.refused)
+    elif type_def.get("additional_storage"):
         # SEVERAL STORAGES, JOINED (GOLD-5). Each storage declares its
         # own id_column and each field names exactly one storage, so
         # this is a join rather than a survivorship contest -- see
@@ -326,6 +356,11 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         table = catalog.load_table(identifier)
         _tag_publication(table)
         result.published = True
+        # THE LOSING VALUES ARE KEPT (GOLD-6). "Deleting losing values
+        # destroys trust": a person asking why the golden record says
+        # Leeds must be able to see that the CRM said Hull and was
+        # outranked, or the answer is an assertion.
+        _write_conflicts(catalog, object_type, unresolved)
         # A FIRST PUBLICATION HAS NO HISTORY, and writing every row as
         # an INSERT would claim one that did not happen. Called anyway,
         # so the decision lives in one place (gold_history).
@@ -350,12 +385,68 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     audited = table.snapshot_by_name(AUDIT_BRANCH).snapshot_id
     _publish(table, audited)
     result.published = True
+    # THE LOSING VALUES ARE KEPT (GOLD-6). "Deleting losing values
+    # destroys trust": a person asking why the golden record says
+    # Leeds must be able to see that the CRM said Hull and was
+    # outranked, or the answer is an assertion.
+    _write_conflicts(catalog, object_type, unresolved)
     # AFTER THE PUBLICATION, never before: history describes what was
     # published, and a changelog entry for a build that was refused
     # would be a record of something that did not happen.
     result.history_rows = _record_history(catalog, object_type, type_def,
                                            previous_rows, rows)
     return result
+
+
+CONFLICT_NAMESPACE = "gold_conflicts"
+
+CONFLICT_SCHEMA = pa.schema([
+    ("entity_id", pa.string()),
+    ("kind", pa.string()),
+    ("field", pa.string()),
+    ("chosen", pa.string()),
+    ("chosen_source", pa.string()),
+    ("losing", pa.string()),
+    ("losing_source", pa.string()),
+    ("recorded_at", pa.string()),
+])
+
+
+def _write_conflicts(catalog, object_type: str, conflicts: list) -> None:
+    """Every disagreement identity resolution could not make disappear.
+
+    APPENDED, like the changelog and for the same reason: a record that
+    can be rewritten is not a record. And it holds BOTH kinds -- a
+    property whose sources disagreed, and a merge D2 refused -- because
+    an operator asking "what did identity resolution decline to do"
+    should find one place rather than two.
+    """
+    if not conflicts:
+        return
+    recorded_at = datetime.now(UTC).isoformat()
+    rows = [
+        {
+            "entity_id": conflict.entity_id,
+            "kind": conflict.kind,
+            "field": conflict.field_name,
+            "chosen": None if conflict.chosen is None else str(conflict.chosen),
+            "chosen_source": conflict.chosen_source,
+            "losing": None if conflict.losing is None else str(conflict.losing),
+            "losing_source": conflict.losing_source,
+            "recorded_at": recorded_at,
+        }
+        for conflict in conflicts
+    ]
+    identifier = f"{CONFLICT_NAMESPACE}.{object_type}"
+    try:
+        catalog.create_namespace(CONFLICT_NAMESPACE)
+    except Exception:  # noqa: BLE001 - already there is the normal case
+        pass
+    try:
+        table = catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError):
+        table = catalog.create_table(identifier, schema=CONFLICT_SCHEMA)
+    table.append(pa.Table.from_pylist(rows, schema=CONFLICT_SCHEMA))
 
 
 def _record_history(catalog, object_type: str, type_def: dict,
