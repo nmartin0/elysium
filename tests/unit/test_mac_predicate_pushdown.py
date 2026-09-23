@@ -1,4 +1,9 @@
 """
+READS COME FROM GOLD (GOLD-8), so the reader being observed here is
+the gold connector rather than the mirror adapter. The pushdown
+machinery is the same -- it is shared, in iceberg_reader.py -- and
+what this file tests is which CONDITIONS reach it.
+
 The MAC filter reaches the query where the ontology lets it.
 
 THE CANONICAL NAME IS PREDICATE PUSHDOWN, and what cannot be pushed is
@@ -25,28 +30,31 @@ from unittest.mock import patch
 import pytest
 
 from core.intermediate_layer.auth import UserRecord
-from core.mirror.mirror_adapter import MirrorReadAdapter
+from core.mirror.gold_connector import GoldConnector
 
 
 @pytest.fixture
-def generation(tmp_path, private_deployment):
+def generation(synced_deployment):
+    """A SYNCED deployment, because reads come from gold (GOLD-8).
+
+    It used to build one over a fresh data directory and read the
+    SOURCE adapters directly -- which is the path this change
+    removed, so there is nothing to read until a sync has run."""
     from core.deployment_loader import build_generation
 
-    paths = private_deployment  # E-08: never the developer's deployment
-    return build_generation(
-        paths.config_dir, data_dir=tmp_path, log_dir=tmp_path / "log",
-    )
+    paths = synced_deployment  # E-08: never the developer's deployment
+    return build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
 
 
 def _conditions_reaching_the_adapter(generation, object_type, user):
     seen = []
-    real = MirrorReadAdapter.find_ids
+    real = GoldConnector.find_ids
 
     def spy(self, name, conditions, type_config, limit=None):
         seen.append([(c.field, c.operator, c.value) for c in conditions])
         return real(self, name, conditions, type_config, limit)
 
-    with patch.object(MirrorReadAdapter, "find_ids", spy):
+    with patch.object(GoldConnector, "find_ids", spy):
         generation.mediator.search_object(user, object_type, [])
     return seen[0] if seen else []
 

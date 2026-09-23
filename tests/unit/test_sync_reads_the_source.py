@@ -37,7 +37,12 @@ def test_the_sync_and_the_mediator_read_different_things(private_deployment):
     serving = {type(a).__name__ for a in mediator.adapters.values()}
     filling = {type(a).__name__ for a in build_live_read_adapters(paths).values()}
 
-    assert serving == {"MirrorReadAdapter"}
+    # SINCE GOLD-8 the serving mediator holds ONE reader, the gold
+    # connector: reads come from published gold and from nothing else,
+    # so there is no source adapter in there to read by accident. The
+    # property this file exists for is unchanged and stronger -- what
+    # the SYNC holds must not be what SERVING holds.
+    assert serving == {"GoldConnector"}
     assert filling == {"SQLiteReadAdapter"}
 
 

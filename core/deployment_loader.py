@@ -159,9 +159,6 @@ class DeploymentConfig:
                                    # holds history no source can return. See ELT_ROADMAP.md.
     identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
                                    # approval is not configurable.
-    read_from_gold: bool          # GOLD-3: serve reads from published GOLD, per object
-                                   # type, falling back to the mirror for any type gold
-                                   # does not build. Off by default while it is proven.
     read_from_mirror: bool        # Phase 4 of the read-only mirror architecture -- serve
                                    # READS from the local Iceberg mirror rather than querying
                                    # the customer's own databases live. Writes are unaffected
@@ -520,11 +517,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.
             read_from_mirror=(config.get("mirror") or {}).get("read_from_mirror", True),
-            # GOLD-3, AND OFF BY DEFAULT WHILE IT IS PROVEN. Reads
-            # come from published GOLD rather than from silver, per
-            # object type, with the source view kept for the sync and
-            # for writes. Off means today's behaviour exactly.
-            read_from_gold=(config.get("mirror") or {}).get("read_from_gold", False),
+
             # GOLD-6: may the pipeline PROPOSE merges it inferred?
             # Defaults to FALSE, as FUSION_AND_IDENTITY.md requires --
             # and note the other half is NOT here: whether a proposal
@@ -942,7 +935,8 @@ def _mirror_snapshot_ids(mediator: DataMediator) -> Mapping[str, int]:
 
 
 def build_generation(
-    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None
+    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None,
+    *, serving: bool = False,
 ) -> DeploymentGeneration:
     """Builds one complete, immutable generation from the files on disk.
 
@@ -962,9 +956,12 @@ def build_generation(
     from core.agent.agentic_loop import AgentLoop
     from core.ontology.write_mediator import WriteMediator
 
-    config, mediator, write_adapters = load_deployment_bundle(config_dir, data_dir, log_dir)
+    config, mediator, write_adapters = load_deployment_bundle(config_dir, data_dir, log_dir, serving=serving)
     write_mediator = WriteMediator(
         mediator, write_adapters, config.roles, config.action_types, config.generation,
+        # WRITES DESCRIBE THE SOURCE (D3), whatever reads are bound to.
+        source_schema=config.schema,
+        source_silo_for_type=_build_silo_for_type(config.schema),
     )
     return DeploymentGeneration(
         generation=config.generation,
@@ -1052,7 +1049,8 @@ def _with_effective_roles(config: DeploymentConfig, data_dir: Path) -> Deploymen
 
 
 def load_deployment_bundle(
-    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None
+    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None,
+    *, serving: bool = True,
 ) -> tuple[DeploymentConfig, DataMediator, dict[str, ExternalWriteAdapter]]:
     # Loads config, builds one adapter instance per declared silo (see
     # _ADAPTER_REGISTRY above), and wires them into a DataMediator that
@@ -1155,7 +1153,7 @@ def load_deployment_bundle(
     # live deployment, which disables the overlay entirely.
     mirror_synced_at = _mirror_last_synced_at(config, data_dir) if config.read_from_mirror else None
     read_schema, adapters, silo_for_type = _bind_reads_to_gold(
-        config, adapters, silo_for_type, data_dir,
+        config, adapters, silo_for_type, data_dir, serving=serving,
     )
     mediator = DataMediator(read_schema, adapters, silo_for_type, config.roles,
                              write_log=write_log, audit_log=audit_log,
@@ -1184,7 +1182,8 @@ def _gold_published_at(mediator) -> Mapping[str, str]:
 
 
 def _bind_reads_to_gold(config: DeploymentConfig, adapters: dict,
-                         silo_for_type: dict, data_dir: Path) -> tuple[dict, dict, dict]:
+                         silo_for_type: dict, data_dir: Path,
+                         serving: bool = True) -> tuple[dict, dict, dict]:
     """(the schema reads use, the adapters, the type->silo map).
 
     PER OBJECT TYPE, not all-or-nothing. Gold does not build every
@@ -1201,7 +1200,7 @@ def _bind_reads_to_gold(config: DeploymentConfig, adapters: dict,
     OFF BY DEFAULT while this is proven. Off is today's behaviour
     exactly: the same schema, the same adapters, the same map.
     """
-    if not (config.read_from_gold and config.read_from_mirror):
+    if not config.read_from_mirror:
         return config.schema, adapters, silo_for_type
 
     from core.mirror.gold import published_snapshot_ids
@@ -1209,8 +1208,23 @@ def _bind_reads_to_gold(config: DeploymentConfig, adapters: dict,
     from core.ontology.gold_view import GOLD_NAMESPACE, build_gold_view
 
     view, excluded = build_gold_view(config.schema)
-    for object_type, why in sorted(excluded.items()):
-        logger.info(f"{object_type} reads from the source: {why}")
+    if not view:
+        # Nothing gold can build at all, which for a non-serving
+        # caller (the sync) means carry on with the source schema it
+        # is about to build gold FROM.
+        return config.schema, adapters, silo_for_type
+
+    if excluded and serving:
+        # A TYPE GOLD CANNOT BUILD CANNOT BE SERVED. Silver is not a
+        # lesser gold: it has not been conformed to the ontology, its
+        # links are not re-keyed, and its columns are the source's
+        # words. Serving it would answer the same question with worse
+        # data and say nothing about the difference.
+        named = "; ".join(f"{object_type} ({why})" for object_type, why in sorted(excluded.items()))
+        raise ValueError(
+            f"gold cannot be built for: {named}. Every object type must be servable "
+            f"from gold. Fix the declaration, or remove the type."
+        )
 
     # The same catalog the mirror adapters read, named identically:
     # gold lives in its own namespace inside it, not in a second lake.
@@ -1226,17 +1240,40 @@ def _bind_reads_to_gold(config: DeploymentConfig, adapters: dict,
     # ground under it (D3's second half).
     pinned = published_snapshot_ids(catalog, view)
     unpublished = sorted(set(view) - set(pinned))
-    for object_type in unpublished:
-        logger.info(f"{object_type} reads from the source: gold has not been published yet")
-        del view[object_type]
-
-    if not view:
-        logger.warning("read_from_gold is on, but no object type has published gold yet")
-        return config.schema, adapters, silo_for_type
+    # AN UNPUBLISHED TYPE IS STILL BOUND TO GOLD. There is no fallback
+    # to silver anywhere: a read of a type gold has not published
+    # raises GoldPublicationMissing, which names the type and says to
+    # run a sync. Binding it to the source instead would answer the
+    # question with worse data and say nothing about the difference.
+    if unpublished and serving:
+        # NOT YET PUBLISHED IS NOT A REASON TO SERVE SOMETHING ELSE,
+        # and it is not a reason to refuse to START either: a
+        # deployment's first sync happens after its first boot, and an
+        # API that cannot start until gold exists cannot tell anyone
+        # why. So this is LOUD AND NOT FATAL -- and a read of one of
+        # these types still raises GoldPublicationMissing, naming the
+        # type and the command. Nothing serves silver in the meantime,
+        # because there is no path that could.
+        logger.error(
+            f"gold has not been published for: {', '.join(unpublished)}. "
+            f"Reads of those types will fail until `python -m scripts.run_sync` runs."
+        )
 
     read_schema = {**config.schema, **view}
-    bound_adapters = {**adapters, GOLD_NAMESPACE: GoldConnector(catalog, pinned)}
     bound_silos = {**silo_for_type, **{object_type: GOLD_NAMESPACE for object_type in view}}
+    connector = GoldConnector(catalog, pinned)
+    if set(bound_silos.values()) == {GOLD_NAMESPACE}:
+        # GOLD ONLY, STRUCTURALLY (GOLD-8). When every type is bound to
+        # gold, the read mediator holds ONE adapter: the connector.
+        # Keeping the source adapters around "just in case" is how a
+        # fallback comes back -- there would be something for a future
+        # line of code to find. The sync keeps its own adapters, which
+        # is where source reads belong.
+        bound_adapters = {GOLD_NAMESPACE: connector}
+    else:
+        # A NON-SERVING caller (the sync) may have types gold cannot
+        # build yet; those keep their source adapters until it can.
+        bound_adapters = {**adapters, GOLD_NAMESPACE: connector}
     logger.info(
         f"reading {len(view)} object type(s) from published gold: {', '.join(sorted(view))}"
     )

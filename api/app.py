@@ -294,7 +294,12 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # failure as a workaround, arriving from the documentation side.)
     generation = build_generation(
         runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
-    )
+    ,
+        # SERVING (GOLD-8): this process answers reads, so it requires
+        # published gold for every object type and refuses to start
+        # without it. build_generation() itself does not, because the
+        # SYNC builds generations too -- and it is what publishes gold.
+        serving=True,)
     # THE ONLY REFERENCE. The five configuration-derived objects are
     # reachable through this and nowhere else -- there is deliberately
     # no app.state.config, no app.state.mediator and so on.

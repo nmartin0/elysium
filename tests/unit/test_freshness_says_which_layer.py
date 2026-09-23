@@ -14,10 +14,10 @@ window -- the exact bug patch 335 closed -- so the route carries BOTH,
 each meaning its own thing.
 """
 
+import dataclasses
 import shutil
 
 import pytest
-import yaml
 
 from core.deployment_loader import RuntimePaths, build_generation
 from scripts.run_sync import run_sync
@@ -25,14 +25,14 @@ from scripts.run_sync import run_sync
 
 @pytest.fixture
 def deployment(tmp_path, synced_deployment):
-    def build(read_from_gold: bool):
-        config_dir = tmp_path / f"etc-{read_from_gold}"
+    """A synced deployment. THE SWITCH IS GONE (GOLD-8): reads come
+    from gold and from nothing else, so there is no longer a
+    mirror-reading variant to compare against."""
+    def build():
+        config_dir = tmp_path / "etc"
         shutil.copytree(synced_deployment.config_dir, config_dir)
-        config = yaml.safe_load((config_dir / "config.yaml").read_text())
-        config["mirror"] = {**(config.get("mirror") or {}), "read_from_gold": read_from_gold}
-        (config_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
-        data_dir = tmp_path / f"data-{read_from_gold}"
-        log_dir = tmp_path / f"log-{read_from_gold}"
+        data_dir = tmp_path / "data"
+        log_dir = tmp_path / "log"
         shutil.copytree(synced_deployment.data_dir, data_dir)
         log_dir.mkdir()
         run_sync(RuntimePaths(config_dir=config_dir, data_dir=data_dir, log_dir=log_dir))
@@ -42,19 +42,20 @@ def deployment(tmp_path, synced_deployment):
 
 class TestWhatTheGenerationKnows:
     def test_reading_gold_records_when_each_type_was_published(self, deployment):
-        generation = deployment(read_from_gold=True)
+        generation = deployment()
 
         assert sorted(generation.gold_published_at) == ["Customer", "Transaction"]
 
-    def test_reading_the_mirror_records_nothing_of_the_kind(self, deployment):
-        """Empty is what tells a caller it is NOT looking at gold."""
-        generation = deployment(read_from_gold=False)
+    def test_every_type_reports_a_publication(self, deployment):
+        """There is no mirror-reading variant left to report nothing:
+        a type without a publication cannot be served at all."""
+        generation = deployment()
 
-        assert dict(generation.gold_published_at) == {}
+        assert sorted(generation.gold_published_at) == ["Customer", "Transaction"]
 
     def test_the_publication_is_LATER_than_the_source_read(self, deployment):
         """The whole reason the two are reported separately."""
-        generation = deployment(read_from_gold=True)
+        generation = deployment()
 
         assert all(published > generation.mediator.mirror_synced_at
                    for published in generation.gold_published_at.values())
@@ -63,12 +64,11 @@ class TestWhatTheGenerationKnows:
         """F-29's window. If this ever became the publication time,
         writes applied between the read and the publication would be in
         neither the mirror nor the overlay."""
-        from_mirror = deployment(read_from_gold=False)
-        from_gold = deployment(read_from_gold=True)
+        generation = deployment()
 
-        assert from_gold.mediator.mirror_synced_at is not None
-        assert from_gold.mediator.mirror_synced_at <= min(from_gold.gold_published_at.values())
-        assert from_mirror.mediator.mirror_synced_at is not None
+        assert generation.mediator.mirror_synced_at is not None
+        assert generation.mediator.mirror_synced_at <= min(
+            generation.gold_published_at.values())
 
 
 class TestWhatTheRouteSays:
@@ -85,17 +85,23 @@ class TestWhatTheRouteSays:
         return {"source": "mirror", "last_synced_at": mediator.mirror_synced_at}
 
     def test_it_names_gold_when_gold_is_what_is_read(self, deployment):
-        answer = self._freshness(deployment(read_from_gold=True))
+        answer = self._freshness(deployment())
 
         assert answer["source"] == "gold" and answer["published_at"]
 
-    def test_it_still_names_the_mirror_otherwise(self, deployment):
-        answer = self._freshness(deployment(read_from_gold=False))
+    def test_it_names_the_mirror_only_when_nothing_is_published(self, deployment):
+        """The branch is kept because a deployment that has not synced
+        still answers /api/data-freshness -- it just cannot serve
+        reads."""
+        generation = deployment()
+        stripped = dataclasses.replace(generation, gold_published_at={})
+
+        answer = self._freshness(stripped)
 
         assert answer["source"] == "mirror" and "published_at" not in answer
 
     def test_and_carries_BOTH_clocks_when_reading_gold(self, deployment):
-        answer = self._freshness(deployment(read_from_gold=True))
+        answer = self._freshness(deployment())
 
         assert answer["last_synced_at"] is not None
         assert min(answer["published_at"].values()) >= answer["last_synced_at"]

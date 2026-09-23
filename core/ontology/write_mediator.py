@@ -350,6 +350,7 @@ class WriteMediator:
     def __init__(
         self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict,
         action_types: dict, generation: int,
+        source_schema: dict | None = None, source_silo_for_type: dict | None = None,
     ):
         # action_types is required, not optional -- a WriteMediator's
         # only real capability is propose_action(), which is useless
@@ -412,8 +413,16 @@ class WriteMediator:
         # inheritance from SQLiteReadAdapter). The cast is safe
         # specifically because this instance's own adapters are never
         # read through this constructor's own, narrower, static type.
+        # THE SOURCE SCHEMA, NOT THE READ MEDIATOR'S (GOLD-8). Reads
+        # come from gold, whose storage block says `gold.<Type>`; a
+        # WRITE goes to the customer's database (decision D3), so it
+        # needs the schema that describes THAT. Inheriting the read
+        # mediator's schema made every write look for an adapter called
+        # "gold" -- caught by six action tests the moment reads moved.
         self._adapter_mediator = DataMediator(
-            mediator.schema, cast("dict[str, ExternalReadAdapter]", write_adapters), mediator.silo_for_type, roles,
+            source_schema or mediator.schema,
+            cast("dict[str, ExternalReadAdapter]", write_adapters),
+            source_silo_for_type or mediator.silo_for_type, roles,
             write_log=mediator.write_log, audit_log=mediator.audit_log,
         )
         # write_log is NOT taken as a separate parameter and stored

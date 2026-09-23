@@ -405,8 +405,11 @@ def run_sync(runtime_paths=None) -> int:
         # The read adapters specifically -- load_deployment_bundle()'s
         # own third return value is the WRITE set, deliberately ignored
         # here. A sync only ever reads from the source.
+        # NOT SERVING (GOLD-8): this process is the one that PUBLISHES
+    # gold, so it must be able to start when gold does not exist yet.
+    # The refusal belongs to serving reads, not to loading a bundle.
         config, mediator, _write_adapters = load_deployment_bundle(
-            runtime_paths.config_dir, runtime_paths.data_dir
+            runtime_paths.config_dir, runtime_paths.data_dir, serving=False,
         )
         targets = resolve_sync_targets({"object_types": config.schema})
         # THE WRITE LOG IS PASSED, and without it the drift policy

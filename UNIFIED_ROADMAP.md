@@ -196,6 +196,24 @@ resolution, so gold for it is a straight conform.
           since rows held back are absent by design and absence reads
           as loss; Admin keeping the silo panel (it is about SOURCES)
           and gaining the publication beside it.
+  GOLD-8. ~~GOLD IS THE ONLY READ PATH~~ DONE, patch 385 (the owner,
+          September 23: "there's no reason anymore why Elysium
+          shouldn't be reading from the pristine gold layer, as
+          anything else is inferior data"). The read_from_gold switch
+          is gone; a mirrored deployment binds every type to published
+          gold, the read mediator holds ONE reader -- the connector --
+          and there is no fallback to silver anywhere. A type gold
+          cannot build refuses at startup; a type not yet PUBLISHED is
+          logged loudly and its reads raise, because an API that cannot
+          start until gold exists cannot tell anyone why. Three bugs
+          surfaced: the sync loads the same bundle and is what
+          publishes gold (so `serving` is now a parameter), the WRITE
+          mediator was inheriting the read schema and looking for an
+          adapter called "gold", and constructing the app is starting
+          the server in this codebase.
+          STILL OPEN: `read_from_mirror: false` remains as a documented
+          fallback that bypasses the lake entirely. Removing it is the
+          next patch.
   UI-LIVE. LIVE UPDATES, no manual refresh and no page reload (the
           owner, September 22; design in
           LIVE_UPDATES_AND_PIPELINE_BUILDER.md). MEASURED TODAY: one

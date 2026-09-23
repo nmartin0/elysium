@@ -18,16 +18,42 @@ from pyiceberg.expressions import And, EqualTo, In, NotEqualTo, NotIn
 
 import core.mirror.iceberg_reader as reader_module
 import core.mirror.mirror_adapter as mirror_module
-from core.deployment_loader import build_generation
 from core.mirror.snapshot_cache import SnapshotCache
 from scripts.run_sync import run_sync
 
 
+def _pinned_adapter(paths):
+    """A mirror adapter over a deployment's lake, pinned to its current
+    snapshots -- exactly as core/deployment_loader.py pins them."""
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    from core.mirror.mirror_adapter import MirrorReadAdapter
+
+    mirror_dir = paths.data_dir / "mirror"
+    catalog = SqlCatalog(
+        "elysium_mirror",
+        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
+        warehouse=f"file://{mirror_dir / 'warehouse'}",
+    )
+    pinned = {}
+    for identifier in catalog.list_tables("primary_sql"):
+        snapshot = catalog.load_table(identifier).current_snapshot()
+        if snapshot is not None:
+            pinned[identifier[-1]] = snapshot.snapshot_id
+    return MirrorReadAdapter(catalog, "primary_sql", snapshot_ids=pinned)
+
+
 @pytest.fixture
 def mirror(synced_deployment):
-    generation = build_generation(synced_deployment.config_dir, synced_deployment.data_dir,
-                                  synced_deployment.log_dir)
-    return generation.mediator.adapters["primary_sql"], synced_deployment
+    """The mirror adapter itself, built over the deployment's lake.
+
+    IT USED TO COME FROM THE READ MEDIATOR, which no longer holds one:
+    reads are served by the gold connector alone (GOLD-8), and keeping
+    the source adapters there "just in case" is how a fallback comes
+    back. What this file tests is the ADAPTER's cache, so it builds
+    one.
+    """
+    return _pinned_adapter(synced_deployment), synced_deployment
 
 
 def _direct(adapter, table_name, selected, row_filter=None, limit=None):
@@ -113,7 +139,10 @@ class TestNeverStale:
             conn.execute("UPDATE customers SET name = 'Renamed' WHERE customer_id = 'cust_001'")
         with contextlib.redirect_stdout(io.StringIO()):
             assert run_sync(paths) == 0
-        new_adapter = build_generation(paths.config_dir, paths.data_dir, paths.log_dir).mediator.adapters["primary_sql"]
+        # A SECOND ADAPTER over the same lake, pinned to what the sync
+        # just published -- which is what a new generation used to hand
+        # back before reads moved to gold (GOLD-8).
+        new_adapter = _pinned_adapter(paths)
 
         again = old_adapter._reader._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
         fresh = new_adapter._reader._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
