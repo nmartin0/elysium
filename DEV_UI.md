@@ -1068,4 +1068,126 @@ the gate is not imitated everywhere else. A confirmation that is
 everywhere is a confirmation nowhere -- which is the same conclusion
 section 10 reached from the error-prevention literature, arrived at
 from a second direction.
+---
+
+# 16. Alerting on the pipeline
+
+The same question as section 15, pointed at the data: silos going
+offline, cleaning and merging going wrong, a stage falling behind.
+Researched September 22 -- and AUDITED FIRST, because Elysium already
+has more of this than the discussion assumed.
+
+## 16.1 What already exists (audited, not remembered)
+
+  - A NOTIFICATIONS STORE: notify / for_user / mark_seen /
+    unseen_count, per user.
+  - MIRROR HEALTH ALREADY ALERTS, from core/mirror/health_condition.py
+    and run_sync's _notify_mirror_health, on refused syncs and on
+    tables that have not changed in over a threshold -- freshness and
+    failure, two of the five pillars below.
+  - AND TWO DESIGN DECISIONS IN IT THAT THE RESEARCH ENDORSES:
+      RECIPIENTS COME FROM A GRANT, not a list: "whoever holds
+      manage:deployment can start a sync, so whoever holds it should
+      hear that one is needed". A deployment that adds an
+      administrator changes the recipient list by doing so.
+      REPEATS ARE SUPPRESSED PER RECIPIENT, because "a standing
+      condition is true until somebody fixes it, and a notification
+      per sync is a channel nobody reads by the time it matters" --
+      while a CHANGED summary is news and goes through.
+  - IT NEVER RAISES INTO THE SYNC: failing to notice something must
+    not turn a successful sync into a failed one.
+
+So this section is about extending a working design, not inventing
+one.
+
+## 16.2 The two bodies of precedent
+
+SRE, ON WHAT DESERVES A HUMAN. "Every page should be actionable;
+simply noting 'this paged again' is not an action", and "every page
+response should require intelligence. If a page merely merits a
+robotic response, it shouldn't be a page." The capacity limit is
+stated plainly: a responder "can only react with a sense of urgency a
+few times a day" before fatiguing.
+
+  AND THE THREE-WAY SPLIT, which is the part worth copying exactly:
+  page-worthy alerts go to a person NOW; "important but subcritical"
+  ones go to a TICKET QUEUE; "all other alerts should be retained as
+  informational data for status dashboards". Email alerts specifically
+  "are of very limited value and tend to easily become overrun with
+  noise".
+
+  SYMPTOMS, NOT CAUSES: "include cause-based information in
+  symptom-based pages or on dashboards, but avoid alerting directly on
+  causes", because a rule further up the stack catches more distinct
+  problems at once.
+
+  AND ONE ALERT PER INCIDENT: "noisy alerts that systematically
+  generate more than one alert per incident should be tweaked to
+  approach a 1:1 alert/incident ratio".
+
+DATA OBSERVABILITY, ON WHAT TO WATCH. The five pillars, standard since
+2020: FRESHNESS (is data arriving on schedule), VOLUME (are row counts
+within expected ranges), SCHEMA (have columns been added, removed or
+changed), DISTRIBUTION (are value patterns stable), LINEAGE (which
+downstream consumers are affected when something breaks).
+
+## 16.3 The symptom, for Elysium, is not what it first looks like
+
+A silo going offline is a CAUSE. The symptom is that a person reading
+an object sees data that is stale, incomplete, or absent -- and
+several different causes produce it: the source is unreachable, the
+sync refused, the audit failed so gold did not publish, a rule
+quarantined half the rows.
+
+  SO THE PAGE-WORTHY RULE IS ABOUT THE SERVED DATA: an object type is
+  being served from a publication older than its declared tolerance,
+  or is not being served at all. One rule, many causes caught -- and
+  the cause named in the alert body, which is exactly the shape the
+  SRE guidance describes.
+
+## 16.4 The five pillars, mapped to what Elysium can already compute
+
+  FRESHNESS      publication age per object type against a declared
+                 tolerance; source read age per silo. Partly built
+                 (STALE_AFTER on mirror tables).
+  VOLUME         row count per publication against the last -- and
+                 gold's audit ALREADY REFUSES a publication that loses
+                 more than half its rows. The alert is the refusal,
+                 which is a symptom with a cause attached.
+  SCHEMA         drift verdicts already exist and already refuse.
+  DISTRIBUTION   the quarantine RATE per rule: 0.1% is a data problem,
+                 40% is a pipeline problem (the owner's D4 decision).
+                 This is the pillar Elysium is furthest from and the
+                 one that catches "cleaning or merging going wrong".
+  LINEAGE        which object types a failing source feeds -- which
+                 the lineage columns and the gold conform now make
+                 answerable, and which turns "primary_sql is down"
+                 into "Customer and Transaction are affected".
+
+## 16.5 The rules for Elysium's alerting
+
+  1. THREE TIERS, as the precedent splits them: NOW (served data is
+     wrong or absent), QUEUE (subcritical -- a quarantine rate moved,
+     a source was slow, a publication was refused but the last one
+     still serves), DASHBOARD (everything else, retained and visible,
+     never pushed).
+  2. ONE ALERT PER INCIDENT. A sync that fails for eight tables
+     because one silo is down is ONE alert naming the silo and the
+     eight, never eight alerts.
+  3. SUPPRESS THE STANDING CONDITION, ANNOUNCE THE CHANGE -- already
+     the behaviour of the mirror-health notifier, and the rule the
+     rest should follow.
+  4. RECIPIENTS FROM GRANTS, never from a configured list -- already
+     the behaviour, and it means an alert cannot outlive the
+     administrator it was addressed to.
+  5. EVERY ALERT IS A DOOR into the pipeline canvas, landing on the
+     stage that failed, with its status and its findings (section 12's
+     rule, and what the canvas is for).
+  6. NO EMAIL BY DEFAULT. The precedent is blunt that email alerting
+     becomes noise; in-product first, with email as a declared
+     escalation for the NOW tier only.
+  7. AND MEASURE THE ALERTS THEMSELVES, as section 15 measures
+     approvals: how many fired, how many were acted on, how many
+     recurred. An alert nobody acts on is a bug in the rule, and
+     without the count nobody ever finds out.
 
