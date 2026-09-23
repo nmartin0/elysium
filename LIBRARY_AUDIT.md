@@ -133,3 +133,143 @@ there a library" but "does the library do the part we would get
 WRONG": statistics, string distance, graph algorithms, date handling,
 SQL generation -- yes. Diffing two lists of dicts, summing a column we
 already hold in memory -- no.
+
+---
+
+# Part 4. When to take a dependency -- the framework, read properly
+
+Added September 23, after the owner observed that the criteria in
+Parts 1-3 were assembled on the spot. They were. The canonical
+treatment is Russ Cox's "Our Software Dependency Problem" (2019,
+later in CACM as "Surviving Software Dependencies"), and reading it
+CORRECTS TWO OF MY CRITERIA AND ADDS THREE I DID NOT HAVE.
+
+## 4.1 The cost model, which decides how much care is due
+
+"The cost of adopting a bad dependency can be viewed as the sum, over
+all possible bad outcomes, of the cost of each bad outcome multiplied
+by its probability of happening." And the context sets the cost: a
+hobby project's is near zero, while for "production software that must
+be maintained for years ... servers may go down, sensitive data may be
+divulged, customers may be harmed".
+
+ELYSIUM IS THE SECOND KIND, and holds the customer's data under a
+mandatory access control model. So the bar is not "is this library
+popular" -- it is inspection, and the inspection is specified.
+
+## 4.2 The inspection, which I was doing by vibes
+
+Cox's checklist, and it is the thing to actually run before adding
+anything:
+
+  DESIGN        is the documentation clear? "If the authors can
+                explain the package's API and its design well to you,
+                the user ... that increases the likelihood they have
+                explained the implementation well to the computer."
+  CODE QUALITY  read some. "Does it look like code you'd want to
+                debug? You may need to."
+  TESTING       "Does the code have tests? Can you run them? Do they
+                pass?" -- and if not, "that's a serious red flag".
+  DEBUGGING     the issue tracker: many open bugs, long open, is bad;
+                bugs "rarely found and promptly fixed" is great.
+  MAINTENANCE   how long, how many people, still active.
+  USAGE         many dependants means bugs found by others first, and
+                is "a hedge against the question of continued
+                maintenance".
+  SECURITY      "Will you be processing untrusted inputs with the
+                package?" and its NVD history.
+  LICENSING     acceptable, and actually present.
+  DEPENDENCIES  "Flaws in indirect dependencies are just as bad ...
+                A package with many dependencies incurs additional
+                inspection work."
+
+## 4.3 What I got WRONG in Parts 1-3
+
+**I used INSTALL SIZE as the headline argument.** 186 MB was the first
+number I reported about Splink. Size appears NOWHERE in Cox's risk
+framework, and rightly: it is a distribution constraint, not a risk.
+It matters here only because some deployments are air-gapped, which
+argues for an optional extra -- the conclusion was right, the stated
+reason was not. The reasons that should have led are maintenance (an
+active government team), licence (MIT), tests, and the seven
+transitive packages each needing their own inspection.
+
+**I dismissed recordlinkage for being stale**, on "hasn't been updated
+since July 2023". Cox answers this directly: "some code really is
+'done'", citing a package that "may never need to be modified again".
+Staleness is a question -- is this finished, or abandoned? -- not a
+verdict. Answering it means looking at the issue tracker and the
+problem's nature, which I did not do.
+
+## 4.4 What I did not have at all
+
+**ABSTRACT THE DEPENDENCY.** "Define an interface of your own, along
+with a thin wrapper implementing that interface using the dependency
+... the wrapper should include only what your project needs."
+GOLD-6 already chose a matcher interface, but as an architectural
+preference rather than as risk management. It is both: it is what
+makes replacing Splink a change to one file.
+
+**USE THE LIBRARY AS A TEST ORACLE WHEN YOU HAND-WRITE.** Cox's own
+strconv.IsPrint example, and an AWS team's write-up of dropping
+buildkit, do the same thing: keep the library in the TESTS, comparing
+your implementation's output against it, and ship neither the
+dependency nor an unverified reimplementation. This is the missing
+option in every "library or hand-write" argument I have made here,
+and it fits several of them exactly.
+
+**UPGRADE AND WATCH.** Equifax: a patched Struts released March 7,
+breached May 13, 148 million people. "Every day you wait is another
+day that attackers can break in." And watch for indirect dependencies
+creeping in on upgrade -- the event-stream attack hid in a NEW
+transitive package added by a release.
+
+## 4.5 So: the rule for this project
+
+  1. THE DEFAULT IS THE STANDARD LIBRARY, which carries no supply
+     chain at all. statistics.quantiles over a hand-rolled percentile;
+     unicodedata over a normaliser; hashlib over a digest.
+  2. A NEW THIRD-PARTY DEPENDENCY REQUIRES THE INSPECTION in 4.2,
+     written down in the commit that adds it. Not a vibe, a paragraph.
+  3. PREFER A DEPENDENCY WE ALREADY HAVE over a new one, even when the
+     new one is nicer. SQLAlchemy is already here; using it for SQLite
+     adds no supply chain at all.
+  4. WRAP IT behind an interface of ours, including only what we use.
+  5. IF WE ONLY NEED A TINY FRACTION, hand-write it AND TEST IT
+     AGAINST THE LIBRARY -- keeping the library in the test
+     dependencies, not the runtime ones.
+     WITH THE COUNTER-EXAMPLE IN MIND: the objection to "a little
+     copying" is that copies keep bugs alive, the canonical case
+     being binary search overflow. So this applies to code we can
+     fully test, not to subtle algorithms.
+  6. SUBTLE OR ADVERSARIAL DOMAINS ARE NOT OURS TO WRITE: statistics,
+     string distance, graph algorithms, cryptography, date parsing,
+     SQL generation, YAML round-tripping.
+  7. PIN AND WATCH: lock files already do the first; the second means
+     re-reading the inspection on upgrade, and noticing new indirect
+     packages.
+
+## 4.6 Re-scoring Parts 1-3 under this framework
+
+  statistics.quantiles       STILL YES, and stronger: stdlib, no
+                             supply chain, less code.
+  SQLAlchemy for SQLite      STRONGEST OF ALL, and I under-sold it:
+                             it adds NO new dependency, and identifier
+                             quoting is exactly the "subtle domain"
+                             of rule 6.
+  cachetools                 WEAKER THAN I SAID. It is a new runtime
+                             dependency to replace 52 tested lines
+                             that also do something cachetools does
+                             not (refuse an entry too large to cache).
+                             Under rule 5 the better move is to keep
+                             ours and TEST IT against cachetools'
+                             semantics, if we want the assurance.
+  the changelog diff         UNCHANGED: 377 ms measured, and the
+                             pure function has no backend to be
+                             unavailable.
+  Splink                     UNCHANGED CONCLUSION, better reasons:
+                             MIT, actively maintained by a government
+                             team, wrapped behind our interface,
+                             optional because of air-gapped
+                             distribution -- not because it is large.
+

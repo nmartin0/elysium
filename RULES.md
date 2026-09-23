@@ -386,3 +386,44 @@ separately from the grouping by subject -- they are different
 questions and the dependency one is more useful once a phase is
 half-done.
 
+---
+
+## 18. Inspect a dependency before adding it, and write the inspection down
+
+**A new third-party dependency gets Russ Cox's inspection -- design,
+code quality, tests, issue tracker, maintenance, usage, security
+history, licence, and its own dependencies -- and the result goes in
+the commit message that adds it.**
+
+Because the cost of a bad dependency is "the cost of each bad outcome
+multiplied by its probability", and this project's bad outcomes are a
+customer's data under a mandatory access control model. That is the
+expensive end of the scale, where inspection is due.
+
+THE ORDER OF PREFERENCE, in full:
+
+  1. the standard library, which carries no supply chain;
+  2. a dependency this project ALREADY has;
+  3. a new dependency, inspected, wrapped behind an interface of ours
+     that exposes only what we use;
+  4. hand-written, AND TESTED AGAINST the library it replaces, with
+     the library in the test dependencies only.
+
+The fourth is the option that is usually forgotten, and it is
+sometimes the best one: it buys the library's correctness as an
+oracle without shipping its risk.
+
+BUT NOT FOR SUBTLE DOMAINS. Statistics, string distance, graph
+algorithms, cryptography, date parsing, SQL generation and YAML
+round-tripping are places where a hand-written version is wrong in
+ways tests written by the same person will not catch. The standing
+counter-example to "a little copying" is binary search overflow: a
+bug that survived decades precisely because everyone copied it.
+
+AND SIZE IS NOT A RISK ARGUMENT. It appears nowhere in the framework.
+It matters here only because some deployments are air-gapped, which
+is an argument about DISTRIBUTION -- make it optional -- not about
+whether the code can be trusted. Recorded because I used it as the
+headline argument against a library and had to correct myself
+(LIBRARY_AUDIT.md part 4.3).
+
