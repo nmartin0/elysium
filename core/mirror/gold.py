@@ -35,6 +35,7 @@ behind an object type:
 """
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 import pyarrow as pa
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
@@ -221,6 +222,30 @@ def published_snapshot_ids(catalog, object_types) -> dict[str, int]:
         if snapshot is not None:
             pinned[object_type] = snapshot.snapshot_id
     return pinned
+
+
+def published_at(catalog, object_types) -> dict[str, str]:
+    """{object type: when its gold table was published}, ISO-8601 UTC.
+
+    THE CLOCK A READER EXPERIENCES (DEV_UI.md 16.6). Silver records
+    when the SOURCE WAS READ, which is what the write overlay needs;
+    gold records when a PUBLICATION WAS MADE, which is what a person
+    looking at an object is actually seeing. A source read hourly but
+    published daily is a day stale to that person, and no source-side
+    timestamp says so.
+    """
+    published: dict[str, str] = {}
+    for object_type in object_types:
+        try:
+            table = catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
+        except (NoSuchTableError, NoSuchNamespaceError, FileNotFoundError):
+            continue
+        snapshot = table.current_snapshot()
+        if snapshot is not None:
+            published[object_type] = datetime.fromtimestamp(
+                snapshot.timestamp_ms / 1000, tz=UTC,
+            ).isoformat()
+    return published
 
 
 def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict],

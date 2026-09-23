@@ -250,6 +250,13 @@ class ProfileResponse(BaseModel):
 class DataFreshnessResponse(BaseModel):
     source: str
     last_synced_at: str | None
+    # WHICH LAYER, AND WHEN IT WAS PUBLISHED (GOLD-3). Present only
+    # when some object types are read from gold, because that is the
+    # clock a reader actually experiences: silver records when the
+    # SOURCE WAS READ, gold when a PUBLICATION WAS MADE, and a source
+    # read hourly but published daily is a day stale to the person
+    # looking at it.
+    published_at: dict[str, str] | None = None
 
 
 class VisibleAppResponse(BaseModel):
@@ -2762,6 +2769,18 @@ def data_freshness_route(request: Request,
         # would have to interpret.
         return {"source": "live", "last_synced_at": None}
 
+    published = dict(_generation(request).gold_published_at)
+    if published:
+        # THE OLDEST PUBLICATION is what "how current is this" means
+        # for a deployment reading several types: a caller comparing
+        # two objects is only as current as the staler of them.
+        #
+        # last_synced_at STAYS THE SOURCE-READ TIME, deliberately. It
+        # is what the write overlay is bounded by (F-29), and
+        # conflating the two would silently widen or narrow that
+        # window -- the exact bug patch 335 closed.
+        return {"source": "gold", "last_synced_at": mediator.mirror_synced_at,
+                "published_at": published}
     return {"source": "mirror", "last_synced_at": mediator.mirror_synced_at}
 
 

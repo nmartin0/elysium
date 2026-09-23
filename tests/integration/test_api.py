@@ -379,7 +379,44 @@ def test_data_freshness_reports_live_when_not_reading_from_the_mirror(client):
     response = client.get("/api/data-freshness")
 
     assert response.status_code == 200
-    assert response.json() == {"source": "live", "last_synced_at": None}
+    # published_at is null because nothing is read from gold -- its
+    # presence is how a caller tells which layer it is seeing (GOLD-3).
+    # A null last_synced_at still means "live", and is kept rather than
+    # omitted: omitting it would leave a caller guessing at the
+    # difference between absent and not-applicable.
+    assert response.json() == {"source": "live", "last_synced_at": None,
+                                "published_at": None}
+
+
+def test_data_freshness_reports_gold_and_its_publication(client):
+    # THE REAL ROUTE, with a generation bound to gold -- which the unit
+    # tests could not do, because they exercised a copy of this logic
+    # rather than the endpoint itself.
+    #
+    # BOTH CLOCKS ARE CARRIED, and they mean different things: the
+    # publication is what a reader is seeing, and last_synced_at stays
+    # the SOURCE READ time, which is what bounds the write overlay
+    # (F-29). Conflating them would silently move that window.
+    import dataclasses
+
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west",
+                                                 "customer_service")
+    _login(client, "alice", "correct-pw")
+    with_config(client.app, read_from_mirror=True)
+    mediator_of(client.app).mirror_synced_at = "2026-01-15T09:00:00+00:00"
+    client.app.state.generation = dataclasses.replace(
+        client.app.state.generation,
+        gold_published_at={"Customer": "2026-01-15T09:05:00+00:00"},
+    )
+
+    response = client.get("/api/data-freshness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source": "gold",
+        "last_synced_at": "2026-01-15T09:00:00+00:00",
+        "published_at": {"Customer": "2026-01-15T09:05:00+00:00"},
+    }
 
 
 def test_data_freshness_reports_the_mirror_sync_time_when_reading_from_it(client):
@@ -398,6 +435,9 @@ def test_data_freshness_reports_the_mirror_sync_time_when_reading_from_it(client
     assert response.json() == {
         "source": "mirror",
         "last_synced_at": "2026-01-15T09:00:00+00:00",
+        # Null until some object type is read from GOLD, which is how a
+        # caller tells which layer it is looking at (GOLD-3).
+        "published_at": None,
     }
 
 

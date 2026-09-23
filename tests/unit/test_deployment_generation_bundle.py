@@ -119,4 +119,8 @@ def test_every_field_is_declared(generation):
         "generation", "loaded_at", "source_digest",
         "config", "mediator", "write_mediator", "loop", "synthesis_client",
         "write_adapters", "mirror_snapshots",
+        # GOLD-3: which types this generation reads from gold, and when
+        # each was published. Added deliberately and declared here, so
+        # the shape stays decided in one place.
+        "gold_published_at",
     }

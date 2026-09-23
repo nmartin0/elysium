@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
 from pyiceberg.catalog.sql import SqlCatalog
@@ -876,6 +877,10 @@ class DeploymentGeneration:
     # Empty when read_from_mirror is off: there is no mirror being read,
     # so there is nothing to pin.
     mirror_snapshots: Mapping[str, int]
+    # {object type: when its gold was published}, for the types this
+    # generation reads from gold. Empty when none are -- which is what
+    # tells a caller which layer it is looking at (GOLD-3).
+    gold_published_at: Mapping[str, str] = MappingProxyType({})
 
 
 def repointed_silos(before: DeploymentConfig, after: DeploymentConfig) -> list[str]:
@@ -964,6 +969,7 @@ def build_generation(
         synthesis_client=build_llm_adapter(config, config.synthesis_model),
         write_adapters=write_adapters,
         mirror_snapshots=_mirror_snapshot_ids(mediator),
+        gold_published_at=_gold_published_at(mediator),
     )
 
 
@@ -1147,6 +1153,26 @@ def load_deployment_bundle(
                              write_log=write_log, audit_log=audit_log,
                              mirror_synced_at=mirror_synced_at)
     return config, mediator, write_adapters
+
+
+def _gold_published_at(mediator) -> Mapping[str, str]:
+    """When each gold-bound type was published, for this generation.
+
+    Asked of the MEDIATOR rather than passed down, because the
+    mediator is where the binding ended up: whichever types point at
+    the connector are the ones a reader sees gold for, and anything
+    else would be a second place to keep the same fact.
+    """
+    from core.mirror.gold import published_at
+    from core.mirror.gold_connector import GoldConnector
+    from core.ontology.gold_view import GOLD_NAMESPACE
+
+    connector = mediator.adapters.get(GOLD_NAMESPACE)
+    if not isinstance(connector, GoldConnector):
+        return MappingProxyType({})
+    bound = [object_type for object_type, silo in mediator.silo_for_type.items()
+             if silo == GOLD_NAMESPACE]
+    return MappingProxyType(published_at(connector._reader._catalog, bound))
 
 
 def _bind_reads_to_gold(config: DeploymentConfig, adapters: dict,
