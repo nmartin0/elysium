@@ -358,6 +358,29 @@ resolution, so gold for it is a straight conform.
           one: measured before adding it, the pure-Python diff already
           in the tree takes 377 ms for 200,000 rows against DuckDB's
           76 -- irrelevant beside a sync that takes seconds.
+  LIB-1..3. STOP REINVENTING, where a library does it better
+          (LIBRARY_AUDIT.md, September 23):
+          (1) SnapshotCache -> cachetools.LRUCache with getsizeof,
+              verified byte-bounded eviction; 52 lines of hand-rolled
+              LRU go, the decision of WHAT to cache stays.
+          (2) _percentile -> statistics.quantiles, keeping "None rather
+              than zero when there is nothing to measure".
+          (3) THE REAL ONE: adapters/sqlite_adapter.py builds SQL by
+              f-string in 50 places while adapters/sqlalchemy_adapter.py
+              uses the expression API for the same job, and SQLAlchemy
+              supports SQLite. Fold SQLite in as a dialect, WRITE PATH
+              FIRST, with the existing tests as the parity check --
+              every interpolated identifier is a place a declared
+              schema controls SQL text, and a library that quotes
+              identifiers is the answer to the CLASS rather than to its
+              instances. 75 files reference it, so this is real work.
+          AND WHAT STAYS HAND-WRITTEN, with reasons: the changelog diff
+          (377 ms per 200,000 rows, measured, against a dependency),
+          aggregates (they run over already-authorised rows, so a
+          dataframe would be built per request for nothing), metrics
+          (persisted by design, which a scrape-based client is not),
+          and coerce() (deliberately stricter than dateutil -- it
+          refuses '2026-2-1' rather than guessing).
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.
