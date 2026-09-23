@@ -96,9 +96,10 @@ class TestNonDecimalFieldsAreUntouched:
     def test_an_unparseable_value_passes_through(self):
         """SOMEBODY ELSE'S ERROR TO REPORT. Swallowing it here would
         turn a clear message into an empty result."""
-        from core.mirror.mirror_adapter import MirrorReadAdapter
+        from core.mirror.iceberg_reader import IcebergNamespaceReader
 
-        adapter = MirrorReadAdapter.__new__(MirrorReadAdapter)
+        # The mechanics moved to the shared reader (GOLD-3).
+        adapter = IcebergNamespaceReader.__new__(IcebergNamespaceReader)
 
         assert adapter._decimal_literal(
             "amount", "not a number", {"amount"},
@@ -161,8 +162,9 @@ class TestTheRangeBounds:
     answered -- and pinned here, since nothing else exercises it."""
 
     def _term(self, value, decimal_columns=frozenset({"amount"})):
-        from core.mirror.mirror_adapter import MirrorReadAdapter
-        adapter = MirrorReadAdapter.__new__(MirrorReadAdapter)
+        from core.mirror.iceberg_reader import IcebergNamespaceReader
+        # The mechanics moved to the shared reader (GOLD-3).
+        adapter = IcebergNamespaceReader.__new__(IcebergNamespaceReader)
         return adapter._term_for(
             FieldFilter(field="amount", operator="range", value=value), set(decimal_columns),
         )

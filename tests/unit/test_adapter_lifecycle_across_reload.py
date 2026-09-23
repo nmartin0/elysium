@@ -64,8 +64,8 @@ def test_two_generations_can_hold_catalogs_over_one_mirror(mirrored):
     old = MirrorReadAdapter(_catalog(mirrored), "primary")
     new = MirrorReadAdapter(_catalog(mirrored), "primary")
 
-    assert old._scan("customers", ("customer_id", "name")).num_rows == ROWS
-    assert new._scan("customers", ("customer_id", "name")).num_rows == ROWS
+    assert old._reader._scan("customers", ("customer_id", "name")).num_rows == ROWS
+    assert new._reader._scan("customers", ("customer_id", "name")).num_rows == ROWS
 
 
 def test_an_in_flight_read_survives_a_generation_being_built_beneath_it(mirrored):
@@ -78,7 +78,7 @@ def test_an_in_flight_read_survives_a_generation_being_built_beneath_it(mirrored
     def keep_reading():
         try:
             for _ in range(20):
-                assert old._scan("customers", ("customer_id", "name")).num_rows == ROWS
+                assert old._reader._scan("customers", ("customer_id", "name")).num_rows == ROWS
         except Exception as error:  # noqa: BLE001 -- reported, not swallowed
             failures.append(repr(error))
 
@@ -86,7 +86,7 @@ def test_an_in_flight_read_survives_a_generation_being_built_beneath_it(mirrored
     reader.start()
     try:
         for _ in range(10):
-            MirrorReadAdapter(_catalog(mirrored), "primary")._scan(
+            MirrorReadAdapter(_catalog(mirrored), "primary")._reader._scan(
                 "customers", ("customer_id", "name")
             )
     finally:

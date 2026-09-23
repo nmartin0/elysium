@@ -298,13 +298,13 @@ def test_substring_search_reads_only_the_searched_columns(tmp_path):
     adapter = MirrorReadAdapter(sync._catalog, "primary")
 
     scanned_fields = {}
-    real_scan = adapter._scan
+    real_scan = adapter._reader._scan
 
     def recording_scan(table_name, selected_fields, row_filter=None):
         scanned_fields["fields"] = selected_fields
         return real_scan(table_name, selected_fields, row_filter)
 
-    adapter._scan = recording_scan
+    adapter._reader._scan = recording_scan
     config = {"storage": {"table": "people", "id_column": "person_id"}}
     matches = adapter.find_ids_matching_text("Person", ["name"], "Person 42", config)
 

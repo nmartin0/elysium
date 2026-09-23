@@ -16,6 +16,7 @@ import sqlite3
 import pytest
 from pyiceberg.expressions import And, EqualTo, In, NotEqualTo, NotIn
 
+import core.mirror.iceberg_reader as reader_module
 import core.mirror.mirror_adapter as mirror_module
 from core.deployment_loader import build_generation
 from core.mirror.snapshot_cache import SnapshotCache
@@ -32,7 +33,7 @@ def mirror(synced_deployment):
 def _direct(adapter, table_name, selected, row_filter=None, limit=None):
     """What a scan returns with no cache at all."""
     table = adapter._catalog.load_table(f"{adapter.silo_name}.{table_name}")
-    kwargs = {"selected_fields": selected, "snapshot_id": adapter._snapshot_ids.get(table_name)}
+    kwargs = {"selected_fields": selected, "snapshot_id": adapter._reader._snapshot_ids.get(table_name)}
     if row_filter is not None:
         kwargs["row_filter"] = row_filter
     if limit:
@@ -56,7 +57,7 @@ class TestParity:
         adapter, _ = mirror
         selected = ("customer_id", "name", "region")
 
-        cached = adapter._scan("customers", selected, row_filter=row_filter)
+        cached = adapter._reader._scan("customers", selected, row_filter=row_filter)
 
         assert cached.to_pylist() == _direct(adapter, "customers", selected, row_filter).to_pylist()
 
@@ -64,7 +65,7 @@ class TestParity:
         adapter, _ = mirror
         asked = ("region", "customer_id")
 
-        cached = adapter._scan("customers", asked)
+        cached = adapter._reader._scan("customers", asked)
 
         assert cached.column_names == _direct(adapter, "customers", asked).column_names
 
@@ -72,7 +73,7 @@ class TestParity:
         adapter, _ = mirror
         selected = ("customer_id",)
 
-        cached = adapter._scan("customers", selected, limit=2)
+        cached = adapter._reader._scan("customers", selected, limit=2)
 
         assert cached.to_pylist() == _direct(adapter, "customers", selected, limit=2).to_pylist()
 
@@ -80,25 +81,25 @@ class TestParity:
 class TestWhatTheCacheSaves:
     def test_a_cached_pinned_table_needs_no_catalog(self, mirror, monkeypatch):
         adapter, _ = mirror
-        adapter._scan("customers", ("customer_id",))
+        adapter._reader._scan("customers", ("customer_id",))
 
         def gone(*args, **kwargs):
             raise AssertionError("the catalog was consulted")
         monkeypatch.setattr(adapter._catalog, "load_table", gone)
 
-        assert adapter._scan("customers", ("customer_id",)).num_rows > 0
+        assert adapter._reader._scan("customers", ("customer_id",)).num_rows > 0
 
     def test_a_large_table_is_never_read_whole(self, mirror, monkeypatch):
         """Judged from the snapshot summary BEFORE reading, so a limit
         pushed into the direct scan keeps meaning what it says."""
         adapter, _ = mirror
-        monkeypatch.setattr(mirror_module, "MAX_CACHED_ROWS", 1)
+        monkeypatch.setattr(reader_module, "MAX_CACHED_ROWS", 1)
 
-        rows = adapter._scan("customers", ("customer_id",), limit=1)
+        rows = adapter._reader._scan("customers", ("customer_id",), limit=1)
 
         assert rows.num_rows == 1
-        assert adapter._snapshot_cache.get((
-            "customers", adapter._snapshot_ids["customers"])) is None
+        assert adapter._reader._snapshot_cache.get((
+            "customers", adapter._reader._snapshot_ids["customers"])) is None
 
 
 class TestNeverStale:
@@ -106,7 +107,7 @@ class TestNeverStale:
         """KEYED BY SNAPSHOT: a sync writes a new snapshot, so a new key;
         nothing is ever invalidated, and nothing can be stale."""
         old_adapter, paths = mirror
-        before = old_adapter._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
+        before = old_adapter._reader._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
 
         with sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db") as conn:
             conn.execute("UPDATE customers SET name = 'Renamed' WHERE customer_id = 'cust_001'")
@@ -114,8 +115,8 @@ class TestNeverStale:
             assert run_sync(paths) == 0
         new_adapter = build_generation(paths.config_dir, paths.data_dir, paths.log_dir).mediator.adapters["primary_sql"]
 
-        again = old_adapter._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
-        fresh = new_adapter._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
+        again = old_adapter._reader._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
+        fresh = new_adapter._reader._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
         assert again.to_pylist() == before.to_pylist()
         assert fresh.to_pylist() == [{"customer_id": "cust_001", "name": "Renamed"}]
 
@@ -128,14 +129,14 @@ class TestNeverStale:
         the same instance must not answer from the old one."""
         pinned, paths = mirror
         unpinned = mirror_module.MirrorReadAdapter(pinned._catalog, pinned.silo_name, snapshot_ids=None)
-        unpinned._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
+        unpinned._reader._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
 
         with sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db") as conn:
             conn.execute("UPDATE customers SET name = 'Renamed' WHERE customer_id = 'cust_001'")
         with contextlib.redirect_stdout(io.StringIO()):
             assert run_sync(paths) == 0
 
-        after = unpinned._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
+        after = unpinned._reader._scan("customers", ("customer_id", "name"), EqualTo("customer_id", "cust_001"))
         assert after.to_pylist() == [{"customer_id": "cust_001", "name": "Renamed"}]
 
 class TestTheCache:

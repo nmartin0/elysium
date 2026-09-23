@@ -80,9 +80,10 @@ def test_the_mirror_adapter_handles_or_declines_every_operator(operator):
     # The second adapter, and the reason this is a class-level test
     # rather than one about SQLite. A third adapter would be caught by
     # the same shape.
-    from core.mirror.mirror_adapter import MirrorReadAdapter
+    from core.mirror.iceberg_reader import IcebergNamespaceReader
 
-    adapter = MirrorReadAdapter.__new__(MirrorReadAdapter)
+    # The mechanics moved to the shared reader (GOLD-3).
+    adapter = IcebergNamespaceReader.__new__(IcebergNamespaceReader)
     try:
         term = adapter._term_for(FieldFilter("f", operator, SAMPLE[operator]))
     except UnsupportedFilter:

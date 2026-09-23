@@ -60,7 +60,7 @@ def _resync(sync, source_db, name):
 
 
 def _names(adapter):
-    rows = adapter._scan("customers", ("customer_id", "name"))
+    rows = adapter._reader._scan("customers", ("customer_id", "name"))
     return rows.to_pydict()["name"]
 
 
@@ -119,7 +119,7 @@ def test_the_pin_survives_a_filtered_scan(synced, source_db):
     pinned = MirrorReadAdapter(sync._catalog, "primary", snapshot_ids={"customers": snapshot})
     _resync(sync, source_db, "Grace")
 
-    row_filter = pinned._conditions_to_filter(as_equality_conditions({"customer_id": "c1"}))
-    rows = pinned._scan("customers", ("customer_id", "name"), row_filter=row_filter)
+    row_filter = pinned._reader._conditions_to_filter(as_equality_conditions({"customer_id": "c1"}))
+    rows = pinned._reader._scan("customers", ("customer_id", "name"), row_filter=row_filter)
 
     assert rows.to_pydict()["name"] == ["Ada"], "the filtered path ignored the pin"

@@ -262,12 +262,14 @@ def test_the_mirror_declines_contains_rather_than_approximating_it():
     keeps finding.
     """
     from core.filters import UnsupportedFilter
-    from core.mirror.mirror_adapter import MirrorReadAdapter
+    from core.mirror.iceberg_reader import IcebergNamespaceReader
 
-    adapter = MirrorReadAdapter.__new__(MirrorReadAdapter)
+    # The mechanics live on the reader now, shared by the mirror
+    # adapter and the gold connector (GOLD-3).
+    reader = IcebergNamespaceReader.__new__(IcebergNamespaceReader)
 
     with pytest.raises(UnsupportedFilter):
-        adapter._term_for(FieldFilter("name", "contains", "ada"))
+        reader._term_for(FieldFilter("name", "contains", "ada"))
 
 
 # --- The same semantics, in Python ---------------------------------------
