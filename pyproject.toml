@@ -39,6 +39,19 @@ target-version = "py312"
 # F821/B018 project-wide.
 exclude = ["vulture_whitelist.py"]
 
+[project.optional-dependencies]
+# PROBABILISTIC IDENTITY RESOLUTION (GOLD-6), optional because
+# inference is off by default and this brings 186 MB across seven
+# transitive packages. A deployment that never enables it never
+# installs it; the DECLARED rule in identity.match_on works without.
+#
+# Splink is pinned below the release whose estimate_u_using_random
+# _sampling raises "Salting partitions must be specified and > 1" --
+# reproduced across four version pairs. Elysium declares its weights
+# rather than estimating them, so that path is unused, but a pin is
+# cheaper than discovering it from a deployment.
+identity = ["splink>=4.0,<5"]
+
 [tool.ruff.lint]
 # Four genuinely different, non-overlapping concerns, not picked
 # arbitrarily -- each verified directly against this codebase before
