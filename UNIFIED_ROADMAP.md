@@ -213,6 +213,54 @@ resolution, so gold for it is a straight conform.
           gives Last-Event-ID resume. Constraints to hold: no
           generation or connection held open across a hot reload, close
           within E-12's grace, caps and heartbeats, the table pruned.
+  UI-LIVE-1..5. THE BUILD ORDER, from the audited inventory (parts 4-6
+          of LIVE_UPDATES_AND_PIPELINE_BUILDER.md). Every event below
+          already has ONE place it can be raised from -- write_log's
+          pending and applied calls, notifications.notify(),
+          SyncResult's single return, gold's publication,
+          _write_quarantine, config_history's reload epoch -- so no
+          refactor is needed to emit them.
+          (1) THE SHELL'S ONE CONNECTION, the events table and the
+              badge count: the smallest thing that proves the path,
+              including Last-Event-ID resume, a heartbeat, caps, and
+              closing inside E-12's grace while holding no generation
+              or connection across a reload.
+          (2) APPROVALS AND NOTIFICATIONS, tier 1 -- a proposal
+              arriving, an approval landing, an unseen count -- plus
+              pending changes shown ON the object, which
+              pending_changes_for_ids already answers.
+          (3) FRESHNESS, MIRROR STATE AND SILOS, and DELETE
+              MirrorPanel's 30-second timer, so the first live panel
+              also removes the last polling one. A freshness indicator
+              that is itself stale is the sharpest irony in the
+              product.
+          (4) THE AGENT'S STREAM -- steps and tokens -- which is a
+              different shape: per session, carrying data the
+              recipient is already cleared to see (part 4.4), so it
+              comes after the plumbing is proven.
+          (5) TIER 3 as convenient: metrics, role changes, triggers,
+              saved views, and deployment config, which is nearly free
+              because the reload epoch is already monotonic.
+          AND NOT ELIGIBLE, deliberately: search results, a table being
+          filtered, an object being edited. A list that reorders while
+          somebody reads it is worse than a stale one -- the precedent
+          is a BANNER ("12 new results. Show them.") so the person
+          decides when the ground moves.
+  NOTIFY-1. ALERT MAIL, which SSE cannot do (part 5). AUDITED: no SMTP
+          support of any kind exists. The precedent separates an EVENT
+          from a NOTIFICATION from a DELIVERY, "keeping them apart
+          prevents duplicate sends and ambiguous delivery state", and
+          Elysium already has the notification -- with recipients from
+          GRANTS. What is missing is an OUTBOX: one deliveries row per
+          (event, user, channel), written in the same transaction as
+          the event, its primary key the idempotency key. Preferences
+          evaluated at SEND time; only the NOW tier mails, since email
+          alerting "tends to easily become overrun with noise"; digests
+          for the rest with a maximum wait. SMTP host and port in
+          config, credentials as ${VAR}. And email is an outbound
+          dependency in a product that otherwise has none, so it is
+          optional, degrades silently to in-app, and never blocks a
+          sync or a write.
   PIPELINE-BUILDER. A sub-app to build the pipeline visually (the
           owner, September 22): sources, bronze, silver rules per
           column, gold object types, links drawn as lines, with REAL
