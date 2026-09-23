@@ -113,9 +113,25 @@ because a column name means nothing outside one table.
 
 ON GOLD every type is one table in one namespace, so that comparison
 stops distinguishing anything. Left as written it does not fail
-loudly: it SILENTLY WIDENS, permitting a security chain it currently
-refuses. No error, no log, no test failing -- the worst shape a
-security change can take.
+loudly.
+
+CORRECTED, September 23, BY THE CONTROL FOR ITS OWN TESTS
+(tests/unit/test_security_pushdown_guard.py). This entry first said
+the failure was a silent WIDENING. It is not. check_access() runs per
+candidate id unconditionally after the read, so MAC is enforced
+whatever the pushdown does; the pushdown exists so the database
+returns only permitted rows, which is what makes a LIMIT correct
+rather than a guess.
+
+So a lost guard pushes a column name into a table that may hold a
+different column of the same name, and the query silently DROPS rows
+the user is entitled to. A silent DENIAL, not a silent grant --
+measured: with the guard removed, a us-east user searching by a
+support field got [] instead of their own customer.
+
+Still a real fault, and harder to notice than an exception, because
+NOBODY REPORTS THE ROWS THEY NEVER SAW. But the direction matters for
+how it is tested and how urgently it is treated.
 
 HOW TO DO IT SAFELY, and in this order:
   1. Write the tests FIRST, against the current source-shaped code,
