@@ -41,9 +41,9 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.changelog import MAX_DELETED_FRACTION
 from core.mirror.lineage import LINEAGE_COLUMNS
+from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
 
-GOLD_NAMESPACE = "gold"
 AUDIT_BRANCH = "audit"
 PUBLISHED_TAG = "published"
 
