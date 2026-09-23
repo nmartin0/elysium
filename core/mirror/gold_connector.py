@@ -76,6 +76,18 @@ class GoldConnector:
     # with no remote end to rate-limit.
     max_concurrent_reads = None
 
+    # WHAT IT CAN EXPRESS, and it must SAY SO. The mediator pushes only
+    # the operators a reader declares, and applies the rest itself --
+    # it does not ask and retry. Declaring nothing is therefore not
+    # "safe": it means every filter is applied in memory, against raw
+    # storage values, which is both slow and WRONG for a decimal, where
+    # 49.990000000 does not equal the string '49.99'.
+    #
+    # FOUND BY THE PARITY TEST (GOLD-3): a decimal filter returned two
+    # rows from the mirror and none from gold, because this line was
+    # missing. The same engine answers both, so the same set applies.
+    pushable_operators = frozenset({"equals", "in", "not_in", "range", "date_range"})
+
     def __init__(self, catalog: SqlCatalog, snapshot_ids: "dict[str, int] | None" = None):
         # SNAPSHOTS PINNED PER GENERATION. A request reads the
         # publication its generation was built against, so a build

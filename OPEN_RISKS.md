@@ -146,3 +146,30 @@ HOW TO DO IT SAFELY, and in this order:
      not a test.
 
 This one wants a second pair of eyes before it merges.
+
+---
+
+## 5. visible_schema hands the agent the customer's column names
+
+FOUND BY THE PARITY TEST, September 23. visible_schema() splats every
+key of a field's declaration, so `column`, `via_table`, `via_column`
+and `storage` travel with it. api/routes.py strips them before
+answering the UI -- which is why nobody had noticed -- but THE AGENT
+IS HANDED THIS DICT DIRECTLY, and is therefore told the customer's
+physical table and column names on every step.
+
+Two costs, one small and one not: tokens spent on facts the agent
+cannot use, and internal structure disclosed to a model whose output
+an attacker may influence.
+
+AND IT IS NOT A ONE-LINE FIX. Stripping the keys at the source broke
+27 INTEGRATION TESTS: visible_schema is fed BACK INTO the mediator,
+and those keys are what group a type's fields by storage when a type
+spans more than one. The unit tier caught none of it.
+
+So the work is: give the agent a narrowed view rather than the schema
+the mediator uses internally -- or separate "what exists" from "where
+it lives" properly, which is the same split the gold view makes for
+storage. Either way it wants its own patch, its own tests, and the
+integration tier run before it is believed.
+

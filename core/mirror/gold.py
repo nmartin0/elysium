@@ -41,6 +41,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.changelog import MAX_DELETED_FRACTION
 from core.mirror.lineage import LINEAGE_COLUMNS
+from core.ontology.field_types import arrow_type_for
 from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
 
@@ -136,21 +137,55 @@ def audit(type_def: dict, rows: list[dict], previous_count: int | None,
 
 
 def _arrow(rows: list[dict], type_def: dict) -> pa.Table:
-    """Gold's columns, all as strings for now: gold is read through the
-    ontology, which coerces on read, and a type per property arrives
-    with the declared-type work in GOLD-3."""
+    """Gold's columns, TYPED as the ontology declares them.
+
+    They were strings until the parity test (GOLD-3) compared a read
+    from gold against the same read from silver and found two
+    disagreements that only typing explains: a decimal filter matched
+    NOTHING, because `amount = 49.99` was being compared against text;
+    and a sum raised TypeError, because you cannot add a string to a
+    running total.
+
+    Silver already coerced these values (transform.py), so the values
+    arrive typed and only the SCHEMA was lying. arrow_type_for raises
+    on an unknown declared type rather than falling back to string,
+    which is how a typo fails loudly here too.
+
+    LINEAGE COLUMNS STAY TEXT: they are ours, and they are text.
+    """
     id_field = type_def["id_field"]
+    declared = type_def.get("fields") or {}
     names = [id_field]
     names += [
-        field_name for field_name, field_config in (type_def.get("fields") or {}).items()
+        field_name for field_name, field_config in declared.items()
         if field_name != id_field
         and not (field_config.get("type") == "link" and is_reverse_link(field_config))
     ]
-    names += [column for column in LINEAGE_COLUMNS]
-    schema = pa.schema([(name, pa.string()) for name in names])
+    names += list(LINEAGE_COLUMNS)
+
+    def _type_for(name: str) -> pa.DataType:
+        if name in LINEAGE_COLUMNS:
+            return pa.string()
+        field_config = declared.get(name) or {}
+        # A LINK IS A KEY, and a key is whatever the target's id is --
+        # declared on the target, not here. Text is the honest default
+        # for one, as it is for a field that declares no data_type.
+        if field_config.get("type") == "link":
+            return pa.string()
+        return arrow_type_for(field_config.get("data_type", "string"))
+
+    schema = pa.schema([(name, _type_for(name)) for name in names])
+
+    def _value(row: dict, name: str):
+        value = row.get(name)
+        if value is None:
+            return None
+        # An id and a link are keys, and keys are compared as text
+        # everywhere else in this system.
+        return str(value) if schema.field(name).type == pa.string() else value
+
     return pa.Table.from_pylist(
-        [{name: None if row.get(name) is None else str(row.get(name)) for name in names}
-         for row in rows],
+        [{name: _value(row, name) for name in names} for row in rows],
         schema=schema,
     )
 

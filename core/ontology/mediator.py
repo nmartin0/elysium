@@ -269,6 +269,7 @@ def _security_scoped(method):
     return scoped
 
 
+
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
                  silo_for_type: dict[str, str], roles: dict,
