@@ -202,6 +202,27 @@ def published_ids(catalog, object_type: str, id_field: str) -> set | None:
     return set(table.scan(selected_fields=(id_field,)).to_arrow()[id_field].to_pylist())
 
 
+def published_snapshot_ids(catalog, object_types) -> dict[str, int]:
+    """{object type: the snapshot its gold table is published at}.
+
+    A generation PINS these, so every read in a request sees one
+    publication and a build finishing mid-request cannot move the
+    ground under it. A type with no gold table is simply absent, and
+    the caller decides what to do about that -- here, keep serving it
+    from the source (GOLD-3).
+    """
+    pinned: dict[str, int] = {}
+    for object_type in object_types:
+        try:
+            table = catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
+        except (NoSuchTableError, NoSuchNamespaceError, FileNotFoundError):
+            continue
+        snapshot = table.current_snapshot()
+        if snapshot is not None:
+            pinned[object_type] = snapshot.snapshot_id
+    return pinned
+
+
 def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict],
                known_ids: dict[str, set] | None = None) -> GoldResult:
     """Conform, audit and -- only if it passes -- publish one type.

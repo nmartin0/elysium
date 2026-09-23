@@ -156,6 +156,9 @@ class DeploymentConfig:
                                    #
                                    # Matters once a changelog exists, since the mirror then
                                    # holds history no source can return. See ELT_ROADMAP.md.
+    read_from_gold: bool          # GOLD-3: serve reads from published GOLD, per object
+                                   # type, falling back to the mirror for any type gold
+                                   # does not build. Off by default while it is proven.
     read_from_mirror: bool        # Phase 4 of the read-only mirror architecture -- serve
                                    # READS from the local Iceberg mirror rather than querying
                                    # the customer's own databases live. Writes are unaffected
@@ -514,6 +517,11 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.
             read_from_mirror=(config.get("mirror") or {}).get("read_from_mirror", True),
+            # GOLD-3, AND OFF BY DEFAULT WHILE IT IS PROVEN. Reads
+            # come from published GOLD rather than from silver, per
+            # object type, with the source view kept for the sync and
+            # for writes. Off means today's behaviour exactly.
+            read_from_gold=(config.get("mirror") or {}).get("read_from_gold", False),
             # VALIDATED HERE, at load, so a mistake in a declared
             # trigger stops the deployment starting -- where whoever
             # wrote it is looking -- rather than surfacing when it was
@@ -1132,10 +1140,73 @@ def load_deployment_bundle(
     # overlay (see DataMediator._read_field_with_log_check()). None for a
     # live deployment, which disables the overlay entirely.
     mirror_synced_at = _mirror_last_synced_at(config, data_dir) if config.read_from_mirror else None
-    mediator = DataMediator(config.schema, adapters, silo_for_type, config.roles,
+    read_schema, adapters, silo_for_type = _bind_reads_to_gold(
+        config, adapters, silo_for_type, data_dir,
+    )
+    mediator = DataMediator(read_schema, adapters, silo_for_type, config.roles,
                              write_log=write_log, audit_log=audit_log,
                              mirror_synced_at=mirror_synced_at)
     return config, mediator, write_adapters
+
+
+def _bind_reads_to_gold(config: DeploymentConfig, adapters: dict,
+                         silo_for_type: dict, data_dir: Path) -> tuple[dict, dict, dict]:
+    """(the schema reads use, the adapters, the type->silo map).
+
+    PER OBJECT TYPE, not all-or-nothing. Gold does not build every
+    type yet -- one with several sources waits for GOLD-5 -- so a type
+    gold publishes is bound to the connector and every other type
+    keeps the binding it already had. A deployment is therefore never
+    asked to choose between "all of gold" and "none of it".
+
+    WHAT IS NOT REBOUND: the write path and the sync, both of which
+    keep config.schema. A write goes to the customer's database
+    (decision D3), and the sync's job is to FILL gold from the source
+    it describes.
+
+    OFF BY DEFAULT while this is proven. Off is today's behaviour
+    exactly: the same schema, the same adapters, the same map.
+    """
+    if not (config.read_from_gold and config.read_from_mirror):
+        return config.schema, adapters, silo_for_type
+
+    from core.mirror.gold import published_snapshot_ids
+    from core.mirror.gold_connector import GoldConnector
+    from core.ontology.gold_view import GOLD_NAMESPACE, build_gold_view
+
+    view, excluded = build_gold_view(config.schema)
+    for object_type, why in sorted(excluded.items()):
+        logger.info(f"{object_type} reads from the source: {why}")
+
+    # The same catalog the mirror adapters read, named identically:
+    # gold lives in its own namespace inside it, not in a second lake.
+    mirror_dir = data_dir / "mirror"
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    catalog = SqlCatalog(
+        "elysium_mirror",
+        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
+        warehouse=f"file://{mirror_dir / 'warehouse'}",
+    )
+    # PINNED AT BUILD TIME, so every read in a request sees ONE
+    # publication -- a build finishing mid-request cannot move the
+    # ground under it (D3's second half).
+    pinned = published_snapshot_ids(catalog, view)
+    unpublished = sorted(set(view) - set(pinned))
+    for object_type in unpublished:
+        logger.info(f"{object_type} reads from the source: gold has not been published yet")
+        del view[object_type]
+
+    if not view:
+        logger.warning("read_from_gold is on, but no object type has published gold yet")
+        return config.schema, adapters, silo_for_type
+
+    read_schema = {**config.schema, **view}
+    bound_adapters = {**adapters, GOLD_NAMESPACE: GoldConnector(catalog, pinned)}
+    bound_silos = {**silo_for_type, **{object_type: GOLD_NAMESPACE for object_type in view}}
+    logger.info(
+        f"reading {len(view)} object type(s) from published gold: {', '.join(sorted(view))}"
+    )
+    return read_schema, bound_adapters, bound_silos
 
 
 def load_example_queries(config_dir: Path) -> list[dict]:
