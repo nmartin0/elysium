@@ -339,6 +339,40 @@ it** -- not in a sentence afterwards, and not as a trailing comment.
 A step written as prose beside a command block is a step that gets
 skipped.
 
+### And the patch itself is part of "everything"
+
+**A patch that is described but not attached has not been handed
+over.** Recorded because it happened: patch 365 was built, verified on
+a fresh clone, and written about at length -- without the file. The
+description reads exactly the same either way, which is what makes
+this failure invisible to the person who commits it.
+
+### One file per commit, always, plus a script to apply them in order
+
+**The owner, September 23: when several patches are ready, hand over
+ALL of them, individually, in order, with a script that applies them
+in order and keeps their own commit messages. Never one file holding
+several commits** -- the single exception being work that genuinely
+belongs in one commit, which is then one patch by definition (rule
+13).
+
+Why it is a rule and not a preference: a single mbox of eighteen
+commits applies as eighteen commits, so the history is right, but
+NOTHING ELSE IS. A reviewer cannot read one change without the other
+seventeen in front of them; a single failing `git am` leaves an
+ambiguous half-state; and one bad patch cannot be dropped without
+rebuilding the lot. Separate files can be applied, skipped, reordered
+or re-requested individually.
+
+  THE SHAPE OF A HANDOVER, THEN:
+    - one .patch file per commit, numbered so the order is visible in
+      the filename;
+    - one script that checks the base commit, verifies each file's
+      fingerprint, applies them in order, and stops without applying
+      anything if a check fails;
+    - the script run against a fresh clone BEFORE it is handed over,
+      because a delivery script is itself a deliverable (rule 14).
+
 ---
 
 ## 17. Prefer the boring order
