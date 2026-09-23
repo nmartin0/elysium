@@ -361,6 +361,16 @@ resolution, so gold for it is a straight conform.
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.
+  GOLD-5. ~~MULTI-SOURCE GOLD~~ DONE, patch 374, and AUDITING IT
+          CHANGED THE WORK: each storage declares its own id_column and
+          each field names exactly ONE storage, so a type spanning two
+          databases is a JOIN, not a survivorship contest.
+          Per-property survivorship and the MAC conflict D2 governs
+          arise when two sources describe an entity INDEPENDENTLY,
+          which is identity resolution (GOLD-6). The join is OUTER: an
+          object in one storage and not the other is real, and a
+          required property missing from the absent side makes the
+          audit refuse. Gold's view no longer excludes these types.
   GOLD-5. MULTI-SOURCE GOLD (G2, G3): FUSION_AND_IDENTITY.md's build
           order -- declared identity rules, a crosswalk table,
           per-property survivorship, every contributing value kept in a

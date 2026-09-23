@@ -288,6 +288,16 @@ def _build_gold(sync, config) -> int:
         identifier = f"{storage.get('silo')}.{storage.get('table')}"
         try:
             silver = sync._catalog.load_table(identifier).scan().to_arrow().to_pylist()
+            # EVERY STORAGE THE TYPE SPANS (GOLD-5), because a fused
+            # type is a join and a join needs both sides. Read here
+            # rather than inside build_gold so that reading silver
+            # stays the caller's job, as it already was.
+            additional = {}
+            for name, block in (type_def.get("additional_storage") or {}).items():
+                other = f"{block.get('silo')}.{block.get('table')}"
+                additional[name] = (
+                    sync._catalog.load_table(other).scan().to_arrow().to_pylist()
+                )
         except Exception as exc:  # noqa: BLE001 - reported per type, like a sync
             print(f"FAILED  gold.{object_type}: its silver table could not be read: {exc}",
                   file=sys.stderr)
@@ -301,7 +311,8 @@ def _build_gold(sync, config) -> int:
             )
             if ids is not None
         }
-        result = build_gold(sync._catalog, object_type, type_def, silver, known)
+        result = build_gold(sync._catalog, object_type, type_def, silver, known,
+                             additional_rows=additional)
         if result.skipped:
             print(f"skipped gold.{object_type}: {result.skipped}")
         elif result.published:

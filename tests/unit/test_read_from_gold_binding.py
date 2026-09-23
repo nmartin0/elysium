@@ -106,79 +106,29 @@ class TestTheReadsThemselves:
 
 
 class TestWhatStaysOnTheSource:
-    def test_a_type_gold_cannot_build_keeps_its_old_binding(self, deployment):
-        """A type spanning several sources waits for GOLD-5 -- and must
-        keep being served meanwhile, not disappear."""
-        def spread_customer(types):
-            types["Customer"]["additional_storage"] = {
-                "extra": {"silo": "primary_sql", "table": "customers",
-                           "id_column": "customer_id"},
-            }
+    """SINCE GOLD-5 THE ONLY REACHABLE FALLBACK IS AN UNPUBLISHED TYPE.
 
-        generation, _ = deployment(read_from_gold=True, schema_edit=spread_customer)
-
-        assert generation.mediator.silo_for_type["Customer"] != "gold"
-        assert generation.mediator.search_object(DEBUG, "Customer", [])
-
-    def test_and_so_does_anything_linking_to_it(self, deployment):
-        """The gold view excludes those too, because a link into a type
-        with no gold table cannot be followed there."""
-        def spread_customer(types):
-            types["Customer"]["additional_storage"] = {
-                "extra": {"silo": "primary_sql", "table": "customers",
-                           "id_column": "customer_id"},
-            }
-
-        generation, _ = deployment(read_from_gold=True, schema_edit=spread_customer)
-
-        assert generation.mediator.silo_for_type["Transaction"] != "gold"
+    The view used to exclude a type spanning several storages; gold now
+    joins those. What is left excludes only schemas that cannot load at
+    all -- a type with no id_field is refused by policy validation long
+    before the binding sees it -- so the case worth testing is the
+    RUNTIME one: gold exists for some types and not others, which
+    TestAMixedDeployment covers by dropping a published table.
+    """
 
 
 class TestAMixedDeployment:
     """SOME types on gold, others on the source, in one deployment.
 
-    WRITTEN BECAUSE TWO CONTROLS PROVED NOTHING. The earlier tests
-    make EVERY type fall back -- Customer is excluded and Transaction
-    links to it -- so the binding returns early and never builds a
-    mixed map. Mutating the per-type logic changed nothing observable
-    until these existed.
+    WRITTEN BECAUSE TWO CONTROLS PROVED NOTHING: the earlier tests made
+    EVERY type fall back, so the binding returned early and never built
+    a mixed map, and mutating the per-type logic changed nothing
+    observable.
+
+    SINCE GOLD-5 the mixture comes from PUBLICATION rather than from
+    what gold can build -- gold now joins multi-storage types -- so the
+    case is a type whose published table is gone.
     """
-
-    @staticmethod
-    def _add_a_standalone_multi_source_type(types):
-        types["Note"] = {
-            "id_field": "note_id",
-            "security": {"field": "region"},
-            "storage": {"silo": "primary_sql", "table": "customers",
-                         "id_column": "customer_id"},
-            "additional_storage": {"extra": {"silo": "primary_sql", "table": "customers",
-                                              "id_column": "customer_id"}},
-            "fields": {"note_id": {"type": "data", "column": "customer_id"},
-                        "region": {"type": "data"}},
-        }
-
-    def test_the_buildable_types_go_to_gold(self, deployment):
-        generation, _ = deployment(read_from_gold=True,
-                                 schema_edit=self._add_a_standalone_multi_source_type)
-
-        assert generation.mediator.silo_for_type["Customer"] == "gold"
-        assert generation.mediator.silo_for_type["Transaction"] == "gold"
-
-    def test_and_the_one_gold_cannot_build_stays_on_its_source(self, deployment):
-        generation, _ = deployment(read_from_gold=True,
-                                 schema_edit=self._add_a_standalone_multi_source_type)
-
-        assert generation.mediator.silo_for_type["Note"] == "primary_sql"
-
-    def test_the_read_schema_is_mixed_too(self, deployment):
-        """Gold's types are described in gold's terms; the others keep
-        the source's, because that is where they are read from."""
-        generation, _ = deployment(read_from_gold=True,
-                                 schema_edit=self._add_a_standalone_multi_source_type)
-        schema = generation.mediator.schema
-
-        assert schema["Customer"]["storage"]["table"] == "Customer"
-        assert schema["Note"]["storage"]["table"] == "customers"
 
     def test_a_type_whose_gold_vanished_falls_back_alone(self, deployment):
         """PUBLISHED IS NOT THE SAME AS BUILDABLE. A type the view

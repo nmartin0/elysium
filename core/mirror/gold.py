@@ -42,6 +42,7 @@ import pyarrow as pa
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.changelog import MAX_DELETED_FRACTION
+from core.mirror.fusion import FUSED_FROM_COLUMN, fuse
 from core.mirror.lineage import LINEAGE_COLUMNS
 from core.ontology.field_types import arrow_type_for
 from core.ontology.gold_view import GOLD_NAMESPACE
@@ -169,9 +170,13 @@ def _arrow(rows: list[dict], type_def: dict) -> pa.Table:
         and not (field_config.get("type") == "link" and is_reverse_link(field_config))
     ]
     names += list(LINEAGE_COLUMNS)
+    # Present only on a fused type, naming the storages that
+    # contributed to each row (GOLD-5).
+    if type_def.get("additional_storage"):
+        names.append(FUSED_FROM_COLUMN)
 
     def _type_for(name: str) -> pa.DataType:
-        if name in LINEAGE_COLUMNS:
+        if name in LINEAGE_COLUMNS or name == FUSED_FROM_COLUMN:
             return pa.string()
         field_config = declared.get(name) or {}
         # A LINK IS A KEY, and a key is whatever the target's id is --
@@ -255,7 +260,8 @@ def published_at(catalog, object_types) -> dict[str, str]:
 
 
 def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict],
-               known_ids: dict[str, set] | None = None) -> GoldResult:
+               known_ids: dict[str, set] | None = None,
+               additional_rows: "dict[str, list[dict]] | None" = None) -> GoldResult:
     """Conform, audit and -- only if it passes -- publish one type.
 
     A TABLE THAT ALREADY HAS A PUBLICATION is written on a branch, so
@@ -264,11 +270,21 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     fails, the table is dropped, leaving no gold rather than unaudited
     gold.
     """
-    if type_def.get("additional_storage"):
-        return GoldResult(object_type, skipped="more than one source: GOLD-5")
-
     result = GoldResult(object_type)
-    rows = conform(type_def, silver_rows)
+    if type_def.get("additional_storage"):
+        # SEVERAL STORAGES, JOINED (GOLD-5). Each storage declares its
+        # own id_column and each field names exactly one storage, so
+        # this is a join rather than a survivorship contest -- see
+        # core/mirror/fusion.py for why that distinction decides what
+        # belongs here and what belongs to GOLD-6.
+        if additional_rows is None:
+            return GoldResult(
+                object_type,
+                skipped="spans several storages, and their rows were not supplied",
+            )
+        rows = fuse(type_def, {None: silver_rows, **additional_rows})
+    else:
+        rows = conform(type_def, silver_rows)
     result.rows = len(rows)
     arrow_table = _arrow(rows, type_def)
     identifier = f"{GOLD_NAMESPACE}.{object_type}"

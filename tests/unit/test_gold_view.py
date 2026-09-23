@@ -121,20 +121,24 @@ class TestTheReKeying:
 
 
 class TestWhatIsLeftOUT:
-    def test_a_type_with_several_sources_is_excluded_and_named(self):
+    def test_a_type_with_several_sources_is_INCLUDED_since_GOLD_5(self):
+        """Gold joins its storages into one table, so it reads like any
+        other type -- and its per-field storage pointers are dropped,
+        because they named source tables that gold does not have."""
         schema = {**SCHEMA}
         schema["Customer"] = {**SCHEMA["Customer"], "additional_storage": {"other": {}}}
 
         built, excluded = build_gold_view(schema)
 
-        assert "Customer" not in built
-        assert "GOLD-5" in excluded["Customer"]
+        assert "Customer" in built and "Customer" not in excluded
+        assert built["Customer"]["storage"]["table"] == "Customer"
 
-    def test_and_so_is_anything_that_LINKS_to_it(self):
+    def test_anything_LINKING_to_an_excluded_type_is_still_excluded(self):
         """A field pointing at a type with no gold table is exactly the
         dangling reference this module exists to avoid."""
         schema = {**SCHEMA}
-        schema["Customer"] = {**SCHEMA["Customer"], "additional_storage": {"other": {}}}
+        schema["Customer"] = {key: value for key, value in SCHEMA["Customer"].items()
+                               if key != "id_field"}
 
         built, excluded = build_gold_view(schema)
 

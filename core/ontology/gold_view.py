@@ -22,12 +22,14 @@ SOURCE-shaped schema is still needed, by the sync that fills gold and
 by the write path that goes to the customer's database (decision D3).
 Both views describe the same ontology; only the bindings differ.
 
-WHAT IT REFUSES. A type gold does not build -- one with more than one
-source, which GOLD-5 covers -- has no gold table to point at, and a
-view that quietly pointed at a missing table would fail at read time
-with a catalog error. Those types are LEFT OUT, and the caller is told
-which, so it can keep serving them the old way rather than discover
-the gap one request at a time.
+WHAT IT REFUSES. A type gold does not build has no gold table to point
+at, and a view that quietly pointed at a missing table would fail at
+read time with a catalog error. Those types are LEFT OUT, and the
+caller is told which, so it can keep serving them the old way rather
+than discover the gap one request at a time. Since GOLD-5 that no
+longer includes a type spanning several storages -- gold joins those
+into one table -- but a type with no id_field, or one linking to a
+type that is itself excluded, still is.
 """
 
 from core.ontology.link_types import is_reverse_link
@@ -51,9 +53,10 @@ def _gold_fields(type_def: dict, schema: dict) -> dict:
         # `column` override the source needed is gone -- and a stale
         # one would read a column gold never created.
         rebound.pop("column", None)
-        # A type spanning several storages is not in the view at all
-        # (see build_gold_view), so a per-field storage pointer has
-        # nothing left to mean.
+        # A FUSED TYPE IS ONE TABLE IN GOLD (GOLD-5), so a per-field
+        # pointer at one of the SOURCE storages names something that
+        # does not exist here. The fusion already put every property in
+        # one row.
         rebound.pop("storage", None)
         if field_config.get("type") == "link" and is_reverse_link(field_config):
             target = field_config.get("target")
@@ -99,9 +102,9 @@ def build_gold_view(schema: dict) -> tuple[dict, dict[str, str]]:
     view: dict = {}
     excluded: dict[str, str] = {}
     for object_type, type_def in schema.items():
-        if type_def.get("additional_storage"):
-            excluded[object_type] = "more than one source: gold does not build it yet (GOLD-5)"
-            continue
+        # A TYPE SPANNING SEVERAL STORAGES IS NO LONGER EXCLUDED
+        # (GOLD-5): gold joins them into one table, keyed by the
+        # object's id, so it is read exactly like any other.
         id_field = type_def.get("id_field")
         if not id_field:
             excluded[object_type] = "no id_field: gold is keyed by the object's id"

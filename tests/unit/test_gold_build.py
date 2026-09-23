@@ -177,12 +177,15 @@ class TestBuildingAndPublishing:
         with pytest.raises(NoSuchTableError):
             _gold(mirrored)
 
-    def test_a_type_with_several_sources_is_skipped_for_now(self, mirrored):
+    def test_a_type_with_several_sources_needs_their_rows(self, mirrored):
+        """SINCE GOLD-5 it is built, by joining the storages -- but
+        building it from one side would publish objects missing every
+        property the other side holds, so it refuses instead."""
         type_def = {**CUSTOMER, "additional_storage": {"other": {}}}
 
         result = build_gold(mirrored._catalog, "Customer", type_def, _silver(mirrored))
 
-        assert result.skipped and "GOLD-5" in result.skipped
+        assert result.skipped and "not supplied" in result.skipped
 
     def test_published_ids_reads_what_is_published(self, mirrored):
         build_gold(mirrored._catalog, "Customer", CUSTOMER, _silver(mirrored))
