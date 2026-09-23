@@ -441,3 +441,110 @@ sync or a write when the relay is down -- the same discipline the
 existing notifier already keeps, where failing to notice something
 "must not turn a successful sync into a failed one".
 
+---
+
+# Part 6. The inventory: what is eligible for SSE today
+
+Audited September 22 by walking every panel, what it reads, and what
+changes that data. Ordered by how badly the staleness shows.
+
+## 6.1 TIER 1 -- wrong on screen within seconds, and a person notices
+
+  APPROVALS (ApprovalsPanel, getAwaitingWrites). A proposal arrives
+  and the queue does not move; a colleague approves yours and you find
+  out by reloading. THE badge count in the shell has the same problem
+  and is worse, because it is the thing that is supposed to tell you.
+      EVENT SOURCE: write_log.log_pending_* and mark_applied -- one
+      place each, already.
+
+  NOTIFICATIONS (NotificationsPanel, getNotifications) and the unseen
+  count. A notification is BY DEFINITION news, and today it waits for
+  a refresh. This is the one whose current behaviour is hardest to
+  defend.
+      EVENT SOURCE: notifications.notify(), one place.
+
+  PENDING CHANGES ON AN OBJECT (ObjectDetailPanel). A change proposed
+  on the object you are looking at should appear on it.
+      EVENT SOURCE: the same write-log calls;
+      pending_changes_for_ids already answers the query.
+
+  THE AGENT'S OWN ANSWER (QueryPanel). Today the answer arrives when
+  the whole query finishes. Streaming steps and tokens is the same
+  transport every AI SDK already uses for this.
+      EVENT SOURCE: the agent loop, per hop.
+
+## 6.2 TIER 2 -- silently stale, and the staleness is the point
+
+  DATA FRESHNESS (ObjectSearchPanel, getDataFreshness). A freshness
+  indicator that is itself stale is the sharpest irony in the product:
+  it says 14:22 long after a publication at 15:10.
+      EVENT SOURCE: gold publication, and the sync's SyncResult.
+
+  MIRROR STATE (MirrorPanel, getMirrorState). The ONLY thing that
+  polls today, every 30 seconds. SSE replaces the timer and makes it
+  immediate, while removing a poll that runs whether or not anything
+  changed.
+      EVENT SOURCE: SyncResult, one return.
+
+  SILOS (Silos.tsx, getSilos). Source health changes when a database
+  goes down -- which is exactly when somebody is looking at this
+  screen and wants it to be current.
+      EVENT SOURCE: the startup and per-sync source checks.
+
+  QUARANTINE COUNTS, which do not have a panel yet (OPEN_RISKS item
+  1). When they land they are live data by nature: rows disappearing
+  from silver is the thing an operator must see happen.
+      EVENT SOURCE: _write_quarantine, one place.
+
+## 6.3 TIER 3 -- worth doing, rarely urgent
+
+  METRICS (MetricsPanel). A dashboard of counters; live is nicer, and
+  nobody is harmed by 30 seconds of lag.
+  ROLE CHANGES (RolesPanel, getRoleChanges). Low volume, but an
+  approval queue of its own shape -- it should follow tier 1's
+  pattern when it is cheap to.
+  TRIGGERS AND WATCH LIST (WatchList, getTriggers). Changes when the
+  user changes them; live matters only across two sessions.
+  SAVED VIEWS (getSavedViews). Same.
+  DEPLOYMENT CONFIG (DeploymentConfig, getDeploymentConfig). Changes
+  only at a reload -- and the reload epoch ALREADY EXISTS as a
+  monotonic counter, so this one is nearly free.
+      EVENT SOURCE: config_history's reload_epoch.
+
+## 6.4 NOT eligible, and it matters to say why
+
+  SEARCH RESULTS (ObjectSearchPanel, searchObjects) must NOT
+  live-update by default. A list that reorders while somebody is
+  reading it, or loses the row they were about to click, is worse than
+  a stale one. The precedent everywhere -- mail clients, issue
+  trackers -- is a BANNER: "12 new results. Show them." The person
+  decides when the ground moves.
+
+  THE SAME APPLIES to any table being actively filtered, and to an
+  object being edited.
+
+  AND THE AGENT'S INPUT, obviously: a half-typed question is not
+  refreshed.
+
+## 6.5 What the audit found on the server side
+
+Every event above has ONE place it can be raised from, already:
+write_log's pending and applied calls, notifications.notify(),
+SyncResult's single return, gold's publication, _write_quarantine,
+and config_history's reload epoch. No refactor is required to emit
+them -- which is the difference between an SSE feature that takes a
+week and one that takes a quarter.
+
+## 6.6 The order to do it in
+
+  1. THE SHELL'S ONE CONNECTION, plus the events table and the badge
+     count. Smallest thing that proves the whole path.
+  2. APPROVALS AND NOTIFICATIONS -- tier 1, and the two where the
+     current behaviour is least defensible.
+  3. FRESHNESS AND MIRROR STATE -- and DELETE MirrorPanel's 30-second
+     timer, so the first live panel also removes the last polling one.
+  4. THE AGENT'S STREAM, which is a different shape (per-session, data
+     the recipient is already cleared to see) and should come after
+     the plumbing is proven.
+  5. EVERYTHING IN TIER 3, as it becomes convenient.
+
