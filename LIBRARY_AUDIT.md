@@ -12,7 +12,15 @@ Each finding is measured or read, not guessed.
 
 # Part 1. Reinvented, and worth replacing
 
-## 1.1 SnapshotCache -> cachetools.LRUCache (52 lines, confident)
+## 1.1 SnapshotCache -> cachetools.LRUCache -- DOWNGRADED, see 4.6
+
+**SUPERSEDED BY PART 4.6.** What follows was written before the
+framework in Part 4 was read, and it is weaker than it sounds: this
+would ADD A RUNTIME DEPENDENCY to replace 52 tested lines that also do
+something cachetools does not. Under rule 18 the better move is to
+keep ours and TEST IT against cachetools' semantics, with the library
+in the test dependencies only. Left here rather than rewritten,
+because what a correction corrected is worth being able to read.
 
 core/mirror/snapshot_cache.py hand-rolls a byte-bounded LRU over an
 OrderedDict: 52 lines of eviction, accounting and
@@ -58,6 +66,11 @@ done here:
 
 RECOMMENDED: fold SQLite into the SQLAlchemy adapter as a dialect,
 write-path first, with the existing tests as the parity check.
+
+AND THIS IS THE STRONGEST OF THE THREE, which Part 4.6 says and this
+section originally under-sold: it adds NO new dependency, because
+SQLAlchemy is already here -- and SQL identifier quoting is exactly
+the kind of subtle domain rule 18 says not to hand-write.
 
 ---
 

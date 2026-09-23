@@ -360,12 +360,16 @@ resolution, so gold for it is a straight conform.
           76 -- irrelevant beside a sync that takes seconds.
   LIB-1..3. STOP REINVENTING, where a library does it better
           (LIBRARY_AUDIT.md, September 23):
-          (1) SnapshotCache -> cachetools.LRUCache with getsizeof,
-              verified byte-bounded eviction; 52 lines of hand-rolled
-              LRU go, the decision of WHAT to cache stays.
+          (1) SnapshotCache -> cachetools: DOWNGRADED once the
+              framework was read (rule 18). It would add a RUNTIME
+              dependency to replace 52 tested lines that also refuse
+              an entry too large to cache. If we want the assurance,
+              test ours against cachetools' semantics with the library
+              in the TEST dependencies. Lowest priority of the three.
           (2) _percentile -> statistics.quantiles, keeping "None rather
               than zero when there is nothing to measure".
-          (3) THE REAL ONE: adapters/sqlite_adapter.py builds SQL by
+          (3) THE REAL ONE, AND THE FIRST TO DO:
+              adapters/sqlite_adapter.py builds SQL by
               f-string in 50 places while adapters/sqlalchemy_adapter.py
               uses the expression API for the same job, and SQLAlchemy
               supports SQLite. Fold SQLite in as a dialect, WRITE PATH
@@ -404,7 +408,8 @@ resolution, so gold for it is a straight conform.
           gamma_<field> per pair, so the "why did these score" the
           review needs is DATA rather than a chart; compare_two_records
           scores ONE pair on demand, which is the review screen itself.
-          BUT it costs 186 MB across seven transitive dependencies
+          ITS SIZE IS A DISTRIBUTION ARGUMENT, NOT A RISK ONE (rule
+          18, corrected): 186 MB across seven transitive dependencies
           (duckdb, numpy, pandas, igraph, altair, sqlglot, jinja2)
           against Elysium's current TEN direct ones -- weight most
           deployments would carry for a feature that is off by default.
