@@ -961,4 +961,111 @@ which it is, precisely because it is not in the declaration.
                          CHAINS in another, on a layer that can be
                          switched on -- the view that would have made
                          F-19 obvious at a glance.
+---
+
+# 15. Proposals and approvals: presence without prompting
+
+The owner asked whether a mailbox for proposal control should be
+available on every screen. Researched September 22, and the precedent
+splits: enterprise practice says YES to persistent presence, and the
+fatigue literature says NO to persistent PROMPTING. Both are right,
+about different things.
+
+## 15.1 What enterprise practice does
+
+SAP Fiori is the clearest model: a bell in the shell with a badge, a
+notification centre listing items by date, type or priority, and
+QUICK ACTIONS inline -- "you might want to quickly approve a low-value
+purchase requisition without having to navigate to the approval task
+in app My Inbox". Selecting a notification navigates to the relevant
+app; workflow items go to My Inbox.
+
+Their hierarchy is worth copying: "the most urgent and most visible
+notifications are those that require a response", where "an approver
+must approve or reject" -- and for those the launchpad shows them "in
+even more places". URGENCY EARNS SURFACE AREA; everything else does
+not. ServiceNow, Workday and Concur land on the same shape: one
+unified task list, detail enough to decide, action where you are.
+
+## 15.2 And what the fatigue research says, which applies directly
+     to an AGENT-DRIVEN write path
+
+APPROVER FATIGUE is "the loss of decision quality that happens when
+reviewers face too many requests with too little context", showing up
+as rubber-stamping and inconsistent outcomes -- and the phrase that
+should worry us, "the control exists but the human decision can no
+longer be trusted".
+
+It descends from alert fatigue, where surveys put uninvestigated
+alerts between a quarter and two-thirds, and where "when the volume of
+alerts outpaces the capacity to evaluate them, teams don't slow down
+and miss deadlines. They speed up and miss alerts."
+
+AND THE FINDING THAT IS ABOUT US SPECIFICALLY. If every trivial action
+demands confirmation, "you are running thousands of reps that teach
+the reviewer one lesson: approving is safe and approving is fast" --
+and then an attacker who can influence the agent's output needs only
+to BURY ONE CONSEQUENTIAL ACTION INSIDE A STREAM OF ROUTINE ONES. It
+arrives "wearing the same dialog box as the four hundred harmless
+lookups before it, and it gets the same reflexive click".
+
+Elysium's writes are proposed BY AN AGENT, and prompt injection is
+exactly the influence channel that sentence describes. The instinct to
+gate everything is what manufactures the inattention the dangerous
+approval slips through.
+
+## 15.3 The decisions
+
+  A BADGE ON EVERY SCREEN, NOT AN INBOX. The count is always visible
+  in the shell; the queue is one keystroke away; the full review is
+  its own place. An inbox rendered on every screen competes with the
+  work and teaches people to dismiss it.
+
+  NO QUICK APPROVE FROM THE BADGE -- and this is a deliberate
+  departure from Fiori. Their low-value requisition is reversible and
+  bounded. AUDITED: Elysium's write path has NO undo -- no revert, no
+  rollback, nothing -- because a write goes to the customer's real
+  database through an approved action. The guidance for exactly this
+  case is that reversible actions deserve one click and an undo, while
+  the blocking confirm is "for operations with no undo button".
+  Approving requires looking at the diff.
+
+  SORT BY CONSEQUENCE, NOT ARRIVAL. The recommendation across this
+  research is to "sort actions by reversibility and impact". Elysium
+  has the ingredients already: the action type, the fields touched,
+  how many objects, and whether the change WIDENS ACCESS (section
+  13.6), which is the one that should always sort to the top.
+
+  SHOW PENDING PROPOSALS IN CONTEXT, which is the part no inbox does
+  well. If an object has a pending change, that belongs ON THE
+  OBJECT; if a set does, it belongs on the set -- "3 of these 40 have
+  pending changes". AUDITED, AND IT IS NEARLY FREE:
+  write_log.pending_changes_for_ids(object_type, object_ids) already
+  exists. This is also the antidote to context-free approving, since
+  the reviewer is already looking at the thing being changed.
+
+  EVERY INBOX ROW IS A DOOR. Consistent with section 12: a proposal
+  opens the object or the build it concerns, not a dead-end detail
+  page.
+
+## 15.4 Measure the reps, because the failure is silent
+
+The documented early signal of rubber-stamping is that "your average
+time per approval keeps dropping even though the changes are not
+getting any simpler".
+
+AUDITED: the audit log timestamps every entry, so median
+time-to-decision per approver, per action type, is computable today.
+It belongs in Admin beside the other metrics -- because this failure
+mode has no error, no exception and no alert. The control keeps
+looking present while it stops working, and the only way to see it is
+to watch the clock.
+
+## 15.5 What this does NOT mean
+
+Not fewer approvals. The gate stays where it is; what changes is that
+the gate is not imitated everywhere else. A confirmation that is
+everywhere is a confirmation nowhere -- which is the same conclusion
+section 10 reached from the error-prevention literature, arrived at
+from a second direction.
 
