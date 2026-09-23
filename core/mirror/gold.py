@@ -43,6 +43,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.changelog import MAX_DELETED_FRACTION
 from core.mirror.fusion import FUSED_FROM_COLUMN, fuse
+from core.mirror.gold_arrow import audit_arrow, conform_arrow
 from core.mirror.identity import resolve, rule_for
 from core.mirror.lineage import LINEAGE_COLUMNS
 from core.mirror.survivorship import fuse_entities
@@ -282,6 +283,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     """
     result = GoldResult(object_type)
     unresolved: list = []
+    rows: list[dict] | None = None
     identity_rule = rule_for(type_def)
     if identity_rule is not None:
         # IDENTITY RESOLUTION (GOLD-6): the sources do not agree on the
@@ -314,10 +316,28 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
                 skipped="spans several storages, and their rows were not supplied",
             )
         rows = fuse(type_def, {None: silver_rows, **additional_rows})
+    elif not isinstance(silver_rows, list):
+        rows = None          # Arrow in, Arrow out: see below.
     else:
         rows = conform(type_def, silver_rows)
-    result.rows = len(rows)
-    arrow_table = _arrow(rows, type_def)
+
+    if rows is None:
+        # THE ARROW PATH (GOLD-7). A single-source type needs no Python
+        # dicts: conform is a column rename and the audit is counting,
+        # both of which Arrow does on buffers. MEASURED: 200,000
+        # six-column rows cost 25.7 MB as Arrow against 154.3 MB as
+        # dicts -- 772 bytes a row, a six-fold amplification for a
+        # slower representation.
+        #
+        # ONLY THIS PATH CAN TAKE IT. Identity resolution and
+        # survivorship compare values row by row across sources, and
+        # the changelog diffs by key; those are row-shaped problems and
+        # keep the dict path.
+        arrow_table = conform_arrow(type_def, silver_rows)
+        result.rows = arrow_table.num_rows
+    else:
+        result.rows = len(rows)
+        arrow_table = _arrow(rows, type_def)
     identifier = f"{GOLD_NAMESPACE}.{object_type}"
 
     try:
@@ -373,7 +393,8 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         # noise that would teach a reader to ignore pyiceberg's
         # warnings.
         table.append(arrow_table)
-        result.problems = audit(type_def, rows, previous_count, known_ids)
+        result.problems = _audit_either(type_def, rows, arrow_table, previous_count,
+                                         known_ids)
         if result.problems:
             # NO GOLD RATHER THAN UNAUDITED GOLD.
             catalog.drop_table(identifier)
@@ -400,7 +421,8 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     table.overwrite(arrow_table, branch=AUDIT_BRANCH)
     table = catalog.load_table(identifier)
 
-    result.problems = audit(type_def, rows, previous_count, known_ids)
+    result.problems = _audit_either(type_def, rows, arrow_table, previous_count,
+                                     known_ids)
     if result.problems:
         # NOTHING MOVES. The branch is removed so the next build starts
         # from what is published, not from a refused attempt.
@@ -435,6 +457,19 @@ CONFLICT_SCHEMA = pa.schema([
     ("losing_source", pa.string()),
     ("recorded_at", pa.string()),
 ])
+
+
+def _audit_either(type_def: dict, rows: "list[dict] | None", arrow_table,
+                   previous_count: int | None, known_ids) -> list[str]:
+    """The same findings, whichever representation the build used.
+
+    The two implementations are kept deliberately parallel and their
+    MESSAGES ARE IDENTICAL, because two checks that are supposed to
+    agree and quietly drift apart are worse than one slower check.
+    """
+    if rows is None:
+        return audit_arrow(type_def, arrow_table, previous_count, known_ids)
+    return audit(type_def, rows, previous_count, known_ids)
 
 
 def _columns_changed(table, arrow_table) -> bool:

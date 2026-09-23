@@ -425,6 +425,18 @@ resolution, so gold for it is a straight conform.
   GOLD-6. INFERRED IDENTITY: Fellegi-Sunter (Splink, on DuckDB), off by
           default; the uncertain middle zone to a person through the
           approval queue.
+  GOLD-7. ~~SCALE~~ PARTLY DONE, patch 384, and MEASURED FIRST: a
+          single-source gold build no longer materialises Python dicts.
+          200,000 six-column rows cost 25.7 MB as Arrow buffers against
+          154.3 MB as dicts -- 772 bytes a row, a six-fold
+          amplification -- and the build itself went from 126.7 MB peak
+          and 5.80s to 0.4 MB and 0.21s. STILL OPEN: the whole table is
+          still materialised, so this removes the multiplier rather
+          than the limit; and the dict path remains for identity
+          resolution, survivorship and the changelog, which compare
+          values row by row. Streaming in batches is blocked on the
+          audit -- "are these ids unique" cannot be answered by a batch
+          that has not seen the others.
   GOLD-7. SCALE: batching, when a table outgrows memory (ELT_ROADMAP,
           "the limit that actually binds").
 

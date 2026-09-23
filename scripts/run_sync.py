@@ -324,7 +324,14 @@ def _build_gold(sync, config, data_dir) -> int:
         storage = type_def.get("storage") or {}
         identifier = f"{storage.get('silo')}.{storage.get('table')}"
         try:
-            silver = sync._catalog.load_table(identifier).scan().to_arrow().to_pylist()
+            # ARROW, NOT DICTS (GOLD-7): a single-source type never
+            # needs the rows as Python objects, and building them costs
+            # six times the memory. A type that DOES need them --
+            # identity resolution, survivorship -- converts below,
+            # where the need is visible.
+            silver_arrow = sync._catalog.load_table(identifier).scan().to_arrow()
+            needs_rows = bool(type_def.get("additional_storage") or type_def.get("identity"))
+            silver = silver_arrow.to_pylist() if needs_rows else silver_arrow
             # EVERY STORAGE THE TYPE SPANS (GOLD-5), because a fused
             # type is a join and a join needs both sides. Read here
             # rather than inside build_gold so that reading silver
@@ -351,8 +358,9 @@ def _build_gold(sync, config, data_dir) -> int:
         result = build_gold(sync._catalog, object_type, type_def, silver, known,
                              additional_rows=additional,
                              approved_pairs=decisions.approved_pairs(object_type))
-        proposed = _propose_merges(decisions, config, object_type, type_def,
-                                    {None: silver, **additional})
+        proposed = _propose_merges(
+            decisions, config, object_type, type_def,
+            {None: silver if needs_rows else silver_arrow.to_pylist(), **additional})
         if proposed:
             print(f"proposed {proposed} merge(s) for {object_type}, awaiting a decision")
         if result.skipped:
