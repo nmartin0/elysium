@@ -190,6 +190,12 @@ layers = [
     # what a route and a duration are and nothing else -- not what an
     # object is, not what a role is -- so any layer may reach it.
     "request_metrics",
+    # identity_decisions, the same shape a third time (GOLD-6): one
+    # SQLite store of proposed merges and what a person decided about
+    # them. A leaf, deliberately -- it imports nothing from core,
+    # because the thing that READS it (core.mirror) sits above, and a
+    # store that knew about its reader would invert that.
+    "identity_decisions",
     # The artifact store, also a leaf. It persists and scopes saved
     # things -- searches, selections, pending writes -- and knows
     # nothing about what is inside one: `body` is opaque JSON.

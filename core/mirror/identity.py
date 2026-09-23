@@ -123,8 +123,54 @@ def _entity_id(storage_key: Any, row: dict, storage: dict, primary: Any) -> str:
     return f"{storage_key}:{object_id}"
 
 
+def _source_qualified(storage_key: Any, row: dict, storage: dict) -> str:
+    """How a matcher and an approved decision name this row.
+
+    Always `<source>:<id>`, including for the primary storage, because
+    a proposal must say WHICH source it means -- unlike an entity id,
+    which is the answer rather than the question.
+    """
+    prefix = "primary" if storage_key is None else str(storage_key)
+    return f"{prefix}:{row.get(storage['id_column'])}"
+
+
+def _union(groups: list[list], pairs: list[tuple[str, str]], name_of) -> list[list]:
+    """Groups joined wherever an approved pair spans two of them.
+
+    AFTER the rule has grouped, not during it: an approval says these
+    two ROWS are one object, which means every row already grouped with
+    either of them comes too. Doing it inside the keying would merge
+    only the pair and leave their rule-mates behind.
+    """
+    if not pairs:
+        return groups
+    index = {}
+    for position, members in enumerate(groups):
+        for member in members:
+            index[name_of(member)] = position
+    parent = list(range(len(groups)))
+
+    def root(position: int) -> int:
+        while parent[position] != position:
+            parent[position] = parent[parent[position]]
+            position = parent[position]
+        return position
+
+    for left, right in pairs:
+        if left in index and right in index:
+            left_root, right_root = root(index[left]), root(index[right])
+            if left_root != right_root:
+                parent[right_root] = left_root
+
+    joined: dict[int, list] = {}
+    for position, members in enumerate(groups):
+        joined.setdefault(root(position), []).extend(members)
+    return list(joined.values())
+
+
 def resolve(type_def: dict, rows_by_storage: dict[Any, list[dict]],
-            rule: IdentityRule | None = None) -> Resolution:
+            rule: IdentityRule | None = None,
+            approved_pairs: "list[tuple[str, str]] | None" = None) -> Resolution:
     """Group rows from every storage into entities.
 
     A row matching nothing is its own entity, which is what makes this
@@ -151,7 +197,16 @@ def resolve(type_def: dict, rows_by_storage: dict[Any, list[dict]],
             else:
                 by_key.setdefault(key, []).append((storage_key, row))
 
-    for members in by_key.values():
+    # AN APPROVED MERGE JOINS GROUPS THE RULE LEFT APART. A row the
+    # rule matched nothing on is a group of one here, so an approval
+    # can pick it up -- which is the whole point of the inferred half.
+    grouped_rows = [[entry] for entry in unmatched] + list(by_key.values())
+    unmatched = []
+    for members in _union(
+        grouped_rows,
+        list(approved_pairs or []),
+        lambda entry: _source_qualified(entry[0], entry[1], storages[entry[0]]),
+    ):
         # THE ENTITY KEEPS THE PRIMARY SOURCE'S ID where the primary
         # source has the row: an id that survives a rule changing is
         # worth more than a tidy one.
