@@ -286,6 +286,22 @@ resolution, so gold for it is a straight conform.
           guaranteed to alert forever. And the publication time is
           shown on every object, so staleness is visible before it is
           an alert.
+  INFER-1. A vLLM ADAPTER, and raising the concurrency limit
+          (SCALABILITY.md). AUDITED: agent queries run through an
+          explicit ThreadPoolExecutor sized from
+          max_concurrent_requests, DEFAULT 4, while ordinary reads use
+          Starlette's own pool of 40 -- so reads scale to ~40 and agent
+          queries to 4. The benchmarks: at one request vLLM and Ollama
+          are within ~20%, and Ollama is often faster on
+          time-to-first-token; past 4-8 concurrent requests vLLM leads
+          by 2-9x; at saturation Red Hat measured 793 tok/s against
+          Ollama's 41, p99 80 ms against 673 ms. Ollama's own default
+          parallel cap is FOUR, the same as ours by coincidence, so
+          swapping engines without raising the limit would change
+          nothing. The adapter is small -- an OpenAI-compatible HTTP
+          client behind the existing LLMAdapter protocol -- which makes
+          the engine a per-deployment choice: Ollama for a laptop or a
+          small team, vLLM where concurrency is real.
   GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.
