@@ -27,6 +27,7 @@ turns it on never installs it: `pip install elysium[identity]`. The
 import is lazy and the failure names the extra.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -100,18 +101,25 @@ def settings_for(type_def: dict) -> ProbabilisticSettings | None:
     Raises rather than defaulting on a malformed block: a deployment
     that meant to enable matching and typed a key wrongly should be
     told, not quietly left deterministic.
+
+    ACCEPTS FROZEN CONFIGURATION. The loader deep-freezes the schema
+    before anything sees it, so a mapping arrives as a mappingproxy and
+    a list as a TUPLE. Checking for `dict` and `list` here rejected
+    every real deployment while passing every test that built its
+    schema by hand -- found by running the pipeline end to end, which
+    no unit test would have caught.
     """
     identity = type_def.get("identity") or {}
     declared = identity.get("probabilistic")
     if not declared:
         return None
-    if not isinstance(declared, dict):
+    if not isinstance(declared, Mapping):
         raise ValueError(f"identity.probabilistic must be a mapping, got {declared!r}.")
     unknown = set(declared) - {"compare", "block_on", "auto_propose_above", "review_above"}
     if unknown:
         raise ValueError(f"unknown identity.probabilistic key(s) {sorted(unknown)}.")
     compare = declared.get("compare")
-    if not compare or not isinstance(compare, list):
+    if not compare or isinstance(compare, str) or not isinstance(compare, Sequence):
         raise ValueError("identity.probabilistic.compare must be a non-empty list of fields.")
     fields = type_def.get("fields") or {}
     missing = [name for name in compare if name not in fields]

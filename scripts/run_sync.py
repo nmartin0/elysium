@@ -48,6 +48,7 @@ Run from the project root:
 """
 
 import fcntl
+import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -279,9 +280,45 @@ def _notify_mirror_health(runtime_paths, config, attempts, targets) -> None:
         print(f"could not evaluate mirror health: {e}", file=sys.stderr)
 
 
-def _build_gold(sync, config) -> int:
+def _propose_merges(store, config, object_type: str, type_def: dict,
+                     rows_by_storage: dict) -> int:
+    """Candidates a person should look at. Returns how many are new.
+
+    NEVER APPLIES ANYTHING. A proposal sits in the store until somebody
+    decides, and the next build reads only APPROVED ones -- which is
+    why this can run unattended at all.
+
+    AND IT NEVER BREAKS A SYNC. Inference is the optional half; if the
+    extra is missing or the backend throws, the mirror and gold are
+    still correct, so the failure is reported and the run continues.
+    """
+    from core.mirror.matching import SplinkMatcher, settings_for
+    if not config.identity_inference or settings_for(type_def) is None:
+        return 0
+    try:
+        candidates = SplinkMatcher().candidates(type_def, rows_by_storage)
+    except Exception as exc:  # noqa: BLE001 - reported per type, like a sync
+        print(f"WARNING gold.{object_type}: merges could not be proposed: {exc}",
+              file=sys.stderr)
+        return 0
+    proposed = 0
+    for candidate in candidates:
+        before = len(store.proposals(object_type))
+        store.propose(object_type, candidate.left_id, candidate.right_id,
+                       candidate.score,
+                       agreement=json.dumps(candidate.agreement, sort_keys=True))
+        proposed += len(store.proposals(object_type)) - before
+    return proposed
+
+
+def _build_gold(sync, config, data_dir) -> int:
     """One gold table per object type, audited before it is published.
     Returns how many were refused."""
+    from core.identity_decisions import MergeDecisionStore
+    # DECISIONS LIVE BESIDE THE OTHER STORES, under data_dir -- not in
+    # the lake, because they are what a PERSON told this deployment
+    # rather than something derived from a source.
+    decisions = MergeDecisionStore(data_dir / "identity_decisions.db")
     refused = 0
     for object_type, type_def in (config.schema or {}).items():
         storage = type_def.get("storage") or {}
@@ -312,7 +349,12 @@ def _build_gold(sync, config) -> int:
             if ids is not None
         }
         result = build_gold(sync._catalog, object_type, type_def, silver, known,
-                             additional_rows=additional)
+                             additional_rows=additional,
+                             approved_pairs=decisions.approved_pairs(object_type))
+        proposed = _propose_merges(decisions, config, object_type, type_def,
+                                    {None: silver, **additional})
+        if proposed:
+            print(f"proposed {proposed} merge(s) for {object_type}, awaiting a decision")
         if result.skipped:
             print(f"skipped gold.{object_type}: {result.skipped}")
         elif result.published:
@@ -443,7 +485,7 @@ def run_sync(runtime_paths=None) -> int:
         # publish a partial picture, and the audit's row-count bound
         # would refuse it anyway, more confusingly.
         if failures == 0:
-            failures += _build_gold(sync, config)
+            failures += _build_gold(sync, config, runtime_paths.data_dir)
 
         # THE CONDITION IS CHECKED AFTER THE SYNC, which is the only
         # moment the facts are current. A separate scheduler would need

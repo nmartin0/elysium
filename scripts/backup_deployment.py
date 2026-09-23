@@ -69,6 +69,14 @@ OWNED_DATABASES = (
     # The approvals queue -- database-authoritative since patch 276,
     # so there is no other copy of a waiting decision.
     "pending_writes.db",
+    # THE JUDGEMENTS A PERSON MADE ABOUT WHO IS WHO (GOLD-6). Nothing
+    # upstream remembers them: gold is rebuilt from silver on every
+    # sync, and the merges it applies exist ONLY here. Losing this file
+    # would silently un-merge every entity somebody had approved, and
+    # the next sync would publish the un-merged version without
+    # complaint. The backup guard caught it the moment the store
+    # appeared, which is what that guard is for.
+    "identity_decisions.db",
     "saved_views.db",
     "triggers.db",
     "notifications.db",

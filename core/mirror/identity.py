@@ -38,6 +38,7 @@ can see the result. They are left unmerged and reported, which is the
 one case this module declines to answer.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -70,14 +71,21 @@ def rule_for(type_def: dict) -> IdentityRule | None:
     Raises on a rule that cannot work, rather than resolving nothing
     quietly: a match_on naming a field the type does not have would
     match every row against every other on a missing value.
+
+    ACCEPTS FROZEN CONFIGURATION. The loader deep-freezes the schema
+    before anything sees it, so a mapping arrives as a mappingproxy and
+    a list as a TUPLE. Checking for `dict` and `list` here rejected
+    every real deployment while passing every test that built its
+    schema by hand -- found by running the pipeline end to end, which
+    no unit test would have caught.
     """
     declared = type_def.get("identity")
     if not declared:
         return None
-    if not isinstance(declared, dict):
+    if not isinstance(declared, Mapping):
         raise ValueError(f"identity must be a mapping, got {declared!r}.")
     match_on = declared.get("match_on")
-    if not match_on or not isinstance(match_on, list):
+    if not match_on or isinstance(match_on, str) or not isinstance(match_on, Sequence):
         raise ValueError("identity.match_on must be a non-empty list of field names.")
     fields = type_def.get("fields") or {}
     unknown = [name for name in match_on if name not in fields]
@@ -85,7 +93,11 @@ def rule_for(type_def: dict) -> IdentityRule | None:
         raise ValueError(
             f"identity.match_on names field(s) this type does not have: {unknown}."
         )
-    unknown_keys = set(declared) - {"match_on", "primary"}
+    #  is the inferred half's own block (matching.py),
+    # validated there -- named here only so this validator does not
+    # reject a type that declares both halves, which is the normal
+    # case for a deployment using inference at all.
+    unknown_keys = set(declared) - {"match_on", "primary", "probabilistic"}
     if unknown_keys:
         raise ValueError(f"unknown identity key(s) {sorted(unknown_keys)}.")
     return IdentityRule(match_on=tuple(match_on), primary=declared.get("primary"))

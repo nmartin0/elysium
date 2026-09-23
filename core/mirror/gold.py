@@ -270,7 +270,8 @@ def published_at(catalog, object_types) -> dict[str, str]:
 
 def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict],
                known_ids: dict[str, set] | None = None,
-               additional_rows: "dict[str, list[dict]] | None" = None) -> GoldResult:
+               additional_rows: "dict[str, list[dict]] | None" = None,
+               approved_pairs: "list[tuple[str, str]] | None" = None) -> GoldResult:
     """Conform, audit and -- only if it passes -- publish one type.
 
     A TABLE THAT ALREADY HAS A PUBLICATION is written on a branch, so
@@ -294,7 +295,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
                 skipped="resolves identity across sources, and their rows were not supplied",
             )
         resolution = resolve(type_def, {None: silver_rows, **(additional_rows or {})},
-                              identity_rule)
+                              identity_rule, approved_pairs)
         fused = fuse_entities(type_def, resolution)
         rows = fused.rows
         result.conflicts = len(fused.conflicts)
@@ -327,6 +328,30 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     try:
         table = catalog.load_table(identifier)
         first_build = table.current_snapshot() is None
+        if _columns_changed(table, arrow_table):
+            # THE SHAPE OF THE TYPE CHANGED, so the existing table
+            # cannot hold the new rows -- adding an identity rule to a
+            # live deployment adds a column, and dropping one removes
+            # it. GOLD IS DERIVED, so the answer is to rebuild it
+            # rather than to migrate it: every row comes from silver,
+            # which still has them.
+            #
+            # FOUND BY A TEST WRITTEN FOR SOMETHING ELSE: declaring
+            # identity on an existing deployment failed with "PyArrow
+            # table contains more columns: _fused_from", which is what
+            # an operator would have seen at 2am.
+            #
+            # THE COST, STATED: publications are re-tagged from zero,
+            # so "published-7" means something different afterwards.
+            # The CHANGELOG is untouched, being its own table, and the
+            # first build after a reshape records no history -- there
+            # is no previous publication of THIS shape to differ from.
+            logger.info(
+                f"gold.{object_type}: the type's columns changed, rebuilding the table"
+            )
+            catalog.drop_table(identifier)
+            table = catalog.create_table(identifier, schema=arrow_table.schema)
+            first_build = True
     except (NoSuchTableError, NoSuchNamespaceError):
         table = catalog.create_table(identifier, schema=arrow_table.schema)
         first_build = True
@@ -410,6 +435,15 @@ CONFLICT_SCHEMA = pa.schema([
     ("losing_source", pa.string()),
     ("recorded_at", pa.string()),
 ])
+
+
+def _columns_changed(table, arrow_table) -> bool:
+    """Whether the published table holds different columns than this
+    build produces. Names only: a type change is a different problem,
+    and the audit is where that belongs."""
+    published = {field.name for field in table.schema().fields}
+    building = set(arrow_table.schema.names)
+    return published != building
 
 
 def _write_conflicts(catalog, object_type: str, conflicts: list) -> None:

@@ -157,6 +157,8 @@ class DeploymentConfig:
                                    #
                                    # Matters once a changelog exists, since the mirror then
                                    # holds history no source can return. See ELT_ROADMAP.md.
+    identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
+                                   # approval is not configurable.
     read_from_gold: bool          # GOLD-3: serve reads from published GOLD, per object
                                    # type, falling back to the mirror for any type gold
                                    # does not build. Off by default while it is proven.
@@ -523,6 +525,12 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # object type, with the source view kept for the sync and
             # for writes. Off means today's behaviour exactly.
             read_from_gold=(config.get("mirror") or {}).get("read_from_gold", False),
+            # GOLD-6: may the pipeline PROPOSE merges it inferred?
+            # Defaults to FALSE, as FUSION_AND_IDENTITY.md requires --
+            # and note the other half is NOT here: whether a proposal
+            # needs approval is not configurable, "because a setting is
+            # a thing someone turns off".
+            identity_inference=(config.get("mirror") or {}).get("identity_inference", False),
             # VALIDATED HERE, at load, so a mistake in a declared
             # trigger stops the deployment starting -- where whoever
             # wrote it is looking -- rather than surfacing when it was
