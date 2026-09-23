@@ -286,3 +286,158 @@ CROSS-LINKED, THOUGH: a gold node opens its object type, and each
 property in the ontology shows the silver column it came from -- which
 the lineage columns (patch 340) now make possible.
 
+---
+
+# Part 4. SSE, decided (September 22)
+
+Part 1 chose server-sent events. This records WHY it survived being
+argued with, what it is expected to carry, and the two things that
+will go wrong in a real deployment if nobody writes them down.
+
+## 4.1 The frame that changed the bar
+
+The owner: "this isn't a website -- it's the client that just so
+happens to run on a browser." Which raises the question from "can we
+push a badge count" to "can this carry live data, live charts,
+proposal arrivals and messaging, in real time". The answer is yes to
+all four, with one boundary worth knowing exactly.
+
+## 4.2 What SSE carries well
+
+  LIVE DATA AND CHARTS. Live dashboards and tickers are the canonical
+  case. The design constraint is ours, not the transport's: COALESCE
+  ON THE SERVER. A browser cannot render faster than the screen
+  refreshes, and a chart redrawn two hundred times a second is heat.
+
+  PROPOSAL ARRIVALS, ALERTS, SYNC PROGRESS. One small event each.
+
+  AGENT STREAMING, which is the same mechanism the industry already
+  standardised on: "LLM token streaming has since made SSE the default
+  transport for most major AI SDKs".
+
+  MESSAGING. Received messages arrive on the stream; sent messages are
+  an ordinary POST, which the client already has.
+
+## 4.3 The boundary: what would actually need a websocket
+
+Both sides sending AT HIGH FREQUENCY on one connection -- typing
+indicators, presence dots, live cursors, read receipts. Note what
+those have in common: they are transient SOCIAL signals, not facts.
+Elysium's real-time needs are the opposite, so a websocket is an
+ADDITIVE decision later, not a rewrite: SSE for facts, a websocket for
+a social layer if one is ever built.
+
+## 4.4 A REFINEMENT to the hint-only rule
+
+Part 1 said events carry no data, only a hint, and the client
+refetches through the authorised endpoint. That is right for anything
+governed by object security -- it keeps one read path and one set of
+rules.
+
+BUT IT IS WRONG FOR A CHAT MESSAGE. Refetching a conversation to learn
+what somebody said is silly. So the rule refines to:
+
+  AN EVENT MAY CARRY DATA THE RECIPIENT IS ALREADY CLEARED TO SEE AND
+  WHICH HAS NO SEPARATE AUTHORISATION TO APPLY -- a message addressed
+  to them, an agent token in their own session. EVERYTHING GOVERNED BY
+  OBJECT SECURITY STAYS A HINT.
+
+## 4.5 The advantages that decided it, beyond the obvious
+
+  NO STICKY SESSIONS, EVER: "any server instance can pick up any
+  client on reconnect, thanks to Last-Event-ID. No sticky sessions, no
+  session affinity, no consistent hashing." Websockets terminate at
+  the origin, so scaling means affinity or an external pub/sub layer.
+  Elysium is already multi-worker-safe; SSE keeps that for free.
+
+  THE EXISTING MIDDLEWARE APPLIES UNCHANGED -- auth, the request-size
+  limit, Permissions-Policy, rate limiting -- because an SSE stream IS
+  an HTTP request. A websocket would need every one reconsidered for a
+  second protocol.
+
+  GRACEFUL SHUTDOWN ALREADY WORKS. Patch 326 proved a 30-second drain;
+  a stream is a request that ends, and the browser reconnects to the
+  new process by itself. Websockets need their own drain logic.
+
+  NO NEW PORT, NO NEW FIREWALL RULE, which in a customer's environment
+  is a procurement conversation rather than a config change.
+
+  DEBUGGABLE WITH curl, because the traffic is human-readable text --
+  and this is an on-prem product whose faults get diagnosed over
+  email, on somebody else's machine.
+
+  OBSERVABILITY FOR FREE: "the reliance on HTTP means that many
+  monitoring, logging, and observability tools work out of the box".
+
+  CHEAPER PER CONNECTION: a websocket holds "state for both directions
+  plus frame buffers".
+
+  AND IT FITS AN AUDIT-SHAPED PRODUCT: event ids with replay mean the
+  server can PROVE a client saw every event up to N -- the same
+  reasoning as the write log.
+
+## 4.6 The two things that will go wrong, written down in advance
+
+  REVERSE PROXIES BUFFER BY DEFAULT. Nginx dams the stream and
+  delivers it in bursts unless told otherwise (X-Accel-Buffering: no,
+  proxy_buffering off). The symptom -- events arriving late, in
+  clumps -- looks like a server bug and is not. THIS BELONGS IN
+  INSTALL.md BEFORE THE FIRST DEPLOYMENT MEETS IT.
+
+  RECONNECT STORMS: "if a server restarts, thousands of clients may
+  reconnect at once unless you plan for it". The server controls the
+  retry interval, and it must jitter it.
+
+---
+
+# Part 5. Alert mail, and why it is not SSE
+
+The owner asked whether an alert MAIL MESSAGE could arrive with the
+notification. SSE cannot do that: it pushes to an open browser. Mail
+is a delivery channel, and AUDITED -- Elysium has no SMTP support of
+any kind today.
+
+## 5.1 The three nouns, from the precedent
+
+"Separate three nouns: an event (something happened), a notification
+(a person should know), and a delivery (one message on one channel,
+however many attempts it takes). Keeping them apart prevents duplicate
+sends and ambiguous delivery state."
+
+Elysium already has the middle one: a notifications store, per user,
+with recipients derived from GRANTS and per-recipient suppression.
+What is missing is the delivery layer.
+
+## 5.2 The shape
+
+  AN OUTBOX: a deliveries row per (event, user, channel), "written in
+  the same transaction as the event, claimed by a worker", its primary
+  key acting as the idempotency key. This is what stops the same alert
+  being mailed three times.
+
+  CHANNELS DIFFER, and that is why they are separate rows: "email can
+  be submitted more than once and cannot be unsent", while an in-app
+  notification can be marked read or corrected.
+
+  PREFERENCES EVALUATED AT SEND TIME, not at event time -- "if the
+  user mutes email in the meantime, the digest should not go out".
+
+  ONLY THE TOP TIER MAILS. The SRE precedent is blunt that email
+  alerting "tends to easily become overrun with noise", so the NOW
+  tier (DEV_UI.md 16.5) mails and everything else stays in-app, with
+  digests for the rest -- and a maximum wait on the digest window,
+  since a rolling window reset by each new event can delay a
+  notification indefinitely.
+
+  SMTP FOLLOWS THE EXISTING RULE: host and port in the config file,
+  credentials as ${VAR} from the environment, never a literal.
+
+## 5.3 The constraint that is ours
+
+EMAIL IS AN OUTBOUND NETWORK DEPENDENCY in a product that otherwise
+has none, and some deployments are air-gapped with no relay to reach.
+So it is OPTIONAL, degrades silently to in-app, and must never block a
+sync or a write when the relay is down -- the same discipline the
+existing notifier already keeps, where failing to notice something
+"must not turn a successful sync into a failed one".
+
