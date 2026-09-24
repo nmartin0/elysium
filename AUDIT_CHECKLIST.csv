@@ -121,14 +121,14 @@ PA001-G8,PA,PIPELINE_AUDIT,MED,link check depends on build order within one sync
 PA001-G9,PA,PIPELINE_AUDIT,HIGH,one refused table silently skips gold for all types,run_sync.py:430,IN,unverified
 PA001-G10,PA,PIPELINE_AUDIT,LOW,"silo named gold/gold_history/bronze_*/changelog_*/quarantine_* collides",gold_view.py:38,IN,unverified
 PA001-G11,PA,PIPELINE_AUDIT,LOW,gold republishes unchanged types every sync,gold.py,MR2,"interacts with patch 394 retention"
-PA001-G12,PA,PIPELINE_AUDIT,LOW,decimal scale differs by path; the API emits floats,api + mediator,IN,unverified
+PA001-G12,PA,PIPELINE_AUDIT,LOW,decimal scale differs by path; the API emits floats,api + mediator,IN,"PROMPT HALF FIXED patch 403 (one declared rendering); the API float half is still open"
 PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared text field (newlines),standardise.py:34,P21,unverified
 PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes become Python repr",iceberg_sync.py:810,IN,unverified
 PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,unverified
 PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; six places said it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 3 tests,P22,"CONFIRMED + FIXED patch 402: audit right, I was wrong; gold now expires under the 7-day margin; all six claims corrected"
 PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,unverified
 PA001-X1,PA,PIPELINE_AUDIT,HIGH,many-valued link fields return ids the caller's MAC forbids,mediator.py:2108,P25,"UNVERIFIED - TOP PRIORITY"
-PA001-X2,PA,PIPELINE_AUDIT,CRITICAL,the agent crashes on any decimal or date field in the shipped config,agent_step_prompt.py:485,P26,"UNVERIFIED - TOP PRIORITY"
+PA001-X2,PA,PIPELINE_AUDIT,CRITICAL,the agent crashes on any decimal or date field in the shipped config,agent_step_prompt.py:485,P26,"CONFIRMED + FIXED patch 403: one renderer at the declared scale"
 ZOO-01,ZOO,PR001 Part II,GAP,mojibake not detected,standardise/transform,P24,unverified
 ZOO-02,ZOO,PR001 Part II,GAP,zero-width space kept,standardise,P24,unverified
 ZOO-03,ZOO,PR001 Part II,SEC,Unicode tag smuggling kept (LLM-readable; invisible to reviewers),standardise,P24,unverified
@@ -159,7 +159,7 @@ LB-1b,LB,LLM_BOUNDARY,HIGH,no number check; add one that fails closed like the c
 LB-2,LB,LLM_BOUNDARY,HIGH,"agent filters by EQUALITY only; schema hides data types; no order_by/limit",agentic_loop.py:361 filters.py,IN,unverified
 LB-3,LB,LLM_BOUNDARY,HIGH,three code-detected failures end as complete answers,agent_step_prompt.py agentic_loop.py,IN,unverified
 LB-4,LB,LLM_BOUNDARY,HIGH,output shape not enforced at decoding (json_mode only),adapters,IN,unverified
-LB-5,LB,LLM_BOUNDARY,MED,records rendered as Python repr step logs,synthesis_prompt.py,IN,unverified
+LB-5,LB,LLM_BOUNDARY,MED,records rendered as Python repr step logs,synthesis_prompt.py,IN,"the encoder patch 403 built is LB-5s prerequisite; synthesis still sends repr"
 LB-6,LB,LLM_BOUNDARY,MED,deterministic follow-ups delegated; 52% of the step prompt is procedure,agent_step_prompt.py,IN,unverified
 LB-7,LB,LLM_BOUNDARY,MED,tool arguments transcribed by the model,agentic_loop.py _step_use_tool,IN,unverified
 LB-8,LB,LLM_BOUNDARY,MED,entity lookup by exact-match guess; free-text search not offered,mediator.py,IN,unverified

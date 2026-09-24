@@ -36,6 +36,7 @@ import logging
 
 from core.functions.interface import Function
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
+from core.llm.prompt_values import dumps_gathered
 from core.ontology.schema import is_searchable_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation, evaluate_submission_criteria
 
@@ -482,7 +483,7 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
     # guessing at an appropriate default).
     user_message = (
         f"Question: {query_text}\n\n"
-        f"Gathered so far: {json.dumps(gathered_so_far)}\n\n"
+        f"Gathered so far: {dumps_gathered(gathered_so_far, visible_schema)}\n\n"
         f"What is the next step?"
     )
 
