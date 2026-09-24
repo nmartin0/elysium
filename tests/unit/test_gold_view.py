@@ -120,6 +120,71 @@ class TestTheReKeying:
         assert link["target"] == "Customer" and "column" not in link
 
 
+class TestALinkThroughAJoinTable:
+    """A MANY-TO-MANY LINK HAS NO OBJECT TYPE IN THE MIDDLE.
+
+    Customer.tags is resolved by reading `customer_tags`, which is not
+    a type, is not conformed, and has no gold table of its own -- so
+    the re-keying cannot point it at gold.<Type>. It keeps the table's
+    name, and the gold build publishes that table alongside the types.
+
+    FOUND BY THE INTEGRATION SUITE, not by this file: the re-keying had
+    assumed every via_table was a type's own table, which is true of
+    every one-to-many link and of none of the many-to-many ones. Pinned
+    here so the next change to it fails a fast test.
+    """
+
+    @staticmethod
+    def _schema():
+        return {
+            "Customer": {
+                "id_field": "customer_id",
+                "security": {"field": "region"},
+                "storage": {"silo": "s", "table": "customers", "id_column": "cust_pk"},
+                "fields": {
+                    "customer_id": {"type": "data", "column": "cust_pk"},
+                    "region": {"type": "data"},
+                    # Through a JOIN TABLE, which is nobody's type.
+                    "tags": {"type": "link", "target": "Tag", "cardinality": "many",
+                              "via_table": "customer_tags", "via_column": "cust_ref",
+                              "via_target_column": "tag_ref"},
+                },
+            },
+            "Tag": {
+                "id_field": "tag_id",
+                "security": {"field": "region"},
+                "storage": {"silo": "s", "table": "tags", "id_column": "tag_pk"},
+                "fields": {"tag_id": {"type": "data", "column": "tag_pk"},
+                            "region": {"type": "data"}},
+            },
+        }
+
+    def test_the_join_tables_name_is_kept(self):
+        built, _ = build_gold_view(self._schema())
+
+        assert built["Customer"]["fields"]["tags"]["via_table"] == "customer_tags"
+
+    def test_and_so_is_its_column(self):
+        """There is no property to re-key to: the join table has no
+        ontology shape at all."""
+        built, _ = build_gold_view(self._schema())
+
+        assert built["Customer"]["fields"]["tags"]["via_column"] == "cust_ref"
+
+    def test_a_link_to_the_targets_OWN_table_is_still_re_keyed(self):
+        """The one-to-many case must not be caught by the same branch."""
+        schema = self._schema()
+        schema["Customer"]["fields"]["tags"] = {
+            "type": "link", "target": "Tag", "cardinality": "many",
+            "via_table": "tags", "via_column": "tag_pk",
+        }
+
+        built, _ = build_gold_view(schema)
+
+        assert built["Customer"]["fields"]["tags"]["via_table"] == "Tag"
+        assert built["Customer"]["fields"]["tags"]["via_column"] == "tag_id"
+
+
 class TestWhatIsLeftOUT:
     def test_a_type_with_several_sources_is_INCLUDED_since_GOLD_5(self):
         """Gold joins its storages into one table, so it reads like any

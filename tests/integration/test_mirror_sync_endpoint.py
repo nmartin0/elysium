@@ -68,49 +68,19 @@ def _as_admin(client):
     _login(client, "root", "correct-pw")
 
 
-class TestALiveDeploymentHasNoMirrorToFill:
-    def test_it_refuses(self, client, captured):
-        """THE INTEGRATION FIXTURE READS LIVE, declared explicitly when
-        the mirror became the default -- so this is the state those
-        tests run in, and the refusal is the right answer for it.
-
-        Starting a sync here would work and serve nobody, which is
-        worse than refusing.
-        """
-        _as_admin(client)
-
-        response = client.post(
-            "/api/admin/mirror/sync", headers=_csrf_headers(client),
-        )
-
-        assert response.status_code == 409
-        assert captured.started == []
-
-
-def _reading_from_mirror(client):
-    """Flips this deployment onto the mirror for one test.
-
-    THE FIXTURE DECLARES `read_from_mirror: false`, so tests needing
-    the mirror path have to say so.
-
-    BY REPLACING THE CONFIG, not by assigning to it. A
-    DeploymentGeneration is FROZEN -- assigning raises
-    FrozenInstanceError, which is the immutability doing its job and
-    caught this attempt immediately.
-    """
-    import dataclasses
-
-    generation = client.app.state.generation
-    client.app.state.generation = dataclasses.replace(
-        generation,
-        config=dataclasses.replace(generation.config, read_from_mirror=True),
-    )
-
+# _reading_from_mirror() WENT WITH IT. It flipped a deployment onto
+# the mirror for one test, because the fixture declared
+# `read_from_mirror: false`; the fixture no longer can, so every test
+# here is already on the mirror and the calls are gone.
+#
+# A LIVE DEPLOYMENT HAS NO MIRROR TO FILL -- and since GOLD-9 there is
+# no live deployment: read_from_mirror: false is refused at load, so
+# the 409 this class covered is unreachable. Removed rather than
+# rewritten, because the case it described cannot occur.
 
 class TestStartingASync:
     def test_it_returns_before_the_sync_finishes(self, client, captured):
         _as_admin(client)
-        _reading_from_mirror(client)
 
         response = client.post("/api/admin/mirror/sync", headers=_csrf_headers(client))
 
@@ -121,7 +91,6 @@ class TestStartingASync:
         """THE CONTROL ON THE TEST ABOVE. A route returning
         {"started": true} without starting anything would pass it."""
         _as_admin(client)
-        _reading_from_mirror(client)
 
         client.post("/api/admin/mirror/sync", headers=_csrf_headers(client))
 
@@ -130,7 +99,6 @@ class TestStartingASync:
     def test_it_says_where_the_outcome_will_appear(self, client, captured):
         # A BUTTON THAT RETURNS INSTANTLY looks like it did nothing.
         _as_admin(client)
-        _reading_from_mirror(client)
 
         detail = client.post("/api/admin/mirror/sync", headers=_csrf_headers(client)).json()["detail"]
 

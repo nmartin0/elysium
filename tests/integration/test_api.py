@@ -369,23 +369,9 @@ def test_data_freshness_requires_a_login(client):
     assert response.status_code in (401, 403)
 
 
-def test_data_freshness_reports_live_when_not_reading_from_the_mirror(client):
-    # The fixture deployment reads live, so this is the real default
-    # path. "live" is said explicitly rather than returning a null
-    # timestamp a caller would have to interpret.
-    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
-    _login(client, "alice", "correct-pw")
-
-    response = client.get("/api/data-freshness")
-
-    assert response.status_code == 200
-    # published_at is null because nothing is read from gold -- its
-    # presence is how a caller tells which layer it is seeing (GOLD-3).
-    # A null last_synced_at still means "live", and is kept rather than
-    # omitted: omitting it would leave a caller guessing at the
-    # difference between absent and not-applicable.
-    assert response.json() == {"source": "live", "last_synced_at": None,
-                                "published_at": None}
+# THE LIVE-READ FRESHNESS TEST IS GONE (GOLD-9), with the mode it
+# covered: a deployment cannot read from the source any more, so
+# "source": "live" is not an answer /api/data-freshness can give.
 
 
 def test_data_freshness_reports_gold_and_its_publication(client):
@@ -419,26 +405,21 @@ def test_data_freshness_reports_gold_and_its_publication(client):
     }
 
 
-def test_data_freshness_reports_the_mirror_sync_time_when_reading_from_it(client):
-    # Simulates a mirror-backed deployment by setting the same two
-    # values load_deployment_bundle() would set for one -- exercising
-    # the real route rather than mocking it.
-    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+def test_data_freshness_reports_the_publication_it_is_serving(client):
+    # SINCE GOLD-9 a synced deployment always answers "gold", because
+    # that is where reads come from. BOTH CLOCKS are reported: the
+    # publication a reader is seeing, and the SOURCE-READ time that
+    # bounds the write overlay (F-29), which are different instants.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west",
+                                                 "customer_service")
     _login(client, "alice", "correct-pw")
 
-    with_config(client.app, read_from_mirror=True)
-    mediator_of(client.app).mirror_synced_at = "2026-01-15T09:00:00+00:00"
+    body = client.get("/api/data-freshness").json()
 
-    response = client.get("/api/data-freshness")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "source": "mirror",
-        "last_synced_at": "2026-01-15T09:00:00+00:00",
-        # Null until some object type is read from GOLD, which is how a
-        # caller tells which layer it is looking at (GOLD-3).
-        "published_at": None,
-    }
+    assert body["source"] == "gold"
+    assert body["last_synced_at"] is not None
+    assert set(body["published_at"]) >= {"Customer", "Transaction"}
+    assert min(body["published_at"].values()) >= body["last_synced_at"]
 
 
 def test_data_freshness_needs_no_particular_grant(client):
@@ -679,8 +660,16 @@ def test_search_objects_finds_a_partial_match_with_real_field_values(client):
     assert response.status_code == 200
     body = response.json()
     assert body["total_matches"] == 1
+    # risk_score JOINED THE ANSWER when reads moved to gold (GOLD-9),
+    # and that is an improvement rather than a leak: this role holds
+    # read:Customer.risk_score, and the field was previously left out
+    # of a search result because it lives in a SECOND database and
+    # fetching it meant a second read. In gold the object is one row,
+    # so the user is shown what they were always entitled to see.
     assert body["results"] == [
-        {"id": "cust_001", "fields": {"region": "us-west", "name": "Ada Okafor", "email": "ada.okafor@example.com"}}
+        {"id": "cust_001", "fields": {"region": "us-west", "name": "Ada Okafor",
+                                       "email": "ada.okafor@example.com",
+                                       "risk_score": 0.35}}
     ]
 
 
@@ -812,7 +801,13 @@ def test_object_detail_returns_every_visible_field_including_a_link(client):
     # "transactions" is a real link field (cardinality many) -- proves
     # get_object() resolves it to the actual linked ids, not just plain
     # data fields.
-    assert set(body["fields"]["transactions"]) == {1, 2}
+    # STRINGS SINCE GOLD-9, and consistent at last: a link value IS an
+    # id, and every other id here is already a string -- body["id"]
+    # above, and test_search_returns_string_ids_for_an_integer_keyed
+    # _type. Gold stores keys as text, so a link to an integer-keyed
+    # type no longer comes back as an int while the id of the same
+    # object comes back as a string.
+    assert set(body["fields"]["transactions"]) == {"1", "2"}
 
 
 def test_object_detail_nonexistent_id_returns_200_with_every_field_null(client):
@@ -1452,9 +1447,15 @@ def test_confirming_an_approved_action_actually_changes_the_database(client):
     # Real proof the database actually changed -- a direct adapter
     # read, not just trusting the confirm endpoint's own claim. This
     # fixture's OWN, disposable database -- nothing to restore afterward.
-    adapter = mediator_of(client.app)._adapter_for("Customer")
-    type_config = mediator_of(client.app)._type_schema("Customer")
-    actual_value = adapter.get_raw_field("Customer", "cust_001", "name", type_config)
+    # STRAIGHT AT THE SOURCE DATABASE (GOLD-9). This used to read
+    # through the mediator's adapter, which WAS the source; since reads
+    # come from gold that would prove the opposite of what is wanted --
+    # gold holds the pre-write value until the next sync, and the claim
+    # being checked is that the CUSTOMER'S database changed.
+    paths = client.app.state.runtime_paths
+    with sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db") as conn:
+        actual_value = conn.execute(
+            "SELECT name FROM customers WHERE customer_id = 'cust_001'").fetchone()[0]
     assert actual_value == "Updated Name"
 
 
@@ -1930,15 +1931,48 @@ def _many_customers(client, count=137):
     directory = client.app.state.user_directory
     directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
-    adapter = mediator_of(client.app).adapters["primary_sql"]
-    conn = sqlite3.connect(adapter.db_path)
+    # STRAIGHT TO THE SOURCE, THEN SYNC (GOLD-9). The mediator has no
+    # source adapter any more -- it holds the gold connector alone --
+    # and rows written to a source are not readable until they have
+    # been through the pipeline, which is the point of reading gold.
+    paths = client.app.state.runtime_paths
+    conn = sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db")
     conn.executemany(
         "INSERT INTO customers VALUES (?, ?, ?, ?)",
         [(f"c{i:04d}", f"Person {i:04d}", "us-west", f"e{i}@x.com") for i in range(count)],
     )
     conn.commit()
     conn.close()
+    _resync(client)
     return count
+
+
+def _resync(client):
+    """Publish what a test just wrote to a source database."""
+    import contextlib
+    import io
+
+    from scripts.run_sync import run_sync
+
+    paths = client.app.state.runtime_paths
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert run_sync(paths) == 0
+    _rebuild_generation(client)
+
+
+def _rebuild_generation(client):
+    """Point the running app at the publication just made.
+
+    A GENERATION PINS ITS SNAPSHOTS, so an app built before a sync goes
+    on reading the publication it was built against -- which is correct,
+    and exactly what a test that just synced does not want.
+    """
+    from core.deployment_loader import build_generation
+
+    paths = client.app.state.runtime_paths
+    client.app.state.generation = build_generation(
+        paths.config_dir, paths.data_dir, paths.log_dir, serving=True,
+    )
 
 
 def test_paging_returns_every_result_exactly_once(client):
@@ -2310,7 +2344,11 @@ def test_health_leaks_nothing_about_the_data(client):
     # leak actually lived: silo names were keys, not values, so a
     # value-set assertion and a grep for paths both passed while every
     # data source's name was in the response.
-    assert set(body["checks"]) <= {"ontology", "silos"}, (
+    # "mirror" joined the set when live reads went (GOLD-9): every
+    # deployment has a lake now, so the check always runs. It is a
+    # FIXED WORD, not a data-source name -- which is what this
+    # assertion actually guards: silo names as keys.
+    assert set(body["checks"]) <= {"ontology", "silos", "mirror"}, (
         f"/health exposed deployment configuration in its keys: {sorted(body['checks'])}"
     )
 

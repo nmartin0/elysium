@@ -214,6 +214,19 @@ resolution, so gold for it is a straight conform.
           STILL OPEN: `read_from_mirror: false` remains as a documented
           fallback that bypasses the lake entirely. Removing it is the
           next patch.
+  GOLD-9. ~~LIVE READS REMOVED~~ DONE, patch 386. read_from_mirror:
+          false is REFUSED at load rather than honoured or ignored,
+          because a deployment that set it expects the old behaviour
+          and silently giving it the new one is the worst of both. The
+          startup warning, three route branches and the "reading live"
+          answers are gone with it. Two real findings: a reverse link
+          through a JOIN TABLE has no object type to re-key to, so the
+          view keeps the table's name and the build publishes it; and
+          the write path could follow reads into gold in six places
+          that build a WriteMediator, so the mediator now CARRIES its
+          source binding and nobody has to remember. The integration
+          suite runs against a synced deployment -- one sync per
+          session, copied per test.
   UI-LIVE. LIVE UPDATES, no manual refresh and no page reload (the
           owner, September 22; design in
           LIVE_UPDATES_AND_PIPELINE_BUILDER.md). MEASURED TODAY: one

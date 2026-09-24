@@ -61,15 +61,32 @@ def _gold_fields(type_def: dict, schema: dict) -> dict:
         if field_config.get("type") == "link" and is_reverse_link(field_config):
             target = field_config.get("target")
             target_def = schema.get(target) or {}
-            # THE RE-KEYING. A reverse link is resolved by querying the
-            # TARGET's table for rows pointing back here; in gold that
-            # table is gold.<Target>, and the column holding the
-            # foreign key is the target's own PROPERTY name, not the
-            # source column the via_column named.
-            rebound["via_table"] = target
-            rebound["via_column"] = _property_for_column(
-                target_def, field_config.get("via_column"),
-            )
+            source_table = (target_def.get("storage") or {}).get("table")
+            declared_via = field_config.get("via_table")
+            if declared_via and source_table and declared_via != source_table:
+                # A JOIN TABLE, NOT THE TARGET'S OWN. A many-to-many
+                # link is resolved through a table that is not an
+                # object type at all -- Customer.tags reads
+                # customer_tags -- so there is no gold.<Type> to point
+                # at. It keeps its name, and the gold build publishes
+                # that table alongside the types.
+                #
+                # FOUND BY THE INTEGRATION SUITE once it read gold: the
+                # re-keying had assumed every via_table was a type's
+                # own table, which is true of every one-to-many link
+                # and of none of the many-to-many ones.
+                rebound["via_table"] = declared_via
+                rebound["via_column"] = field_config.get("via_column")
+            else:
+                # THE RE-KEYING. A reverse link is resolved by querying
+                # the TARGET's table for rows pointing back here; in
+                # gold that table is gold.<Target>, and the column
+                # holding the foreign key is the target's own PROPERTY
+                # name, not the source column via_column named.
+                rebound["via_table"] = target
+                rebound["via_column"] = _property_for_column(
+                    target_def, field_config.get("via_column"),
+                )
         fields[field_name] = rebound
     return fields
 

@@ -31,11 +31,32 @@ def _user(client, name, region, role="customer_service"):
 
 
 def _move_cust_001_to(client, region):
-    db = client.app.state.runtime_paths.data_dir / "dev_fixtures" / "mediator.db"
-    conn = sqlite3.connect(db)
+    """Move the row, and publish the move (GOLD-9).
+
+    THE PROPERTY UNDER TEST IS UNCHANGED: a security decision must not
+    outlive the REQUEST that made it. What changed is how a row moves
+    -- reads come from gold, so a source edit is not visible until it
+    has been through the pipeline, and a generation pins the
+    publication it was built against. So the move is synced and the
+    generation rebuilt, and the assertions that follow still measure
+    what they always did: the NEXT request must decide afresh.
+    """
+    import contextlib
+    import io
+
+    from core.deployment_loader import build_generation
+    from scripts.run_sync import run_sync
+
+    paths = client.app.state.runtime_paths
+    conn = sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db")
     conn.execute("UPDATE customers SET region = ? WHERE customer_id = 'cust_001'", (region,))
     conn.commit()
     conn.close()
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert run_sync(paths) == 0
+    client.app.state.generation = build_generation(
+        paths.config_dir, paths.data_dir, paths.log_dir, serving=True,
+    )
 
 
 def _name_seen(client):

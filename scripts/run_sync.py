@@ -47,11 +47,13 @@ Run from the project root:
     python3 -m scripts.run_sync
 """
 
+import contextlib
 import fcntl
 import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from core.deployment_loader import (
     build_live_read_adapters,
@@ -311,10 +313,64 @@ def _propose_merges(store, config, object_type: str, type_def: dict,
     return proposed
 
 
+def _link_tables(schema: dict) -> dict[str, Any]:
+    """{join table: the silo it lives in}, for many-to-many links.
+
+    A LINK THROUGH A JOIN TABLE HAS NO OBJECT TYPE. Customer.tags is
+    resolved by reading `customer_tags`, which is not a type, is not
+    conformed and has no gold table of its own -- so a read from gold
+    could not follow the link at all until gold published it too.
+
+    PUBLISHED AS IT STANDS, without conforming: there is no ontology
+    shape for a row that is nothing but two foreign keys, and inventing
+    one would mean deciding what a link row IS, which nobody has asked
+    for.
+    """
+    tables: dict[str, Any] = {}
+    for type_def in (schema or {}).values():
+        own_table = (type_def.get("storage") or {}).get("table")
+        for field_config in (type_def.get("fields") or {}).values():
+            if field_config.get("type") != "link":
+                continue
+            via_table = field_config.get("via_table")
+            if not via_table:
+                continue
+            target = (schema or {}).get(field_config.get("target")) or {}
+            target_table = (target.get("storage") or {}).get("table")
+            if via_table in (own_table, target_table):
+                continue
+            tables[via_table] = ((target.get("storage") or {}).get("silo")
+                                  or (type_def.get("storage") or {}).get("silo"))
+    return tables
+
+
+def _publish_link_tables(sync, schema: dict) -> None:
+    """Copy each join table into gold, unchanged."""
+    from core.ontology.gold_view import GOLD_NAMESPACE
+
+    for table_name, silo in _link_tables(schema).items():
+        try:
+            silver = sync._catalog.load_table(f"{silo}.{table_name}").scan().to_arrow()
+        except Exception as exc:  # noqa: BLE001 - reported, like any other build
+            print(f"FAILED  gold.{table_name}: its silver table could not be read: {exc}",
+                  file=sys.stderr)
+            continue
+        identifier = f"{GOLD_NAMESPACE}.{table_name}"
+        with contextlib.suppress(Exception):
+            sync._catalog.create_namespace(GOLD_NAMESPACE)
+        with contextlib.suppress(Exception):
+            sync._catalog.drop_table(identifier)
+        table = sync._catalog.create_table(identifier, schema=silver.schema)
+        table.append(silver)
+        print(f"published gold.{table_name}: {silver.num_rows} rows (link table)")
+
+
 def _build_gold(sync, config, data_dir) -> int:
     """One gold table per object type, audited before it is published.
     Returns how many were refused."""
     from core.identity_decisions import MergeDecisionStore
+
+    _publish_link_tables(sync, config.schema)
     # DECISIONS LIVE BESIDE THE OTHER STORES, under data_dir -- not in
     # the lake, because they are what a PERSON told this deployment
     # rather than something derived from a source.

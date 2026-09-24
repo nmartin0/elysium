@@ -420,9 +420,9 @@ class WriteMediator:
         # mediator's schema made every write look for an adapter called
         # "gold" -- caught by six action tests the moment reads moved.
         self._adapter_mediator = DataMediator(
-            source_schema or mediator.schema,
+            source_schema or mediator.source_schema,
             cast("dict[str, ExternalReadAdapter]", write_adapters),
-            source_silo_for_type or mediator.silo_for_type, roles,
+            source_silo_for_type or mediator.source_silo_for_type, roles,
             write_log=mediator.write_log, audit_log=mediator.audit_log,
         )
         # write_log is NOT taken as a separate parameter and stored

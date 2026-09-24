@@ -52,52 +52,20 @@ tools:
   enabled:
     - linear_regression
 
-# WHERE THE MIRROR LIVES, and whether reads come from it.
+# WHERE THE MIRROR LIVES. Reads come from published GOLD, and from
+# nothing else (GOLD-9).
 #
-# BOTH KEYS ARE OPTIONAL. The warehouse defaults to a local one; reads
-# default to COMING FROM THE MIRROR. (This said both defaulted to the
-# conservative answer, with reads going to the customer's own
-# databases, which the code stopped doing some time ago.)
-mirror:
-  # read_from_mirror: false     # a FALLBACK, not an equal choice
-  #
-  # LIVE READS GIVE UP THE PIPELINE. Standardisation, the declared
-  # expectations and their quarantine, duplicate-key handling, lineage
-  # and gold all live in the lake; a live read goes straight to the
-  # customer's database and sees none of them. It remains for a
-  # deployment that has not synced yet, or one diagnosing the mirror
-  # itself. The service warns at startup when it is on.
-  #
-  # THE DEFAULT IS NOW true -- reads come from the local Iceberg
-  # mirror. That is what makes reads independent of a source's
-  # availability and latency, and it is the layer where declared types
-  # are enforced.
-  #
-  # A FRESH DEPLOYMENT SHOWS NOTHING until its first
-  # `python -m scripts.run_sync`. Browse says so rather than claiming
-  # the data is empty.
-  #
-  # Setting this to false restores direct silo reads. That path is a
-  # secondary option on the way to deprecation -- see UNIFIED_ROADMAP
-  # phase 0.5 -- and its likely future is as the refresh mechanism
-  # behind a read-through cache rather than as a serving path.
-  #
-  # storage: WHERE THE ICEBERG WAREHOUSE LIVES. Absent means a local
-  # directory under var/lib/mirror, which is correct for one host.
-  #
-  # Point it at object storage once the mirror holds anything the
-  # source cannot return -- a changelog, when one exists. Until then
-  # everything here is derivable by re-syncing, so local is not a risk.
-  #
-  # Keys other than `warehouse` are passed to pyiceberg verbatim rather
-  # than translated, so its own documentation is the reference:
-  #
-  # storage:
-  #   warehouse: "s3://elysium/warehouse"
-  #   s3.endpoint: "http://minio.internal:9000"
-  #   s3.access-key-id: "..."
-  #   s3.secret-access-key: "..."
-  #   s3.region: "us-east-1"
+# THE `read_from_mirror: false` SETTING IS GONE, not merely
+# discouraged. It sent reads straight to your databases, bypassing
+# standardisation, the declared expectations and their quarantine,
+# duplicate-key handling, lineage, identity resolution and gold --
+# which is to say it answered with the data BEFORE the ontology had
+# been applied to it. A deployment that still declares it is REFUSED
+# at load rather than quietly given the new behaviour.
+#
+# THE WAREHOUSE PATH is optional and defaults to a local one.
+# mirror:
+#   warehouse: /var/lib/elysium/mirror/warehouse
 
 # TRIGGERS THIS DEPLOYMENT DECLARES. Commented out: none ship. People
 # can also make their own in the product (Browse -> Saved views ->

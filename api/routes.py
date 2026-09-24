@@ -2009,13 +2009,9 @@ def admin_mirror_sync_route(
             detail="You need manage:deployment to start a sync.",
         )
 
-    if not generation.config.read_from_mirror:
-        # A LIVE DEPLOYMENT HAS NO MIRROR TO FILL. Starting a sync
-        # would work and serve nobody, which is worse than refusing.
-        raise HTTPException(
-            status_code=409,
-            detail="This deployment reads live, so there is no mirror to sync.",
-        )
+    # A LIVE DEPLOYMENT USED TO BE REFUSED A SYNC HERE. There is no
+    # such deployment since GOLD-9: every deployment fills the mirror,
+    # because that is the only thing reads come from.
 
     generation.mediator.audit_log.log_access(
         current_user.user_id, "_mirror", "_sync", "start", None, True,
@@ -2087,11 +2083,8 @@ def admin_mirror_route(request: Request,
             detail="You need manage:deployment to see the mirror's state.",
         )
 
-    if not generation.config.read_from_mirror:
-        # NOT AN ERROR. A deployment reading live has no mirror state
-        # to report, and saying so is more useful than an empty list
-        # that looks like a broken sync.
-        return {"reading_from_mirror": False, "tables": [], "problems": []}
+    # The "reading live, no mirror state" answer this used to return is
+    # unreachable since GOLD-9: there is no deployment without a mirror.
 
     # BUILT HERE RATHER THAN HELD ON THE GENERATION, because this is
     # the only reader of it and a catalog pinned at load would go stale
@@ -2515,12 +2508,17 @@ def silos_route(request: Request,
     """
     _require_manage_users(request, current_user)
     config = _generation(request).config
-    mediator = _generation(request).mediator
-
+    # PRIMARY storage, from the declaration.
     # PRIMARY storage, from silo_for_type.
     types_by_silo: dict[str, list[str]] = {name: [] for name in config.silo_configs}
-    for object_type, silo_name in getattr(mediator, "silo_for_type", {}).items():
-        types_by_silo.setdefault(silo_name, []).append(object_type)
+    # FROM THE DECLARATION, NOT FROM THE READ BINDING (GOLD-9). This
+    # route answers "which of your databases holds what", and since
+    # reads moved to gold the mediator's silo_for_type says "gold" for
+    # every type -- which is true, and not what is being asked.
+    for object_type, type_def in config.schema.items():
+        silo_name = (type_def.get("storage") or {}).get("silo")
+        if silo_name:
+            types_by_silo.setdefault(silo_name, []).append(object_type)
 
     # AND additional storage, which silo_for_type does not carry.
     #
@@ -2759,15 +2757,10 @@ def data_freshness_route(request: Request,
     # Gating it behind a permission would mean the people most likely
     # to need it (anyone about to approve a write against possibly
     # stale data) are the least likely to see it.
-    config = _generation(request).config
     mediator = _generation(request).mediator
 
-    if not config.read_from_mirror:
-        # A live deployment reads the customer's real database on every
-        # request, so "freshness" is not a meaningful question -- said
-        # explicitly rather than returning a null timestamp a caller
-        # would have to interpret.
-        return {"source": "live", "last_synced_at": None}
+    # THE "LIVE" ANSWER IS GONE (GOLD-9): every deployment reads the
+    # lake, so freshness is always a meaningful question.
 
     published = dict(_generation(request).gold_published_at)
     if published:
@@ -3835,7 +3828,7 @@ def health_route(request: Request) -> dict:
     if silo_names:
         down = source_failures(silo_names, live_source_adapters(request))
         checks["silos"] = "unreachable" if down else "reachable"
-    if mediator is not None and getattr(generation.config, "read_from_mirror", False):
+    if mediator is not None:
         mirror_down = source_failures(mediator.adapters, mediator.adapters)
         checks["mirror"] = "unreachable" if mirror_down else "reachable"
 

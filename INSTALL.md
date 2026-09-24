@@ -184,10 +184,12 @@ It starts without one and says so in the log, naming every object type
 that has no publication yet; a read of one of those raises an error
 naming the type and the command. Run `python -m scripts.run_sync`.
 
-Setting `read_from_mirror: false` still sends reads straight to your
-databases and bypasses all of it. It exists for a deployment that has
-not synced yet or for diagnosing the lake itself; the service warns at
-startup whenever it is on.
+`read_from_mirror: false` used to send reads straight to your
+databases and bypasses all of it. **It is refused at load now**, so a
+deployment still carrying the setting fails to start, with a message
+saying to remove it and run a sync. Nothing silently changes meaning:
+an operator who believed reads bypassed the lake is told they no
+longer can.
 
 Elysium can serve reads from a local mirror of your data rather than
 querying your databases on every request. The mirror is populated by
@@ -365,10 +367,13 @@ easy; discovering that hourly was too slow after someone acted on
 stale data is not.
 
 **If any field genuinely cannot tolerate staleness**, the honest
-answer is to leave `read_from_mirror` off for that deployment rather
-than sync aggressively. Live reads have no staleness at all, and the
-mirror's benefits — speed, and surviving a database outage — may not
-be worth it for your case.
+answer used to be to leave `read_from_mirror` off for that deployment.
+That option is gone, and the honest answer now is that Elysium may be
+the wrong tool for that field: reads are served from a published gold
+table, so there is always a publication interval between a change in
+your database and a reader seeing it. Sync more often if the interval
+is too long — and if no interval is acceptable, query the source
+system directly rather than asking this one to pretend.
 
 ## 9. Data-access security: what Elysium guarantees, and what you must configure
 

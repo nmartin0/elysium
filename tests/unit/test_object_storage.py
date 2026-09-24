@@ -199,7 +199,11 @@ class TestReachableFromConfig:
         shutil.copytree(source, target)
 
         config = (target / "config.yaml").read_text()
-        config = config[:config.index("\nmirror:")] + "\n" + mirror_section
+        # CUT AT THE SECTION'S HEADING, not at the `mirror:` key: since
+        # GOLD-9 the shipped file has no mirror keys at all (reads come
+        # from gold, and the only setting it held is refused), so the
+        # key is a commented example and splicing on it found nothing.
+        config = config[:config.index("\n# WHERE THE MIRROR LIVES")] + "\n" + mirror_section
         (target / "config.yaml").write_text(config)
         return target
 

@@ -275,10 +275,26 @@ class DataMediator:
                  silo_for_type: dict[str, str], roles: dict,
                  write_log: WriteLogReader | None = None,
                  audit_log: AuditLog | None = None,
-                 mirror_synced_at: str | None = None):
+                 mirror_synced_at: str | None = None,
+                 source_schema: dict | None = None,
+                 source_silo_for_type: dict[str, str] | None = None):
         self.schema = schema
         self.adapters = adapters
         self.silo_for_type = silo_for_type
+        # WHERE THE DATA ACTUALLY LIVES, which since GOLD-8 is not the
+        # same as where READS come from: `schema` describes gold, and a
+        # WRITE goes to the customer's database (decision D3).
+        #
+        # CARRIED HERE SO NOBODY HAS TO REMEMBER. A WriteMediator is
+        # built from a DataMediator in seven places, six of them tests,
+        # and asking each to pass the source schema separately made the
+        # write path silently follow reads into gold -- it looked for
+        # an adapter called "gold" and raised KeyError. A mediator that
+        # knows both cannot be wired wrongly.
+        self.source_schema = source_schema if source_schema is not None else schema
+        self.source_silo_for_type = (
+            source_silo_for_type if source_silo_for_type is not None else silo_for_type
+        )
         self.roles = roles
         # Optional, defaulting to None -- plenty of legitimate
         # DataMediator constructions have nothing to do with writes at

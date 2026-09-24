@@ -63,6 +63,7 @@ pytest's tmp_path for every single test, same isolation discipline as
 the single-database case this extends.
 """
 
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -125,8 +126,15 @@ def isolated_audit_log(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def _bundle(tmp_path: Path, isolated_audit_log: Path):
+def _bundle(tmp_path: Path, isolated_audit_log: Path, synced_template: Path):
     data_dir = tmp_path / "data"
+    # THE TEMPLATE'S MIRROR (GOLD-9): reads come from gold, so this
+    # deployment needs a publication before the API can answer. The
+    # SOURCE databases are built fresh below rather than copied,
+    # because several tests modify them -- and re-running their
+    # inserts over populated tables would collide.
+    data_dir.mkdir(parents=True)
+    shutil.copytree(synced_template / "mirror", data_dir / "mirror")
     dev_fixtures_dir = data_dir / "dev_fixtures"
     dev_fixtures_dir.mkdir(parents=True)
 
@@ -170,8 +178,41 @@ def write_adapters(_bundle):
 # plain-http base URL, matching a real browser), which is exactly the
 # kind of hard-won detail a copy loses.
 
+@pytest.fixture(scope="session")
+def synced_template(tmp_path_factory):
+    """A data directory whose mirror and gold are already built.
+
+    WHY IT EXISTS (GOLD-9): live reads are gone, so every deployment --
+    including this suite's -- serves from published gold, and gold has
+    to exist before the API can answer anything.
+
+    SYNCED ONCE AND COPIED, because the fixtures below are
+    function-scoped and a sync per test would add minutes to the run
+    for no extra coverage: what each test needs is a deployment that
+    HAS synced, not one that syncs again.
+    """
+    import contextlib
+    import io
+
+    from core.deployment_loader import RuntimePaths
+    from scripts.run_sync import run_sync
+
+    root = tmp_path_factory.mktemp("synced-template")
+    data_dir = root / "data"
+    dev_fixtures_dir = data_dir / "dev_fixtures"
+    dev_fixtures_dir.mkdir(parents=True)
+    _build_sqlite_db(FIXTURES_DIR / "schema.sql", dev_fixtures_dir / "mediator.db")
+    _build_sqlite_db(FIXTURES_DIR / "support_schema.sql", dev_fixtures_dir / "support.db")
+    _build_sqlite_db(FIXTURES_DIR / "risk_schema.sql", dev_fixtures_dir / "risk.db")
+    log_dir = root / "log"
+    log_dir.mkdir()
+    with contextlib.redirect_stdout(io.StringIO()):
+        run_sync(RuntimePaths(config_dir=FIXTURES_DIR, data_dir=data_dir, log_dir=log_dir))
+    return data_dir
+
+
 @pytest.fixture
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synced_template: Path):
     # TestClient's own base URL is plain http://testserver, not https --
     # a real, found gap this test suite ran into directly: a Secure-
     # flagged cookie (core/auth/auth_cookies.py's own default, matching
@@ -185,6 +226,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
 
     data_dir = tmp_path / "data"
+    # THE TEMPLATE'S MIRROR (GOLD-9): reads come from gold, so this
+    # deployment needs a publication before the API can answer. The
+    # SOURCE databases are built fresh below rather than copied,
+    # because several tests modify them -- and re-running their
+    # inserts over populated tables would collide.
+    data_dir.mkdir(parents=True)
+    shutil.copytree(synced_template / "mirror", data_dir / "mirror")
     dev_fixtures_dir = data_dir / "dev_fixtures"
     dev_fixtures_dir.mkdir(parents=True)
 

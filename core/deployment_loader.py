@@ -159,7 +159,11 @@ class DeploymentConfig:
                                    # holds history no source can return. See ELT_ROADMAP.md.
     identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
                                    # approval is not configurable.
-    read_from_mirror: bool        # Phase 4 of the read-only mirror architecture -- serve
+    read_from_mirror: bool        # ALWAYS TRUE since GOLD-9: live reads are gone, and a
+                                   # deployment that asks for them is refused at load. Kept
+                                   # as a field because the API reports it, and because a
+                                   # reader of an old config diff should find the answer.
+                                   # Phase 4 of the read-only mirror architecture -- serve
                                    # READS from the local Iceberg mirror rather than querying
                                    # the customer's own databases live. Writes are unaffected
                                    # either way: they always go to the real database. False by
@@ -516,7 +520,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # a secondary option on the way to deprecation, and its
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.
-            read_from_mirror=(config.get("mirror") or {}).get("read_from_mirror", True),
+            read_from_mirror=_refuse_live_reads(config),
 
             # GOLD-6: may the pipeline PROPOSE merges it inferred?
             # Defaults to FALSE, as FUSION_AND_IDENTITY.md requires --
@@ -667,6 +671,32 @@ def build_live_read_adapters(runtime_paths: "RuntimePaths | None" = None,
         "dict[str, ExternalReadAdapter]",
         _build_adapters(resolved, _READ_ADAPTER_REGISTRY),
     )
+
+
+def _refuse_live_reads(config: dict) -> bool:
+    """Always True, and REFUSES a deployment that asked for False.
+
+    LIVE READS ARE GONE (GOLD-9). They bypassed everything the pipeline
+    does -- standardisation, the declared expectations and their
+    quarantine, duplicate-key handling, lineage, identity resolution
+    and gold itself -- and answered from the customer's database as
+    though that were the same data. It is not: it is the data BEFORE
+    the ontology was applied to it.
+
+    REFUSED RATHER THAN IGNORED. A deployment that set this
+    deliberately expects the old behaviour, and silently giving it the
+    new one would be the worst of both: the operator believes reads
+    bypass the lake, and they do not. So the load fails and says what
+    to do instead.
+    """
+    declared = (config.get("mirror") or {}).get("read_from_mirror")
+    if declared is False:
+        raise ValueError(
+            "read_from_mirror: false is no longer supported. Reads are served from "
+            "published gold, which is the only layer where the ontology has been "
+            "applied. Remove the setting and run `python -m scripts.run_sync`."
+        )
+    return True
 
 
 def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
@@ -1157,7 +1187,11 @@ def load_deployment_bundle(
     )
     mediator = DataMediator(read_schema, adapters, silo_for_type, config.roles,
                              write_log=write_log, audit_log=audit_log,
-                             mirror_synced_at=mirror_synced_at)
+                             mirror_synced_at=mirror_synced_at,
+                             # The SOURCE binding travels with it, for the
+                             # write path (D3) -- see DataMediator.__init__.
+                             source_schema=config.schema,
+                             source_silo_for_type=_build_silo_for_type(config.schema))
     return config, mediator, write_adapters
 
 
