@@ -1237,6 +1237,33 @@ class DataMediator:
         )
         return allowed
 
+    def _visible_link_ids(self, user_record: UserRecord, target_type: str,
+                           linked: Any, context: RequestContext | None = None) -> Any:
+        """The link's targets the caller may actually see (PA001-X1).
+
+        BATCH-PREFETCHED, because the alternative is one security read
+        per linked object and a link list can be long;
+        _prefetch_security_values() is the same warming link_counts and
+        search_object already rely on.
+
+        ORDER AND SHAPE ARE PRESERVED: a caller that may see everything
+        gets exactly what the adapter returned, so this can only ever
+        REMOVE ids.
+        """
+        if not linked:
+            return linked
+        ids = list(linked) if isinstance(linked, (list, tuple)) else [linked]
+        self._prefetch_security_values(target_type, ids)
+        action = f"read:{target_type}"
+        visible = [
+            target_id for target_id in ids
+            if check_access(self, user_record, self.roles, target_type, target_id,
+                             action, context)
+        ]
+        if not isinstance(linked, (list, tuple)):
+            return visible[0] if visible else None
+        return visible
+
     def _security_values_for(self, object_type: str, object_ids: list) -> set:
         """The distinct security partitions a set of objects sits in.
 
@@ -2141,7 +2168,24 @@ class DataMediator:
             target_type = get_link_target(field_info)
             target_adapter = self._adapter_for(target_type)
             target_id_column = self.schema[target_type]["storage"]["id_column"]
-            return target_adapter.resolve_reverse_link(object_id, field_info, target_id_column)
+            linked = target_adapter.resolve_reverse_link(
+                object_id, field_info, target_id_column)
+            # FILTERED BY MAC, exactly as link_counts() two methods
+            # below already does (PA001-X1). Without this, a link field
+            # returns the IDS of objects the caller may not see, while
+            # link_counts and search_around on the SAME link correctly
+            # report and return fewer. Reproduced with one row: a
+            # us-west user reading a us-west tag got a us-east
+            # customer's id, whose own object correctly answers None.
+            #
+            # link_counts' own comment called this case "UNTESTABLE IN
+            # THIS DEPLOYMENT". It is testable with one many-to-many
+            # row that crosses regions, and it leaked.
+            #
+            # THE AGENT READS THROUGH get_object, which reads through
+            # here, so the disclosure reached the model as well as the
+            # API.
+            return self._visible_link_ids(user_record, target_type, linked, context)
 
         # Checks core/ontology/write_log.py's own store FIRST, before
         # ever reaching the real adapter -- if an update touching this

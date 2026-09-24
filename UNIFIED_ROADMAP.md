@@ -934,8 +934,16 @@ checking it found NOW.
                 patch 397's conclusion survives its wrong reason.
       PA001-X2  CRITICAL: the agent crashes on any decimal or date
                 field, in the SHIPPED configuration.
-      PA001-X1  a MAC leak on many-valued links, beside a method that
-                filters correctly.
+      PA001-X1  CONFIRMED AND FIXED, patch 404. One cross-region row
+                reproduced it: link_counts said 2, get_field returned
+                3. Now filtered like link_counts.
+                RAISED BY IT, NEW-1: a FORWARD single-valued link still
+                returns its target's id when that object is hidden.
+                That id is a foreign-key COLUMN of the caller's own
+                visible row, so withholding it changes what reading an
+                object means and could break legitimate joins. YOUR
+                DECISION; today's behaviour is pinned by a test so it
+                cannot drift while you make it.
       AL-1      a second crash: model-emitted list/dict values escape
                 the loop's error handling and fail /query.
       F1 + F2   a source column freezes the pipeline permanently, and a

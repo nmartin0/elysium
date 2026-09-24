@@ -127,7 +127,7 @@ PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes beco
 PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,unverified
 PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; six places said it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 3 tests,P22,"CONFIRMED + FIXED patch 402: audit right, I was wrong; gold now expires under the 7-day margin; all six claims corrected"
 PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,unverified
-PA001-X1,PA,PIPELINE_AUDIT,HIGH,many-valued link fields return ids the caller's MAC forbids,mediator.py:2108,P25,"UNVERIFIED - TOP PRIORITY"
+PA001-X1,PA,PIPELINE_AUDIT,HIGH,many-valued link fields return ids the caller's MAC forbids,mediator.py:2108,P25,"CONFIRMED + FIXED patch 404"
 PA001-X2,PA,PIPELINE_AUDIT,CRITICAL,the agent crashes on any decimal or date field in the shipped config,agent_step_prompt.py:485,P26,"CONFIRMED + FIXED patch 403: one renderer at the declared scale"
 ZOO-01,ZOO,PR001 Part II,GAP,mojibake not detected,standardise/transform,P24,unverified
 ZOO-02,ZOO,PR001 Part II,GAP,zero-width space kept,standardise,P24,unverified
@@ -272,3 +272,4 @@ DEP-4,DEP,DEPENDENCY_REVIEW,-,"CONDITIONAL: phonenumbers, holidays, email-valida
 DEP-5,DEP,DEPENDENCY_REVIEW,-,"AVOID: pycountry (LGPL); python-stdnum pending counsel",-,-,"owner decision D4"
 DEP-6,DEP,DEPENDENCY_REVIEW,-,"REJECT: setfit, recognizers-text; NOT NEEDED: jsonschema, mapie, outlines",-,-,unverified
 GAP-1,GAP,this review,-,"ui/ audits 01-08 cited by 09 and 10 were NEVER PRODUCED (AAA_14 manifest; the roadmap already recorded it at line 858)",-,-,"CLOSED - not available, nothing depends on them"
+NEW-1,NEW,found while fixing X1,OPEN,"a FORWARD single-valued link still returns its target id when that object is hidden; the id is a foreign-key column of the caller's own row",mediator.py get_field,"reproduced 24 Sep","OWNER DECISION - behaviour pinned by a test"
