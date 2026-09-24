@@ -924,12 +924,14 @@ checking it found NOW.
     200 distinct broken behaviours between the two sets.
 
     CHECKED FIRST, in this order:
-      PA001-M1  says pyiceberg 0.12 CAN expire snapshots, through
-                table.maintenance.expire_snapshots(). PATCH 397 SAID THE
-                OPPOSITE and called it measured. I used a different
-                entry point. If M1 holds, 397's reasoning is wrong in a
-                commit message, a docstring and a test, and correcting
-                it comes before any new work.
+      PA001-M1  CONFIRMED AND FIXED, patch 402. The audit was right
+                and I was wrong: table.maintenance.expire_snapshots()
+                works (15 snapshots to 3). Six places in this
+                repository said it could not be done, each saying
+                "checked, not assumed". Gold expires its own now,
+                under the seven-day margin the retention guard already
+                required. Expiry reclaims METADATA, not disk -- so
+                patch 397's conclusion survives its wrong reason.
       PA001-X2  CRITICAL: the agent crashes on any decimal or date
                 field, in the SHIPPED configuration.
       PA001-X1  a MAC leak on many-valued links, beside a method that

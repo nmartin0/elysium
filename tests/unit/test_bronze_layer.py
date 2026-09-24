@@ -153,13 +153,18 @@ def test_a_bronze_failure_does_not_fail_the_sync(tmp_path, monkeypatch, caplog):
 
 
 class TestRetention:
-    """Bronze declares how long it keeps history, even though nothing
-    can yet act on it.
+    """Bronze declares how long it keeps history.
 
-    pyiceberg 0.12 HAS NO SNAPSHOT EXPIRY AT ALL -- checked, not
-    assumed: no expire_snapshots, no ExpireSnapshots, and
-    ManageSnapshots offers only branches, tags and rollback. So these
-    properties reclaim nothing today.
+    THIS SAID pyiceberg 0.12 "HAS NO SNAPSHOT EXPIRY AT ALL -- checked,
+    not assumed". IT WAS WRONG, and an external audit (PA001-M1) caught
+    it: the check covered ManageSnapshots and a direct ExpireSnapshots
+    call, both of which do nothing, and missed
+    `table.maintenance.expire_snapshots()`, which works. Gold uses it
+    now (tests/unit/test_snapshot_expiry.py).
+
+    These properties still reclaim nothing for BRONZE today, because
+    nothing calls expiry on bronze yet -- a smaller and more honest
+    claim than the one they replaced.
 
     They are still worth declaring. They are the NAMES Iceberg defines
     for the policy, so the intent travels with the table rather than

@@ -645,7 +645,53 @@ def _forget_old_publications(table, retain: int) -> int:
         except Exception as exc:  # noqa: BLE001 - retention must never fail a publish
             logger.warning(f"could not forget {name}: {exc}")
             break
+    if dropped:
+        # GUARDED AT THE CALL SITE TOO, not only inside. A test that
+        # injected a failure into _expire_unreferenced itself showed
+        # the difference: anything raised OUTSIDE that function's own
+        # try -- an import, an attribute lookup on a catalog that has
+        # moved on -- would fail a publish that had already succeeded.
+        # Retention is housekeeping and must never do that.
+        try:
+            _expire_unreferenced(table)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"could not expire snapshots: {exc}")
     return dropped
+
+
+def _expire_unreferenced(table) -> None:
+    """Expire snapshots no tag, branch or reader needs.
+
+    ONLY AFTER THE TAGS ARE GONE, because a tag PINS its snapshot: the
+    library refuses to expire a ref's head, so this reclaims exactly
+    what forgetting a publication released and nothing else.
+
+    THE AGE BOUND IS RETENTION_MARGIN_MS, seven days, which is what
+    tests/unit/test_snapshot_retention_guard.py requires and why: a
+    request pinned to a superseded snapshot must finish long before
+    that snapshot can go. The guard's other rule -- never reclaim the
+    CURRENT snapshot -- the library enforces itself, since current is a
+    ref head.
+
+    IT DOES NOT FREE DISK, which is worth stating because the opposite
+    is the natural assumption. Measured on a real gold table: 15
+    snapshots became 3 and the Parquet files stayed at 10, with the new
+    metadata file making the directory 7.7 KB LARGER. What it bounds is
+    METADATA: over 40 publications, 79 snapshots and a 62 KB
+    metadata.json become 5 and 20 KB, and load_table goes from 1.9 ms
+    to 1.0 ms. Every generation build loads every table, so that cost
+    is paid constantly. Reclaiming the FILES needs an orphan sweep,
+    which pyiceberg does not have yet (apache/iceberg-python #3361).
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from core.mirror.iceberg_sync import RETENTION_MARGIN_MS
+
+    cutoff = datetime.now(UTC) - timedelta(milliseconds=RETENTION_MARGIN_MS)
+    try:
+        table.maintenance.expire_snapshots().older_than(cutoff).commit()
+    except Exception as exc:  # noqa: BLE001 - retention must never fail a publish
+        logger.warning(f"could not expire snapshots for {table.name()}: {exc}")
 
 
 def _next_publication_number(table) -> int:

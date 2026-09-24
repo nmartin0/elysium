@@ -81,10 +81,30 @@ logger = logging.getLogger(__name__)
 
 # BRONZE RETENTION, declared as standard Iceberg table properties.
 #
-# WHY A DECLARATION RATHER THAN CODE. pyiceberg 0.12 has no snapshot
-# expiry at all -- checked, not assumed: no expire_snapshots, no
-# ExpireSnapshots, and ManageSnapshots offers only branches, tags and
-# rollback. So nothing here can reclaim space today.
+# WHY A DECLARATION RATHER THAN CODE, CORRECTED. This said pyiceberg
+# 0.12 "has no snapshot expiry at all -- checked, not assumed". THAT
+# WAS WRONG, and an external audit (PA001-M1) caught it. The check
+# looked at ManageSnapshots and at ExpireSnapshots called directly,
+# both of which do nothing; the public entry point is
+# `table.maintenance.expire_snapshots()`, and it works -- measured, 15
+# snapshots to 3 on a real gold table.
+#
+# Five other places in this repository repeated the same wrong claim,
+# each also saying "checked, not assumed". One bad check, restated
+# until it read like corroboration.
+#
+# GOLD NOW EXPIRES ITS OWN (core/mirror/gold.py _expire_unreferenced),
+# under the age margin below. Bronze does not yet: bronze's retention
+# is still only these declared properties, because the snapshots a
+# diff needs are the two newest and nothing here has released an older
+# one to reclaim. Wiring bronze up is roadmap work, not a one-liner
+# here.
+#
+# WHAT EXPIRY DOES NOT DO, since the natural assumption is the
+# opposite: it frees no DISK. Expired snapshots stop being referenced;
+# their Parquet files stay until an orphan sweep removes them, and
+# pyiceberg has none yet (apache/iceberg-python #3361). What it bounds
+# is metadata, which is paid on every load_table.
 #
 # These are the NAMES Iceberg defines for the policy, which any engine
 # that does implement expiry reads. Declaring them means the intent
@@ -542,9 +562,12 @@ class IcebergMirrorSync(MirrorSync):
             # table produced 27.2 MB across 65 snapshots, all holding
             # the same data.
             #
-            # pyiceberg 0.12 has no snapshot expiry -- checked, not
-            # assumed -- so nothing reclaims those afterwards. The
-            # cheapest fix is not to create them.
+            # Expiry could reclaim those afterwards -- this comment
+            # used to say pyiceberg could not do it at all, which was
+            # wrong (PA001-M1, see BRONZE_RETENTION above) -- but only
+            # their METADATA, since the files stay until an orphan
+            # sweep exists. The cheapest fix is still not to create
+            # them.
             #
             # IDEMPOTENCY IS THE PATTERN THIS SATISFIES: a pipeline
             # "produces the same result regardless of how many times it

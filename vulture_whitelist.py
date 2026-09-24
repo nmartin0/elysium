@@ -392,3 +392,7 @@ model_name
 quarantined_rows
 quarantine_reason
 
+
+# tests/unit/test_snapshot_expiry.py -- an autouse fixture, called by
+# pytest rather than by name.
+_no_margin

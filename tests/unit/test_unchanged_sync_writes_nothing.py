@@ -9,7 +9,9 @@ that it was identical. Thirty identical syncs of a 50,000-row table:
     before: 27.2 MB across 65 snapshots, all holding the same data
     after :  0.9 MB across  1 snapshot
 
-pyiceberg 0.12 has no snapshot expiry -- checked, not assumed -- so
+pyiceberg 0.12 CAN expire snapshots through table.maintenance
+(PA001-M1 corrected an earlier claim here that it could not), but
+expiry reclaims metadata only and the files stay, so -- so
 nothing reclaims those afterwards. The cheapest fix is not to create
 them, and it is the safest too: writing nothing is never wrong, where
 deleting a snapshot can be.

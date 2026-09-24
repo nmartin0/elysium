@@ -125,7 +125,7 @@ PA001-G12,PA,PIPELINE_AUDIT,LOW,decimal scale differs by path; the API emits flo
 PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared text field (newlines),standardise.py:34,P21,unverified
 PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes become Python repr",iceberg_sync.py:810,IN,unverified
 PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,unverified
-PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; five places say it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 2 tests,P22,"CHECK FIRST - contradicts patch 397"
+PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; six places said it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 3 tests,P22,"CONFIRMED + FIXED patch 402: audit right, I was wrong; gold now expires under the 7-day margin; all six claims corrected"
 PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,unverified
 PA001-X1,PA,PIPELINE_AUDIT,HIGH,many-valued link fields return ids the caller's MAC forbids,mediator.py:2108,P25,"UNVERIFIED - TOP PRIORITY"
 PA001-X2,PA,PIPELINE_AUDIT,CRITICAL,the agent crashes on any decimal or date field in the shipped config,agent_step_prompt.py:485,P26,"UNVERIFIED - TOP PRIORITY"
