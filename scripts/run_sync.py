@@ -541,7 +541,7 @@ def run_sync(runtime_paths=None) -> int:
                     target.columns, target.column_types,
                     target.fields_by_column, target.standardisation,
                     target.expectations, target.duplicate_policy,
-                    target.object_types,
+                    target.object_types, target.link_pair,
                 )
             except Exception as exc:
                 # Per-table, deliberately -- see this module's docstring.

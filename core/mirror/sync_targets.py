@@ -83,6 +83,15 @@ class SyncTarget:
     # works in TABLES (PA001-A1). A frozenset because two types can
     # share one table.
     object_types: frozenset = field(default_factory=frozenset)
+    # For a many-to-many JOIN TABLE: the two columns whose PAIR
+    # identifies a row (PA001-A2). Empty for every ordinary table.
+    #
+    # A JOIN TABLE HAS NO ID. Keying it by either column alone makes
+    # every second row a duplicate -- and the default duplicate policy
+    # is QUARANTINE, so a customer with two tags lost one of them and
+    # the mirror served a SUBSET of the truth. Measured while fixing
+    # this: live said ['c1', 'c2'], the mirror said ['c2'].
+    link_pair: tuple = ()
     # column -> the rules silver canonicalises its values with, absent
     # for a column whose field opted out (GOLD-1). Read from the same
     # field declaration as the type above, in the same walk.
@@ -93,6 +102,10 @@ class SyncTarget:
     # What to do when two rows claim the same id (GOLD-1). Declared on
     # the storage block, because it is a property of the TABLE.
     duplicate_policy: DuplicatePolicy = field(default_factory=DuplicatePolicy)
+
+
+# The column a join table is keyed by, synthesised from its pair.
+LINK_ID_COLUMN = "_link_id"
 
 
 def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
@@ -177,6 +190,65 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             duplicate_policy=entry["duplicate_policy"],
         )
         for (silo_name, table_name), entry in by_table.items()
+    ] + _join_table_targets(schema, set(by_table))
+
+
+def _join_table_targets(schema: dict, already: set) -> list["SyncTarget"]:
+    """A target for every many-to-many JOIN TABLE (PA001-A2).
+
+    WHY THEY WERE MISSING. _targets_for_type skips any field carrying
+    `via_table`, with a comment saying a reverse link "lives in the
+    OTHER type's table, which is already its own sync target". That is
+    true for a ONE-to-many link, where via_table IS the target type's
+    table. For MANY-to-many it is the join table -- customer_tags,
+    enrollments -- which backs no object type at all, so nothing else
+    ever emits it.
+
+    WHAT IT COST: on the default read path every many-to-many link,
+    its link_counts and its search_around came back EMPTY. Not an
+    error, not a warning: an empty list, which reads exactly like a
+    customer with no tags. And gold's own link-table publishing reads
+    `{silo}.{table}` from silver, so it failed on every run for a
+    table that was never going to be there.
+
+    TWO COLUMNS, because that is all a join table has that anyone
+    needs: the two sides of the link. The silo is the link SOURCE's,
+    which is where link_types.py already resolves the table against.
+    """
+    seen: dict[tuple, set] = {}
+    for type_def in (schema.get("object_types") or {}).values():
+        silo = (type_def.get("storage") or {}).get("silo")
+        for field_config in (type_def.get("fields") or {}).values():
+            via_table = field_config.get("via_table")
+            via_column = field_config.get("via_column")
+            target_column = field_config.get("via_target_column")
+            # BOTH COLUMNS OR IT IS NOT A JOIN TABLE. A one-to-many
+            # reverse link carries via_table and via_column but no
+            # via_target_column, and its table really is the target
+            # type's own -- already a target, and skipping it here is
+            # what keeps this from emitting duplicates.
+            if not (via_table and via_column and target_column):
+                continue
+            if (silo, via_table) in already:
+                continue
+            seen.setdefault((silo, via_table), set()).update({via_column, target_column})
+    return [
+        SyncTarget(
+            silo_name=silo,
+            table_name=table_name,
+            # NO SINGLE ID COLUMN EXISTS on a join table -- a row is
+            # identified by the PAIR. The source column is used so the
+            # sync has something to key by; duplicate "ids" are normal
+            # here and the duplicate policy must not quarantine them,
+            # which is why nothing declares one.
+            id_column=LINK_ID_COLUMN,
+            columns=sorted(columns),
+            column_types={},
+            fields_by_column={},
+            object_types=frozenset(),
+            link_pair=tuple(sorted(columns)),
+        )
+        for (silo, table_name), columns in sorted(seen.items())
     ]
 
 

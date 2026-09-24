@@ -65,7 +65,11 @@ def test_a_single_sync_runs_normally(deployment):
     stdout, _stderr = process.communicate(timeout=120)
 
     assert process.returncode == 0
-    assert "6/6 tables synced successfully" in stdout
+    # SEVEN, NOT SIX, SINCE PA001-A2: the many-to-many join table
+    # (primary_sql.customer_tags) is a sync target now. It was the one
+    # table the ontology referenced and the sync never copied, which is
+    # why every many-to-many link read empty from the mirror.
+    assert "7/7 tables synced successfully" in stdout
 
 
 def test_a_second_concurrent_sync_exits_instead_of_colliding(deployment):
@@ -82,7 +86,7 @@ def test_a_second_concurrent_sync_exits_instead_of_colliding(deployment):
     combined_out = first_out + second_out
 
     assert "another sync is already running" in combined_err
-    assert "6/6 tables synced successfully" in combined_out
+    assert "7/7 tables synced successfully" in combined_out
     # Neither process fails -- the skipped one is a normal outcome, not
     # an error a scheduler should alert on.
     assert first.returncode == 0
@@ -100,7 +104,7 @@ def test_the_lock_is_released_so_a_later_sync_still_runs(deployment):
     stdout, _stderr = second.communicate(timeout=120)
 
     assert second.returncode == 0
-    assert "6/6 tables synced successfully" in stdout
+    assert "7/7 tables synced successfully" in stdout
 
 
 def test_a_hard_killed_holder_leaves_no_stale_lock(deployment, tmp_path):
@@ -135,4 +139,4 @@ def test_a_hard_killed_holder_leaves_no_stale_lock(deployment, tmp_path):
 
     recovered = _run_sync(deployment)
     stdout, _stderr = recovered.communicate(timeout=120)
-    assert "6/6 tables synced successfully" in stdout
+    assert "7/7 tables synced successfully" in stdout

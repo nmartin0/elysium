@@ -68,6 +68,7 @@ from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.lake_permissions import make_private
 from core.mirror.lineage import BRONZE_SNAPSHOT_PROPERTY, LINEAGE_COLUMNS, with_lineage
+from core.mirror.sync_targets import LINK_ID_COLUMN
 from core.mirror.transform import describe_drift, transform_rows
 from core.ontology.field_types import (
     DEFAULT_FIELD_DATA_TYPE,
@@ -334,7 +335,8 @@ class IcebergMirrorSync(MirrorSync):
                     standardisation: dict[str, dict] | None = None,
                     expectations: dict[str, dict] | None = None,
                     duplicate_policy: DuplicatePolicy | None = None,
-                    object_types: frozenset | None = None) -> SyncResult:
+                    object_types: frozenset | None = None,
+                    link_pair: tuple = ()) -> SyncResult:
         # HELD FOR THIS CALL so the drift check can ask the write log
         # by OBJECT TYPE (PA001-A1). Per-call rather than per-instance
         # because one IcebergMirrorSync syncs every table in turn.
@@ -471,6 +473,22 @@ class IcebergMirrorSync(MirrorSync):
             source_rows = None
         if source_rows is None:
             source_rows = raw_rows
+
+        if link_pair:
+            # A JOIN TABLE IS KEYED BY ITS PAIR (PA001-A2). Synthesised
+            # HERE rather than in bronze, because bronze holds what the
+            # source held and the source has no such column. Silver
+            # gets it so the row has an identity for the duplicate
+            # check, the changelog diff and quarantine -- all of which
+            # key by id, and all of which treated a customer's second
+            # tag as a duplicate of the first.
+            source_rows = [
+                {**row, LINK_ID_COLUMN: "\x1f".join(
+                    "" if row.get(column) is None else str(row.get(column))
+                    for column in link_pair)}
+                for row in source_rows
+            ]
+            columns = [*columns, LINK_ID_COLUMN]
 
         transformed = transform_rows(source_rows, columns, column_types, standardisation)
         if transformed.has_drift:

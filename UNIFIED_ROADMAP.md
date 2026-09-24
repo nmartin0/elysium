@@ -974,6 +974,15 @@ checking it found NOW.
                 the PERMISSIVE outcome that strands the writes the
                 check protects.
 
+      A2        CONFIRMED AND FIXED, patch 410. The join table was
+                never a sync target, so every many-to-many link read
+                EMPTY from the mirror. Fixing that exposed a second
+                defect the audit does not mention: a join table has no
+                id, so keying it by one column made every second row a
+                duplicate and the default QUARANTINE policy ate it --
+                live ['c1','c2'] vs mirror ['c2']. Keyed by the pair
+                now. X1 landed first, as the audit required.
+
     Then 004-6 and 004-7 from the first set, then the rest by severity.
 
 ### AUDIT INTAKE, 24 September -- 78 findings, none yet checked
