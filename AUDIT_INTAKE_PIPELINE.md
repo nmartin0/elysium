@@ -307,6 +307,29 @@ sentence-transformers, jellyfish. AVOID: pycountry (LGPL). AVOID
 pending counsel: python-stdnum (LGPL). REJECT: setfit,
 recognizers-text. NOT NEEDED: jsonschema, mapie, outlines.
 
+## The set is complete, and one file was a stale revision
+
+AAA_14_MANIFEST.txt lists all 14 files with SHA-256 prefixes and line
+counts. Every one matches what is on disk -- except AAA_02, where the
+copy first supplied was revision `ac957e4d` (3,100 lines) and the
+authoritative one is `cd52b172` (3,107). **The whole difference is a
+nine-line header note; no finding was added, removed or altered**, so
+the checklist stands.
+
+GAP-1 IS CLOSED, and not by finding the missing files. The manifest
+states that 001FINDINGS, 004FINDINGS and AUDIT-01..AUDIT-10 are earlier
+EXTERNAL reports by other reviewers, that Audits 01-08 were never
+produced at all, and that UNIFIED_ROADMAP.md already recorded this
+(at line 1126, not 858 as the manifest says -- right about the
+substance, off by about 270 lines). OUR OWN REPOSITORY ALREADY KNEW,
+and I asked the owner for the files instead of grepping the roadmap I
+had been editing all week. Nothing in
+the pipeline set depends on them.
+
+It also settles a naming trap: **the "-001" suffix is a document
+revision number, not a position in a series.** There is no
+PIPELINE_AUDIT-002 to go looking for.
+
 ## Where the two audit sets overlap
 
 | Issue | This set | AUDIT_INTAKE.md |

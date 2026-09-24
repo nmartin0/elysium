@@ -271,4 +271,4 @@ DEP-3,DEP,DEPENDENCY_REVIEW,-,"ADOPT extras: scikit-learn [ml], splink [fusion]"
 DEP-4,DEP,DEPENDENCY_REVIEW,-,"CONDITIONAL: phonenumbers, holidays, email-validator, ftfy",-,-,unverified
 DEP-5,DEP,DEPENDENCY_REVIEW,-,"AVOID: pycountry (LGPL); python-stdnum pending counsel",-,-,"owner decision D4"
 DEP-6,DEP,DEPENDENCY_REVIEW,-,"REJECT: setfit, recognizers-text; NOT NEEDED: jsonschema, mapie, outlines",-,-,unverified
-GAP-1,GAP,this review,-,"ui/ audits 01-08 are cited by 09 and 10 but were never supplied",-,-,"ASK THE OWNER"
+GAP-1,GAP,this review,-,"ui/ audits 01-08 cited by 09 and 10 were NEVER PRODUCED (AAA_14 manifest; the roadmap already recorded it at line 858)",-,-,"CLOSED - not available, nothing depends on them"
