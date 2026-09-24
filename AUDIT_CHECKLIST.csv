@@ -42,7 +42,7 @@ N-03,001,001FINDINGS,NOFIX,Protocol vs ABC split (document the Protocol side),co
 004-3,004,004FINDINGS,LOW,incomplete tools->functions rename,config + core/functions,IN,"documented patch 396"
 004-4,004,004FINDINGS,LOW,three comments contradict each other or the code,core/,IN,unverified
 004-5,004,004FINDINGS,LOW,README omits app-schema and ChartsPanel; lists 4 of 5 deployment YAMLs,README.md,MC,unverified
-004-6,004,004FINDINGS,HIGH,"STALE SHARED SECURITY CACHE allows cross-region reads (reproduced over HTTP)",mediator _security_value_cache,RP,"UNVERIFIED - TOP PRIORITY"
+004-6,004,004FINDINGS,HIGH,"STALE SHARED SECURITY CACHE allows cross-region reads (reproduced over HTTP)",mediator _security_value_cache,RP,"NOT REPRODUCED - fixed by e9c0a33 before the audit reached us; also the cache holds the OBJECT value not a per-user decision. Behaviour pinned by tests patch 411"
 004-7,004,004FINDINGS,HIGH,confirming a write does not re-authorise it (up to 15 min later),write_mediator confirm_and_execute,RP,"UNVERIFIED - TOP PRIORITY"
 004-8,004,004FINDINGS,LOW,WriteMediator calls _security_allowed() directly rather than check_access(),write_mediator.py,IN,unverified
 004-S1,004,004FINDINGS,MED,session tokens stored in plaintext,core/auth,IN,"= E-03, owner decision"

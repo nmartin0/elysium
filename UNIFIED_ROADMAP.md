@@ -983,7 +983,15 @@ checking it found NOW.
                 live ['c1','c2'] vs mirror ['c2']. Keyed by the pair
                 now. X1 landed first, as the audit required.
 
-    Then 004-6 and 004-7 from the first set, then the rest by severity.
+      004-6     NOT REPRODUCED, patch 411. Fixed by e9c0a33 before
+                the audit reached us (it is pinned to 120d1b2), and
+                the finding is imprecise besides: the cache holds the
+                OBJECT's security value keyed by (type, id), not a
+                per-user decision, so sharing it grants nobody
+                anything. Behaviour pinned by tests; the honest limit
+                is recorded in the test file.
+
+    Then 004-7, then the rest by severity.
 
 ### AUDIT INTAKE, 24 September -- 78 findings, none yet checked
 
