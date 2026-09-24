@@ -375,6 +375,39 @@ your database and a reader seeing it. Sync more often if the interval
 is too long — and if no interval is acceptable, query the source
 system directly rather than asking this one to pretend.
 
+## 8b. The lake is part of your security perimeter
+
+**Read access to the mirror directory is read access to everything.**
+Gold holds one table per object type -- conformed, keyed, joined
+across your databases, with lineage attached. It is the business
+picture, which is precisely the artefact worth stealing.
+
+**The ontology's security is applied when data is read THROUGH it.**
+Object and property security, the region check, the audit entry: all
+of that happens in the read path. A process that opens the Parquet
+files directly gets every row and every column, and nothing records
+that it did. This is not an Elysium limitation but an Iceberg design
+choice -- the format "does not control which users can read which
+rows, and it cannot mask column values based on user identity".
+
+So the directory is not a cache. Treat it the way you would treat a
+replica of the underlying databases, because that is what it is.
+
+**A lake Elysium creates is owner-only (0o700).** It used to be 0o755,
+which on a shared host means every account on the box.
+
+**A lake that already exists is reported, not changed.** If the
+directory is readable by group or other, the service says so at
+startup and the sync says so again, naming the mode and the command.
+It does not chmod it for you: you may have widened it deliberately for
+a backup user or a read-only mount, and a deployment that silently
+revokes that at boot is a deployment that breaks at 3am.
+
+**Encryption at rest is a separate question, and Elysium does not do
+it.** Volume or bucket encryption protects the stolen-disk case, not
+the logged-in-process case. If your threat model includes the second,
+file permissions are the control that matters, and they are yours.
+
 ## 9. Data-access security: what Elysium guarantees, and what you must configure
 
 Elysium reads from *your* databases. This section states plainly what

@@ -31,7 +31,25 @@ in Browse, each linking to the rule that caught the rows.
 
 ---
 
-## 2. Gold is a tidy, joined, business-shaped copy of everything
+## 2. ~~Gold is a tidy, joined, business-shaped copy of everything~~
+##    OPTION (a) TAKEN, patch 395: the boundary is stated and the
+##    default is private.
+
+A lake Elysium creates is now 0o700 -- it was 0o755, which on a shared
+host means every account on the box. A lake that ALREADY EXISTS is
+reported rather than changed, at startup and again at each sync,
+naming the mode and the command: an operator may have widened it
+deliberately for a backup user or a read-only mount, and a deployment
+that silently revokes that at boot is one that breaks at 3am.
+
+INSTALL.md now says plainly that read access to the directory IS read
+access to everything, for every region and classification, with no
+audit entry -- and that encryption at rest is a separate question
+Elysium does not answer.
+
+The original assessment follows, with options (b) and (c) still open.
+
+## 2 (as originally recorded). Gold as an artefact worth stealing
 
 THE STATE TODAY: gold holds one table per object type, keyed by object
 id, conformed, deduplicated, with lineage attached. The ontology

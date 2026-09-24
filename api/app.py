@@ -110,6 +110,7 @@ from core.deployment_loader import (
     build_live_read_adapters,
     resolve_runtime_paths,
 )
+from core.mirror.lake_permissions import warn_if_world_readable
 from core.ontology.mediator import security_cache_scope
 from core.pending_write_persistence import PendingWritePersistence
 from core.pending_write_store import PendingWriteStore
@@ -338,6 +339,13 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # right answer while the fallback existed -- it said what was being
     # bypassed -- but a fallback nobody can select needs no warning,
     # and leaving one would imply it is still possible.
+
+    # WHO CAN READ THE LAKE (OPEN_RISKS item 2). Reported, not
+    # changed: an operator may have widened it deliberately -- a
+    # backup user, a read-only analytics mount -- and silently
+    # revoking that at startup would break a working deployment to
+    # enforce a preference.
+    warn_if_world_readable(runtime_paths.data_dir / "mirror", logger)
 
     # EVERY SOURCE CHECKED AT STARTUP, each failure reported BY NAME
     # (E-13). Nothing called health_check() before, so an unreachable

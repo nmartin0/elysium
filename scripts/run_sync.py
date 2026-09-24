@@ -368,7 +368,13 @@ def _publish_link_tables(sync, schema: dict) -> None:
 def _build_gold(sync, config, data_dir) -> int:
     """One gold table per object type, audited before it is published.
     Returns how many were refused."""
+    # The sync is often the first thing a new deployment runs, and it
+    # is the thing that FILLS the lake -- so it says who can read it.
+    import logging as _logging
+
     from core.identity_decisions import MergeDecisionStore
+    from core.mirror.lake_permissions import warn_if_world_readable
+    warn_if_world_readable(data_dir / "mirror", _logging.getLogger(__name__))
 
     _publish_link_tables(sync, config.schema)
     # DECISIONS LIVE BESIDE THE OTHER STORES, under data_dir -- not in

@@ -66,6 +66,7 @@ from core.mirror.durability import force_table_metadata_to_disk
 from core.mirror.expectations import Violation, apply_expectations
 from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
+from core.mirror.lake_permissions import make_private
 from core.mirror.lineage import BRONZE_SNAPSHOT_PROPERTY, LINEAGE_COLUMNS, with_lineage
 from core.mirror.transform import describe_drift, transform_rows
 from core.ontology.field_types import (
@@ -237,7 +238,13 @@ class IcebergMirrorSync(MirrorSync):
         # column, so drift_policy refuses rather than absorbing on the
         # strength of a check that did not happen.
         self._write_log = write_log
-        mirror_dir.mkdir(parents=True, exist_ok=True)
+        # OWNER ONLY (OPEN_RISKS item 2). Read access to this
+        # directory IS read access to every object type, region and
+        # classification, with no audit entry -- the ontology's
+        # security is applied when data is read THROUGH it, not to
+        # these files. It defaulted to 0o755, which on a shared host
+        # means every account on the box.
+        make_private(mirror_dir)
 
         # WHERE THE WAREHOUSE LIVES, which is a deployment question
         # rather than a code one.
@@ -265,7 +272,7 @@ class IcebergMirrorSync(MirrorSync):
         options = dict(storage or {})
         warehouse = options.pop("warehouse", None)
         if warehouse is None:
-            (mirror_dir / "warehouse").mkdir(exist_ok=True)
+            make_private(mirror_dir / "warehouse")
             warehouse = f"file://{mirror_dir / 'warehouse'}"
 
         # THE LOCAL WAREHOUSE DIRECTORY, or None when it is not
