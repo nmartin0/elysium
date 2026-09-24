@@ -43,7 +43,7 @@ N-03,001,001FINDINGS,NOFIX,Protocol vs ABC split (document the Protocol side),co
 004-4,004,004FINDINGS,LOW,three comments contradict each other or the code,core/,IN,unverified
 004-5,004,004FINDINGS,LOW,README omits app-schema and ChartsPanel; lists 4 of 5 deployment YAMLs,README.md,MC,unverified
 004-6,004,004FINDINGS,HIGH,"STALE SHARED SECURITY CACHE allows cross-region reads (reproduced over HTTP)",mediator _security_value_cache,RP,"NOT REPRODUCED - fixed by e9c0a33 before the audit reached us; also the cache holds the OBJECT value not a per-user decision. Behaviour pinned by tests patch 411"
-004-7,004,004FINDINGS,HIGH,confirming a write does not re-authorise it (up to 15 min later),write_mediator confirm_and_execute,RP,"UNVERIFIED - TOP PRIORITY"
+004-7,004,004FINDINGS,HIGH,confirming a write does not re-authorise it (up to 15 min later),write_mediator confirm_and_execute,RP,"CONFIRMED + FIXED patch 412: object reach re-checked against the proposer; see NEW-2 for the approver question"
 004-8,004,004FINDINGS,LOW,WriteMediator calls _security_allowed() directly rather than check_access(),write_mediator.py,IN,unverified
 004-S1,004,004FINDINGS,MED,session tokens stored in plaintext,core/auth,IN,"= E-03, owner decision"
 004-S2,004,004FINDINGS,MED,expired sessions never purged,core/auth,IN,"= E-03"
@@ -273,3 +273,5 @@ DEP-5,DEP,DEPENDENCY_REVIEW,-,"AVOID: pycountry (LGPL); python-stdnum pending co
 DEP-6,DEP,DEPENDENCY_REVIEW,-,"REJECT: setfit, recognizers-text; NOT NEEDED: jsonschema, mapie, outlines",-,-,unverified
 GAP-1,GAP,this review,-,"ui/ audits 01-08 cited by 09 and 10 were NEVER PRODUCED (AAA_14 manifest; the roadmap already recorded it at line 858)",-,-,"CLOSED - not available, nothing depends on them"
 NEW-1,NEW,found while fixing X1,OPEN,"a FORWARD single-valued link still returns its target id when that object is hidden; the id is a foreign-key column of the caller's own row",mediator.py get_field,"reproduced 24 Sep","OWNER DECISION - behaviour pinned by a test"
+NEW-2,NEW,found while fixing 004-7,OPEN,"should an APPROVER have to reach the objects they approve? today they need not; the same fixture calls bob cross-org a MAC boundary test when proposing yet has him approving writes to that object",write_mediator confirm_and_execute,"reproduced 24 Sep","OWNER DECISION - pinned by a test"
+NEW-3,NEW,found while fixing 004-7,OPEN,"the re-check uses the proposers record as captured at propose time so it catches the OBJECT moving not the PROPOSERs clearance being revoked; that needs a user-directory lookup this layer lacks",write_mediator,"stated in the code","ROADMAP"

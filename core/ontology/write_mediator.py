@@ -1508,6 +1508,24 @@ class WriteMediator:
                     f"{pending.proposed_under_generation} and the deployment is now "
                     f"on {self.generation}. Nothing has been written."
                 )
+            # AND AGAINST THE CURRENT MAC (004-7). Every other check
+            # here already re-runs at the point of use; the security
+            # value of the OBJECTS did not, so a proposal outlived the
+            # authority it was made under.
+            #
+            # REPRODUCED: propose while a ticket is us-west, move the
+            # ticket to us-east, and the SAME action is refused when
+            # proposed fresh while the older proposal still applies. A
+            # write nobody may make now is not made safe by having been
+            # askable earlier.
+            #
+            # AFTER the undeclared-field check, deliberately. A write
+            # whose SECURITY FIELD has been removed from the ontology
+            # cannot have its reach evaluated at all, and that write
+            # has a better, more specific refusal waiting above --
+            # three existing tests found this order by failing with a
+            # KeyError when it was the other way round.
+            self._refuse_writes_outside_current_mac(pending, approver)
 
         request_id = str(uuid.uuid4())
         self.audit_log.log_pre(
@@ -1584,6 +1602,74 @@ class WriteMediator:
         One function, two callers, no second opinion.
         """
         return self._fields_no_longer_declared(pending)
+
+    def _refuse_writes_outside_current_mac(self, pending: PendingWrite,
+                                            approver: UserRecord | None) -> None:
+        """Every object this write touches is still reachable NOW.
+
+        CHECKED AGAINST THE PROPOSER, not the approver, and that
+        choice is the whole design of this function.
+
+        I FIRST CHECKED THE APPROVER -- they are live, they are
+        deciding now, and Foundry requires the submitter to see what
+        they edit. Three existing tests failed, and reading them
+        settled it: the same fixture asserts that `bob` CANNOT PROPOSE
+        against auth_001 because he is in another org ("MAC boundary
+        test"), while three four-eyes tests have bob APPROVING a write
+        to that same object. Requiring the approver to reach the
+        object would narrow who may approve -- a cross-org supervisor
+        could no longer sign anything off -- and that is a policy
+        decision for the deployment's owner, not a bug fix. It is
+        recorded for them instead.
+
+        SO: the write is re-checked against the authority it was
+        PROPOSED under. That closes what 004-7 actually reproduced --
+        an object moving out of reach between propose and confirm --
+        and leaves four-eyes exactly as it was.
+
+        AND ITS LIMIT, stated because the next reader will ask: this
+        uses the proposer's record as captured at propose time, so it
+        catches the OBJECT moving, not the PROPOSER's own clearance
+        being revoked. Catching that needs a user-directory lookup
+        this layer does not have. Recorded as such rather than implied
+        by a reassuring name.
+
+        CREATES ARE SKIPPED for the same reason propose skips them:
+        the object does not exist yet, so it has no security value to
+        be outside of.
+        """
+        proposer = pending.proposer
+        if proposer is None or proposer.security_value is None:
+            return
+        for sub_write in pending.sub_writes:
+            if getattr(sub_write, "operation", None) == "create":
+                continue
+            object_type = sub_write.object_type
+            object_id = sub_write.object_id
+            # ONLY WHERE THE OBJECT HAS A SECURITY VALUE AT ALL.
+            # `None` means the row is gone or never had one -- a
+            # DELETED object, most often -- and that is not "in another
+            # compartment", it is "not there". Tests for deleting and
+            # then re-writing an object found this: refusing on a
+            # missing value blocked a write whose whole purpose was to
+            # bring the object back, which no security rule intends.
+            #
+            # The narrow claim is the true one: a write is refused when
+            # the object has MOVED OUT of the proposer's reach.
+            current = self._adapter_mediator._get_security_value(object_type, object_id)
+            if current is None or current == proposer.security_value:
+                continue
+            self.audit_log.log_access(
+                proposer.user_id, object_type, object_id,
+                f"write:{pending.action_type_name}", False, True,
+            )
+            raise PermissionError(
+                f"This write can no longer be applied: {object_type} "
+                f"{object_id!r} is no longer within reach of "
+                f"{proposer.user_id!r}, who proposed it. It was proposed "
+                f"under configuration generation "
+                f"{pending.proposed_under_generation}; nothing has been written."
+            )
 
     def _refuse_constraint_violations(self, sub_writes) -> None:
         """Raises if any change breaks its field's declared constraints.
