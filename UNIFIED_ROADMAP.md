@@ -898,6 +898,21 @@ checking it found NOW.
     - E-20: PROPOSE a consolidation of the roadmap files; do not
       perform one.
 
+### AUDIT INTAKE, 24 September -- TWO sets, 273 items, none yet checked
+
+    THE WORKING LIST IS AUDIT_CHECKLIST.csv: one row per verifiable
+    claim, 273 rows, every id unique, with source, severity, the claim,
+    where to look, the probe that reproduces it and a status. 203
+    unverified. The two prose intakes (AUDIT_INTAKE.md,
+    AUDIT_INTAKE_PIPELINE.md) explain; the CSV is what gets worked
+    through.
+
+    ONE GAP TO CLOSE WITH THE OWNER: the ui/ audits supplied are 09 and
+    10 of a series of ten. They cite specific findings from audits 01,
+    02, 03, 05, 06, 07 and 08 -- S2-04, S2-05, S2-06, S3-01, S1-02,
+    S1-03, S1-05, S3-05, S4-01, S4-07 -- which were never supplied. Ask
+    for them before calling the ui/ surface covered.
+
 ### AUDIT INTAKE, 24 September -- TWO sets, none yet checked
 
     A SECOND SET arrived the same day: 14 files, 13,360 lines, pinned to

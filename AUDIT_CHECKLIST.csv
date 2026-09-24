@@ -1,0 +1,274 @@
+id,set,source,severity,claim,where,probe,status
+F-01,001,001FINDINGS,HIGH,"coerce() rejects true/false; mirror sync fails permanently, misreported as drift",core/ontology/field_types.py,RP,unverified
+F-02,001,001FINDINGS,HIGH,cross-type actions unauthorisable by any valid policy,write_mediator.py:1236 + policy_validation.py:51,RP,"reproduced 24 Sep, owner decision pending"
+F-03,001,001FINDINGS,HIGH,KeyError 'mutations' on a cross-type action containing a delete,write_mediator.py cross-type loop,RP,"reproduced 24 Sep"
+F-04,001,001FINDINGS,MED,chat(*args **kwargs) erases the typed LLM signature at the wrapper,core/llm,IN,unverified
+F-05,001,001FINDINGS,MED,rate-limit check and increment are separate transactions,api rate limiting,IN,unverified
+F-06,001,001FINDINGS,MED,DeploymentConfigResponse duplicates DeploymentConfig field-for-field,api/routes.py,MC,unverified
+F-07,001,001FINDINGS,LOW,identical via_table destructuring at four sites,core/ontology,MC,unverified
+F-08,001,001FINDINGS,LOW,submission_criteria parameter-skip safe only via an unstated precondition,write_mediator.py,IN,unverified
+F-09,001,001FINDINGS,LOW,MemoryGuard.put() uses a private mediator method; flattens None to empty string,core/memory,IN,unverified
+F-10,001,001FINDINGS,LOW,_generation(request) called 31x where a Depends() exists,api/routes.py,MC,unverified
+F-11,001,001FINDINGS,LOW,mediator() test fixture duplicated seven times,tests/unit,MC,unverified
+F-12a,001,001FINDINGS,LOW,"THE SEVEN REAL GRANT PATTERNS enumerates six, omits manage:deployment",policy docs,IN,unverified
+F-12b,001,001FINDINGS,LOW,login_attempt_tracker claims a structurally read-only connection; it is not,core/auth,IN,unverified
+F-12c,001,001FINDINGS,LOW,"write: rejection message claims it is not enforced anywhere; it is",policy_validation.py:51,IN,"confirmed by the F-02 reproduction"
+F-13,001,001FINDINGS,LOW,"get_object() audit entries carry no request_id",core/ontology/mediator.py,IN,unverified
+F-14,001,001FINDINGS,HIGH,parameter used only in a sub-write's criteria rejected at load,action type validation,RP,"fixed patch 389"
+F-15,001,001FINDINGS,HIGH,valid non-object JSON from the model gives an uncaught 500,agent_step_prompt.py,RP,"fixed patch 389"
+F-16,001,001FINDINGS,LOW,64 assertion-free tests (regraded by the audit itself),tests,MC,unverified
+F-17,001,001FINDINGS,LOW,every action parameter shown to the model as a quoted string,agent_step_prompt.py,IN,unverified
+F-18,001,001FINDINGS,INFO,agent limited to equality filters,agentic_loop.py,IN,"open; = LB-2"
+F-19,001,001FINDINGS,MED,a reverse link accepted as security.via_field; read path crashes,ontology validation,RP,unverified
+F-20,001,001FINDINGS,MED,mirror stringifies literals for three operators and not two,mirror_adapter.py,IN,"fixed patch 333 per PA001-A8"
+F-21,001,001FINDINGS,MED,entries_for_request() readlines() loads the whole audit log,core/intermediate_layer/audit.py,IN,unverified
+F-22,001,001FINDINGS,HIGH,Ollama adapter leaks 3 of 4 failure modes past LLMUnavailable,adapters/ollama_adapter.py,RP,"fixed patch 389"
+F-23,001,001FINDINGS,HIGH,"synthesis catches RequestException, not LLMUnavailable",synthesis_prompt.py,RP,"fixed patch 389"
+F-24,001,001FINDINGS,LOW,Claude SDK adapter passes the system prompt as argv (~128 KB ceiling),claude_agent_sdk_adapter.py,RP,unverified
+F-25,001,001FINDINGS,HIGH,generation numbers repeat after restart and are consumed by rejected loads,deployment_loader.py,RP,unverified
+F-26,001,001FINDINGS,HIGH,"mirror overlay returns only the latest edit, serving stale values",write_log.py,RP,"= PA001-A4, fixed 529b235"
+F-27,001,001FINDINGS,HIGH,"crash recovery loses deletes, reports success, writes a fabricated create",write path recovery,RP,unverified
+F-28,001,001FINDINGS,MED,"rebuild_deleted_index() documented as the recovery path, never called",write_log.py,IN,"fixed patch 397"
+F-29,001,001FINDINGS,MED,sync timestamp taken after the read: a blind window,iceberg_sync.py,RP,"= PA001-A5 (partly fixed)"
+F-30,001,001FINDINGS,MED,create_colleague_user.py bypasses create_debug_user.py's safety guard,scripts/,IN,unverified
+F-31,001,001FINDINGS,LOW,ObjectNotes.submit() is the only error handler ignoring session expiry,ui/,IN,unverified
+F-32,001,001FINDINGS,LOW,apiFetchOrThrow reads an untyped body.detail,ui/,IN,unverified
+F-33,001,001FINDINGS,MED,two critical auth controls each defended by exactly ONE test,tests/unit,RP,unverified
+N-01,001,001FINDINGS,NOFIX,duplicated denial-logging block (rule of three says wait),core/intermediate_layer,IN,"recorded as do-not-fix"
+N-02,001,001FINDINGS,NOFIX,user_directory bare commit() (convention split),core/auth,IN,"recorded as do-not-fix"
+N-03,001,001FINDINGS,NOFIX,Protocol vs ABC split (document the Protocol side),core/,IN,"recorded as do-not-fix"
+004-1,004,004FINDINGS,MED,lint.sh lockfile step sets FAILED=1 which nothing reads,lint.sh,RP,unverified
+004-2,004,004FINDINGS,MED,documentation references 7 files/symbols that do not exist,docs,MC,unverified
+004-3,004,004FINDINGS,LOW,incomplete tools->functions rename,config + core/functions,IN,"documented patch 396"
+004-4,004,004FINDINGS,LOW,three comments contradict each other or the code,core/,IN,unverified
+004-5,004,004FINDINGS,LOW,README omits app-schema and ChartsPanel; lists 4 of 5 deployment YAMLs,README.md,MC,unverified
+004-6,004,004FINDINGS,HIGH,"STALE SHARED SECURITY CACHE allows cross-region reads (reproduced over HTTP)",mediator _security_value_cache,RP,"UNVERIFIED - TOP PRIORITY"
+004-7,004,004FINDINGS,HIGH,confirming a write does not re-authorise it (up to 15 min later),write_mediator confirm_and_execute,RP,"UNVERIFIED - TOP PRIORITY"
+004-8,004,004FINDINGS,LOW,WriteMediator calls _security_allowed() directly rather than check_access(),write_mediator.py,IN,unverified
+004-S1,004,004FINDINGS,MED,session tokens stored in plaintext,core/auth,IN,"= E-03, owner decision"
+004-S2,004,004FINDINGS,MED,expired sessions never purged,core/auth,IN,"= E-03"
+E-01,E2,ELYSIUM-FLAWS-2,SEC,validation errors reflect request bodies including secrets,api/app.py,IN,unverified
+E-02,E2,ELYSIUM-FLAWS-2,SEC,unauthenticated disk exhaustion via login_attempts (100 KB -> 16.3 MB),core/auth,RP,unverified
+E-03,E2,ELYSIUM-FLAWS-2,SEC,"session tokens in plain text, never reaped",core/auth,IN,"owner decision (forces re-login)"
+E-04,E2,ELYSIUM-FLAWS-2,SEC,CSRF token compared with != rather than compare_digest,api/csrf,IN,unverified
+E-05,E2,ELYSIUM-FLAWS-2,SEC,no Permissions-Policy header,api/app.py,IN,unverified
+E-06,E2,ELYSIUM-FLAWS-2,SEC,failure kinds are runtime exception class names,api,IN,"owner decision"
+E-07,E2,ELYSIUM-FLAWS-2,CORR,a link's id type depends on the read path,mediator,IN,"= PA001-G6; owner decision"
+E-08,E2,ELYSIUM-FLAWS-2,CORR,17 unit tests fail on a fresh clone,tests/unit,RP,unverified
+E-09,E2,ELYSIUM-FLAWS-2,CORR,no CI of any kind,.github/,IN,"audit set 2 says CI added at 3799d90"
+E-10,E2,ELYSIUM-FLAWS-2,CORR,mirror read path 8-10x slower than live; ~86% catalog load,mirror_adapter.py,RP,unverified
+E-11,E2,ELYSIUM-FLAWS-2,CORR,model calls have no deadline and discard token counts,core/llm,IN,"partly addressed since"
+E-12,E2,ELYSIUM-FLAWS-2,CORR,no graceful shutdown; the executor is never drained,api/app.py,IN,unverified
+E-13,E2,ELYSIUM-FLAWS-2,CORR,sources are not checked at startup; health_check() never called,deployment_loader.py,IN,"addressed patch 385?"
+E-14,E2,ELYSIUM-FLAWS-2,CORR,"MemoryGuard is built, tested and never used",core/memory,IN,"owner decision: wire or delete"
+E-15,E2,ELYSIUM-FLAWS-2,DOCS,requirements.txt says a lockfile is deferred; both lockfiles exist,requirements.txt,MC,unverified
+E-16,E2,ELYSIUM-FLAWS-2,DOCS,README says the pending-write store is in-process memory,README.md,MC,unverified
+E-17,E2,ELYSIUM-FLAWS-2,DOCS,README says links cannot cross data silos; they can,README.md,MC,unverified
+E-18,E2,ELYSIUM-FLAWS-2,DOCS,SECURITY_ARCHITECTURE heads a closed hole as THE REAL HOLE,SECURITY_ARCHITECTURE.md,MC,unverified
+E-19,E2,ELYSIUM-FLAWS-2,DOCS,UI_ROADMAP wrong on log rotation and migrations; the true gap is narrower,UI_ROADMAP.md,MC,unverified
+E-20,E2,ELYSIUM-FLAWS-2,DOCS,six roadmap files overlap plus four *_PLAN.md,docs,MC,"owner decision: propose only"
+E-21,E2,ELYSIUM-FLAWS-2,OWNER,repository visibility vs LICENSE,LICENSE,IN,"owner decision; source-available is a recognised pattern"
+REVISE-7,E2,REVISE-THIS-FILE,GUARD,"section 7: 7 claims verified correct (SQL injection, read-only conn, timing, lockout, uniform denial, CSRF, headers)",various,RP,"negative controls; a break is a regression"
+CSS-S1-01,UI,AUDIT-09-css,DEFECT,"one selector defined twice; the first is dead and its comment describes removed behaviour",ui/ app.css,IN,unverified
+CSS-S1-02,UI,AUDIT-09-css,DEFECT,cascade-layer architecture declared and never used; 6 of 7 layers empty in the build,ui/ layers.css,IN,unverified
+CSS-S2-01,UI,AUDIT-09-css,DEAD,four rules for markup the Blueprint migration removed,ui/,IN,unverified
+CSS-S2-02,UI,AUDIT-09-css,DEAD,three custom properties defined and never used,ui/,IN,unverified
+CSS-S3-01,UI,AUDIT-09-css,GUARD,duplicate-selector test sees 101 of 148 selectors and no compound selector,ui/ tests,IN,unverified
+CSS-S3-02,UI,AUDIT-09-css,GUARD,the !important check covers three of four stylesheets,ui/ tests,IN,unverified
+CSS-S3-03,UI,AUDIT-09-css,COSMETIC,a duplicated comment block,ui/,IN,unverified
+UI-S1-01,UI,AUDIT-10,DOCS,"ui/README says no design system; the UI is built on Blueprint",ui/README.md,MC,unverified
+UI-S1-02,UI,AUDIT-10,DOCS,app-schema missing from the workspace listing (third omission),ui/README.md,MC,unverified
+UI-S1-03,UI,AUDIT-10,DOCS,per-package contents are a snapshot of an earlier codebase,ui/README.md,MC,unverified
+UI-S1-04,UI,AUDIT-10,DOCS,"five checks claimed, four listed, all four run; the React plugin is off",ui/ tooling,MC,unverified
+UI-S2-01,UI,AUDIT-10,MINOR,no <noscript> fallback,ui/index.html,IN,unverified
+UI-S2-02,UI,AUDIT-10,MINOR,no favicon link; every page load 404s,ui/index.html,IN,unverified
+PA001-F1,PA,PIPELINE_AUDIT,CRITICAL,a new source column freezes bronze/silver/changelog permanently while sync reports success,iceberg_sync.py:842/969/424,P1;P2,unverified
+PA001-F2,PA,PIPELINE_AUDIT,CRITICAL,any bronze failure makes silver re-derive from the previous bronze snapshot,iceberg_sync.py:364/424/872,P1-B,unverified
+PA001-F3,PA,PIPELINE_AUDIT,HIGH,"stringified bronze changes what silver accepts; coerce('5.0',integer) still raises",field_types.py:214,P3,"partly fixed 82881ef"
+PA001-F4,PA,PIPELINE_AUDIT,HIGH,the partial-read guard protects only the changelog,changelog.py:62/140,P1-D,unverified
+PA001-F5,PA,PIPELINE_AUDIT,CRITICAL,object storage honoured by the writer only; four local-only catalogs,deployment_loader.py:709/1211 routes.py:2102 check_mirror.py:81,P11,unverified
+PA001-F6.1,PA,PIPELINE_AUDIT,MED,no id uniqueness check,mirror_adapter.py:178,IN,"FIXED b84670a"
+PA001-F6.2,PA,PIPELINE_AUDIT,MED,six stale docstrings describing the pre-bronze design,core/mirror/*,IN,unverified
+PA001-F6.3,PA,PIPELINE_AUDIT,MED,manifest published before the sync loop,run_sync.py:388,IN,unverified
+PA001-F6.4,PA,PIPELINE_AUDIT,MED,layers identified by name prefix only,integrity.py:194,IN,unverified
+PA001-A1,PA,PIPELINE_AUDIT,CRITICAL,drift policy queries the write log by TABLE name; log keyed by OBJECT TYPE,iceberg_sync.py:733,P5,unverified
+PA001-A2,PA,PIPELINE_AUDIT,CRITICAL,many-to-many join tables never synced; m2m links empty on the default path,sync_targets.py:212,P6;P12,unverified
+PA001-A3,PA,PIPELINE_AUDIT,HIGH,rejected writes marked applied and served through the overlay,write_mediator.py:1812,P14,unverified
+PA001-A4,PA,PIPELINE_AUDIT,HIGH,overlay used only the newest applied entry,write_log.py,P7,"FIXED 529b235"
+PA001-A5,PA,PIPELINE_AUDIT,HIGH,"overlay bound is a stale last-changed time; min() across tables",deployment_loader.py:588 iceberg_sync.py:556,P7-C,"partly fixed"
+PA001-A6,PA,PIPELINE_AUDIT,HIGH,served snapshots frozen until reload; pins can mix,deployment_loader.py mirror_adapter.py:297,P13,unverified
+PA001-A7,PA,PIPELINE_AUDIT,HIGH,"source column names executed as SQL: reserved word, alias, a-b expression, subquery EXECUTED",sqlite_adapter.py:433,P4-G;P8,"LIB-3 fixed find_ids; bronze path may remain"
+PA001-A8,PA,PIPELINE_AUDIT,HIGH,decimal equals/in crashed; range refused,mirror_adapter.py:333 filters.py:57,P9,"FIXED ce14480 + patch 396"
+PA001-A9,PA,PIPELINE_AUDIT,HIGH,the changelog schema cannot widen; changes are lost,iceberg_sync.py:1025,P4-H,unverified
+PA001-A10,PA,PIPELINE_AUDIT,MED,a declared type change has no path forward,iceberg_sync.py:525,P4-I,unverified
+PA001-A11,PA,PIPELINE_AUDIT,HIGH,manifest publishes data_silos.yaml verbatim including credentials,manifest.py:62,P15,"partly mitigated"
+PA001-A12,PA,PIPELINE_AUDIT,MED,bronze copies every column reversing the stated policy,iceberg_sync.py:805,P1-A,unverified
+PA001-A13,PA,PIPELINE_AUDIT,MED,changelog has no bronze snapshot id and no UPDATE before-image,iceberg_sync.py,IN,"partly fixed 97954d6"
+PA001-A14,PA,PIPELINE_AUDIT,MED,~2.6 KB/row peak; ~10 whole-table copies per sync,iceberg_sync.py,P10,unverified
+PA001-A15,PA,PIPELINE_AUDIT,MED,tables read at different times; a refusal freezes all of gold,run_sync.py,IN,unverified
+PA001-A16,PA,PIPELINE_AUDIT,MED,repair_catalog --write takes no sync lock,scripts/repair_catalog.py,IN,unverified
+PA001-A17,PA,PIPELINE_AUDIT,LOW,'unchanged' never recorded; degraded recorded as 'synced',run_sync.py:425,IN,unverified
+PA001-A18,PA,PIPELINE_AUDIT,LOW,declared-column check ignores MDO storage and can pick a quarantine table,integrity.py:255,IN,unverified
+PA001-A19,PA,PIPELINE_AUDIT,HIGH,every API integration test runs read_from_mirror false,tests/integration/fixtures/config.yaml:51,IN,"changed by patch 386?"
+PA001-G1,PA,PIPELINE_AUDIT,CRITICAL,many-to-many links raise on gold,gold_view.py:58,P16,unverified
+PA001-G2,PA,PIPELINE_AUDIT,HIGH,"gold parity test compares gold to mirror, not source",tests/unit/test_gold_parity.py,IN,unverified
+PA001-G3,PA,PIPELINE_AUDIT,MED,one cross-silo field removes the linked graph from gold,gold_view.py,P16,unverified
+PA001-G4,PA,PIPELINE_AUDIT,HIGH,a crash in a first build publishes unaudited gold; readers pin current_snapshot,gold.py:299/212,P17,unverified
+PA001-G5,PA,PIPELINE_AUDIT,HIGH,a new field raises out of the gold step; later types never built,gold.py:324 run_sync.py:304,P17;P19,unverified
+PA001-G6,PA,PIPELINE_AUDIT,MED,integer ids served as strings; FK values stringified; reaches the mirror path,gold.py:173 sync_targets.py,P18,unverified
+PA001-G7,PA,PIPELINE_AUDIT,LOW,link check compares ids without type normalisation,gold.py:130,P17,unverified
+PA001-G8,PA,PIPELINE_AUDIT,MED,link check depends on build order within one sync,run_sync.py:296,P17,unverified
+PA001-G9,PA,PIPELINE_AUDIT,HIGH,one refused table silently skips gold for all types,run_sync.py:430,IN,unverified
+PA001-G10,PA,PIPELINE_AUDIT,LOW,"silo named gold/gold_history/bronze_*/changelog_*/quarantine_* collides",gold_view.py:38,IN,unverified
+PA001-G11,PA,PIPELINE_AUDIT,LOW,gold republishes unchanged types every sync,gold.py,MR2,"interacts with patch 394 retention"
+PA001-G12,PA,PIPELINE_AUDIT,LOW,decimal scale differs by path; the API emits floats,api + mediator,IN,unverified
+PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared text field (newlines),standardise.py:34,P21,unverified
+PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes become Python repr",iceberg_sync.py:810,IN,unverified
+PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,unverified
+PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; five places say it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 2 tests,P22,"CHECK FIRST - contradicts patch 397"
+PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,unverified
+PA001-X1,PA,PIPELINE_AUDIT,HIGH,many-valued link fields return ids the caller's MAC forbids,mediator.py:2108,P25,"UNVERIFIED - TOP PRIORITY"
+PA001-X2,PA,PIPELINE_AUDIT,CRITICAL,the agent crashes on any decimal or date field in the shipped config,agent_step_prompt.py:485,P26,"UNVERIFIED - TOP PRIORITY"
+ZOO-01,ZOO,PR001 Part II,GAP,mojibake not detected,standardise/transform,P24,unverified
+ZOO-02,ZOO,PR001 Part II,GAP,zero-width space kept,standardise,P24,unverified
+ZOO-03,ZOO,PR001 Part II,SEC,Unicode tag smuggling kept (LLM-readable; invisible to reviewers),standardise,P24,unverified
+ZOO-04,ZOO,PR001 Part II,SEC,bidi override kept (Trojan Source),standardise,P24,unverified
+ZOO-05,ZOO,PR001 Part II,GAP,Cyrillic homoglyph not flagged,standardise,P24,unverified
+ZOO-06,ZOO,PR001 Part II,GAP,C0 control / ESC sequence kept,standardise,P24,unverified
+ZOO-07,ZOO,PR001 Part II,GAP,HTML entity not decoded or flagged,standardise,P24,unverified
+ZOO-08,ZOO,PR001 Part II,GAP,"disguised missing N/A kept as a real value",transform,P24,unverified
+ZOO-09,ZOO,PR001 Part II,GAP,disguised missing 999-999-9999 kept,transform,P24,unverified
+ZOO-10,ZOO,PR001 Part II,GAP,sentinel date 1900-01-01 parsed as real,field_types,P24,unverified
+ZOO-11,ZOO,PR001 Part II,HIGH,"N/A in an integer column refuses the WHOLE TABLE",transform.py,P24,unverified
+ZOO-12,ZOO,PR001 Part II,GAP,thousands separator 1234 table-refused (no declared format),field_types,P24,unverified
+ZOO-13,ZOO,PR001 Part II,GAP,full-width digits silently accepted as 123,field_types,P24,unverified
+ZOO-14,ZOO,PR001 Part II,GAP,leading zeros 007 silently become 7,field_types,P24,unverified
+ZOO-15,ZOO,PR001 Part II,GAP,scientific notation 1e3 table-refused,field_types,P24,unverified
+ZOO-16,ZOO,PR001 Part II,HIGH,currency symbol $5.00 CRASHES,field_types.py:224,P24,"= PA001-C1"
+ZOO-17,ZOO,PR001 Part II,GAP,percent 5% table-refused,field_types,P24,unverified
+ZOO-18,ZOO,PR001 Part II,GAP,European decimal comma table-refused,field_types,P24,unverified
+ZOO-19,ZOO,PR001 Part II,HIGH,NaN accepted into number; poisons every sum,field_types,P24,unverified
+ZOO-20,ZOO,PR001 Part II,HIGH,inf accepted into number,field_types,P24,unverified
+ZOO-21,ZOO,PR001 Part II,GAP,US date 01/02/2024 ambiguous and refused,field_types,P24,unverified
+ZOO-22,ZOO,PR001 Part II,GAP,Excel serial date refused,field_types,P24,unverified
+ZOO-23,ZOO,PR001 Part II,GAP,implausible future date accepted with no range,constraints,P24,unverified
+ZOO-24,ZOO,PR001 Part II,GAP,email has no canonical or match key,standardise,P24,unverified
+ZOO-25,ZOO,PR001 Part II,HIGH,CRLF inside text flattened,standardise,P24,"= PA001-S1"
+LB-1a,LB,LLM_BOUNDARY,HIGH,synthesis computes figures in prose; compute them in code first,synthesis_prompt.py,IN,unverified
+LB-1b,LB,LLM_BOUNDARY,HIGH,no number check; add one that fails closed like the citation check,synthesis_prompt.py,IN,unverified
+LB-2,LB,LLM_BOUNDARY,HIGH,"agent filters by EQUALITY only; schema hides data types; no order_by/limit",agentic_loop.py:361 filters.py,IN,unverified
+LB-3,LB,LLM_BOUNDARY,HIGH,three code-detected failures end as complete answers,agent_step_prompt.py agentic_loop.py,IN,unverified
+LB-4,LB,LLM_BOUNDARY,HIGH,output shape not enforced at decoding (json_mode only),adapters,IN,unverified
+LB-5,LB,LLM_BOUNDARY,MED,records rendered as Python repr step logs,synthesis_prompt.py,IN,unverified
+LB-6,LB,LLM_BOUNDARY,MED,deterministic follow-ups delegated; 52% of the step prompt is procedure,agent_step_prompt.py,IN,unverified
+LB-7,LB,LLM_BOUNDARY,MED,tool arguments transcribed by the model,agentic_loop.py _step_use_tool,IN,unverified
+LB-8,LB,LLM_BOUNDARY,MED,entity lookup by exact-match guess; free-text search not offered,mediator.py,IN,unverified
+LB-9,LB,LLM_BOUNDARY,LOW,every question goes through the open-ended loop,agentic_loop.py,IN,unverified
+LB-10,LB,LLM_BOUNDARY,LOW,injection defence is a prompt instruction,synthesis_prompt.py,IN,unverified
+AL-1,AL,AGENT_LOOP,HIGH,model-controlled list/dict values crash _step_signature outside error handling,agentic_loop.py,P29,"UNVERIFIED - TOP PRIORITY"
+AL-2,AL,AGENT_LOOP,HIGH,the planner reads raw source data while choosing actions; no untrusted framing,agent_step_prompt.py,P29,unverified
+AL-3,AL,AGENT_LOOP,MED,48704 chars over 9 hops to gather ~1100,agentic_loop.py,P29,unverified
+AL-4,AL,AGENT_LOOP,MED,one step per model call; patches for ReAct failure modes,agentic_loop.py,IN,unverified
+AL-5,AL,AGENT_LOOP,MED,no retries on transient model failures,adapters,IN,unverified
+AL-6,AL,AGENT_LOOP,MED,four booleans instead of one stop reason,agentic_loop.py,IN,unverified
+AL-7,AL,AGENT_LOOP,MED,no standard tracing,scripts/agent_trace.py,IN,unverified
+AL-8,AL,AGENT_LOOP,MED,no reliability evaluation (pass^k),tests,IN,unverified
+AL-9,AL,AGENT_LOOP,LOW,JSON-in-prompt instead of native tool calling,adapters,IN,unverified
+AL-10,AL,AGENT_LOOP,LOW,hop budget only; no token/cost budget,agentic_loop.py,IN,unverified
+AL-11,AL,AGENT_LOOP,LOW,cancellation between hops only,agentic_loop.py,IN,unverified
+AL-12,AL,AGENT_LOOP,LOW,a proposed write ends the run; no resume,agentic_loop.py,IN,unverified
+AR-1,AR,AGENT_RESEARCH,P1,verify and protect KV prefix-cache reuse (97.5% of each prompt repeats),ops + adapters,P31,unverified
+AR-2,AR,AGENT_RESEARCH,P1,move per-hop notes out of the system prompt (append-only context),agent_step_prompt.py:462,P31,unverified
+AR-3,AR,AGENT_RESEARCH,P2,persist each user's system-prompt KV,llama-server,IN,unverified
+AR-4,AR,AGENT_RESEARCH,P1,readable tool results: names beside ids,agentic_loop.py,IN,unverified
+AR-5,AR,AGENT_RESEARCH,P1,constrain the step choice fully; keep synthesis free,adapters,IN,unverified
+AR-6,AR,AGENT_RESEARCH,P2,automatic prompt optimisation (GEPA),offline,IN,unverified
+AR-7,AR,AGENT_RESEARCH,P2,plan caching feeding router growth,agent,IN,unverified
+AR-8,AR,AGENT_RESEARCH,P3,n-gram speculative decoding,llama-server,IN,unverified
+AR-9,AR,AGENT_RESEARCH,P3,heterogeneous models with policy-gated escalation,adapters,IN,"owner decision D3"
+AR-10,AR,AGENT_RESEARCH,P3,train the small model on Elysium's task,offline,IN,"owner decision D6"
+R1,R,PR001 I,P1,land the audit's waves 1-3 before any enhancement,-,-,unverified
+R2,R,PR001 I,P2,declared incremental extraction per source table,data_silos.yaml,-,unverified
+R3,R,PR001 I,P1,canonical type-aware bronze encoding,iceberg_sync.py,-,unverified
+R4,R,PR001 I,P2,one consistent read per silo per run,run_sync.py,-,unverified
+R5,R,PR001 I,P3,bounded-memory batched sync,iceberg_sync.py,-,unverified
+R6,R,PR001 I,P1,health checks per table and object type,new,-,unverified
+R7,R,PR001 I,P2,column profiles and distribution drift,new,-,unverified
+R8,R,PR001 I,P1,independent reconciliation source to gold,new,-,unverified
+R9,R,PR001 I,P1,one run id and one run report across all layers,run_sync.py,-,unverified
+R10,R,PR001 I,P2,finish the changelog as SCD2 with before-images,changelog.py,-,unverified
+R11,R,PR001 I,P1,enforced retention and orphan-file cleanup,new,-,"depends on M1"
+R12,R,PR001 I,P1,column classifications that propagate through layers,ontology,-,unverified
+R13,R,PR001 I,P1,an erasure (right-to-be-forgotten) workflow,new,-,"no doc on dev mentions it"
+R14,R,PR001 I,P2,refuse plaintext credentials,secret_references.py,-,unverified
+R15,R,PR001 I,P3,emit lineage as OpenLineage events,new,-,unverified
+R16,R,PR001 I,P3,publish each object type as an ODCS data contract,new,-,unverified
+R17,R,PR001 I,P3,a REST catalog so other engines can read gold,new,-,unverified
+R18,R,PR001 I,P1,dependency-aware per-type gold builds,run_sync.py,-,unverified
+R19,R,PR001 I,P1,source-mutation matrix and live-parity suite in CI,tests,-,unverified
+R20,R,PR001 I,P2,preview an ontology change on Iceberg branches,hot reload,-,unverified
+R21,R,PR001 I,P3,DuckDB for diff and aggregation on evidence,new,-,unverified
+R22,R,PR001 II,P1,type failures become row-level expectations,transform.py,-,unverified
+R23,R,PR001 II,P1,a text-hygiene pass and agent-boundary guard,standardise.py,-,unverified
+R24,R,PR001 II,P2,detect mojibake and markup residue,standardise.py,-,unverified
+R25,R,PR001 II,P2,detect and suggest disguised missing values,new,-,unverified
+R26,R,PR001 II,P1,numeric sanity defaults (reject NaN/inf; flag 007),field_types.py,-,unverified
+R27,R,PR001 II,P2,declared parse formats and locales,ontology,-,unverified
+R28,R,PR001 II,P2,semantic value types with canonical keys,ontology,-,unverified
+R29,R,PR001 II,P2,"cross-field rules, FDs and denial constraints",constraints.py,-,unverified
+R30,R,PR001 II,P3,statistical and pattern outlier flags (warn only),new,-,unverified
+R31,R,PR001 II,P2,suggest never infer: rule proposals for approval,new,-,unverified
+R32,R,PR001 II,P2,value clustering to approved value mappings,new,-,unverified
+R33,R,PR001 II,P2,per-cell cleaning provenance and replayable history,new,-,unverified
+R34,R,PR001 II,P3,correct at the source: owner reports and proposals,new,-,unverified
+R35,R,PR001 II,P3,export-time formula escaping,new,-,unverified
+R36,R,PR001 II,P1,fix the decimal crash,field_types.py,-,"= PA001-C1"
+R37,R,PR001 III,P2,declared derived properties,ontology,-,unverified
+R38,R,PR001 III,P1,value kinds and per-value enrichment provenance,ontology + gold,-,unverified
+R39,R,PR001 III,P1,compartment-safe aggregates and graph metrics,mediator + gold,-,unverified
+R40,R,PR001 III,P2,versioned reference data,new,-,unverified
+R41,R,PR001 III,P2,an LLM enrichment transform (compile first cache eval),new,-,unverified
+R42,R,PR001 III,P1*,guard LLM enrichment inputs and outputs,new,-,unverified
+R43,R,PR001 III,P3,entity linking via the W3C Reconciliation API,new,-,unverified
+R44,R,PR001 III,P3,"external data: waterfall, licence metadata, TTL expiry",new,-,unverified
+R45,R,PR001 III,P3,embeddings as versioned classified gold derivatives,new,-,unverified
+R46,R,PR001 III,P2,as-of joins for time-correct enrichment,new,-,unverified
+R47,R,PR001 III,P2,inference review for special categories,new,-,"owner decision D5"
+R48,R,PR001 III,P3,model predictions as inferred properties,new,-,unverified
+R49,R,PR001 III,P3,human enrichment: notes and annotations as data,ui roadmap,-,unverified
+R50,R,PR001 III,P2,feedback-loop guard on the write path,write_mediator.py,-,unverified
+R51,R,PR001 IV,P3,"detectors as proposals: LLM-written rules, learned signals",new,-,unverified
+R52,R,PR001 IV,P1,an imputation policy (never into served data),policy,-,unverified
+R53,R,PR001 IV,P3,tabular foundation-model predictions as inferred values,new,-,unverified
+R54,R,PR001 IV,P3,link and join discovery as suggestions,new,-,unverified
+R55,R,PR001 IV,P3,schema-matching assistant for new silos,new,-,unverified
+R56,R,PR001 IV,P2,the FUSION matching pipeline as a cascade,fusion,-,unverified
+R57,R,PR001 IV,P1*,conformal FDR-controlled thresholds or none,fusion,P27,unverified
+R58,R,PR001 IV,P1*,clustering without blind transitive closure,fusion,P27,unverified
+R59,R,PR001 IV,P1*,an evaluation harness for every statistical method,new,-,unverified
+R60,R,PR001 IV,P3,truth discovery and copy detection as evidence only,fusion,-,unverified
+R61,R,PR001 IV,P1*,cross-compartment matching runs system-high,fusion,-,unverified
+R62,R,PR001 IV,P2,reproducible statistical runs,fusion,-,unverified
+R63,R,PR001 IV,P2,"the agent reads evaluation results, code enforces them",agent,-,"needs PA001-X2 first"
+PATCH-01,PATCH,PIPELINE_TESTING,-,"tests/pipeline 161 tests + core/mirror/validation + validate_pipeline.py + CI step",new,-,"offered; not applied"
+PATCH-02,PATCH,PIPELINE_MODEL,-,core/mirror/pipeline_model derived model and check registry,new,-,"offered; not applied"
+PATCH-03,PATCH,llm_bench,-,scripts/llm_bench.py model benchmark for the VM,new,-,"offered; not applied"
+D1,DEC,HANDOFF,-,model switch phi4-mini -> Qwen3-4B-Instruct-2507 after the bench,-,-,owner
+D2,DEC,HANDOFF,-,stay on Ollama or add a llama-server adapter,-,-,owner
+D3,DEC,HANDOFF,-,may data leave the VM for escalation to a hosted model,-,-,owner
+D4,DEC,HANDOFF,-,LGPL licences (pycountry python-stdnum) in a proprietary product,-,-,owner
+D5,DEC,HANDOFF,-,"governance policy: erasure, retention, plaintext credentials, classifications, inference review",-,-,owner
+D6,DEC,HANDOFF,-,fine-tuning a small model on Elysium's traces,-,-,owner
+Q1,DEC,PR001,-,which regulatory regimes apply to target customers,-,-,owner
+Q2,DEC,PR001,-,crypto-shredding or PII-split tables for erasure,-,-,owner
+Q3,DEC,PR001,-,is lake-level access by other tools a goal,-,-,owner
+Q4,DEC,PR001,-,which source databases are expected first,-,-,owner
+Q5,DEC,PR001,-,freshness targets per object type,-,-,owner
+Q6,DEC,PR001,-,is gold_history or the silver changelog the history of record,-,-,owner
+DEP-1,DEP,DEPENDENCY_REVIEW,-,"ADOPT runtime: rapidfuzz, dateparser, babel",requirements.txt,-,unverified
+DEP-2,DEP,DEPENDENCY_REVIEW,-,"ADOPT dev: hypothesis, mutmut",requirements-dev.txt,-,unverified
+DEP-3,DEP,DEPENDENCY_REVIEW,-,"ADOPT extras: scikit-learn [ml], splink [fusion]",extras,-,unverified
+DEP-4,DEP,DEPENDENCY_REVIEW,-,"CONDITIONAL: phonenumbers, holidays, email-validator, ftfy",-,-,unverified
+DEP-5,DEP,DEPENDENCY_REVIEW,-,"AVOID: pycountry (LGPL); python-stdnum pending counsel",-,-,"owner decision D4"
+DEP-6,DEP,DEPENDENCY_REVIEW,-,"REJECT: setfit, recognizers-text; NOT NEEDED: jsonschema, mapie, outlines",-,-,unverified
+GAP-1,GAP,this review,-,"ui/ audits 01-08 are cited by 09 and 10 but were never supplied",-,-,"ASK THE OWNER"

@@ -21,6 +21,19 @@ OPEN_RISKS item 5 did. Each becomes a roadmap entry only after it has
 been reproduced, or shown not to reproduce, against the code as it
 stands.
 
+## THE VERIFICATION LIST IS AUDIT_CHECKLIST.csv
+
+Both intake documents are prose, and prose is where an item gets lost.
+**AUDIT_CHECKLIST.csv has one row per verifiable claim**: 273 rows
+across both sets, every id unique, each with its source, severity, the
+claim in one line, where in the code to look, which probe reproduces it,
+and a status. 203 are unverified today; the rest are already resolved,
+already fixed by a patch, or are the owner's to decide.
+
+It is a CSV so it can be sorted, filtered and updated as each item is
+checked, and so that "did we cover everything?" is a question a command
+can answer rather than a memory.
+
 ## The files, and what each is pinned to
 
 | File | Pinned to | Findings | Note |
