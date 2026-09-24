@@ -2,7 +2,7 @@
 linear_regression.py  (example action tool -- pure computation, no dependencies)
 
 Least-squares line fit over paired numeric data. Implements
-core/tools/interface.py's Tool contract: run() receives only the
+core/functions/interface.py's Function contract: run() receives only the
 arguments the LLM supplied, touches nothing else, and raises
 ValueError on any invalid input rather than guessing or silently
 producing a meaningless result.

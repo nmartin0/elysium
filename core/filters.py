@@ -54,7 +54,15 @@ OPERATOR_TYPES: dict[str, tuple[str, ...] | None] = {
     "equals": None,  # any type
     "in": None,
     "not_in": None,
-    "range": ("integer", "number"),
+    # DECIMAL BELONGS HERE. It is an exact numeric type -- the one you
+    # CHOOSE for money precisely so it can be compared -- and SQL has
+    # never excluded it from BETWEEN. Leaving it out meant a money
+    # field could not be filtered by amount at all, which is most of
+    # what anyone wants to do with money.
+    #
+    # Found while measuring F-20; no report raised it, which is its
+    # own small lesson about what an audit sees.
+    "range": ("integer", "number", "decimal"),
     # THE REAL TEMPORAL TYPES FIRST, because on them a date_range is
     # correct BY CONSTRUCTION: the mirror stores date32 and timestamp
     # values, and Iceberg compares them chronologically rather than

@@ -912,9 +912,21 @@ checking it found NOW.
       script. The audit recommends the script, given the scan's cost.
     - F-18 -- the agent can emit only equality filters; widening it is a
       feature, not a fix.
+    - ~~`range` on a DECIMAL field~~ ANSWERED, patch 396: a GAP, not a
+      decision. decimal is an exact numeric type and SQL has never
+      excluded it from BETWEEN. Fixing it exposed a worse bug on the
+      source path: a TEXT money column compared LEXICOGRAPHICALLY, so
+      100.00 was an amount between ten and fifty.
     - `range` on a DECIMAL field is refused outright, so money cannot be
       filtered by amount. Found while measuring F-20; no report raised it.
       Deliberate, or a gap?
+    - ~~004-F3~~ ANSWERED, patch 396: DOCUMENTED, not renamed. The
+      boundary word is the industry's (OpenAI deprecated `functions`
+      for `tools` in 2023 and now rejects both together; MCP says
+      tools), and renaming the inside buys nothing anyone outside can
+      see. Five places pointed at a core/tools/ package that does not
+      exist, which is what an unstated mapping looks like after a
+      while.
     - 004-F3 -- "tools" at the config and API boundary, "functions" in
       the core. Renaming the boundary changes a config key and an API
       field; documenting the mapping does not.

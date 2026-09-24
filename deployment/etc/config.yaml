@@ -47,7 +47,22 @@ agent:
 # Tools the LLM may call, by name -- entirely optional; omitting this
 # section (or listing none) is completely valid, unlike llm:, which
 # every deployment needs. Registered tools live in
-# core/tools/registry.py.
+# core/functions/registry.py -- see NAMING below.
+# NAMING: "tools" out here, "functions" in the code (004-F3).
+#
+# THE BOUNDARY WORD IS THE INDUSTRY'S. OpenAI deprecated its
+# `functions` parameter in favour of `tools` in 2023 and now rejects
+# both together; Azure followed; MCP calls them tools. A deployment
+# config and an API field are read by people who have seen those, so
+# the boundary says what they expect.
+#
+# THE CODE KEPT `functions` because renaming a boundary is never just
+# a rename -- the 2023 migration changed the request field, the
+# response field, the finish reason and the reply message together --
+# and renaming the INSIDE buys nothing anyone outside can see. So the
+# mapping is written down instead: tools.enabled here names entries
+# in core/functions/registry.py, each implementing the Function
+# contract in core/functions/interface.py.
 tools:
   enabled:
     - linear_regression

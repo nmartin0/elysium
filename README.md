@@ -486,7 +486,7 @@ minutes) if never confirmed.
 |---|---|---|
 | A new database technology | `core/ontology/interface.py`'s `DataSiloAdapter` | `core/deployment_loader.py`'s `_ADAPTER_REGISTRY` |
 | A new LLM backend | `core/llm/interface.py`'s `LLMAdapter` | `core/deployment_loader.py`'s `_LLM_ADAPTER_REGISTRY` |
-| A new tool | `core/tools/interface.py`'s `Tool` | `core/tools/registry.py`'s `_TOOL_REGISTRY` |
+| A new tool | `core/functions/interface.py`'s `Function` | `core/functions/registry.py`'s registry |
 
 For a whole new sub-app (a new top-level screen in `ui/`, not a new
 backend extension point), see `ROADMAP.md`'s own prioritized list

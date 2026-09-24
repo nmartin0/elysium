@@ -111,7 +111,7 @@ def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = (),
     return dict(row) if row is not None else None
 
 
-def _clause_for(condition) -> tuple[str, list]:
+def _clause_for(condition, declared_type: str | None = None) -> tuple[str, list]:
     """One condition as a SQL fragment plus its bound values.
 
     A separate function because the mapping from operator to SQL is
@@ -125,8 +125,23 @@ def _clause_for(condition) -> tuple[str, list]:
     """
     field, operator, value = condition.field, condition.operator, condition.value
 
+    # NUMERIC COMPARISON ON A TEXT COLUMN IS LEXICOGRAPHIC, and SQLite
+    # will not tell you. A customer database that stores money as TEXT
+    # -- which many do -- answers `amount BETWEEN 10 AND 50` with
+    # 100.00, because the column's TEXT affinity converts the bounds
+    # to text and "100.00" sorts between "10" and "50". REPRODUCED
+    # before fixing.
+    #
+    # The CAST is applied only where the ONTOLOGY declares a numeric
+    # type. Guessing from the value would make a string field whose
+    # contents happen to look numeric compare differently from one
+    # whose do not, which is a worse surprise than this one.
+    column = _q(field)
+    if declared_type in NUMERIC_TYPES:
+        column = f"CAST({column} AS NUMERIC)"
+
     if operator == "equals":
-        return f"{_q(field)} = ?", [value]
+        return f"{column} = ?", [value]
     if operator in ("in", "not_in"):
         # An empty set would emit `IN ()`, which is not valid SQL.
         # validate_filter() rejects it upstream; this raises rather
@@ -137,19 +152,19 @@ def _clause_for(condition) -> tuple[str, list]:
             raise FilterError(f"{field!r}: {operator} needs at least one value.")
         placeholders = ", ".join("?" for _ in value)
         keyword = "IN" if operator == "in" else "NOT IN"
-        return f"{_q(field)} {keyword} ({placeholders})", list(value)
+        return f"{column} {keyword} ({placeholders})", list(value)
     if operator == "range":
-        return _bounded_clause(field, value.get("min"), value.get("max"))
+        return _bounded_clause(field, value.get("min"), value.get("max"), column)
     if operator == "date_range":
         # Compared as TEXT, which is correct for ISO-8601: lexical
         # order matches chronological order, which is the property the
         # format was designed for. A non-ISO date column would compare
         # wrongly, and that is why date_range requires ISO input.
-        return _bounded_clause(field, value.get("start"), value.get("end"))
+        return _bounded_clause(field, value.get("start"), value.get("end"), column)
     if operator == "contains":
         # LIKE with the wildcards in the BOUND value, not the pattern,
         # so a value containing % or _ cannot widen its own match.
-        return f"{_q(field)} LIKE ?", [f"%{_escape_like(value)}%"]
+        return f"{column} LIKE ?", [f"%{_escape_like(value)}%"]
 
     raise UnsupportedFilter(f"SQLite adapter cannot express {operator!r}")
 
@@ -171,17 +186,21 @@ def _limit_clause(limit: int | None) -> str:
     return f" LIMIT {int(limit)}"
 
 
-def _bounded_clause(field: str, low, high) -> tuple[str, list]:
+def _bounded_clause(field: str, low, high, column: str | None = None) -> tuple[str, list]:
+    # `column` is the QUOTED and possibly CAST expression; `field` is
+    # the bare name, kept for the error message, which an operator
+    # reads and which should not contain SQL.
+    column = column or _q(field)
     # Both absent would emit `field <= ?` bound to None, which matches
     # NOTHING and reports no error -- the hardest kind of wrong answer
     # to debug. Rejected here as well as in validation.
     if low is None and high is None:
         raise FilterError(f"{field!r}: a range needs at least one bound.")
     if low is not None and high is not None:
-        return f"{_q(field)} BETWEEN ? AND ?", [low, high]
+        return f"{column} BETWEEN ? AND ?", [low, high]
     if low is not None:
-        return f"{_q(field)} >= ?", [low]
-    return f"{_q(field)} <= ?", [high]
+        return f"{column} >= ?", [low]
+    return f"{column} <= ?", [high]
 
 
 
@@ -202,6 +221,11 @@ _PREPARER = sqlite_dialect().identifier_preparer
 def _q(identifier: str) -> str:
     """One table or column name, safely quoted for SQLite."""
     return _PREPARER.quote(identifier)
+
+
+# The ontology's numeric types -- `decimal` included, because money is
+# exactly what a range filter is for.
+NUMERIC_TYPES = ("integer", "number", "decimal")
 
 
 def _escape_like(value: str) -> str:
@@ -283,7 +307,9 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         clauses: list[str] = []
         values: list[Any] = []
         for condition in conditions:
-            clause, bound = _clause_for(condition)
+            declared = ((type_config.get("fields") or {}).get(condition.field)
+                        or {}).get("data_type")
+            clause, bound = _clause_for(condition, declared)
             clauses.append(clause)
             values.extend(bound)
 
