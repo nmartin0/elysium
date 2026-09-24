@@ -165,7 +165,7 @@ LB-7,LB,LLM_BOUNDARY,MED,tool arguments transcribed by the model,agentic_loop.py
 LB-8,LB,LLM_BOUNDARY,MED,entity lookup by exact-match guess; free-text search not offered,mediator.py,IN,unverified
 LB-9,LB,LLM_BOUNDARY,LOW,every question goes through the open-ended loop,agentic_loop.py,IN,unverified
 LB-10,LB,LLM_BOUNDARY,LOW,injection defence is a prompt instruction,synthesis_prompt.py,IN,unverified
-AL-1,AL,AGENT_LOOP,HIGH,model-controlled list/dict values crash _step_signature outside error handling,agentic_loop.py,P29,"UNVERIFIED - TOP PRIORITY"
+AL-1,AL,AGENT_LOOP,HIGH,model-controlled list/dict values crash _step_signature outside error handling,agentic_loop.py,P29,"CONFIRMED + FIXED patch 405: signature made safe AND shapes refused as recoverable mistakes"
 AL-2,AL,AGENT_LOOP,HIGH,the planner reads raw source data while choosing actions; no untrusted framing,agent_step_prompt.py,P29,unverified
 AL-3,AL,AGENT_LOOP,MED,48704 chars over 9 hops to gather ~1100,agentic_loop.py,P29,unverified
 AL-4,AL,AGENT_LOOP,MED,one step per model call; patches for ReAct failure modes,agentic_loop.py,IN,unverified

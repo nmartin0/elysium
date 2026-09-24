@@ -944,8 +944,12 @@ checking it found NOW.
                 object means and could break legitimate joins. YOUR
                 DECISION; today's behaviour is pinned by a test so it
                 cannot drift while you make it.
-      AL-1      a second crash: model-emitted list/dict values escape
-                the loop's error handling and fail /query.
+      AL-1      CONFIRMED AND FIXED, patch 405. All three shapes
+                reproduced. Fixing the signature alone was not enough:
+                the values then reached the adapter, which raised
+                ProgrammingError, also outside the caught set. Both
+                halves landed, and a bad shape is now a recoverable
+                mistake the model corrects.
       F1 + F2   a source column freezes the pipeline permanently, and a
                 bronze failure serves stale data -- both reporting
                 success, both invisible to the integrity check.

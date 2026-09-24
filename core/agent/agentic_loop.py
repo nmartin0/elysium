@@ -132,15 +132,89 @@ def _object_ids_in(step: dict) -> list:
     return [step["object_id"]]
 
 
+def _hashable(value):
+    """Any model-supplied value, as something a signature can hold.
+
+    THE CRASH THIS EXISTS FOR (AL-1). _step_signature() runs BEFORE
+    _execute_step(), outside the try/except that turns a bad step into
+    a recoverable mistake, so `frozenset(step["filter"].items())` on a
+    model-written list raised TypeError: unhashable type -- straight
+    out of run(), failing the whole /query request. Reproduced for a
+    list filter value, a list object_id and a dict filter value. A
+    model produces these naturally: "customer_id in [a, b]".
+
+    THE use_tool BRANCH ALREADY KNEW. Its comment says function args
+    "can contain UNHASHABLE values ... JSON serialization (sort_keys=
+    True for determinism) handles nested lists/dicts safely and still
+    produces a stable, hashable signature". That reasoning was right
+    and was applied to exactly one of the six step kinds.
+
+    default=str, so a type nobody anticipated degrades to a stable
+    string rather than taking the request down.
+    """
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+_SCALAR = (str, int, float, bool)
+
+
+def check_step_values(step: dict) -> None:
+    """Refuse model-written values of the wrong SHAPE (AL-1).
+
+    WHY THIS EXISTS SEPARATELY FROM next_step()'s key checks. Those ask
+    whether a step has the right KEYS; nothing asked whether the values
+    were the right kind. A model writes `"object_id": ["a1", "a2"]` or
+    `"filter": {"code": {"x": 1}}` naturally -- it is how you would say
+    "in [a, b]" if nobody told you the grammar -- and those reached the
+    adapter, which raised sqlite3.ProgrammingError. That is not in the
+    loop's caught set either, so the /query request failed just as the
+    signature crash did.
+
+    RAISED AS ValueError, DELIBERATELY, because the loop already turns
+    that into a recoverable mistake: the model is told what was wrong
+    and gets to correct it, capped by max_consecutive_invalid_steps.
+    A malformed step is the model's to fix, not the request's to die
+    of.
+
+    THE FILTER GRAMMAR IS EQUALITY-ONLY TODAY (LB-2/F-18), which is why
+    a list filter value is refused rather than read as "in". When the
+    typed grammar reaches the agent, this is where the shape it accepts
+    widens -- one place, stated.
+    """
+    def scalar(name, value):
+        if not isinstance(value, _SCALAR) and value is not None:
+            raise ValueError(
+                f"{name} must be a single value, not {type(value).__name__}: {value!r}")
+
+    for key in ("object_id", "field_name", "link_field", "group_by", "aggregate"):
+        if key in step:
+            scalar(key, step[key])
+    for key in ("object_ids", "field_names"):
+        for item in step.get(key) or []:
+            scalar(f"each entry of {key}", item)
+    for name, value in (step.get("filter") or {}).items():
+        scalar(f"filter[{name!r}]", value)
+
+
+def _hashable_filter(step: dict) -> frozenset:
+    return frozenset((key, _hashable(value))
+                     for key, value in (step.get("filter") or {}).items())
+
+
 def _step_signature(step: dict):
     # A hashable fingerprint of one step, used to detect exact repeats.
     # propose_action has NO entry here -- see module docstring for why a
     # second proposal in one run() is now structurally impossible, not
     # just discouraged.
     if step["step"] == "search_object":
-        return ("search_object", step["object_type"], frozenset(step["filter"].items()))
+        return ("search_object", step["object_type"],
+                frozenset((key, _hashable(value))
+                          for key, value in step["filter"].items()))
     if step["step"] == "get_field":
-        return ("get_field", step["object_type"], step["object_id"], step["field_name"])
+        return ("get_field", step["object_type"], _hashable(step["object_id"]),
+                _hashable(step["field_name"]))
     if step["step"] == "get_object":
         # frozenset over field_names -- the model asking for the SAME
         # set of fields on the SAME object twice must be detected as a
@@ -148,8 +222,12 @@ def _step_signature(step: dict):
         # them in either time.
         # frozenset over the ids too, for the same reason: naming the
         # same objects in a different ORDER is the same request.
-        return ("get_object", step["object_type"], frozenset(_object_ids_in(step)),
-                frozenset(step["field_names"]))
+        # frozenset STILL, because naming the same ids or fields in a
+        # different order is the same request -- _hashable only makes
+        # each element safe to put in one.
+        return ("get_object", step["object_type"],
+                frozenset(_hashable(i) for i in _object_ids_in(step)),
+                frozenset(_hashable(f) for f in step["field_names"]))
     if step["step"] == "use_tool":
         # Function args can contain UNHASHABLE values (e.g. lists for
         # x_values/y_values) -- frozenset(dict.items()), used for the
@@ -162,11 +240,11 @@ def _step_signature(step: dict):
     # -- worth catching by the same duplicate detection.
     if step["step"] == "aggregate_object":
         return ("aggregate_object", step["object_type"],
-                frozenset((step.get("filter") or {}).items()),
-                step["aggregate"], step.get("field_name"), step.get("group_by"))
+                _hashable_filter(step), step["aggregate"],
+                _hashable(step.get("field_name")), _hashable(step.get("group_by")))
     if step["step"] == "search_around":
-        return ("search_around", step["object_type"],
-                frozenset((step.get("filter") or {}).items()), step["link_field"])
+        return ("search_around", step["object_type"], _hashable_filter(step),
+                _hashable(step["link_field"]))
     return None
 
 
@@ -768,6 +846,23 @@ class AgentLoop:
                     break
                 continue
 
+            try:
+                # BEFORE the signature, which is itself before the
+                # step's own error handling (AL-1).
+                check_step_values(step)
+            except ValueError as e:
+                consecutive_invalid, should_stop = _handle_recoverable_mistake(
+                    gathered, consecutive_invalid, self.max_consecutive_invalid_steps,
+                    detail=f"{step}",
+                    rejected_step_name="rejected_invalid_step",
+                    attempt_label="invalid step",
+                    stop_message="too many consecutive invalid steps, stopping",
+                    note=f"That step was not usable: {e}. Send one value per "
+                         f"field, and ask again for each id separately.",
+                )
+                if should_stop:
+                    break
+                continue
             signature = _step_signature(step)
             if signature is not None and signature in seen_signatures:
                 consecutive_duplicates, should_stop = _handle_recoverable_mistake(
