@@ -112,6 +112,7 @@ from core.deployment_loader import (
 )
 from core.mirror.lake_permissions import warn_if_world_readable
 from core.ontology.mediator import security_cache_scope
+from core.ontology.write_log import WriteLogWriter
 from core.pending_write_persistence import PendingWritePersistence
 from core.pending_write_store import PendingWriteStore
 from core.request_metrics import RETENTION_SECONDS, RequestMetrics
@@ -339,6 +340,23 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # right answer while the fallback existed -- it said what was being
     # bypassed -- but a fallback nobody can select needs no warning,
     # and leaving one would imply it is still possible.
+
+    # THE DELETED INDEX, BROUGHT UP TO DATE (F-28). Free when it is
+    # already current -- two integers compared -- and a full rebuild
+    # only when there is no watermark at all, which means the index has
+    # never synced or came back from a backup without one.
+    #
+    # NOT A CHECK, because a check costs what the rebuild costs: both
+    # read the log once. The watermark is what makes the normal boot
+    # cost nothing.
+    try:
+        outcome, rows = WriteLogWriter(
+            runtime_paths.data_dir / "write_log.db").sync_deleted_index()
+        if outcome != "current":
+            logger.info(f"deleted index {outcome}: {rows} log row(s)")
+    except Exception as e:  # noqa: BLE001 - a boot must not fail over a cache
+        logger.warning(f"deleted index could not be synced ({e}); "
+                       f"run python -m scripts.rebuild_deleted_index")
 
     # WHO CAN READ THE LAKE (OPEN_RISKS item 2). Reported, not
     # changed: an operator may have widened it deliberately -- a

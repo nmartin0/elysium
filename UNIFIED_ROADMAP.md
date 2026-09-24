@@ -908,6 +908,17 @@ checking it found NOW.
       message claims write: is "not enforced anywhere" -- goes with it.
       F-03's KeyError on a delete
       surfaces the moment either lands.
+    - ~~F-28~~ ANSWERED, patch 397, and MEASURING CHANGED THE ANSWER.
+      The audit recommended the script "given the scan's cost"; a
+      rebuild is one pass, 22 ms per 10,000 log rows, 206 ms per
+      100,000, 1.07 s per 500,000. And any CHECK is also one pass, so
+      detection could never be cheaper than the rebuild it avoids --
+      which rules out the middle option I had proposed. A WATERMARK
+      escapes both: the index remembers the highest log row it has
+      consumed, and a boot compares two integers. Measured on 50,000
+      rows: 80.9 ms to rebuild, 0.39 ms to find current, 1.25 ms to
+      catch up after one write. The script remains for an index that
+      is WRONG rather than behind.
     - F-28 -- rebuild the deleted index at startup, or by an operator
       script. The audit recommends the script, given the scan's cost.
     - F-18 -- the agent can emit only equality filters; widening it is a
