@@ -47,6 +47,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
+
 from core.filters import FilterError, UnsupportedFilter
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter, StorageUnavailable
 from core.sqlite_connection import open_connection as _connect
@@ -124,7 +126,7 @@ def _clause_for(condition) -> tuple[str, list]:
     field, operator, value = condition.field, condition.operator, condition.value
 
     if operator == "equals":
-        return f"{field} = ?", [value]
+        return f"{_q(field)} = ?", [value]
     if operator in ("in", "not_in"):
         # An empty set would emit `IN ()`, which is not valid SQL.
         # validate_filter() rejects it upstream; this raises rather
@@ -135,7 +137,7 @@ def _clause_for(condition) -> tuple[str, list]:
             raise FilterError(f"{field!r}: {operator} needs at least one value.")
         placeholders = ", ".join("?" for _ in value)
         keyword = "IN" if operator == "in" else "NOT IN"
-        return f"{field} {keyword} ({placeholders})", list(value)
+        return f"{_q(field)} {keyword} ({placeholders})", list(value)
     if operator == "range":
         return _bounded_clause(field, value.get("min"), value.get("max"))
     if operator == "date_range":
@@ -147,7 +149,7 @@ def _clause_for(condition) -> tuple[str, list]:
     if operator == "contains":
         # LIKE with the wildcards in the BOUND value, not the pattern,
         # so a value containing % or _ cannot widen its own match.
-        return f"{field} LIKE ?", [f"%{_escape_like(value)}%"]
+        return f"{_q(field)} LIKE ?", [f"%{_escape_like(value)}%"]
 
     raise UnsupportedFilter(f"SQLite adapter cannot express {operator!r}")
 
@@ -176,10 +178,30 @@ def _bounded_clause(field: str, low, high) -> tuple[str, list]:
     if low is None and high is None:
         raise FilterError(f"{field!r}: a range needs at least one bound.")
     if low is not None and high is not None:
-        return f"{field} BETWEEN ? AND ?", [low, high]
+        return f"{_q(field)} BETWEEN ? AND ?", [low, high]
     if low is not None:
-        return f"{field} >= ?", [low]
-    return f"{field} <= ?", [high]
+        return f"{_q(field)} >= ?", [low]
+    return f"{_q(field)} <= ?", [high]
+
+
+
+# QUOTING IDENTIFIERS IS NOT OURS TO INVENT (LIB-3). Every table and
+# column name below is interpolated into SQL text, and a name that is
+# a reserved word or contains a space -- `order details`, both legal in
+# SQLite -- produced a syntax error, so a customer database using one
+# simply could not be mapped. REPRODUCED before fixing.
+#
+# SQLAlchemy is already a dependency (rule 18 prefers one we have), and
+# its IdentifierPreparer knows this dialect's rules: which words are
+# reserved, when quotes are needed, and how to escape a quote inside a
+# name. Writing that by hand is the sort of thing that looks right for
+# years and then meets a column called `group`.
+_PREPARER = sqlite_dialect().identifier_preparer
+
+
+def _q(identifier: str) -> str:
+    """One table or column name, safely quoted for SQLite."""
+    return _PREPARER.quote(identifier)
 
 
 def _escape_like(value: str) -> str:
@@ -271,7 +293,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             if where_clause:
                 rows = _run_query(
                     conn,
-                    f"SELECT {id_column} FROM {table} WHERE {where_clause}"
+                    f"SELECT {_q(id_column)} FROM {_q(table)} WHERE {where_clause}"
                     + _limit_clause(limit),
                     tuple(values),
                     db_path=str(self.db_path),
@@ -279,7 +301,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             else:
                 rows = _run_query(
                     conn,
-                    f"SELECT {id_column} FROM {table}" + _limit_clause(limit),
+                    f"SELECT {_q(id_column)} FROM {_q(table)}" + _limit_clause(limit),
                     db_path=str(self.db_path),
                 )
         return [row[id_column] for row in rows]
@@ -312,12 +334,12 @@ class SQLiteReadAdapter(ExternalReadAdapter):
 
         escaped = query_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{escaped}%"
-        where_clause = " OR ".join(f"{column} LIKE ? ESCAPE '\\'" for column in columns)
+        where_clause = " OR ".join(f"{_q(column)} LIKE ? ESCAPE '\\'" for column in columns)
         values = tuple(pattern for _ in columns)
 
         with self._connection() as conn:
             rows = _run_query(
-                conn, f"SELECT {id_column} FROM {table} WHERE {where_clause}", values,
+                conn, f"SELECT {_q(id_column)} FROM {_q(table)} WHERE {where_clause}", values,
                 db_path=str(self.db_path),
             )
             return [row[id_column] for row in rows]
@@ -328,7 +350,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
 
         with self._connection() as conn:
             row = _run_query_one(
-                conn, f"SELECT {field_name} FROM {table} WHERE {id_column} = ?", (object_id,),
+                conn, f"SELECT {_q(field_name)} FROM {_q(table)} WHERE {_q(id_column)} = ?", (object_id,),
                 db_path=str(self.db_path),
             )
             return row[field_name] if row else None
@@ -354,8 +376,8 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         with self._connection() as conn:
             rows = _run_query(
                 conn,
-                f"SELECT {result_column}, {via_column} FROM {via_table} "
-                f"WHERE {via_column} IN ({placeholders})",
+                f"SELECT {_q(result_column)}, {_q(via_column)} FROM {_q(via_table)} "
+                f"WHERE {_q(via_column)} IN ({placeholders})",
                 tuple(object_ids),
                 db_path=str(self.db_path),
             )
@@ -408,11 +430,11 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         # rather than interpolated -- the same split every other query
         # in this adapter uses.
         placeholders = ", ".join("?" for _ in object_ids)
-        selected = ", ".join(dict.fromkeys([id_column, *columns]))
+        selected = ", ".join(_q(name) for name in dict.fromkeys([id_column, *columns]))
         with self._connection() as conn:
             rows = _run_query(
                 conn,
-                f"SELECT {selected} FROM {table_name} WHERE {id_column} IN ({placeholders})",
+                f"SELECT {selected} FROM {_q(table_name)} WHERE {_q(id_column)} IN ({placeholders})",
                 tuple(object_ids),
                 db_path=str(self.db_path),
             )
@@ -428,9 +450,9 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         # this file.
         if not columns:
             return []
-        column_list = ", ".join(columns)
+        column_list = ", ".join(_q(name) for name in columns)
         with self._connection() as conn:
-            return _run_query(conn, f"SELECT {column_list} FROM {table_name}", db_path=str(self.db_path))
+            return _run_query(conn, f"SELECT {column_list} FROM {_q(table_name)}", db_path=str(self.db_path))
 
     def source_column_types(self, table_name: str) -> dict[str, str]:
         """NOTHING, and the reason is worth stating.
@@ -485,7 +507,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         """
         try:
             with self._connection() as conn:
-                cursor = conn.execute(f"SELECT * FROM {table_name} LIMIT 0")
+                cursor = conn.execute(f"SELECT * FROM {_q(table_name)} LIMIT 0")
                 return {description[0] for description in cursor.description}
         except sqlite3.Error:
             # An absent table, an unopenable file, a denied read: all
@@ -506,7 +528,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         result_column = field_config.get("via_target_column", target_id_column)
         with self._connection() as conn:
             rows = _run_query(
-                conn, f"SELECT {result_column} FROM {via_table} WHERE {via_column} = ?", (object_id,),
+                conn, f"SELECT {_q(result_column)} FROM {_q(via_table)} WHERE {_q(via_column)} = ?", (object_id,),
                 db_path=str(self.db_path),
             )
             return [row[result_column] for row in rows]
@@ -586,7 +608,7 @@ class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):
         table = type_config["storage"]["table"]
         id_column = type_config["storage"]["id_column"]
 
-        set_clause = ", ".join(f"{key} = ?" for key in changes)
+        set_clause = ", ".join(f"{_q(key)} = ?" for key in changes)
         # "IS ?", not "= ?" -- a REAL, confirmed bug otherwise: in SQL,
         # "column = NULL" always evaluates to NULL/unknown, never TRUE,
         # even when the actual stored value genuinely IS NULL. This
@@ -598,12 +620,12 @@ class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):
         # legitimately started NULL. SQLite's "IS" is null-safe
         # equality -- identical to "=" for non-NULL values, but
         # correctly treats NULL as a real, comparable value.
-        condition_clause = " AND ".join(f"{key} IS ?" for key in expected_current_values)
-        where_clause = f"{id_column} = ?" + (f" AND {condition_clause}" if condition_clause else "")
+        condition_clause = " AND ".join(f"{_q(key)} IS ?" for key in expected_current_values)
+        where_clause = f"{_q(id_column)} = ?" + (f" AND {condition_clause}" if condition_clause else "")
 
         with self._connection() as conn:
             cursor = conn.execute(
-                f"UPDATE {table} SET {set_clause} WHERE {where_clause}",
+                f"UPDATE {_q(table)} SET {set_clause} WHERE {where_clause}",
                 (*changes.values(), object_id, *expected_current_values.values()),
             )
             conn.commit()
@@ -613,12 +635,12 @@ class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):
         table = type_config["storage"]["table"]
         id_column = type_config["storage"]["id_column"]
 
-        columns = ", ".join(fields.keys())
+        columns = ", ".join(_q(name) for name in fields)
         placeholders = ", ".join("?" for _ in fields)
 
         with self._connection() as conn:
             cursor = conn.execute(
-                f"INSERT INTO {table} ({columns}) VALUES ({placeholders})", tuple(fields.values())
+                f"INSERT INTO {_q(table)} ({columns}) VALUES ({placeholders})", tuple(fields.values())
             )
             conn.commit()
             new_id = cursor.lastrowid

@@ -401,6 +401,28 @@ resolution, so gold for it is a straight conform.
           one: measured before adding it, the pure-Python diff already
           in the tree takes 377 ms for 200,000 rows against DuckDB's
           76 -- irrelevant beside a sync that takes seconds.
+  LIB-1..3. ~~STOP REINVENTING~~ RESOLVED, patch 390, and TWO OF THE
+          THREE WERE REJECTED ON INSPECTION -- which is a finding about
+          the original audit, not about the libraries.
+          (1) cachetools: NOT TAKEN. A new runtime dependency to
+              replace 52 tested lines that also refuse an entry too
+              large to cache.
+          (2) statistics.quantiles: NOT TAKEN, and this one was
+              measured. It RAISES on a single sample -- a real case
+              here, "the one success is the whole latency picture" --
+              and reports values never observed: p99 of
+              [1, 2, 3, 400] is 388.09. For a latency report, an
+              observed value is the right answer.
+          (3) SQLAlchemy's identifier quoting: TAKEN, and it fixed a
+              REPRODUCED limitation rather than a hypothetical one. A
+              table called `order details` or a column called `group`
+              -- both legal in SQLite -- broke every query with
+              `near "order": syntax error`, so a customer database
+              using either could not be mapped. No new dependency:
+              SQLAlchemy was already here.
+          STILL OPEN: folding SQLite into the SQLAlchemy adapter
+          entirely. The quoting removes the bug class; the duplication
+          remains.
   LIB-1..3. STOP REINVENTING, where a library does it better
           (LIBRARY_AUDIT.md, September 23):
           (1) SnapshotCache -> cachetools: DOWNGRADED once the

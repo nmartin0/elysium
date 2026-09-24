@@ -286,3 +286,52 @@ transitive package added by a release.
                              optional because of air-gapped
                              distribution -- not because it is large.
 
+---
+
+# Part 5. What happened when the three were actually attempted
+
+Recorded September 24, because two of the three did not survive
+contact and the reason is instructive: I had proposed them by reading
+the code, and rule 18 says to inspect the LIBRARY.
+
+## 5.1 statistics.quantiles -- REJECTED, measured
+
+The stdlib does not compute the same thing. `statistics.quantiles`
+RAISES on a single sample ("must have at least two data points"),
+which is a real case here -- test_request_metrics has one named "the
+one success is the whole latency picture" -- and it INTERPOLATES, so
+the p99 of [1, 2, 3, 400] is 388.09: a number that was never observed
+and never will be.
+
+For a latency report the question is "how slow was the slow one", and
+the honest answer is a value that actually happened. Ours stays.
+
+## 5.2 cachetools -- REJECTED, as Part 4.6 already downgraded it
+
+A new runtime dependency to replace 52 tested lines that also do
+something it does not.
+
+## 5.3 SQLAlchemy's identifier quoting -- TAKEN, and it found a bug
+
+REPRODUCED FIRST: a table named `order details` and a column named
+`group` are both legal in SQLite, and every query the adapter built
+interpolated them unquoted. The result was `near "order": syntax
+error` -- so a customer whose database uses a reserved word or a space
+simply could not be mapped, and the error read like a bug in Elysium
+rather than a name Elysium refused to say properly.
+
+NOT A SECURITY HOLE: these names come from the deployment's own
+configuration. What they are is a CLASS of failure, and the answer to
+a class is a library that knows the rules.
+
+SQLAlchemy was already a dependency, so this cost nothing new -- rule
+18's second preference, a dependency we already have, doing the part
+we would get wrong.
+
+## 5.4 The lesson for the next audit
+
+Two of three proposals died on inspection, and both would have
+SHIPPED had the audit been trusted as written. Reading our own code
+tells you what we do; only reading the library tells you whether it
+does the same thing.
+
