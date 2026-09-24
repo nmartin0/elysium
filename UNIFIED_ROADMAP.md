@@ -898,6 +898,34 @@ checking it found NOW.
     - E-20: PROPOSE a consolidation of the roadmap files; do not
       perform one.
 
+### AUDIT INTAKE, 24 September -- 78 findings, none yet checked
+
+    Six audit files arrived and every finding in them is recorded in
+    AUDIT_INTAKE.md, which also maps the eleven issues that appear
+    under two or three different IDs across files.
+
+    NOTHING IS ON THIS ROADMAP FROM THEM YET, deliberately. A finding
+    earns a roadmap entry once it has been reproduced against the code
+    as it stands, or shown not to reproduce. The audits are pinned to
+    commits hundreds behind dev -- 001FINDINGS to a 1,321-test suite,
+    004FINDINGS to 120d1b2, ELYSIUM-FLAWS-2 to cb94943 -- so a good
+    number are already fixed, and at least one is likely overstated in
+    the way OPEN_RISKS item 5 turned out to be.
+
+    FIRST TO CHECK, because they are the most severe and the least
+    likely to have been touched by any work so far:
+
+      004-6  a STALE SHARED SECURITY CACHE allowing cross-region
+             reads. The audit reproduced it over HTTP: after an object
+             moved region, the old user kept access and the rightful
+             one was denied. If it still holds it outranks everything
+             else in all six files.
+      004-7  CONFIRMING A WRITE DOES NOT RE-AUTHORISE IT. Reproduced:
+             the same action refused when proposed fresh, applied from
+             a proposal made 15 minutes earlier.
+
+    Then 001FINDINGS by severity, then the E- items, then ui/.
+
 ### Needs a decision from a person
 
     - F-02, WITH F-03 IN THE SAME CHANGE -- no valid policy can authorise
