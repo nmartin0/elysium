@@ -1,5 +1,14 @@
 # Audit intake -- every finding, before any of them is checked
 
+**A SECOND AUDIT SET ARRIVED THE SAME DAY**: 14 files, 13,360 lines,
+pinned to dev `a598ed0`, with 26 reproduction probes whose code is
+printed. It is recorded in **AUDIT_INTAKE_PIPELINE.md**, and the two
+sets must be read together: NEITHER FOUND THE OTHER'S MOST SEVERE
+FINDING. The stale shared security cache (004-6) and confirm-time
+re-authorisation (004-7) appear nowhere in the second set; the agent's
+decimal crash (PA001-X2), the link-field MAC leak (X1) and the silent
+pipeline freeze (F1/F2) appear nowhere in this one.
+
 Six audit files arrived on 24 September. This records EVERY finding in
 them, so nothing is lost between reading and working. It is an intake
 list, not a verdict.

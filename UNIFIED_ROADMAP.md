@@ -898,6 +898,37 @@ checking it found NOW.
     - E-20: PROPOSE a consolidation of the roadmap files; do not
       perform one.
 
+### AUDIT INTAKE, 24 September -- TWO sets, none yet checked
+
+    A SECOND SET arrived the same day: 14 files, 13,360 lines, pinned to
+    a598ed0, with 26 reproduction probes printed in full. Recorded in
+    AUDIT_INTAKE_PIPELINE.md. 154 distinct ids, and the ids understate
+    it: the test tier it ships encodes 57 separately failing
+    behaviours, F6 and A15-A18 are eight findings under two headings,
+    and the dirty-data zoo is 25 cases of which 20 behave wrongly. Over
+    200 distinct broken behaviours between the two sets.
+
+    CHECKED FIRST, in this order:
+      PA001-M1  says pyiceberg 0.12 CAN expire snapshots, through
+                table.maintenance.expire_snapshots(). PATCH 397 SAID THE
+                OPPOSITE and called it measured. I used a different
+                entry point. If M1 holds, 397's reasoning is wrong in a
+                commit message, a docstring and a test, and correcting
+                it comes before any new work.
+      PA001-X2  CRITICAL: the agent crashes on any decimal or date
+                field, in the SHIPPED configuration.
+      PA001-X1  a MAC leak on many-valued links, beside a method that
+                filters correctly.
+      AL-1      a second crash: model-emitted list/dict values escape
+                the loop's error handling and fail /query.
+      F1 + F2   a source column freezes the pipeline permanently, and a
+                bronze failure serves stale data -- both reporting
+                success, both invisible to the integrity check.
+      F5        an S3 mirror cannot be served at all after its first
+                sync.
+
+    Then 004-6 and 004-7 from the first set, then the rest by severity.
+
 ### AUDIT INTAKE, 24 September -- 78 findings, none yet checked
 
     Six audit files arrived and every finding in them is recorded in
