@@ -866,6 +866,26 @@ class IcebergMirrorSync(MirrorSync):
                 self._record_changes(
                     silo_name, table_name, id_column, table, raw_rows, columns)
 
+                # BRONZE WIDENS, exactly as silver already did at :552
+                # (PA001-F1). Without this, a source that gained ANY
+                # column made the Arrow table wider than the bronze
+                # table; overwrite() raised, the failure was caught and
+                # merely warned about, and _read_bronze() then handed
+                # silver the PREVIOUS snapshot's rows. The table froze
+                # PERMANENTLY -- measured at three syncs, each
+                # reporting success, each adding a row at the source,
+                # silver unchanged at two rows throughout, and
+                # check_mirror reporting no problems because bronze and
+                # silver still agreed with each other.
+                #
+                # THE SOURCE OWNS ITS OWN SCHEMA. A column appearing is
+                # routine in any live database, and nothing about it
+                # should stop the mirror tracking the columns the
+                # ontology DOES declare.
+                with table.update_schema() as update:
+                    update.union_by_name(arrow_table.schema)
+                table = self._catalog.load_table(identifier)
+
                 with warnings.catch_warnings():
                     warnings.filterwarnings(
                         "ignore", message="Delete operation did not match any records")
@@ -996,7 +1016,15 @@ class IcebergMirrorSync(MirrorSync):
             if bronze_table.current_snapshot() is None:
                 return
 
-            previous = bronze_table.scan(selected_fields=tuple(columns)).to_arrow().to_pylist()
+            # ONLY THE COLUMNS THE OLD SNAPSHOT ACTUALLY HAS (PA001-F1).
+            # Scanning it for a column added this run raised "Could not
+            # find column", which was caught and warned about -- and
+            # the warning said the change was "lost permanently", which
+            # it was. Every change in that sync went unrecorded,
+            # including ones to columns that had existed all along.
+            stored = set(bronze_table.schema().column_names)
+            readable = tuple(column for column in columns if column in stored)
+            previous = bronze_table.scan(selected_fields=readable).to_arrow().to_pylist()
             changes = diff_snapshots(previous, current_rows, id_column)
 
             if changes.suspected_partial_read:
@@ -1051,6 +1079,21 @@ class IcebergMirrorSync(MirrorSync):
             table = self._catalog.load_table(identifier)
         except NoSuchTableError:
             table = self._catalog.create_table(identifier, schema=arrow_table.schema)
+
+        # THE CHANGELOG WIDENS TOO (PA001-A9), and F1's fix is
+        # incomplete without it -- which the audit said and a test here
+        # proved: bronze widened, silver followed the source again, and
+        # the changelog still refused every change in the sync that
+        # added the column, because its own schema was fixed by the
+        # FIRST change set it ever recorded.
+        #
+        # ONE DEFECT IN TWO TABLES. The changelog is the only record of
+        # what changed, it is append-only, and "the source has already
+        # moved on" -- so a change it cannot record is not deferred,
+        # it is gone.
+        with table.update_schema() as update:
+            update.union_by_name(arrow_table.schema)
+        table = self._catalog.load_table(identifier)
 
         table.append(arrow_table)
 

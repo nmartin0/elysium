@@ -950,9 +950,12 @@ checking it found NOW.
                 ProgrammingError, also outside the caught set. Both
                 halves landed, and a bad shape is now a recoverable
                 mistake the model corrects.
-      F1 + F2   a source column freezes the pipeline permanently, and a
-                bronze failure serves stale data -- both reporting
-                success, both invisible to the integrity check.
+      F1        CONFIRMED AND FIXED, patch 406, together with A9
+                because the audit was right that F1 is incomplete
+                without it. Bronze now widens as silver always has,
+                and the changelog widens and reads only what the old
+                snapshot holds. F2 (a bronze FAILURE serving stale
+                data) is the next item and is still open.
       F5        an S3 mirror cannot be served at all after its first
                 sync.
 

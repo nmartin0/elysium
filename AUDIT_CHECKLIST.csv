@@ -82,7 +82,7 @@ UI-S1-03,UI,AUDIT-10,DOCS,per-package contents are a snapshot of an earlier code
 UI-S1-04,UI,AUDIT-10,DOCS,"five checks claimed, four listed, all four run; the React plugin is off",ui/ tooling,MC,unverified
 UI-S2-01,UI,AUDIT-10,MINOR,no <noscript> fallback,ui/index.html,IN,unverified
 UI-S2-02,UI,AUDIT-10,MINOR,no favicon link; every page load 404s,ui/index.html,IN,unverified
-PA001-F1,PA,PIPELINE_AUDIT,CRITICAL,a new source column freezes bronze/silver/changelog permanently while sync reports success,iceberg_sync.py:842/969/424,P1;P2,unverified
+PA001-F1,PA,PIPELINE_AUDIT,CRITICAL,a new source column freezes bronze/silver/changelog permanently while sync reports success,iceberg_sync.py:842/969/424,P1;P2,"CONFIRMED + FIXED patch 406 (with A9)"
 PA001-F2,PA,PIPELINE_AUDIT,CRITICAL,any bronze failure makes silver re-derive from the previous bronze snapshot,iceberg_sync.py:364/424/872,P1-B,unverified
 PA001-F3,PA,PIPELINE_AUDIT,HIGH,"stringified bronze changes what silver accepts; coerce('5.0',integer) still raises",field_types.py:214,P3,"partly fixed 82881ef"
 PA001-F4,PA,PIPELINE_AUDIT,HIGH,the partial-read guard protects only the changelog,changelog.py:62/140,P1-D,unverified
@@ -99,7 +99,7 @@ PA001-A5,PA,PIPELINE_AUDIT,HIGH,"overlay bound is a stale last-changed time; min
 PA001-A6,PA,PIPELINE_AUDIT,HIGH,served snapshots frozen until reload; pins can mix,deployment_loader.py mirror_adapter.py:297,P13,unverified
 PA001-A7,PA,PIPELINE_AUDIT,HIGH,"source column names executed as SQL: reserved word, alias, a-b expression, subquery EXECUTED",sqlite_adapter.py:433,P4-G;P8,"LIB-3 fixed find_ids; bronze path may remain"
 PA001-A8,PA,PIPELINE_AUDIT,HIGH,decimal equals/in crashed; range refused,mirror_adapter.py:333 filters.py:57,P9,"FIXED ce14480 + patch 396"
-PA001-A9,PA,PIPELINE_AUDIT,HIGH,the changelog schema cannot widen; changes are lost,iceberg_sync.py:1025,P4-H,unverified
+PA001-A9,PA,PIPELINE_AUDIT,HIGH,the changelog schema cannot widen; changes are lost,iceberg_sync.py:1025,P4-H,"CONFIRMED + FIXED patch 406: F1 was incomplete without it"
 PA001-A10,PA,PIPELINE_AUDIT,MED,a declared type change has no path forward,iceberg_sync.py:525,P4-I,unverified
 PA001-A11,PA,PIPELINE_AUDIT,HIGH,manifest publishes data_silos.yaml verbatim including credentials,manifest.py:62,P15,"partly mitigated"
 PA001-A12,PA,PIPELINE_AUDIT,MED,bronze copies every column reversing the stated policy,iceberg_sync.py:805,P1-A,unverified
