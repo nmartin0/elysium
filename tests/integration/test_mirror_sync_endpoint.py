@@ -130,3 +130,91 @@ class TestWhoMayStartOne:
         # therefore no token. Asking for one raises before the request
         # is made, which would test the helper rather than the route.
         assert client.post("/api/admin/mirror/sync").status_code in (401, 403)
+
+
+def _mirror_catalog(client):
+    """The same lake the route reads."""
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    mirror_dir = client.app.state.runtime_paths.data_dir / "mirror"
+    return SqlCatalog(
+        "elysium_mirror",
+        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
+        warehouse=f"file://{mirror_dir / 'warehouse'}",
+    )
+
+
+class TestWhatWasHeldBack:
+    """OPEN_RISKS item 1. A quarantined row is absent from silver BY
+    DESIGN -- it failed a rule the deployment declared -- but absence
+    reads as LOSS: 4,000 rows where the source has 4,200 says nothing
+    about whether 200 were rejected, dropped, or never there.
+
+    So every table reports how many the rules held back, and which
+    rule caught the most of them: "12 rows held back" is a fact, and
+    "12 held back by required:email" is something somebody can act on.
+    """
+
+    def test_every_table_reports_a_count(self, client):
+        _as_admin(client)
+
+        body = client.get("/api/admin/mirror").json()
+
+        assert body["tables"]
+        for table in body["tables"]:
+            assert table["quarantined_rows"] == 0, "this fixture violates no rules"
+            assert "quarantine_reason" in table
+
+    def test_a_held_row_REACHES_the_panel(self, client):
+        """WRITTEN BECAUSE A CONTROL PROVED NOTHING TWICE: this
+        deployment violates no rules, so every count is legitimately
+        zero and a mutation hard-coding zero passed. A known finding
+        is put in the lake, and the panel must show it -- which is the
+        only version of this test that can fail.
+        """
+        import pyarrow as pa
+        _as_admin(client)
+        catalog = _mirror_catalog(client)
+        catalog.create_namespace_if_not_exists("quarantine_primary_sql")
+        schema = pa.schema([("object_id", pa.string()), ("column", pa.string()),
+                             ("field", pa.string()), ("reason", pa.string()),
+                             ("value", pa.string()), ("detected_at", pa.string())])
+        table = catalog.create_table_if_not_exists(
+            "quarantine_primary_sql.customers", schema=schema)
+        table.append(pa.Table.from_pylist([{
+            "object_id": "cust_001", "column": "email", "field": "email",
+            "reason": "is required, and missing", "value": None,
+            "detected_at": "2026-09-24T00:00:00+00:00",
+        }], schema=schema))
+
+        body = client.get("/api/admin/mirror").json()
+
+        customers = next(row for row in body["tables"] if row["table"] == "customers")
+        assert customers["quarantined_rows"] == 1
+        assert customers["quarantine_reason"] == "is required, and missing"
+
+    def test_the_count_is_the_REPORT_S_count(self, client):
+        """WRITTEN BECAUSE A CONTROL PROVED NOTHING: this fixture
+        violates no rules, so every count is zero and a mutation
+        hard-coding zero passed. Comparing against the report proves
+        the panel is WIRED to it rather than agreeing by luck."""
+        from core.mirror.quarantine_report import quarantine_for
+        _as_admin(client)
+        catalog = _mirror_catalog(client)
+
+        body = client.get("/api/admin/mirror").json()
+
+        for table in body["tables"]:
+            expected = quarantine_for(catalog, table["silo"], table["table"])
+            assert table["quarantined_rows"] == expected.rows
+            assert table["quarantine_reason"] == expected.worst_reason
+
+    def test_the_reason_is_absent_when_nothing_is_held(self, client):
+        """Not an empty string: a rule name is either known or it is
+        not, and "" would render as a blank label in the panel."""
+        _as_admin(client)
+
+        body = client.get("/api/admin/mirror").json()
+
+        assert all(table["quarantine_reason"] is None for table in body["tables"])
+

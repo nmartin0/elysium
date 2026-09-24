@@ -129,9 +129,18 @@ def apply_expectations(rows: list[dict], expectations: dict[str, dict]) -> Expec
         failed = [v for v in violations if v.policy == FAIL]
         if failed:
             raise ExpectationFailed(failed[0])
-        held = next((v for v in violations if v.policy == QUARANTINE), None)
-        if held is not None:
-            result.quarantined.append((row, held))
+        held = [v for v in violations if v.policy == QUARANTINE]
+        if held:
+            # EVERY REASON, not just the first. The row is held ONCE --
+            # it is one row whatever it failed -- but each rule that
+            # caught it is recorded, because an operator who fixes the
+            # one reason they were shown, re-syncs, and watches the
+            # same row get held again has been told half the truth.
+            #
+            # Found while making quarantine visible: a row failing two
+            # rules recorded one finding, which also skewed "which rule
+            # is holding the most rows" -- the number the panel shows.
+            result.quarantined.extend((row, violation) for violation in held)
             continue
         result.warned.extend(v for v in violations if v.policy == WARN)
         result.kept.append(row)

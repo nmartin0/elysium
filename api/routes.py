@@ -142,6 +142,7 @@ from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import _row_count, check_mirror
+from core.mirror.quarantine_report import quarantine_for
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
 from core.ontology.mediator import SearchOutcome
@@ -1254,6 +1255,18 @@ class ConfigHistoryResponse(BaseModel):
     generations: list[GenerationSummary]
 
 
+def _mirror_catalog_for(request):
+    """The lake's catalog, opened read-only for a status query."""
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
+    return SqlCatalog(
+        "elysium_mirror",
+        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
+        warehouse=f"file://{mirror_dir / 'warehouse'}",
+    )
+
+
 def _recent_snapshots(catalog, identifier: str, limit: int = 5) -> list[dict]:
     """The newest snapshots of one table, newest first.
 
@@ -1308,6 +1321,14 @@ class MirrorTableState(BaseModel):
     last_synced_at: str | None
     silver_rows: int | None
     bronze_rows: int | None
+    # HOW MANY ROWS THE RULES HELD BACK, which is what explains a
+    # silver count lower than bronze's. Absence reads as loss unless
+    # something says otherwise (OPEN_RISKS item 1). The RULE that
+    # caught the most of them is named too, because "12 rows held
+    # back" is a fact and "12 rows held back by required:email" is a
+    # thing somebody can act on.
+    quarantined_rows: int = 0
+    quarantine_reason: str | None = None
     # THE LAST ATTEMPT, as distinct from the last CHANGE. Snapshots
     # record when data changed, so a sync that ran and was refused
     # leaves exactly what a sync that ran and found nothing leaves.
@@ -2103,6 +2124,7 @@ def admin_mirror_route(request: Request,
     for target in resolve_sync_targets({"object_types": generation.config.schema}):
         synced_at = sync.last_synced_at(target.silo_name, target.table_name)
         attempt = attempts.last_for(target.silo_name, target.table_name)
+        quarantine = quarantine_for(catalog, target.silo_name, target.table_name)
         tables.append({
             "silo": target.silo_name,
             "table": target.table_name,
@@ -2111,6 +2133,14 @@ def admin_mirror_route(request: Request,
             "bronze_rows": _row_count(
                 catalog, f"bronze_{target.silo_name}.{target.table_name}",
             ),
+            # WHAT WAS HELD BACK, beside the row counts it explains
+            # (OPEN_RISKS item 1). A quarantined row is absent from
+            # silver by design, and absence reads as LOSS: 4,000 rows
+            # where the source has 4,200 says nothing about whether
+            # 200 were rejected on purpose, dropped by a bug, or never
+            # existed.
+            "quarantined_rows": quarantine.rows,
+            "quarantine_reason": quarantine.worst_reason,
             "last_attempt_at": attempt.at.isoformat() if attempt else None,
             "last_attempt_outcome": attempt.outcome if attempt else None,
             "last_attempt_detail": attempt.detail if attempt else None,
@@ -3831,6 +3861,25 @@ def health_route(request: Request) -> dict:
     if mediator is not None:
         mirror_down = source_failures(mediator.adapters, mediator.adapters)
         checks["mirror"] = "unreachable" if mirror_down else "reachable"
+        # HELD BACK IS NOT UNREACHABLE. A deployment whose rules are
+        # working is not degraded -- quarantine is the pipeline doing
+        # its job -- so this is its own key with its own vocabulary,
+        # and it does not make /health say "degraded".
+        #
+        # A FIXED WORD, not a count and not a table name: /health is
+        # unauthenticated, and the test that guards its keys exists
+        # because silo names once leaked through them.
+        try:
+            from core.mirror.quarantine_report import quarantine_summary
+            from core.mirror.sync_targets import resolve_sync_targets
+            held = quarantine_summary(
+                _mirror_catalog_for(request),
+                resolve_sync_targets({"object_types": generation.config.schema}),
+            )
+            checks["quarantine"] = "holding" if held["rows"] else "clear"
+        except Exception as e:  # noqa: BLE001 - health must not fail over a count
+            logger.warning(f"quarantine count unavailable for /health: {e!r}")
+            checks["quarantine"] = "unknown"
 
     degraded = any(value == "unreachable" for value in checks.values())
     return {"status": "degraded" if degraded else "ok", "checks": checks}

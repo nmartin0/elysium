@@ -2328,6 +2328,16 @@ def test_health_reports_silos_in_aggregate_not_by_name(client):
     assert not [key for key in body["checks"] if key.startswith("silo:")]
 
 
+def test_health_says_whether_anything_is_held_back(client):
+    # HELD BACK IS NOT DEGRADED: a deployment whose rules are firing
+    # is working. So it is its own key, in its own vocabulary, and it
+    # does not change the overall status.
+    body = client.get("/api/health").json()
+
+    assert body["checks"]["quarantine"] in {"holding", "clear", "unknown"}
+    assert body["status"] == "ok"
+
+
 def test_health_leaks_nothing_about_the_data(client):
     # Unauthenticated, so it reports only whether subsystems ANSWER --
     # never counts, names, paths or configuration. A connection error
@@ -2338,7 +2348,15 @@ def test_health_leaks_nothing_about_the_data(client):
     serialized = json.dumps(body)
     for leaked in ("cust_", "password", "/home/", "sqlite", ".db"):
         assert leaked not in serialized, f"/health exposed {leaked!r}"
-    assert set(body["checks"].values()) <= {"ready", "reachable", "unreachable", "unconfigured"}
+    # "holding", "clear" and "unknown" joined the vocabulary when
+    # quarantine became visible (OPEN_RISKS item 1). All three are
+    # FIXED WORDS -- no count, no table name -- which is what this
+    # assertion guards: /health is unauthenticated, and a value that
+    # varied with the data would be a leak however small.
+    assert set(body["checks"].values()) <= {
+        "ready", "reachable", "unreachable", "unconfigured",
+        "holding", "clear", "unknown",
+    }
 
     # THE KEYS TOO, which this test did not check and which is where a
     # leak actually lived: silo names were keys, not values, so a
@@ -2348,7 +2366,7 @@ def test_health_leaks_nothing_about_the_data(client):
     # deployment has a lake now, so the check always runs. It is a
     # FIXED WORD, not a data-source name -- which is what this
     # assertion actually guards: silo names as keys.
-    assert set(body["checks"]) <= {"ontology", "silos", "mirror"}, (
+    assert set(body["checks"]) <= {"ontology", "silos", "mirror", "quarantine"}, (
         f"/health exposed deployment configuration in its keys: {sorted(body['checks'])}"
     )
 

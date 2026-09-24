@@ -6,7 +6,10 @@ that has no owner yet, which is how consequences become incidents.
 
 ---
 
-## 1. Quarantine is invisible, and invisible absence reads as loss
+~~## 1. Quarantine is invisible, and invisible absence reads as loss~~ FIXED,
+patch 392: the mirror panel carries a per-table count and the rule that caught
+the most rows, and /health says holding or clear as a fixed word. Held back is
+NOT degraded.
 
 THE STATE TODAY: a declared `quarantine` rule holds rows back from
 silver and writes a finding to quarantine_<silo>.<table>. The row stays

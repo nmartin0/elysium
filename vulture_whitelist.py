@@ -385,3 +385,10 @@ claude_on_path
 # test may call, so the fakes provide it even though these particular
 # tests do not reach it.
 model_name
+
+# MirrorTableState fields (OPEN_RISKS item 1). Pydantic response-model
+# attributes, set by name in the route's dict and read by the UI --
+# vulture sees neither side.
+quarantined_rows
+quarantine_reason
+
