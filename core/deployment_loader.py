@@ -165,6 +165,8 @@ class DeploymentConfig:
                                    #
                                    # Matters once a changelog exists, since the mirror then
                                    # holds history no source can return. See ELT_ROADMAP.md.
+    retain_publications: int      # How many `published-N` tags to keep per gold table.
+                                   # Bounds the LIST, not the disk -- see gold.py.
     identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
                                    # approval is not configurable.
     read_from_mirror: bool        # ALWAYS TRUE since GOLD-9: live reads are gone, and a
@@ -541,6 +543,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # needs approval is not configurable, "because a setting is
             # a thing someone turns off".
             identity_inference=(config.get("mirror") or {}).get("identity_inference", False),
+            # HOW MANY NAMED PUBLICATIONS GOLD KEEPS (OPEN_RISKS item
+            # 3). Thirty is a month of nightlies; 0 keeps every one,
+            # which is what every deployment did before this.
+            retain_publications=_retain_publications(config),
             # VALIDATED HERE, at load, so a mistake in a declared
             # trigger stops the deployment starting -- where whoever
             # wrote it is looking -- rather than surfacing when it was
@@ -710,6 +716,20 @@ def _default_concurrency(config: dict) -> int:
         return int(declared)
     provider = (config.get("llm") or {}).get("provider")
     return 16 if provider == "vllm" else 4
+
+
+def _retain_publications(config: dict) -> int:
+    """How many `published-N` tags a gold table keeps.
+
+    IMPORTED LATE, like every other core.mirror name in this file:
+    importing gold at module scope pulls PyIceberg into the import
+    graph of everything that loads a deployment, including the tests
+    that never touch a lake.
+    """
+    from core.mirror.gold import DEFAULT_RETAINED_PUBLICATIONS
+
+    return int((config.get("mirror") or {}).get(
+        "retain_publications", DEFAULT_RETAINED_PUBLICATIONS))
 
 
 def _refuse_live_reads(config: dict) -> bool:

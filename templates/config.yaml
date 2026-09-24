@@ -110,3 +110,18 @@ writes:
 tools:
   enabled:
     - linear_regression
+
+# HOW MANY NAMED GOLD PUBLICATIONS TO KEEP (OPEN_RISKS item 3).
+# Thirty is a month of nightlies: long enough to answer "what did this
+# look like when the report was wrong", short enough that the list
+# stays readable. 0 keeps every one.
+#
+# IT BOUNDS THE LIST, NOT THE DISK. The snapshots themselves are not
+# removed -- PyIceberg 0.12's ExpireSnapshots expires nothing, which
+# was measured rather than assumed (see core/mirror/gold.py). The
+# changelog is unaffected either way: what CHANGED lives in its own
+# table, so forgetting a publication loses the ability to read the
+# table as it WAS, not the record of what happened.
+#
+# mirror:
+#   retain_publications: 30

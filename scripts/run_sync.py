@@ -420,7 +420,8 @@ def _build_gold(sync, config, data_dir) -> int:
         }
         result = build_gold(sync._catalog, object_type, type_def, silver, known,
                              additional_rows=additional,
-                             approved_pairs=decisions.approved_pairs(object_type))
+                             approved_pairs=decisions.approved_pairs(object_type),
+                             retain_publications=config.retain_publications)
         # THE MATCHER NEEDS ROWS, and only runs when a type declares
         # inference -- so the table is materialised here rather than
         # for every type.

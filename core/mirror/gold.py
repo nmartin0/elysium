@@ -31,6 +31,7 @@ behind an object type:
                   against the last one is refused -- the same bound,
                   and the same reasoning, as the changelog's
                   MAX_DELETED_FRACTION: a source that emptied is
+
                   usually a broken export, not a business event.
 """
 
@@ -53,6 +54,13 @@ from core.ontology.field_types import arrow_type_for
 from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
 
+# HOW MANY NAMED PUBLICATIONS TO KEEP (OPEN_RISKS item 3). Thirty is a
+# month of nightly publications: long enough to answer "what did this
+# look like when the report was wrong", short enough that the list is
+# readable. A deployment can say otherwise; 0 keeps every one, which
+# is the old behaviour.
+DEFAULT_RETAINED_PUBLICATIONS = 30
+
 logger = logging.getLogger(__name__)
 
 AUDIT_BRANCH = "audit"
@@ -68,6 +76,9 @@ class GoldResult:
     published: bool = False
     problems: list[str] = field(default_factory=list)
     skipped: str | None = None
+    # How many named publications were forgotten to keep the list
+    # bounded (OPEN_RISKS item 3). See _forget_old_publications.
+    forgotten_publications: int = 0
     # Identity resolution's own counts (GOLD-6), zero for a type that
     # declares no rule: entities formed from more than one source,
     # merges refused by D2, and disagreements recorded rather than
@@ -274,7 +285,8 @@ def published_at(catalog, object_types) -> dict[str, str]:
 def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict],
                known_ids: dict[str, set] | None = None,
                additional_rows: "dict[str, list[dict]] | None" = None,
-               approved_pairs: "list[tuple[str, str]] | None" = None) -> GoldResult:
+               approved_pairs: "list[tuple[str, str]] | None" = None,
+               retain_publications: int = DEFAULT_RETAINED_PUBLICATIONS) -> GoldResult:
     """Conform, audit and -- only if it passes -- publish one type.
 
     A TABLE THAT ALREADY HAS A PUBLICATION is written on a branch, so
@@ -426,6 +438,8 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
             return result
         table = catalog.load_table(identifier)
         _tag_publication(table)
+        result.forgotten_publications = _forget_old_publications(
+            catalog.load_table(identifier), retain_publications)
         result.published = True
         # THE LOSING VALUES ARE KEPT (GOLD-6). "Deleting losing values
         # destroys trust": a person asking why the golden record says
@@ -459,6 +473,8 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
 
     audited = table.snapshot_by_name(AUDIT_BRANCH).snapshot_id
     _publish(table, audited)
+    result.forgotten_publications = _forget_old_publications(
+        catalog.load_table(identifier), retain_publications)
     result.published = True
     # THE LOSING VALUES ARE KEPT (GOLD-6). "Deleting losing values
     # destroys trust": a person asking why the golden record says
@@ -585,7 +601,7 @@ def _record_history(catalog, object_type: str, type_def: dict,
 def _publish(table, audited_snapshot: int) -> None:
     """One commit: main moves to the audited snapshot, which is tagged,
     and the branch is removed."""
-    number = 1 + sum(1 for ref in table.metadata.refs if ref.startswith(f"{PUBLISHED_TAG}-"))
+    number = _next_publication_number(table)
     table.manage_snapshots().set_current_snapshot(
         snapshot_id=audited_snapshot,
     ).create_tag(audited_snapshot, f"{PUBLISHED_TAG}-{number}").remove_branch(
@@ -593,8 +609,70 @@ def _publish(table, audited_snapshot: int) -> None:
     ).commit()
 
 
+def _forget_old_publications(table, retain: int) -> int:
+    """Drop the tags beyond the most recent `retain`. Returns how many.
+
+    WHY TAGS AND NOT SNAPSHOTS, measured rather than assumed. PyIceberg
+    0.12 exposes ExpireSnapshots, and it does not expire anything here:
+    tried through the table, through a transaction, with older_than and
+    with explicit by_ids, on snapshots that were neither the current
+    one nor referenced by any ref -- nine snapshots stayed nine every
+    time. So the metadata and its data files still accumulate, and this
+    function does NOT free disk. What it bounds is the list of named
+    publications an operator navigates by, which otherwise grows by one
+    every night forever.
+
+    AND IT IS THE NECESSARY FIRST HALF. A tag PINS its snapshot: when
+    expiry works, an untagged snapshot is the only kind that can go.
+
+    THE CHANGELOG IS UNAFFECTED, which is what makes this safe: the
+    record of what CHANGED between publications lives in its own
+    append-only table (GOLD-4), not in the snapshots. Forgetting
+    `published-3` loses the ability to read the table AS IT WAS then;
+    it loses nothing about what happened.
+    """
+    if retain <= 0:
+        return 0
+    tags = sorted(
+        (name for name in table.metadata.refs if name.startswith(f"{PUBLISHED_TAG}-")),
+        key=lambda name: int(name.rsplit("-", 1)[1]),
+    )
+    dropped = 0
+    for name in tags[:-retain] if len(tags) > retain else []:
+        try:
+            table.manage_snapshots().remove_tag(name).commit()
+            dropped += 1
+        except Exception as exc:  # noqa: BLE001 - retention must never fail a publish
+            logger.warning(f"could not forget {name}: {exc}")
+            break
+    return dropped
+
+
+def _next_publication_number(table) -> int:
+    """One more than the highest so far -- NOT one more than how many
+    exist.
+
+    IT USED TO COUNT THEM, in two places, which was the same number
+    until retention started forgetting old ones (OPEN_RISKS item 3).
+    Then, with three kept, the next publication was numbered four,
+    collided with a tag already there, and the sequence stalled at
+    2, 3, 4 FOREVER -- publishing happily while never naming a new
+    publication again. A number that repeats is worse than a large
+    one: it makes two different tables answer to the same name.
+
+    ONE FUNCTION because there were two copies of the rule, and the
+    second was found only because a test counted tags after eight
+    builds and saw three.
+    """
+    existing = [
+        int(ref.rsplit("-", 1)[1]) for ref in table.metadata.refs
+        if ref.startswith(f"{PUBLISHED_TAG}-") and ref.rsplit("-", 1)[1].isdigit()
+    ]
+    return 1 + max(existing, default=0)
+
+
 def _tag_publication(table) -> None:
-    number = 1 + sum(1 for ref in table.metadata.refs if ref.startswith(f"{PUBLISHED_TAG}-"))
+    number = _next_publication_number(table)
     snapshot = table.current_snapshot()
     table.manage_snapshots().create_tag(
         snapshot.snapshot_id, f"{PUBLISHED_TAG}-{number}",
