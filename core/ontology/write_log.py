@@ -1065,6 +1065,27 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
             (str(rowid),),
         )
 
+    def mark_abandoned(self, log_id: str) -> None:
+        """This entry changed nothing and never will (PA001-A3).
+
+        WHY A THIRD STATUS. A write refused by the optimistic check
+        -- the value changed since it was proposed -- used to be
+        marked APPLIED, and the comment at the call site said why:
+        "the log row is abandoned rather than left pending", because a
+        pending row keeps being masked over reads indefinitely.
+
+        The intent was right and the status was wrong. `applied` is
+        read by the mirror overlay, by edit_history and by
+        edits_touching_field, so a write that was REFUSED was served
+        as the object's value: the database held 900 and the ontology
+        reported 800. Neither `pending` nor `applied` is true of it,
+        so it gets the word the comment already used.
+        """
+        with self._connection() as conn:
+            conn.execute("UPDATE write_log SET status = 'abandoned' WHERE id = ?",
+                          (log_id,))
+            conn.commit()
+
     def mark_applied(self, log_id: str) -> None:
         with self._connection() as conn:
             conn.execute("UPDATE write_log SET status = 'applied' WHERE id = ?", (log_id,))

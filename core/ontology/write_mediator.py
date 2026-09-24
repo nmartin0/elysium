@@ -1904,7 +1904,14 @@ class WriteMediator:
                 # exist. That state must stay pending -- see
                 # _apply_batch()'s own handling.
                 if not applied_groups and not batch_already_committed:
-                    self.write_log.mark_applied(log_id)
+                    # ABANDONED, WHICH IS WHAT THIS COMMENT HAS SAID
+                    # ALL ALONG (PA001-A3). It called mark_applied,
+                    # and `applied` is exactly what the overlay,
+                    # edit_history and edits_touching_field read -- so
+                    # a REFUSED write was served as the object's
+                    # value. Measured: the database held 900, the
+                    # ontology reported 800.
+                    self.write_log.mark_abandoned(log_id)
                 raise ValueError(
                     f"{sub_write.object_type} {sub_write.object_id!r} changed since this "
                     f"write was proposed -- refresh and retry"
