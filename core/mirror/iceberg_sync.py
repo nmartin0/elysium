@@ -388,7 +388,8 @@ class IcebergMirrorSync(MirrorSync):
         # read left a 2.08 s window. The read's START is the honest
         # answer: everything after it is still overlaid.
         read_started_at = datetime.now(UTC).isoformat()
-        raw_rows = self._write_bronze(adapter, silo_name, table_name, id_column, columns)
+        raw_rows, bronze_is_current = self._write_bronze(
+            adapter, silo_name, table_name, id_column, columns)
         bronze_snapshot = self._bronze_snapshot_id(silo_name, table_name)
 
         # BRONZE: what the source said, before anything was done to it.
@@ -445,10 +446,25 @@ class IcebergMirrorSync(MirrorSync):
         # FALLS BACK TO THE ROWS IN MEMORY if bronze is unavailable --
         # which it will be for the first sync after this ships, since
         # no bronze table exists yet, and whenever a bronze write failed
-        # for the reasons _write_bronze() tolerates. Silver stays
-        # correct either way; only the re-derivability is lost, and the
-        # warning says so.
-        source_rows = self._read_bronze(silo_name, table_name, columns)
+        # for the reasons _write_bronze() tolerates.
+        #
+        # THIS COMMENT USED TO SAY "Silver stays correct either way".
+        # IT WAS FALSE (PA001-F2), and measurably so: with bronze's
+        # overwrite failing, _read_bronze() found the table still there
+        # from the PREVIOUS sync, returned ITS rows, and silver was
+        # rebuilt from them. Source said NEW, silver served the old
+        # value, the sync reported one row and success, and the warning
+        # said the mirror was correct.
+        #
+        # THE BUG WAS THE UNCONDITIONAL READ. A bronze table existing
+        # is not the same as THIS RUN's bronze being current, and only
+        # _write_bronze knows the difference. It says so now, and the
+        # rows already in memory -- which ARE this run's source truth --
+        # are used when it could not write them down.
+        if bronze_is_current:
+            source_rows = self._read_bronze(silo_name, table_name, columns)
+        else:
+            source_rows = None
         if source_rows is None:
             source_rows = raw_rows
 
@@ -786,7 +802,7 @@ class IcebergMirrorSync(MirrorSync):
         return adapter.read_all_rows(table_name, columns, type_config)
 
     def _write_bronze(self, adapter, silo_name: str, table_name: str,
-                       id_column: str, declared: list[str]) -> list[dict]:
+                       id_column: str, declared: list[str]) -> tuple[list[dict], bool]:
         """Stores the source rows unaltered, with provenance in metadata.
 
         EVERY VALUE AS A STRING, deliberately. Bronze must not decide
@@ -922,14 +938,21 @@ class IcebergMirrorSync(MirrorSync):
         except (OSError, ValueError, KeyError, pa.ArrowInvalid) as e:
             logger.warning(
                 f"bronze copy of {silo_name}.{table_name} failed ({e}); the sync "
-                f"continues and the mirror is correct, but this read leaves no "
-                f"raw record to trace values back to."
+                f"continues and silver is built from the rows just read from the "
+                f"source, but bronze is now BEHIND and this read leaves no raw "
+                f"record to trace values back to."
             )
             # The declared columns only -- enough for silver, which is
             # what the caller needs to carry on.
-            return self._read_source_rows(adapter, table_name, id_column, declared)
+            #
+            # AND `False`, WHICH IS THE POINT (PA001-F2). The caller
+            # used to read bronze back unconditionally; a bronze table
+            # left over from the PREVIOUS sync answered, and silver was
+            # rebuilt from stale rows while these fresh ones were
+            # discarded. Saying so is the whole fix.
+            return self._read_source_rows(adapter, table_name, id_column, declared), False
 
-        return raw_rows
+        return raw_rows, True
 
     def _force_metadata_to_disk(self, identifier: str) -> None:
         """Makes this table's metadata durable, or stops the sync.

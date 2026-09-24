@@ -954,8 +954,11 @@ checking it found NOW.
                 because the audit was right that F1 is incomplete
                 without it. Bronze now widens as silver always has,
                 and the changelog widens and reads only what the old
-                snapshot holds. F2 (a bronze FAILURE serving stale
-                data) is the next item and is still open.
+                snapshot holds.
+      F2        CONFIRMED AND FIXED, patch 407. A bronze table
+                EXISTING is not the same as this run's bronze being
+                current; only _write_bronze knew, and it does not
+                keep it to itself now.
       F5        an S3 mirror cannot be served at all after its first
                 sync.
 

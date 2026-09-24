@@ -396,3 +396,7 @@ quarantine_reason
 # tests/unit/test_snapshot_expiry.py -- an autouse fixture, called by
 # pytest rather than by name.
 _no_margin
+
+# tests/unit/test_a_bronze_failure_never_serves_stale_data.py -- a
+# fixture named in test signatures, which vulture reads as unused.
+_bronze_fails
