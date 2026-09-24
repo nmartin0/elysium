@@ -59,6 +59,7 @@ from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
 from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.ontology.action_types import validate_action_types
+from core.ontology.bindings import TYPE_BINDING_KEYS, merge_bindings
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.mediator import DataMediator
@@ -228,7 +229,8 @@ def _next_generation() -> int:
 # _source_digest() and load_deployment() cannot drift into disagreeing
 # about what a deployment consists of -- the same reasoning as the step
 # vocabulary probe in tests/unit/test_step_vocabulary_consistency.py.
-CONFIG_FILENAMES = ["config.yaml", "ontology_schema.yaml", "policy.yaml", "data_silos.yaml"]
+CONFIG_FILENAMES = ["config.yaml", "ontology_schema.yaml", "source_bindings.yaml",
+                     "policy.yaml", "data_silos.yaml"]
 
 
 def _source_digest(base_path: Path, filenames: list[str]) -> str:
@@ -404,6 +406,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
 
     config = load_yaml(base_path / "config.yaml")
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
+    # WHERE THE DATA COMES FROM, kept apart from what an object IS
+    # (GOLD-3c). Merged here so everything downstream sees exactly the
+    # schema it always saw; only the files a person edits changed.
+    schema_raw = _merged_with_bindings(base_path, schema_raw)
     policy_raw = load_yaml(base_path / "policy.yaml")
     data_silos_raw = load_yaml(base_path / "data_silos.yaml")
 
@@ -697,6 +703,39 @@ def _refuse_live_reads(config: dict) -> bool:
             "applied. Remove the setting and run `python -m scripts.run_sync`."
         )
     return True
+
+
+def _merged_with_bindings(base_path: Path, schema_raw: dict) -> dict:
+    """The declaration and its source bindings, as one schema.
+
+    A DEPLOYMENT THAT HAS NOT SPLIT ITS FILE STILL WORKS. Where
+    source_bindings.yaml is absent, the ontology file is taken as
+    already merged -- which is what every deployment written before
+    GOLD-3c looks like. Where it is present, the ontology file must
+    NOT also carry bindings: two places declaring where a table lives
+    is the ambiguity this split exists to remove, and guessing which
+    wins would be worse than refusing.
+    """
+    bindings_path = base_path / "source_bindings.yaml"
+    if not bindings_path.exists():
+        return schema_raw
+
+    declaration = dict(schema_raw.get("object_types") or schema_raw)
+    stray = sorted(
+        object_type for object_type, type_def in declaration.items()
+        if any(key in (type_def or {}) for key in TYPE_BINDING_KEYS)
+    )
+    if stray:
+        raise ValueError(
+            f"ontology_schema.yaml still binds {', '.join(stray)} to a source while "
+            f"source_bindings.yaml exists. Move the storage blocks into the bindings "
+            f"file, or delete it."
+        )
+    bindings_raw = load_yaml(bindings_path)
+    merged = merge_bindings(declaration, dict(bindings_raw.get("object_types") or bindings_raw))
+    if "object_types" in schema_raw:
+        return {**schema_raw, "object_types": merged}
+    return merged
 
 
 def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,

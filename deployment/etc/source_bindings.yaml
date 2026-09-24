@@ -1,0 +1,23 @@
+# WHERE EACH OBJECT TYPE'S DATA COMES FROM (GOLD-3c).
+#
+# An INGESTION detail, kept out of ontology_schema.yaml so that
+# file says what an object IS and nothing else. Since GOLD-8 this
+# is not how reads work either: a read goes to gold, whose table
+# is the object type and whose columns are property names.
+#
+# Written by scripts/split_ontology_bindings.py.
+object_types:
+  Customer:
+    storage:
+      silo: primary_sql
+      table: customers
+      id_column: customer_id
+    fields:
+      transactions:
+        via_table: transactions
+        via_column: customer_id
+  Transaction:
+    storage:
+      silo: primary_sql
+      table: transactions
+      id_column: transaction_id

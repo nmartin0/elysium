@@ -179,6 +179,18 @@ resolution, so gold for it is a straight conform.
           the E-10 cache. This SUPERSEDES the survey's "reuse the
           mirror adapter over a gold view". Costs a second read
           implementation and the parity test the plan already needed.
+  GOLD-3c. ~~SPLIT THE ONTOLOGY FILE~~ DONE, patch 388.
+          ontology_schema.yaml says what an object IS;
+          source_bindings.yaml says where its data comes from (silo,
+          table, column, and the table a link is resolved through).
+          The loader merges them into exactly the schema it produced
+          before -- asserted against the shipped deployment -- so
+          nothing downstream changed. A deployment that has NOT split
+          still works; binding the same type in BOTH files is refused.
+          The migration script writes the bindings file and PRINTS
+          what to delete rather than rewriting a commented file: its
+          first version used yaml.safe_dump and deleted all 27
+          comments in the shipped ontology.
   GOLD-3c. SPLIT THE ONTOLOGY FILE, and generate gold's shape from it:
           declaration (what an object IS -- types, links, security,
           constraints, actions) apart from source bindings (silo,

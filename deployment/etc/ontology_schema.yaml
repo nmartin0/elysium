@@ -1,3 +1,14 @@
+# WHAT EACH OBJECT TYPE IS -- and nothing about where its data lives.
+#
+# SINCE GOLD-3c the source bindings (silo, table, column, and the table
+# a link is resolved through) live in source_bindings.yaml. They are an
+# INGESTION detail: reads are served from gold, whose table is the
+# object type and whose columns are these property names.
+#
+# So a change of source system edits that file, and a change to what a
+# Customer IS edits this one -- which is what makes a diff of this file
+# worth reading.
+#
 # ontology_schema.yaml  (this deployment's object model)
 #
 # Declares what data EXISTS and how it's structured -- it does NOT by
@@ -17,10 +28,6 @@
 
 object_types:
   Customer:
-    storage:
-      silo: primary_sql
-      table: customers
-      id_column: customer_id
     id_field: customer_id
     # WHAT A RESULT CARD CALLS THIS OBJECT. Without it every card in
     # Browse reads `cust_001` rather than `Ada Okafor`, because
@@ -45,15 +52,9 @@ object_types:
         type: link
         target: Transaction
         cardinality: many
-        via_table: transactions
-        via_column: customer_id
   Transaction:
     # A transaction has no name, so its id IS the honest title. Stated
     # rather than omitted, so the absence reads as a decision.
-    storage:
-      silo: primary_sql
-      table: transactions
-      id_column: transaction_id
     id_field: transaction_id
     security:
       # `via_field:` CANNOT BE PUSHED INTO THE QUERY, and that is a
