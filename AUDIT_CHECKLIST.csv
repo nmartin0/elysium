@@ -126,7 +126,7 @@ PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared 
 PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes become Python repr",iceberg_sync.py:810,IN,unverified
 PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,unverified
 PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; six places said it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 3 tests,P22,"CONFIRMED + FIXED patch 402: audit right, I was wrong; gold now expires under the 7-day margin; all six claims corrected"
-PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,unverified
+PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,"CONFIRMED + FIXED patch 414"
 PA001-X1,PA,PIPELINE_AUDIT,HIGH,many-valued link fields return ids the caller's MAC forbids,mediator.py:2108,P25,"CONFIRMED + FIXED patch 404"
 PA001-X2,PA,PIPELINE_AUDIT,CRITICAL,the agent crashes on any decimal or date field in the shipped config,agent_step_prompt.py:485,P26,"CONFIRMED + FIXED patch 403: one renderer at the declared scale"
 ZOO-01,ZOO,PR001 Part II,GAP,mojibake not detected,standardise/transform,P24,unverified
@@ -144,7 +144,7 @@ ZOO-12,ZOO,PR001 Part II,GAP,thousands separator 1234 table-refused (no declared
 ZOO-13,ZOO,PR001 Part II,GAP,full-width digits silently accepted as 123,field_types,P24,unverified
 ZOO-14,ZOO,PR001 Part II,GAP,leading zeros 007 silently become 7,field_types,P24,unverified
 ZOO-15,ZOO,PR001 Part II,GAP,scientific notation 1e3 table-refused,field_types,P24,unverified
-ZOO-16,ZOO,PR001 Part II,HIGH,currency symbol $5.00 CRASHES,field_types.py:224,P24,"= PA001-C1"
+ZOO-16,ZOO,PR001 Part II,HIGH,currency symbol $5.00 CRASHES,field_types.py:224,P24,"FIXED patch 414 (= PA001-C1); now reported as drift"
 ZOO-17,ZOO,PR001 Part II,GAP,percent 5% table-refused,field_types,P24,unverified
 ZOO-18,ZOO,PR001 Part II,GAP,European decimal comma table-refused,field_types,P24,unverified
 ZOO-19,ZOO,PR001 Part II,HIGH,NaN accepted into number; poisons every sum,field_types,P24,unverified
@@ -222,7 +222,7 @@ R32,R,PR001 II,P2,value clustering to approved value mappings,new,-,unverified
 R33,R,PR001 II,P2,per-cell cleaning provenance and replayable history,new,-,unverified
 R34,R,PR001 II,P3,correct at the source: owner reports and proposals,new,-,unverified
 R35,R,PR001 II,P3,export-time formula escaping,new,-,unverified
-R36,R,PR001 II,P1,fix the decimal crash,field_types.py,-,"= PA001-C1"
+R36,R,PR001 II,P1,fix the decimal crash,field_types.py,-,"DONE patch 414 (= PA001-C1)"
 R37,R,PR001 III,P2,declared derived properties,ontology,-,unverified
 R38,R,PR001 III,P1,value kinds and per-value enrichment provenance,ontology + gold,-,unverified
 R39,R,PR001 III,P1,compartment-safe aggregates and graph metrics,mediator + gold,-,unverified

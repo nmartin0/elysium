@@ -221,7 +221,26 @@ def coerce(value, data_type: str, source_timezone: str | None = None):
         # so a value that arrived as a float must be rendered as text
         # first. Bronze stores strings, so the normal path is already
         # text; this guards the case where it is not.
-        converted = decimal.Decimal(str(value))
+        try:
+            converted = decimal.Decimal(str(value))
+        except decimal.InvalidOperation as e:
+            # AS A ValueError, BECAUSE THAT IS WHAT CALLERS CATCH
+            # (PA001-C1). decimal.InvalidOperation derives from
+            # ArithmeticError, NOT ValueError, so it sailed straight
+            # through core/mirror/transform.py's `except (ValueError,
+            # TypeError)` -- the handler that turns a bad value into a
+            # named DriftedColumn. No column name, no example value, no
+            # row count: run_sync recorded the whole table's refusal as
+            # "[<class 'decimal.ConversionSyntax'>]".
+            #
+            # ONE "$5.00" IN 10,000 GOOD ROWS DOES THIS, and so do
+            # "N/A", "1,234" and "TBD" -- the ordinary contents of a
+            # money column somebody has been typing into by hand.
+            raise ValueError(
+                f"{value!r} is not a number, so it cannot be stored as a "
+                f"`decimal`. Currency symbols, thousands separators and "
+                f"placeholder text all look like this."
+            ) from e
         if not converted.is_finite():
             # NaN AND INFINITY ARE NOT AMOUNTS. Decimal accepts both,
             # and either would reach the mirror as a value no
