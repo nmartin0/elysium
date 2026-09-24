@@ -2328,6 +2328,23 @@ def test_health_reports_silos_in_aggregate_not_by_name(client):
     assert not [key for key in body["checks"] if key.startswith("silo:")]
 
 
+def test_the_visible_schema_response_carries_no_binding(client):
+    # OPEN_RISKS item 5, the browser half. The response models filter
+    # per field, and this holds them to it: a model gains a key far
+    # more easily than it loses one, and `storage` on a field dict
+    # would put the customer's table name in every browser tab.
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west",
+                                                 "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    body = client.get("/api/me/visible-schema").json()
+
+    serialised = json.dumps(body)
+    for key in ("via_table", "via_column", "id_column", "primary_sql", "storage"):
+        assert key not in serialised, f"the browser was told about {key}"
+    assert "Customer" in serialised, "and the control: it did say something"
+
+
 def test_health_says_whether_anything_is_held_back(client):
     # HELD BACK IS NOT DEGRADED: a deployment whose rules are firing
     # is working. So it is its own key, in its own vocabulary, and it

@@ -152,7 +152,31 @@ This one wants a second pair of eyes before it merges.
 
 ---
 
-## 5. visible_schema hands the agent the customer's column names
+## 5. ~~visible_schema hands the agent the customer's column names~~
+##    OVERSTATED -- CORRECTED AND PINNED, patch 393
+
+WHAT AUDITING IT FOUND. The keys ARE in the dict, and neither the
+PROMPT nor the API RESPONSE contains them: the system prompt is
+assembled from a fixed set of fields rather than by dumping the dict,
+and the response models filter per field. Measured on the shipped
+deployment -- `via_table`, `via_column`, `primary_sql` and every lake
+namespace are absent from the prompt; `customer_id` appears because it
+is the declared id FIELD, which is ontology rather than plumbing.
+
+SO THE RISK WAS REAL IN SHAPE AND ALREADY CLOSED IN FACT, and nothing
+held it closed. What this patch adds is TRIPWIRES on both boundaries,
+because the prompt is edited often and the edit that starts printing a
+whole field dict is one line long and invisible in review. A control
+proves each: dumping the dict fails two tests, and a response model
+gaining `via_table` fails two more.
+
+AND THE DICT KEEPS ITS KEYS, deliberately -- the mediator reads them
+to group a multi-storage read, and patch 370 found that stripping them
+broke 27 integration tests.
+
+The original report follows, as written.
+
+## 5 (as originally recorded). visible_schema and the column names
 
 FOUND BY THE PARITY TEST, September 23. visible_schema() splats every
 key of a field's declaration, so `column`, `via_table`, `via_column`
