@@ -501,6 +501,19 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # gathered[] alone. Enable with pytest's --log-cli-level=DEBUG.
         logger.debug(f"raw model response: {raw_content!r}")
         parsed = json.loads(raw_content)
+        if not isinstance(parsed, dict):
+            # VALID JSON THAT IS NOT AN OBJECT (F-15). `[1, 2]`,
+            # `"finish"`, `42`, `null` and `true` all parse, and the
+            # next line asks them for a key -- an AttributeError that
+            # became a 500 and DISCARDED THE WHOLE RUN, including
+            # everything already gathered, because a model returned a
+            # bare string.
+            #
+            # Raised as a KeyError so it lands in the same handler as
+            # every other unparseable answer: the model DID answer,
+            # with something this cannot use, and finishing on what was
+            # gathered beats erasing it.
+            raise KeyError(f"expected a JSON object, got {type(parsed).__name__}")
     except LLMUnavailable:
         # THE BACKEND WAS NEVER REACHED, which is a completely
         # different event from the model answering badly -- and this

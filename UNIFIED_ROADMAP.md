@@ -719,12 +719,22 @@ checking it found NOW.
        ~~F-01~~ FIXED, patch 332.
        F-01 -- coerce("true", "boolean") raises, and the mirror calls that
          schema drift; the table can never sync.
+       ~~F-15~~ FIXED, patch 389: a non-object answer raises into the
+         same handler as any other unusable one, so the run finishes on
+         what it gathered instead of 500ing it away.
        F-15 -- valid JSON that is not an object ([1,2], "finish", 42,
          null) crashes next_step, a 500 that discards the whole run. A test
          per shape.
+       ~~F-22 WITH F-23~~ FIXED, patch 389: the adapter translates HTTP
+         errors, non-JSON bodies and wrong-shaped answers into
+         LLMUnavailable, and synthesis catches LLMUnavailable rather
+         than one adapter's library exception -- a handler that had
+         become unreachable.
        F-22 WITH F-23 -- the Ollama adapter leaks HTTPError and KeyError
          instead of LLMUnavailable, and synthesis catches
          RequestException, so a real outage propagates. One change.
+       ~~F-14~~ ALREADY FIXED, and UNTESTED until patch 389, which is
+         how a fix becomes a regression. Four tests now hold it.
        F-14 -- a parameter used only in a sub-write's criteria is rejected
          at load (reproduced); two defects in one function.
        ~~F-19~~ FIXED, patch 334: refused at load, by one shared rule.

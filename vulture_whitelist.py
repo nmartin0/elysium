@@ -379,3 +379,9 @@ unreported
 # claude_on_path (tests/unit/test_model_deadline_and_usage.py) -- a fixture
 # named in @pytest.mark.usefixtures, which vulture cannot see.
 claude_on_path
+
+# Test doubles for the LLM client protocol (B1 findings). model_name()
+# is part of the interface every adapter implements and the code under
+# test may call, so the fakes provide it even though these particular
+# tests do not reach it.
+model_name

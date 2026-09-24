@@ -205,10 +205,39 @@ class OllamaAdapter:
             # Translated at the boundary so callers never need to know
             # this adapter uses `requests` -- see LLMUnavailable.
             raise LLMUnavailable(f"Could not reach the model at {self.base_url}: {e}") from e
-        response.raise_for_status()
-        body = response.json()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            # AN ANSWER IS NOT A REACHABLE MODEL (F-22). A 500 from
+            # Ollama used to leak requests.HTTPError straight past
+            # every caller, so code that carefully handled
+            # LLMUnavailable saw an exception it had never heard of --
+            # and the agent loop turned it into a 500 of its own.
+            raise LLMUnavailable(
+                f"The model at {self.base_url} answered {response.status_code}: {e}"
+            ) from e
+        try:
+            body = response.json()
+        except ValueError as e:
+            # A 200 CARRYING SOMETHING THAT IS NOT JSON -- a proxy's
+            # error page, most often, which is exactly when a
+            # deployment is already confused.
+            raise LLMUnavailable(
+                f"The model at {self.base_url} answered with something that is not JSON: {e}"
+            ) from e
         if usage is not None:
             # Ollama's own names: prompt_eval_count is the input,
             # eval_count the output. Absent on some cached answers.
             usage.add(body.get("prompt_eval_count"), body.get("eval_count"))
-        return body["message"]["content"]
+        try:
+            return body["message"]["content"]
+        except (KeyError, TypeError) as e:
+            # A WELL-FORMED ANSWER OF THE WRONG SHAPE (F-23). Ollama
+            # returns {"error": "..."} for a model it cannot load, and
+            # this used to raise KeyError('message') -- which reads, to
+            # everything upstream, like a bug in Elysium rather than a
+            # model that is not installed.
+            detail = body.get("error") if isinstance(body, dict) else body
+            raise LLMUnavailable(
+                f"The model at {self.base_url} answered without a message: {detail!r}"
+            ) from e

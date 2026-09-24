@@ -10,8 +10,8 @@ mechanism itself, given a scripted answer, the same way the rest of
 tests/unit/ tests mechanisms in isolation from model behavior.
 """
 
-import requests
 
+from core.llm.interface import LLMUnavailable
 from core.llm.synthesis_prompt import _has_only_valid_citations, synthesize_insight
 
 
@@ -31,13 +31,19 @@ class _FailingClient:
     max_concurrent_requests = None
 
     def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *, deadline=None, usage=None):
-        # A REAL requests.RequestException, not a generic Exception --
-        # confirmed directly (not assumed) that a genuine
-        # ConnectionError's own str() representation includes real,
-        # internal infrastructure detail (host/port/URL path), which
-        # is EXACTLY what this test exists to prove never reaches the
-        # caller-facing answer text anymore.
-        raise requests.ConnectionError(
+        # LLMUnavailable, WHICH IS WHAT AN ADAPTER RAISES (F-23).
+        # This raised requests.ConnectionError, because synthesis used
+        # to catch that -- one adapter's library exception. Once every
+        # adapter translated at its boundary, the handler here became
+        # UNREACHABLE and a real outage propagated as a 500: correct,
+        # and dead.
+        #
+        # THE MESSAGE STILL CARRIES HOST AND PORT, because a real
+        # LLMUnavailable does: the adapter names the address it could
+        # not reach, which is right for a log and wrong for an answer.
+        # That is exactly what this test proves never reaches a caller.
+        raise LLMUnavailable(
+            "Could not reach the model at http://localhost:11434/api/chat: "
             "HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded"
         )
 

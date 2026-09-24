@@ -427,3 +427,29 @@ whether the code can be trusted. Recorded because I used it as the
 headline argument against a library and had to correct myself
 (LIBRARY_AUDIT.md part 4.3).
 
+---
+
+## 19. Never reset onto a remote that may be behind your own work
+
+**Before `git reset --hard origin/<branch>`, check `git log
+origin/<branch>..HEAD`.** If it lists anything, that work exists only
+here, and the reset destroys it.
+
+THIS HAS HAPPENED TWICE, both times the same way: a patch was
+committed locally, handed over, and then -- while the owner was
+applying it -- the next task began with a reset to a remote that did
+not have it yet. The commit vanished. The work survived only because
+the patch file had already been written out.
+
+AND THE SECOND FAILURE IS WORSE THAN LOSING THE COMMIT. The new work
+then sits on the WRONG BASE, and the patch it produces still applies
+cleanly to the real branch -- because the hunks it touches happen to
+match -- while producing a tree that differs from the one that was
+tested. "It applied cleanly" is not "it is correct", and the only
+thing that catches it is comparing the applied tree against the tested
+one, which the handover script does.
+
+  SO: reset only after checking, and when the base has moved, REBASE
+  the local work onto it and RE-RUN BOTH TIERS there. A patch verified
+  against a base nobody has is a patch verified against nothing.
+

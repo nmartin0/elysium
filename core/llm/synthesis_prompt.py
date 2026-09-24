@@ -63,9 +63,7 @@ Called by: scripts/run_deployment.py, and directly by
 import logging
 import re
 
-import requests
-
-from core.llm.interface import LLMAdapter, TokenUsage
+from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +147,17 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
 
     try:
         answer = client.chat(system_prompt, user_message, json_mode=False, temperature=0, usage=usage)
-    except requests.RequestException as e:
+    except LLMUnavailable as e:
+        # LLMUnavailable, NOT requests.RequestException (F-23). This
+        # caught one adapter's library exception, so once the adapters
+        # translated failures at their boundary -- which is the whole
+        # point of LLMUnavailable -- a REAL OUTAGE STOPPED BEING
+        # CAUGHT HERE and propagated out of synthesis as a 500. The
+        # handler was correct and unreachable, which is the worst kind
+        # of correct.
+        #
+        # Reproduced: a client raising LLMUnavailable came straight
+        # back out of synthesize_insight.
         # A real, confirmed leak, fixed here: the raw exception STRING
         # itself was returned directly as the user-facing "answer" --
         # confirmed directly, not assumed, that a real
