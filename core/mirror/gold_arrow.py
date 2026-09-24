@@ -79,7 +79,17 @@ def conform_arrow(type_def: dict, silver: pa.Table) -> pa.Table:
         # lineage silver happened to carry would reshape itself between
         # builds, and GOLD-6's reshape check would then rebuild it.
         if column in silver.column_names:
-            columns.append(silver.column(column))
+            # CAST, NOT PASSED THROUGH. A batch reader types these as
+            # large_string while a materialised scan types them as
+            # string, so gold's schema would depend on HOW silver was
+            # read -- and the next build, reading it the other way,
+            # would see a changed column set and rebuild the table.
+            #
+            # FOUND BY COMPARING the streamed and materialised builds
+            # of one table: identical rows, different schemas.
+            values = silver.column(column)
+            columns.append(values if values.type == pa.string()
+                            else values.cast(pa.string()))
         else:
             columns.append(pa.nulls(silver.num_rows, type=pa.string()))
         names.append(column)
@@ -107,13 +117,18 @@ def audit_arrow(type_def: dict, table: pa.Table, previous_count: int | None,
         problems.append(f"{missing} row(s) have no {id_field}")
 
     present = ids.drop_null()
-    if not len(present) or pa.types.is_null(present.type):
-        # Nothing to compare: an all-null id column arrives typed as
-        # null, and count_distinct has no kernel for that. The missing
-        # count above has already reported it.
-        return problems
-    distinct = pc.count_distinct(present).as_py()
-    if distinct != len(present):
+    # AN ALL-NULL ID COLUMN arrives typed `null`, and count_distinct
+    # has no kernel for that -- so uniqueness is SKIPPED, not the rest
+    # of the audit. It used to `return` here, which silently dropped
+    # the required-property, dangling-link and row-count checks for
+    # exactly the table most likely to fail them.
+    #
+    # FOUND BY WRITING A THIRD IMPLEMENTATION (the streaming one) and
+    # comparing all three: the dict and streaming audits both reported
+    # "1 rows, down from 10" on a table this one called clean.
+    duplicated = len(present) and not pa.types.is_null(present.type) and (
+        pc.count_distinct(present).as_py() != len(present))
+    if duplicated:
         # NAMED, NOT JUST COUNTED: an operator cannot act on "there are
         # duplicates" without knowing which -- the dict path shows
         # examples too, and losing that would make this check useless

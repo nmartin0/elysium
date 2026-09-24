@@ -37,6 +37,7 @@ behind an object type:
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import cast
 
 import pyarrow as pa
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
@@ -44,6 +45,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from core.mirror.changelog import MAX_DELETED_FRACTION
 from core.mirror.fusion import FUSED_FROM_COLUMN, fuse
 from core.mirror.gold_arrow import audit_arrow, conform_arrow
+from core.mirror.gold_stream import StreamingAudit, conformed_batches
 from core.mirror.identity import resolve, rule_for
 from core.mirror.lineage import LINEAGE_COLUMNS
 from core.mirror.survivorship import fuse_entities
@@ -321,7 +323,26 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     else:
         rows = conform(type_def, silver_rows)
 
-    if rows is None:
+    arrow_table = None
+    stream_audit = None
+    batches = None
+    streaming = isinstance(silver_rows, pa.RecordBatchReader)
+    if streaming:
+        # STREAMED (GOLD-7): PyIceberg's scan produces a
+        # RecordBatchReader and its append accepts one, so silver is
+        # never held whole. MEASURED BY RSS -- tracemalloc does not
+        # see Arrow's buffers at all -- on 300,000 rows of six wide
+        # columns: +81.8 MB materialised against +11.0 MB streamed,
+        # and that 11 MB is almost entirely the set of ids the audit
+        # keeps to find duplicates. So the residual cost is
+        # proportional to the number of OBJECTS rather than to the
+        # width of their rows: a table twice as wide streams in the
+        # same memory.
+        stream_audit = StreamingAudit(type_def, known_ids)
+        reader = cast("pa.RecordBatchReader", silver_rows)
+        arrow_schema = conform_arrow(type_def, reader.schema.empty_table()).schema
+        batches = conformed_batches(type_def, reader, stream_audit)
+    elif rows is None:
         # THE ARROW PATH (GOLD-7). A single-source type needs no Python
         # dicts: conform is a column rename and the audit is counting,
         # both of which Arrow does on buffers. MEASURED: 200,000
@@ -334,10 +355,12 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         # the changelog diffs by key; those are row-shaped problems and
         # keep the dict path.
         arrow_table = conform_arrow(type_def, silver_rows)
+        arrow_schema = arrow_table.schema
         result.rows = arrow_table.num_rows
     else:
         result.rows = len(rows)
         arrow_table = _arrow(rows, type_def)
+        arrow_schema = arrow_table.schema
     identifier = f"{GOLD_NAMESPACE}.{object_type}"
 
     try:
@@ -348,7 +371,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     try:
         table = catalog.load_table(identifier)
         first_build = table.current_snapshot() is None
-        if _columns_changed(table, arrow_table):
+        if _columns_changed(table, arrow_schema):
             # THE SHAPE OF THE TYPE CHANGED, so the existing table
             # cannot hold the new rows -- adding an identity rule to a
             # live deployment adds a column, and dropping one removes
@@ -370,10 +393,10 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
                 f"gold.{object_type}: the type's columns changed, rebuilding the table"
             )
             catalog.drop_table(identifier)
-            table = catalog.create_table(identifier, schema=arrow_table.schema)
+            table = catalog.create_table(identifier, schema=arrow_schema)
             first_build = True
     except (NoSuchTableError, NoSuchNamespaceError):
-        table = catalog.create_table(identifier, schema=arrow_table.schema)
+        table = catalog.create_table(identifier, schema=arrow_schema)
         first_build = True
 
     previous_count = None
@@ -392,9 +415,11 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         # there warns "Delete operation did not match any records" --
         # noise that would teach a reader to ignore pyiceberg's
         # warnings.
-        table.append(arrow_table)
+        table.append(_payload(streaming, arrow_schema, batches, arrow_table))
         result.problems = _audit_either(type_def, rows, arrow_table, previous_count,
-                                         known_ids)
+                                         known_ids, stream_audit)
+        if stream_audit is not None:
+            result.rows = stream_audit.rows
         if result.problems:
             # NO GOLD RATHER THAN UNAUDITED GOLD.
             catalog.drop_table(identifier)
@@ -418,11 +443,14 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         table.current_snapshot().snapshot_id, AUDIT_BRANCH,
     ).commit()
     table = catalog.load_table(identifier)
-    table.overwrite(arrow_table, branch=AUDIT_BRANCH)
+    table.overwrite(_payload(streaming, arrow_schema, batches, arrow_table),
+                     branch=AUDIT_BRANCH)
     table = catalog.load_table(identifier)
 
     result.problems = _audit_either(type_def, rows, arrow_table, previous_count,
-                                     known_ids)
+                                     known_ids, stream_audit)
+    if stream_audit is not None:
+        result.rows = stream_audit.rows
     if result.problems:
         # NOTHING MOVES. The branch is removed so the next build starts
         # from what is published, not from a refused attempt.
@@ -459,25 +487,37 @@ CONFLICT_SCHEMA = pa.schema([
 ])
 
 
+def _payload(streaming: bool, arrow_schema, batches, arrow_table):
+    """What to hand Iceberg: a streaming reader, or the whole table."""
+    if streaming:
+        return pa.RecordBatchReader.from_batches(arrow_schema, batches)
+    return arrow_table
+
+
 def _audit_either(type_def: dict, rows: "list[dict] | None", arrow_table,
-                   previous_count: int | None, known_ids) -> list[str]:
+                   previous_count: int | None, known_ids,
+                   stream_audit=None) -> list[str]:
     """The same findings, whichever representation the build used.
 
     The two implementations are kept deliberately parallel and their
     MESSAGES ARE IDENTICAL, because two checks that are supposed to
     agree and quietly drift apart are worse than one slower check.
     """
+    if stream_audit is not None:
+        # ACCUMULATED WHILE THE BATCHES WENT PAST, so silver is read
+        # once rather than twice.
+        return stream_audit.problems(previous_count)
     if rows is None:
         return audit_arrow(type_def, arrow_table, previous_count, known_ids)
     return audit(type_def, rows, previous_count, known_ids)
 
 
-def _columns_changed(table, arrow_table) -> bool:
+def _columns_changed(table, arrow_schema) -> bool:
     """Whether the published table holds different columns than this
     build produces. Names only: a type change is a different problem,
     and the audit is where that belongs."""
     published = {field.name for field in table.schema().fields}
-    building = set(arrow_table.schema.names)
+    building = set(arrow_schema.names)
     return published != building
 
 

@@ -456,6 +456,21 @@ resolution, so gold for it is a straight conform.
   GOLD-6. INFERRED IDENTITY: Fellegi-Sunter (Splink, on DuckDB), off by
           default; the uncertain middle zone to a person through the
           approval queue.
+  GOLD-7. ~~SCALE~~ DONE ENOUGH, patches 384 and 387. Gold now streams:
+          PyIceberg's scan produces a RecordBatchReader and its append
+          accepts one, and the audit accumulates a batch at a time,
+          keeping only the ids uniqueness needs. MEASURED ON THE READ:
+          +81.8 MB materialised against +11.0 MB streamed for 300,000
+          rows of six wide columns, the residual being the id set --
+          proportional to OBJECTS, not row width. NOT DEMONSTRATED
+          end to end: a cold build peaked 333 MB against 321, and the
+          gap did not widen at three times the row width, so the write
+          side and the allocator dominate. The streaming is kept
+          because it is correct and removes an O(width x rows)
+          materialisation, not because an end-to-end win was shown.
+          STILL OPEN: the changelog materialises the PREVIOUS
+          publication to diff against, so a build holds one table's
+          worth of rows whatever the new one does.
   GOLD-7. ~~SCALE~~ PARTLY DONE, patch 384, and MEASURED FIRST: a
           single-source gold build no longer materialises Python dicts.
           200,000 six-column rows cost 25.7 MB as Arrow buffers against
