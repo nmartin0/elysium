@@ -78,6 +78,11 @@ class SyncTarget:
     # leaves them grepping ontology_schema.yaml to find out which
     # declaration cares.
     fields_by_column: dict[str, str]
+    # The object type(s) backing this table, for asking the write log
+    # about pending edits -- it is keyed by OBJECT TYPE, and the sync
+    # works in TABLES (PA001-A1). A frozenset because two types can
+    # share one table.
+    object_types: frozenset = field(default_factory=frozenset)
     # column -> the rules silver canonicalises its values with, absent
     # for a column whose field opted out (GOLD-1). Read from the same
     # field declaration as the type above, in the same walk.
@@ -101,7 +106,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
     """
     by_table: dict[tuple[str, str], dict] = {}
 
-    for type_def in schema.get("object_types", {}).values():
+    for object_type, type_def in schema.get("object_types", {}).items():
         for (silo_name, table_name, id_column, columns,
              column_types, fields_by_column,
              standardisation, expectations,
@@ -109,7 +114,8 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             key = (silo_name, table_name)
             if key not in by_table:
                 by_table[key] = {"id_column": id_column, "columns": [], "column_types": {},
-                             "fields_by_column": {}, "standardisation": {},
+                             "fields_by_column": {}, "object_types": set(),
+                             "standardisation": {},
                              "expectations": {},
                              "duplicate_policy": duplicate_policy}
             existing = by_table[key]["columns"]
@@ -127,6 +133,16 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             # operator where to look.
             for column, backing_field in fields_by_column.items():
                 by_table[key]["fields_by_column"].setdefault(column, backing_field)
+            # WHICH OBJECT TYPES BACK ONTO THIS TABLE (PA001-A1). The
+            # write log is keyed by OBJECT TYPE and the sync works in
+            # TABLES; the drift policy asked the log using the table
+            # name, got zero every time, and absorbed removals that
+            # should have been refused.
+            #
+            # A SET, NOT ONE NAME, because two types CAN share a table
+            # -- the loop above already handles that for columns -- and
+            # a pending write on either of them is a reason to refuse.
+            by_table[key]["object_types"].add(object_type)
 
     for (silo_name, table_name), entry in by_table.items():
         # INVARIANT: the id column is always synced, and every typed
@@ -155,6 +171,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             columns=entry["columns"],
             column_types=entry["column_types"],
             fields_by_column=entry["fields_by_column"],
+            object_types=frozenset(entry["object_types"]),
             standardisation=entry["standardisation"],
             expectations=entry["expectations"],
             duplicate_policy=entry["duplicate_policy"],

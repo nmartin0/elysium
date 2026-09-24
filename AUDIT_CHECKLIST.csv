@@ -91,7 +91,7 @@ PA001-F6.1,PA,PIPELINE_AUDIT,MED,no id uniqueness check,mirror_adapter.py:178,IN
 PA001-F6.2,PA,PIPELINE_AUDIT,MED,six stale docstrings describing the pre-bronze design,core/mirror/*,IN,unverified
 PA001-F6.3,PA,PIPELINE_AUDIT,MED,manifest published before the sync loop,run_sync.py:388,IN,unverified
 PA001-F6.4,PA,PIPELINE_AUDIT,MED,layers identified by name prefix only,integrity.py:194,IN,unverified
-PA001-A1,PA,PIPELINE_AUDIT,CRITICAL,drift policy queries the write log by TABLE name; log keyed by OBJECT TYPE,iceberg_sync.py:733,P5,unverified
+PA001-A1,PA,PIPELINE_AUDIT,CRITICAL,drift policy queries the write log by TABLE name; log keyed by OBJECT TYPE,iceberg_sync.py:733,P5,"CONFIRMED + FIXED patch 409"
 PA001-A2,PA,PIPELINE_AUDIT,CRITICAL,many-to-many join tables never synced; m2m links empty on the default path,sync_targets.py:212,P6;P12,unverified
 PA001-A3,PA,PIPELINE_AUDIT,HIGH,rejected writes marked applied and served through the overlay,write_mediator.py:1812,P14,unverified
 PA001-A4,PA,PIPELINE_AUDIT,HIGH,overlay used only the newest applied entry,write_log.py,P7,"FIXED 529b235"

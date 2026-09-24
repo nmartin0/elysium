@@ -333,7 +333,12 @@ class IcebergMirrorSync(MirrorSync):
                     fields_by_column: dict[str, str] | None = None,
                     standardisation: dict[str, dict] | None = None,
                     expectations: dict[str, dict] | None = None,
-                    duplicate_policy: DuplicatePolicy | None = None) -> SyncResult:
+                    duplicate_policy: DuplicatePolicy | None = None,
+                    object_types: frozenset | None = None) -> SyncResult:
+        # HELD FOR THIS CALL so the drift check can ask the write log
+        # by OBJECT TYPE (PA001-A1). Per-call rather than per-instance
+        # because one IcebergMirrorSync syncs every table in turn.
+        self._object_types = frozenset(object_types or ())
         adapter = self.adapters.get(silo_name)
         if adapter is None:
             raise ValueError(
@@ -773,16 +778,39 @@ class IcebergMirrorSync(MirrorSync):
         """
         if self._write_log is None or field is None:
             return None
-        return self._write_log.edits_touching_field(self._object_type_for(table_name), field)
+        # ASKED FOR EVERY OBJECT TYPE BACKING THIS TABLE (PA001-A1).
+        # The write log is keyed by OBJECT TYPE; this used to pass the
+        # TABLE name, so the shipped ontology -- where Customer lives
+        # in `customers` -- always got zero, and zero edits means
+        # absorb. A pending write on Customer.tier did not stop the
+        # column being dropped, which is exactly what
+        # verdict_for_removed_column exists to prevent.
+        totals: dict[str, int] = {}
+        for object_type in self._object_types_for(table_name):
+            counts = self._write_log.edits_touching_field(object_type, field)
+            for key, value in (counts or {}).items():
+                totals[key] = totals.get(key, 0) + value
+        return totals
 
-    def _object_type_for(self, table_name: str) -> str:
-        # The write log is keyed by OBJECT TYPE and the sync works in
-        # TABLES. They coincide in every deployment written so far, and
-        # where they do not the count comes back zero -- which REFUSES
-        # nothing, because zero edits means absorb. Wrong in the safe
-        # direction, and worth replacing with a real mapping once a
-        # deployment separates them.
-        return table_name
+    def _object_types_for(self, table_name: str) -> frozenset:
+        """The object type(s) backing this table (PA001-A1).
+
+        THIS USED TO RETURN THE TABLE NAME, with a comment claiming
+        the two "coincide in every deployment written so far" and that
+        being wrong here was "wrong in the safe direction". BOTH CLAIMS
+        WERE FALSE. The shipped ontology has Customer in `customers`
+        and Transaction in `transactions`, so they coincide in none of
+        them; and absorbing a removed column is the PERMISSIVE
+        outcome, which strands the very pending writes the check
+        exists to protect.
+
+        FALLS BACK TO THE TABLE NAME when the caller did not say --
+        older callers and tests that build a sync directly -- because
+        that is the previous behaviour and no worse than it was.
+        """
+        if self._object_types:
+            return self._object_types
+        return frozenset({table_name})
 
     def _read_source_rows(self, adapter: ExternalReadAdapter, table_name: str,
                            id_column: str, columns: list[str]) -> list[dict]:

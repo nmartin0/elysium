@@ -966,6 +966,14 @@ checking it found NOW.
                 was not a bad line -- it was the same line copied five
                 times.
 
+      A1        CONFIRMED AND FIXED, patch 409. Its comment claimed
+                object type and table name "coincide in every
+                deployment written so far" and that being wrong was
+                "wrong in the safe direction". Both false: the shipped
+                ontology has Customer in `customers`, and absorbing is
+                the PERMISSIVE outcome that strands the writes the
+                check protects.
+
     Then 004-6 and 004-7 from the first set, then the rest by severity.
 
 ### AUDIT INTAKE, 24 September -- 78 findings, none yet checked
