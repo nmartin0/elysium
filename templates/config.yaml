@@ -13,6 +13,22 @@ llm:
   provider: ollama                 # key into core/deployment_loader.py's LLM
                                     # adapter registry -- see that file's
                                     # _LLM_ADAPTER_REGISTRY for what's built in
+  #
+  # OR `vllm`, FOR CONCURRENT USERS ON A GPU. At one request the two
+  # are within about 20%, and Ollama is often faster to first token
+  # because it has no scheduler queue; past four to eight concurrent
+  # requests vLLM leads by two to nine times, because it batches
+  # continuously rather than queuing (SCALABILITY.md). Its connection
+  # wants an OpenAI-style endpoint:
+  #
+  #   provider: vllm
+  #   connection:
+  #     base_url: "http://gpu-host:8000/v1/chat/completions"
+  #     api_key: "${VLLM_API_KEY}"   # only if the endpoint wants one
+  #
+  # AND THE AGENT'S CONCURRENCY FOLLOWS THE ENGINE unless you set it:
+  # 4 for ollama, matching llama.cpp's own parallel cap, and 16 for
+  # vllm, which wants requests in flight.
   connection:
     base_url: "http://localhost:11434/api/chat"
     request_timeout_seconds: 600   # local CPU-only inference can be genuinely

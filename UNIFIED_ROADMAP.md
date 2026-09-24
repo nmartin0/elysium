@@ -377,6 +377,18 @@ resolution, so gold for it is a straight conform.
           guaranteed to alert forever. And the publication time is
           shown on every object, so staleness is visible before it is
           an alert.
+  INFER-1. ~~A vLLM ADAPTER~~ DONE, patch 391. An OpenAI-compatible
+          client behind the existing LLMAdapter protocol, so the engine
+          is a per-deployment choice rather than a migration -- Ollama
+          for a laptop or a small team, vLLM where concurrency is real
+          and a GPU exists. Every failure translates to LLMUnavailable
+          at the boundary, as F-22 forced the Ollama adapter to do.
+          AND THE AGENT'S CONCURRENCY NOW FOLLOWS THE ENGINE: 4 for
+          ollama, matching llama.cpp's own parallel cap, 16 for vllm,
+          which wants requests in flight. The old default of 4 for
+          everyone matched Ollama's cap BY COINCIDENCE, so swapping
+          engines and changing nothing else would have shown no
+          improvement at all.
   INFER-1. A vLLM ADAPTER, and raising the concurrency limit
           (SCALABILITY.md). AUDITED: agent queries run through an
           explicit ThreadPoolExecutor sized from

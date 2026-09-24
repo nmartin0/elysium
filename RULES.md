@@ -453,3 +453,10 @@ one, which the handover script does.
   the local work onto it and RE-RUN BOTH TIERS there. A patch verified
   against a base nobody has is a patch verified against nothing.
 
+AND CHECK AGAIN BEFORE PACKAGING, not only before starting. The base
+moves while work happens -- the owner applies and pushes the last
+patch during the next one -- so a check at the start says nothing
+about the base at the end. The tree comparison in the handover script
+catches it every time, which is the argument for that comparison
+existing: it has now found this three times.
+

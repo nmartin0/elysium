@@ -43,6 +43,7 @@ from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
+from adapters.vllm_adapter import VLLMAdapter
 from core.config import load_yaml
 from core.declared_triggers import load_declared_triggers
 from core.ontology.constraints import validate_constraints
@@ -96,6 +97,12 @@ _WRITE_ADAPTER_REGISTRY: dict[str, type] = {
 
 _LLM_ADAPTER_REGISTRY: dict[str, type] = {
     "ollama": OllamaAdapter,
+    # vLLM, for a deployment with concurrent users and a GPU: at one
+    # request it and Ollama are within about 20%, and past four to
+    # eight concurrent requests vLLM leads by two to nine times
+    # (SCALABILITY.md). An OpenAI-compatible endpoint, so this also
+    # reaches anything else speaking that dialect.
+    "vllm": VLLMAdapter,
     # Runs the local `claude` CLI, so calls draw on the operator's
     # Claude subscription Agent SDK credit rather than separately
     # billed API credits. See the adapter's own module docstring.
@@ -480,7 +487,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             query_deadline_seconds=config["agent"].get("query_deadline_seconds", 300),
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
-            max_concurrent_requests=config["agent"].get("max_concurrent_requests", 4),
+            max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a
             # forgotten proposal does not outlive the context that
@@ -677,6 +684,32 @@ def build_live_read_adapters(runtime_paths: "RuntimePaths | None" = None,
         "dict[str, ExternalReadAdapter]",
         _build_adapters(resolved, _READ_ADAPTER_REGISTRY),
     )
+
+
+def _default_concurrency(config: dict) -> int:
+    """How many agent queries this process runs at once.
+
+    THE DEFAULT FOLLOWS THE ENGINE, because the limit exists because
+    of the engine (INFER-1). Ollama inherits llama.cpp's server and
+    caps parallel requests at four, queuing the rest, so a larger
+    number here would only build a queue in a second place. vLLM's
+    continuous batching is the opposite: it wants requests in flight,
+    and past four to eight concurrent it leads Ollama by two to nine
+    times (SCALABILITY.md).
+
+    THE OLD DEFAULT WAS FOUR FOR EVERYONE, which matched Ollama's cap
+    BY COINCIDENCE -- so a deployment that swapped to vLLM and changed
+    nothing else would have seen no improvement at all, and would have
+    had no reason to suspect the limit was ours rather than the
+    engine's.
+
+    A deployment that states a number keeps it, whatever the engine.
+    """
+    declared = config["agent"].get("max_concurrent_requests")
+    if declared is not None:
+        return int(declared)
+    provider = (config.get("llm") or {}).get("provider")
+    return 16 if provider == "vllm" else 4
 
 
 def _refuse_live_reads(config: dict) -> bool:
