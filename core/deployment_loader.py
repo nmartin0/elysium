@@ -37,8 +37,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
-from pyiceberg.catalog.sql import SqlCatalog
-
 from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
@@ -58,6 +56,7 @@ from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
+from core.mirror.catalog import open_mirror_catalog
 from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.ontology.action_types import validate_action_types
 from core.ontology.bindings import TYPE_BINDING_KEYS, merge_bindings
@@ -829,11 +828,7 @@ def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
     # last_synced_at, and Browse says so rather than claiming the data
     # is empty.
     mirror_dir.mkdir(parents=True, exist_ok=True)
-    catalog = SqlCatalog(
-        "elysium_mirror",
-        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
-        warehouse=f"file://{mirror_dir / 'warehouse'}",
-    )
+    catalog = open_mirror_catalog(mirror_dir, dict(config.mirror_storage or {}))
     # Computed HERE, where the catalog already exists, and passed into
     # each adapter rather than set on it afterwards. Setting it after
     # construction would leave a window in which an adapter existed
@@ -1356,11 +1351,7 @@ def _bind_reads_to_gold(config: DeploymentConfig, adapters: dict,
     # gold lives in its own namespace inside it, not in a second lake.
     mirror_dir = data_dir / "mirror"
     mirror_dir.mkdir(parents=True, exist_ok=True)
-    catalog = SqlCatalog(
-        "elysium_mirror",
-        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
-        warehouse=f"file://{mirror_dir / 'warehouse'}",
-    )
+    catalog = open_mirror_catalog(mirror_dir, dict(config.mirror_storage or {}))
     # PINNED AT BUILD TIME, so every read in a request sees ONE
     # publication -- a build finishing mid-request cannot move the
     # ground under it (D3's second half).

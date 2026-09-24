@@ -959,8 +959,12 @@ checking it found NOW.
                 EXISTING is not the same as this run's bronze being
                 current; only _write_bronze knew, and it does not
                 keep it to itself now.
-      F5        an S3 mirror cannot be served at all after its first
-                sync.
+      F5        CONFIRMED AND FIXED, patch 408. SIX call sites, not
+                the four reported: five hard-coded a local warehouse
+                and only the WRITER honoured mirror.storage. One
+                factory now, plus a tripwire test, because the defect
+                was not a bad line -- it was the same line copied five
+                times.
 
     Then 004-6 and 004-7 from the first set, then the rest by severity.
 

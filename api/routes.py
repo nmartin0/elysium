@@ -120,7 +120,6 @@ from typing import Any
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from pyiceberg.catalog.sql import SqlCatalog
 
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
@@ -1256,15 +1255,18 @@ class ConfigHistoryResponse(BaseModel):
 
 
 def _mirror_catalog_for(request):
-    """The lake's catalog, opened read-only for a status query."""
-    from pyiceberg.catalog.sql import SqlCatalog
+    """The lake's catalog, opened read-only for a status query.
+
+    THROUGH THE ONE FACTORY, with the deployment's storage options
+    (PA001-F5). Hard-coding a local warehouse here meant this endpoint
+    reported on a lake it could not open whenever mirror.storage named
+    object storage.
+    """
+    from core.mirror.catalog import open_mirror_catalog
 
     mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
-    return SqlCatalog(
-        "elysium_mirror",
-        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
-        warehouse=f"file://{mirror_dir / 'warehouse'}",
-    )
+    return open_mirror_catalog(
+        mirror_dir, dict(_generation(request).config.mirror_storage or {}))
 
 
 def _recent_snapshots(catalog, identifier: str, limit: int = 5) -> list[dict]:
@@ -2113,11 +2115,9 @@ def admin_mirror_route(request: Request,
     # endpoint exists to report.
     mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
     mirror_dir.mkdir(parents=True, exist_ok=True)
-    catalog = SqlCatalog(
-        "elysium_mirror",
-        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
-        warehouse=f"file://{mirror_dir / 'warehouse'}",
-    )
+    from core.mirror.catalog import open_mirror_catalog
+    catalog = open_mirror_catalog(
+        mirror_dir, dict(_generation(request).config.mirror_storage or {}))
     sync = IcebergMirrorSync(mirror_dir, {})
     attempts = SyncAttempts(mirror_dir / "sync_attempts.db")
     tables = []

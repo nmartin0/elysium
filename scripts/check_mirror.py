@@ -28,9 +28,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from pyiceberg.catalog.sql import SqlCatalog
-
 from core.deployment_loader import load_deployment, resolve_runtime_paths
+from core.mirror.catalog import open_mirror_catalog
 from core.mirror.integrity import check_mirror
 from core.mirror.manifest import read_manifests
 
@@ -78,19 +77,26 @@ def main() -> int:
         )
         return 1
 
-    catalog = SqlCatalog(
-        "elysium_mirror",
-        uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
-        warehouse=f"file://{mirror_dir / 'warehouse'}",
-    )
-
-    schema = None
+    # THE DEPLOYMENT IS LOADED FIRST NOW, because the catalog needs its
+    # storage options (PA001-F5): an integrity script that cannot open
+    # an S3 lake reports a healthy mirror as missing, which is worse
+    # than not running at all.
+    #
+    # STILL OPTIONAL. --no-ontology and an unloadable configuration
+    # both still work; they just mean the structural checks run against
+    # a LOCAL warehouse, which is the only one they could have reached
+    # before in any case.
+    config, schema = None, None
     if not args.no_ontology:
         try:
-            schema = load_deployment(paths.config_dir).schema
+            config = load_deployment(paths.config_dir)
+            schema = config.schema
         except (OSError, ValueError) as e:
             print(f"Could not load the ontology ({e}); running structural "
                   f"checks only.", file=sys.stderr)
+
+    catalog = open_mirror_catalog(
+        mirror_dir, dict(getattr(config, "mirror_storage", None) or {}))
 
     report = check_mirror(catalog, schema, mirror_dir / "warehouse")
 

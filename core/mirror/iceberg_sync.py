@@ -48,13 +48,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pyarrow as pa
-from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
     NoSuchTableError,
 )
 
+from core.mirror.catalog import open_mirror_catalog
 from core.mirror.changelog import MAX_DELETED_FRACTION, diff_snapshots
 from core.mirror.drift_policy import (
     DriftVerdict,
@@ -306,12 +306,11 @@ class IcebergMirrorSync(MirrorSync):
             else None
         )
 
-        self._catalog = SqlCatalog(
-            "elysium_mirror",
-            uri=f"sqlite:///{mirror_dir / 'catalog.db'}",
-            warehouse=warehouse,
-            **options,
-        )
+        # THE WRITER USES THE SAME FACTORY AS EVERY READER (PA001-F5).
+        # It was already the only caller honouring mirror.storage; the
+        # point of routing it through here too is that the writer and
+        # the readers can no longer drift apart.
+        self._catalog = open_mirror_catalog(mirror_dir, storage)
 
     @property
     def catalog(self):
