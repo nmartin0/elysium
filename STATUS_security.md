@@ -293,6 +293,46 @@ against clean directories -- never the messy one real use produces.
 
 ---
 
+## Session 7 — F-05 REPRODUCED AND PINNED; the list is now blocked
+
+**F-05 needs narrowing.** `record_query()` is already atomic. The gap
+is the SEQUENCE in `api/routes.py:3378-3380` -- check in one
+transaction, record in another, with a window between them. Measured:
+at 19 of 20, two callers both check, both pass, both record, count
+reaches 21. Commit `a0cf84d`.
+
+The overshoot is BOUNDED at (callers inside the window) - 1. Agent
+queries run through a pool of 4 by default, so the realistic worst
+case is three past the limit -- a correctness defect, not an incident.
+
+    controls   simulate the fix       -> 5 failed, 2 passed
+               remove the transaction -> 7 failed
+    gates      ./lint.sh clean, 8/8; 2,853 unit (+7); 445 integration
+
+The fix needs `api/routes.py`, which I do not own, so it is filed in
+`REQUESTS_security.md` with the proposed `try_record_query()`. I did
+NOT add that method -- nothing would call it.
+
+## THE BRANCH IS BLOCKED, and it is not a code problem
+
+`origin/security` has been at `a29594d` for FIVE consecutive rounds.
+Eight commits of verified work sit unapplied. Two delivery defects
+have been found and fixed in that time (a glob that ate stale patches,
+a subject parser that mis-read wrapped lines), and neither has been
+shown to be the remaining cause, because no terminal output from a run
+has come back.
+
+NOTHING FURTHER SHOULD BE STACKED until one batch lands. Every
+remaining item is a decision, another agent's file, or both:
+
+    F-05 fix      needs api/routes.py           -> backend
+    004-8 fix     needs a nod on the shape      -> owner
+    E-02 residual needs a remedy decision       -> owner
+    F-13, F-25    live in backend-owned files   -> backend
+    F-08 R50 R52  policy, propose before build  -> owner
+
+---
+
 ## Where this leaves the list
 
     Closed, controlled      E-01  E-04  E-05  F-27
@@ -306,8 +346,8 @@ against clean directories -- never the messy one real use produces.
                             F-12b        commit 2dbece9
                             F-33         commit 85c6e7b
     Analysed, needs a nod   004-8        shape proposed above
-    Next, needs a session   F-05         a TOCTOU; the test must FORCE
-                                         the interleaving, not race it
+    Reproduced and pinned   F-05         commit a0cf84d; fix needs
+                                         api/routes.py -> requested
     Policy, propose first   F-08  R50  R52
     Owner decision          E-02 residual, F-13 and F-25 (backend files)
     Need one measurement    F-05  F-12b
