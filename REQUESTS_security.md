@@ -109,3 +109,51 @@ and its docstring says why. The security hole is closed regardless, and
 each `main()`, so all three are protected behaviourally whether or not
 the code is ever shared. Nothing worked around, nothing edited outside
 my area, no test fixed into passing.
+
+---
+
+## F-05: one atomic check-and-record, which needs two lines in routes.py
+
+NEEDS: backend
+
+WHAT: replace the check-then-act at `api/routes.py:3378-3380`
+
+    if request.app.state.query_rate_limiter.is_rate_limited(user_id):
+        raise HTTPException(429, ...)
+    request.app.state.query_rate_limiter.record_query(user_id)
+
+with a single call
+
+    if not request.app.state.query_rate_limiter.try_record_query(user_id):
+        raise HTTPException(429, ...)
+
+I will add `try_record_query()` to `core/auth/query_rate_limiter.py`
+(mine) in the same coordinated change: it reads, decides and
+increments inside ONE immediate transaction, returning False when the
+window is full without incrementing. `is_rate_limited()` stays for any
+caller that only wants to ask.
+
+WHY: reproduced and measured. `record_query()` is already atomic -- the
+gap is that CHECKING and RECORDING are separate transactions, so
+another caller can check between them, see the same count, and be let
+through. Forced (not raced) in
+`tests/unit/test_rate_limit_check_then_act.py`: with the count at 19
+of 20, two callers both check, both pass, both record, and the count
+reaches 21.
+
+THE OVERSHOOT IS BOUNDED, which matters for scheduling: it is
+(callers inside the window) - 1. Agent queries run through a pool
+sized from `max_concurrent_requests`, default 4, so the realistic
+worst case is three queries past the limit -- not an open door. This
+is a correctness defect worth fixing, not an incident.
+
+MEANWHILE: I did NOT add `try_record_query()` yet, because nothing
+would call it and PRINCIPLES.md 7 says not to build for a caller that
+does not exist. I have instead PINNED today's behaviour with tests
+that fail the moment it changes in either direction -- a control that
+simulates the fix fails 5 of them, which is how I know they observe
+the gap rather than describe it. When you agree the shape, the method
+and the route change land together and those tests are rewritten to
+prove the overshoot is gone.
+
+I did not edit `api/routes.py`.
