@@ -366,9 +366,20 @@ def _publish_link_tables(sync, schema: dict) -> None:
         print(f"published gold.{table_name}: {silver.num_rows} rows (link table)")
 
 
-def _build_gold(sync, config, data_dir) -> int:
+def _build_gold(sync, config, data_dir, unsynced: set | None = None) -> int:
     """One gold table per object type, audited before it is published.
-    Returns how many were refused."""
+    Returns how many were refused.
+
+    `unsynced` names the "silo.table" entries that FAILED this run. A
+    type is skipped when one of its own tables is among them
+    (PA001-G9): its silver is stale, so publishing it would claim a
+    freshness it does not have.
+
+    A TYPE WHOSE OWN TABLES ALL SYNCED IS BUILT NORMALLY, even while a
+    neighbour's did not. Its links are still audited against the other
+    types' PUBLISHED ids, which is the same thing that happens on any
+    run where a neighbour simply did not change.
+    """
     # The sync is often the first thing a new deployment runs, and it
     # is the thing that FILLS the lake -- so it says who can read it.
     import logging as _logging
@@ -416,6 +427,24 @@ def _build_gold(sync, config, data_dir) -> int:
             print(f"FAILED  gold.{object_type}: its silver table could not be read: {exc}",
                   file=sys.stderr)
             refused += 1
+            continue
+        needed = {f"{(type_def.get('storage') or {}).get('silo')}."
+                   f"{(type_def.get('storage') or {}).get('table')}"}
+        needed.update(
+            f"{block.get('silo')}.{block.get('table')}"
+            for block in (type_def.get("additional_storage") or {}).values()
+        )
+        stale = sorted(needed & (unsynced or set()))
+        if stale:
+            # SAID OUT LOUD, which is the whole of PA001-G9: this used
+            # to be silent, and a silent skip on the ONLY read path
+            # means the deployment serves yesterday's answer with
+            # nothing in the output to suggest it.
+            #
+            # NOT counted as a gold failure: the silver failure that
+            # caused it was already counted and named.
+            print(f"skipped gold.{object_type}: "
+                  f"{', '.join(stale)} did not sync, so its silver is stale")
             continue
         known = {
             target: ids
@@ -558,6 +587,9 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
         publish_manifest(sync, config)
 
         failures = 0
+        # WHICH TABLES DID NOT SYNC, so gold can skip exactly the
+        # types that depend on them rather than all of them.
+        unsynced: set = set()
         attempts = SyncAttempts(
             runtime_paths.data_dir / "mirror" / "sync_attempts.db")
         # SWEPT AT THE START, not on a timer. A sync is the only
@@ -582,6 +614,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
                 # into a generic message: this is an operator-facing
                 # tool, and the real cause is what an operator needs.
                 failures += 1
+                unsynced.add(f"{target.silo_name}.{target.table_name}")
                 print(f"FAILED  {label}: {exc}", file=sys.stderr)
                 # RECORDED BEFORE IT IS PRINTED, because stderr is
                 # the thing nobody sees. A refused sync leaves the
@@ -599,12 +632,22 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
 
-        # GOLD, FROM THE SILVER JUST WRITTEN (GOLD-2). Only when every
-        # table synced: gold built from a half-synced mirror would
-        # publish a partial picture, and the audit's row-count bound
-        # would refuse it anyway, more confusingly.
-        if failures == 0:
-            failures += _build_gold(sync, config, runtime_paths.data_dir)
+        # GOLD, FROM THE SILVER JUST WRITTEN (GOLD-2), PER TYPE
+        # (PA001-G9).
+        #
+        # THIS USED TO BE `if failures == 0`, with the reasoning that
+        # "gold built from a half-synced mirror would publish a partial
+        # picture". The reasoning is right and the scope was wrong: a
+        # type whose OWN tables all synced is not a partial picture,
+        # and one unrelated table failing skipped gold for EVERY type,
+        # SILENTLY -- the run printed "1/2 tables synced successfully"
+        # and then nothing at all about gold.
+        #
+        # WHAT THAT COST: gold is the only read path (GOLD-8), so every
+        # type kept serving its PREVIOUS publication while fresh silver
+        # sat unused, and nothing in the output said so.
+        failures += _build_gold(sync, config, runtime_paths.data_dir,
+                                 unsynced=unsynced)
 
         # THE CONDITION IS CHECKED AFTER THE SYNC, which is the only
         # moment the facts are current. A separate scheduler would need
