@@ -1166,3 +1166,137 @@ the VM in front of you.
 Vulture caught a real gap on the way: `case_name` was set and never
 read, because I had not written the aggregator. Whitelisting it would
 have hidden a missing piece of the design.
+
+---
+
+## RESEARCH, round 2: the deferred items
+
+Asked to find canonical answers for the deferred list. **Four have
+clear ones. One is genuinely contested and our own measurement is
+the better evidence. One has no canonical answer and should not be
+presented as if it does. Several I did not reach.**
+
+### LB-4 / AR-5 constrained decoding -- CLEAR, and it CONFIRMS our number
+
+IDEAS.md measured constrained decoding dropping accuracy 19.7% ->
+11.0%. That is not an anomaly:
+
+- Tam et al. (EMNLP 2024), "Let Me Speak Freely?": format constraints
+  degrade reasoning, reported up to 27 points on maths benchmarks.
+- "Across open-weight models, forcing structured output formats
+  produced a 3-to-9 percentage point accuracy drop."
+- A study across twelve scenarios found structured formats degraded
+  performance in ten of them.
+
+**THE MECHANISM MATCHES OUR CASE EXACTLY.** "The Constraint Tax ...
+for Small Language Models": "For a large model, format fidelity may
+consume a small fraction of effective capacity. For a sub-3B model,
+the same schema can be a material part of the generation problem. The
+concerning case is not merely invalid JSON; it is *wrong answer, valid
+schema*." We run phi4-mini at 3.8B.
+
+**THE CANONICAL FIX EXISTS**: "give the model a free-form reasoning
+scratchpad first, then apply constrained decoding only to the final
+structured output step", and order schema fields with reasoning before
+answers. The stated cause is that JSON "forces models to emit the
+answer field before completing chain-of-thought reasoning".
+
+**AND THAT FIX COLLIDES WITH A MEASUREMENT WE ALREADY HAVE.** The
+Ollama adapter sends `think: false`, deliberately: asked for one word,
+qwen3.5:2b emitted 370 tokens, and think=false cut it to 2. At ~1.5
+tokens/s that is six minutes against under a second. So the
+literature's remedy -- let it reason first -- costs minutes per hop on
+this hardware. **That is a genuine tension between two measured facts,
+not an oversight**, and it is the decision to take to D1: a scratchpad
+is only affordable on a faster model.
+
+**CORRECTNESS CAVEAT, stated because it matters: THIS LITERATURE IS
+CONTESTED.** JSONSchemaBench references "dottxt's 'let me speak
+freely' rebuttal", which argues the original study's prompts were
+unfair to the constrained condition. So the field is not unanimous and
+I will not present it as settled. Our own 19.7% -> 11.0% measurement,
+on our model and our task, is the stronger evidence either way -- and
+it points the same direction.
+
+**RECOMMENDATION: do not take AR-5 as written.** "Constrain the step
+choice fully" is precisely the intervention the literature and our own
+measurement both say hurts small models.
+
+### AL-2 step 2 / LB-10 / AL-4-as-security -- CLEAR AND CANONICAL
+
+The pattern has a name, a paper, and an implementation.
+
+Willison's **Dual LLM pattern** (2023): a privileged LLM that plans
+and calls tools but never reads untrusted data, and a quarantined LLM
+that reads untrusted data and returns values but has no tool access.
+
+**CaMeL** (Google DeepMind, arXiv 2503.18813) is the first concrete
+implementation: "CaMeL explicitly extracts the control and data flows
+from the (trusted) query; therefore, the untrusted data retrieved by
+the LLM can never impact the program flow", solving "77% of tasks with
+provable security (compared to 84% with an undefended system) in
+AgentDojo".
+
+**OUR ARCHITECTURE IS THE PATTERN, WIRED BACKWARDS.** Synthesis has no
+tools, emits prose, and reads untrusted data -- that is a Q-LLM, and
+it is the call that already carries untrusted-data framing. The
+planner chooses steps and can invoke `propose_action` -- that is a
+P-LLM, and until patch 006 it had no framing at all, and still reads
+raw field values. The canonical rule the P-LLM must satisfy is
+"never directly processes untrusted data", which ours does.
+
+**AND THE LIMIT IS STATED TOO**, which is the part that stops this
+being a silver bullet. The design-patterns taxonomy (arXiv 2506.08837)
+says of plan-then-execute: "we cannot prevent a prompt injection in
+the calendar data from altering the content of the email sent". **It
+protects CONTROL flow, not DATA flow.** CaMeL closes the data half
+with capabilities tracking provenance and allowed readers, checked
+before every tool call.
+
+**WE ALREADY HAVE THE DATA-FLOW HALF.** Compartments, the
+`check_access()` chokepoint, functions receiving a capability rather
+than a mediator, and the Bell-LaPadula write-down check are exactly
+capability-based data-flow enforcement. The missing piece is the
+control-flow half -- the plan being fixed before untrusted data is
+read. That is AL-4, and it is justified on SECURITY grounds with a
+citation, which is a much stronger case than the accuracy one below.
+
+### AL-4 on accuracy grounds -- NO CANONICAL ANSWER. Do not pretend.
+
+"Neither architecture guarantees lower token use, lower latency, or
+higher accuracy." ReAct adapts per observation; plan-then-execute is
+predictable and governable but brittle when the plan is wrong, and "if
+replanning fires on most tasks, you're paying the planning cost AND
+the adaptation cost". The honest summary is: **pick by the failure
+mode you can live with.**
+
+So AL-4 should be argued from prompt-injection resistance and from the
+measured 87.5%-procedure prompt, NOT from an expectation that it will
+answer more questions correctly. That is exactly what AL-8 is for.
+
+### LB-2 filter vocabulary -- CLEAR, and it is nearly what we already have
+
+Foundry's search vocabulary: `eq`, `lt`, `lte`, `gt`, `gte`,
+`contains`, `isNull`, `not`, `and`, `or`, with `orderBy` (field plus
+direction, multiple fields) and `pageSize`/`pageToken`. Range filters
+compose: "If two range filters are applied to the same property (e.g.
+lt and gte), then only objects that match both constraints will be
+returned."
+
+The query shape is a typed object -- `{"type":"eq","field":"age",
+"value":21}` -- not a bare `{field: value}` map.
+
+**`core/filters.py` ALREADY IMPLEMENTS range, in, not_in, date_range,
+relative_date and contains.** The gap is only that the agent's
+`search_object` collapses its filter to equality via
+`as_equality_conditions()`. So LB-2 is largely exposure of an existing
+vocabulary in a shape Foundry validates, plus `orderBy` and a page
+size -- both of which Foundry treats as first-class and we do not
+offer at all.
+
+### Not researched this round
+
+AL-12 (resume after a proposed write), AR-7 (plan caching), AL-10
+(token budget), LB-7 (tool arguments transcribed), LB-9 (three-tier
+routing), D1 (model choice). Saying so rather than implying the list
+was covered.
