@@ -101,6 +101,11 @@ rather than answering as if this were a complete result.
 """
 
 _CITATION_PATTERN = re.compile(r"\[R(\d+)\]")
+# A number as it appears in prose: optional thousands separators, an
+# optional decimal part. Currency symbols and percent signs sit
+# OUTSIDE the match, so "$1,248.99" and "50%" yield "1,248.99" and
+# "50".
+_NUMBER_PATTERN = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
 
@@ -110,6 +115,81 @@ def _has_only_valid_citations(answer: str, record_count: int) -> bool:
     # an uncited answer is a genuinely different, NOT-mechanically-
     # checkable risk this function doesn't attempt to catch.
     return all(1 <= n <= record_count for n in cited_indices)
+
+
+def _numbers_in(text: str) -> set[str]:
+    """Every number in some text, normalised so 1,248.99 and 1248.99
+    are the same number and 49.90 matches a stored 49.9."""
+    found = set()
+    for token in _NUMBER_PATTERN.findall(text):
+        plain = token.replace(",", "")
+        found.add(plain)
+        if "." in plain:
+            # A trailing-zero form and a normalised one are the same
+            # figure: a record holding 49.9 grounds an answer saying
+            # 49.90, and the reverse.
+            found.add(plain.rstrip("0").rstrip("."))
+    return found
+
+
+def _grounded_numbers(records: list[dict], original_query: str) -> set[str]:
+    """Every figure the answer is allowed to contain.
+
+    THREE SOURCES, and each is there for a reason found the hard way.
+
+    THE RENDERED RECORDS, not `str(record)` (LB-5). The model is shown
+    a rendered Decimal; grounding against the raw one would reject a
+    correctly copied 49.99 because the source said
+    Decimal('49.990000000').
+
+    THE LENGTH OF EVERY LIST RESULT. "Ada has 2 transactions" is a
+    correct, deterministic, checkable statement, and 2 appears nowhere
+    in the values. Without this the check would withhold counting --
+    one of the most common things anyone asks.
+
+    THE NUMBERS IN THE QUESTION. A figure the USER supplied is not a
+    hallucination. An answer to "transactions over 100 in 2026" will
+    restate 100 and 2026, and neither need appear in a record.
+
+    PERMISSIVE BY DESIGN, and it is worth being explicit about which
+    way this errs. Numeric tokens inside ids ground too --  a record
+    holding "cust_001" grounds a 1 -- so an invented figure that
+    happens to coincide with an id passes. That is the direction to
+    err: a check that withholds CORRECT answers gets turned off, and
+    the failures this exists for ($7,412.00 against records of 49.99
+    and 199.00, "47 transactions") are nowhere in any of the three
+    sources and are caught.
+    """
+    # THE VALUES, NOT THE TAGGED TEXT. _tagged_records() prefixes each
+    # record with [R1], [R2] -- and a control caught those index digits
+    # grounding answers: with two records, "1" and "2" passed whatever
+    # the data said, and the citation-stripping below was untestable
+    # because its digits coincided with them. Same rendering, tags
+    # excluded.
+    grounded = _numbers_in(json.dumps(render_gathered(records)))
+    grounded |= _numbers_in(original_query)
+    for record in records:
+        result = record.get("result") if isinstance(record, dict) else None
+        if isinstance(result, list):
+            grounded.add(str(len(result)))
+    return grounded
+
+
+def _has_only_grounded_numbers(answer: str, records: list[dict],
+                               original_query: str) -> list[str]:
+    """The figures in the answer that came from nowhere.
+
+    Returns them rather than a bool, so the log names what was wrong
+    instead of only that something was.
+
+    CITATIONS ARE STRIPPED FIRST. "[R1]" contains a 1, and counting it
+    as a figure would ground every answer that cited record 1 -- and,
+    worse, would make the check pass for reasons unrelated to the
+    data.
+    """
+    prose = _CITATION_PATTERN.sub(" ", answer)
+    grounded = _grounded_numbers(records, original_query)
+    return sorted(_numbers_in(prose) - grounded)
 
 
 def _tagged_records(records: list[dict]) -> str:
@@ -217,6 +297,19 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
         return (
             f'Regarding "{original_query}": the answer could not be generated right '
             f"now (the language model backend is temporarily unreachable). Please try again."
+        )
+
+    ungrounded = _has_only_grounded_numbers(answer, records, original_query)
+    if ungrounded:
+        logger.warning(
+            f"synthesis answer contained figures not present in the data "
+            f"{ungrounded}, discarding: {answer!r}"
+        )
+        return (
+            f'Regarding "{original_query}": the generated answer contained '
+            f"figures that do not appear in the records it was given, so it "
+            f"was withheld. The data may not support a numeric answer to this "
+            f"question."
         )
 
     if not _has_only_valid_citations(answer, len(records)):

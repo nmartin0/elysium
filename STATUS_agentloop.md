@@ -1538,3 +1538,85 @@ change.
 
 If anything is worth tidying it is the `Function` protocol's own
 docstring saying which of the two words it is, not the directory name.
+
+---
+
+## LB-1b -- the number check. DONE. LB-1 now CLOSED.
+
+The half that catches what the calculator cannot: what happens when
+the model does not use it.
+
+**WHY THE ORDER MATTERED.** Measured before 1a existed, this check
+ALONE withheld the CORRECT total ($248.99) along with the invented
+ones, because a correct sum legitimately does not appear in the
+records. With the calculator in the registry a correct total CAN
+appear -- as the tool's own result -- so the check finally
+distinguishes "computed exactly" from "computed in the model's head".
+That is what makes it safe to fail closed. A test asserts both
+directions of exactly that.
+
+### Three sources ground a figure, each found the hard way
+
+**The rendered records** (LB-5), not `str(record)`: the model is shown
+a rendered Decimal, so grounding against the raw one would reject a
+correctly copied value.
+
+**The length of every list result.** "Ada has 2 transactions" is
+correct, deterministic and checkable, and 2 appears in no value.
+Without it the check withholds counting.
+
+**The numbers in the question.** A figure the USER supplied is not a
+hallucination; an answer to "over $100 in 2026" restates both.
+
+**PERMISSIVE BY DESIGN, stated plainly:** numeric tokens inside ids
+ground too, so an invented figure coinciding with an id passes. That
+is the direction to err -- a check that withholds correct answers gets
+turned off -- and every reproduction case ($7,412.00, $1,248.99, "47
+transactions") is caught.
+
+### A control found a real defect in my own code
+
+`_grounded_numbers` grounded against `_tagged_records()`, which
+prefixes each record with `[R1]`, `[R2]`. **The tag digits were
+grounding answers**: with two records, "1" and "2" passed whatever the
+data said. It also made the citation-stripping untestable, because its
+digits coincided with the tags. Fixed to ground against the rendered
+values with tags excluded.
+
+**And three of my tests proved nothing until controls said so.** Each
+had a fixture whose ids or values already contained the number under
+test:
+
+    count grounded by list length   ids ["1","2"] contained the count
+    citations not read as figures   [R1][R2] coincided with ids 1, 2
+    rendered form grounds an answer Decimal("49.990000000") -> str()
+                                    yields 49.99 after trailing-zero
+                                    normalisation, and the second
+                                    attempt, Decimal("4.999E+3"),
+                                    normalises at construction so
+                                    str() is ALREADY "4999"
+
+The third took two attempts to get right. `Decimal("1E+3")` finally
+distinguishes: `str()` is "1E+3", `render_value()` is "1000".
+
+### Controls, five, all failing
+
+    the check does nothing              12 of 17 fail
+    ground against str(record)           1 fails
+    drop list lengths                    1 fails
+    do not strip citations               4 fail
+    drop the query as a source           1 fails
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2953 passed, 8 skipped  (2936 before; +17 here)
+
+### LB-1 is closed, with one deployment action outstanding
+
+1a and 1b are both in. **Neither is active until `calculator` is added
+to `tools.enabled` in `config.yaml`**, with a `tool:calculator` grant
+for the roles that should reach it. Until then 1b will withhold
+arithmetic the model does in its head -- which is the correct reading
+of an unverifiable figure, but it is a visible behaviour change and
+should land with the tool, not before it.
