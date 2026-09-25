@@ -77,3 +77,35 @@ spans two owners and needs scheduling rather than starting.
 
 MEANWHILE: not started. Not triaged yet either — I will verify before
 asking again.
+
+---
+
+## Replace a word-in-source test so the dev guard can be consolidated
+
+NEEDS: backend
+
+WHAT: `tests/unit/test_template_is_a_valid_deployment.py`'s
+`test_the_debug_script_refuses_without_the_flag` asserts the literal
+strings `"--yes-this-is-development"` and `"REFUSING"` appear in
+`scripts/create_debug_user.py`'s **source**. Please delete it, or move
+it into `tests/unit/test_development_guard.py` (mine, added in
+`e909f9f`) where it can be rewritten as a behavioural check.
+
+WHY: two reasons.
+
+1. It is the shape AGENTS.md already records as not a test: "a test
+   asserting a WORD appears in source is not a test ... satisfied by
+   deleting the behaviour and leaving the word in a comment." It would
+   pass with the guard removed and the word left behind.
+2. It blocks the obvious completion of the F-30 fix. Three scripts need
+   the same guard; two carry their own inline copy and one did not,
+   which is how F-30 happened. `core/auth/development_only.py` now
+   holds the shared guard, but converting the other two moves those
+   literal strings out of `create_debug_user.py` and fails this test.
+
+MEANWHILE: I did NOT convert them. `development_only.py` has one caller
+and its docstring says why. The security hole is closed regardless, and
+`test_development_guard.py` globs `scripts/create_*_user*.py` and calls
+each `main()`, so all three are protected behaviourally whether or not
+the code is ever shared. Nothing worked around, nothing edited outside
+my area, no test fixed into passing.

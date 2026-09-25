@@ -105,6 +105,42 @@ honestly do.
 
 ---
 
+## Session 2 — F-30 CLOSED
+
+**F-30 was worse than its one-line claim.** It is described as
+"`create_colleague_user.py` bypasses `create_debug_user.py`'s safety
+guard". It does not merely bypass it -- it creates *the same account*,
+`debug` / `a` with every grant the deployment defines, so the guard on
+the other script was advisory rather than enforced. Reproduced, fixed,
+tested, three controls run, all gates green. Commit `e909f9f`.
+
+    reproduction   create_debug_user refuses; create_colleague_user
+                   creates debug/a AND colleague/a, no flag
+    fix            the guard, on the script that lacked it, before it
+                   touches a deployment
+    also fixed     create_debug_user ran its role check BEFORE its
+                   guard, so a run certain to refuse still loaded a
+                   deployment and created a directory. Found by my own
+                   test, not by reading.
+    test           tests/unit/test_development_guard.py -- globs
+                   scripts/create_*_user*.py and calls each main(), so
+                   a FOURTH script is covered the day it is written.
+                   Asserts row counts, not exit codes.
+    controls       guard removed      -> 3 failed, 11 passed
+                   never refuses      -> 3 failed, 11 passed
+                   ALWAYS refuses     -> 1 failed, 13 passed
+    gates          ./lint.sh clean, 8/8 contracts; 2,826 unit passed
+                   (+14); 442 integration passed; deployment/ clean
+
+**NOT DONE, DELIBERATELY:** the guard now exists in
+`core/auth/development_only.py` with ONE caller. Converting
+`create_debug_user.py` and `create_e2e_users.py` to it breaks a
+backend-owned word-in-source test. Filed in `REQUESTS_security.md`
+rather than fixed into passing. The behavioural tripwire covers all
+three either way, so the consolidation is tidiness, not safety.
+
+---
+
 ## Where this leaves the list
 
     Closed, controlled      E-01  E-04  E-05  F-27
@@ -112,14 +148,14 @@ honestly do.
     Closed by measurement   E-08         (2,812 pass on a fresh clone)
     PARTLY closed, MINE     E-02         residual measured above
 
-    Reproduced, open, mine  F-30  F-21  004-8
+    DONE, controlled        F-30         commit e909f9f
+    Reproduced, open, mine  F-21  004-8  F-12a
     Need one measurement    F-05  F-12b
     Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
 
-**F-30 remains the most severe genuinely-open item**:
-`create_colleague_user.py` has no `--yes-this-is-development` guard at
-all, where `create_debug_user.py` refuses without one. It creates a
-known-password account unconditionally.
+**F-30 is closed** (above). The next item is **F-21**: `readlines()`
+in `entries_for_request()`, where the fix and its control are both
+clear.
 
 ---
 
