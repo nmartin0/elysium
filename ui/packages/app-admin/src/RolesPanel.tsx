@@ -32,7 +32,7 @@ import {
 } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { groupGrants, summariseChange } from './roleGrants'
 
@@ -52,6 +52,25 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
   const [newName, setNewName] = useState('')
   const [draft, setDraft] = useState<Set<string>>(new Set())
 
+  /**
+   * The session callback through a ref, so `load` has NO dependencies
+   * and the effect below runs once.
+   *
+   * MEASURED BEFORE THE FIX: three renders of the parent, three
+   * fetches. App.tsx declares handleSessionExpired as a plain function
+   * inside the component, so it is a new identity on every render;
+   * `load` was built with useCallback([onSessionExpired]) and run from
+   * useEffect([load]), so each parent render rebuilt `load` and
+   * refired the effect. Exactly the bug useFetchOnce's own notes
+   * record -- the schema fetched three times per page load -- in a
+   * panel that does not use useFetchOnce because it needs to REFETCH
+   * after an action.
+   */
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
+
   const load = useCallback(async () => {
     try {
       const [roles, pending] = await Promise.all([getRoles(), getRoleChanges()])
@@ -59,10 +78,10 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
       setChanges(pending)
       setError(null)
     } catch (caught: unknown) {
-      if (handleIfSessionExpired(caught, onSessionExpired)) return
+      if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
       setError(getErrorMessage(caught))
     }
-  }, [onSessionExpired])
+  }, [])
 
   useEffect(() => {
     void load()
@@ -92,7 +111,7 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
       setNotice(done)
       await load()
     } catch (caught: unknown) {
-      if (handleIfSessionExpired(caught, onSessionExpired)) return
+      if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
       setError(getErrorMessage(caught))
     }
   }

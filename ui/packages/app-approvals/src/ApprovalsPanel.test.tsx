@@ -11,7 +11,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   }
 })
 
-import { confirmWrite, getAwaitingWrites, getWriteDetail } from '@elysium/shell-api/api'
+import { ApiError, confirmWrite, getAwaitingWrites, getWriteDetail } from '@elysium/shell-api/api'
 
 import ApprovalsPanel from './ApprovalsPanel'
 
@@ -267,5 +267,38 @@ describe('a request a reviewer can only partly decide', () => {
 
     await screen.findByText(/Awaiting your review/)
     expect(screen.queryByText(/approved so far/)).toBeNull()
+  })
+})
+
+describe('ApprovalsPanel -- the shell re-rendering', () => {
+  it('fetches once across parent renders, not once per render', async () => {
+    /**
+     * MEASURED BEFORE THE FIX: three renders, three fetches. App.tsx
+     * declares handleSessionExpired as a plain function inside the
+     * component, so it is a new identity every render; `load` listed
+     * it as a dependency and the effect listed `load`.
+     */
+    mockedList.mockResolvedValue([])
+    const { rerender } = render(<ApprovalsPanel onSessionExpired={() => {}} />)
+    await waitFor(() => expect(mockedList).toHaveBeenCalled())
+
+    rerender(<ApprovalsPanel onSessionExpired={() => {}} />)
+    rerender(<ApprovalsPanel onSessionExpired={() => {}} />)
+
+    expect(mockedList).toHaveBeenCalledTimes(1)
+  })
+
+  it('still calls the LATEST callback after a re-render', async () => {
+    // The other half: reading through a ref must not pin the first
+    // render's callback, or an expired session would call a stale one.
+    mockedList.mockRejectedValue(new ApiError(401, 'Invalid or expired session'))
+    const first = vi.fn()
+    const second = vi.fn()
+
+    const { rerender } = render(<ApprovalsPanel onSessionExpired={first} />)
+    rerender(<ApprovalsPanel onSessionExpired={second} />)
+
+    await waitFor(() => expect(second).toHaveBeenCalledTimes(1))
+    expect(first).not.toHaveBeenCalled()
   })
 })

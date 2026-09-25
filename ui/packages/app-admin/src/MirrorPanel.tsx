@@ -10,7 +10,7 @@ import {
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatTimestamp } from '@elysium/shell-api/format'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /**
  * What the mirror holds, table by table.
@@ -40,10 +40,21 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
     try {
       setSyncMessage((await startMirrorSync()).detail)
     } catch (caught: unknown) {
-      if (handleIfSessionExpired(caught, onSessionExpired)) return
+      if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
       setSyncMessage(getErrorMessage(caught))
     }
   }
+
+  // The session callback through a ref, so this effect has NO
+  // dependencies. App.tsx declares handleSessionExpired as a plain
+  // function inside the component, so it is a new identity on every
+  // render -- and this effect listed it, so every parent render tore
+  // the effect down and rebuilt it. The linter never flagged these
+  // two; the structural test in useLatest.test.tsx did.
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -55,7 +66,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
         })
         .catch((caught: unknown) => {
           if (cancelled) return
-          if (handleIfSessionExpired(caught, onSessionExpired)) return
+          if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
           setError(getErrorMessage(caught))
         })
     }
@@ -81,7 +92,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
       cancelled = true
       clearInterval(timer)
     }
-  }, [onSessionExpired])
+  }, [])
 
   if (error) return <ErrorState>{error}</ErrorState>
   if (!state) return <LoadingState label="Reading the mirror…" />

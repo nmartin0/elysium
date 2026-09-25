@@ -107,3 +107,40 @@ remaining half to 10 sites / 8 files / 4 packages.
 **No reply needed.** The accurate counts also live in
 `ui/.oxlintrc.json` next to the rule, which is the copy a reader is
 most likely to hit.
+
+---
+
+## 4. react/set-state-in-effect is imprecise, and B0's count is not the defect count
+
+Measured, with probes, while working B0's second half.
+
+**The rule cannot see an async boundary through a call.** Three probe
+components, identical semantics:
+
+| probe | flagged |
+| --- | --- |
+| `setN(1)` directly in an effect | yes -- correct |
+| setState after `await`, in a `useCallback` the effect calls | **yes -- false positive** |
+| setState after `await`, in an inline async IIFE | no |
+
+So five of its ten sites are fetches whose setState is genuinely
+asynchronous. Silencing it there means writing
+`void (async () => { await load() })()` in place of `void load()` --
+identical behaviour, purely to satisfy the rule. Not done.
+
+**And it misses sites with the same underlying defect.** It flagged
+five panels for depending on `onSessionExpired`; MetricsPanel and
+MirrorPanel have exactly the same dependency bug and were never
+flagged, because they call the API inline rather than through a
+useCallback. A source-shape check found those two.
+
+**Five sites remain genuine** -- synchronous setState that should be
+derived during render or reset with a key: RolesPanel x2, LinkTrail,
+WatchDialog x2, ExploreRelated. Those stay open, and the rule stays
+off until they are done.
+
+Suggested amendment to B0: its "10 sites" is the rule's count, not the
+defect count. Seven real dependency bugs were fixed (patch 12); five
+genuine rule violations remain; five of its flags were false.
+
+**No reply needed.**
