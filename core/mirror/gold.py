@@ -621,6 +621,28 @@ def _record_history(catalog, object_type: str, type_def: dict,
     from core.mirror.gold_history import record_publication
 
     table = catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
+    if rows is None and previous_rows is not None:
+        # THE STREAMING PATH NEVER MATERIALISES ITS ROWS (GOLD-7), so
+        # `rows` is None for a single-source type with no identity
+        # rule -- which is most of them. record_publication then tried
+        # to diff against None and raised, and the failure was
+        # SWALLOWED into a warning, so every publication after the
+        # first recorded NO HISTORY while the sync reported success.
+        #
+        # FOUND BY RUNNING run_sync TWICE on a fresh deployment, which
+        # no test did: a FIRST publication has no history by
+        # definition, so the bug needed a second one to appear at all.
+        #
+        # READ BACK RATHER THAN KEPT. Streaming exists to avoid
+        # holding the table in memory (measured: +81.8 MB materialised
+        # against +11.0 MB streamed) and this gives some of that back
+        # -- but only for a type that HAS a previous publication to
+        # diff against, and `previous_rows` is already materialised
+        # for exactly that comparison. The alternative is a gold
+        # changelog permanently empty for streamed types, which is
+        # worse: answering "what changed between publications" is the
+        # whole of GOLD-4.
+        rows = table.scan().to_arrow().to_pylist()
     snapshot = table.current_snapshot()
     published_at = datetime.fromtimestamp(snapshot.timestamp_ms / 1000, tz=UTC).isoformat()
     try:
