@@ -101,7 +101,7 @@ PA001-A7,PA,PIPELINE_AUDIT,HIGH,"source column names executed as SQL: reserved w
 PA001-A8,PA,PIPELINE_AUDIT,HIGH,decimal equals/in crashed; range refused,mirror_adapter.py:333 filters.py:57,P9,"FIXED ce14480 + patch 396"
 PA001-A9,PA,PIPELINE_AUDIT,HIGH,the changelog schema cannot widen; changes are lost,iceberg_sync.py:1025,P4-H,"CONFIRMED + FIXED patch 406: F1 was incomplete without it"
 PA001-A10,PA,PIPELINE_AUDIT,MED,a declared type change has no path forward,iceberg_sync.py:525,P4-I,unverified
-PA001-A11,PA,PIPELINE_AUDIT,HIGH,manifest publishes data_silos.yaml verbatim including credentials,manifest.py:62,P15,"partly mitigated"
+PA001-A11,PA,PIPELINE_AUDIT,HIGH,manifest publishes data_silos.yaml verbatim including credentials,manifest.py:62,P15,"CONFIRMED + FIXED patch 427: an allow-list of silo keys; connection blocks never published"
 PA001-A12,PA,PIPELINE_AUDIT,MED,bronze copies every column reversing the stated policy,iceberg_sync.py:805,P1-A,unverified
 PA001-A13,PA,PIPELINE_AUDIT,MED,changelog has no bronze snapshot id and no UPDATE before-image,iceberg_sync.py,IN,"partly fixed 97954d6"
 PA001-A14,PA,PIPELINE_AUDIT,MED,~2.6 KB/row peak; ~10 whole-table copies per sync,iceberg_sync.py,P10,unverified

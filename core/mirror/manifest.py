@@ -42,8 +42,10 @@ will be the one with the credentials in it.
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any
 
+import yaml
 from pyarrow.fs import FileSelector
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,23 @@ MANIFEST_PREFIX = "_elysium"
 # credentials end up in a bucket many things can read. This list has to
 # be edited deliberately to grow, which is the point.
 PUBLISHABLE = ("ontology_schema.yaml", "data_silos.yaml", "policy.yaml")
+
+# WHAT OF data_silos.yaml MAY BE PUBLISHED, named one by one
+# (PA001-A11).
+#
+# THE FILE WENT INTO THE MANIFEST VERBATIM, and a silo's `connection`
+# block is where its credentials live: a SQLAlchemy URL carries its
+# password inline. `${VAR}` references make that avoidable and nothing
+# REFUSES a literal, so a deployment that typed one had it copied into
+# the lake -- which, since OPEN_RISKS item 2, we describe as part of
+# the security perimeter and nothing else.
+#
+# AN ALLOW-LIST, FOR THE REASON STATED ABOVE ABOUT FILES. Redacting
+# keys that "look secret" is an exclusion list by another name, and it
+# is correct only until an adapter invents a key nobody thought of.
+# These are the keys a LAKE READER needs -- which silos exist and what
+# kind of thing each is -- and a connection string is not among them.
+SILO_KEYS_PUBLISHED = ("adapter",)
 
 # NO PROBE CONSTANTS ANY MORE. A gap size and an upper bound existed
 # only to make a guessing loop terminate; listing the directory needs
@@ -101,7 +120,9 @@ def build_manifest(generation: int, loaded_at: str, source_digest: str,
         "source_digest": source_digest,
         "tables": sorted(tables),
         "files": {
-            name: content for name, content in sorted(files.items())
+            name: (_silos_without_connections(content)
+                   if name == "data_silos.yaml" else content)
+            for name, content in sorted(files.items())
             if name in PUBLISHABLE
         },
         # NAMED RATHER THAN SILENTLY DROPPED. A reader finding four
@@ -109,6 +130,40 @@ def build_manifest(generation: int, loaded_at: str, source_digest: str,
         # deliberate.
         "withheld": sorted(name for name in files if name not in PUBLISHABLE),
     }
+
+
+def _silos_without_connections(content: str) -> str:
+    """data_silos.yaml with only SILO_KEYS_PUBLISHED kept (PA001-A11).
+
+    WHAT A LAKE READER ACTUALLY NEEDS from this file is which silos
+    exist and what kind each is, so that the table names in
+    ontology_schema.yaml resolve to something. It does not need to
+    know how to CONNECT to them -- it is reading the lake, not the
+    sources.
+
+    REWRITTEN RATHER THAN OMITTED. Dropping the file entirely would
+    lose the silo names, which the schema references and a reader
+    cannot resolve without. Keeping named keys loses only the part
+    that should never have travelled.
+
+    IF THE FILE CANNOT BE PARSED it is withheld entirely rather than
+    published unchanged: an unparseable file is exactly the case where
+    guessing what is safe is least defensible.
+    """
+    try:
+        parsed = yaml.safe_load(content) or {}
+        silos = parsed.get("data_silos") or {}
+        if not isinstance(silos, Mapping):
+            raise ValueError("data_silos is not a mapping")
+        kept = {
+            name: {key: block[key] for key in SILO_KEYS_PUBLISHED if key in block}
+            for name, block in silos.items()
+            if isinstance(block, Mapping)
+        }
+    except Exception:  # noqa: BLE001 - withhold rather than guess
+        return ("# withheld: this file could not be parsed, so no part of it\n"
+                "# could be shown to be free of credentials.\n")
+    return yaml.safe_dump({"data_silos": kept}, sort_keys=True)
 
 
 def publish(catalog, generation: int, loaded_at: str, source_digest: str,
