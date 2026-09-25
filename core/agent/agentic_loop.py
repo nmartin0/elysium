@@ -163,6 +163,23 @@ class AgentLoopResult:
     # the one ending that needs no explanation, and every other return
     # in _run() names its own.
     stop_reason: str = StopReason.FINISHED
+    # EVERY unusable reply this run produced, in order, by cause --
+    # "unparseable_reply", "malformed_step", "unrecognised_step".
+    #
+    # stop_reason names only the LAST one, and only when it ended the
+    # run. A fabricated finish that gets nudged and is followed by a
+    # genuine finish leaves stop_reason saying FINISHED and no trace
+    # anywhere but a log line, so the RATE was not measurable from a
+    # result at all.
+    #
+    # WHY THE RATE IS WORTH HAVING. A published CPU tool-calling
+    # benchmark found that adding a fallback parser for non-standard
+    # output moved one model from 0.670 to 0.960 and moved another
+    # DOWN from 0.880 to 0.780 -- a bigger swing than any model swap
+    # in its table. Our next_step() fails closed on every parse
+    # failure, so how often that fires is a number worth knowing
+    # before D1 changes the model underneath it.
+    fabricated_finishes: tuple[str, ...] = ()
 
     @property
     def possibly_incomplete(self) -> bool:
@@ -957,6 +974,7 @@ class AgentLoop:
         gathered: list[dict] = []
         seen_signatures = set()
         stop_reason = StopReason.FINISHED
+        fabricated_finishes: list[str] = []
         consecutive_duplicates = 0
         consecutive_invalid = 0
         consecutive_business_rule = 0
@@ -982,10 +1000,12 @@ class AgentLoop:
         usage = context.token_usage if context is not None else None
         for _ in range(1, self.max_hops + 1):
             if cancel_event is not None and cancel_event.is_set():
-                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.CANCELLED)
+                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.CANCELLED,
+                                       fabricated_finishes=tuple(fabricated_finishes))
             if deadline is not None and time.monotonic() >= deadline:
                 logger.warning("query deadline passed, answering from what was gathered")
-                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME)
+                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME,
+                                       fabricated_finishes=tuple(fabricated_finishes))
 
             # THE ACTING USER IS RE-RESOLVED EVERY HOP, not once per
             # request. Identity is resolved once when the request
@@ -1013,7 +1033,8 @@ class AgentLoop:
                     # way the work so far is returned: it WAS authorized
                     # when it was read, and discarding it would lose
                     # information the user was entitled to.
-                    return AgentLoopResult(gathered=gathered, stop_reason=StopReason.AUTHORITY_CHANGED)
+                    return AgentLoopResult(gathered=gathered, stop_reason=StopReason.AUTHORITY_CHANGED,
+                                       fabricated_finishes=tuple(fabricated_finishes))
 
             try:
                 step = next_step(
@@ -1026,7 +1047,8 @@ class AgentLoop:
                 # other unavailability is still the error it always was.
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("query deadline passed during a model call")
-                    return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME)
+                    return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME,
+                                       fabricated_finishes=tuple(fabricated_finishes))
                 raise
 
             if step["step"] == "finish":
@@ -1037,15 +1059,16 @@ class AgentLoop:
                 # like the model deciding it was done, so the caller was
                 # told a complete answer had been produced.
                 fallback = step.get("fallback")
+                if fallback is not None:
+                    # RECORDED WHETHER OR NOT IT ENDS THE RUN. A later
+                    # genuine finish must not erase the fact that an
+                    # unusable reply was produced on the way.
+                    fabricated_finishes.append(fallback)
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)
                 if should_stop:
                     stop_reason = fallback or StopReason.FINISHED
                     break
                 if fallback is not None:
-                    # The nudge gave it another turn, so this run has
-                    # not ended -- but it has already produced one
-                    # unusable reply, and a later genuine finish should
-                    # not erase that.
                     logger.warning(f"fabricated finish ({fallback}), nudged for another hop")
                 continue
 
@@ -1111,7 +1134,8 @@ class AgentLoop:
             )
             if pending_write is not None:
                 return AgentLoopResult(gathered=gathered, pending_write=pending_write,
-                                       stop_reason=StopReason.PROPOSED_WRITE)
+                                       stop_reason=StopReason.PROPOSED_WRITE,
+                                       fabricated_finishes=tuple(fabricated_finishes))
             if step_stop_reason is not None:
                 stop_reason = step_stop_reason
                 break
@@ -1125,10 +1149,12 @@ class AgentLoop:
             # end, and one that used to be visible only in a server log
             # a caller would never see.
             logger.warning(f"hit max_hops ({self.max_hops}), stopping")
-            return AgentLoopResult(gathered=gathered, stop_reason=StopReason.MAX_HOPS)
+            return AgentLoopResult(gathered=gathered, stop_reason=StopReason.MAX_HOPS,
+                                       fabricated_finishes=tuple(fabricated_finishes))
 
         # NAMED BY WHICHEVER break set it. Before this change every
         # break fell through to a bare result that read as a deliberate
         # finish -- the LB-3 defect, and why stop_reason has no safe
         # default here.
-        return AgentLoopResult(gathered=gathered, stop_reason=stop_reason)
+        return AgentLoopResult(gathered=gathered, stop_reason=stop_reason,
+                               fabricated_finishes=tuple(fabricated_finishes))

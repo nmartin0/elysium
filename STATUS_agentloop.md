@@ -1620,3 +1620,61 @@ for the roles that should reach it. Until then 1b will withhold
 arithmetic the model does in its head -- which is the correct reading
 of an unverifiable figure, but it is a visible behaviour change and
 should land with the tool, not before it.
+
+---
+
+## The parse-failure rate is now measurable
+
+The one unblocked item left, and it came out of round 3's research.
+
+A published CPU tool-calling benchmark found that **adding a fallback
+parser for non-standard output moved one model from 0.670 to 0.960 and
+moved another DOWN from 0.880 to 0.780** -- a bigger swing than any
+model swap in its table. Our `next_step()` fails closed on every parse
+failure, so how often that fires plausibly matters more than which
+model sits underneath it. That is a number to have BEFORE D1, not
+after.
+
+**IT WAS NOT MEASURABLE.** `stop_reason` names only the LAST ending,
+and only when it ended the run. A fabricated finish that gets nudged
+and is followed by a genuine finish leaves `stop_reason` saying
+FINISHED and survives nowhere but a log line -- so a run could contain
+several unusable replies and report as clean.
+
+`AgentLoopResult.fabricated_finishes` now records every one, in order,
+by cause. Additive: nothing outside `core/agent/` constructs the
+result, and the existing fields are untouched.
+
+### Two controls, and the first caught a vacuous test
+
+    record only when it ENDS the run   1 of 10 fails
+    never record at all                2 fail
+
+**Control 1 passed at first.** My test constructed an
+`AgentLoopResult` directly, so it asserted the dataclass carried the
+field and never reached the code that fills it -- the half-fix passed
+unchanged. Rewritten to drive the real loop into a NUDGED fabricated
+finish followed by a genuine one.
+
+**And that route took two attempts.** `_detect_asymmetry` needs two
+objects of the SAME TYPE each with a `get_field`, whose field sets
+DIFFER; a search result is a list and is ignored. My first sequence
+used a search plus one field read and never nudged at all -- the
+fabricated finish simply stopped the run, which is the case the other
+test already covered.
+
+That is the fifth time this session a control has caught a test that
+could not fail. Every one was found by running something, not by
+reading it.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2956 passed, 8 skipped  (2953 before; +3 here)
+
+### What to do with it
+
+AL-8's runner should record `fabricated_finishes` per trial alongside
+pass/fail. Then one VM run gives both the reliability figure and the
+parse-failure rate, and D1 can be decided against the second rather
+than assumed against the first.

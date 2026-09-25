@@ -210,3 +210,80 @@ def test_a_proposed_write_is_not_an_incomplete_answer():
     result = AgentLoopResult(gathered=[{"a": 1}],
                              stop_reason=StopReason.PROPOSED_WRITE)
     assert result.possibly_incomplete is False
+
+
+# ------------------------------------------- the rate, not just the last one
+
+
+def test_every_unusable_reply_is_recorded_even_when_the_run_ends_well(loop_and_user):
+    """THE GAP stop_reason CANNOT COVER.
+
+    stop_reason names only the LAST ending, and only when it ended the
+    run. A fabricated finish that gets nudged and is followed by a
+    genuine finish leaves stop_reason saying FINISHED, and the fact
+    that the model produced an unusable reply on the way survives
+    nowhere but a log line. The RATE was not measurable from a result.
+
+    WHY IT IS WORTH MEASURING: a published CPU tool-calling benchmark
+    found that adding a fallback parser for non-standard output moved
+    one model from 0.670 to 0.960 and moved another DOWN from 0.880 to
+    0.780 -- a bigger swing than any model swap in its table. Our
+    next_step() fails closed on every parse failure, so how often that
+    fires matters more than which model is underneath it.
+
+    DRIVEN THROUGH THE REAL LOOP, and a control is why. The first
+    version constructed an AgentLoopResult directly, so it asserted
+    the dataclass carried the field and never touched the code that
+    fills it -- recording only on the path that STOPS the run passed
+    it unchanged.
+
+    THE ROUTE TO THE NUDGE took two attempts. _detect_asymmetry needs
+    two objects OF THE SAME TYPE each with a get_field, whose field
+    sets DIFFER -- a search result is a list and is ignored. So one
+    customer gets one field read and the other gets two; then an
+    unusable reply arrives, the asymmetry check nudges instead of
+    stopping, and a genuine finish ends the run.
+    """
+    loop, user = loop_and_user
+    replies = iter([
+        '{"step": "get_field", "object_type": "Customer", "object_id": "cust_001", "field_name": "email"}',
+        '{"step": "get_field", "object_type": "Customer", "object_id": "cust_002", "field_name": "email"}',
+        '{"step": "get_field", "object_type": "Customer", "object_id": "cust_002", "field_name": "name"}',
+        '{"step": "teleport_object"}',          # unusable -- fabricates a finish
+        '{"step": "finish"}',                   # the genuine one
+    ])
+
+    class Sequence:
+        max_concurrent_requests = 1
+
+        def chat(self, *a, **k):
+            return next(replies, '{"step": "finish"}')
+
+    loop.client = Sequence()
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = loop.run(user, "What are the customers' emails?")
+
+    # Reads as a clean finish...
+    assert result.stop_reason == StopReason.FINISHED
+    assert result.possibly_incomplete is False
+    # ...while still reporting the unusable reply it recovered from.
+    assert result.fabricated_finishes == ("unrecognised_step",)
+
+
+def test_a_run_with_no_parse_failures_records_none(loop_and_user):
+    """The denominator has to be trustworthy too: a clean run must not
+    report a failure it did not have."""
+    loop, user = loop_and_user
+    result = _run(loop, user, '{"step": "finish"}')
+
+    assert result.fabricated_finishes == ()
+
+
+def test_an_unusable_reply_that_ends_the_run_is_recorded_too(loop_and_user):
+    """Recorded on BOTH paths -- the one that stops and the one that is
+    nudged -- or the rate counts only half of them."""
+    loop, user = loop_and_user
+    result = _run(loop, user, '{"step": "teleport_object"}')
+
+    assert result.fabricated_finishes == ("unrecognised_step",)
+    assert result.stop_reason == "unrecognised_step"
