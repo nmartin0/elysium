@@ -45,6 +45,10 @@ from pathlib import Path
 
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
+from core.mirror.gold_history import CHANGELOG_NAMESPACE as GOLD_HISTORY_NAMESPACE
+from core.mirror.quarantine_report import QUARANTINE_PREFIX
+from core.ontology.gold_view import GOLD_NAMESPACE
+
 
 @dataclass
 class IntegrityReport:
@@ -147,6 +151,19 @@ def check_mirror(catalog, schema: dict | None = None,
         if silver_rows is None or bronze_rows is None:
             continue
 
+        # QUARANTINED ROWS ARE NOT MISSING ROWS (PA001-I1). A row held
+        # back by a declared expectation or the duplicate policy is a
+        # DELIBERATE outcome, and it is still in the lake -- in
+        # quarantine_<silo>, on purpose, where an operator can look at
+        # it.
+        #
+        # Without this, a deployment whose quarantine is doing its job
+        # reported "serving 1 rows against 3 fetched -- silver refused
+        # to accept what bronze fetched" every time anyone looked:
+        # the same false alarm as the gold one, wearing different
+        # words.
+        silver_rows += _quarantined_rows(catalog, identifier)
+
         if silver_rows != bronze_rows:
             # THE DIRECTION SAYS WHICH FAULT IT IS, and a first version
             # reported both as "a transform dropped rows silently".
@@ -188,13 +205,58 @@ def _partition_tables(catalog) -> tuple[set[str], set[str]]:
     for namespace in catalog.list_namespaces():
         for identifier in catalog.list_tables(namespace):
             name = ".".join(identifier)
-            # CHANGELOG TABLES ARE NEITHER, and are excluded rather
-            # than mis-sorted: they are append-only history whose row
-            # count deliberately does NOT match anything.
-            if name.startswith("changelog_"):
+            if _not_a_source_layer(identifier[0]):
                 continue
             (bronze if name.startswith("bronze_") else silver).add(name)
     return silver, bronze
+
+
+# The namespaces the pipeline writes that are NOT a copy of a source
+# table (PA001-I1, PA001-F6.4).
+NON_SOURCE_NAMESPACES = ("changelog_", GOLD_NAMESPACE, GOLD_HISTORY_NAMESPACE,
+                          QUARANTINE_PREFIX)
+
+
+def _not_a_source_layer(namespace: str) -> bool:
+    """Whether a namespace holds something other than a copy of a
+    source table.
+
+    WHY THIS EXISTS. `_split_tables` sorted every table that was not
+    `bronze_*` or `changelog_*` into SILVER, and the check then
+    reported each one as a silver table with no bronze twin. On a
+    perfectly healthy deployment:
+
+        gold.Thing: no bronze table, so its rows cannot be traced
+        back to what the source said
+
+    Gold is DERIVED from silver and has no bronze twin BY DESIGN, and
+    neither does gold_history or a quarantine table.
+
+    WHY IT MATTERS MORE THAN ITS SEVERITY SUGGESTS, in the audit's own
+    words: "a check that always reports problems on a healthy
+    deployment trains operators to ignore it, which is how F1 and F2
+    go unnoticed". F1 and F2 were real, and that is exactly how they
+    hid -- behind a check nobody believed.
+
+    NAMED CONSTANTS, NOT LITERALS (PA001-F6.4). The layers were
+    identified by hand-written prefixes in this file, so renaming a
+    namespace anywhere else would silently re-sort its tables into
+    silver and bring the false alarm straight back.
+    """
+    return namespace.startswith(NON_SOURCE_NAMESPACES)
+
+
+def _quarantined_rows(catalog, silver_identifier: str) -> int:
+    """How many of this table's rows were held back on purpose.
+
+    Silver plus quarantine is what bronze fetched. Counting only
+    silver makes every quarantined row look like a row silver refused
+    to interpret -- which is what quarantine IS, except that it is the
+    designed outcome rather than a fault, and the row is still in the
+    lake for somebody to look at.
+    """
+    namespace, _, table = silver_identifier.partition(".")
+    return _row_count(catalog, f"{QUARANTINE_PREFIX}{namespace}.{table}") or 0
 
 
 def _row_count(catalog, identifier: str) -> "int | None":

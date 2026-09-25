@@ -90,7 +90,7 @@ PA001-F5,PA,PIPELINE_AUDIT,CRITICAL,object storage honoured by the writer only; 
 PA001-F6.1,PA,PIPELINE_AUDIT,MED,no id uniqueness check,mirror_adapter.py:178,IN,"FIXED b84670a"
 PA001-F6.2,PA,PIPELINE_AUDIT,MED,six stale docstrings describing the pre-bronze design,core/mirror/*,IN,unverified
 PA001-F6.3,PA,PIPELINE_AUDIT,MED,manifest published before the sync loop,run_sync.py:388,IN,unverified
-PA001-F6.4,PA,PIPELINE_AUDIT,MED,layers identified by name prefix only,integrity.py:194,IN,unverified
+PA001-F6.4,PA,PIPELINE_AUDIT,MED,layers identified by name prefix only,integrity.py:194,IN,"CONFIRMED + FIXED patch 433: namespaces now imported from the modules that define them"
 PA001-A1,PA,PIPELINE_AUDIT,CRITICAL,drift policy queries the write log by TABLE name; log keyed by OBJECT TYPE,iceberg_sync.py:733,P5,"CONFIRMED + FIXED patch 409"
 PA001-A2,PA,PIPELINE_AUDIT,CRITICAL,many-to-many join tables never synced; m2m links empty on the default path,sync_targets.py:212,P6;P12,"CONFIRMED + FIXED patch 410; a second defect found while fixing (no id on a join table) fixed too"
 PA001-A3,PA,PIPELINE_AUDIT,HIGH,rejected writes marked applied and served through the overlay,write_mediator.py:1812,P14,"CONFIRMED + FIXED patch 413: an abandoned status, which the comment already named"
@@ -124,7 +124,7 @@ PA001-G11,PA,PIPELINE_AUDIT,LOW,gold republishes unchanged types every sync,gold
 PA001-G12,PA,PIPELINE_AUDIT,LOW,decimal scale differs by path; the API emits floats,api + mediator,IN,"PROMPT HALF FIXED patch 403 (one declared rendering); the API float half is still open"
 PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared text field (newlines),standardise.py:34,P21,"CONFIRMED + FIXED patch 417"
 PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes become Python repr",iceberg_sync.py:810,IN,unverified
-PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,unverified
+PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,"CONFIRMED + FIXED patch 433; a SECOND false alarm found and fixed - quarantined rows counted as missing"
 PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; six places said it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 3 tests,P22,"CONFIRMED + FIXED patch 402: audit right, I was wrong; gold now expires under the 7-day margin; all six claims corrected"
 PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,"CONFIRMED + FIXED patch 414"
 PA001-X1,PA,PIPELINE_AUDIT,HIGH,many-valued link fields return ids the caller's MAC forbids,mediator.py:2108,P25,"CONFIRMED + FIXED patch 404"
