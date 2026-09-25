@@ -106,7 +106,7 @@ PA001-A12,PA,PIPELINE_AUDIT,MED,bronze copies every column reversing the stated 
 PA001-A13,PA,PIPELINE_AUDIT,MED,changelog has no bronze snapshot id and no UPDATE before-image,iceberg_sync.py,IN,"partly fixed 97954d6"
 PA001-A14,PA,PIPELINE_AUDIT,MED,~2.6 KB/row peak; ~10 whole-table copies per sync,iceberg_sync.py,P10,unverified
 PA001-A15,PA,PIPELINE_AUDIT,MED,tables read at different times; a refusal freezes all of gold,run_sync.py,IN,"HALF FIXED: the gold freeze was fixed by patch 424 and verified in 435. The other half (tables read at different moments) is PR001-R4 - a design change, not a defect"
-PA001-A16,PA,PIPELINE_AUDIT,MED,repair_catalog --write takes no sync lock,scripts/repair_catalog.py,IN,unverified
+PA001-A16,PA,PIPELINE_AUDIT,MED,repair_catalog --write takes no sync lock,scripts/repair_catalog.py,IN,"CONFIRMED + FIXED patch 436: the lock moved to core/mirror/sync_lock.py and both writers take it"
 PA001-A17,PA,PIPELINE_AUDIT,LOW,'unchanged' never recorded; degraded recorded as 'synced',run_sync.py:425,IN,"CONFIRMED + FIXED patch 435"
 PA001-A18,PA,PIPELINE_AUDIT,LOW,declared-column check ignores MDO storage and can pick a quarantine table,integrity.py:255,IN,unverified
 PA001-A19,PA,PIPELINE_AUDIT,HIGH,every API integration test runs read_from_mirror false,tests/integration/fixtures/config.yaml:51,IN,"ALREADY FIXED by patch 386; verified the suite template carries a gold namespace. Patch 428 adds the guard tests that keep it fixed"

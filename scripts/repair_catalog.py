@@ -50,6 +50,7 @@ import sys
 from pathlib import Path
 
 from core.deployment_loader import resolve_runtime_paths
+from core.mirror.sync_lock import single_writer
 
 
 def _metadata_path(location: str) -> Path:
@@ -134,6 +135,26 @@ def main() -> int:
         print("Each repaired table loses the commits recorded only in the missing file.")
         return 1
 
+    # THE SAME LOCK THE SYNC TAKES (PA001-A16). This repoints tables in
+    # the catalog a sync writes to, and a repair landing between a
+    # sync's read and its commit is exactly the race Iceberg's
+    # optimistic concurrency turns into a hard failure -- the one
+    # `single_writer` exists to prevent. It was a private helper of
+    # run_sync, so this script simply did not take it.
+    #
+    # REFUSES RATHER THAN WAITS, like the sync: a repair is a
+    # deliberate act by a person at a terminal, and "a sync is running,
+    # try again" is a better answer than blocking for an unknown time
+    # while they wonder whether it has hung.
+    with single_writer(mirror_dir.parent / "sync.lock") as acquired:
+        if not acquired:
+            print("A sync is running. NOTHING WAS REPAIRED -- re-run when "
+                  "it has finished.", file=sys.stderr)
+            return 1
+        return _repoint(catalog_db, repairable)
+
+
+def _repoint(catalog_db: Path, repairable: list) -> int:
     connection = sqlite3.connect(catalog_db)
     try:
         for identifier, survivor in repairable:

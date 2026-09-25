@@ -49,11 +49,8 @@ Run from the project root:
 
 import argparse
 import contextlib
-import fcntl
 import json
 import sys
-from contextlib import contextmanager
-from pathlib import Path
 from typing import Any
 
 from core.deployment_loader import (
@@ -65,46 +62,12 @@ from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
 from core.mirror.sync_attempts import SyncAttempts
+from core.mirror.sync_lock import single_writer
 from core.mirror.sync_targets import resolve_sync_targets
 from core.sqlite_connection import (
     require_assertions_enabled,
     require_json_each,
 )
-
-
-@contextmanager
-def _single_writer(lock_path: Path):
-    """Holds an exclusive lock for the duration of a sync, or yields
-    False if another sync already holds it.
-
-    Iceberg uses optimistic concurrency: a commit carries "the table's
-    metadata is version N", and a second writer that started from the
-    same N is rejected rather than allowed to clobber the first. That
-    design is correct -- it is what prevents a lost overwrite. But
-    PyIceberg surfaces the rejection as a hard exception its retry loop
-    cannot resolve for a full-table overwrite (Java Iceberg retries
-    transparently; PyIceberg's equivalent is still open upstream).
-    Confirmed by running two syncs at once: one committed, the other
-    failed with "Added data files were found matching the filter".
-
-    Genuinely reachable rather than hypothetical -- INSTALL.md tells
-    operators to schedule syncs with cron or a systemd timer, and
-    nothing stops a slow run from overlapping the next scheduled one.
-
-    flock rather than a PID file: it is released automatically when the
-    process dies, so a crash leaves nothing stale to clean up.
-    """
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as lock_file:
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            yield False
-            return
-        try:
-            yield True
-        finally:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
@@ -541,7 +504,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
-    with _single_writer(runtime_paths.data_dir / "sync.lock") as acquired:
+    with single_writer(runtime_paths.data_dir / "sync.lock") as acquired:
         if not acquired:
             # Exits rather than waiting: the run this collided with is
             # already copying the same data, so queueing would only
