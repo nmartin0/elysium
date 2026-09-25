@@ -241,6 +241,17 @@ def _report_type_drift(silo_name: str, table_name: str,
         )
 
 
+class SuspectedPartialRead(ValueError):
+    """More of a table vanished in one sync than a real deletion
+    plausibly explains (PA001-F4).
+
+    A ValueError, so run_sync and every existing caller handle it as
+    the refusal it is -- and its own class, so _write_bronze's
+    tolerate-and-continue handler can let it past rather than
+    absorbing it as a failed bronze copy.
+    """
+
+
 class IcebergMirrorSync(MirrorSync):
     def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter],
                  write_log=None, storage: dict | None = None):
@@ -336,11 +347,13 @@ class IcebergMirrorSync(MirrorSync):
                     expectations: dict[str, dict] | None = None,
                     duplicate_policy: DuplicatePolicy | None = None,
                     object_types: frozenset | None = None,
-                    link_pair: tuple = ()) -> SyncResult:
+                    link_pair: tuple = (),
+                    accept_deletions: bool = False) -> SyncResult:
         # HELD FOR THIS CALL so the drift check can ask the write log
         # by OBJECT TYPE (PA001-A1). Per-call rather than per-instance
         # because one IcebergMirrorSync syncs every table in turn.
         self._object_types = frozenset(object_types or ())
+        self._accept_deletions = accept_deletions
         adapter = self.adapters.get(silo_name)
         if adapter is None:
             raise ValueError(
@@ -810,6 +823,54 @@ class IcebergMirrorSync(MirrorSync):
                 totals[key] = totals.get(key, 0) + value
         return totals
 
+    def _refuse_suspected_partial_read(self, silo_name: str, table_name: str,
+                                        rows: list[dict]) -> None:
+        """Stop before overwriting the mirror with half a table
+        (PA001-F4).
+
+        THE GUARD EXISTED AND PROTECTED THE WRONG LAYER. The changelog
+        already refused to record when more than
+        MAX_DELETED_FRACTION of the rows vanished, saying so plainly:
+        "a partially-failed read looks exactly like a mass deletion
+        and a changelog cannot be un-written". Then bronze and silver
+        were overwritten with that very table anyway.
+
+        MEASURED: a read that returned 10 of 100 rows left silver with
+        10 rows, bronze with 10, the changelog empty, and the sync
+        reporting success. The mirror served a tenth of the data and
+        nothing said it was wrong.
+
+        THE SAME REASONING APPLIES HARDER TO SILVER, because silver is
+        what gets SERVED. Gold already takes this line -- "NO GOLD
+        RATHER THAN UNAUDITED GOLD" -- and this is the same rule one
+        layer down: an unchanged mirror is wrong by being stale, which
+        is recoverable; an overwritten one is wrong by being confident.
+
+        AND A REAL MASS DELETION NEEDS A WAY THROUGH, which is the
+        other half of F4: without one, a table that genuinely emptied
+        could never sync again. `accept_deletions` is that way, and it
+        is deliberately per-run and per-table rather than a config key
+        -- the question "did half this table really just go?" has a
+        different answer every time it is asked.
+        """
+        if self._accept_deletions:
+            return
+        try:
+            previous = self._catalog.load_table(
+                f"{silo_name}.{table_name}").scan().to_arrow().num_rows
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return
+        if not previous or len(rows) >= previous * (1 - MAX_DELETED_FRACTION):
+            return
+        raise SuspectedPartialRead(
+            f"{silo_name}.{table_name}: the source returned {len(rows)} rows, "
+            f"down from {previous} -- more than "
+            f"{int(MAX_DELETED_FRACTION * 100)}% of the table. A partially "
+            f"failed read looks exactly like a mass deletion, so the mirror is "
+            f"UNCHANGED and still serves {previous} rows. If the rows really "
+            f"are gone, re-run with --accept-deletions {silo_name}.{table_name}"
+        )
+
     def _object_types_for(self, table_name: str) -> frozenset:
         """The object type(s) backing this table (PA001-A1).
 
@@ -895,6 +956,11 @@ class IcebergMirrorSync(MirrorSync):
             present = adapter.columns_present(table_name)
             columns = sorted(present) if present else list(declared)
             raw_rows = self._read_source_rows(adapter, table_name, id_column, columns)
+            # BEFORE ANY LAYER IS WRITTEN (PA001-F4). Checking after
+            # bronze had already been overwritten would leave the raw
+            # record destroyed by the very read we decided not to
+            # trust -- a test caught exactly that.
+            self._refuse_suspected_partial_read(silo_name, table_name, raw_rows)
 
             arrow_table = pa.table({
                 column: pa.array(
@@ -980,6 +1046,15 @@ class IcebergMirrorSync(MirrorSync):
                        if current_types else {}),
                     **BRONZE_RETENTION,
                 })
+        except SuspectedPartialRead:
+            # NOT A BRONZE FAILURE, so it must not be absorbed as one
+            # (PA001-F4). _write_bronze tolerates its own failures and
+            # lets the sync carry on -- correctly, since bronze is
+            # lineage rather than correctness. This is the opposite: a
+            # decision that NOTHING should be written. A test caught
+            # it being swallowed here and the sync proceeding to
+            # overwrite silver with the ten rows anyway.
+            raise
         except (OSError, ValueError, KeyError, pa.ArrowInvalid) as e:
             logger.warning(
                 f"bronze copy of {silo_name}.{table_name} failed ({e}); the sync "
@@ -1093,9 +1168,10 @@ class IcebergMirrorSync(MirrorSync):
             stored = set(bronze_table.schema().column_names)
             readable = tuple(column for column in columns if column in stored)
             previous = bronze_table.scan(selected_fields=readable).to_arrow().to_pylist()
-            changes = diff_snapshots(previous, current_rows, id_column)
+            changes = diff_snapshots(previous, current_rows, id_column,
+                                      accept_deletions=self._accept_deletions)
 
-            if changes.suspected_partial_read:
+            if changes.suspected_partial_read and not self._accept_deletions:
                 logger.warning(
                     f"changelog for {silo_name}.{table_name}: more than "
                     f"{int(MAX_DELETED_FRACTION * 100)}% of rows vanished in one sync. "
@@ -1103,6 +1179,17 @@ class IcebergMirrorSync(MirrorSync):
                     f"like a mass deletion and a changelog cannot be un-written."
                 )
                 return
+            if changes.suspected_partial_read:
+                # THE OPERATOR SAID THESE ROWS REALLY ARE GONE
+                # (PA001-F4, second half). Without this the deletions
+                # would land in silver and be absent from history --
+                # the changelog silently disagreeing with the table it
+                # describes, which is worse than either alone.
+                logger.info(
+                    f"changelog for {silo_name}.{table_name}: recording "
+                    f"{len(changes.rows)} change(s) including a mass deletion, "
+                    f"accepted by the operator."
+                )
             if changes.is_empty:
                 return
 

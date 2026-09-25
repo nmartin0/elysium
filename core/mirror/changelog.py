@@ -105,7 +105,8 @@ def _as_strings(row: dict) -> dict:
     }
 
 
-def diff_snapshots(previous: list[dict], current: list[dict], id_column: str) -> ChangeSet:
+def diff_snapshots(previous: list[dict], current: list[dict], id_column: str,
+                    accept_deletions: bool = False) -> ChangeSet:
     """What changed between two reads of one table.
 
     ROWS COMPARED WHOLE, not field by field. A row whose every value
@@ -137,7 +138,7 @@ def diff_snapshots(previous: list[dict], current: list[dict], id_column: str) ->
     # one: a read that returned nothing would divide by zero on the
     # current, and "everything vanished" is precisely the case this
     # exists to catch.
-    if old and len(missing) / len(old) > MAX_DELETED_FRACTION:
+    if old and len(missing) / len(old) > MAX_DELETED_FRACTION and not accept_deletions:
         return ChangeSet(rows=[], suspected_partial_read=True)
 
     for key in missing:

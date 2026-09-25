@@ -71,8 +71,10 @@ def _mirror(sync, identifier="primary.widgets"):
     return sync._catalog.load_table(identifier).scan().to_arrow()
 
 
-def _sync(sync):
-    return sync.sync_table("primary", "widgets", "widget_id", ["widget_id", "label"])
+def _sync(sync, accept_deletions=False):
+    return sync.sync_table("primary", "widgets", "widget_id",
+                            ["widget_id", "label"],
+                            accept_deletions=accept_deletions)
 
 
 def test_a_sync_is_a_snapshot_that_replaces_rather_than_appends(sync, source):
@@ -106,6 +108,15 @@ def test_an_emptied_source_table_produces_an_empty_mirror(sync, source):
     # SNAPSHOT of an empty table is genuinely empty, not "keep the last
     # non-empty version." That is correct, and it is also the behaviour
     # most likely to alarm someone, so it is asserted deliberately.
+    #
+    # NOW REQUIRES THE OPERATOR TO SAY SO (PA001-F4). The semantics are
+    # unchanged -- an empty source still yields an empty mirror -- but
+    # getting there needs `accept_deletions`, because a read that
+    # FAILED halfway looks identical to a table that really emptied,
+    # and the failing version used to overwrite the mirror silently
+    # and report success. The alarm this comment anticipated turned
+    # out to be justified; it is raised before the damage now rather
+    # than after.
     _sync(sync)
 
     conn = sqlite3.connect(source)
@@ -113,7 +124,7 @@ def test_an_emptied_source_table_produces_an_empty_mirror(sync, source):
     conn.commit()
     conn.close()
 
-    assert _sync(sync).row_count == 0
+    assert _sync(sync, accept_deletions=True).row_count == 0
     assert _mirror(sync).num_rows == 0
 
 
@@ -247,14 +258,14 @@ def test_snapshot_history_lets_an_earlier_sync_still_be_read(sync, source):
     # Iceberg keeps prior snapshots, so a bad sync can be inspected
     # against what came before. A real capability of this storage
     # choice, proven rather than assumed.
-    _sync(sync)
+    _sync(sync, accept_deletions=True)
     first_snapshot = sync._catalog.load_table("primary.widgets").current_snapshot().snapshot_id
 
     conn = sqlite3.connect(source)
     conn.execute("DELETE FROM widgets")
     conn.commit()
     conn.close()
-    _sync(sync)
+    _sync(sync, accept_deletions=True)
 
     assert _mirror(sync).num_rows == 0
     earlier = (

@@ -85,7 +85,7 @@ UI-S2-02,UI,AUDIT-10,MINOR,no favicon link; every page load 404s,ui/index.html,I
 PA001-F1,PA,PIPELINE_AUDIT,CRITICAL,a new source column freezes bronze/silver/changelog permanently while sync reports success,iceberg_sync.py:842/969/424,P1;P2,"CONFIRMED + FIXED patch 406 (with A9)"
 PA001-F2,PA,PIPELINE_AUDIT,CRITICAL,any bronze failure makes silver re-derive from the previous bronze snapshot,iceberg_sync.py:364/424/872,P1-B,"CONFIRMED + FIXED patch 407"
 PA001-F3,PA,PIPELINE_AUDIT,HIGH,"stringified bronze changes what silver accepts; coerce('5.0',integer) still raises",field_types.py:214,P3,"partly fixed 82881ef"
-PA001-F4,PA,PIPELINE_AUDIT,HIGH,the partial-read guard protects only the changelog,changelog.py:62/140,P1-D,unverified
+PA001-F4,PA,PIPELINE_AUDIT,HIGH,the partial-read guard protects only the changelog,changelog.py:62/140,P1-D,"CONFIRMED + FIXED patch 415: refuses before any write; --accept-deletions for a real one. CHANGES a deliberately pinned behaviour - see commit"
 PA001-F5,PA,PIPELINE_AUDIT,CRITICAL,object storage honoured by the writer only; SIX catalog sites not four,deployment_loader.py x2 routes.py x2 check_mirror.py iceberg_sync.py,P11,"CONFIRMED + FIXED patch 408: one factory + a tripwire"
 PA001-F6.1,PA,PIPELINE_AUDIT,MED,no id uniqueness check,mirror_adapter.py:178,IN,"FIXED b84670a"
 PA001-F6.2,PA,PIPELINE_AUDIT,MED,six stale docstrings describing the pre-bronze design,core/mirror/*,IN,unverified

@@ -47,6 +47,7 @@ Run from the project root:
     python3 -m scripts.run_sync
 """
 
+import argparse
 import contextlib
 import fcntl
 import json
@@ -447,10 +448,20 @@ def _build_gold(sync, config, data_dir) -> int:
     return refused
 
 
-def run_sync(runtime_paths=None) -> int:
+def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
     """Syncs every ontology-referenced table. Returns the number of
     tables that FAILED -- 0 meaning a fully successful run, so a
-    caller (and __main__ below) can use it directly as an exit code."""
+    caller (and __main__ below) can use it directly as an exit code.
+
+    `accept_deletions` names tables ("silo.table") allowed to sync
+    even though more than half their rows are gone. Without it such a
+    table is REFUSED and the mirror is left as it was, because a
+    partially failed read looks exactly like a mass deletion
+    (PA001-F4). Per-run and per-table, deliberately: the question "did
+    half this table really just go?" has a different answer every time
+    it is asked, so it is not a config key.
+    """
+    accepted = set(accept_deletions or ())
     # The sync has its own invariant asserts -- that the committed
     # snapshot holds exactly what was written -- so it needs the same
     # guarantee the server does.
@@ -542,6 +553,7 @@ def run_sync(runtime_paths=None) -> int:
                     target.fields_by_column, target.standardisation,
                     target.expectations, target.duplicate_policy,
                     target.object_types, target.link_pair,
+                    f"{target.silo_name}.{target.table_name}" in accepted,
                 )
             except Exception as exc:
                 # Per-table, deliberately -- see this module's docstring.
@@ -585,4 +597,12 @@ def run_sync(runtime_paths=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run_sync())
+    _parser = argparse.ArgumentParser(description=__doc__)
+    _parser.add_argument(
+        "--accept-deletions", action="append", default=[], metavar="SILO.TABLE",
+        help="let this table sync even though more than half its rows are gone. "
+             "Without it the sync refuses and leaves the mirror as it was, "
+             "because a partially failed read looks exactly like a mass "
+             "deletion. Repeatable.",
+    )
+    sys.exit(run_sync(accept_deletions=set(_parser.parse_args().accept_deletions)))
