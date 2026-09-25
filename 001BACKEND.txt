@@ -1,0 +1,268 @@
+================================================================================
+001BACKEND.txt -- the back-end work list for Elysium
+================================================================================
+Written 2026-09-24. A second Claude instance is working the front-end
+list (001FRONTEND.txt) on its own branch; this file is the other half of
+that division.
+
+Branch: `backend`, from `main`. `main` was brought level with `dev` on
+2026-09-24 (188 commits, fast-forward) so both branches start together.
+
+
+================================================================================
+1. THE DIVISION
+================================================================================
+
+MINE, entirely:
+
+    core/**  api/**  adapters/**  scripts/**  tests/**  functions/**
+    lint.sh  pyproject.toml  requirements*.txt  vulture_whitelist.py
+    deployment/**  templates/**
+    AUDIT_CHECKLIST.csv  AUDIT_INTAKE.md  AUDIT_INTAKE_PIPELINE.md
+    UNIFIED_ROADMAP.md  OPEN_RISKS.md  ELT_ROADMAP.md
+    MEDALLION_PIPELINE.md  RULES.md  SECURITY_ARCHITECTURE.md
+    and every planning document not listed below
+
+NOT MINE -- the front-end instance owns these:
+
+    ui/**            every package, test, style, config
+    ui/README.md
+    UI_ROADMAP.md    DEV_UI.md    OBJECT_EXPLORER_PLAN.md
+    CONFIG_ROUND_TRIP_AND_UI_KIT.md   (the UI-KIT half)
+
+THE API IS A CONTRACT. `api/routes.py` is mine; `ui/packages/shell-api`
+is theirs. A response-shape change is a negotiation, not an edit: it
+lands here, and the front end updates its types afterwards.
+
+I read `FRONTEND_REQUESTS.md` (their branch) for anything they need from
+me, and reply in the same file.
+
+
+================================================================================
+2. WHERE THE WORK IS
+================================================================================
+
+AUDIT_CHECKLIST.csv is the working list: 279 rows, one per verifiable
+claim, from twenty audit files across two independent reviews.
+
+    front-end rows          16   -> 001FRONTEND.txt
+    back-end rows          263
+      resolved              24   verified and fixed, or shown not to
+                                 reproduce (patches 402-417)
+      owner decision        14   §5 below
+      still open           175
+
+Open by severity: 1 CRITICAL, 17 HIGH, 31 MEDIUM, 24 LOW, 6 security,
+3 correctness, 4 docs, 18 recommendations at P1, 24 at P2, 19 at P3,
+5 P1* statistical safeguards, 18 gaps and concerns.
+
+AUDIT_INTAKE.md and AUDIT_INTAKE_PIPELINE.md explain where each row
+came from and what each audit file contains. Read those before working
+a row whose one-line claim is not self-explanatory.
+
+
+================================================================================
+3. ORDER OF WORK
+================================================================================
+
+By severity, as the audits themselves recommend, with the audit's own
+hard dependencies respected.
+
+DONE SO FAR (patches 402-417), in the order they were taken:
+
+    PA001-M1   snapshot expiry -- the audit was right, I was wrong
+    PA001-X2   the agent crashed on any decimal or date field
+    PA001-X1   link fields leaked ids across MAC
+    AL-1       model-written list/dict values crashed /query
+    PA001-F1   a new source column froze the pipeline permanently
+      + A9     the changelog could not widen either
+    PA001-F2   a bronze failure served stale data
+    PA001-F5   an S3 mirror could be written but never served
+    PA001-A1   the drift policy asked the write log the wrong question
+    PA001-A2   many-to-many join tables were never synced
+    004-6      stale shared security cache -- NOT REPRODUCED
+    004-7      confirming a write did not re-check the object's reach
+    PA001-A3   refused writes were served as the object's value
+    PA001-C1   a bad decimal crashed with an unreadable message
+    PA001-F4   a partial read overwrote the mirror with half a table
+    PA001-A7   source column names as SQL -- already fixed, now pinned
+    PA001-S1   standardisation flattened every line of text
+
+NEXT, HIGH and unstarted:
+
+    PA001-G4   a crash during a FIRST gold build publishes unaudited
+               gold; readers pin current_snapshot(), not the tag
+    PA001-G5   a new field raises out of the gold step, so every LATER
+               type is never built and post-sync checks never run
+    PA001-G9   one refused silver table silently skips gold for ALL
+               types, with nothing printed or recorded
+    PA001-G1   many-to-many links raise on gold (unblocked now that A2
+               has landed)
+    PA001-G2   the gold parity test compares gold to the MIRROR, not
+               the source, so it cannot see A2 or G1
+    PA001-A11  the manifest publishes data_silos.yaml verbatim,
+               credentials included
+    PA001-A19  every API integration test runs read_from_mirror false,
+               so the DEFAULT serving path has no end-to-end tests
+    PA001-A5   the overlay bound is a stale last-changed time
+    PA001-A6   served snapshots frozen until reload, and pins can MIX
+    PA001-F3   stringified bronze changes what silver accepts
+    E-02       unauthenticated disk exhaustion via login_attempts
+    E-01       validation errors reflect request bodies, secrets and all
+    E-04       CSRF compared with != rather than compare_digest
+    F-25       generation numbers repeat after restart
+    F-27       crash recovery loses deletes and fabricates a create
+    F-33       two critical auth controls each defended by ONE test
+
+THEN: MEDIUM, then the dirty-data zoo (25 rows, several security),
+then LOW, then the recommendations by priority (P1 first). The LLM and
+agent findings (LB-*, AL-*, AR-*) are back-end too and sit with the
+MEDIUM band.
+
+HARD DEPENDENCIES from the audit, do not reorder:
+
+    X1 before A2/G1 .................... done, in that order
+    X2 before R63 ...................... X2 done
+    AL-6 before AR-6 ................... GEPA learns from stop reasons
+    AL-4 (plan format) before AR-10
+    R59 (evaluation) before R56 (FUSION)
+    gold column mapping extracted before gate migration
+
+
+================================================================================
+4. HOW EACH ITEM IS WORKED
+================================================================================
+
+One item per patch. The sequence, every time:
+
+  1. CHECK THE BASE, BOTH WAYS. `git fetch`, confirm the PREVIOUS patch
+     actually landed on the remote, and that the remote has not moved
+     ahead. Rule 19 covers the second; the first was added on
+     2026-09-24 after patch 414 sat unpushed for a turn while I built
+     415 on a premise I had not checked.
+  2. REPRODUCE THE FINDING against current code. If it does not
+     reproduce, that is a result -- record it as such (004-6, A7) with
+     what was tried, rather than quietly closing it.
+  3. FIX IT, with the reasoning in the code where the next reader will
+     need it.
+  4. TESTS that would have caught it.
+  5. CONTROLS: break the fix deliberately, confirm the tests fail,
+     restore, confirm they pass. A control that proves nothing is a
+     finding about the tests -- write the missing case (this has
+     happened eleven times so far and has been worth it every time).
+  6. BOTH SUITES, and ./lint.sh.
+  7. Update AUDIT_CHECKLIST.csv and UNIFIED_ROADMAP.md.
+  8. Package as a patch with an apply script that verifies the
+     checksum, verifies the base, runs the gates, and only then pushes.
+
+THE STANDARD IS IN PRINCIPLES.md. Measure rather than assume; state
+what was not checked; correct a wrong claim in public when one is found
+(patch 402 did exactly that about my own earlier work).
+
+
+================================================================================
+5. DECISIONS ONLY THE OWNER CAN MAKE
+================================================================================
+
+Nothing below should be decided by an instance. Each is recorded with
+its evidence in UNIFIED_ROADMAP.md and AUDIT_CHECKLIST.csv.
+
+    F-02       the grant model for cross-type actions. Three options,
+               with Foundry precedent favouring a per-TYPE read check.
+               Blocked on the creates-and-deletes analysis.
+    NEW-1      should a FORWARD single-valued link return its target's
+               id when that object is hidden? Today it does; that id is
+               a foreign-key column of the caller's own row.
+    NEW-2      should an APPROVER have to reach the objects they
+               approve? Today they need not, and four-eyes tests depend
+               on that.
+    E-03       session tokens in plaintext. Fixing forces a re-login.
+    E-06       failure kinds are runtime exception class names.
+    E-07       a link's id type depends on the read path.
+    E-14       MemoryGuard is built, tested and never used: wire it or
+               delete it.
+    E-20       six overlapping roadmap files. Propose, do not perform.
+    E-21       repository visibility versus LICENSE.
+    D1-D6      model switch, serving stack, whether data may leave the
+               VM, LGPL licences, governance policy, fine-tuning.
+    Q1-Q6      regulatory regimes, erasure strategy, lake-level access,
+               which sources come first, freshness targets, and whether
+               gold_history or the silver changelog is the history of
+               record.
+    F-18       widening the agent beyond equality filters: a feature,
+               and its priority is the owner's.
+
+ALSO OPEN, raised while fixing other things:
+
+    CONCERN-1  SQLite reads an unknown double-quoted identifier as a
+               STRING LITERAL, so a misspelled column would fill every
+               row with its own name. Only the drift check one layer up
+               prevents it, and neither layer says so.
+    CONCERN-2  the two adapters are safe from SQL injection by
+               DIFFERENT mechanisms (quoting; bound columns). A third
+               would have to rediscover which.
+    CONCERN-3  silver rewriting a served value means a user who opens a
+               prefilled field and saves it writes the standardised
+               form back to the SOURCE. S1 is fixed; the shape remains.
+    NEW-3      the confirm-time reach check uses the proposer's record
+               as captured at propose time, so it catches the OBJECT
+               moving, not the PROPOSER's clearance being revoked.
+
+
+================================================================================
+6. JOINT WORK -- DEFERRED, DO NOT START
+================================================================================
+
+Identical list to 001FRONTEND.txt §5. Each needs a server change AND a
+UI change; starting from one side produces a half-feature and a merge
+conflict.
+
+    UI-LIVE            server-sent events: a streaming endpoint, an
+                       events table, fan-out across workers. THE
+                       SECURITY DECISION IS MADE AND MUST HOLD: an
+                       event carries NO DATA, only what KIND of thing
+                       changed; the client refetches through the same
+                       authorised endpoints.
+    CONFIG-WRITE       a validating write endpoint, compare-and-set, an
+                       audit entry per write, a new generation at an
+                       epoch boundary.
+    PIPELINE-BUILDER   endpoints plus a sub-app.
+    ACCESS-1..6        a classification model plus the admin UI.
+    ALERT-1            server-side freshness evaluation plus a surface.
+    GOLD-3d provenance per-object provenance from silver's lineage; no
+                       endpoint exists. The REST of GOLD-3d is
+                       front-end and unblocked.
+    E-07, G12 (API)    response-shape changes that the UI consumes.
+
+The front end may add to this list. Read FRONTEND_REQUESTS.md on their
+branch before assuming a request is out of scope.
+
+
+================================================================================
+7. THE THREE OFFERED PATCHES
+================================================================================
+
+The second audit shipped working code, verified on a clean a598ed0:
+
+    AAA_11  tests/pipeline: 161 tests (105 pass, 56 STRICT xfails, each
+            naming the defect it tracks), core/mirror/validation/ with
+            ~25 named checks, scripts/validate_pipeline.py, a CI step.
+    AAA_12  core/mirror/pipeline_model/: the pipeline as a typed model
+            with one check registry. Its generic type check found
+            PA001-G6 unaided.
+    AAA_13  scripts/llm_bench.py: measures prefill, decode, prefix-cache
+            reuse and pass^k with Elysium's REAL prompt.
+
+NOT APPLIED. Three reasons to decide deliberately: they are ~3,200
+lines of someone else's code; the xfail ratchet would turn every fix
+above into a two-part change (fix, then remove the marker in the same
+commit, which is the point of it); and several xfails track defects
+already fixed here, so they would XPASS and fail the run on arrival.
+
+MY RECOMMENDATION: take AAA_11 after the HIGH band is drained, and
+re-baseline its xfails against what is fixed by then. AAA_13 can be run
+on the VM at any time -- it is read-only and standalone.
+
+================================================================================
+END
+================================================================================

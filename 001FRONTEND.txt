@@ -1,0 +1,349 @@
+================================================================================
+001FRONTEND.txt -- the front-end work list for Elysium
+================================================================================
+Written 2026-09-24 for a second Claude instance approaching this
+repository fresh. The back-end instance is working the same audit
+backlog from 001BACKEND.txt on the `backend` branch; this list and that
+one were divided so the two can run at once without treading on each
+other.
+
+Branch from `main`, work on a branch of your own (`frontend` is the
+obvious name). `main` was brought level with `dev` on 2026-09-24
+specifically so both branches start from the same place.
+
+
+================================================================================
+1. WHAT YOU OWN, AND WHAT YOU MUST NOT TOUCH
+================================================================================
+
+YOURS, entirely:
+
+    ui/**                          every package, test, style and config
+    ui/README.md
+    UI_ROADMAP.md                  the UI's own plan (1,967 lines)
+    DEV_UI.md                      UI design decisions (1,271 lines)
+    OBJECT_EXPLORER_PLAN.md
+    CONFIG_ROUND_TRIP_AND_UI_KIT.md     the UI-KIT half only; see §5
+
+NOT YOURS -- the back-end instance is editing these continuously:
+
+    core/**  api/**  adapters/**  scripts/**  tests/**  functions/**
+    lint.sh  pyproject.toml  requirements*.txt  vulture_whitelist.py
+    AUDIT_CHECKLIST.csv  AUDIT_INTAKE*.md  UNIFIED_ROADMAP.md
+    OPEN_RISKS.md  ELT_ROADMAP.md  MEDALLION_PIPELINE.md  RULES.md
+
+If you believe a file outside your list needs changing, DO NOT CHANGE
+IT. Write the request down (§6) and it will be done on the back-end
+branch. One exception: if you find a genuine security defect, say so
+immediately rather than filing it.
+
+THE API IS A CONTRACT, NOT A SHARED FILE. `api/routes.py` is
+back-end-owned; `ui/packages/shell-api/src/api.ts` is yours. If an
+endpoint's shape is wrong for you, that is a request, not an edit.
+
+
+================================================================================
+2. HOW TO RUN THINGS
+================================================================================
+
+    cd ui
+    npm ci
+    npm run lint        # oxlint --deny-warnings, tsc --noEmit,
+                        # prettier --check, knip  (ALL FOUR must pass)
+    npm test            # vitest
+    npm run e2e         # playwright (needs `npm run e2e:install` once)
+    npm run dev         # vite, against a running back end
+
+The back end runs separately:
+
+    python -m scripts.run_sync          # populate the mirror
+    uvicorn api.app:app                 # serve
+
+READ `AGENTS.md` AND `PRINCIPLES.md` BEFORE WRITING ANYTHING. They are
+short and they are the house style: AGENTS.md is the how, PRINCIPLES.md
+the why. `RULES.md` carries hard rules learned from mistakes -- read it
+too. The commit-message and verification conventions in AGENTS.md apply
+to your work exactly as they do to the back end's.
+
+
+================================================================================
+3. THE WORK, IN ORDER
+================================================================================
+
+Everything below came from two external audits (AUDIT-09-css.md and
+AUDIT-10-ui-closeout.md, in the audit set) or from findings whose fix
+lives entirely in `ui/`. Severity is the audit's own.
+
+-------------------------------------------------------------------------------
+-
+3.1 CSS -- two real defects
+-------------------------------------------------------------------------------
+-
+
+CSS-S1-01  DEFECT. `.app-frame--sidebar-collapsed .app__sidebar` is
+           defined TWICE, same layer, no media query. The FIRST
+           definition (index.css ~:609) is entirely dead, and its
+           comment describes an `aria-hidden` Shell.tsx behaviour that
+           was deliberately removed. Delete it.
+           WHY IT MATTERS BEYOND TIDINESS: the duplicate-selector test
+           (S3-01 below) could not see it, which is the actual finding.
+
+CSS-S1-02  DEFECT. The cascade-layer architecture is DECLARED and never
+           used: six of seven layers are empty in the shipped build, so
+           every rule we write is unlayered and the ordering the
+           declaration promises does not exist.
+           THE AUDIT IS EMPHATIC that migration must be ONE PASS OR NOT
+           AT ALL -- a half-migrated cascade is worse than none, because
+           some rules would obey the declared order and others would
+           not. Decide deliberately: migrate fully, or delete the
+           declaration and say why.
+           NOTE: AUDIT-09's own follow-up says layers ARE in use now for
+           some rules, so re-measure before acting. Do not trust this
+           line over what the built CSS says.
+
+-------------------------------------------------------------------------------
+-
+3.2 CSS -- dead code
+-------------------------------------------------------------------------------
+-
+
+CSS-S2-01  Four rules target markup the Blueprint migration removed.
+CSS-S2-02  Three custom properties are defined and never referenced.
+CSS-S3-03  A duplicated comment block, citing "the vh line above" which
+           is not there.
+
+-------------------------------------------------------------------------------
+-
+3.3 CSS -- the guards that let the defects through
+-------------------------------------------------------------------------------
+-
+
+THIS IS THE MOST VALUABLE GROUP. S1-01 existed because the test meant
+to catch it could not see it.
+
+CSS-S3-01  The duplicate-selector test sees 101 of 148 selectors and NO
+           COMPOUND SELECTOR AT ALL. Its regex stops at the first
+           simple selector, so `.a .b` is never compared. Fix the test
+           first, then fix what it finds.
+
+CSS-S3-02  The `!important` check covers three of four stylesheets --
+           omitting the one whose entire purpose is making `!important`
+           unnecessary.
+
+-------------------------------------------------------------------------------
+-
+3.4 Documentation that is wrong about the code
+-------------------------------------------------------------------------------
+-
+
+UI-S1-01   `ui/README.md` says there is "no design system". The UI is
+           built on Blueprint. This is the first thing a new
+           contributor reads.
+UI-S1-02   `app-schema` is missing from the workspace listing -- the
+           THIRD place it has been omitted from an enumeration. Look
+           for a fourth.
+UI-S1-03   Per-package contents are a snapshot of an earlier codebase:
+           4 of ~19 modules listed for shell-api.
+UI-S1-04   "Five separate checks", four are listed, and the text says
+           "all four" run. WORSE: the React plugin is switched off, so
+           NO REACT RULE HAS EVER RUN. Turning it on is likely to
+           produce real findings -- treat that as its own piece of work.
+E-19       `UI_ROADMAP.md` claims log rotation is missing (it ships) and
+           that there is no migration mechanism (there is one, ad hoc).
+           The TRUE gap is narrower: no store records a schema version.
+           Correct the document to the narrow, true statement.
+
+-------------------------------------------------------------------------------
+-
+3.5 Small, self-contained
+-------------------------------------------------------------------------------
+-
+
+UI-S2-01   No `<noscript>` fallback in `ui/index.html`.
+UI-S2-02   No favicon link -- every page load 404s.
+F-31       `ObjectNotes.submit()` is the ONLY error handler that ignores
+           session expiry. Every other one handles it; this one drops
+           the user's typing on an expired session.
+F-32       `apiFetchOrThrow` reads an untyped `body.detail`, against the
+           file's own stated policy about untyped responses.
+
+-------------------------------------------------------------------------------
+-
+3.6 GOLD-3d -- what the UI says about gold
+-------------------------------------------------------------------------------
+-
+
+THE BACK END IS ALREADY DONE FOR MOST OF THIS, which is why it is
+yours. Verified on 2026-09-24:
+
+    /api/admin/mirror    returns `quarantined_rows` and
+                         `quarantine_reason` per table (patch 392)
+    /api/health          returns a `quarantine` key: holding / clear /
+                         unknown
+    /data-freshness      exists, and shell-api already calls it
+    published_at         exposed per type
+
+What the UI should show (UNIFIED_ROADMAP.md:205):
+  - freshness reading the GOLD PUBLICATION time, not the silver sync
+  - quarantine counts VISIBLE, because rows held back are absent by
+    design and absence reads as data loss
+  - Admin keeps the silo panel (it is about SOURCES) and gains the
+    publication beside it
+
+DEFERRED, because no endpoint exists: per-object PROVENANCE from the
+lineage silver carries. That one is joint work -- see §5.
+
+-------------------------------------------------------------------------------
+-
+3.7 UI-KIT -- owning the components
+-------------------------------------------------------------------------------
+-
+
+UNIFIED_ROADMAP.md:333 and CONFIG_ROUND_TRIP_AND_UI_KIT.md. Entirely
+within `ui/`, so it is yours, but it is a PROGRAMME rather than a fix:
+read the roadmap entry, propose a plan, and do not start a
+library-wide migration while the smaller items above are open.
+
+
+================================================================================
+4. MORE READING
+================================================================================
+
+Read these in this order. The first three are short and tell you how to
+work here; the rest are reference for specific tasks.
+
+    AGENTS.md          HOW TO WORK HERE. Commands, conventions, the
+                       things you would get wrong unaided. Deliberately
+                       short.
+    PRINCIPLES.md      WHY those rules exist. Read it once; it explains
+                       the standard of evidence expected in this
+                       repository (measure, do not assume; controls that
+                       must fail; say what you did not check).
+    RULES.md           Hard rules, each learned from a specific mistake.
+    CLAUDE.md          Instance-specific guidance if present.
+
+    ui/README.md       The UI's own entry point -- and itself a work
+                       item (UI-S1-01..03 above), so read it
+                       sceptically.
+    DEV_UI.md          1,271 lines of UI design decisions and their
+                       reasoning. The authority on why the UI looks and
+                       behaves as it does. Section 16.6 covers freshness
+                       and alerting.
+    UI_ROADMAP.md      1,967 lines: the UI's plan, including items not
+                       in this list. Yours to maintain. Contains at
+                       least one known error (E-19 above).
+    OBJECT_EXPLORER_PLAN.md
+                       The object explorer's design.
+    CONFIG_ROUND_TRIP_AND_UI_KIT.md
+                       Two subjects. The UI-KIT half is yours; the
+                       config round-trip half is joint (§5).
+    LIVE_UPDATES_AND_PIPELINE_BUILDER.md
+                       Design for UI-LIVE and PIPELINE-BUILDER. Both
+                       are JOINT and deferred (§5) -- read it to
+                       understand what is coming, not to start it.
+
+    UNIFIED_ROADMAP.md The whole project's roadmap, back end included.
+                       Back-end-owned, but read the UI entries:
+                       GOLD-3d (:205), UI-LIVE (:242), PIPELINE-BUILDER
+                       (:307), CONFIG-WRITE (:319), UI-KIT (:333),
+                       ACCESS-1..6 (:348), ALERT-1 (:369).
+
+    SECURITY_ARCHITECTURE.md
+                       What the API guarantees and what it does not.
+                       Read before touching anything that displays data
+                       a user may not be allowed to see.
+    INSTALL.md         Running a deployment end to end.
+    README.md          What Elysium is.
+
+    AUDIT_CHECKLIST.csv
+                       ALL 203+ audit findings, back end and front end,
+                       one row each. Back-end-owned -- do not edit it.
+                       Your rows are those with set=UI, plus F-31, F-32,
+                       E-19. Filter and read; the `claim` column is the
+                       finding in one line.
+    AUDIT_INTAKE.md    What the first six audit files contain.
+    AUDIT_INTAKE_PIPELINE.md
+                       What the second fourteen contain.
+
+
+================================================================================
+5. JOINT WORK -- DEFERRED, DO NOT START
+================================================================================
+
+Each of these needs a server change AND a UI change. Starting one from
+either side alone produces a half-feature and a merge conflict. They
+are deferred deliberately; they will be scheduled once the two lists
+are drained, or sooner if the owner decides.
+
+    UI-LIVE            Server-sent events. Needs a streaming endpoint
+                       (none exists), an events table, fan-out across
+                       workers -- and then the UI to consume it. The
+                       security decision is already made and must hold:
+                       AN EVENT CARRIES NO DATA. It says what KIND of
+                       thing changed; the client refetches through the
+                       same authorised endpoints, so MAC and roles apply
+                       unchanged and no second read path exists.
+    CONFIG-WRITE       UI edits written back to YAML through ruamel
+                       round-trip. Needs a validating write endpoint,
+                       compare-and-set, an audit entry per write, and a
+                       new generation at an epoch boundary.
+    PIPELINE-BUILDER   A sub-app plus the endpoints behind it.
+    ACCESS-1..6        A classification model in the ontology and policy
+                       layer, plus the admin UI that edits it.
+    ALERT-1            Freshness alerting: a server-side evaluation and
+                       a UI surface.
+    GOLD-3d provenance Per-object provenance from silver's lineage. The
+                       rest of GOLD-3d is yours (§3.6); this part has no
+                       endpoint.
+    E-07               A link's id type depends on the read path (ints
+                       live, strings mirrored). The FIX is back-end and
+                       needs an owner decision; when it lands your types
+                       may need updating. Do not work around it in the
+                       UI meanwhile -- that would hide the defect.
+    PA001-G12 (API)    The API emits decimals as floats, so
+                       Decimal("12345678901234567.89") does not survive.
+                       Back-end fix; may change what you receive.
+
+IF YOU FIND MORE JOINT WORK, add it here rather than starting it.
+
+
+================================================================================
+6. HOW TO ASK FOR A BACK-END CHANGE
+================================================================================
+
+Append to a file called `FRONTEND_REQUESTS.md` on your branch, one
+entry each:
+
+    ## <short title>
+    WHAT I NEED: the endpoint, field or shape.
+    WHY: what the UI cannot do without it.
+    WHAT I DID MEANWHILE: nothing / a temporary display / a skipped
+        feature. Say which.
+
+That file is yours; the back-end instance will read it and reply in
+the same file. Do not edit any back-end file to unblock yourself, even
+trivially -- two instances editing `api/routes.py` is exactly the
+conflict this division exists to prevent.
+
+
+================================================================================
+7. STANDARD OF EVIDENCE
+================================================================================
+
+This repository holds work to a specific standard, and it applies to
+the UI as much as the pipeline:
+
+  - MEASURE, DO NOT ASSUME. "The cascade layers are unused" is a claim
+    about the built CSS; check the build, not the source.
+  - WRITE THE TEST THAT WOULD HAVE CAUGHT IT. CSS-S3-01 exists because
+    a test could not see a duplicate selector. Fixing the selector
+    without fixing the test leaves the next one to be found by an
+    auditor.
+  - RUN A CONTROL. After a fix, break it deliberately and confirm the
+    test fails. A test that passes both ways is not a test.
+  - SAY WHAT YOU DID NOT CHECK. An honest gap is worth more than an
+    implied guarantee.
+
+================================================================================
+END
+================================================================================
