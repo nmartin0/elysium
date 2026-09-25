@@ -88,6 +88,24 @@ remembering -- which is the actual failure here.
 
 ## R3 -- LB-8 asks to reverse a documented decision. Confirm or reverse it.
 
+**FOUNDRY PRECEDENT FOUND, and it points at option 1.** See the
+"Research" section of STATUS_agentloop.md. In short: Foundry's Object
+Storage V2 guarantees read-your-writes for ontology queries -- "if an
+object read occurring as part of an ontology query happens after a
+user modification is sent, the object read is guaranteed to contain
+the user edits" -- and edits "will be visible immediately after the
+action completes". The eventually-consistent search index, where a
+change takes time to appear in queries, is Object Storage V1
+(Phonograph), which Palantir has placed in "the legacy phase of
+development" with "no additional development expected" and which "will
+not be supported for any new workflows".
+
+So the split we have -- exact search reconciles, free-text does not --
+is the V1 behaviour Foundry deliberately moved away from, not a
+boundary Foundry endorses. I would now take option 1 without
+hesitation.
+
+
 **Owner:** backend (`core/ontology/mediator.py`)
 **Status:** NOT BUILT. I stopped rather than reverse a deliberate,
 documented scope boundary on my own.

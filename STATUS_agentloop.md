@@ -909,3 +909,154 @@ DEFINITION further down the file. Parsed the AST instead:
 does not. LB-8 stays blocked. Recording the bad check because a grep
 that answers the wrong question looks exactly like a grep that answers
 the right one.
+
+---
+
+## RESEARCH: precedent for the four open questions
+
+Asked to look for precedent rather than keep reasoning from first
+principles. Three of the four have a clear answer. One has two
+precedents that DISAGREE, and which applies turned on a fact about our
+own code.
+
+### LB-1 -- CLEAR PRECEDENT, and it settles all three decisions
+
+**Decision 3 (is synthesis the right place?) -- YES, and the industry
+name for the split is "LLMs propose and narrate, deterministic code
+computes and commits."** The pattern is uniform across every source:
+the model orchestrates, code calculates. The closest match to what I
+proposed is a production writeup where "the LLM receives pre-computed
+results and is explicitly instructed not to alter any figures -- and
+even if it does, the UI renders from the engine's JSON output, not the
+model's text."
+
+**And that same source independently names 1b's necessity.** A
+practitioner's question on the first piece: how do you stop the model
+"helpfully" re-deriving or rounding the figure in the prose after the
+exact value was already computed -- they had watched a model restate a
+precise $12,340 as "~$12K". That is exactly the failure 1b catches and
+exactly why 1a alone is not enough. I had argued this from a
+measurement; it is also the field's own experience.
+
+**Decision 1 (which figures?) -- FOUNDRY ANSWERS IT: DECLARED, NOT
+INFERRED.** Foundry has "derived properties": "properties that are
+calculated at runtime based on the values of other properties or links
+on objects. This includes aggregating on or selecting properties of
+linked objects." They are declared per object type against a link,
+with an aggregation (average, count, collect), and they are read-only
+-- "cannot be edited by functions or actions".
+
+**That is a better answer than either option I put to you.** I offered
+"compute count/sum/min/max over whatever came back" versus "compute
+what the question asks". Foundry does neither: the deployer DECLARES
+which aggregate exists, on the ontology, and it is then available to
+every reader. No guessing, no speculative arithmetic over arbitrary
+result sets, and it composes with the ontology we already have.
+
+**And Foundry states the security property we would need:** "Derived
+properties use the security of all objects involved in the
+calculation, so they do not expose information a user would otherwise
+be unable to see." That is the rule AR-4's title reads already follow.
+
+**Decision 2 (cost) -- Foundry names the same trade-off and its
+escape hatch.** "Derived properties are computed on the fly, which may
+result in longer module computation times", and "if derived properties
+introduce unacceptable latency at high scale, consider selective
+denormalization." So the cost is real, expected, and answered by
+precomputing into the pipeline rather than by abandoning the feature.
+
+**REVISED RECOMMENDATION:** declare aggregates on the ontology as
+Foundry does, rather than computing opportunistically in synthesis.
+That is a larger change than LB-1 as written and it touches
+`core/ontology/**`, which is not mine -- so it needs your decision
+before anyone starts, and probably a backend owner.
+
+### R3 -- CLEAR PRECEDENT, and it points the opposite way to the code
+
+Foundry's Object Storage V2: "if an object read occurring as part of
+an ontology query happens after a user modification is sent, the
+object read is guaranteed to contain the user edits", and action edits
+"will be visible immediately after the action completes".
+
+The eventually-consistent search index -- where "there is some small
+delay between when a change is written and when the change will appear
+in queries to the Search endpoint" -- is Object Storage V1
+(Phonograph), which Palantir has put in "the legacy phase of
+development" with "no additional development expected", and which
+"will not be supported for any new workflows".
+
+**So our split -- exact search reconciles pending writes, free-text
+does not -- is the V1 behaviour Foundry deliberately moved away from.**
+The docstring's reasoning ("a discovery aid, not a
+correctness-sensitive read") is a fair description of V1, not a
+principle V2 endorses. R3 option 1, reconcile first, now has precedent
+behind it. Recorded in REQUESTS_agentloop.md.
+
+### R1 -- TWO PRECEDENTS THAT DISAGREE, resolved by our own code
+
+    Polly's bulkhead package:  "Place bulkhead before retry so
+                                rejected calls don't get retried"
+                                -> bulkhead OUTSIDE
+    a resilience pipeline's    retry(circuitBreaker(bulkhead(call))),
+    default:                   "bulkhead innermost -- a slot is
+                                occupied only while the callback
+                                actually runs, re-requested per
+                                attempt; retry sleeps consume zero
+                                concurrency budget"
+                                -> bulkhead INSIDE
+
+Both are right, for different limiters. The first protects against
+retrying a REJECTION; the second stops a sleeping retry holding a
+slot. **Which applies depends on whether the limiter rejects or
+blocks, so I checked ours:** `ConcurrencyLimiter.limit()` does `with
+self._semaphore:` -- a blocking acquire. It queues; it never rejects.
+
+**So Polly's objection cannot arise here, and the second precedent
+applies cleanly -- in almost the words I used in R1.** The ordering in
+R1 stands, now for a cited reason rather than an argued one.
+
+**ONE CONDITION THAT WOULD FLIP IT**, worth writing down: if the
+limiter ever gains a queue timeout or a reject-when-full mode, the
+rejection becomes a retryable-looking failure and Polly's ordering
+becomes the correct one. R1's ordering is a consequence of the limiter
+blocking, not a free-standing truth.
+
+### The tokeniser -- NO CLEAN ANSWER, and a trap worth more than the answer
+
+**Ollama has no tokenizer endpoint.** `/api/tokenize` has been
+requested since 2024 and the PR is still unmerged. The practical route
+is `prompt_eval_count` from a zero-generation call, or loading the
+model's own HuggingFace tokenizer locally.
+
+**THE TRAP, which matters more than LB-6's percentage.** Ollama's
+prompt caching is implicit and prefix-based -- it "will reuse the
+computation for the shared part" and "relies on exact prefix matching"
+-- which is the documented confirmation of AR-1's engine half that I
+said I could not verify here. But: "Ollama does not currently return
+an accurate count of just the tokens processed in a request when using
+caching... `prompt_eval_count` reports the Total Context Size of the
+request you sent, not the number of new calculations the GPU
+performed. **Ignore prompt_eval_count for checking cache hits.**" The
+worked example shows 723 on both a cold and a warm request.
+
+**That is exactly how someone would try to finish AR-1 on the VM, and
+it would produce a confident wrong answer.** AR-1's engine half has to
+be measured by TIME, not by reported token counts.
+
+**Two things checked against this, one clean, one open:**
+
+`keep_alive` -- the precedent calls the five-minute default eviction
+"most critical", since it dumps the KV cache. Our config already sets
+`keep_alive: -1` with matching reasoning. Verified, not assumed; no
+action. Recorded because a non-finding checked is worth more than an
+assumption.
+
+`num_ctx: 4096` -- OPEN, and I am not asserting the direction. My
+AL-3 measurement had hop 9 at 7,751 characters, roughly 2,000 tokens,
+comfortably inside. A deployment with a larger ontology would not be,
+and the reported behaviour of an over-long prompt is SILENT
+TRUNCATION rather than refusal. AR-2 has just moved the per-hop notes
+to the tail of the prompt, so what gets dropped first matters. I have
+not verified where llama.cpp truncates under this configuration and
+will not guess. Worth a VM check before any deployment with a bigger
+schema.
