@@ -313,6 +313,64 @@ The fix needs `api/routes.py`, which I do not own, so it is filed in
 `REQUESTS_security.md` with the proposed `try_record_query()`. I did
 NOT add that method -- nothing would call it.
 
+## Session 8 — the batch landed; R50 analysed
+
+**PATCHES 0005-0014 ARE ON THE REMOTE** at `49bf6de`, tree-identical to
+what was tested. All six new test files present. The cause of the
+five-round blockage was found from one paste of terminal output: the
+`apply-security-patches.sh` in `~/Downloads` was the BATCH-1 copy,
+still pinned to `f6c5a0b`, refusing correctly and for the right reason
+from the wrong script. Two design errors of mine: the script was
+pinned to a single base commit, so it was guaranteed to be wrong from
+its second use onward; and the filename never changed, so a stale copy
+looked exactly like a fresh one. Both fixed -- the batch range is in
+the filename now, and correctness is proved by TREE HASH rather than
+by a pinned base.
+
+**R50 -- A FEEDBACK-LOOP GUARD ON THE WRITE PATH. Analysed, not built,
+and the structural finding is the useful part.**
+
+THE LOOP, CONCRETELY, and it is the write-path half of CONCERN-3:
+silver standardises on the way in (NFC, trim, collapse whitespace, per
+patch 337). So a source row holding `"  Ada   Okafor "` is SERVED as
+`"Ada Okafor"`. A form prefilled from the served value, saved by
+somebody who edited a different field, proposes `name = "Ada Okafor"`
+-- and the write path puts that into the SOURCE. The customer's own
+row is rewritten by a transformation no person chose, attributed to a
+person who never typed it.
+
+NOTHING TODAY WOULD NOTICE. `_expected_current_values_for()` reads
+through `self._adapter_mediator`, which is bound to the SOURCE, so the
+lost-update check compares source against source and passes. The
+proposed value is never compared against what the caller was SHOWN.
+
+WHAT MAKES IT FIXABLE IN ONE FILE, which I did not expect: WriteMediator
+already holds BOTH readers --
+
+    self.mediator           the read DataMediator, which since patch
+                            385 reads PUBLISHED GOLD
+    self._adapter_mediator  its own internal DataMediator over the
+                            WRITE adapters, bound to the source
+
+so `proposed == served AND served != source` is answerable at proposal
+time without reaching outside `core/ontology/write_mediator.py`. No
+new plumbing, no cross-agent change.
+
+THE SHAPE I WOULD PROPOSE, for agreement first because it changes what
+a write DOES: treat a field whose proposed value equals the SERVED
+value, while the SOURCE holds something different, as UNCHANGED, and
+drop it from the sub_write rather than refusing the whole action. The
+caller did not edit it -- they submitted back what they were shown --
+so writing it is a no-op from their point of view and preserving the
+source is the conservative reading. Refusing the action instead would
+block a legitimate edit to a neighbouring field, which is the common
+case.
+
+TWO THINGS I HAVE NOT CHECKED, said plainly: I have not reproduced the
+loop end to end against a synced deployment, and I have not measured
+the cost of one gold read per updated field at proposal time. Both
+belong with the build.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
@@ -348,7 +406,9 @@ remaining item is a decision, another agent's file, or both:
     Analysed, needs a nod   004-8        shape proposed above
     Reproduced and pinned   F-05         commit a0cf84d; fix needs
                                          api/routes.py -> requested
-    Policy, propose first   F-08  R50  R52
+    Analysed, needs a nod   R50          shape proposed above; the
+                                         guard fits in one file
+    Policy, propose first   F-08  R52
     Owner decision          E-02 residual, F-13 and F-25 (backend files)
     Need one measurement    F-05  F-12b
     Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
