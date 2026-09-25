@@ -425,10 +425,31 @@ def _build_gold(sync, config, data_dir) -> int:
             )
             if ids is not None
         }
-        result = build_gold(sync._catalog, object_type, type_def, silver, known,
-                             additional_rows=additional,
-                             approved_pairs=decisions.approved_pairs(object_type),
-                             retain_publications=config.retain_publications)
+        try:
+            result = build_gold(sync._catalog, object_type, type_def, silver, known,
+                                 additional_rows=additional,
+                                 approved_pairs=decisions.approved_pairs(object_type),
+                                 retain_publications=config.retain_publications)
+        except Exception as exc:  # noqa: BLE001 - per type, like a sync
+            # PER TYPE, LIKE EVERY OTHER FAILURE IN THIS LOOP
+            # (PA001-G5). Reading silver was already guarded a few
+            # lines above; BUILDING was not, so any exception out of
+            # build_gold -- for ANY type -- ended the whole run in a
+            # traceback.
+            #
+            # WHAT THAT COST, measured by injecting one failure: every
+            # LATER type was never built, and run_sync raised instead
+            # of returning, so _notify_mirror_health() and
+            # _evaluate_user_triggers() never ran either. The
+            # mirror-health alert is skipped precisely when something
+            # has gone wrong, which is the one moment it exists for.
+            #
+            # ONE BAD TYPE IS NOT EVERY TYPE. The others have their own
+            # silver and their own audit; refusing them because a
+            # neighbour failed discards work that was fine.
+            print(f"FAILED  gold.{object_type}: {exc}", file=sys.stderr)
+            refused += 1
+            continue
         # THE MATCHER NEEDS ROWS, and only runs when a type declares
         # inference -- so the table is materialised here rather than
         # for every type.

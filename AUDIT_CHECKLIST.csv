@@ -114,7 +114,7 @@ PA001-G1,PA,PIPELINE_AUDIT,CRITICAL,many-to-many links raise on gold,gold_view.p
 PA001-G2,PA,PIPELINE_AUDIT,HIGH,"gold parity test compares gold to mirror, not source",tests/unit/test_gold_parity.py,IN,unverified
 PA001-G3,PA,PIPELINE_AUDIT,MED,one cross-silo field removes the linked graph from gold,gold_view.py,P16,unverified
 PA001-G4,PA,PIPELINE_AUDIT,HIGH,a crash in a first build publishes unaudited gold; readers pin current_snapshot,gold.py:299/212,P17,"CONFIRMED + FIXED. The CODE reached dev inside patch 420 by accident (see FLAW-1); tests and controls landed in patch 422"
-PA001-G5,PA,PIPELINE_AUDIT,HIGH,a new field raises out of the gold step; later types never built,gold.py:324 run_sync.py:304,P17;P19,unverified
+PA001-G5,PA,PIPELINE_AUDIT,HIGH,a new field raises out of the gold step; later types never built,gold.py:324 run_sync.py:304,P17;P19,"CONFIRMED (structural) + FIXED patch 423. The new-field trigger is already handled by patch 383 rebuild; the boundary fault was real and worse - ANY exception ended the run and skipped the health alert"
 PA001-G6,PA,PIPELINE_AUDIT,MED,integer ids served as strings; FK values stringified; reaches the mirror path,gold.py:173 sync_targets.py,P18,unverified
 PA001-G7,PA,PIPELINE_AUDIT,LOW,link check compares ids without type normalisation,gold.py:130,P17,unverified
 PA001-G8,PA,PIPELINE_AUDIT,MED,link check depends on build order within one sync,run_sync.py:296,P17,unverified
