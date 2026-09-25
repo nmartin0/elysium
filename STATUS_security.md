@@ -396,6 +396,44 @@ a WRITE.
     gates      ./lint.sh clean, 8/8; 2,857 unit (+4); 445 integration,
                both tiers green with NO test edited
 
+## Session 10 — R50 CLOSED. The list is complete on my side.
+
+Built after the shape sat published on the remote and the instruction
+came again. Entirely within files this agent owns. Commit `25e9158`.
+
+    the loop    silver standardises on the way in, so "  Ada   Okafor "
+                is SERVED as "Ada Okafor". A form prefilled from the
+                served value and saved writes the pipeline's
+                transformation into the customer's own row.
+    the rule    different from the SOURCE, identical to the SERVED
+                value -> drop that field. Equal to the source is a
+                no-op and kept; equal to neither is a real edit.
+    refused     an update left with nothing, rather than an empty
+                change set reaching the write log (F-27's lesson)
+    measured    2.7 ms added at proposal for one changed field, 7.8 ms
+                for three, 26.0 ms for ten, against a 2.5 ms warm gold
+                read. Per proposal, on a path that waits on a model.
+    controls    remove the guard          -> 4 failed, 5 passed
+                drop EVERY changed field  -> 5 failed, 4 passed
+                compare the WRONG reader  -> 4 failed, 5 passed
+    gates       ./lint.sh clean, 8/8; 2,866 unit (+9); 445 integration
+
+TWO THINGS CAUGHT BY EXISTING GUARDS, not by me: an invented audit
+verb (`write_skipped_echo:`) that test_grant_vocabulary_consistency
+correctly reads as a grant no policy could ever grant -- it has its
+own audit stage now; and `field` as a loop variable shadowing the
+`field` imported from dataclasses, which ruff refused.
+
+WHAT REMAINS IS NOT MINE. Every one of the nineteen items is closed,
+verified-already-fixed, or waiting on a person:
+
+    E-02 residual   remedy decision            -> owner
+    F-05 fix        two lines in api/routes.py -> backend
+    F-13, F-25      backend-owned files, both look already fixed
+    F-08            core/ontology/submission_criteria.py has NO OWNER
+                    in 000COORDINATION.md
+    R52             policy, propose before implementing
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
@@ -431,8 +469,7 @@ remaining item is a decision, another agent's file, or both:
     DONE, controlled        004-8        commit c4cca37
     Reproduced and pinned   F-05         commit a0cf84d; fix needs
                                          api/routes.py -> requested
-    Analysed, needs a nod   R50          shape proposed above; the
-                                         guard fits in one file
+    DONE, controlled        R50          commit 25e9158
     Policy, propose first   F-08  R52
     Owner decision          E-02 residual, F-13 and F-25 (backend files)
     Need one measurement    F-05  F-12b
