@@ -417,3 +417,67 @@ changes. Said.
 `localhost:11434`, 17 `LLMUnavailable`, no other error type anywhere
 in the run. 14 are `test_real_model_*` and 3 are the mis-named ones
 already reported to backend. Identical on an unmodified tree.
+
+---
+
+## AL-2 step 1 -- DONE. And the hygiene half was smaller than written.
+
+REPRODUCED (recorded above): instruction-shaped text planted in a real
+source column reached the planner verbatim, and the planner's system
+prompt contained no untrusted-data framing at all -- while synthesis,
+the WEAKER call (no tools, prose out), has carried that framing all
+along. The planner is the call that chooses `propose_action`.
+
+**THE FRAMING IS ADDED, BELOW THE SCHEMA.** Not above it: the schema
+being first is what keeps two users from sharing an alignable prefix
+for a KV-cache timing attack, and a fixed warning at the head would
+have taken the shared prefix from 2 characters to the length of the
+warning -- undoing a closed hole while looking like a security
+improvement. A control confirms it: moving the text above the schema
+fails my new local guard AND the pre-existing
+test_prompt_prefix_is_user_specific, independently.
+
+**IT IS A FLOOR, NOT THE FIX, and the test says so.**
+SECURITY_ARCHITECTURE.md is explicit that the model is an envelope
+rather than a principal -- effective authority is the human's grants
+intersected with what the agent may reach, and no prompt text changes
+that. A planted instruction that persuades the model still meets
+`execute:`, MAC per sub_write, and a human at confirm. LB-10 records
+that prompt-instruction defence is insufficient alone and is right.
+The fix is AL-4, where the planner sees HANDLES not values.
+
+### The hygiene half: MEASURED, and the audit's claim does not hold here
+
+ZOO-03/R23 warn that Unicode tag characters (U+E0000-U+E007F) are read
+by a model and render as NOTHING to a reviewer. At THIS boundary that
+is false, by luck: `json.dumps` defaults to ensure_ascii=True, so tag
+characters, bidi overrides, zero-width spaces and C0 controls all
+arrive as VISIBLE \uXXXX escapes. A planted newline or quote cannot
+break out of its JSON string either.
+
+SO NO SCRUBBER WAS WRITTEN. One would duplicate the serialiser and
+would have to decide what to do with legitimately non-ASCII names,
+which is most names. What was missing is not the behaviour but the
+GUARANTEE -- nothing declared it, and `ensure_ascii=False` is one word
+and would read as an encoding improvement. Pinned with a tripwire
+instead; the control (adding that one word) fails it.
+
+THE STORAGE-SIDE HALF OF ZOO-03/04 IS REAL AND IS NOT MINE. Gold holds
+these characters as they arrived. This only says they cannot reach the
+model invisibly.
+
+### Controls, three, each failing differently
+
+    framing removed                       1 of 5 fails
+    framing moved ABOVE the schema        2 fail: mine AND the
+                                          cross-user prefix guard
+    ensure_ascii=False in prompt_values   1 fails, naming the exact
+                                          characters that got through
+
+Restored from backups; `git diff core/` shows only the intended 8 added
+lines.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2859 passed, 8 skipped  (2854 before; +5 here)
