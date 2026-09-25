@@ -747,3 +747,89 @@ one object's name against another object's id.
 `origin/backend`'s `core/deployment_loader.py:608` is unchanged, so
 **AL-5 remains merged and inert** -- the retry wrapper exists and
 nothing constructs it.
+
+---
+
+## AL-3 and LB-6 -- MEASURED. Both understate. And some of it is MINE.
+
+Nine distinct hops of a real query, real loop, real mediator, shipped
+deployment, `user_alice`. Recorded at the adapter, so these are the
+bytes an engine receives.
+
+### AL-3: "48,704 characters over 9 hops"
+
+    hop 1   6544      hop 4   6986      hop 7   7509
+    hop 2   6731      hop 5   7131      hop 8   7632
+    hop 3   6852      hop 6   7391      hop 9   7751
+                                        TOTAL  64,527
+
+**64,527, not 48,704 -- a third more than the finding says.**
+
+### LB-6: "52% of the step prompt is procedure"
+
+    whole system prompt   6432 chars
+    the schema part        803 chars
+    everything else       5629 chars   =  87.5%
+
+**87.5%, not 52%.** Only 803 characters of a 6,432-character system
+prompt are the thing the prompt exists to convey. And across the whole
+query, **90.6% of everything sent is system prompt** -- the same fixed
+block, re-sent nine times.
+
+**CHARACTERS, NOT TOKENS, and that matters for comparing to 52%.** I
+could not tokenise: tiktoken fetches its BPE table from
+`openaipublic.blob.core.windows.net`, which is not in this container's
+allowlist. I will not divide by four and call it a token count. If the
+52% was a token share, these are not directly comparable and the
+comparison should be redone on the VM. **You may want to add that
+domain to the sandbox's network settings**, or hand me the model's own
+tokeniser locally.
+
+### THE PART I HAVE TO OWN
+
+The system prompt was **5,989** characters when I measured AR-1 on
+this same user and deployment. It is **6,432** now. That +443 is mine:
+AL-2's untrusted-data framing and F-17's longer action example. Over
+nine hops, **~4,000 characters of the 64,527 above are my own
+additions** -- and AR-1 established that prefill dominates, so a fixed
+addition to the SYSTEM prompt is the most expensive place to put one.
+
+Every one of those changes was justified on its own. None was weighed
+against what it costs on every hop of every query, because I never
+measured the total until now. That is the cumulative-cost failure
+BACKLOG.md warns about, committed by me across three patches.
+
+Correcting the baseline: without my additions, ~60,500 characters --
+still well above the 48,704 claimed.
+
+### What this reframes
+
+AL-3, LB-6 and AR-2 are one problem: a ~5.6k fixed procedure block
+re-sent every hop is ~50k of the 64.5k total. AL-4 (plan-then-execute)
+and AR-2 (move per-hop state out) both attack it. **Nothing should be
+added to that block without a number attached, and I have been.**
+
+### Not done, and why
+
+**LB-8 -- NOT BUILT, filed as R3.** It asks to expose
+`search_object_free_text()` to the agent, which its own docstring
+excludes deliberately, and which -- verified, not assumed -- does NOT
+reconcile pending writes (`_reconcile_search_with_pending_writes()` is
+called at mediator.py:1200 inside `search_object()` and nowhere in the
+free-text path). Acceptable for a browse box where a human eyeballs a
+list; not obviously acceptable when the result becomes an ANSWER.
+Three options in R3; I would take "reconcile it first" or "close LB-8
+as declined".
+
+**AL-11 -- also a documented boundary.** The module docstring states
+cancellation is checked "once at the TOP of each hop, never mid-hop
+-- not about aborting a single already-in-flight LLM call". The
+in-flight model call is the expensive part; the step execution is
+milliseconds against a local lake. Refining the cheap half would be
+motion, not progress.
+
+**AL-10 -- needs wiring I do not own**, like AL-5. Worth noting one
+trap for whoever takes it: `TokenUsage.unreported` counts calls whose
+provider reported nothing, so a budget enforced on reported tokens
+silently does not apply at all when the provider is quiet. A budget
+that can fail open without saying so is not a budget.
