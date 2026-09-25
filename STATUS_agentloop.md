@@ -481,3 +481,56 @@ lines.
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  2859 passed, 8 skipped  (2854 before; +5 here)
+
+---
+
+## LB-5 -- DONE. Synthesis was showing the model Python internals.
+
+The step prompt has rendered values through `prompt_values` since
+PA001-X2 and G12. Synthesis was left behind, still building records
+with `f"{record}"`. Both calls in one query showed the same value two
+different ways:
+
+    step prompt  {"amount": "49.99", "occurred_on": "2026-01-14"}
+    synthesis    {'amount': Decimal('49.990000000'),
+                  'occurred_on': datetime.date(2026, 1, 14)}
+
+TWO PROBLEMS IN ONE LINE. Python internals reached the model, and
+money arrived at the STORAGE scale rather than the declared one --
+nine places for a field declared with two. G12 is precisely that
+question and prompt_values already answered it.
+
+**IT DID NOT CRASH, WHICH IS WHY IT SURVIVED.** PA001-X2 was these
+same values hitting `json.dumps`, which raises TypeError -- loud,
+found, fixed. An f-string renders anything, so the identical defect
+one function away produced no error. The quiet half of a bug outlives
+the loud half, and nothing was looking for the quiet half.
+
+### The checks had to move with it
+
+`_has_only_verified_emails` grounded the answer against a SECOND
+rendering, `" ".join(str(record) ...)`. That matched the prompt only
+because both were repr. Rendering one without the other would leave a
+check grepping a string the model never saw -- which can pass an
+invented value or reject a copied one. Both now go through
+`_tagged_records()`, one function, and a test asserts the text is
+identical rather than merely similar.
+
+**This matters for LB-1.** 1b grounds numbers against the records; it
+must ground against the RENDERED ones, or a correctly copied `49.99`
+would not be found in a source that says `Decimal('49.990000000')`.
+That trap is now closed before LB-1 is built rather than after.
+
+### Controls, two, the second sharper than the first
+
+    revert to f"{record}"          4 of 7 fail
+    render with str() instead of   1 of 7 fails -- str() LOOKS like a
+    prompt_values                  fix and silently drops the declared
+                                   scale; exactly one test sees it
+
+Restored from a backup between each.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2866 passed, 8 skipped  (2859 before; +7 here)

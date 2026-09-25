@@ -60,10 +60,12 @@ Called by: scripts/run_deployment.py, and directly by
            tests/integration/test_full_roundtrip.py
 """
 
+import json
 import logging
 import re
 
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
+from core.llm.prompt_values import render_gathered
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,21 @@ def _has_only_valid_citations(answer: str, record_count: int) -> bool:
     return all(1 <= n <= record_count for n in cited_indices)
 
 
+def _tagged_records(records: list[dict]) -> str:
+    """The records as the model is shown them, and as they are checked.
+
+    ONE FUNCTION, TWO CALLERS, deliberately (LB-5). The prompt and the
+    grounding checks must read the SAME text: a check that greps a
+    different rendering from the one the model saw can pass an invented
+    value or reject a copied one. They used to coincide only because
+    both were str(record).
+    """
+    return "\n".join(
+        f"[R{i}] {json.dumps(record)}"
+        for i, record in enumerate(render_gathered(records), start=1)
+    )
+
+
 def _has_only_verified_emails(answer: str, records: list[dict]) -> bool:
     # See module docstring for why a verbatim-presence check is SAFE
     # for emails specifically (never legitimately computed, only ever
@@ -120,7 +137,13 @@ def _has_only_verified_emails(answer: str, records: list[dict]) -> bool:
     if not found_emails:
         return True
 
-    source_text = " ".join(str(record) for record in records).lower()
+    # GROUNDED AGAINST WHAT THE MODEL WAS SHOWN, not against a second
+    # rendering of the same records (LB-5). The two used to coincide
+    # because both were str(record); once the prompt renders values
+    # properly they would not, and a check that greps a different
+    # string from the one the model read is a check that can pass an
+    # invented value or reject a copied one.
+    source_text = _tagged_records(records).lower()
     return all(email.lower() in source_text for email in found_emails)
 
 
@@ -137,7 +160,18 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
             f"(either none exist, or they're outside your access scope)."
         )
 
-    tagged = "\n".join(f"[R{i}] {record}" for i, record in enumerate(records, start=1))
+    # RENDERED, NOT repr()'d (LB-5). f"{record}" is a Python dict
+    # repr, so a `decimal` field reached the model as
+    # Decimal('49.990000000') and a `date` as datetime.date(2026, 1,
+    # 14) -- Python internals, and money at the STORAGE scale rather
+    # than the scale the ontology declares. The step prompt has
+    # rendered values through prompt_values since PA001-X2/G12; this
+    # call was left behind, so the two model calls in one query showed
+    # the same value two different ways.
+    #
+    # ONE RENDERING, USED FOR BOTH the prompt and the grounding checks
+    # below, so they cannot drift apart.
+    tagged = _tagged_records(records)
     user_message = f"Question: {original_query}\n\nData:\n{tagged}"
 
     # A LOCAL, per-call string -- never mutates the module-level
