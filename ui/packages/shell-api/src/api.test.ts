@@ -3,6 +3,7 @@ import {
   getVisibleActionTypesCached,
   resetVisibleActionTypesCache,
   ApiError,
+  getErrorMessage,
   login,
   logout,
   query,
@@ -173,6 +174,87 @@ describe('apiFetch / apiFetchOrThrow (via real exported callers)', () => {
       status: 401,
       message: 'Invalid username or password',
     })
+  })
+
+  /**
+   * F-32: the error body is not a string just because the happy path
+   * always sent one.
+   *
+   * api/app.py's RequestValidationError handler returns
+   * `{"detail": [{...}]}` on EVERY 422, so the old unchecked
+   * `body.detail` put an array into ApiError's `message: string` --
+   * TypeScript could not object, because fetch's own .json() is typed
+   * `any` and `any` disables the check it flows into. The user was
+   * shown the literal text "[object Object]".
+   *
+   * These use the handler's exact payload shape rather than an
+   * invented one.
+   */
+  it('renders a validation error as words, not [object Object]', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        { detail: [{ type: 'missing', loc: ['body', 'username'], msg: 'Field required' }] },
+        { ok: false, status: 422 },
+      ),
+    )
+
+    const error = await login('', 'x').catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).message).toBe('username: Field required')
+    // THE POINT OF THE WHOLE FIX, asserted directly: whatever else
+    // changes, this must never again be what reaches the screen.
+    expect(getErrorMessage(error as ApiError)).not.toContain('[object Object]')
+  })
+
+  it('joins several validation errors rather than showing only one', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          detail: [
+            { loc: ['body', 'username'], msg: 'Field required' },
+            { loc: ['body', 'password'], msg: 'String should have at least 8 characters' },
+          ],
+        },
+        { ok: false, status: 422 },
+      ),
+    )
+
+    await expect(login('', '')).rejects.toMatchObject({
+      message: 'username: Field required; password: String should have at least 8 characters',
+    })
+  })
+
+  it('falls back to the generic message for a detail shape we do not know', async () => {
+    // A shape we have not seen is one we cannot render honestly, so
+    // the generic message is the correct answer -- NOT a best-effort
+    // stringify, which is how "[object Object]" happened.
+    fetchMock.mockResolvedValue(jsonResponse({ detail: { code: 17, nested: {} } }, { ok: false, status: 400 }))
+
+    await expect(login('a', 'b')).rejects.toMatchObject({ message: 'Request failed (400)' })
+  })
+
+  it('keeps ApiError.message a string for every shape the backend sends', async () => {
+    // The invariant ApiError's own signature claims and `any` was
+    // quietly defeating. One test over all the shapes at once, so a
+    // future shape added above cannot forget it.
+    const bodies: unknown[] = [
+      { detail: 'plain string' },
+      { detail: [{ loc: ['body', 'x'], msg: 'bad' }] },
+      { detail: { unexpected: true } },
+      { detail: [] },
+      { detail: '' },
+      { detail: null },
+      {},
+    ]
+
+    for (const body of bodies) {
+      fetchMock.mockResolvedValue(jsonResponse(body, { ok: false, status: 400 }))
+      const error = await login('a', 'b').catch((caught: unknown) => caught)
+
+      expect(typeof (error as ApiError).message).toBe('string')
+      expect((error as ApiError).message).not.toContain('[object Object]')
+    }
   })
 
   it('throws ApiError as a real instance of ApiError, not a plain object', async () => {

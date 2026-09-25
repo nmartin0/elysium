@@ -107,12 +107,19 @@ export function handleIfSessionExpired(err: unknown, onSessionExpired: () => voi
 // PendingWriteCard), every single one of them the same, standard
 // "safely narrow an unknown catch variable to a real, displayable
 // string" idiom -- ApiError's own real .message (set via its
-// constructor) already carries api.ts's own safe, generic message for
-// every real HTTP failure (see apiFetchOrThrow's own body.detail
-// fallback), so this is never showing a raw, unexpected value to the
-// person using the app; it's just the one, safe way to also handle
-// the rarer case of something non-Error being thrown at all (which
-// JavaScript genuinely permits).
+// constructor) already carries api.ts's own safe message for every
+// real HTTP failure (see messageFromErrorBody), so this is never
+// showing a raw, unexpected value to the person using the app; it's
+// just the one, safe way to also handle the rarer case of something
+// non-Error being thrown at all (which JavaScript genuinely permits).
+//
+// THAT CLAIM WAS UNTRUE UNTIL F-32, and this comment asserted it
+// anyway. The old body.detail read was unchecked, so a 422 -- whose
+// detail is a LIST -- reached ApiError as an array and arrived here
+// as the string "[object Object]", which is exactly the raw,
+// unexpected value the sentence above promises never happens. The
+// promise is now kept by messageFromErrorBody narrowing first, rather
+// than by this comment saying so.
 export function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -236,14 +243,69 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
   return response
 }
 
+/**
+ * The displayable message inside a non-2xx body, or null if there
+ * isn't one.
+ *
+ * F-32. This used to be `body.detail || 'Request failed (n)'` on a
+ * body typed `any`, which is the one thing this file's own RETURN
+ * TYPES note says not to do -- `any` is contagious, and here it
+ * silently defeated ApiError's own `message: string` parameter.
+ *
+ * IT WAS NOT ONLY A TYPING POINT. Measured against this backend, not
+ * imagined: api/app.py's RequestValidationError handler returns
+ * `{"detail": [{...}, ...]}` -- a LIST of objects -- on every 422. So
+ * `body.detail` was an array, ApiError carried it as its `message`
+ * despite the annotation, and the screen showed the string
+ * "[object Object]". Reproduced through login() with the handler's
+ * exact payload before this was changed.
+ *
+ * TWO SHAPES, BOTH REAL, neither speculative:
+ *   - a string, from the 66 HTTPException(detail=...) sites
+ *   - a list of {msg, loc}, from the validation handler
+ * Anything else returns null and the caller uses its generic message,
+ * because a shape we have not seen is one we cannot render honestly.
+ */
+function messageFromErrorBody(body: unknown): string | null {
+  if (typeof body !== 'object' || body === null || !('detail' in body)) return null
+  const detail: unknown = (body as { detail: unknown }).detail
+
+  if (typeof detail === 'string' && detail !== '') return detail
+
+  if (Array.isArray(detail)) {
+    // `loc` is a path like ["body", "username"]; the leading segment
+    // names the request part and means nothing to a reader, so it is
+    // dropped. "username: Field required" beats "Request failed (422)"
+    // and beats the raw payload by a much wider margin.
+    const parts = detail
+      .map((entry: unknown) => {
+        if (typeof entry !== 'object' || entry === null) return null
+        const { msg, loc } = entry as { msg?: unknown; loc?: unknown }
+        if (typeof msg !== 'string') return null
+        const field = Array.isArray(loc)
+          ? loc
+              .slice(1)
+              .filter((s) => typeof s === 'string')
+              .join('.')
+          : ''
+        return field ? `${field}: ${msg}` : msg
+      })
+      .filter((part): part is string => part !== null)
+
+    if (parts.length > 0) return parts.join('; ')
+  }
+
+  return null
+}
+
 // Throws ApiError on any non-2xx response -- used by calls where the
 // caller only cares about success/failure, not the raw status (login,
 // confirming a write). query() is deliberately DIFFERENT -- see below.
 async function apiFetchOrThrow(path: string, options: RequestInit = {}): Promise<Response> {
   const response = await apiFetch(path, options)
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new ApiError(response.status, body.detail || `Request failed (${response.status})`)
+    const body: unknown = await response.json().catch(() => ({}))
+    throw new ApiError(response.status, messageFromErrorBody(body) ?? `Request failed (${response.status})`)
   }
   return response
 }
