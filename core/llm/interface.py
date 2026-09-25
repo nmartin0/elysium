@@ -27,7 +27,30 @@ class LLMUnavailable(Exception):
     previously caught requests.RequestException -- one adapter's
     transport library. A second adapter raising anything else went
     entirely unhandled.
+
+    `retryable` says whether SENDING THE SAME REQUEST AGAIN could
+    plausibly succeed (AL-5). One type covers four very different
+    events and only one of them is worth another attempt:
+
+        transport failure       RETRYABLE. The socket, not the model.
+        deadline already passed NOT. There is no time to retry IN; a
+                                retry loop here burns the remaining
+                                budget and reports the wrong cause.
+        unparseable response    NOT. Calls are made at temperature 0,
+                                so the same prompt returns the same
+                                unusable bytes. Retrying is a slower
+                                way to fail.
+        HTTP 4xx / bad payload  NOT. The request is wrong, not unlucky.
+
+    DEFAULTS TO FALSE, so a raise site that has not thought about it is
+    not retried. A wrong retry costs a user's latency budget and can
+    double a load on an already-struggling backend; a wrong non-retry
+    costs one query. The cheap mistake is the default.
     """
+
+    def __init__(self, *args, retryable: bool = False):
+        super().__init__(*args)
+        self.retryable = retryable
 
 
 # TokenUsage lives in core/request_context.py -- the context carries one,

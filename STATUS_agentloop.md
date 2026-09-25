@@ -534,3 +534,73 @@ Restored from a backup between each.
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  2866 passed, 8 skipped  (2859 before; +7 here)
+
+---
+
+## AL-5 -- mechanism DONE, wiring is a REQUEST (R1)
+
+Confirmed open first: no retry, backoff or attempt logic anywhere in
+the three adapters. One refused connection ended a whole query, and
+the user got nothing having already paid for every hop before it.
+
+**WHAT IS RETRIED IS NARROW, and that was the whole difficulty.**
+`LLMUnavailable` covers four events and only one is worth another
+attempt:
+
+    transport failure        RETRIED
+    deadline already passed  NOT -- there is no time to retry IN, and
+                             a retry loop reports the wrong cause
+    unparseable response     NOT -- temperature 0 returns the same
+                             bytes; retrying is a slower way to fail
+    HTTP 4xx / bad payload   NOT -- the request is wrong, not unlucky
+
+So `LLMUnavailable` gained a `retryable` flag, **defaulting to False**.
+A raise site that has not thought about it is not retried: a wrong
+retry costs a user's latency budget and can double the load on an
+already-struggling backend, a wrong non-retry costs one query. The
+cheap mistake is the default. Only the two transport raise sites
+(ollama, vllm) set it True.
+
+**TWO THINGS I CHECKED RATHER THAN ASSUMED**, both of which would have
+made this wrong:
+
+`usage.add()` runs only after a successful parse, so a failed call
+records no tokens and a retry cannot double-count.
+
+`call_timeout()` already raises the moment the deadline has passed,
+before anything is sent -- and that exception is NOT retryable, so a
+retry loop cannot outlive the query's budget however many attempts it
+is given. The attempt count bounds a backend failing instantly; the
+deadline bounds everything else. Both are needed.
+
+**NESTING ORDER IS LOad-BEARING.** Backoff sleeps OUTSIDE the
+concurrency limit -- `Retrying(ConcurrencyLimited(concrete))`. The
+other order holds a slot while sleeping, and since the step and
+synthesis models share one capped Ollama, that would let a struggling
+backend starve the healthy requests: one user's transient failure
+becomes a queue for everyone. Spelled out in R1 so the wiring cannot
+land the wrong way round.
+
+### Controls, three
+
+    ignore .retryable, retry everything   2 of 12 fail (deadline,
+                                          unparseable)
+    default retryable=True                3 of 12 fail
+    sleep after the final failure         1 of 12 fails
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2878 passed, 8 skipped  (2866 before; +12 here)
+
+### Two requests filed -- REQUESTS_agentloop.md, my first
+
+**R1**: one line in `core/deployment_loader.py:608` to wrap the
+adapter. AL-5 is INERT until this lands. Safe to land before wiring,
+since nothing constructs the wrapper yet.
+
+**R2**: the import-linter contract for `core/llm/` siblings ENUMERATES
+three modules by name. `retrying_adapter` and `prompt_values` are not
+in it, so the contract does not constrain them and lint still reports
+"8 kept, 0 broken" -- a guard that looks like it is working and does
+not cover the new code. I have not edited `pyproject.toml`.
