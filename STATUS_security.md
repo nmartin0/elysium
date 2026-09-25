@@ -229,6 +229,35 @@ already known True -- one dict lookup, not a query.
 
 ---
 
+## Session 5 — F-12b CLOSED
+
+**F-12b reproduces, and the claim was false in both halves.** The
+comment said "a STRUCTURALLY read-only connection besides -- it
+couldn't delete even if it tried". I wrote a row through the same
+helper, then deleted it. Commit `2dbece9`.
+
+`connection()` reaches `open_connection()` with `read_only` defaulting
+to False, and it must: `connection_with_schema()` runs the schema and
+migrations through the same handle, and `record_failure()` writes
+through it on every failed login. So it is not a flag somebody forgot
+-- making it genuinely read-only needs "ensure the schema" separated
+from "read", which touches every caller.
+
+The test pins the truth in the direction that catches the false claim
+returning: it asserts the connection CAN write, so a future change to
+make it read-only fails and sends the author to the two dependents
+instead of landing half a change.
+
+    controls   is_locked_out deletes the row  -> 1 failed, 4 passed
+               disable the read-only authorizer -> 1 failed, 4 passed
+    gates      ./lint.sh clean, 8/8; 2,846 unit (+5); 442 integration
+
+**PROPOSED, NOT BUILT:** a structurally read-only handle for the
+pre-auth read path is real defence in depth. It is a design change
+with two dependents, so it is recorded rather than started.
+
+---
+
 ## Where this leaves the list
 
     Closed, controlled      E-01  E-04  E-05  F-27
@@ -239,8 +268,10 @@ already known True -- one dict lookup, not a query.
     DONE, controlled        F-30         pushed as d992843
                             F-21         commit 39f2a94
                             F-12a        commit 6e3b413
+                            F-12b        commit 2dbece9
     Analysed, needs a nod   004-8        shape proposed above
-    Reproduced, open, mine  (none -- next is 004-8's build)
+    Next, needs a session   F-05         a TOCTOU; the test must FORCE
+                                         the interleaving, not race it
     Need one measurement    F-05  F-12b
     Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
 
