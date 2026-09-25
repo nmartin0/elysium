@@ -22,6 +22,7 @@ reasoning.
 """
 
 from core.llm.agent_step_prompt import (
+    MALFORMED_STEP,
     _action_state_notes,
     _build_system_prompt,
     _describe_actions,
@@ -181,7 +182,7 @@ def test_next_step_fails_closed_on_malformed_propose_action_step():
     # crash or pass through a malformed step.
     client = _FakeClient('{"step": "propose_action", "action_type": "ReopenTicket"}')
     step = next_step(client, "reopen it", {}, [], [], True, ACTION_TYPES)
-    assert step == {"step": "finish"}
+    assert step == {"step": "finish", "fallback": MALFORMED_STEP}
 
 
 # --- prompt stability across hops ---

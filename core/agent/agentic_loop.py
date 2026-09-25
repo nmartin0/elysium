@@ -101,19 +101,101 @@ logger = logging.getLogger(__name__)
 MAX_OBJECT_IDS = 20
 
 
+class StopReason:
+    """Why the loop stopped. Exactly one of these, always.
+
+    LB-3 AND AL-6 ARE ONE DEFECT, which is why this is one change.
+    AL-6 said "four booleans instead of one stop reason"; LB-3 said
+    "three code-detected failures presented as complete answers". They
+    are the same hole from two ends: four of the ways this loop can end
+    set NO boolean at all, so the result was byte-identical to a
+    deliberate finish and every caller read it as one.
+
+    MEASURED BEFORE THIS CHANGE, by driving the real loop into each:
+
+        deliberate finish   every flag False
+        DUPLICATE spiral    every flag False   <- indistinguishable
+        UNKNOWN step kind   every flag False   <- indistinguishable
+
+    The unknown-step case was the worst of them. It stops on hop one
+    with nothing gathered, so synthesis received zero records and said
+    "no matching records were found (either none exist, or they're
+    outside your access scope)" -- blaming the customer's data or the
+    caller's own permissions for what was a model failure. That is not
+    a missing feature; it is a wrong answer delivered confidently.
+
+    ONE FIELD RATHER THAN A FIFTH BOOLEAN. A fifth would have the same
+    shape as the four that already failed: nothing forces a new stop to
+    set one, so the next one added defaults to silence exactly as these
+    did. A single required reason cannot be left unset -- a new stop
+    has to name itself.
+
+    THE BOOLEANS BELOW ARE DERIVED FROM THIS, not stored beside it. 27
+    call sites read them and none construct one, so they keep working
+    unchanged while there is only one thing to keep correct. Two
+    parallel representations of one fact is how they drift.
+    """
+
+    FINISHED = "finished"
+    MAX_HOPS = "max_hops"
+    CANCELLED = "cancelled"
+    AUTHORITY_CHANGED = "authority_changed"
+    RAN_OUT_OF_TIME = "ran_out_of_time"
+    PROPOSED_WRITE = "proposed_write"
+    # The four that used to say nothing at all.
+    REPEATED_ITSELF = "repeated_itself"
+    INVALID_STEPS = "invalid_steps"
+    BLOCKED_BY_RULES = "blocked_by_rules"
+    UNRECOGNISED_STEP = "unrecognised_step"
+
+    # A deliberate finish is the ONLY ending that means "as much as was
+    # needed". A proposed write is not incomplete -- the run ended
+    # because a human has to decide, and what was gathered is whole.
+    COMPLETE = frozenset({FINISHED, PROPOSED_WRITE})
+
+
 @dataclass
 class AgentLoopResult:
     gathered: list[dict]
     pending_write: PendingWrite | None = None
-    cancelled: bool = False
-    hit_max_hops: bool = False
-    # The acting user's authority changed mid-query and the loop
-    # stopped. Distinct from cancelled: nobody asked for this, and the
-    # caller should say something different about it.
-    authority_changed: bool = False
-    # E-11: the query's deadline passed. Like hit_max_hops, what was
-    # gathered is kept, and synthesis is told it may be incomplete.
-    ran_out_of_time: bool = False
+    # REQUIRED IN PRACTICE though it carries a default: the default is
+    # the one ending that needs no explanation, and every other return
+    # in _run() names its own.
+    stop_reason: str = StopReason.FINISHED
+
+    @property
+    def possibly_incomplete(self) -> bool:
+        """Whether synthesis must be told this answer may be partial.
+
+        The route previously computed `hit_max_hops or ran_out_of_time`
+        itself, which was right about those two and silent about the
+        four endings that set no flag. Asking the result instead means
+        a stop added later is covered without every caller being
+        revisited -- the failure this whole change is about.
+        """
+        return self.stop_reason not in StopReason.COMPLETE
+
+    @property
+    def cancelled(self) -> bool:
+        return self.stop_reason == StopReason.CANCELLED
+
+    @property
+    def hit_max_hops(self) -> bool:
+        return self.stop_reason == StopReason.MAX_HOPS
+
+    @property
+    def authority_changed(self) -> bool:
+        """The acting user's authority changed mid-query and the loop
+        stopped. Distinct from cancelled: nobody asked for this, and
+        the caller should say something different about it."""
+        return self.stop_reason == StopReason.AUTHORITY_CHANGED
+
+    @property
+    def ran_out_of_time(self) -> bool:
+        """E-11: the query's deadline passed. Like hit_max_hops, what
+        was gathered is kept, and synthesis is told it may be
+        incomplete."""
+        return self.stop_reason == StopReason.RAN_OUT_OF_TIME
 
 
 def _object_ids_in(step: dict) -> list:
@@ -671,8 +753,13 @@ class AgentLoop:
     def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
                        gathered: list[dict], consecutive_invalid: int, consecutive_business_rule: int,
                        context: RequestContext | None = None
-                       ) -> tuple[int, int, bool, PendingWrite | None]:
+                       ) -> tuple[int, int, str | None, PendingWrite | None]:
         """Runs one step, counting mistakes and deciding whether to stop.
+
+        RETURNS A REASON, NOT A BOOLEAN (AL-6/LB-3). The bare
+        should_stop it used to return collapsed an unrecognised step
+        and a business-rule spiral into one value, so the caller could
+        not have named either even if it had wanted to.
 
         The dispatch is a table; what remains here is what is genuinely
         SHARED -- the two recoverable-mistake handlers, and the
@@ -682,14 +769,15 @@ class AgentLoop:
         if handler is None:
             # An unknown step kind is not a mistake to count -- the
             # model produced something outside the schema entirely.
-            return consecutive_invalid, consecutive_business_rule, True, None
+            return (consecutive_invalid, consecutive_business_rule,
+                    StopReason.UNRECOGNISED_STEP, None)
         try:
             result = handler(step, user_record, visible_schema, gathered, context)
             if isinstance(result, _ProposalPending):
-                return 0, 0, True, result.pending
+                return 0, 0, StopReason.PROPOSED_WRITE, result.pending
             if result is not STEP_HANDLED:
                 gathered.append({**step, "result": result})
-            return 0, 0, False, None
+            return 0, 0, None, None
         except SubmissionCriteriaViolation as e:
             # MUST be caught before the generic ValueError branch below
             # -- SubmissionCriteriaViolation IS a ValueError subclass,
@@ -704,7 +792,8 @@ class AgentLoop:
                 note=f"That action is not currently allowed: {e}. "
                      f"Try a different action, a different object, or finish if you have enough already.",
             )
-            return consecutive_invalid, new_count, should_stop, None
+            return (consecutive_invalid, new_count,
+                    StopReason.BLOCKED_BY_RULES if should_stop else None, None)
         except (ValueError, TypeError, PermissionError) as e:
             if isinstance(e, TypeError):
                 # A TypeError here is far more likely OUR bug than the
@@ -733,7 +822,8 @@ class AgentLoop:
                      f"Check the schema above and try something valid, "
                      f"or finish if you have enough already.",
             )
-            return new_count, consecutive_business_rule, should_stop, None
+            return (new_count, consecutive_business_rule,
+                    StopReason.INVALID_STEPS if should_stop else None, None)
 
     def run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None,
@@ -768,6 +858,7 @@ class AgentLoop:
         # only at the top of each hop -- see module docstring.
         gathered: list[dict] = []
         seen_signatures = set()
+        stop_reason = StopReason.FINISHED
         consecutive_duplicates = 0
         consecutive_invalid = 0
         consecutive_business_rule = 0
@@ -793,10 +884,10 @@ class AgentLoop:
         usage = context.token_usage if context is not None else None
         for _ in range(1, self.max_hops + 1):
             if cancel_event is not None and cancel_event.is_set():
-                return AgentLoopResult(gathered=gathered, cancelled=True)
+                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.CANCELLED)
             if deadline is not None and time.monotonic() >= deadline:
                 logger.warning("query deadline passed, answering from what was gathered")
-                return AgentLoopResult(gathered=gathered, ran_out_of_time=True)
+                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME)
 
             # THE ACTING USER IS RE-RESOLVED EVERY HOP, not once per
             # request. Identity is resolved once when the request
@@ -824,7 +915,7 @@ class AgentLoop:
                     # way the work so far is returned: it WAS authorized
                     # when it was read, and discarding it would lose
                     # information the user was entitled to.
-                    return AgentLoopResult(gathered=gathered, authority_changed=True)
+                    return AgentLoopResult(gathered=gathered, stop_reason=StopReason.AUTHORITY_CHANGED)
 
             try:
                 step = next_step(
@@ -837,13 +928,27 @@ class AgentLoop:
                 # other unavailability is still the error it always was.
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("query deadline passed during a model call")
-                    return AgentLoopResult(gathered=gathered, ran_out_of_time=True)
+                    return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME)
                 raise
 
             if step["step"] == "finish":
+                # A FABRICATED FINISH IS NOT A FINISH (LB-3). next_step()
+                # fails closed on an unparseable reply, a step missing
+                # required keys, or a name outside the vocabulary -- and
+                # every one of those used to arrive here looking exactly
+                # like the model deciding it was done, so the caller was
+                # told a complete answer had been produced.
+                fallback = step.get("fallback")
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)
                 if should_stop:
+                    stop_reason = fallback or StopReason.FINISHED
                     break
+                if fallback is not None:
+                    # The nudge gave it another turn, so this run has
+                    # not ended -- but it has already produced one
+                    # unusable reply, and a later genuine finish should
+                    # not erase that.
+                    logger.warning(f"fabricated finish ({fallback}), nudged for another hop")
                 continue
 
             try:
@@ -861,6 +966,7 @@ class AgentLoop:
                          f"field, and ask again for each id separately.",
                 )
                 if should_stop:
+                    stop_reason = StopReason.INVALID_STEPS
                     break
                 continue
             signature = _step_signature(step)
@@ -875,6 +981,7 @@ class AgentLoop:
                          f"different, or finish if you have enough.",
                 )
                 if should_stop:
+                    stop_reason = StopReason.REPEATED_ITSELF
                     break
                 continue
 
@@ -900,13 +1007,15 @@ class AgentLoop:
                             seen_signatures.add(
                                 ("get_field", step["object_type"], object_id, field_name))
 
-            consecutive_invalid, consecutive_business_rule, should_stop, pending_write = self._execute_step(
+            consecutive_invalid, consecutive_business_rule, step_stop_reason, pending_write = self._execute_step(
                 step, user_record, visible_schema, gathered, consecutive_invalid,
                 consecutive_business_rule, context
             )
             if pending_write is not None:
-                return AgentLoopResult(gathered=gathered, pending_write=pending_write)
-            if should_stop:
+                return AgentLoopResult(gathered=gathered, pending_write=pending_write,
+                                       stop_reason=StopReason.PROPOSED_WRITE)
+            if step_stop_reason is not None:
+                stop_reason = step_stop_reason
                 break
         else:
             # The for loop exhausted every hop without ever break-ing --
@@ -918,6 +1027,10 @@ class AgentLoop:
             # end, and one that used to be visible only in a server log
             # a caller would never see.
             logger.warning(f"hit max_hops ({self.max_hops}), stopping")
-            return AgentLoopResult(gathered=gathered, hit_max_hops=True)
+            return AgentLoopResult(gathered=gathered, stop_reason=StopReason.MAX_HOPS)
 
-        return AgentLoopResult(gathered=gathered)
+        # NAMED BY WHICHEVER break set it. Before this change every
+        # break fell through to a bare result that read as a deliberate
+        # finish -- the LB-3 defect, and why stop_reason has no safe
+        # default here.
+        return AgentLoopResult(gathered=gathered, stop_reason=stop_reason)

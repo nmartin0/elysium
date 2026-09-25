@@ -48,7 +48,31 @@ logger = logging.getLogger(__name__)
 AGGREGATES = frozenset({"count", "sum", "avg", "min", "max"})
 
 
-def _finish_step() -> dict:
+# The three ways next_step() fails closed, named so the loop can say
+# which -- LB-3's "three code-detected failures presented as complete
+# answers". Plain strings rather than an import from core.agent:
+# core.llm sits BELOW core.agent in the import contract (see
+# pyproject.toml's importlinter section), and reaching upward for a
+# constant would break a checked boundary for a piece of vocabulary.
+UNPARSEABLE_REPLY = "unparseable_reply"
+MALFORMED_STEP = "malformed_step"
+UNRECOGNISED_STEP = "unrecognised_step"
+
+
+def _finish_step(fallback: str | None = None) -> dict:
+    """The finish step, and WHY it is one.
+
+    LB-3: this function has fourteen call sites and exactly ONE of them
+    is the model deciding it is done. The other thirteen are next_step()
+    failing closed -- an unparseable reply, a step missing its required
+    keys, a step name outside the vocabulary. Failing closed is right,
+    and it was INDISTINGUISHABLE from success: the loop received a
+    legitimate-looking finish, stopped, and the caller was told the
+    answer was complete.
+
+    `fallback` names which of those happened. Absent means the model
+    genuinely finished. The loop reads it and stops with a reason.
+    """
     # A fresh dict on every call, deliberately -- NOT a shared
     # module-level constant returned by reference from every call site
     # below (the earlier design). Every current caller only ever reads
@@ -59,7 +83,10 @@ def _finish_step() -> dict:
     # signal for every subsequent call, for the rest of the process's
     # lifetime, not just the one caller that mutated it. A fresh dict
     # each time costs nothing and removes that risk entirely.
-    return {"step": "finish"}
+    step = {"step": "finish"}
+    if fallback is not None:
+        step["fallback"] = fallback
+    return step
 
 
 def _has_required_keys(parsed: dict, required: set, step_name: str) -> bool:
@@ -539,22 +566,22 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # is right here: there is real gathered context, and the best
         # available answer is better than an error.
         logger.warning(f"unparseable model response, finishing: {e}")
-        return _finish_step()
+        return _finish_step(fallback=UNPARSEABLE_REPLY)
 
     step = parsed.get("step")
 
     if step == "finish":
-        return _finish_step()
+        return _finish_step()   # THE GENUINE ONE
 
     if step == "search_object":
         if not _has_required_keys(parsed, {"object_type", "filter"}, "search_object"):
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         return {"step": "search_object", "object_type": parsed["object_type"], "filter": parsed["filter"]}
 
     if step == "get_field":
         required = {"object_type", "object_id", "field_name"}
         if not _has_required_keys(parsed, required, "get_field"):
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         return {
             "step": "get_field",
             "object_type": parsed["object_type"],
@@ -569,14 +596,14 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         id_key = "object_ids" if "object_ids" in parsed else "object_id"
         required = {"object_type", id_key, "field_names"}
         if not _has_required_keys(parsed, required, "get_object"):
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         if id_key == "object_ids":
             object_ids = parsed["object_ids"]
             # Same reasoning as field_names below: a non-list or an
             # empty one is structurally malformed, not "read nothing".
             if not isinstance(object_ids, list) or not object_ids:
                 logger.warning("malformed get_object step (object_ids must be a non-empty list), finishing")
-                return _finish_step()
+                return _finish_step(fallback=MALFORMED_STEP)
         field_names = parsed["field_names"]
         # A non-list, or an empty one, is structurally malformed --
         # NOT "read every field" or "read nothing," and never treated
@@ -589,7 +616,7 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # recovery message every other malformed step already does.
         if not isinstance(field_names, list) or not field_names:
             logger.warning("malformed get_object step (field_names must be a non-empty list), finishing")
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         return {
             "step": "get_object",
             "object_type": parsed["object_type"],
@@ -610,17 +637,17 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # and the query ended after two steps having answered a count
         # question by reading a link list.
         if not _has_required_keys(parsed, {"object_type", "aggregate"}, "aggregate_object"):
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         aggregate = parsed["aggregate"]
         if aggregate not in AGGREGATES:
             logger.warning(f"malformed aggregate_object step (unknown aggregate {aggregate!r}), finishing")
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         # count needs no field; every other aggregate does. Checked
         # here rather than left to the mediator, because at this depth
         # a bad step costs a whole hop to discover.
         if aggregate != "count" and not parsed.get("field_name"):
             logger.warning(f"malformed aggregate_object step ({aggregate} needs field_name), finishing")
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         validated = {
             "step": "aggregate_object",
             "object_type": parsed["object_type"],
@@ -634,7 +661,7 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
 
     if step == "search_around":
         if not _has_required_keys(parsed, {"object_type", "link_field"}, "search_around"):
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         return {
             "step": "search_around",
             "object_type": parsed["object_type"],
@@ -644,7 +671,7 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
 
     if step == "use_tool":
         if not _has_required_keys(parsed, {"tool_name", "args"}, "use_tool"):
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         return {"step": "use_tool", "tool_name": parsed["tool_name"], "args": parsed["args"]}
 
     if step == "propose_action":
@@ -662,7 +689,7 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         # module docstring for the full reasoning.
         required = {"action_type", "parameters"}
         if not _has_required_keys(parsed, required, "propose_action"):
-            return _finish_step()
+            return _finish_step(fallback=MALFORMED_STEP)
         return {
             "step": "propose_action",
             "action_type": parsed["action_type"],
@@ -670,4 +697,4 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         }
 
     logger.warning(f"unrecognized step {step!r}, finishing")
-    return _finish_step()
+    return _finish_step(fallback=UNRECOGNISED_STEP)

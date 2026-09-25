@@ -350,3 +350,70 @@ a 2-type schema -- but I did not tokenise, so I will not repeat 52%.
 
 Everything else reproduces as written. Full evidence per item in the
 review; the ordered plan follows there too.
+
+---
+
+## LB-3 + AL-6 -- DONE, as one change
+
+The audit said "four unflagged breaks in the loop". True, and not the
+main mechanism. Running it showed `next_step()` FABRICATES a finish on
+any uncertainty -- 14 call sites, exactly ONE of which is the model
+deciding it is done. The other thirteen fail closed: an unparseable
+reply, a step missing required keys, a name outside the vocabulary.
+
+Failing closed is right. Being INDISTINGUISHABLE FROM SUCCESS is the
+defect. The loop got a legitimate-looking finish, stopped, and the
+caller was told the answer was complete.
+
+**That reconciles the two findings.** LB-3's "three code-detected
+failures" are those three categories in `next_step()`. AL-6's four are
+the loop's unnamed breaks. One hole, two ends, one change.
+
+WHAT LANDED:
+
+    StopReason              one named reason per ending
+    the four booleans       now DERIVED properties, so all 27 read
+                            sites -- api/routes.py included, which I
+                            do not own -- keep working unchanged, with
+                            one fact in one place
+    _finish_step(fallback)  a fabricated finish carries its cause;
+                            the genuine one carries nothing
+    _execute_step           returns the REASON, not a bare bool that
+                            collapsed two different stops into one
+    possibly_incomplete     a property, so a stop added later is
+                            covered without revisiting every caller --
+                            which is the failure this item IS
+
+The worst case is now visible rather than confident: an unrecognised
+step stopped on hop one with nothing gathered, so synthesis said "no
+matching records were found (either none exist, or they're outside
+your access scope)" -- blaming the customer's data or the caller's own
+permissions for a model failure.
+
+CONTROLS, three, each failing differently:
+
+    fabricated finishes unmarked (pre-fix)        1 of 7 fails
+    loop breaks unnamed (the AL-6 half)           2 of 7 fail
+    possibly_incomplete narrowed to the old rule  3 of 7 fail
+
+Restored from backups; `git diff` verified clean between each.
+
+### What I changed that others might read
+
+`AgentLoopResult`'s fields and `_execute_step`'s return type. Both are
+inside files I own, and NOTHING outside `core/agent/` constructs an
+`AgentLoopResult` -- checked before choosing the derived-property
+design precisely so `api/routes.py` needs no edit. 000COORDINATION
+says to say so anyway when a signature another agent may depend on
+changes. Said.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2854 passed, 8 skipped  (2847 before; +7 here)
+    both tiers         3297 passed, 17 failed, 8 skipped
+
+**All 17 accounted for**: 17 `ConnectionRefusedError` on
+`localhost:11434`, 17 `LLMUnavailable`, no other error type anywhere
+in the run. 14 are `test_real_model_*` and 3 are the mis-named ones
+already reported to backend. Identical on an unmodified tree.

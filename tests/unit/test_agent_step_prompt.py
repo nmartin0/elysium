@@ -17,7 +17,12 @@ real HTTP dependency to isolate away, unlike full AgentLoop tests.
 import json
 from unittest.mock import MagicMock
 
-from core.llm.agent_step_prompt import next_step
+from core.llm.agent_step_prompt import (
+    MALFORMED_STEP,
+    UNPARSEABLE_REPLY,
+    UNRECOGNISED_STEP,
+    next_step,
+)
 
 VISIBLE_SCHEMA = {
     "Widget": {
@@ -52,17 +57,17 @@ def test_get_field_step_parses_correctly():
 
 
 def test_malformed_json_fails_closed_to_finish():
-    assert _next_step("not valid json{{{") == {"step": "finish"}
+    assert _next_step("not valid json{{{") == {"step": "finish", "fallback": UNPARSEABLE_REPLY}
 
 
 def test_unrecognized_step_fails_closed_to_finish():
-    assert _next_step({"step": "totally_made_up_step"}) == {"step": "finish"}
+    assert _next_step({"step": "totally_made_up_step"}) == {"step": "finish", "fallback": UNRECOGNISED_STEP}
 
 
 def test_get_field_missing_a_required_key_fails_closed():
     # No "field_name" -- structurally incomplete for this step's own shape.
     step = {"step": "get_field", "object_type": "Widget", "object_id": "w1"}
-    assert _next_step(step) == {"step": "finish"}
+    assert _next_step(step) == {"step": "finish", "fallback": MALFORMED_STEP}
 
 
 # --- get_object -------------------------------------------------------------
@@ -74,7 +79,7 @@ def test_get_object_step_parses_correctly():
 
 def test_get_object_missing_a_required_key_fails_closed():
     step = {"step": "get_object", "object_type": "Widget", "object_id": "w1"}  # no field_names
-    assert _next_step(step) == {"step": "finish"}
+    assert _next_step(step) == {"step": "finish", "fallback": MALFORMED_STEP}
 
 
 def test_get_object_with_empty_field_names_fails_closed():
@@ -84,7 +89,7 @@ def test_get_object_with_empty_field_names_fails_closed():
     # agentic_loop.py, a confusing no-op the model gets no feedback
     # from at all.
     step = {"step": "get_object", "object_type": "Widget", "object_id": "w1", "field_names": []}
-    assert _next_step(step) == {"step": "finish"}
+    assert _next_step(step) == {"step": "finish", "fallback": MALFORMED_STEP}
 
 
 def test_get_object_with_non_list_field_names_fails_closed():
@@ -92,4 +97,4 @@ def test_get_object_with_non_list_field_names_fails_closed():
     # list -- structurally wrong, not silently coerced into a
     # single-element list.
     step = {"step": "get_object", "object_type": "Widget", "object_id": "w1", "field_names": "name"}
-    assert _next_step(step) == {"step": "finish"}
+    assert _next_step(step) == {"step": "finish", "fallback": MALFORMED_STEP}
