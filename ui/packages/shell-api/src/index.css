@@ -114,10 +114,14 @@
  * chrome and all. A DEFINITE height gives the track an upper bound and
  * the overflow rules start working.
  *
- * dvh rather than vh: on mobile browsers the toolbars slide away, and
- * vh measures the largest viewport, which leaves a fixed shell taller
- * than the screen. The vh line above is the fallback for anything that
- * does not know dvh.
+ * The lock itself is on `.app-frame` below, with the dvh reasoning
+ * beside it. This block ended with a second copy of that reasoning
+ * until 09-S3-03, which also said "the vh line above" -- and the vh
+ * line is BELOW, inside a rule this comment does not introduce. Both
+ * were left behind when the lock moved to the outermost element: the
+ * text stayed where the rule used to be, so it described a position
+ * that had stopped being true. A stale comment is worse than none,
+ * because it is believed.
  */
   /* --- The frame: header on top, everything else below ---------------
  *

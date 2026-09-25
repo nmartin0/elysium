@@ -532,3 +532,53 @@ describe('every rule describes markup that exists', () => {
     expect(orphans).toEqual([])
   })
 })
+
+describe('the viewport lock is declared in one place', () => {
+  /**
+   * 09-S3-03 was graded COSMETIC -- a duplicated comment block, whose
+   * copy said "the vh line above" when the vh line is below it, in a
+   * rule that comment does not introduce. Both were left behind when
+   * the lock moved to the outermost element.
+   *
+   * WHAT IS NOT TESTED, AND WHY. The duplication itself is not
+   * assertable without pinning the prose, and pinning prose to catch
+   * stale prose is what produced 10-S1-03. There is no general test
+   * for "this paragraph repeats that one", and a regex for the
+   * particular sentence would pass the moment somebody rewords it --
+   * a test that can only catch the instance already fixed.
+   *
+   * WHAT IS TESTED is the property underneath the comment, which has
+   * one right answer: the lock is declared ONCE. Two rules both
+   * sizing the shell to the viewport is the defect a second
+   * explanation was describing, and it is the thing that would
+   * actually break a layout.
+   */
+
+  it('sizes the shell to the viewport in exactly one rule', () => {
+    const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+    const declarations = [...withoutComments.matchAll(/height:\s*100dvh/g)]
+
+    expect(declarations).toHaveLength(1)
+
+    // AND ON THE OUTERMOST ELEMENT, not just once. The lock moved here
+    // from an inner element, which is what left the stale comment
+    // behind; a future move would leave another.
+    const frame = /\.app-frame \{([^}]*)\}/.exec(withoutComments)?.[1] ?? ''
+
+    expect(frame).toMatch(/height:\s*100dvh/)
+  })
+
+  it('keeps the vh fallback beside the dvh it falls back from', () => {
+    // The pair is load-bearing and order-sensitive: vh FIRST, then
+    // dvh, so a browser that does not know dvh keeps the vh value and
+    // one that does overrides it. Reversed, every modern browser gets
+    // the vh answer and the mobile toolbar bug comes back.
+    const declarations = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+    const vh = declarations.indexOf('height: 100vh')
+    const dvh = declarations.indexOf('height: 100dvh')
+
+    expect(vh).toBeGreaterThan(-1)
+    expect(dvh).toBeGreaterThan(-1)
+    expect(vh).toBeLessThan(dvh)
+  })
+})
