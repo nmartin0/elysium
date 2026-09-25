@@ -993,19 +993,47 @@ class WriteMediator:
         than as one 65-line body with cyclomatic complexity 26.
         """
         if operation == "create":
-            mac_allowed = True
-        else:
-            mac_allowed = (
-                user_record.security_value is not None
-                and self._adapter_mediator._security_allowed(
-                    object_type, object_id, user_record.security_value
-                )
+            # NO ROW TO CONSULT, so MAC cannot be evaluated and the
+            # execute: grant is the whole check. check_access() has no
+            # way to express that -- it would read a security value
+            # from an object that does not exist yet and deny -- so
+            # this branch stays as it was. Inventing a skip-MAC
+            # parameter to route it through would weaken the chokepoint
+            # in order to tidy a docstring, which is the wrong trade.
+            self.audit_log.log_access(
+                user_record.user_id, object_type, object_id, execute_action_id,
+                mac_allowed=True, rbac_allowed=rbac_allowed,
             )
-        self.audit_log.log_access(
-            user_record.user_id, object_type, object_id, execute_action_id,
-            mac_allowed, rbac_allowed,
-        )
-        if not mac_allowed:
+            return
+
+        # THROUGH THE CHOKEPOINT (004-8). This computed MAC inline and
+        # logged it by hand -- the same two gates check_access() makes,
+        # minus one thing only it does: on a MAC denial it asks whether
+        # the object's security value could be resolved AT ALL, and
+        # records log_security_resolution_failed() when it could not.
+        # That distinguishes an orphaned MDO record -- a data-integrity
+        # signal -- from an ordinary mismatch. It is called from
+        # exactly ONE place in core/, inside check_access(), so a path
+        # that does not go through there cannot emit it. The same
+        # broken object therefore produced that signal on a READ and
+        # silence on a WRITE.
+        #
+        # THE SHAPE IS ALREADY USED TWO FUNCTIONS AWAY: approver
+        # eligibility (_eligible_sub_write_indexes) branches to
+        # authorize() for a create and check_access() otherwise, and
+        # says reuse "means eligibility here cannot drift from
+        # eligibility anywhere else". This is that, applied to the
+        # proposer.
+        #
+        # RBAC IS RE-DECIDED HERE AND THAT IS DELIBERATE. It was
+        # already settled upstream at propose_action() and is always
+        # True by now; rbac_allowed is still passed in so the create
+        # branch above can log it accurately. One dict lookup buys a
+        # single place that decides, which is the point.
+        if not check_access(
+            self._adapter_mediator, user_record, self.roles,
+            object_type, object_id, execute_action_id,
+        ):
             raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
 
     def _expected_current_values_for(self, operation: str, object_type: str, object_id: Any,
