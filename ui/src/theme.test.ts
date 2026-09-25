@@ -107,18 +107,26 @@ describe('theming', () => {
     // in both themes, and inverting it would make a delete button
     // stop looking dangerous.
     /**
-     * Two kinds of exception, both deliberate:
+     * ONE exception now, and it is deliberate:
      *
-     * - The danger red is SEMANTIC. It means "destructive" in both
-     *   themes, and inverting it would make a delete button stop
-     *   looking dangerous. The white on top of it goes with it.
      * - Translucent white overlays. rgba(255,255,255,alpha) on chrome
      *   is a LIGHTENING, not a colour: it works on any dark surface,
-     *   in either theme, and a token would fix it to one.
+     *   in either theme, and a token would fix it to one. Three uses.
+     *
+     * THERE WERE THREE. `#b3261e` and `#ffffff` were exempted for the
+     * destructive button -- a semantic red that must not invert, and
+     * the white on top of it. That button moved to Blueprint's own
+     * intent="danger" long ago, and 09-S2-01 removed the rule that
+     * outlived it, so neither literal appears in this file any more.
+     *
+     * THE EXEMPTIONS WERE THEREFORE EXEMPTING NOTHING, and a dead
+     * exemption is worse than none: it is a hole held open for a case
+     * that no longer exists, so the day somebody writes #b3261e here
+     * again -- the exact literal the token system was built to absorb
+     * -- this test would have waved it through. Checked before
+     * removing: zero occurrences of either in index.css.
      */
-    const offenders = colourLiterals(CSS).filter(
-      (line) => !line.includes('#b3261e') && !line.includes('#ffffff') && !/rgba\(255,\s*255,\s*255/.test(line),
-    )
+    const offenders = colourLiterals(CSS).filter((line) => !/rgba\(255,\s*255,\s*255/.test(line))
 
     expect(offenders).toEqual([])
   })
@@ -420,5 +428,107 @@ describe('schema tables have fixed columns', () => {
     const widths = [...CSS.matchAll(/\.schema-panel__fields td:nth-child\((\d)\)/g)].map((match) => match[1])
 
     expect(new Set(widths)).toEqual(new Set(['1', '2', '3']))
+  })
+})
+
+/**
+ * A rule whose markup is gone (09-S2-01).
+ *
+ * Every other stylesheet guard here reads the CSS ALONE, so none of
+ * them can see a rule that is perfectly well-formed and describes
+ * nothing. That needs the CSS compared against the markup beside it.
+ *
+ * THE MATCH IS ON CLASS-ATTRIBUTE POSITION, NOT ON THE WORD, and this
+ * is the whole difficulty. A first version searched production source
+ * for the class name as a whole word and found FOUR of the five dead
+ * rules: it missed `button.danger`, because `danger` is a live
+ * Blueprint intent value -- SchemaPanel.tsx returns `'danger'` for a
+ * deprecated type, and every error Callout takes `intent="danger"`.
+ * A substring cannot tell an intent from a class name.
+ *
+ * Reading what is actually rendered -- the contents of `className=`
+ * and `class=` -- finds all five with no false positives across 156
+ * classes. It is also the honest question: a class is alive if
+ * something puts it on an element, not if the word appears somewhere.
+ *
+ * THE KNOWN LIMIT, written here rather than rediscovered: a class
+ * assembled at runtime (`` className={`row--${kind}`} ``) contributes
+ * the literal fragments only, so a fully computed name would read as
+ * dead. None exists today. If one is added, this test is what will
+ * complain, and the answer is an allowlist entry with a reason -- not
+ * a weaker match, which is how 09-S3-01 happened.
+ */
+
+/** Every class token the app actually puts on an element. */
+function renderedClassNames(): Set<string> {
+  const found = new Set<string>()
+  const attribute = /class(?:Name)?\s*=\s*(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\}|\{([^}]*)\})/g
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules' && entry.name !== 'dist') walk(full)
+      } else if (/\.(tsx|ts|html)$/.test(entry.name) && !entry.name.includes('.test.')) {
+        // TESTS EXCLUDED DELIBERATELY: a class only a test renders is
+        // dead in the product, and counting it would let a rule stay
+        // alive by being asserted about. Checked before choosing --
+        // no class is test-only today, so this forbids a future one
+        // at no cost.
+        const source = readFileSync(full, 'utf8')
+        for (const match of source.matchAll(attribute)) {
+          const blob = [match[1], match[2], match[3], match[4]].filter(Boolean).join(' ')
+          for (const token of blob.match(/[a-zA-Z][\w-]*/g) ?? []) found.add(token)
+        }
+      }
+    }
+  }
+  walk(path.resolve(__dirname, '..', 'packages'))
+  walk(__dirname)
+  for (const match of readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8').matchAll(attribute)) {
+    const blob = [match[1], match[2], match[3], match[4]].filter(Boolean).join(' ')
+    for (const token of blob.match(/[a-zA-Z][\w-]*/g) ?? []) found.add(token)
+  }
+  return found
+}
+
+/** Every class OUR stylesheets style. Blueprint's own `bp6-` classes
+ *  are its markup, not ours -- we never write them on an element. */
+function styledClassNames(): Map<string, string> {
+  const found = new Map<string, string>()
+  for (const file of RULE_STYLESHEETS) {
+    const css = readFileSync(path.resolve(__dirname, '..', file), 'utf8')
+    for (const rule of cssRules(css)) {
+      for (const match of rule.selector.matchAll(/\.([a-zA-Z][\w-]*)/g)) {
+        const name = match[1] ?? ''
+        if (!name.startsWith('bp6-') && !found.has(name)) found.set(name, file)
+      }
+    }
+  }
+  return found
+}
+
+describe('every rule describes markup that exists', () => {
+  it('finds both sides, so an empty search cannot pass', () => {
+    // THE CONTROL INSIDE THE TEST. Both halves are built by walking
+    // the tree; a moved directory or a broken parse would leave one
+    // empty and the comparison below would pass having compared
+    // nothing -- the same vacuity as 09-S3-01.
+    const styled = styledClassNames()
+    const rendered = renderedClassNames()
+
+    expect(styled.size).toBeGreaterThan(100)
+    expect(rendered.size).toBeGreaterThan(100)
+    expect([...styled.keys()]).toContain('object-search__result')
+    expect(rendered.has('object-search__result')).toBe(true)
+  })
+
+  it('styles no class the app never renders', () => {
+    const rendered = renderedClassNames()
+    const orphans: string[] = []
+    for (const [name, file] of styledClassNames()) {
+      if (!rendered.has(name)) orphans.push(`${file}: .${name}`)
+    }
+
+    expect(orphans).toEqual([])
   })
 })

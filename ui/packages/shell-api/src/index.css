@@ -699,10 +699,13 @@
  * fault the `button` rule below had, just less visible because it set
  * borders and padding rather than colour.
  *
- * Two plain controls remain: ObjectSearchPanel's search box and
- * QueryPanel's textarea. Everything else is a Blueprint widget and
- * styles itself. */
-  .object-search__controls input,
+ * ONE plain control remains: QueryPanel's textarea. Everything else
+ * is a Blueprint widget and styles itself.
+ *
+ * It said TWO until 09-S2-01. The other was ObjectSearchPanel's search
+ * box, which became a Blueprint InputGroup -- so the rule kept naming
+ * a control that had stopped existing, and the comment kept counting
+ * it. */
   .query-panel__input {
     padding: 0.5rem 0.6rem;
     border: 1px solid var(--border-subtle);
@@ -878,10 +881,6 @@
     overflow-x: auto;
   }
 
-  button.danger {
-    background: var(--fill-danger);
-  }
-
   /* A muted FACT, not a warning. read_from_mirror is deployment-wide, so
  * this is present on every view when it is on -- and a permanent
  * warning is one people stop seeing. Secondary text, small, no icon. */
@@ -891,27 +890,7 @@
     font-size: 0.85rem;
   }
 
-  .object-search__controls {
-    display: flex;
-    gap: 0.6rem;
-    margin-bottom: 1rem;
-  }
-
-  .object-search__controls select {
-    padding: 0.5rem 0.6rem;
-    border: 1px solid var(--border-subtle);
-    border-radius: 6px;
-    font-size: 1rem;
-    background: var(--surface-content);
-    min-width: 10rem;
-  }
-
-  .object-search__controls input {
-    flex: 1;
-  }
-
   .object-search__status,
-.object-search__empty,
 
 /* CardList/Card, not a bare <ul>/<li> -- see ObjectSearchPanel.tsx's
    own comment on why Card must be CardList's own DIRECT child
@@ -1151,11 +1130,6 @@
     margin: 0;
   }
 
-  .action-form__field input:disabled {
-    background: var(--surface-sunken);
-    color: var(--text-secondary);
-  }
-
   .action-form__actions {
     display: flex;
     gap: 0.5rem;
@@ -1289,7 +1263,21 @@
   /* Below the three-column minimum an expanded sidebar OVERLAYS rather
  * than pushing, because pushing would leave the content unusable.
  * This is the "Auto" mode a mainstream enterprise component library
- * ships as its default: push at desktop widths, overlay below. */
+ * ships as its default: push at desktop widths, overlay below.
+ *
+ * WHERE 1100 COMES FROM, kept here because this is the only place the
+ * number is used. Rail 56 plus an open sidebar 240 leaves 532px of
+ * content below 1100 -- which cannot hold a results table. DERIVED
+ * from that arithmetic rather than cited, though it sits near the 992
+ * where two-column layouts commonly break, a third column needing
+ * more room.
+ *
+ * It lived on a `--three-column-min: 1100px` token until 09-S2-02,
+ * which nothing read and nothing could: a custom property is not
+ * allowed in a media query's condition, so the token could only ever
+ * restate this number, never supply it. The two had already drifted
+ * by one -- the token said 1100, the query fires at 1099 -- which is
+ * the drift a second copy always eventually produces. */
   @media (max-width: 1099px) {
     /* BELOW the header, not over it. An earlier `top` of zero covered
      the global header entirely -- the product name, theme toggle and
@@ -1355,14 +1343,6 @@
   input[type='checkbox'],
   [role='button'] {
     min-height: var(--target-min);
-  }
-
-  /* A single filter above the content it filters. Not a sidebar: that
- * pattern is for more than five filters, and one input in a 288px
- * column is mostly empty grey. */
-  .schema-panel__toolbar {
-    max-width: 420px;
-    margin-bottom: var(--space-normal);
   }
 
   /* --- Schema's parameter and field tables --------------------------
