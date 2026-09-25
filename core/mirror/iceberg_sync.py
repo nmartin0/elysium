@@ -633,6 +633,34 @@ class IcebergMirrorSync(MirrorSync):
                 logger.info(
                     f"{identifier}: source unchanged, no new snapshot written"
                 )
+                # THE READ STILL HAPPENED (PA001-A5). No snapshot is
+                # written -- that part is right, and it is what keeps
+                # an unchanged table from growing history it does not
+                # need -- but the SOURCE WAS READ, at this time, and
+                # found to say the same thing.
+                #
+                # WITHOUT THIS, the property only ever advanced when
+                # the DATA changed, so a lookup table that never
+                # changes kept its first timestamp for ever. The
+                # overlay bound is min() across every table, so ONE
+                # static table pinned it to the day the mirror was
+                # built.
+                #
+                # WHAT THAT COST, measured: a write applied through
+                # Elysium, then the same field changed DIRECTLY in the
+                # source afterwards. Source and mirror both said
+                # "platinum"; the overlay still masked it with the
+                # older applied write and the user was shown "gold".
+                # The overlay exists to cover the gap between a write
+                # and the next sync -- not to outlive the sync that
+                # closed it.
+                #
+                # A PROPERTY, NOT A SNAPSHOT: set_properties commits
+                # metadata without adding to the table's history, so
+                # this records the read without inventing a version of
+                # data that did not change.
+                with table.transaction() as tx:
+                    tx.set_properties({SOURCE_READ_PROPERTY: read_started_at})
             else:
                 table.overwrite(arrow_table)
                 # AFTER THE DATA COMMIT, never before (001's F-29): a

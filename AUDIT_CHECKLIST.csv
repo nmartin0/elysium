@@ -95,7 +95,7 @@ PA001-A1,PA,PIPELINE_AUDIT,CRITICAL,drift policy queries the write log by TABLE 
 PA001-A2,PA,PIPELINE_AUDIT,CRITICAL,many-to-many join tables never synced; m2m links empty on the default path,sync_targets.py:212,P6;P12,"CONFIRMED + FIXED patch 410; a second defect found while fixing (no id on a join table) fixed too"
 PA001-A3,PA,PIPELINE_AUDIT,HIGH,rejected writes marked applied and served through the overlay,write_mediator.py:1812,P14,"CONFIRMED + FIXED patch 413: an abandoned status, which the comment already named"
 PA001-A4,PA,PIPELINE_AUDIT,HIGH,overlay used only the newest applied entry,write_log.py,P7,"FIXED 529b235"
-PA001-A5,PA,PIPELINE_AUDIT,HIGH,"overlay bound is a stale last-changed time; min() across tables",deployment_loader.py:588 iceberg_sync.py:556,P7-C,"partly fixed"
+PA001-A5,PA,PIPELINE_AUDIT,HIGH,"overlay bound is a stale last-changed time; min() across tables",deployment_loader.py:588 iceberg_sync.py:556,P7-C,"CONFIRMED + FIXED patch 429: an unchanged table records the READ without writing a snapshot"
 PA001-A6,PA,PIPELINE_AUDIT,HIGH,served snapshots frozen until reload; pins can mix,deployment_loader.py mirror_adapter.py:297,P13,unverified
 PA001-A7,PA,PIPELINE_AUDIT,HIGH,"source column names executed as SQL: reserved word, alias, a-b expression, subquery EXECUTED",sqlite_adapter.py:433,P4-G;P8,"ALREADY FIXED by LIB-3 patch 390; all four shapes verified safe on the bronze path and pinned by tests patch 416"
 PA001-A8,PA,PIPELINE_AUDIT,HIGH,decimal equals/in crashed; range refused,mirror_adapter.py:333 filters.py:57,P9,"FIXED ce14480 + patch 396"
