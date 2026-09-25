@@ -10,9 +10,17 @@
  * Unlayered styles beat EVERY layer, so importing Blueprint plainly
  * while putting our own CSS in a layer would silently invert the
  * entire override order -- Blueprint would win everything, the test
- * suite would stay green, and the app would look wrong. Nothing in
- * this repository can catch that: there are no computed-style
- * assertions and no screenshot tests.
+ * suite would stay green, and the app would look wrong.
+ *
+ * THIS FILE USED TO SAY NOTHING HERE COULD CATCH THAT. It was true
+ * when written. layers.test.ts now walks every stylesheet we own and
+ * fails on any rule outside a layer block -- one written plainly, one
+ * inside an unlayered @media, or a whole wrapper removed. There are
+ * still no computed-style assertions and no screenshot tests, so the
+ * check is on the SOURCE: it proves every rule we AUTHOR is layered,
+ * not that the bundler kept it that way. The built bundle was measured
+ * by hand at the commit adding that test -- 2,954 rules in vendor, 199
+ * in components, 2 in tokens, and ZERO unlayered.
  *
  * The order, outermost-in:
  *   vendor      Blueprint's own stylesheet
@@ -22,6 +30,16 @@
  *   components  everything a sub-app renders
  *   utilities   single-purpose helpers
  *   overrides   deliberate, documented exceptions -- should stay empty
+ *
+ * FOUR OF THOSE CARRY NO RULES TODAY -- base, layout, utilities,
+ * overrides -- and that is not a defect to be fixed by filling them.
+ * `overrides` should stay empty by design; `utilities` has no helper
+ * yet; base and layout hold rules that sit fine in `components`. An
+ * audit read the empty layers as an unused architecture and proposed
+ * either migrating in one pass or deleting the declaration. The
+ * measurement above answers it: every rule already obeys the order, so
+ * there is nothing to migrate, and deleting the declaration would
+ * create the exact inversion described above.
  */
 @layer vendor, tokens, base, layout, components, utilities, overrides;
 
