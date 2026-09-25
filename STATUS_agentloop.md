@@ -164,12 +164,119 @@ files sit outside my area. **Not touched. Flagging for backend.**
 
 ---
 
+## LB-1 -- arithmetic in prose. REPRODUCED. Proposing the shape before
+## building, because neither half is safe to ship alone.
+
+### It reproduces
+
+Drove the real `synthesize_insight()` with a client returning answers
+the records do not support. Records given: two transactions, `49.99`
+and `199.00`.
+
+    case                                      reached the user?
+    correct arithmetic ($248.99)              returned verbatim
+    WRONG arithmetic ($1,248.99)              returned verbatim
+    invented figure ($7,412.00)               returned verbatim
+    invented count ("47 transactions")        returned verbatim
+    a real value, copied ($49.99)             returned verbatim
+    invented email                            WITHHELD
+    citation out of range [R9]                WITHHELD
+
+**An invented figure with a valid citation reaches the user.** The two
+existing checks fire correctly on their own cases, which is what makes
+this a reproduction of a gap rather than a broken harness.
+
+### And 1b ALONE would be a regression -- measured, not assumed
+
+The module docstring already argues against a number check: "$49.99 +
+$199.00 = $248.99 is a genuinely correct answer that would never
+appear verbatim in the source records -- a naive verbatim check
+applied to arithmetic would wrongly flag it."
+
+**That objection is correct.** A verbatim number check over the same
+cases withholds the CORRECT total along with the wrong ones:
+
+    correct arithmetic    ungrounded: ['248.99']    WITHHELD
+    WRONG arithmetic      ungrounded: ['1,248.99']  WITHHELD
+    invented figure       ungrounded: ['7,412.00']  WITHHELD
+    invented count        ungrounded: ['47']        WITHHELD
+    real value copied     ungrounded: []            allowed
+
+So the dependency in the work list runs BOTH ways. It says "do not do
+1a without 1b". It is equally true that **1b without 1a discards
+correct answers**, which is a worse failure than the one it fixes: a
+check that withholds good answers gets turned off.
+
+**1a IS WHAT MAKES 1b SOUND.** Once the code supplies every figure the
+answer needs, the model never has to compute one, and a verbatim check
+over numbers becomes exactly as safe as the email check already is --
+for the same stated reason: the value can then only be COPIED, never
+legitimately computed.
+
+### A trap the measurement exposed, which shapes 1b
+
+`"Ada has 2 transactions"` PASSED the verbatim check -- not because it
+was verified, but because `"2"` happens to be an `object_id` in the
+records. The naive check greps the whole serialised record, so an
+invented figure can be grounded by coincidence against an unrelated
+identifier.
+
+**So 1b must ground a number against the VALUES of numeric fields and
+the computed figures, never against `str(record)`.** The existing
+email check greps `" ".join(str(record) ...)` and is safe doing so
+only because an email-shaped string cannot collide with an id. A
+number can, and will.
+
+### The shape I propose -- NOT BUILT, want agreement first
+
+1a. `synthesize_insight()` computes deterministic aggregates over the
+    records it was given -- count, sum, min, max per numeric field,
+    per object type -- and appends them as their own tagged records
+    (`[R3] {"computed": "sum of amount over 2 Transactions", "value":
+    "248.99"}`). In `Decimal`, never float: this project added a
+    `decimal` type precisely because `float()` silently loses money
+    digits, and a synthesis total computed in float would reintroduce
+    that at the last step.
+
+1b. `_has_only_grounded_numbers()`, a third independent check beside
+    citations and emails, failing closed the same way: every numeric
+    token in the answer must appear among the field values or the
+    computed figures. Same narrow scope, same "vacuously true when
+    there are none", no generalisation into a pattern registry.
+
+### Three things to decide, and they are why I stopped
+
+**WHICH FIGURES.** Computing count/sum/min/max for every numeric field
+is deterministic and needs no guess about the question. Computing only
+what the question asks needs understanding of the question, which is
+the model's job -- circular. I would build the first. But it is a
+scope decision, not mine.
+
+**THE COST, which AR-1 makes concrete.** Every appended record is
+prefill on a call where prefill dominates (~5.4 tokens/s measured).
+Aggregates over a wide result set could add meaningfully to the
+synthesis prompt. **I have not measured this**, and I would measure it
+before landing 1a rather than after.
+
+**OVERLAP WITH `aggregate_object`.** The agent already HAS an
+aggregate step, and LB-9/IDEAS.md record that it under-selects it.
+There is a real argument that the right fix is to make the agent
+aggregate properly and have synthesis refuse ungrounded numbers --
+which is a different, larger piece of work touching the step prompt.
+Computing in synthesis may be the correct narrow fix, or it may
+paper over the loop choosing badly. Worth an opinion before I build.
+
+Nothing committed for LB-1 beyond this record. Probes deleted.
+
+---
+
 ## Next
 
-`LB-1` (arithmetic in prose -- 1a compute in code, 1b a number check
-that fails closed; not 1a without 1b), then `AL-2` (the planner reads
-raw source data with no untrusted-data framing). I will read
-SECURITY_ARCHITECTURE.md before AL-2, as 001AGENTLOOP §3 directs.
+Blocked on the three LB-1 decisions above. While they are open I will
+start `AL-2` (the planner reads raw source data with no untrusted-data
+framing), reading SECURITY_ARCHITECTURE.md first as 001AGENTLOOP §3
+directs -- what the model may be trusted with is a security question,
+not a prompt-engineering one.
 
 Nothing in `REQUESTS_agentloop.md` yet -- I have needed no change
 outside my area.
