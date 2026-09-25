@@ -109,7 +109,7 @@ PA001-A15,PA,PIPELINE_AUDIT,MED,tables read at different times; a refusal freeze
 PA001-A16,PA,PIPELINE_AUDIT,MED,repair_catalog --write takes no sync lock,scripts/repair_catalog.py,IN,unverified
 PA001-A17,PA,PIPELINE_AUDIT,LOW,'unchanged' never recorded; degraded recorded as 'synced',run_sync.py:425,IN,unverified
 PA001-A18,PA,PIPELINE_AUDIT,LOW,declared-column check ignores MDO storage and can pick a quarantine table,integrity.py:255,IN,unverified
-PA001-A19,PA,PIPELINE_AUDIT,HIGH,every API integration test runs read_from_mirror false,tests/integration/fixtures/config.yaml:51,IN,"changed by patch 386?"
+PA001-A19,PA,PIPELINE_AUDIT,HIGH,every API integration test runs read_from_mirror false,tests/integration/fixtures/config.yaml:51,IN,"ALREADY FIXED by patch 386; verified the suite template carries a gold namespace. Patch 428 adds the guard tests that keep it fixed"
 PA001-G1,PA,PIPELINE_AUDIT,CRITICAL,many-to-many links raise on gold,gold_view.py:58,P16,"NOT REPRODUCED - closed by the gold_view join-table branch plus A2 (patch 410). Pinned by live-vs-gold parity tests patch 425; both historical failure modes verified caught"
 PA001-G2,PA,PIPELINE_AUDIT,HIGH,"gold parity test compares gold to mirror, not source",tests/unit/test_gold_parity.py,IN,"CONFIRMED + FIXED patch 426: gold-vs-SOURCE suite added with a cross-silo field; the mirror-backed mediator renamed from from_source"
 PA001-G3,PA,PIPELINE_AUDIT,MED,one cross-silo field removes the linked graph from gold,gold_view.py,P16,"NOT REPRODUCED patch 426: the integration fixture builds all SIX types and gold.Customer carries risk_score=0.35 fused from risk_db. Pinned by the new gold-vs-source suite"
