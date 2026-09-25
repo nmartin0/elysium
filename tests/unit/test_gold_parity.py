@@ -1,5 +1,18 @@
 """
-The same answers from gold as from the source (GOLD-3).
+The same answers from gold as from the MIRROR (GOLD-3).
+
+WHAT THIS FILE DOES NOT DO, said first because its name and its
+variables used to imply otherwise (PA001-G2): it compares gold against
+the MIRROR, not against the source database. Both are Elysium's own
+copies. They can agree with each other and both be wrong about what
+the customer's database actually says -- and a cross-silo field or a
+many-to-many link, neither of which this schema has, is exactly where
+that would show.
+
+The variable holding the mirror-backed mediator was called
+`from_source`, which made the file read as though it did. It is
+`from_mirror` now, and the gold-against-SOURCE comparison lives in
+tests/unit/test_gold_matches_the_source.py.
 
 THE CLAIM THIS EXISTS TO MEASURE: pointing the ontology at gold
 changes where rows come from and NOTHING a caller can observe. Two
@@ -125,13 +138,13 @@ def both(tmp_path, isolated_audit_log):
                              write_log=WriteLogWriter(tmp_path / f"{name}.db"),
                              audit_log=AuditLog(isolated_audit_log / f"{name}.log"))
 
-    from_source = _mediator(SCHEMA, {"p": MirrorReadAdapter(sync._catalog, "p")},
+    from_mirror = _mediator(SCHEMA, {"p": MirrorReadAdapter(sync._catalog, "p")},
                              {"Customer": "p", "Transaction": "p"}, "source")
     view, excluded = build_gold_view(SCHEMA)
     assert excluded == {}
     from_gold = _mediator(view, {"gold": GoldConnector(sync._catalog)},
                            {"Customer": "gold", "Transaction": "gold"}, "gold")
-    return from_source, from_gold
+    return from_mirror, from_gold
 
 
 BINDING_KEYS = frozenset({"column", "storage", "via_table", "via_column",
