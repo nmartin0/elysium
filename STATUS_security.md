@@ -167,6 +167,68 @@ own test file that nothing used.
 
 ---
 
+## Session 4 — F-12a CLOSED, and 004-8 analysed
+
+**F-12a closed**, commit `6e3b413`. The audit said the docstring omits
+`manage:deployment`; it omitted THREE -- `manage:roles`,
+`manage:escalation` and `manage:deployment`. Fixed at the root: the
+heading states no count at all, and the literals are no longer a
+second list beside `EXACT_GRANTS`. Four controls fired, including one
+that caught my own test being wrong -- it looked for the words
+anywhere and so fired against the corrected file, because the
+docstring deliberately quotes its former wrong claim.
+
+**004-8 ANALYSED, NOT BUILT -- and it is narrower and different from
+what the audit describes.** The claim is that `WriteMediator` calls
+`_security_allowed()` directly rather than `check_access()`, so the
+documented single enforcement point is not single. What the code
+actually does:
+
+    RBAC is gated ONCE, upstream, at write_mediator.py:1183 --
+    authorize(user, roles, "execute:<Action>"), logged with
+    mac_allowed=None, raising on refusal.
+
+    MAC is gated PER OBJECT in _authorize_sub_write (:982), which
+    receives the already-decided rbac_allowed purely so its per-object
+    audit line is accurate. By the time it runs, rbac_allowed is
+    always True.
+
+So it is not two implementations of one combination. It is RBAC at the
+ACTION level and MAC at the OBJECT level, which is the right shape --
+the grant is about the action, and re-deciding it per sub_write would
+be redundant.
+
+THE REAL DIFFERENCE IS ONE LINE, AND IT IS AN AUDIT GAP THE AUDIT DID
+NOT FIND. `check_access()` calls `log_security_resolution_failed()`
+when a MAC denial turns out to be an object whose security value could
+not be resolved AT ALL -- an orphaned MDO record, a genuine
+data-integrity signal, distinct from an ordinary mismatch. The write
+path does not. So the same broken object produces that signal on a
+READ and produces nothing on a WRITE.
+
+TWO OTHER SITES ALREADY SHOW THE INTENDED SHAPE. Approver eligibility
+(:1420) solves the identical "a create has no object to check" problem
+by branching to authorize() for create and check_access() otherwise,
+and its docstring says reuse "means eligibility here cannot drift from
+eligibility anywhere else". The proposer site inlines it instead.
+
+PROPOSED, for agreement before building, because this is the write
+authorization path:
+  1. Route the non-create branch through check_access(), matching
+     :1420. Gains the resolution-failure signal, and future-proofs
+     against a third gate -- SECURITY_ARCHITECTURE's write-down check
+     is exactly such a candidate and would otherwise reach reads only.
+  2. Keep the create branch as it is: check_access() cannot express
+     "no row exists to consult", and inventing a skip-MAC parameter
+     for it would weaken the chokepoint to fix a docstring.
+  3. Correct access_control.py's claim either way. Even after (1) the
+     create branch bypasses it, so the absolute wording stays false.
+
+Cost: check_access() recomputes RBAC per sub_write. Same answer,
+already known True -- one dict lookup, not a query.
+
+---
+
 ## Where this leaves the list
 
     Closed, controlled      E-01  E-04  E-05  F-27
@@ -176,7 +238,9 @@ own test file that nothing used.
 
     DONE, controlled        F-30         pushed as d992843
                             F-21         commit 39f2a94
-    Reproduced, open, mine  004-8  F-12a
+                            F-12a        commit 6e3b413
+    Analysed, needs a nod   004-8        shape proposed above
+    Reproduced, open, mine  (none -- next is 004-8's build)
     Need one measurement    F-05  F-12b
     Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
 
