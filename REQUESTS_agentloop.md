@@ -83,3 +83,46 @@ I have not edited `pyproject.toml`. Adding `retrying_adapter` (and
 Alternatively an `independence` contract over the whole `core.llm`
 package would stop enumerating, and then no future sibling needs
 remembering -- which is the actual failure here.
+
+---
+
+## R3 -- LB-8 asks to reverse a documented decision. Confirm or reverse it.
+
+**Owner:** backend (`core/ontology/mediator.py`)
+**Status:** NOT BUILT. I stopped rather than reverse a deliberate,
+documented scope boundary on my own.
+
+LB-8 says the agent looks entities up by exact-match guess although
+`search_object_free_text()` exists. Both halves are true. But that
+method's own docstring says it was built
+
+> for a real end user typing a few characters of a name or email into
+> a search box, not for the model's own precise, single-field
+> search_object() steps (which stay completely unchanged by this
+> addition)
+
+**AND IT DOES NOT RECONCILE PENDING WRITES.** Verified, not taken from
+the comment: `_reconcile_search_with_pending_writes()` is called at
+`mediator.py:1200` inside `search_object()` and nowhere inside
+`search_object_free_text()`. Its docstring is accurate about this and
+calls the gap acceptable because it is "a discovery aid, not a
+correctness-sensitive read".
+
+**That reasoning holds for a browse box and not for the agent.** A UI
+user sees a list and picks from it. An agent's search result becomes
+an ANSWER. An object mid-update would be silently missing from, or
+wrongly present in, a result the user never gets to eyeball.
+
+So LB-8 is a choice between three things, and it is not mine:
+
+1. Reconcile pending writes in `search_object_free_text()`, then
+   exposing it to the agent is safe. `core/ontology/**`, yours.
+2. Expose it as-is and accept the window, documented at the step.
+   Cheap, and it puts a knowingly-unreconciled read in the answer
+   path.
+3. Confirm the boundary stands and CLOSE LB-8 as declined. Also a
+   legitimate answer -- the exact-match path works when the model has
+   an exact value, and LB-2 (equality-only filters) may be the better
+   fix for the same underlying complaint.
+
+I would take 1 or 3. Tell me which and I will do my half.
