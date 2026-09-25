@@ -24,20 +24,10 @@ REGION = "us-west"
 
 
 def main() -> int:
-    paths = resolve_runtime_paths()
-    config = load_deployment(paths.config_dir)
-
-    if ROLE not in config.roles:
-        print(
-            f"No {ROLE!r} role in {paths.config_dir}/policy.yaml.\n"
-            f"Add one, or point ELYSIUM_CONFIG_DIR at a deployment that "
-            f"has it. Both deployment/etc and tests/integration/fixtures "
-            f"do.",
-            file=sys.stderr,
-        )
-        return 1
-
-    # REFUSES TO RUN WITHOUT --yes-this-is-development, and the reason
+    # REFUSES TO RUN WITHOUT --yes-this-is-development, FIRST, before
+    # any work (001's F-30). It used to sit after the role check, so a
+    # run certain to refuse still resolved paths and loaded a
+    # deployment -- which creates directories. The reason
     # is the password. A four-grant admin account with a memorable
     # password is a mistake; a SIXTEEN-grant account whose password is
     # the single character "a" is a back door, and the thing that makes
@@ -56,6 +46,19 @@ def main() -> int:
             f"That is a back door, not an account. If this really is a "
             f"development machine, re-run with:\n\n"
             f"    python -m scripts.create_debug_user --yes-this-is-development\n",
+            file=sys.stderr,
+        )
+        return 1
+
+    paths = resolve_runtime_paths()
+    config = load_deployment(paths.config_dir)
+
+    if ROLE not in config.roles:
+        print(
+            f"No {ROLE!r} role in {paths.config_dir}/policy.yaml.\n"
+            f"Add one, or point ELYSIUM_CONFIG_DIR at a deployment that "
+            f"has it. Both deployment/etc and tests/integration/fixtures "
+            f"do.",
             file=sys.stderr,
         )
         return 1
