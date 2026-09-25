@@ -73,21 +73,150 @@ being off is not.
 
 ---
 
-## Open, each verified against this base
+## The work list, audited 2026-09-25
 
-Measured, not copied from the checklist.
+Every item below was re-measured on this base (`f6c5a0b`). The two
+commits since `2aebe3b` touch no file under `ui/`, confirmed by
+`git diff --stat`, so earlier measurements carried over rather than
+being re-taken on faith.
 
-| Item | State |
-| --- | --- |
-| CSS-S2-01 | **4 dead class selectors** confirmed: `.object-search__controls`, `.object-search__empty`, `.action-form__field`, `.schema-panel__toolbar`. None appears in any `.tsx`/`.ts`/`.html`. |
-| CSS-S2-02 | **3 unread custom properties** confirmed: `--border-control`, `--text-on-danger`, `--three-column-min`. |
-| CSS-S3-03 | Confirmed and narrowed. Two adjacent comment blocks explain the same dvh/vh reasoning, and the first says "the vh line above" when the `vh` line is *below* it, at `:138`. It is a leftover from when the viewport lock sat on a different element. |
-| UI-S2-01 | No `<noscript>` in `ui/index.html`. |
-| UI-S2-02 | Confirmed **empirically**, not by reading. Reproduced the real serving path (FastAPI 0.141.1, the same `app.frontend("/", fallback="index.html")` line, against the real `dist/`): a browser's automatic favicon request, with Chrome's actual `Accept: image/avif,...` header, returns **404**. The same path with a navigation `Accept` returns `index.html`, so the fallback discriminates on `Accept` exactly as `api/app.py`'s comment claims. No favicon asset exists anywhere in the repo. |
-| F-31 | `ObjectNotes.tsx` has no session-expiry handling at all -- no `handleIfSessionExpired`, no 401 path. |
-| F-32 | `api.ts:246`, `body.detail` read off an untyped `response.json()`. |
-| E-19 | All three parts verified: log rotation **ships** (`deployment/logrotate/elysium`, installed at `install.sh:166`); an ad-hoc migration mechanism **exists** (`add_column_if_missing`, used by four stores); `user_version` appears **nowhere**, so the narrow true gap is exactly as E-19 states. `UI_ROADMAP.md` is mine to correct. |
-| GOLD-3d (display half) | Backend confirmed ready: `quarantined_rows`/`quarantine_reason` at `api/routes.py:2142`, the `/health` quarantine key, `/data-freshness`, `published_at`. UI side untouched -- **zero references to quarantine or `published_at` anywhere in `ui/`**, and `getDataFreshness` appears only in test mocks. Real display work, not wiring. |
+The audit merged three items into one, split one into two, moved two
+assertions, and deferred two. Net: **thirteen findings, eight
+commits.**
+
+### Tier A -- verifiable here, in order
+
+**A1. Dead CSS and the tokens it orphans** (CSS-S2-01, CSS-S2-02, and
+`button.danger`) -- ONE commit, because they cannot be separated.
+`button.danger` (`index.css:882`) is the ONLY user of `--fill-danger`
+(`tokens.css:133`), and `--text-on-danger` sits in the same token
+block. Delete the rule and the token is orphaned; delete the token
+first and the rule breaks. Touching the same lines twice to keep them
+"one change each" would be worse than one coherent deletion.
+
+    5 dead rules    .object-search__controls, .object-search__empty,
+                    .action-form__field, .schema-panel__toolbar,
+                    button.danger
+    3 unread tokens --border-control, --text-on-danger,
+                    --three-column-min
+    1 orphaned by the above: --fill-danger
+
+THE GUARD MUST MATCH IN CLASS-ATTRIBUTE POSITION, not by word.
+Measured: a whole-word search of production source finds **4** of the
+5, because `danger` legitimately appears in real code as a Blueprint
+intent value (`SchemaPanel.tsx:80` returns `'danger'`). Extracting the
+class tokens actually rendered -- from `className=`/`class=`
+attributes -- finds **5, with zero false positives** across 156
+classes. A guard whose match is weaker than the thing it guards is
+CSS-S3-01 one layer up, which is the whole reason this one is worth
+getting right.
+
+THE TOKEN ASSERTION GOES IN `tokens.test.ts`, not `theme.test.ts`.
+B4 says so and B4 is right: `tokens.test.ts:88` already computes the
+`defined` and `used` sets for the FORWARD direction ("every token a
+stylesheet references is defined"). The converse is two lines beside
+it, and splitting the pair across two files would be the drift both
+tests exist to prevent.
+
+**A2. The stale dvh comment** (CSS-S3-03). Separate from A1: a comment
+correction is a different change, and doing it after A1 avoids
+re-editing the same region. Narrowed from the audit's "a duplicated
+comment block": two adjacent blocks explain the same dvh/vh reasoning,
+and the first says "the vh line above" when the `vh` line is **below**
+it at `:138`. It is a leftover from when the viewport lock sat on a
+different element, which the second block states correctly.
+
+**A3. The HTML shell** (UI-S2-01, UI-S2-02) -- one commit, one file,
+one finding in two halves. The favicon needs an actual asset; there
+are zero SVGs in `ui/` today, so this is a small deliberate choice
+rather than a link tag.
+
+**A4. `F-32`** -- `apiFetchOrThrow` reads `body.detail` off an untyped
+`response.json()` at `api.ts:246`, against the file's own stated
+policy. Shell-api, and everything else depends on it, so it goes
+before F-31.
+
+**A5. `F-31`** -- `ObjectNotes.tsx` has no session-expiry handling at
+all. Comparator measured rather than assumed: **6 other panels in
+`app-browse` call `handleIfSessionExpired`**, so "the only error
+handler ignoring session expiry" holds.
+
+**A6. `E-19`** -- correct `UI_ROADMAP.md` items 22 and 25 to the
+narrow true statement. All three parts verified against the backend's
+code (read-only): rotation ships, ad-hoc migrations exist,
+`user_version` appears nowhere.
+
+**A7. `CSS-S1-02`, as a guard rather than a migration.** Recommending
+NOT to migrate further -- see the section below -- and instead adding
+the assertion nothing currently makes: the built CSS contains no
+unlayered rule. That is the property that actually matters and the one
+that would catch a regression.
+
+**A8. `B0`, the React rules -- SPLIT IN TWO.** Measured by turning
+both rules on and reading the real output: **12 errors across 10 files
+in 5 packages**, exactly matching B0's recorded counts (the one note
+in this repository that has not decayed). They split on a real
+boundary, not an arbitrary one:
+
+    react/refs               2 sites, and BOTH are in the shared hooks
+                             useFetchOnce and useDeferredValue, which
+                             every package consumes. Highest blast
+                             radius, possibly intentional, and it
+                             needs a decision before a fix. Its own
+                             commit, first and alone.
+    react/set-state-in-effect  10 sites, per-component: RolesPanel x2,
+                             WatchDialog x2, ApprovalsPanel,
+                             NotificationsPanel, WatchList, LinkTrail,
+                             SavedViews, ExploreRelated. Each is a
+                             behavioural change -- derive the state, or
+                             reset with a key -- so each needs its own
+                             review and tests.
+
+Ordered last in Tier A because it is the only item that changes
+runtime behaviour rather than text, dead code or a guard.
+
+### Tier B -- blocked on a running stack, and honestly so
+
+Neither can be verified here, and `CLAUDE.md` is explicit that
+shipping UI fixes which pass jsdom and do not work is a failure this
+project has already had.
+
+**B1. The three Blueprint overrides** (UNIFIED_ROADMAP B4, absent from
+my brief) -- `.app__nav.bp6-menu` (`:277`),
+`.user-menu__trigger.bp6-button.bp6-minimal` (`:340`), and
+`.object-search__results.bp6-card-list > .object-search__result.bp6-card`
+(`:930`). B4 says the specificity stacking can go now layers are real.
+It is **purely a cascade question, which jsdom cannot see at all** --
+removing specificity and trusting layer order is exactly the change a
+green unit suite would wave through and a browser would catch.
+
+**B2. GOLD-3d, the display half.** Backend confirmed ready. The logic
+is jsdom-testable; whether quarantine counts and a publication time
+read correctly beside the silo panel is not.
+
+### What blocks Tier B
+
+`npm run e2e` needs a real uvicorn serving the built bundle, plus
+`plainuser` and `adminuser` from `scripts/create_e2e_users.py`.
+Measured in this container: **`pyiceberg`, `argon2`, `ruamel.yaml` and
+`sqlalchemy` are all missing**, so the backend cannot start without
+installing the full requirement set. Also worth noting before anyone
+tries: `playwright.config.ts` defaults `baseURL` to `:8000`, and my
+assigned port is **8001**, so it needs `E2E_BASE_URL` set.
+
+This is environment setup rather than a code change, and it is not
+mine to decide how much of the backend's dependency tree to install in
+a front-end worktree. Flagging rather than doing.
+
+### Dropped
+
+**The pre-coordination stash**, superseded on three counts: its guard
+matched by word and so missed `button.danger`; it put the token
+assertion in `theme.test.ts` rather than `tokens.test.ts`; and it did
+not delete the fifth rule. Deleting it rather than keeping it, for the
+same reason `CLAUDE.md` says to clear old patches -- a stale artefact
+that can still be applied is a trap.
+
 
 ---
 
