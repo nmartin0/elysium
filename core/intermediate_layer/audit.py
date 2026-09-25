@@ -88,6 +88,7 @@ Used by: core/ontology/mediator.py (owns the instance directly,
 
 import atexit
 import json
+import os
 import shutil
 import tempfile
 import uuid
@@ -121,6 +122,75 @@ def _private_log_path() -> Path:
         # one per instance, so a test run leaves nothing behind in /tmp.
         atexit.register(shutil.rmtree, _PRIVATE_DIRECTORY, True)
     return _PRIVATE_DIRECTORY / f"audit-{uuid.uuid4().hex}.log"
+
+
+
+# Reading the END of an append-only log without reading the whole of it.
+#
+# 64 KiB because it is comfortably larger than any single audit entry
+# (the widest shipped one is ~220 bytes) so one block almost always
+# satisfies a whole request's trace, and small enough that the read is
+# one page-cache hit rather than a file copy.
+_TAIL_BLOCK_BYTES = 64 * 1024
+
+
+def _tail_lines(log_path: Path, max_lines: int) -> Iterable[str]:
+    """Yield up to max_lines lines from the END of a file, NEWEST FIRST.
+
+    WHY THIS EXISTS (001's F-21). entries_for_request() used
+    `f.readlines()` and then sliced `lines[-max_scan:]`, which bounded
+    the PARSE and not the READ: the whole file was in memory before the
+    slice could discard any of it. Its own docstring claimed the cap
+    "bounds the cost to a constant regardless of how long the
+    deployment has been running", and that was false. MEASURED on a log
+    whose answer was three entries at the very end:
+
+           10,000 entries   2.1 MB file    116 ms     2.7 MB peak
+          100,000 entries  21.3 MB file    627 ms    26.6 MB peak
+          400,000 entries  85.2 MB file    955 ms   105.3 MB peak
+
+    Peak memory tracked FILE SIZE, not max_scan. On a deployment that
+    has been up for a month, reading one request's trace is a
+    file-sized allocation.
+
+    SPLITTING ON b"\n" AT THE BYTE LEVEL IS SAFE for UTF-8: every byte
+    of a multi-byte sequence is >= 0x80, so a newline byte can never
+    appear inside one. Blocks are joined to a remainder before
+    splitting, so a line straddling a block boundary is never torn.
+
+    EMPTY LINES ARE SKIPPED AND DO NOT COUNT toward max_lines. The old
+    slice counted them and then discarded each one at json.loads(); not
+    counting them makes the cap mean what it says.
+    """
+    with open(log_path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        position = f.tell()
+        remainder = b""
+        yielded = 0
+
+        while position > 0 and yielded < max_lines:
+            read_size = min(_TAIL_BLOCK_BYTES, position)
+            position -= read_size
+            f.seek(position)
+            block = f.read(read_size) + remainder
+
+            lines = block.split(b"\n")
+            # The first element may START before this block; the next
+            # iteration (which reads EARLIER bytes) completes it.
+            remainder = lines.pop(0)
+
+            for line in reversed(lines):
+                if not line:
+                    continue
+                yield line.decode("utf-8", "replace")
+                yielded += 1
+                if yielded >= max_lines:
+                    return
+
+        # Position 0 reached: the remainder is the file's FIRST line,
+        # and it is complete.
+        if remainder and yielded < max_lines:
+            yield remainder.decode("utf-8", "replace")
 
 
 class AuditLog:
@@ -218,10 +288,10 @@ class AuditLog:
             return []
 
         matches: list[dict] = []
-        with open(self._log_path) as f:
-            lines = f.readlines()
-
-        for line in reversed(lines[-max_scan:]):
+        # NEWEST FIRST, AND ONLY max_scan OF THEM READ (F-21). This was
+        # readlines() plus a slice, which read the whole file to throw
+        # most of it away -- see _tail_lines() for the measurements.
+        for line in _tail_lines(self._log_path, max_scan):
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
