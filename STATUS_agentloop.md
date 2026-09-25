@@ -833,3 +833,79 @@ trap for whoever takes it: `TokenUsage.unreported` counts calls whose
 provider reported nothing, so a budget enforced on reported tokens
 silently does not apply at all when the provider is quiet. A budget
 that can fail open without saying so is not a budget.
+
+---
+
+## AR-2 -- DONE. The ten points are back.
+
+My own AL-3/LB-6 measurement pointed here, so this is the corrective.
+
+The system prompt used to END with `_action_state_notes()`, which
+depends on what has been gathered. On the hop a write became relevant
+the system prompt CHANGED, and everything from there on was re-read.
+
+**BEFORE** (AR-1's re-measurement, same user, same deployment):
+
+    hops 2-5   97.4%-97.7%   diverges in the user message
+    hops 6-7   87.2%, 87.8%  diverges in the SYSTEM PROMPT
+                             (5989 -> 6135 -> 6138)
+
+**AFTER**, measured the same way:
+
+    hops 2-5   96.8%-97.9%   diverges in the user message
+    hops 6-7   96.1%, 96.1%  diverges in the user message
+    system prompt            6432 chars, IDENTICAL every hop
+
+**Nine points recovered on exactly the hops where a write is being
+considered** -- the ones the shipped deployment reaches whenever a
+query touches a Transaction.
+
+The notes did not go away. They moved into the USER message, beside
+the gathered data they are derived from -- both change every hop, so
+keeping them together means the system prompt never does. They sit
+AFTER `Gathered so far`, never before: ahead of the data they describe
+they would move the divergence point earlier for nothing, which is the
+same mistake one layer down that AR-2 undoes one layer up.
+
+`_build_system_prompt()` no longer ACCEPTS `gathered`, so the
+stability holds by construction rather than by care.
+
+### Tests strengthened, not weakened
+
+Three pre-existing tests and one of mine asserted where the notes sat
+in the SYSTEM prompt. Their subject moved, so they were repointed
+rather than deleted -- and the central one got stronger: it used to
+assert the system prompt was identical UP TO the notes, which was the
+best available while the notes were in it. It now asserts identical,
+full stop.
+
+`_build_user_message()` was extracted so the per-hop half can be
+tested as one, the way `_build_system_prompt()` is.
+
+### Controls, two
+
+    notes back at the end of the system prompt   3 tests fail
+    notes BEFORE the data they describe          2 tests fail
+
+**One honest note on control 1.** It did NOT trip
+`test_the_system_prompt_does_not_vary_with_what_was_read`, because
+reintroducing the bug required ADDING the `gathered` parameter back,
+and with it defaulted the notes render empty. The signature is what
+makes that assertion hold; three other tests caught the regression.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2891 passed, 8 skipped  (2889 before)
+
+### Still open, and not mine
+
+**R1** unwired after four checks -- AL-5 merged and inert.
+
+**R3 NOT answered.** I checked with `sed` first and read it as done;
+the range ran past the function and matched the reconciler's own
+DEFINITION further down the file. Parsed the AST instead:
+`search_object` reconciles pending writes, `search_object_free_text`
+does not. LB-8 stays blocked. Recording the bad check because a grep
+that answers the wrong question looks exactly like a grep that answers
+the right one.

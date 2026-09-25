@@ -49,7 +49,7 @@ def agent_schema(synced_deployment):
 
 class TestThePrompt:
     def test_it_names_no_binding_key(self, agent_schema):
-        prompt = _build_system_prompt(agent_schema, [], False, {}, [])
+        prompt = _build_system_prompt(agent_schema, [], False, {})
 
         for key in BINDING_KEYS:
             assert key not in prompt, f"the prompt told the model about {key}"
@@ -58,7 +58,7 @@ class TestThePrompt:
         """A silo name is the operator's word for a database, and a
         lake namespace is Elysium's own plumbing. Neither helps a model
         answer a question about customers."""
-        prompt = _build_system_prompt(agent_schema, [], False, {}, [])
+        prompt = _build_system_prompt(agent_schema, [], False, {})
 
         for name in INTERNAL_NAMES:
             assert name not in prompt, f"the prompt told the model about {name}"
@@ -66,7 +66,7 @@ class TestThePrompt:
     def test_but_it_DOES_name_the_ontology(self, agent_schema):
         """The control on the two above: a prompt that said nothing
         would pass them and be useless."""
-        prompt = _build_system_prompt(agent_schema, [], False, {}, [])
+        prompt = _build_system_prompt(agent_schema, [], False, {})
 
         assert "Customer" in prompt
         assert "region" in prompt
@@ -76,7 +76,7 @@ class TestThePrompt:
         ontology calls the type Customer, and that is what the model
         should know -- a distinction that only matters when the two
         differ, which is most real deployments."""
-        prompt = _build_system_prompt(agent_schema, [], False, {}, [])
+        prompt = _build_system_prompt(agent_schema, [], False, {})
 
         assert "FROM customers" not in prompt
         assert "table" not in prompt.lower().split("available object types")[0]

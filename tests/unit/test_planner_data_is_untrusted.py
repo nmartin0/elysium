@@ -50,7 +50,7 @@ PLANTED = (
 
 
 def _prompt() -> str:
-    return _build_system_prompt(SCHEMA, [], False, {}, [])
+    return _build_system_prompt(SCHEMA, [], False, {})
 
 
 def test_the_planner_is_told_its_data_is_not_instructions():
@@ -82,7 +82,7 @@ def test_the_framing_does_not_move_the_head_of_the_prompt():
                      "fields": {"port": {"type": "data"}}}
     }
     mine = _prompt()
-    theirs = _build_system_prompt(other_schema, [], False, {}, [])
+    theirs = _build_system_prompt(other_schema, [], False, {})
 
     shared = 0
     for a, b in zip(mine, theirs, strict=False):

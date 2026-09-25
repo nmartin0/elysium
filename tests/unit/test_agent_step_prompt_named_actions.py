@@ -25,6 +25,7 @@ from core.llm.agent_step_prompt import (
     MALFORMED_STEP,
     _action_state_notes,
     _build_system_prompt,
+    _build_user_message,
     _describe_actions,
     _known_state_for_object,
     _sub_write_validity_for_object,
@@ -135,7 +136,7 @@ def test_describe_actions_handles_multiple_known_objects_independently():
 
 
 def test_system_prompt_includes_actions_section_when_visible_and_writes_enabled():
-    prompt = _build_system_prompt({}, [], True, ACTION_TYPES, [])
+    prompt = _build_system_prompt({}, [], True, ACTION_TYPES)
     assert "propose_action" in prompt
     assert "ReopenTicket" in prompt
 
@@ -144,14 +145,14 @@ def test_system_prompt_omits_actions_section_when_no_actions_are_visible():
     # Empty visible_action_types -- e.g. this user has zero execute:
     # grants. Must produce ZERO mention of propose_action, not an
     # empty/confusing section.
-    prompt = _build_system_prompt({}, [], True, {}, [])
+    prompt = _build_system_prompt({}, [], True, {})
     assert "propose_action" not in prompt
 
 
 def test_system_prompt_omits_actions_section_when_writes_disabled_even_with_visible_actions():
     # writes_enabled=False must suppress the ENTIRE actions section,
     # regardless of what visible_action_types contains.
-    prompt = _build_system_prompt({}, [], False, ACTION_TYPES, [])
+    prompt = _build_system_prompt({}, [], False, ACTION_TYPES)
     assert "propose_action" not in prompt
 
 
@@ -207,31 +208,55 @@ def test_next_step_fails_closed_on_malformed_propose_action_step():
 _STABLE_PREFIX_END = "Current action availability"
 
 
-def _prompt(gathered):
-    return _build_system_prompt({}, [], True, ACTION_TYPES, gathered)
+WITH_STATE = [
+    {"step": "get_field", "object_type": "Ticket", "object_id": "t1",
+     "field_name": "status", "result": "closed"},
+]
 
 
-def test_the_system_prompt_prefix_is_identical_regardless_of_gathered():
-    # THE PROPERTY THAT MATTERS. Everything up to the trailing notes
-    # must be byte-identical, or the cached prefix is thrown away.
-    empty = _prompt([])
-    with_state = _prompt([
-        {"step": "get_field", "object_type": "Ticket", "object_id": "t1",
-         "field_name": "status", "result": "closed"},
-    ])
+def _prompt():
+    return _build_system_prompt({}, [], True, ACTION_TYPES)
 
-    assert with_state != empty, "the notes must actually appear, or this proves nothing"
-    prefix = empty.split(_STABLE_PREFIX_END)[0]
-    assert with_state.startswith(prefix)
+
+def _user_message(gathered):
+    return _build_user_message("reopen it", gathered, {}, ACTION_TYPES)
+
+
+def test_the_system_prompt_is_identical_regardless_of_gathered():
+    """STRONGER THAN IT WAS, because AR-2 moved the notes out.
+
+    This used to assert that everything UP TO the trailing notes was
+    byte-identical between hops -- the best available while the notes
+    still sat at the end of the system prompt. They now live in the
+    user message beside the gathered data they derive from, so the
+    system prompt does not vary with `gathered` at all and the
+    assertion is the whole string rather than a prefix of it.
+
+    The signature no longer even accepts `gathered`, which is what
+    makes this hold by construction rather than by care.
+    """
+    assert _prompt() == _prompt()
+    assert _STABLE_PREFIX_END not in _prompt()
+
+
+def test_the_notes_still_exist_and_still_depend_on_what_was_read():
+    """WITHOUT THIS, THE TEST ABOVE IS VACUOUS.
+
+    A system prompt that never varies is trivially achievable by
+    deleting the notes. They must still be produced, and still differ
+    between a hop that has read an object's state and one that has
+    not -- they just are not in the system prompt any more.
+    """
+    assert _action_state_notes(ACTION_TYPES, WITH_STATE) != ""
+    assert _action_state_notes(ACTION_TYPES, []) == ""
+    assert _STABLE_PREFIX_END in _action_state_notes(ACTION_TYPES, WITH_STATE)
 
 
 def test_the_verdicts_still_reach_the_prompt():
     # The control for the test above: a prompt that never annotated
-    # anything would trivially have a stable prefix and be useless.
-    text = _prompt([
-        {"step": "get_field", "object_type": "Ticket", "object_id": "t1",
-         "field_name": "status", "result": "closed"},
-    ])
+    # anything would trivially be stable and be useless. AR-2 moved
+    # WHERE they reach it -- the user message -- not WHETHER.
+    text = _user_message(WITH_STATE)
 
     assert "Currently valid for ticket_id: t1" in text
 
@@ -239,15 +264,15 @@ def test_the_verdicts_still_reach_the_prompt():
 def test_the_notes_section_is_absent_entirely_when_nothing_is_known():
     # An empty section is worse than no section -- the same gating
     # discipline the tools and writes sections already use.
-    assert _STABLE_PREFIX_END not in _prompt([])
+    assert _STABLE_PREFIX_END not in _user_message([])
 
 
-def test_the_verdicts_come_after_every_instruction():
-    # Position, not just presence. Appended LAST, matching
-    # core/llm/synthesis_prompt.py's own SYSTEM_PROMPT + note pattern.
-    text = _prompt([
-        {"step": "get_field", "object_type": "Ticket", "object_id": "t1",
-         "field_name": "status", "result": "closed"},
-    ])
+def test_the_verdicts_come_after_the_data_they_describe():
+    # POSITION, NOT JUST PRESENCE, which is the whole point of AR-2.
+    # The notes are a commentary on what was read, so they follow it.
+    # Ahead of it they would move the divergence point between two
+    # hops earlier, for nothing.
+    text = _user_message(WITH_STATE)
 
-    assert text.index(_STABLE_PREFIX_END) > text.index("IMPORTANT")
+    assert text.index(_STABLE_PREFIX_END) > text.index("Gathered so far")
+    assert text.index(_STABLE_PREFIX_END) < text.index("What is the next step?")

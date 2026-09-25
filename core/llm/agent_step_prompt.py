@@ -379,10 +379,13 @@ def _action_state_notes(visible_action_types: dict, gathered: list[dict]) -> str
     # whose state has already been read this run. Mirrors how a real UI
     # disables an action button for an object already on screen.
     #
-    # Rendered as its own trailing section rather than inline in each
-    # action's block, because inline it changed the middle of the
-    # system prompt on the exact hop a write became relevant. See
-    # _build_system_prompt().
+    # Rendered as its own section in the USER message (AR-2), not in
+    # the system prompt. It was moved out of each action's block first
+    # -- inline, it changed the MIDDLE of the system prompt on the hop
+    # a write became relevant -- and then out of the system prompt
+    # entirely, because at its end it still changed the system prompt
+    # on that hop, measurably: 97.6% prefix reuse before, 87.2% on the
+    # hop this first rendered. See _build_system_prompt().
     blocks = []
     for action_name, action_def in visible_action_types.items():
         hint_lines = _object_reference_hints(action_def, gathered)
@@ -397,7 +400,39 @@ def _action_state_notes(visible_action_types: dict, gathered: list[dict]) -> str
 
 
 def _build_system_prompt(visible_schema: dict, tools: list[Function], writes_enabled: bool,
-                          visible_action_types: dict, gathered: list[dict]) -> str:
+                          visible_action_types: dict) -> str:
+    """The system prompt. BYTE-IDENTICAL FOR EVERY HOP OF A QUERY.
+
+    AR-2. It used to end with _action_state_notes(), which depends on
+    what has been gathered -- so on the hop a write became relevant the
+    system prompt CHANGED, and everything from that point on had to be
+    re-read by the model.
+
+    MEASURED, on the real loop over a real mediator:
+
+        hops 2-5   97.4%-97.7% of the prompt was an exact prefix of
+                   the previous hop's
+        hops 6-7   87.2%, 87.8% -- the hops after a Transaction id was
+                   read, where the notes began rendering and the
+                   system prompt grew 5989 -> 6135 -> 6138
+
+    Ten points, on exactly the hops where a write is being considered.
+    The shipped deployment pays it: RecategorizeTransactions targets
+    Transaction, so any query reaching a transaction reaches this.
+
+    THE NOTES DID NOT GO AWAY. They moved into the USER message, beside
+    the gathered data they are derived from -- which is where per-hop
+    state already lives and already changes. Nothing is lost from the
+    prompt; what changes is WHERE the first difference between two
+    hops falls, and everything before it is what an engine can skip.
+
+    NOT SOLVED BY PUTTING THEM EARLIER. Moving per-hop state toward the
+    head is the opposite fix and costs the whole remainder every hop --
+    see test_prompt_is_stable_across_hops.py. And moving shared
+    boilerplate headward to lengthen the cross-user prefix is the
+    KV-cache side channel the security backlog closed deliberately --
+    see test_prompt_prefix_is_user_specific.py. Both guards still hold.
+    """
     tools_section = ""
     if tools:
         tools_section = f"""
@@ -542,7 +577,36 @@ IMPORTANT: Before you finish, check EVERY ID from a list result (like
 ID 1 but not the same field for ID 2, that's incomplete -- go back and
 get it for ID 2 too before finishing. Do not answer about some items in
 a list and silently skip others.
-""" + _action_state_notes(visible_action_types, gathered)
+"""
+
+
+def _build_user_message(query_text: str, gathered_so_far: list[dict],
+                        visible_schema: dict, visible_action_types: dict) -> str:
+    """The per-hop half of the prompt. Everything that changes lives here.
+
+    AR-2 moved the action-availability notes out of the system prompt
+    and into this message, beside the gathered data they are derived
+    from. Both change every hop, so keeping them together means the
+    system prompt never changes at all -- and the first difference
+    between two hops falls as late as it can, which is the whole of
+    what an engine can skip re-reading.
+
+    THE NOTES COME AFTER `Gathered so far`, not before it. They are a
+    commentary on what was read; putting them ahead of it would move
+    the divergence point earlier for no reason, which is the mistake
+    AR-2 exists to undo one layer up.
+
+    A separate function so it can be tested as one, the way
+    _build_system_prompt() is -- the tests that used to assert where
+    these notes sat in the system prompt now assert where they sit
+    here, rather than being deleted for having lost their subject.
+    """
+    return (
+        f"Question: {query_text}\n\n"
+        f"Gathered so far: {dumps_gathered(gathered_so_far, visible_schema)}"
+        f"{_action_state_notes(visible_action_types, gathered_so_far)}\n\n"
+        f"What is the next step?"
+    )
 
 
 def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
@@ -563,15 +627,13 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
     # "writes enabled but no named actions declared yet" -- so the
     # caller must pass it explicitly rather than this function
     # guessing at an appropriate default).
-    user_message = (
-        f"Question: {query_text}\n\n"
-        f"Gathered so far: {dumps_gathered(gathered_so_far, visible_schema)}\n\n"
-        f"What is the next step?"
+    user_message = _build_user_message(
+        query_text, gathered_so_far, visible_schema, visible_action_types
     )
 
     try:
         raw_content = client.chat(
-            _build_system_prompt(visible_schema, tools, writes_enabled, visible_action_types, gathered_so_far),
+            _build_system_prompt(visible_schema, tools, writes_enabled, visible_action_types),
             user_message,
             json_mode=True, temperature=0, deadline=deadline, usage=usage,
         )

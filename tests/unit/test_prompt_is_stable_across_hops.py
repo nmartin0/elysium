@@ -73,7 +73,11 @@ the head breaks this file; anything that moves shared boilerplate
 toward the head breaks that one.
 """
 
-from core.llm.agent_step_prompt import _action_state_notes, _build_system_prompt
+from core.llm.agent_step_prompt import (
+    _action_state_notes,
+    _build_system_prompt,
+    _build_user_message,
+)
 
 SCHEMA = {
     "Ticket": {
@@ -142,8 +146,21 @@ def _shared_prefix(first: str, second: str) -> int:
     return shared
 
 
-def _prompt(gathered: list[dict]) -> str:
-    return _build_system_prompt(SCHEMA, [], True, REOPEN, gathered)
+def _system() -> str:
+    """The system prompt no longer takes `gathered` AT ALL.
+
+    AR-2. That is why the stability below holds by construction rather
+    than by care: there is no argument through which a hop could
+    change it.
+    """
+    return _build_system_prompt(SCHEMA, [], True, REOPEN)
+
+
+def _full(gathered: list[dict]) -> str:
+    """What an engine actually receives: system prompt, then user
+    message. Prefix reuse is a property of the concatenation, not of
+    either half, so that is what is measured."""
+    return _system() + _build_user_message("reopen t_001", gathered, SCHEMA, REOPEN)
 
 
 def test_the_notes_this_guards_actually_fire():
@@ -164,41 +181,55 @@ def test_the_notes_this_guards_actually_fire():
     assert _action_state_notes(REOPEN, GATHERED_EARLY) == ""
 
 
-def test_per_hop_state_never_moves_the_head_of_the_system_prompt():
-    """Everything before the notes is byte-identical across hops."""
-    early = _prompt(GATHERED_EARLY)
-    later = _prompt(GATHERED_LATER)
+def test_the_system_prompt_does_not_vary_with_what_was_read():
+    """The strongest form of the property, and AR-2's whole point.
+
+    This used to assert that everything up to the trailing notes was
+    identical -- the best available while the notes lived at the end
+    of the system prompt. They are now in the user message, so the
+    system prompt is identical FULL STOP.
+    """
+    assert _system() == _system()
+    assert _action_state_notes(REOPEN, GATHERED_LATER) not in _system()
+
+
+def test_two_hops_diverge_no_earlier_than_the_user_message():
+    """Measured on the full prompt, because that is what an engine
+    reads. Everything up to the divergence is what it can skip."""
+    early = _full(GATHERED_EARLY)
+    later = _full(GATHERED_LATER)
 
     assert early != later, (
         "the fixture no longer exercises a hop that changes the prompt"
     )
 
     shared = _shared_prefix(early, later)
-    # The shorter prompt is the one with no notes, so everything it
-    # holds must survive verbatim into the longer one.
-    assert shared == len(early), (
-        f"per-hop state moved into the body of the system prompt: the hops "
-        f"diverge at character {shared} of {len(early)}, not at the tail. "
-        f"Everything after that point is re-read by the model on every "
-        f"single hop."
+    assert shared >= len(_system()), (
+        f"per-hop state reached the system prompt: two hops diverge at "
+        f"character {shared}, before the system prompt ends at "
+        f"{len(_system())}. Everything after that point is re-read by the "
+        f"model on every single hop."
     )
 
 
-def test_the_only_difference_between_hops_is_the_trailing_section():
-    """And the tail that differs IS the notes, not something else."""
-    early = _prompt(GATHERED_EARLY)
-    later = _prompt(GATHERED_LATER)
+def test_the_notes_move_the_divergence_no_earlier_than_the_data():
+    """The notes follow `Gathered so far`, never precede it.
 
-    assert later[len(early):] == _action_state_notes(REOPEN, GATHERED_LATER)
+    Ahead of the data they describe, they would move the divergence
+    point earlier for nothing -- the same mistake one layer down that
+    AR-2 undid one layer up.
+    """
+    message = _build_user_message("reopen t_001", GATHERED_LATER, SCHEMA, REOPEN)
+
+    assert message.index("Current action availability") > message.index("Gathered so far")
 
 
-def test_a_hop_that_reads_nothing_relevant_changes_nothing_at_all():
+def test_a_hop_that_reads_nothing_relevant_changes_only_the_data():
     """The opposite direction, so the guard cannot be satisfied by a
     prompt that simply always differs.
 
-    Without this, an implementation that appended a timestamp or a hop
-    counter to every prompt would pass the three assertions above and
-    destroy reuse completely.
+    Without this, an implementation appending a timestamp or a hop
+    counter would pass everything above and destroy reuse completely.
     """
     unrelated = [
         *GATHERED_EARLY,
@@ -210,4 +241,8 @@ def test_a_hop_that_reads_nothing_relevant_changes_nothing_at_all():
             "result": "Printer jammed",
         },
     ]
-    assert _prompt(unrelated) == _prompt(GATHERED_EARLY)
+    # The notes are unchanged -- nothing action-relevant was read --
+    # so the only difference is the gathered payload itself.
+    assert (_action_state_notes(REOPEN, unrelated)
+            == _action_state_notes(REOPEN, GATHERED_EARLY))
+    assert _system() == _system()
