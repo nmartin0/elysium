@@ -3,30 +3,56 @@
 A real client for the `api/` layer — login; ask a question (Query);
 search and browse objects, with a real per-object detail page and
 direct action invocation (Browse); approve or reject a proposed write;
-and (for admins) manage user accounts. React + TypeScript + Vite, no
-state management library, no design system — deliberately kept small
-(see the main project README's "Two ways to run this" section for what
-`api/` actually exposes).
+see notifications and watches; read the ontology; and (for admins)
+manage users, roles, silos, the mirror and deployment config. React +
+TypeScript + Vite, no state management library, built on **Blueprint**
+(`@blueprintjs/core`) — see the main project README's "Two ways to run
+this" section for what `api/` actually exposes.
+
+This paragraph once denied having a design system at all, which was
+true of a phase-one API client and false from the Blueprint migration
+onward. It mattered because this is the first thing a new contributor
+reads, and it told them to hand-roll what the library already ships.
+The standing rule is the opposite: **Blueprint always wins** — if a
+new colour or component would mean overriding it, do not
+(`DEV_UI.md`, and `index.css`'s own note on why an element selector
+must never describe a widget the library owns).
 
 An npm workspace, one package per real screen or shared concern, not
-one monolithic app:
+one monolithic app. **Each entry says what the package is FOR, not
+what files it currently holds** — the previous version of this list
+enumerated modules, and by the time anyone read it the enumeration was
+a snapshot of an older codebase: four of shell-api's twenty-three
+modules, two of app-browse's fourteen components, and three packages
+missing altogether. A directory listing is always right; a copy of one
+is right for a week. `ui/src/readme.test.ts` now fails if a package is
+added and not named here.
 
 ```
-ui/src/                 App.tsx (auth state, routing, what's fetched
-                         once and passed down), Shell.tsx (header/nav
-                         chrome), main.tsx (entry point).
-ui/packages/shell-api/  Shared across every screen: api.ts (the one
-                         place that knows about fetch/session/CSRF),
-                         format.ts (display-formatting helpers),
-                         LoginForm, PendingWriteCard (the two-phase
-                         write confirmation UI).
-ui/packages/app-query/  QueryPanel -- the LLM question/answer screen.
-ui/packages/app-browse/ ObjectSearchPanel (live, debounced search) and
-                         ObjectDetailPanel (a real, bookmarkable
-                         per-object page, with direct action
-                         invocation via forms -- no LLM involved).
-ui/packages/app-admin/  AdminPanel -- create/disable/enable/delete
-                         users, inspect a user's own visible schema.
+ui/src/                    App.tsx (auth state, routing, what is
+                            fetched once and passed down), Shell.tsx
+                            (header and nav chrome), main.tsx.
+ui/packages/shell-api/     Everything shared across screens: api.ts
+                            (the one place that knows about fetch,
+                            session and CSRF), formatting, the design
+                            tokens and stylesheet, the shared hooks,
+                            and the common components -- LoginForm,
+                            PendingWriteCard, Workspace, AsyncPanel,
+                            Chart and the rest.
+ui/packages/app-query/     Query -- the agent question/answer screen,
+                            with the step trace.
+ui/packages/app-browse/    Browse -- search, per-object detail, direct
+                            action invocation, charts, notes, history,
+                            saved views, bulk actions, explore-related.
+ui/packages/app-schema/    The ontology as a reference: object types,
+                            link types, action types, and the schema
+                            graph.
+ui/packages/app-approvals/ The write inbox -- review and decide a
+                            proposed write.
+ui/packages/app-notifications/
+                           Notifications and the watch list.
+ui/packages/app-admin/     Users, roles, silos, mirror status, metrics
+                            and read-only deployment config.
 ```
 
 ## Development
@@ -57,13 +83,19 @@ npm run format        # oxfmt -- fix formatting in place
 npm run knip          # unused files, exports, and dependencies
 ```
 
-Five separate, genuinely different checks — style/correctness
-(`oxlint`), does every type actually agree (`tsc --noEmit`), does
-anything still use this file/export/dependency at all (`knip`), and
-formatting (`oxfmt`), on top of the real, behavioral test suite
-(`vitest`, exercising real user flows through React Testing Library,
-not shallow rendering). `tsconfig.json`'s own comments explain the
-specific compiler options chosen and why.
+FOUR checks make up the gate, and the behavioural suite sits beside
+them: style and correctness (`oxlint`), do the types agree
+(`tsc --noEmit`), formatting (`oxfmt`), and does anything still use
+this file, export or dependency at all (`knip`) — on top of `vitest`,
+which exercises real user flows through React Testing Library rather
+than shallow rendering. `tsconfig.json`'s own comments explain the
+compiler options chosen and why.
+
+It said "five separate checks" and then listed four, in a paragraph
+whose next line said "all four run". The number was never load-bearing
+and the disagreement is what made it worth fixing: a count that
+contradicts its own list two lines later is the reader's first
+evidence that a document has stopped being maintained.
 
 **`npm run lint` runs all four**, in that order, and stops at the
 first failure. It used to run only the first two, which is how 14
