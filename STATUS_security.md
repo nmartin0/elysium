@@ -371,6 +371,31 @@ loop end to end against a synced deployment, and I have not measured
 the cost of one gold read per updated field at proposal time. Both
 belong with the build.
 
+## Session 9 — 004-8 CLOSED
+
+Built after the shape sat published on the remote without objection
+and the instruction to continue came again. It is entirely within
+files this agent owns. Commit `c4cca37`.
+
+The finding was narrower and different in kind from what was reported.
+Not a duplicated combination: RBAC is gated once upstream, MAC per
+object, which is right. The real difference was ONE AUDIT SIGNAL --
+`log_security_resolution_failed()`, called from exactly one place in
+`core/`, inside `check_access()`. So the write path could not emit it,
+and the same orphaned object gave the signal on a READ and silence on
+a WRITE.
+
+    fix        non-create MAC now goes through check_access();
+               the CREATE branch deliberately does not, because
+               check_access() cannot express "no row to consult"
+    docs       access_control.py's absolute claim corrected, naming
+               the one exception rather than deleted
+    controls   restore the inline MAC    -> 1 failed, 3 passed
+               route CREATE through it   -> 1 failed, 3 passed
+               check_access always allow -> 3 failed, 1 passed
+    gates      ./lint.sh clean, 8/8; 2,857 unit (+4); 445 integration,
+               both tiers green with NO test edited
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
@@ -403,7 +428,7 @@ remaining item is a decision, another agent's file, or both:
                             F-12a        commit 6e3b413
                             F-12b        commit 2dbece9
                             F-33         commit 85c6e7b
-    Analysed, needs a nod   004-8        shape proposed above
+    DONE, controlled        004-8        commit c4cca37
     Reproduced and pinned   F-05         commit a0cf84d; fix needs
                                          api/routes.py -> requested
     Analysed, needs a nod   R50          shape proposed above; the
