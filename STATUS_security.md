@@ -4,116 +4,130 @@ Agent: security (LLM3). Branch: `security`, from `dev` at `f6c5a0b`.
 
 ---
 
-## Session 1 — triage before building. Nothing fixed, because nothing needed fixing yet.
+## Session 1, CORRECTED. One of my four "already fixed" calls was wrong.
 
-**THE FIRST FOUR ITEMS ON MY LIST ARE ALREADY FIXED, AND HELD BY
-CONTROLS.** E-02, E-01, E-04 and F-27 were all reproduced-against
-rather than taken at their word, per step 2. Each is fixed in the code,
-each has a dedicated test file, and I broke each fix deliberately to
-confirm the tests are not decorative.
+My first report said E-02, E-01, E-04 and F-27 were all closed. That was
+based on: the fix present in the code, a dedicated test file, and a
+control that made the test fail. **That evidence was not sufficient, and
+the owner was right to doubt it.**
 
-Environment: a clean clone of `origin/security`, no seeding, no sync,
-dependencies from `requirements.txt` on Python 3.12.3.
-
-### The controls, and what each cost
-
-| Item | Fix in code | Test | Control applied | Result |
-| --- | --- | --- | --- | --- |
-| E-02 | `core/auth/limits.py` (128 / 1024), enforced `api/routes.py:1038` and `core/user_directory.py:128`; expired rows deleted in `record_failure()` | `tests/integration/test_prelogin_bounds.py` | raised both bounds to 10**6 | **2 failed, 11 passed** |
-| E-01 | `api/app.py:174` `RequestValidationError` handler dropping `input`/`ctx` | same file | changed the filter to drop nothing | **3 failed, 10 passed** |
-| E-04 | `api/csrf_middleware.py:95` `secrets.compare_digest`, as bytes | `tests/integration/test_csrf_constant_time.py` | replaced with `!=` | **2 failed, 3 passed** |
-| F-27 | exhaustive 3-way dispatch, `write_mediator.py:709-715`, plus `_resume_one_delete_entry` | `tests/integration/test_resume_deletes.py`, `tests/unit/test_find_fabricated_creates.py` | routed `delete` into the create branch | **2 failed, 10 passed** |
-
-Every control failed the *specific* tests for its item and left the
-others passing, so none of them is broken setup. Each file was restored
-from a backup copy, never hand-edited back; `git diff` is clean.
-
-E-04's two tests are source-level tripwires rather than timing tests.
-That is the right shape and AGENTS.md says so — no timing test here can
-be made reliable, so the mechanism is pinned at source instead.
-
-**I did NOT re-derive the six negative controls an earlier reviewer
-already paid for** (SQL injection through field and type names, the
-engine-enforced read-only connection, the login timing channel at 0.7%,
-lockout at MAX_ATTEMPTS, uniform denial, CSRF as middleware). Nothing I
-did touches them.
-
-### Two more, checked while I was there
-
-- **E-05** — fixed. `api/app.py:260` sets `Permissions-Policy`;
-  `tests/integration/test_permissions_policy.py` holds it.
-- **E-08** — does not reproduce. The whole unit tier is **2812 passed,
-  13 skipped, 0 failed** on a genuinely fresh clone, and
-  `git status --porcelain --ignored deployment/` is empty afterwards, so
-  both halves of E-08 (the failures and the writes) are closed. My
-  worktree was *not* seeded by any setup script, which is the clean
-  checkout the work list asked for.
-- **004-1** — fixed. `lint.sh` uses `STATUS=1` at every step, including
-  the lockfile check, and a comment at line 63 names the old `FAILED=1`
-  bug.
+A control proves a test is coupled to the line you broke. It does not
+prove the original attack is closed. For three of the four it was; for
+**E-02 it was not**. Recorded here in full, because the wrong claim is
+more useful than the corrected one alone.
 
 ---
 
-## What IS open — reproduced, in my area, ready to work
+## E-02 — PARTLY closed. The residual is measured, unauthenticated, and mine.
 
-Checked against the code, not against a list.
+**The audit's specific attack is dead.** Ran it against the real login
+route and measured `credentials.db` on disk, not a row count:
 
-**F-30 — `create_colleague_user.py` has no safety guard at all.**
-`create_debug_user.py` refuses to run without
-`--yes-this-is-development` and explains why (a known password is a back
-door). `create_colleague_user.py` has no argv check, no refusal, no
-exit — it creates a known-password account unconditionally. This is the
-most severe genuinely-open item on my list and I intend to take it
-first unless told otherwise.
+    10 requests, 20,000-char usernames + 200,000-char passwords
+      credentials.db : 45,056 -> 45,056 bytes   (delta 0)
+      login_attempts : 0 -> 0 rows
+      every response : 401 "Invalid username or password"
 
-**F-21 — `entries_for_request()` loads the whole audit log.**
-`core/intermediate_layer/audit.py:222` is `lines = f.readlines()`
-followed by `lines[-max_scan:]`. `max_scan` bounds the parse loop, not
-the read, so the bound does not do what its own docstring at line 197
-says it does.
+From 16.3 MB to zero bytes. That half is genuinely fixed.
 
-**004-8 — the single enforcement point is not single.**
-`write_mediator.py:1000` calls `self._adapter_mediator._security_allowed(...)`
-directly while `check_access()` is imported and used at 1425. Either
-route it through `check_access()` or correct the claim in
-`access_control.py`'s docstring — but the two must stop disagreeing.
+**What is NOT fixed is the class.** The bound is on field LENGTH. Nothing
+bounds the NUMBER of distinct usernames inside one 15-minute window, and
+the expiry `DELETE` only removes rows already past `WINDOW`. Measured:
 
-**F-05 — the rate limiter still checks and increments separately.**
-`is_rate_limited()` opens its own `connection()`; `record_query()` opens
-a separate `immediate_transaction()`. Classic check-then-act. Not yet
-reproduced under concurrency — and per RULES.md a concurrency test must
-*force* the interleaving rather than race threads and hope.
+    400 requests, distinct usernames of LEGAL length (108 chars)
+      credentials.db : 45,056 -> 167,936 bytes  (delta 122,880)
+      login_attempts : 0 -> 400 rows
+      ~307 bytes per row
 
-**F-12b — needs one more measurement before I call it either way.** The
-"STRUCTURALLY read-only" claim the audit flagged is still present at
-`login_attempt_tracker.py:92`. It may now be *true* —
-`core/sqlite_connection.py:132` does `set_authorizer(_deny_all_writes)`
-when `read_only=True`. I have not yet confirmed which way the tracker
-opens its connection. Saying so rather than guessing.
+      extrapolated over one 15-min window:
+        at   100 req/s ->  ~28 MB
+        at 1,000 req/s -> ~276 MB
 
-Not yet triaged: F-33, F-13, F-12a, F-25, F-08, R50, R52.
+Still unauthenticated, still just the login endpoint. A ~5,300x
+reduction per request, which is real — and not the same as closed.
+
+**The fix is constrained by a decision I must not break.** Keying
+`login_attempts` by the RAW username is deliberate: it stops throttling
+from revealing which accounts exist. So "only write a row for a username
+that exists" is not available. The remedy has to be a global bound — a
+row cap with oldest-first eviction, or per-source throttling ahead of
+the tracker. That is a design choice; **proposing before implementing.**
+
+---
+
+## E-01, E-04, F-27, E-05 — confirmed closed, harder than last time
+
+**E-01.** Nine shapes across five endpoints, hunting for the secret
+anywhere in the response: flat body, nested dict, deep list, wrong
+types, `/api/me/password`, `/api/users`, an unknown route, a query
+string, and a 5 MB oversized body. **No leak in any of them.** Errors
+carry only `loc` and `msg`; the oversized body gets a bare
+`413 {"detail":"Request body too large"}`.
+*Not exercised:* a 422 on query parameters — the route I tried returned
+404 before validation, so that shape is untested by me.
+
+**E-04.** `secrets.compare_digest` on bytes is the **only** token
+comparison in the entire tree — grepped `api/` and `core/` for any `==`
+or `!=` against a CSRF token and found none. Exemptions are safe methods
+and `/api/login` only, which is correct: login has no session yet.
+
+**F-27.** There are **TWO** dispatch sites, and my first control only
+covered one. Both are now controlled:
+
+    entry-level (:710)  delete -> create  ->  2 failed, 10 passed
+    batch-level (:673)  delete -> create  ->  2 failed,  5 passed
+
+One of the tests is named `test_and_the_log_records_a_delete_not_a_create`,
+which holds the fabrication claim directly. Closed at both sites.
+
+**E-05.** Now controlled, which it was not in my first report: removing
+the header line gives **3 failed, 1 passed**.
+
+**I WAS WRONG ABOUT AN INCONSISTENCY.** My first report flagged the two
+F-27 comments as contradicting each other — one saying a delete fell
+into the `update` branch, the other into `create`. They describe two
+DIFFERENT dispatch sites, each accurately. There is no inconsistency and
+the comments are correct. Correcting it here rather than leaving it.
+
+---
+
+## E-08, 004-1 — unchanged, with the gap named
+
+**E-08** does not reproduce: **2,812 unit tests pass, 13 skip, 0 fail**
+on an unseeded clone, and `git status --porcelain --ignored deployment/`
+is empty afterwards. Both halves closed.
+
+**004-1** reads fixed — `lint.sh` uses `STATUS=1` at every step and a
+comment at :63 names the old `FAILED=1` bug. **NOT CONTROLLED:** the
+control needs lockfile drift, which means editing `lint.sh` or
+`requirements*.txt`, both backend-owned. Reading it is the most I can
+honestly do.
+
+---
+
+## Where this leaves the list
+
+    Closed, controlled      E-01  E-04  E-05  F-27
+    Closed, not controlled  004-1        (control needs a file I don't own)
+    Closed by measurement   E-08         (2,812 pass on a fresh clone)
+    PARTLY closed, MINE     E-02         residual measured above
+
+    Reproduced, open, mine  F-30  F-21  004-8
+    Need one measurement    F-05  F-12b
+    Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
+
+**F-30 remains the most severe genuinely-open item**:
+`create_colleague_user.py` has no `--yes-this-is-development` guard at
+all, where `create_debug_user.py` refuses without one. It creates a
+known-password account unconditionally.
 
 ---
 
 ## What I did not check
 
-- The integration tier. I ran the unit tier (2812) and the five test
-  files covering my first six items. I have not yet run
-  `pytest tests/integration` whole.
-- `./lint.sh`. Not run this session — no source change was made, so
-  there was nothing for it to judge.
-- Whether F-05 reproduces under real concurrency.
-- Anything outside my ownership map.
-
----
-
-## One inconsistency worth recording
-
-`write_mediator.py:707` says F-27's pre-fix behaviour was that a DELETE
-"fell into the **update** branch". `UNIFIED_ROADMAP.md:570` and the
-audit both say it fell into the **create** branch and fabricated a
-`create` entry. There are two dispatch sites (a batch-level one at
-:678, an entry-level one at :710), so both may be true of different
-sites — but as written, one of the two descriptions is wrong, and the
-`find_fabricated_creates.py` script only makes sense for the create
-story. Recorded, not resolved; it changes no behaviour.
+- `./lint.sh` and the integration tier whole. No source change has been
+  committed, so neither has had anything to judge.
+- A 422 on query parameters (E-01).
+- 004-1's control.
+- Whether F-05 reproduces under forced interleaving.
+- Both probe scripts were throwaway and are deleted; `git diff` is clean.
