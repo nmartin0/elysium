@@ -286,6 +286,51 @@ def _object_reference_hints(action_def: dict, gathered: list[dict]) -> list[str]
     return lines
 
 
+def _example_value(param_info: dict) -> str:
+    """The example value for one action parameter, SHAPED like the type.
+
+    F-17 as written says every parameter is shown as a quoted string
+    regardless of its declared type. True, and measuring what each type
+    actually costs made the fix much narrower than the finding.
+
+    SCALARS ARE FINE QUOTED, and are left alone. Nothing validates a
+    parameter's declared type -- propose_action() checks `required` and
+    nothing else -- so the shape the model copies is the shape that
+    lands. But coerce() absorbs all of it on the way in: "49.99" ->
+    49.99, "42" -> 42, "true" -> True, "2026-01-14" -> a date. And JSON
+    has no date type at all, so a date MUST be a string. Changing these
+    to bare <number> placeholders would buy nothing and risk a model
+    emitting the placeholder literally, which is unparseable where a
+    quoted one is merely wrong.
+
+    A LIST SHOWN AS A STRING IS NOT IMPRECISE, IT IS UNUSABLE. The
+    shipped deployment's only action takes `transaction_ids
+    (object_reference_list)` and was illustrated as
+    `"transaction_ids": "<value>"`. A model copying that sends one
+    string. write_mediator wraps a non-list in [value] rather than
+    iterating it -- so no character-by-character walk, the harm is
+    bounded -- but the result is an action proposed on ONE object when
+    the whole point of an object_reference_list is that it is many.
+    Foundry calls an action using one a "bulk action type"; ours was
+    demonstrated in a form that cannot be bulk.
+
+    THE OBJECT TYPE IS NAMED because an id placeholder that does not
+    say what it identifies is the same gap as AR-4: the model is
+    holding ids from several types by then and nothing in `"<value>"`
+    says which belongs here.
+    """
+    declared = param_info.get("type")
+    object_type = param_info.get("object_type")
+    if declared == "object_reference_list":
+        placeholder = f"<{object_type} id>" if object_type else "<id>"
+        # TWO ENTRIES, not one: a single-element list still reads as
+        # "put the id here", and the parameter exists to take several.
+        return f'["{placeholder}", "{placeholder}"]'
+    if declared == "object_reference":
+        return f'"<{object_type} id>"' if object_type else '"<id>"'
+    return '"<value>"'
+
+
 def _describe_actions(visible_action_types: dict) -> str:
     # Renders the model-facing named-action vocabulary -- one block per
     # action this user is authorized for (already filtered by
@@ -315,7 +360,9 @@ def _describe_actions(visible_action_types: dict) -> str:
             + (f" -- {info['description']}" if info.get("description") else "")
             for name, info in params.items()
         ) or "no parameters"
-        param_json = ", ".join(f'"{name}": "<value>"' for name in params)
+        param_json = ", ".join(
+            f'"{name}": {_example_value(info)}' for name, info in params.items()
+        )
 
         object_types_touched = ", ".join(sorted({sw["object_type"] for sw in action_def["sub_writes"]}))
         block = (

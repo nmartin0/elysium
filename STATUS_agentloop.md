@@ -604,3 +604,67 @@ three modules by name. `retrying_adapter` and `prompt_values` are not
 in it, so the contract does not constrain them and lint still reports
 "8 kept, 0 broken" -- a guard that looks like it is working and does
 not cover the new code. I have not edited `pyproject.toml`.
+
+---
+
+## F-17 -- DONE, and OVERSTATED as written. Half of it was fine.
+
+The finding: every action parameter illustrated as `"name":
+"<value>"`, a quoted string, whatever its declared type. True. What
+each type actually COSTS is where it narrows.
+
+**SCALARS ARE FINE QUOTED, and are deliberately left alone.** Nothing
+validates a parameter's declared type -- `propose_action()` checks
+`required` at write_mediator.py:1209 and the type nowhere -- so the
+shape the model copies is the shape that lands. But `coerce()` absorbs
+all of it, measured:
+
+    number   "49.99"       -> 49.99
+    integer  "42"          -> 42
+    boolean  "true"        -> True
+    date     "2026-01-14"  -> datetime.date(2026, 1, 14)
+    decimal  "49.99"       -> Decimal('49.99')
+
+And JSON has no date type, so a date MUST be a string. Bare `<number>`
+placeholders would buy nothing and risk a model emitting the
+placeholder literally -- unparseable, where a quoted one is merely
+imprecise. A test asserts the quoting STAYS, so a later reading of
+F-17 does not "finish the job" and make it worse.
+
+**A LIST SHOWN AS A STRING IS DIFFERENT IN KIND.** The shipped
+deployment's only action takes `transaction_ids
+(object_reference_list)` and was illustrated as `"transaction_ids":
+"<value>"`. A model copying that sends one string. `write_mediator`
+wraps a non-list in `[value]` rather than iterating it -- so the harm
+is bounded, no character-by-character walk -- but the proposal covers
+ONE object when the parameter exists to carry many. Foundry calls an
+action using one a "bulk action type"; ours was demonstrated in a form
+that cannot be bulk.
+
+Now rendered as `["<Transaction id>", "<Transaction id>"]`, with the
+object type named -- a bare `"<value>"` does not say WHICH id, which
+is the same gap AR-4 records for gathered results.
+
+### Controls, three
+
+    revert to the quoted-string template     3 of 5 fail
+    single-element list (the half-fix)       2 of 5 fail
+    bare placeholders for scalars too        1 of 5 fails -- the test
+                                             that exists to stop that
+
+### For backend, not fixed here
+
+**A parameter's declared type is never checked anywhere.** `required`
+is validated; `type` is not. This change makes the model more likely
+to send the right shape. It does not make the wrong shape impossible,
+and `core/ontology/**` is not mine.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2883 passed, 8 skipped  (2878 before; +5 here)
+
+### R1 still open
+
+`origin/backend`'s `core/deployment_loader.py:608` is still the
+unwrapped line, so **AL-5 remains inert**. Not blocking other work.
