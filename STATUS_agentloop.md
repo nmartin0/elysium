@@ -1300,3 +1300,129 @@ AL-12 (resume after a proposed write), AR-7 (plan caching), AL-10
 (token budget), LB-7 (tool arguments transcribed), LB-9 (three-tier
 routing), D1 (model choice). Saying so rather than implying the list
 was covered.
+
+---
+
+## RESEARCH, round 3: digging into the four
+
+**One of my own recommendations was wrong and is withdrawn. One
+finding reframes AL-9 entirely. One gives LB-1 a third option I did
+not offer, and it is in my area.**
+
+### CORRECTION: "a faster model makes the scratchpad affordable" -- WRONG
+
+I said D1 gains a new input because a faster model would make the
+literature's scratchpad remedy affordable. **The named D1 target
+cannot produce a scratchpad at all.**
+`Qwen3-4B-Instruct-2507` "supports only non-thinking mode and does not
+generate `<think></think>` blocks in its output", and "specifying
+enable_thinking=False is no longer required". The Qwen3-2507 line
+splits Instruct (non-thinking) from Thinking as separate models; D1
+names the Instruct one.
+
+**And the remedy would not help our case even on a model that could.**
+A CPU tool-calling benchmark over Ollama found "thinking mode is a
+double-edged sword: qwen3:4b spends 63 seconds average per prompt
+thinking, for the same score as the 0.6B at 3.6 seconds. For
+tool-calling decisions, longer thinking chains don't consistently
+help."
+
+The scratchpad literature is about REASONING tasks -- maths
+benchmarks. **Our planner makes TOOL-CALLING DECISIONS**, which is the
+case where thinking measurably does not pay. So `think: false` stands
+on its own merits, not merely as a hardware compromise, and the
+tension I reported last round is smaller than I said.
+
+### D1 -- now has real evidence, on our hardware class
+
+    qwen3:0.6b   0.880        phi4-mini:3.8b  0.780
+    qwen3:1.7b   0.960 (champion, after a fallback parser)
+    qwen3:4b     0.880 (63s/prompt thinking)
+
+A 600M model beating our 3.8B one. And "Qwen3-4B-Instruct-2507 is the
+right base. Its BFCL v4 lead out of the box is real, the Apache 2.0
+license is clean, and the Alibaba team's training methodology produces
+unusually consistent tool-calling priors." All three 4B-class
+candidates are supported by llama.cpp's tool-call parser.
+
+**THE FINDING THAT MATTERS MORE THAN THE RANKING.** "Five models
+needed fallback parsers for non-standard output formats", and adding
+one moved qwen3:1.7b from **0.670 to 0.960** while phi4-mini FELL from
+0.880 to 0.780 -- the parser revealed it was calling tools on
+restraint prompts. **A parser change moved scores by 29 points, more
+than any model swap in the table.** Our `next_step()` fails closed on
+any parse failure, and since patch 005 we can finally see how often
+that fires. That is worth measuring before D1, not after.
+
+Also: "When prompts require judgment -- resisting keyword triggers,
+respecting negation, noticing redundant information -- most sub-4B
+models fail." That is the LB-9 argument, from a measurement.
+
+### AL-9 -- MY FRAMING WAS WRONG. It is not a defect.
+
+AL-9 reads "JSON-in-prompt INSTEAD OF native tool calling", as though
+one is the correct form. **Palantir ships both as a configuration
+choice.** AIP Agent Studio's tool mode setting:
+
+- "Prompted tool calling: inserts instructions into the prompt to
+  provide tools and allows the LLM to use these tools. Agents in this
+  tool mode can only call a single tool at a time, so they may take
+  longer to answer complex queries that require multiple tool calls."
+- "Native tool calling: uses the built-in capabilities of supported
+  models."
+
+**Their stated cost of prompted mode is exactly AL-4's complaint** --
+one tool per call, slower on multi-step queries. So AL-9 and AL-4 are
+the same item seen twice, and neither is a correctness defect: they
+are the known price of prompted mode, which Palantir ships to
+production. The decision is "do our models support native tool
+calling", not "fix the wrong design".
+
+### AL-4 as security -- CONFIRMED, and our mediator is already theirs
+
+"LLMs do not have direct access to tools; LLMs can only ask to use
+tools, and these tool calls are then executed by AIP Logic **within
+the invoking user's permissions**." That is our mediator, described in
+Palantir's words. And: "agents access objects, relationships,
+functions, and actions through governed Ontology interfaces -- never
+bypassing the Ontology to touch underlying data", with "the same
+security controls that govern Palantir-native agents apply equally to
+external agents".
+
+So the CaMeL control/data-flow split from round 2 stands, and this
+adds that the data-flow half -- tools executed under the caller's
+permissions, never the agent's -- is what we already built.
+
+### LB-1 -- A THIRD OPTION, and it is mine
+
+AIP Logic ships four tools: Apply actions, Call function, Query
+objects, and **Calculator** -- "enables you to perform accurate
+mathematical calculations with an LLM".
+
+**We already have the registry for it.** `core/functions/interface.py`
+declares a `Function` protocol with `name`, `description`,
+`parameters`, `reads_object_types`; `functions/linear_regression.py`
+is already a purely computational function with no ontology access;
+and `config.yaml` gates them with `tools.enabled`. A calculator is a
+drop-in of the same shape -- **no ontology change, no backend
+request, entirely inside my ownership.**
+
+So Foundry's answer to arithmetic is BOTH: declared derived properties
+for aggregates over linked objects, AND a calculator tool for ad-hoc
+sums. The second half I can build now. It does not remove the need for
+1b: the model must still CHOOSE the tool, and LB-9 records that it
+under-selects. The number check is what catches the times it does not.
+
+### LB-2 -- Palantir's agent surface is ONE tool, not four steps
+
+Their Object query tool "supports filtering, aggregation, inspection,
+and traversal of links for configured objects" -- one tool covering
+what we split across `search_object`, `search_around`, `get_field`
+and `aggregate_object`. It also "can take in an initial object set
+variable per object type to provide a starting point for the LLM to
+apply additional filters or aggregations".
+
+That is the object-set composition model from round 2's LB-2 finding,
+exposed to an agent as a single tool. Worth weighing against our
+four-step vocabulary when AL-4 is designed -- fewer step kinds is
+less of the 87.5% procedure block.
