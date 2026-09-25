@@ -72,6 +72,49 @@ def rules_for(field_config: dict) -> dict[str, Any] | None:
     return rules
 
 
+def _collapse(value: str) -> str:
+    """Runs of spaces and tabs become one space; LINE BREAKS SURVIVE
+    (PA001-S1).
+
+    IT USED TO BE `" ".join(value.split())`, which treats every kind
+    of whitespace alike and therefore flattened every declared text
+    field in the deployment. An address stored as
+
+        12 High St
+        London
+        E1 6AN
+
+    arrived in silver as "12 High St London E1 6AN", and a note with
+    paragraphs became one line. Nothing declared that; it was the
+    DEFAULT, applied to every string field unless it opted out.
+
+    THE CONTRADICTION IS WITH OUR OWN RULE. MEDALLION_PIPELINE.md
+    S1 says standardisation is "meaning-preserving only" -- NFC, trim,
+    collapse whitespace, no case folding, no accent stripping --
+    precisely because silver is what gets SERVED and what a person
+    edits. Destroying the line structure of an address is not
+    meaning-preserving, and a user who opens a prefilled field and
+    saves it writes the flattened version back to the source.
+
+    CRLF AND CR BECOME LF, which IS meaning-preserving: it is the same
+    line break, and leaving three spellings of it in the data makes
+    every later comparison a coin toss.
+
+    EACH LINE IS STILL TRIMMED, so trailing spaces before a newline go
+    -- the tidying this rule was wanted for -- without the structure
+    going with them.
+    """
+    lines = value.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    collapsed = [" ".join(line.split()) for line in lines]
+    # Leading and trailing BLANK lines go, the same way leading and
+    # trailing spaces do. Blank lines in the MIDDLE are the author's.
+    while collapsed and not collapsed[0]:
+        collapsed.pop(0)
+    while collapsed and not collapsed[-1]:
+        collapsed.pop()
+    return "\n".join(collapsed)
+
+
 def standardise(value, rules: dict[str, Any] | None):
     """A value, canonicalised. Non-strings and None pass through: a
     number has no whitespace, and a real NULL is not a sentinel."""
@@ -80,7 +123,7 @@ def standardise(value, rules: dict[str, Any] | None):
     if rules["unicode"] is not False:
         value = unicodedata.normalize(rules["unicode"], value)
     if rules["collapse_whitespace"]:
-        value = " ".join(value.split())
+        value = _collapse(value)
     elif rules["trim"]:
         value = value.strip()
     # AFTER the cleanups, so " N/A " counts as the sentinel it is, and

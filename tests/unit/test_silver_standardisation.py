@@ -31,7 +31,13 @@ class TestWhatIsAppliedToEveryString:
     @pytest.mark.parametrize("value, expected", [
         ("  Ada  ", "Ada"),
         ("Ada   Lovelace", "Ada Lovelace"),
-        ("\tAda\nLovelace ", "Ada Lovelace"),
+        # CHANGED BY PA001-S1: a TAB is horizontal whitespace and
+        # still collapses; a NEWLINE is structure and now survives.
+        # This case used to assert "\tAda\nLovelace " -> "Ada
+        # Lovelace", which was the same default that flattened every
+        # address in the deployment into one line.
+        ("\tAda\tLovelace ", "Ada Lovelace"),
+        ("\tAda\nLovelace ", "Ada\nLovelace"),
         ("cafe\u0301", "caf\u00e9"),          # decomposed -> composed
         ("caf\u00e9", "caf\u00e9"),           # already composed
     ])

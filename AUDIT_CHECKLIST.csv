@@ -122,7 +122,7 @@ PA001-G9,PA,PIPELINE_AUDIT,HIGH,one refused table silently skips gold for all ty
 PA001-G10,PA,PIPELINE_AUDIT,LOW,"silo named gold/gold_history/bronze_*/changelog_*/quarantine_* collides",gold_view.py:38,IN,unverified
 PA001-G11,PA,PIPELINE_AUDIT,LOW,gold republishes unchanged types every sync,gold.py,MR2,"interacts with patch 394 retention"
 PA001-G12,PA,PIPELINE_AUDIT,LOW,decimal scale differs by path; the API emits floats,api + mediator,IN,"PROMPT HALF FIXED patch 403 (one declared rendering); the API float half is still open"
-PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared text field (newlines),standardise.py:34,P21,unverified
+PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared text field (newlines),standardise.py:34,P21,"CONFIRMED + FIXED patch 417"
 PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes become Python repr",iceberg_sync.py:810,IN,unverified
 PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,unverified
 PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; six places said it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 3 tests,P22,"CONFIRMED + FIXED patch 402: audit right, I was wrong; gold now expires under the 7-day margin; all six claims corrected"
@@ -153,7 +153,7 @@ ZOO-21,ZOO,PR001 Part II,GAP,US date 01/02/2024 ambiguous and refused,field_type
 ZOO-22,ZOO,PR001 Part II,GAP,Excel serial date refused,field_types,P24,unverified
 ZOO-23,ZOO,PR001 Part II,GAP,implausible future date accepted with no range,constraints,P24,unverified
 ZOO-24,ZOO,PR001 Part II,GAP,email has no canonical or match key,standardise,P24,unverified
-ZOO-25,ZOO,PR001 Part II,HIGH,CRLF inside text flattened,standardise,P24,"= PA001-S1"
+ZOO-25,ZOO,PR001 Part II,HIGH,CRLF inside text flattened,standardise,P24,"FIXED patch 417: CRLF now normalises to LF and the line survives"
 LB-1a,LB,LLM_BOUNDARY,HIGH,synthesis computes figures in prose; compute them in code first,synthesis_prompt.py,IN,unverified
 LB-1b,LB,LLM_BOUNDARY,HIGH,no number check; add one that fails closed like the citation check,synthesis_prompt.py,IN,unverified
 LB-2,LB,LLM_BOUNDARY,HIGH,"agent filters by EQUALITY only; schema hides data types; no order_by/limit",agentic_loop.py:361 filters.py,IN,unverified
@@ -277,3 +277,4 @@ NEW-2,NEW,found while fixing 004-7,OPEN,"should an APPROVER have to reach the ob
 NEW-3,NEW,found while fixing 004-7,OPEN,"the re-check uses the proposers record as captured at propose time so it catches the OBJECT moving not the PROPOSERs clearance being revoked; that needs a user-directory lookup this layer lacks",write_mediator,"stated in the code","ROADMAP"
 CONCERN-1,CONCERN,found while checking A7,OPEN,"SQLite reads an unknown double-quoted identifier as a STRING LITERAL not an error, so a misspelled column would fill every row with its own name. Only the drift check one layer up prevents it; neither layer states the dependency",sqlite_adapter read_all_rows + iceberg_sync drift,"reproduced 24 Sep","FLAGGED - pinned by a test"
 CONCERN-2,CONCERN,found while checking A7,OPEN,"the SQLAlchemy adapter binds columns via table.c[name] so it cannot interpolate at all - a DIFFERENT safety mechanism from the SQLite adapter quoting. Two adapters two mechanisms; a third adapter would have to rediscover which",sqlalchemy_adapter.py:263,"inspection","FLAGGED"
+CONCERN-3,CONCERN,found while fixing S1,OPEN,"silver rewriting a served value means a user who opens a prefilled field and saves it writes the standardised form BACK to the source. S1 is fixed but the general shape remains for any future standardisation rule",standardise.py + write path,"reasoned from the fix","FLAGGED"
