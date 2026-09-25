@@ -315,3 +315,38 @@ not a prompt-engineering one.
 
 Nothing in `REQUESTS_agentloop.md` yet -- I have needed no change
 outside my area.
+
+---
+
+## AUDIT OF THE WORK LIST, all 33 items checked against the code
+
+Three changed on inspection.
+
+**F-04 IS ALREADY FIXED. Remove it.** `ConcurrencyLimitedLLMAdapter.
+chat()` carries the real typed signature, and the comment beside it
+cites F-04 by name. The list is stale.
+
+**LB-3 IS WORSE AND DIFFERENT.** It says "three code-detected failures
+presented as complete". Measured: FOUR stops -- duplicate spiral,
+invalid-step spiral, business-rule spiral, unknown step kind -- all
+`break` to the same bare `AgentLoopResult(gathered=gathered)`, with
+every flag False. Byte-identical to a deliberate finish. Proven by
+running the loop into each. And the API path is NOT where the gap is:
+it handles `hit_max_hops or ran_out_of_time` and aborts on
+`cancelled`/`authority_changed`. The gap is the four unflagged stops.
+
+WORSE: an unknown step kind returns `gathered=0`, so synthesis emits
+"no matching records were found (either none exist, or they're outside
+your access scope)" -- blaming the data or the user's permissions for a
+model failure.
+
+**LB-3 AND AL-6 ARE ONE FIX**, not two. `AgentLoopResult` now carries
+four booleans; the four silent stops need a fifth thing to say. One
+`stop_reason` answers both.
+
+**LB-6's "52%" is unverified as a NUMBER.** The direction is clearly
+right -- the template is ~6.7k chars of mostly fixed procedure against
+a 2-type schema -- but I did not tokenise, so I will not repeat 52%.
+
+Everything else reproduces as written. Full evidence per item in the
+review; the ordered plan follows there too.
