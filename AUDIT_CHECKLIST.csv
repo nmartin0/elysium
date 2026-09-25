@@ -141,14 +141,14 @@ ZOO-09,ZOO,PR001 Part II,GAP,disguised missing 999-999-9999 kept,transform,P24,u
 ZOO-10,ZOO,PR001 Part II,GAP,sentinel date 1900-01-01 parsed as real,field_types,P24,unverified
 ZOO-11,ZOO,PR001 Part II,HIGH,"N/A in an integer column refuses the WHOLE TABLE",transform.py,P24,unverified
 ZOO-12,ZOO,PR001 Part II,GAP,thousands separator 1234 table-refused (no declared format),field_types,P24,unverified
-ZOO-13,ZOO,PR001 Part II,GAP,full-width digits silently accepted as 123,field_types,P24,unverified
-ZOO-14,ZOO,PR001 Part II,GAP,leading zeros 007 silently become 7,field_types,P24,unverified
+ZOO-13,ZOO,PR001 Part II,GAP,full-width digits silently accepted as 123,field_types,P24,"CONFIRMED + FIXED patch 431: refused as inference"
+ZOO-14,ZOO,PR001 Part II,GAP,leading zeros 007 silently become 7,field_types,P24,"OWNER DECISION patch 431: still accepted - the field was DECLARED an integer and refusing would break working deployments. Behaviour pinned by a test"
 ZOO-15,ZOO,PR001 Part II,GAP,scientific notation 1e3 table-refused,field_types,P24,unverified
 ZOO-16,ZOO,PR001 Part II,HIGH,currency symbol $5.00 CRASHES,field_types.py:224,P24,"FIXED patch 414 (= PA001-C1); now reported as drift"
 ZOO-17,ZOO,PR001 Part II,GAP,percent 5% table-refused,field_types,P24,unverified
 ZOO-18,ZOO,PR001 Part II,GAP,European decimal comma table-refused,field_types,P24,unverified
-ZOO-19,ZOO,PR001 Part II,HIGH,NaN accepted into number; poisons every sum,field_types,P24,unverified
-ZOO-20,ZOO,PR001 Part II,HIGH,inf accepted into number,field_types,P24,unverified
+ZOO-19,ZOO,PR001 Part II,HIGH,NaN accepted into number; poisons every sum,field_types,P24,"CONFIRMED + FIXED patch 431"
+ZOO-20,ZOO,PR001 Part II,HIGH,inf accepted into number,field_types,P24,"CONFIRMED + FIXED patch 431; also 1e999 which overflows to inf silently"
 ZOO-21,ZOO,PR001 Part II,GAP,US date 01/02/2024 ambiguous and refused,field_types,P24,unverified
 ZOO-22,ZOO,PR001 Part II,GAP,Excel serial date refused,field_types,P24,unverified
 ZOO-23,ZOO,PR001 Part II,GAP,implausible future date accepted with no range,constraints,P24,unverified

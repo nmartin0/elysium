@@ -196,6 +196,72 @@ _TRUE_WORDS = frozenset({"true", "t", "yes", "y", "on"})
 _FALSE_WORDS = frozenset({"false", "f", "no", "n", "off"})
 
 
+# The digits a declared number may be written with. `int("１２３")`
+# returns 123 -- Python accepts every Unicode decimal digit -- and a
+# mirror that quietly reads full-width digits as ASCII ones is
+# INFERRING, which this file's whole contract forbids.
+_ASCII_DIGITS = set("0123456789")
+
+
+def _real_number(value):
+    """A `number`, refusing the ones arithmetic cannot use (ZOO-19,
+    ZOO-20, PR001-R26).
+
+    float() ACCEPTS "NaN", "inf", "-inf" and "Infinity", and returns
+    inf for "1e999" -- an overflow, silently, which is the worst of
+    the set because it looks like a number that was simply large.
+
+    NONE OF THESE SURVIVE A SUM. One NaN in a column poisons every
+    total computed from it for ever: NaN + anything is NaN, and
+    nothing reports it. An aggregate over a million good rows and one
+    bad one returns NaN, and a person reads that as a system fault
+    rather than as one cell somebody typed wrongly in 2019.
+
+    REFUSED AS A ValueError, so it lands in the drift report that
+    names the column and the value, exactly as any other unparseable
+    cell does.
+    """
+    converted = float(value)
+    if converted != converted:  # NaN is the only value unequal to itself
+        raise ValueError(
+            f"{value!r} is not a number a total could include. A `number` "
+            f"column cannot hold NaN: one of them makes every sum over the "
+            f"column NaN, silently."
+        )
+    if converted in (float("inf"), float("-inf")):
+        raise ValueError(
+            f"{value!r} is not a finite number. A `number` column cannot "
+            f"hold an infinity -- and note that a value too large for a "
+            f"float, such as 1e999, arrives here as one."
+        )
+    return converted
+
+
+def _whole_number(value):
+    """An `integer`, written in the digits everyone means (ZOO-13).
+
+    `int("１２３")` is 123, because Python accepts every Unicode decimal
+    digit. Reading full-width digits as ASCII ones is a GUESS about
+    what the source meant, and a deployment that wants it can declare
+    NFKC standardisation, which converts them before this point.
+
+    WHAT IS DELIBERATELY STILL ACCEPTED: leading zeros. `int("007")`
+    is 7, and that loses the padding of a code stored as text -- but
+    the field was DECLARED an integer, and a zero-padded integer in a
+    text source is ordinary and harmless. Refusing it would break
+    working deployments to protect against a declaration mistake.
+    Recorded as an owner decision (ZOO-14) rather than decided here.
+    """
+    if isinstance(value, str) and value.strip() and not (
+            set(value.strip().lstrip("+-")) <= _ASCII_DIGITS):
+        raise ValueError(
+            f"{value!r} is not written in ASCII digits, so reading it as a "
+            f"whole number would be a guess. Declare NFKC standardisation "
+            f"on the field if the source really uses other digit forms."
+        )
+    return int(value)
+
+
 def coerce(value, data_type: str, source_timezone: str | None = None):
     """A raw source value, converted to what its declared type says it
     is. None stays None -- a real NULL is not a type error.
@@ -212,9 +278,9 @@ def coerce(value, data_type: str, source_timezone: str | None = None):
     if data_type == "string":
         return str(value)
     if data_type == "integer":
-        return int(value)
+        return _whole_number(value)
     if data_type == "number":
-        return float(value)
+        return _real_number(value)
     if data_type == "decimal":
         # THROUGH str(), ALWAYS. Decimal(float) inherits the float's
         # error -- Decimal(0.1) is 0.1000000000000000055511151231... --
