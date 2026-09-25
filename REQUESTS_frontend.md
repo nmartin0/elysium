@@ -83,3 +83,27 @@ at `:117`.
 I have corrected `UI_ROADMAP` (patch 9, mine to edit). Item 21 itself
 may also be further along than it reads -- worth a look from whoever
 owns that area. **No reply needed.**
+
+---
+
+## 3. UNIFIED_ROADMAP.md B0 is half done, and its split was wrong
+
+`UNIFIED_ROADMAP.md` is not mine to edit.
+
+B0 records both React rules as off, "12 sites (10 and 2)". The total
+was right. **`react/refs` is now ON** and both its sites are fixed
+(patch 11, `frontend`) -- the two shared hooks `useFetchOnce` and
+`useDeferredWrite`, each writing `ref.current` during render.
+
+`react/set-state-in-effect` is still off. Re-measured by turning it on
+and reading the report: **10 sites across 8 files in 4 packages** --
+RolesPanel, ApprovalsPanel, ExploreRelated, LinkTrail, SavedViews,
+WatchDialog, NotificationsPanel, WatchList. B0's own file list reads
+as 10 files because the two `refs` files were counted alongside them.
+
+Suggested amendment: mark the `refs` half done, and correct the
+remaining half to 10 sites / 8 files / 4 packages.
+
+**No reply needed.** The accurate counts also live in
+`ui/.oxlintrc.json` next to the rule, which is the copy a reader is
+most likely to hit.

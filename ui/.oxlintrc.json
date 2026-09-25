@@ -19,13 +19,31 @@
     ],
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn",
-    // OFF, AND RECORDED, NOT FORGOTTEN. The plugin turns these on by
-    // default; they found 12 sites (10 and 2) when first run. Each fix
-    // is a behavioural change to a component -- derive the state, or
-    // reset with a key -- needing its own review and tests, so they are
-    // an item of their own in UNIFIED_ROADMAP.md rather than folded into
-    // the commit that made the hook rules run.
-    "react/set-state-in-effect": "off",
-    "react/refs": "off"
+    // react/refs is ON as of B0's first half. It found 2 sites, both
+    // the same "latest ref" pattern in the two hooks every package
+    // shares -- useFetchOnce and useDeferredWrite -- each writing
+    // ref.current during render to keep an inline-arrow callback fresh
+    // without making it an effect dependency.
+    //
+    // FIXED RATHER THAN EXEMPTED, on one concrete ground: React's own
+    // compiler refuses to optimise a hook that writes a ref during
+    // render, and it says so in the diagnostic. Two shared hooks
+    // bailing out is not a local cost. Both now write in an effect;
+    // useRef's initialiser already covered mount, so nothing about
+    // when the value is read changed.
+    "react/refs": "error",
+    // STILL OFF, AND RECORDED, NOT FORGOTTEN. 10 sites across 8 files
+    // in 4 packages -- RolesPanel, ApprovalsPanel, ExploreRelated,
+    // LinkTrail, SavedViews, WatchDialog, NotificationsPanel,
+    // WatchList -- re-measured at this commit by turning the rule on
+    // and reading the report. (An earlier note said 12 sites for the
+    // two rules together; that total was right, but the split was 10
+    // and 2, and the 2 were the react/refs pair fixed above.)
+    //
+    // Each fix is a behavioural change to a component -- derive the
+    // state, or reset with a key -- needing its own review and tests,
+    // so it stays an item of its own in UNIFIED_ROADMAP.md rather than
+    // being folded into this one.
+    "react/set-state-in-effect": "off"
   }
 }

@@ -48,6 +48,37 @@ describe('useFetchOnce', () => {
     expect(screen.getByText('loading')).toBeInTheDocument()
   })
 
+  it('calls the LATEST onSessionExpired, not the one from the first render', async () => {
+    /**
+     * The other half of the ref's job, and the half nothing tested.
+     *
+     * The effect runs once and holds no dependency on either argument,
+     * so both are read through a ref. Fetching once is the obvious
+     * half; keeping the callback FRESH is the half that breaks
+     * silently -- a rejection arriving after a re-render would call a
+     * stale closure, and the person would stay on a dead screen
+     * instead of being sent to login.
+     *
+     * This is what a careless fix for react/refs breaks: move the ref
+     * write somewhere it does not run on every render and the first
+     * render's callback is the only one this can ever reach.
+     */
+    let settle: (() => void) | undefined
+    const pending = new Promise((_resolve, reject) => {
+      settle = () => reject(new ApiError(401, 'Invalid or expired session'))
+    })
+    const first = vi.fn()
+    const second = vi.fn()
+
+    const { rerender } = render(<Harness fetcher={() => pending} onSessionExpired={first} />)
+    rerender(<Harness fetcher={() => pending} onSessionExpired={second} />)
+
+    settle?.()
+
+    await waitFor(() => expect(second).toHaveBeenCalledTimes(1))
+    expect(first).not.toHaveBeenCalled()
+  })
+
   it('shows a real failure', async () => {
     render(<Harness fetcher={() => Promise.reject(new Error('it broke'))} onSessionExpired={vi.fn()} />)
 

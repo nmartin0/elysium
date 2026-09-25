@@ -32,9 +32,15 @@ export function useDeferredWrite(
   const [value, setValue] = useState(initial)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Held in a ref so a caller passing an inline arrow does not restart
-  // the timer on every render.
+  // the timer on every render. Written in an EFFECT, not during render
+  // -- see useFetchOnce's fuller note on why react/refs is worth
+  // obeying rather than switching off. Mount is covered by useRef's
+  // own initialiser here too, and the 300ms timer cannot fire before
+  // effects have flushed, so the callback this reads is never stale.
   const latestWrite = useRef(write)
-  latestWrite.current = write
+  useEffect(() => {
+    latestWrite.current = write
+  })
 
   const set = useCallback((next: string) => {
     setValue(next)
