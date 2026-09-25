@@ -1060,3 +1060,109 @@ to the tail of the prompt, so what gets dropped first matters. I have
 not verified where llama.cpp truncates under this configuration and
 will not guess. Worth a VM check before any deployment with a bigger
 schema.
+
+---
+
+## AL-8 / R59 -- the evaluation harness. Logic DONE, runner needs a VM.
+
+Every remaining item on my list -- AL-4, AL-9, LB-9, LB-2, LB-4/AR-5,
+AR-6, LB-7 -- changes MODEL BEHAVIOUR, and none can be shown to help
+without this. Everything shipped so far was verifiable structurally: a
+prompt is byte-identical or it is not, a stop reason is named or it is
+not. None of that needed a model. All of the above does.
+
+**And this project already has proof that plausible changes here make
+things worse.** IDEAS.md records constrained decoding dropping
+accuracy from 19.7% to 11.0%. That is AR-5, still on the list, still
+looking obviously correct.
+
+### pass^k, and the estimator is not the obvious one
+
+RESEARCHED, not assumed. tau-bench (Yao et al., 2024) introduced
+pass^k and draws the line at exactly our case: pass@k "captures the
+trend of agents enabling discovery of solutions", while "for
+real-world agent tasks requiring reliability and consistency" the
+question is whether ALL k trials succeeded. An analyst asking the same
+question twice and getting two answers has been failed once, whatever
+the average says.
+
+The gap is not academic. Published: 97% at pass@3 against 34.3% at
+pass^3; a ReAct agent succeeding on 77.4% of runs succeeded on all
+five repetitions for only 53.0% of tasks.
+
+**THE UNBIASED ESTIMATOR, NOT THE PLUG-IN ONE.** tau-bench gives
+`C(c,k)/C(n,k)`. A secondary source states pass^k as `(c/n)^k` -- the
+plug-in estimate, biased, and it disagrees on exactly the small-n runs
+a local-model harness will do (3 of 4 trials: 0.5 unbiased, 0.5625
+plug-in). Both are implemented so the difference is visible rather
+than argued, and a test pins that they differ so nobody "simplifies"
+one into the other.
+
+### The first measurement is whether the metric applies at all
+
+Every call this project makes is at **temperature 0**. If the loop is
+deterministic then c is always 0 or n, pass^k equals pass^1 for every
+k, and a quoted pass^3 could not have come out otherwise -- the "ideal
+compliance posture" one paper describes. `is_degenerate()` reports
+that, and `summary()` refuses to print a pass^k when it holds.
+
+**If the loop turns out NOT to be deterministic at temperature 0, that
+is a finding worth more than the score**, and it is the first thing to
+run on the VM.
+
+### Graded on facts, not prose
+
+A grader reading the synthesised answer needs a judge model or a regex
+over English, and both are less trustworthy than what they grade. The
+loop already records what it read, so a case states which facts a
+correct run must have gathered and grading is a subset check over data
+the mediator returned. This is the "code-based grader" the evaluation
+literature puts first.
+
+**It grades the STOP REASON too**, which is what makes it more than a
+subset check: a run that gathered everything and then hit the hop cap
+told the caller its answer might be partial. Without that, LB-3's
+silent partial answers would grade as successes -- the defect I fixed
+three patches ago would be invisible to the harness measuring it.
+
+**Grading goes through the same renderer the prompt uses**, so a case
+cannot pass here and fail there because two places formatted a decimal
+differently. That is LB-5 one layer over.
+
+**Grouped per case, never pooled.** tau-bench's estimator is an
+expectation over TASKS. Pooling lets an easy case that always passes
+mask a hard one that never does -- 3/3 and 0/3 pooled read as 50%,
+and nothing says one case is entirely broken.
+
+### Controls, six
+
+    plug-in estimator instead of unbiased      3 of 17 fail
+    drop the completion requirement            2 fail
+    grade on raw values, not the renderer      1 fail
+    is_degenerate always False                 1 fail
+    pool trials instead of grouping by case    2 fail
+    summary quotes pass^k when degenerate      1 fail
+
+### What is NOT here
+
+**The runner.** Executing k trials against a live model needs Ollama,
+and there is none in this sandbox. `core/agent/evaluation.py` is the
+half that can be verified without one: the estimators, the grader, the
+aggregation. A runner is thin on top and belongs in
+`scripts/llm_bench.py`, which is MINE by ownership but exists as an
+UNAPPLIED PATCH I have now asked for three times. I did not write a
+competing file under that name.
+
+**The case set.** Cases are data, and writing them blind against a
+deployment I cannot query would be guessing. One case is exercised in
+the tests against the real mediator; a real set should be written with
+the VM in front of you.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2908 passed, 8 skipped  (2891 before; +17 here)
+
+Vulture caught a real gap on the way: `case_name` was set and never
+read, because I had not written the aggregator. Whitelisting it would
+have hidden a missing piece of the design.
