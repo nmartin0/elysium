@@ -1,0 +1,245 @@
+================================================================================
+001AGENTLOOP.txt -- the LLM boundary and agent loop work list
+================================================================================
+Written 2026-09-24 by the backend agent, who is coordinating. You are
+one of four agents working Elysium at once. Read 000COORDINATION.md
+FIRST -- it says which files are yours and which you may only read.
+
+Your worktree:  ~/elysium-agentloop
+Your branch:    agentloop  (branched from dev)
+Your ports:     API 8003, vite 5176  (source .envrc.ports)
+
+Do not switch branches in your worktree. Another agent holds the
+branch you would switch to, and git will refuse.
+
+
+================================================================================
+1. WHAT YOU OWN
+================================================================================
+
+    core/llm/**            prompts, adapters' shared layer, synthesis
+    core/agent/**          the agentic loop
+    core/memory/**         MemoryGuard
+    core/functions/**      the function/tool registry and contract
+    functions/**           the shipped functions
+    adapters/ollama_adapter.py  adapters/vllm_adapter.py
+    adapters/claude_agent_sdk_adapter.py
+    scripts/agent_trace.py  scripts/llm_bench.py
+    tests/unit/test_* for the above
+
+READ BUT DO NOT EDIT: `api/routes.py` (backend), `core/ontology/**`
+(backend and security), `core/mirror/**` (backend), `ui/**`
+(frontend), and every root-level document including
+AUDIT_CHECKLIST.csv.
+
+Your area consumes the mediator's read path heavily. You will want it
+to return something different. FILE A REQUEST -- `REQUESTS_agentloop.md`
+-- rather than editing it.
+
+
+================================================================================
+2. THE WORK, IN ORDER
+================================================================================
+
+Thirty-three open items, from an LLM-boundary audit (LB-1..10), an
+agent-loop review (AL-1..12), and a further-techniques document
+(AR-1..10). Two of the highest have already been fixed on the backend
+branch -- AL-1 and PA001-X2 -- and are listed at the end so you know
+what has moved.
+
+-------------------------------------------------------------------------------
+-
+2.1 Correctness at the boundary -- what the model is trusted with
+-------------------------------------------------------------------------------
+-
+
+LB-1  ARITHMETIC IN PROSE, UNVERIFIED. The synthesis step computes
+      figures in text. TWO FIXES, not one: (1a) compute the figures in
+      CODE first and give the model the results, (1b) add a NUMBER
+      CHECK that fails closed, the way the citation check already
+      does. Do not do 1a without 1b.
+
+LB-3  SILENT PARTIAL ANSWERS. Three failures the code DETECTS are
+      presented to the user as complete answers. Pairs with AL-6: one
+      stop reason instead of four booleans, and partial answers marked
+      as partial.
+
+LB-2  THE AGENT CAN ONLY FILTER BY EQUALITY, although
+      `core/filters.py` implements range, in, not_in, date_range,
+      contains and relative dates -- and the schema shown to the model
+      HIDES EVERY FIELD'S DATA TYPE, so it could not choose a typed
+      operator even if it knew one existed. Also no ordering and no
+      limit. This is F-18 on the roadmap, where it is recorded as a
+      FEATURE whose priority is the owner's: propose before building.
+
+LB-4  OUTPUT SHAPE NOT ENFORCED AT DECODING. `format: json` only.
+      Pairs with AR-5 (constrain the step choice fully, leave
+      synthesis free).
+
+LB-10 INJECTION DEFENCE IS A PROMPT INSTRUCTION. Pairs with AL-2.
+
+-------------------------------------------------------------------------------
+-
+2.2 The loop
+-------------------------------------------------------------------------------
+-
+
+AL-2  THE PLANNER READS RAW SOURCE DATA while choosing actions --
+      including write proposals -- with NO untrusted-data framing in
+      the step prompt. Probe P29 planted text and it reached the
+      planner verbatim. Step 1 is labelling data untrusted plus text
+      hygiene; step 2 is plan-then-execute (AL-4), where the planner
+      sees HANDLES, not values.
+
+AL-3  48,704 CHARACTERS SENT OVER 9 HOPS to gather ~1,100. Resolved
+      largely BY AL-2, AL-4, LB-6 and AR-2 together rather than alone
+      -- verify with the probes rather than fixing it directly.
+
+AL-5  NO RETRIES on transient model failures.
+AL-6  FOUR BOOLEANS INSTEAD OF ONE STOP REASON. Do this before AR-6.
+AL-7  NO STANDARD TRACING.
+AL-8  NO RELIABILITY EVALUATION (pass^k). See R59 -- an evaluation
+      harness is a prerequisite for measuring any of the rest.
+AL-9  JSON-in-prompt instead of native tool calling.
+AL-10 A HOP BUDGET BUT NO TOKEN OR COST BUDGET.
+AL-11 CANCELLATION BETWEEN HOPS ONLY.
+AL-12 A PROPOSED WRITE ENDS THE RUN; no resume.
+AL-4  ONE STEP PER MODEL CALL. The target design is plan-then-execute;
+      it is in AGENT_LOOP_REVIEW-001. Large -- propose first.
+
+-------------------------------------------------------------------------------
+-
+2.3 What the model is shown
+-------------------------------------------------------------------------------
+-
+
+LB-5  RECORDS RENDERED AS PYTHON REPR in step logs. The backend
+      branch has already built the encoder this needs
+      (`core/llm/prompt_values.py`, patch 403) for the decimal/date
+      crash -- YOU OWN THAT FILE NOW. Synthesis still sends repr.
+LB-6  DETERMINISTIC FOLLOW-UPS DELEGATED TO THE MODEL: 52% of the step
+      prompt is procedure, re-sent every hop.
+LB-7  TOOL ARGUMENTS TRANSCRIBED BY THE MODEL.
+LB-8  ENTITY LOOKUP BY EXACT-MATCH GUESS although
+      `search_object_free_text` exists.
+LB-9  EVERY QUESTION GOES THROUGH THE OPEN-ENDED LOOP. The audit built
+      a three-tier front end (probe P28) that answered 65% of
+      answerable test questions with ZERO model calls, all correctly,
+      escalating every open-ended and low-confidence one.
+F-17  EVERY ACTION PARAMETER SHOWN TO THE MODEL AS A QUOTED STRING
+      regardless of its declared type.
+F-04  `chat(*args, **kwargs)` ERASES THE TYPED LLM SIGNATURE at the
+      wrapper every call passes through.
+
+-------------------------------------------------------------------------------
+-
+2.4 Speed, and the VM
+-------------------------------------------------------------------------------
+-
+
+Probe P31 measured that **97.5% of each hop's prompt is an exact
+prefix of the previous one**, and only 16% of what is sent needs
+reading.
+
+AR-1  VERIFY PREFIX-CACHE REUSE. Potentially several-fold, no code
+      change. Do this first: it costs a measurement.
+AR-2  MOVE PER-HOP NOTES OUT OF THE SYSTEM PROMPT. They sit at its
+      END today, which invalidates the cache for everything after
+      them. Append-only context instead.
+AR-4  READABLE TOOL RESULTS: names beside ids.
+AR-5  CONSTRAIN THE STEP CHOICE FULLY; keep synthesis free.
+AR-3  PERSIST EACH USER'S SYSTEM-PROMPT KV (needs llama-server: an
+      owner decision, D2).
+AR-6  GEPA prompt optimisation. Needs AL-6 first.
+AR-7  PLAN CACHING feeding router growth.
+AR-8  N-GRAM SPECULATIVE DECODING (llama-server).
+AR-9  HETEROGENEOUS MODELS with policy-gated escalation. OWNER
+      DECISION D3: this sends data off the VM.
+AR-10 FINE-TUNE ON OUR OWN TRACES. OWNER DECISION D6.
+
+MODEL_SELECTION-001 says the ~10 minutes per hop is mostly READING THE
+PROMPT (~5.4 tokens/s prefill, ~1.5 decode -- 10-25x below published
+figures for this model class). CHECK THE VM's AVX2/FMA FLAGS FIRST; if
+they are missing, fix the CPU model before comparing anything. Then
+phi4-mini -> Qwen3-4B-Instruct-2507 is an owner decision (D1) worth
+~4.5x less time per SUCCESSFUL answer over four steps, after the
+bench.
+
+`scripts/llm_bench.py` exists in the audit set as a patch and is NOT
+applied. It is read-only and standalone; applying it is a good early
+move if you want real numbers.
+
+-------------------------------------------------------------------------------
+-
+2.5 Already fixed on the backend branch -- do not redo
+-------------------------------------------------------------------------------
+-
+
+AL-1        model-written list/dict values crashed `/query` outside
+            the loop's error handling. Fixed patch 405: the signature
+            can no longer raise, AND a bad shape is refused as a
+            RECOVERABLE MISTAKE the model corrects.
+PA001-X2    the agent crashed on ANY decimal or date field in the
+            shipped configuration. Fixed patch 403 with
+            `core/llm/prompt_values.py` -- now yours.
+F-15, F-22, F-23
+            non-object JSON from the model; the Ollama adapter leaking
+            three of four failure modes; synthesis catching the wrong
+            exception. Fixed patch 389.
+
+
+================================================================================
+3. MORE READING
+================================================================================
+
+In this order:
+
+    000COORDINATION.md   OWNERSHIP AND MERGE PROTOCOL. Read first.
+    AGENTS.md            How to work here. Deliberately short.
+    PRINCIPLES.md        Why -- the standard of evidence expected.
+    RULES.md             Hard rules, each learned from a mistake.
+
+    AUDIT_INTAKE_PIPELINE.md
+                         YOUR AUDITS ARE SUMMARISED HERE: the LLM
+                         boundary audit, the agent loop review, agent
+                         research and model selection. Read this
+                         before the individual items.
+    AUDIT_CHECKLIST.csv  All 279 findings. Yours are the LB-*, AL-*
+                         and AR-* rows plus F-04 and F-17.
+                         Backend-owned: read it, never edit it.
+
+    QUERY_PLAN.md        How a question becomes a plan today.
+    TRIGGERS_AND_PLUGINS.md
+                         The function/tool contract and how plugins
+                         reach the agent.
+    THIRD_PARTY_EXTENSIONS.md
+    SECURITY_ARCHITECTURE.md
+                         READ BEFORE AL-2. What the model may and may
+                         not be trusted with is a security question,
+                         not a prompt-engineering one.
+    INSTALL.md           §"agent_trace" shows how to drive the loop by
+                         hand, which is the fastest way to see a
+                         change.
+    UNIFIED_ROADMAP.md   F-18 (agent filters) is recorded there as an
+                         owner decision. Backend-owned.
+
+
+================================================================================
+4. HOW EACH ITEM IS WORKED
+================================================================================
+
+See 000COORDINATION.md §"How work is done". Check the base both ways,
+REPRODUCE, fix with the reasoning in the code, write the test that
+would have caught it, RUN A CONTROL, run `./lint.sh` and both pytest
+tiers, report in `STATUS_agentloop.md`.
+
+ONE THING SPECIFIC TO YOUR AREA. The existing agent tests MOCK THE
+MEDIATOR and return floats and strings, which is exactly why the
+decimal crash (X2) survived to production: the bug lived in the gap
+between a mocked mediator and a real one. When you test, drive the
+REAL loop over a REAL mediator wherever you can. Two of the most
+serious findings in this whole audit were invisible to mocked tests.
+
+================================================================================
+END
+================================================================================

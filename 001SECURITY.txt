@@ -1,0 +1,214 @@
+================================================================================
+001SECURITY.txt -- the auth, write-path and API-edge work list
+================================================================================
+Written 2026-09-24 by the backend agent, who is coordinating. You are
+one of four agents working Elysium at once. Read 000COORDINATION.md
+FIRST -- it says which files are yours and which you may only read.
+
+Your worktree:  ~/elysium-security
+Your branch:    security  (branched from dev)
+Your ports:     API 8002, vite 5175  (source .envrc.ports)
+
+Do not switch branches in your worktree. Another agent holds the
+branch you would switch to, and git will refuse.
+
+
+================================================================================
+1. WHAT YOU OWN
+================================================================================
+
+    core/auth*                       core/user_directory.py
+    core/intermediate_layer/**       (access_control, audit,
+                                      policy_validation, auth)
+    core/ontology/write_mediator.py  core/ontology/write_log.py
+    core/pending_write_*.py          core/identity_decisions.py
+    api/csrf.py                      api/app.py
+    scripts/create_*_user.py
+    tests/unit/test_* for the above
+
+READ BUT DO NOT EDIT: `api/routes.py` (backend owns it -- 3,000 lines
+every area touches), `core/ontology/mediator.py` (backend), anything
+under `core/mirror/`, `core/llm/`, `core/agent/`, `ui/`, and every
+root-level document including AUDIT_CHECKLIST.csv.
+
+Need one of those changed? `REQUESTS_security.md`, per
+000COORDINATION.md. Found a security defect in someone else's area?
+Say so immediately rather than filing it.
+
+
+================================================================================
+2. THE WORK, IN ORDER
+================================================================================
+
+Nineteen open items. Severity is the audit's own. Every one came from
+an external review; the one-line claim is in AUDIT_CHECKLIST.csv
+(backend-owned -- read it, do not edit it).
+
+-------------------------------------------------------------------------------
+-
+2.1 Security, first
+-------------------------------------------------------------------------------
+-
+
+E-02  UNAUTHENTICATED DISK EXHAUSTION. Ten requests took credentials.db
+      from 100 KB to 16.3 MB by filling `login_attempts`. No login
+      required. Start here: it is remotely triggerable by anyone who
+      can reach the login endpoint.
+
+E-01  VALIDATION ERRORS REFLECT REQUEST BODIES, secrets included. No
+      `RequestValidationError` handler exists, so FastAPI's default
+      echoes what was sent. A password in a malformed login body comes
+      back in the error.
+
+E-04  CSRF TOKEN COMPARED WITH `!=` rather than `compare_digest`. A
+      timing side channel on a token comparison. The login path
+      already does this correctly -- an earlier review measured it at
+      0.7% delta over 25 samples -- so this is an inconsistency as
+      much as a defect.
+
+E-05  NO PERMISSIONS-POLICY HEADER. The other security headers ship;
+      this one is missing.
+
+-------------------------------------------------------------------------------
+-
+2.2 The write path
+-------------------------------------------------------------------------------
+-
+
+F-27  CRASH RECOVERY LOSES DELETES, reports success, and writes a
+      FABRICATED `create` into the write log. Reported as reproduced.
+      The write log is the system of record for what was written; an
+      invented entry in it is worse than a missing one.
+
+F-25  GENERATION NUMBERS REPEAT AFTER RESTART and are consumed by
+      REJECTED loads, so audit entries are attributed to the wrong
+      configuration. Touches `core/deployment_loader.py`, which the
+      backend agent owns -- coordinate before starting.
+
+004-8 THE DOCUMENTED SINGLE ENFORCEMENT POINT IS NOT SINGLE:
+      `WriteMediator` calls `_security_allowed()` directly rather than
+      going through `check_access()`. Documentation and code disagree
+      about where authorisation happens.
+
+F-08  `submission_criteria`'s parameter-skip is safe only via an
+      unstated precondition. Write the precondition down, or enforce
+      it.
+
+R50   A FEEDBACK-LOOP GUARD ON THE WRITE PATH: stop a value the
+      system itself produced being written back as though a user
+      supplied it.
+
+-------------------------------------------------------------------------------
+-
+2.3 Audit and policy
+-------------------------------------------------------------------------------
+-
+
+F-33  TWO CRITICAL AUTH CONTROLS ARE EACH DEFENDED BY EXACTLY ONE
+      TEST. Found by mutation testing. One test is one accident away
+      from a silent hole -- and the two controls are the ones that
+      matter most.
+
+F-21  `entries_for_request()` uses `readlines()`, loading the WHOLE
+      audit log into memory and defeating its own `max_scan`.
+
+F-13  `get_object()` audit entries carry no `request_id`, so the
+      PREFERRED read path is absent from request traces.
+
+F-05  THE RATE-LIMIT CHECK AND INCREMENT ARE SEPARATE TRANSACTIONS.
+      Classic check-then-act: concurrent requests can both pass.
+
+F-12a `THE SEVEN REAL GRANT PATTERNS` enumerates six and omits
+      `manage:deployment`.
+
+F-12b `login_attempt_tracker` claims a structurally read-only
+      connection. It is not read-only.
+
+-------------------------------------------------------------------------------
+-
+2.4 Tooling and scripts
+-------------------------------------------------------------------------------
+-
+
+E-08  SEVENTEEN UNIT TESTS FAIL ON A FRESH CLONE, because they depend
+      on a seeded and synced deployment. Your worktree was seeded by
+      the setup script, so you may not see it -- verify on a clean
+      checkout before deciding it is fixed.
+
+004-1 `lint.sh`'s lockfile step sets `FAILED=1`, which nothing reads,
+      so lockfile drift can never fail the build. REPRODUCED by the
+      audit. `lint.sh` is shared -- file a request rather than editing
+      it, or ask to have this one reassigned.
+
+F-30  `create_colleague_user.py` bypasses `create_debug_user.py`'s
+      safety guard entirely.
+
+R52   AN IMPUTATION POLICY: never impute into served data. Policy
+      work; propose before implementing.
+
+
+================================================================================
+3. MORE READING
+================================================================================
+
+In this order:
+
+    000COORDINATION.md   OWNERSHIP AND MERGE PROTOCOL. Read first.
+    AGENTS.md            How to work here. Deliberately short.
+    PRINCIPLES.md        Why those rules exist -- the standard of
+                         evidence expected: measure, do not assume;
+                         controls that must fail; say what you did not
+                         check.
+    RULES.md             Hard rules, each learned from a mistake.
+
+    SECURITY_ARCHITECTURE.md
+                         THE AUTHORITY FOR YOUR AREA. What the system
+                         guarantees, what it does not, and why.
+                         Contains at least one known error (E-18: a
+                         closed hole still headed "THE REAL HOLE").
+    ACCESS_CONTROL_PROPOSAL.md
+                         The classification model that ACCESS-1..6
+                         would build. Joint work -- read, do not start.
+
+    AUDIT_CHECKLIST.csv  All 279 findings, one row each. Yours are the
+                         ones listed above. Backend-owned: read it,
+                         never edit it.
+    AUDIT_INTAKE.md      What the first six audit files contain,
+                         including the 004FINDINGS set that is mostly
+                         yours.
+    AUDIT_INTAKE_PIPELINE.md
+                         The second fourteen files.
+
+    INSTALL.md           Running a deployment end to end.
+    README.md            What Elysium is.
+    UNIFIED_ROADMAP.md   The whole project's plan. Backend-owned.
+
+WORTH KNOWING: an earlier reviewer EXECUTED a set of security claims
+rather than reading them, and they came back clean -- SQL injection
+blocked through field and object-type names; the read-only connection
+enforced at the engine including `ATTACH` and `PRAGMA
+writable_schema`; the login timing channel measured closed at 0.7%
+over 25 samples; lockout at exactly MAX_ATTEMPTS with a uniform 401;
+uniform denial across six endpoints; CSRF enforced as middleware.
+Those are negative controls somebody already paid for. Do not
+re-derive them, and treat anything that breaks one as a regression
+worth its own test.
+
+
+================================================================================
+4. HOW EACH ITEM IS WORKED
+================================================================================
+
+See 000COORDINATION.md §"How work is done". In short: check the base
+both ways, REPRODUCE the finding, fix it with the reasoning in the
+code, write the test that would have caught it, RUN A CONTROL (break
+the fix, confirm the test fails, restore, confirm it passes), run
+`./lint.sh` and both pytest tiers, then report in `STATUS_security.md`.
+
+A control that proves nothing is a finding about your tests, not a
+formality. That has happened eleven times on the backend branch so far
+and has been worth it every time.
+
+================================================================================
+END
+================================================================================

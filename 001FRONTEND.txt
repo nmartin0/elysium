@@ -2,15 +2,21 @@
 001FRONTEND.txt -- the front-end work list for Elysium
 ================================================================================
 Written 2026-09-24 for a second Claude instance approaching this
-repository fresh. The back-end instance is working the same audit
-backlog from 001BACKEND.txt on the `backend` branch; this list and that
-one were divided so the two can run at once without treading on each
-other.
+repository fresh. Four agents work this repository at once. LLM1 (backend)
+coordinates
+and also holds the pipeline; LLM2 has the agent loop; LLM3 has
+security and the write path; you have the front end. The lists were
+divided so all four can run without treading on each other.
 
-Branch from `main`, work on a branch of your own (`frontend` is the
-obvious name). `main` was brought level with `dev` on 2026-09-24
-specifically so both branches start from the same place.
+You are LLM4. Branch `frontend` from `dev`, the integration branch:
+everyone forks from it and merges back into it.
 
+Your worktree: ~/elysium-frontend    ports: API 8001, vite 5174
+
+
+FOUR AGENTS NOW, NOT TWO. Read 000COORDINATION.md first: it carries
+the file-ownership map, the request protocol and the merge order for
+all four. This file is your work; that one is how we avoid each other.
 
 ================================================================================
 1. WHAT YOU OWN, AND WHAT YOU MUST NOT TOUCH

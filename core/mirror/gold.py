@@ -252,10 +252,45 @@ def published_snapshot_ids(catalog, object_types) -> dict[str, int]:
             table = catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
         except (NoSuchTableError, NoSuchNamespaceError, FileNotFoundError):
             continue
-        snapshot = table.current_snapshot()
-        if snapshot is not None:
-            pinned[object_type] = snapshot.snapshot_id
+        snapshot_id = _latest_published_snapshot(table)
+        if snapshot_id is not None:
+            pinned[object_type] = snapshot_id
     return pinned
+
+
+def _latest_published_snapshot(table) -> int | None:
+    """The snapshot of the newest `published-N` tag, or None.
+
+    THE TAG, NOT current_snapshot() (PA001-G4). This used to pin
+    whatever the table's current snapshot happened to be -- and on a
+    FIRST build, the rows are appended BEFORE they are audited and
+    tagged. A crash in between (a power cut, a full disk, an OSError
+    out of the catalog) leaves a table with a current snapshot, NO
+    published tag, and readers pinning the unaudited rows.
+
+    REPRODUCED: a first build interrupted after the append published
+    nothing, carried no tag at all, and readers still pinned it and
+    served its two rows.
+
+    PUBLICATION IS THE PROMISE. `published-N` is written by
+    _tag_publication only after the audit passes, so a table without
+    one has never made that promise. A type with no publication is
+    ABSENT from the pinning, exactly as a type with no gold table is,
+    and GOLD-8's read path turns that absence into a loud
+    GoldPublicationMissing rather than a quiet wrong answer.
+
+    ON THE HAPPY PATH THIS IS THE SAME SNAPSHOT: publishing sets the
+    current snapshot to the audited one and tags it in a single
+    commit. The difference only shows when something went wrong.
+    """
+    numbered = [
+        (int(name.rsplit("-", 1)[1]), ref.snapshot_id)
+        for name, ref in table.refs().items()
+        if name.startswith(f"{PUBLISHED_TAG}-") and name.rsplit("-", 1)[1].isdigit()
+    ]
+    if not numbered:
+        return None
+    return max(numbered)[1]
 
 
 def published_at(catalog, object_types) -> dict[str, str]:
