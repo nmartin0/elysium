@@ -668,3 +668,82 @@ and `core/ontology/**` is not mine.
 
 `origin/backend`'s `core/deployment_loader.py:608` is still the
 unwrapped line, so **AL-5 remains inert**. Not blocking other work.
+
+---
+
+## AR-4 -- DONE. The declaration existed and was wired to nothing.
+
+A search returned bare ids -- `["cust_001", "cust_002"]` -- and the
+model had no idea which was which. It then spent hops reading names
+back one at a time, and an answer built before it did cites an id at
+the user.
+
+**`title_field` WAS ALREADY THERE.** Palantir's "title key" ("the
+property that acts as a display name for objects of this type"),
+validated at schema load by `object_type_validation.py`, declared in
+the SHIPPED deployment as `title_field: name` on Customer, with a
+runtime lookup `get_title_field()` in `schema.py` -- and **zero
+production call sites**. Built, validated, declared, unused. This is
+the caller it was built for.
+
+Now:
+
+    search_object   result=['cust_001', 'cust_002']
+                    titles={'cust_001': 'Ada Okafor',
+                            'cust_002': 'Bram Feldman'}
+
+**EVERY TITLE IS A REAL, AUTHORISED, AUDITED READ** through
+`get_field()` with the caller's own UserRecord -- RBAC, MAC and the
+audit entry exactly as if the model had asked. Plus a check that the
+title field is in the caller's VISIBLE fields before reading it at
+all: declared is not visible, and reading a name the caller may not
+see would be a disclosure dressed as a convenience.
+
+**TITLES SIT BESIDE `result`, NEVER INSIDE IT.** The model copies ids
+out of `result`; a list of `{"id":..., "name":...}` objects would
+invite it to pass the whole object where an id belongs -- trading a
+cosmetic problem for a functional one.
+
+**THE COST, stated plainly:** up to MAX_OBJECT_IDS extra reads per
+search, each with its own audit entry. That volume is CORRECT rather
+than noise -- the values genuinely were read -- but it changes what a
+busy deployment's audit log looks like, and someone should know that
+before it lands.
+
+### A control caught a test of mine that could not fail
+
+Control 2 reintroduced the wrong-type bug -- titling `search_around`
+results as the STEP's object type rather than the LINK TARGET's -- and
+**the test PASSED**.
+
+It could not fail. Titling a transaction id as a Customer looks up a
+Customer that does not exist, the read is refused, and "wrong type" is
+indistinguishable from "no title declared" in the result. The shipped
+fixture has no link whose target declares a title, so no outcome-based
+assertion could see the difference at all.
+
+Rewritten to assert the RESOLUTION rather than the outcome. The
+control now fails as it should. Recording it because the first version
+would have shipped looking green: **search_around("Customer",
+link_field="transactions") returns Transaction ids**, and titling them
+as Customers could, on a schema where both types declare a title, put
+one object's name against another object's id.
+
+### Controls, four
+
+    remove enrichment                        1 of 6 fails
+    title the STEP type, not the target      1 of 6 -- AFTER the test
+                                             was rewritten; 0 before
+    drop the visibility check                1 of 6 fails
+    unbounded reads                          1 of 6 fails
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2889 passed, 8 skipped  (2883 before; +6 here)
+
+### R1 STILL OPEN
+
+`origin/backend`'s `core/deployment_loader.py:608` is unchanged, so
+**AL-5 remains merged and inert** -- the retry wrapper exists and
+nothing constructs it.

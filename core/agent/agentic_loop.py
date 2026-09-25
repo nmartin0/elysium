@@ -80,6 +80,7 @@ from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.agent_step_prompt import next_step
 from core.llm.interface import LLMAdapter, LLMUnavailable
 from core.ontology.mediator import DataMediator, security_cache_scope
+from core.ontology.schema import get_title_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
 from core.request_context import RequestContext
@@ -513,15 +514,102 @@ class AgentLoop:
     # step out into several gathered entries, an auto-executed action
     # records its own, and a proposed action stops the loop instead.
 
+    def _titles_for(self, user_record: UserRecord, object_type: str,
+                    object_ids: list, visible_schema: dict,
+                    context: RequestContext | None) -> dict:
+        """A display name beside each id, where the ontology declares one.
+
+        AR-4: a search returns bare ids -- ["cust_001", "cust_002"] --
+        and the model has no idea which is which. It then spends hops
+        reading names back one at a time to find out, and an answer
+        built before it does cites an id at the user.
+
+        THE DECLARATION ALREADY EXISTED AND WAS WIRED TO NOTHING.
+        `title_field` is Palantir's "title key" ("the property that
+        acts as a display name for objects of this type"), validated
+        at schema load by object_type_validation.py, declared in the
+        shipped deployment as `title_field: name`, with a runtime
+        lookup in schema.py -- and get_title_field() had ZERO
+        production call sites. This is the caller it was built for.
+
+        EVERY TITLE IS A REAL, AUTHORISED, AUDITED READ. Not a
+        shortcut around the mediator: each goes through get_field()
+        with the caller's own UserRecord, so RBAC, MAC and the audit
+        entry all happen exactly as if the model had asked. Reading a
+        name the caller may not see would be a disclosure dressed as a
+        convenience -- and get_title_field()'s own docstring says
+        callers must decide visibility separately, which is what the
+        `fields` check below is.
+
+        THE COST IS REAL AND BOUNDED: up to MAX_OBJECT_IDS extra reads
+        per search, each with its own audit entry. That audit volume
+        is correct rather than noise -- the values genuinely were read
+        -- but it is a change in what a busy deployment's log looks
+        like.
+
+        DEGRADES TO SILENCE. No declared title, a title the caller
+        cannot see, or a refusal on any single object: that object
+        simply has no name here. The ids are unchanged either way, so
+        nothing the model does next depends on this having worked.
+        """
+        title_field = get_title_field(visible_schema, object_type)
+        if title_field is None:
+            return {}
+        # DECLARED IS NOT VISIBLE. A type can name a title field the
+        # caller has no grant to read.
+        if title_field not in visible_schema.get(object_type, {}).get("fields", {}):
+            return {}
+
+        titles = {}
+        for object_id in object_ids[:MAX_OBJECT_IDS]:
+            try:
+                value = self.mediator.get_field(
+                    user_record, object_type, object_id, title_field, context=context,
+                )
+            except (ValueError, TypeError, PermissionError):
+                # The same three the step loop treats as a recoverable
+                # mistake. A title is decoration; losing one must not
+                # cost the step that earned the ids.
+                continue
+            if value is not None:
+                titles[object_id] = value
+        return titles
+
     def _step_search_object(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict],
                             context: RequestContext | None = None) -> Any:
-        return self.mediator.search_object(
+        object_ids = self.mediator.search_object(
             user_record, step["object_type"],
             as_equality_conditions(step["filter"]),
             visible_schema=visible_schema,
             context=context,
         )
+        self._append_search_result(step, user_record, object_ids, visible_schema,
+                                   gathered, context)
+        return STEP_HANDLED
+
+    def _append_search_result(self, step: dict, user_record: UserRecord,
+                              object_ids: Any, visible_schema: dict,
+                              gathered: list[dict],
+                              context: RequestContext | None,
+                              object_type: str | None = None) -> None:
+        """Appends the step's own entry, so `result` keeps its shape.
+
+        TITLES SIT BESIDE `result`, NEVER INSIDE IT. The model copies
+        ids out of `result` to use as object_id in its next step; a
+        list of {"id":..., "name":...} objects would invite it to pass
+        the whole object where an id belongs. The list stays a list of
+        ids and the names are a sibling key it can read but need not
+        understand.
+        """
+        entry = {**step, "result": object_ids}
+        titled_type = object_type or step["object_type"]
+        if isinstance(object_ids, list) and titled_type:
+            titles = self._titles_for(user_record, titled_type,
+                                      object_ids, visible_schema, context)
+            if titles:
+                entry["titles"] = titles
+        gathered.append(entry)
 
     def _step_get_field(self, step: dict, user_record: UserRecord,
                         visible_schema: dict, gathered: list[dict],
@@ -544,11 +632,21 @@ class AgentLoop:
     def _step_search_around(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict],
                             context: RequestContext | None = None) -> Any:
-        return self.mediator.search_around(
+        object_ids = self.mediator.search_around(
             user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             step["link_field"],
             context=context,
         )
+        # THE IDS ARE OF THE LINK'S TARGET, NOT step["object_type"].
+        # search_around("Customer", link_field="transactions") returns
+        # Transaction ids, so titling them as Customers would read the
+        # wrong type's title_field -- or, worse, read a field that
+        # happens to exist on both.
+        target = (visible_schema.get(step["object_type"], {})
+                  .get("fields", {}).get(step["link_field"], {}).get("target"))
+        self._append_search_result(step, user_record, object_ids, visible_schema,
+                                   gathered, context, object_type=target)
+        return STEP_HANDLED
 
     @staticmethod
     def _reject_unknown_fields(step: dict, visible_schema: dict) -> None:
