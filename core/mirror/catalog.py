@@ -50,7 +50,19 @@ def open_mirror_catalog(mirror_dir: Path, storage: Mapping | None = None) -> Sql
     # right place for the rule about who may read it.
     make_private(mirror_dir)
     options = dict(storage or {})
-    warehouse = options.pop("warehouse", None) or (mirror_dir / "warehouse").as_uri()
+    # RESOLVED FIRST, because `as_uri()` REFUSES A RELATIVE PATH --
+    # and data_dir defaults to the relative `deployment/var/lib`, so
+    # this raised ValueError on every default deployment.
+    #
+    # A REGRESSION I INTRODUCED IN PATCH 408 and did not catch: the
+    # code this replaced built the URI by hand as f"file://{path}",
+    # which produced a technically malformed URI for a relative path
+    # and worked anyway. Every test passes an absolute tmp_path, so
+    # both tiers were blind to it; it surfaced the moment a real
+    # deployment ran `python -m scripts.run_sync` from its own
+    # directory.
+    warehouse = (options.pop("warehouse", None)
+                 or (mirror_dir / "warehouse").resolve().as_uri())
     return SqlCatalog(
         CATALOG_NAME,
         uri=f"sqlite:///{mirror_dir / 'catalog.db'}",

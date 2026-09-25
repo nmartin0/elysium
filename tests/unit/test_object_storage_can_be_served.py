@@ -137,6 +137,51 @@ class TestTheLocalPathIsUnchanged:
         assert catalog.properties["s3.endpoint"] == "http://x"
 
 
+class TestARelativeDataDirectory:
+    """THE DEFAULT DEPLOYMENT, and the case that broke.
+
+    `data_dir` defaults to `deployment/var/lib` -- RELATIVE to the
+    working directory -- so `mirror_dir` is relative on every ordinary
+    deployment. `Path.as_uri()` REFUSES a relative path, so patch
+    408's factory raised ValueError the first time anyone ran
+    `python -m scripts.run_sync` from their own checkout.
+
+    EVERY TEST IN THIS FILE USED tmp_path, which is absolute. Both
+    tiers passed while the shipped default was broken -- which is the
+    lesson worth keeping: a fixture that is always absolute cannot see
+    a bug that only exists when the path is relative.
+    """
+
+    def test_a_relative_mirror_directory_opens(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+
+        catalog = open_mirror_catalog(Path("deployment/var/lib/mirror"))
+
+        assert catalog.properties["warehouse"].startswith("file:///")
+
+    def test_it_points_where_the_relative_path_says(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+
+        catalog = open_mirror_catalog(Path("deployment/var/lib/mirror"))
+
+        expected = (tmp_path / "deployment/var/lib/mirror/warehouse").resolve().as_uri()
+        assert catalog.properties["warehouse"] == expected
+
+    def test_a_relative_path_can_actually_be_written_and_read(self, tmp_path,
+                                                               monkeypatch):
+        """Not just constructed: pyiceberg has to accept the URI."""
+        monkeypatch.chdir(tmp_path)
+        source = _source(tmp_path, "rel")
+        sync = IcebergMirrorSync(Path("deployment/var/lib/mirror"),
+                                  {"p": SQLiteReadAdapter({"path": source})})
+
+        sync.sync_table("p", "customers", "customer_id",
+                        ["customer_id", "name"], {})
+
+        rows = sync.catalog.load_table("p.customers").scan().to_arrow().num_rows
+        assert rows == 1
+
+
 class TestNobodyOpensTheCatalogTheirOwnWay:
     """A tripwire, in the spirit of the ones already in tests/unit. The
     defect was not one bad line: it was the SAME line copied five
