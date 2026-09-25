@@ -15,7 +15,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getLinkCounts } from '@elysium/shell-api/api'
+import { ApiError, getLinkCounts } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ExploreRelated from './ExploreRelated'
@@ -34,10 +34,15 @@ const SCHEMA: VisibleSchema = {
   Transaction: { fields: { customer_id: { type: 'link', target: 'Customer' } } },
 }
 
-function renderPanel(schema: VisibleSchema | null = SCHEMA) {
+function renderPanel(schema: VisibleSchema | null = SCHEMA, onSessionExpired: () => void = vi.fn()) {
   return render(
     <MemoryRouter>
-      <ExploreRelated objectType="Customer" objectId="cust_001" visibleSchema={schema} onSessionExpired={vi.fn()} />
+      <ExploreRelated
+        objectType="Customer"
+        objectId="cust_001"
+        visibleSchema={schema}
+        onSessionExpired={onSessionExpired}
+      />
     </MemoryRouter>,
   )
 }
@@ -143,5 +148,42 @@ describe('ExploreRelated', () => {
     renderPanel()
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Counting related records…'))
+  })
+})
+
+describe('ExploreRelated -- an expired session', () => {
+  /**
+   * FOUND WHILE FIXING F-31, and worse than the item itself.
+   *
+   * This panel LOOKED handled: its catch tested
+   * `getErrorMessage(caught).includes('401')` before calling
+   * onSessionExpired. But api/auth_dependency.py answers an expired
+   * session with `detail: "Invalid or expired session"` -- a sentence
+   * containing no digits at all -- and api.ts puts that detail in the
+   * message. So the branch could never run for the case it was
+   * written for, and the code READ as correct while doing nothing.
+   *
+   * The string test was also wrong in the other direction: any
+   * message that happened to contain "401" -- a note, an object id, a
+   * count -- would have logged the person out.
+   */
+  it('sends the person back to login when the session has expired', async () => {
+    mockedGetLinkCounts.mockRejectedValue(new ApiError(401, 'Invalid or expired session'))
+    const onSessionExpired = vi.fn()
+
+    renderPanel(SCHEMA, onSessionExpired)
+
+    await waitFor(() => expect(onSessionExpired).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not log the person out over a message that merely mentions 401', async () => {
+    // The string match this replaces would have fired on this.
+    mockedGetLinkCounts.mockRejectedValue(new ApiError(500, 'Upstream job 401 failed'))
+    const onSessionExpired = vi.fn()
+
+    renderPanel(SCHEMA, onSessionExpired)
+
+    await waitFor(() => expect(screen.getByText(/Upstream job 401 failed/)).toBeInTheDocument())
+    expect(onSessionExpired).not.toHaveBeenCalled()
   })
 })

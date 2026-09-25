@@ -23,7 +23,7 @@ import { Tag } from '@blueprintjs/core'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { getErrorMessage, getLinkCounts, type LinkCount } from '@elysium/shell-api/api'
+import { getErrorMessage, getLinkCounts, handleIfSessionExpired, type LinkCount } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatFieldName } from '@elysium/shell-api/format'
@@ -73,10 +73,18 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
       })
       .catch((caught) => {
         if (stale) return
-        if (getErrorMessage(caught).includes('401')) {
-          onSessionExpired()
-          return
-        }
+        // Checked by STATUS, not by searching the message for "401".
+        //
+        // The string test could never fire for the case it was written
+        // for: api/auth_dependency.py answers an expired session with
+        // detail "Invalid or expired session", a sentence with no
+        // digits in it, and api.ts puts that detail in the message. It
+        // was also wrong the other way -- any message that happened to
+        // contain "401", an id or a count, logged the person out.
+        //
+        // handleIfSessionExpired reads err.status on a real ApiError
+        // instance, which is the thing actually being asked about.
+        if (handleIfSessionExpired(caught, onSessionExpired)) return
         setError(getErrorMessage(caught))
       })
 

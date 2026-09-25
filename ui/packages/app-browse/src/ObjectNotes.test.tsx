@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { ApiError } from '@elysium/shell-api/api'
 
 const getObjectNotes = vi.fn()
 const createObjectNote = vi.fn()
@@ -86,5 +87,46 @@ describe('ObjectNotes', () => {
 
     await waitFor(() => expect(screen.getByText(/could not save/)).toBeInTheDocument())
     expect(screen.getByLabelText('New note')).toHaveValue('Worth keeping')
+  })
+})
+
+describe('ObjectNotes -- an expired session', () => {
+  /**
+   * F-31. The READ went through useFetchOnce, which routes a 401 to
+   * onSessionExpired. The WRITE did not: its catch went straight to
+   * getErrorMessage, so saving a note on an expired session printed
+   * "Invalid or expired session" beside the box and left the person
+   * sitting there -- still typing, still logged out, with nothing
+   * telling them to sign in again. Every other write path in
+   * app-browse already called handleIfSessionExpired.
+   */
+  it('sends the person back to login instead of printing the reason', async () => {
+    createObjectNote.mockRejectedValue(new ApiError(401, 'Invalid or expired session'))
+    const onSessionExpired = vi.fn()
+
+    render(<ObjectNotes {...props} onSessionExpired={onSessionExpired} />)
+    fireEvent.change(await screen.findByLabelText('New note'), { target: { value: 'anything' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add note/ }))
+
+    await waitFor(() => expect(onSessionExpired).toHaveBeenCalledTimes(1))
+    // AND NOT ALSO SHOWN. Printing the reason next to a box the person
+    // is about to be redirected away from is the half-handled state
+    // this fixes.
+    expect(screen.queryByText('Invalid or expired session')).not.toBeInTheDocument()
+  })
+
+  it('uses the real message for a failure that is NOT a session problem', async () => {
+    // The opposite direction: without this, routing everything to
+    // onSessionExpired would pass the test above and lose every other
+    // error.
+    createObjectNote.mockRejectedValue(new ApiError(403, 'You may not add notes here'))
+    const onSessionExpired = vi.fn()
+
+    render(<ObjectNotes {...props} onSessionExpired={onSessionExpired} />)
+    fireEvent.change(await screen.findByLabelText('New note'), { target: { value: 'anything' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add note/ }))
+
+    expect(await screen.findByText('You may not add notes here')).toBeInTheDocument()
+    expect(onSessionExpired).not.toHaveBeenCalled()
   })
 })
