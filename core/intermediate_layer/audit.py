@@ -587,6 +587,34 @@ class AuditLog:
             "description": description,
         })
 
+    def log_echoed_value_not_written(self, user_id: str, object_type: str, object_id,
+                                      field_name: str) -> None:
+        # WriteMediator dropped ONE field from an update because the
+        # value proposed for it was not the source's value but was
+        # exactly the SERVED one -- so the caller submitted back what
+        # they were shown rather than editing it. Silver standardises
+        # on the way in (NFC, trim, collapse whitespace), so writing
+        # that value would replace the customer's own row with the
+        # pipeline's transformation of it, attributed to somebody who
+        # never typed it. See _drop_values_the_pipeline_produced() for
+        # the reasoning and for what it costs a caller who meant it.
+        #
+        # ITS OWN ENTRY, not a log_access() line with an invented verb.
+        # An action string of the shape "something:{...}" is read by
+        # tests/unit/test_grant_vocabulary_consistency.py as a GRANT
+        # the code asks authorize() for, and it caught exactly that
+        # when this was first written that way. A distinct stage is
+        # also the honest shape: this is not an access decision -- MAC
+        # and RBAC both already passed -- it is the system declining to
+        # propagate its own output back to a source.
+        self._write({
+            "stage": "echoed_value_not_written",
+            "user_id": user_id,
+            "object_type": object_type,
+            "object_id": object_id,
+            "field_name": field_name,
+        })
+
     def log_write_resume_ambiguous(self, entry_id: str, object_type: str, object_id, field_name: str,
                                     current_value, expected_old_value, expected_new_value) -> None:
         # WriteMediator.resume_pending_writes() found a write_log entry

@@ -1076,6 +1076,76 @@ class WriteMediator:
             )
         return {}
 
+    def _drop_values_the_pipeline_produced(self, user_record: UserRecord, object_type: str,
+                                            object_id: Any, changes: dict,
+                                            source_values: dict, action_type_name: str) -> dict:
+        """Removes fields whose "new" value is what the caller was SHOWN.
+
+        THE FEEDBACK LOOP (R50), and it is the write-path half of
+        CONCERN-3. Silver standardises on the way in -- NFC, trim,
+        collapse whitespace (patch 337) -- so a source row holding
+        `"  Ada   Okafor "` is SERVED as `"Ada Okafor"`. A form
+        prefilled from the served value, saved by somebody who edited a
+        DIFFERENT field, proposes `name = "Ada Okafor"`, and the write
+        path puts that into the customer's own row. A transformation
+        nobody chose, attributed to somebody who never typed it, and
+        the original is gone.
+
+        NOTHING PREVIOUSLY NOTICED. _expected_current_values_for()
+        reads through _adapter_mediator, which is bound to the SOURCE,
+        so the lost-update check compares source against source and
+        passes. The proposed value was never compared against what the
+        caller was shown.
+
+        THE TEST IS "DIFFERENT FROM THE SOURCE, IDENTICAL TO THE
+        SERVED VALUE". A field equal to the source is not an echo --
+        it is a no-op, harmless, and left alone. A field equal to
+        neither is a real edit and is kept.
+
+        WHAT THIS COSTS SOMEBODY WHO MEANT IT: a caller who genuinely
+        wants to set the source to the standardised form cannot, and
+        that case is INDISTINGUISHABLE from the echo -- the bytes are
+        identical. Preserving the customer's own data is the
+        conservative reading of an ambiguity we cannot resolve, and
+        the alternative silently destroys it. Stated here rather than
+        discovered.
+
+        DROPPED, NOT REFUSED. Refusing the whole action would block a
+        legitimate edit to a neighbouring field, which is the common
+        case -- the echo arrives alongside a real change, not instead
+        of one.
+
+        FAILS TO TODAY'S BEHAVIOUR, NOT OPEN. get_field() returns None
+        for a field the caller may not read, and None is also a real
+        value, so an unreadable field cannot be compared and is kept.
+        That is the pre-R50 behaviour for that field and no weaker:
+        this guard protects the customer's DATA, it is not an
+        authorization gate, and MAC and RBAC already ran above.
+        """
+        kept = {}
+        for field_name, proposed in changes.items():
+            if field_name not in source_values or proposed == source_values[field_name]:
+                kept[field_name] = proposed
+                continue
+            # What a caller reading this object would have been shown:
+            # published gold, through the read mediator, with their own
+            # grants applied.
+            served = self.mediator.get_field(user_record, object_type, object_id, field_name)
+            if served is not None and proposed == served:
+                self.audit_log.log_echoed_value_not_written(
+                    user_record.user_id, object_type, object_id, field_name
+                )
+                continue
+            kept[field_name] = proposed
+
+        if not kept:
+            raise ValueError(
+                f"Action {action_type_name!r} on {object_type} {object_id!r} would change "
+                f"nothing: every value proposed is the one already shown to the caller. "
+                f"The source holds a different form of it, which this refuses to overwrite."
+            )
+        return kept
+
     def _refuse_cross_compartment(self, user_record, action_type_name: str,
                                   action_def: dict, parameters: dict,
                                   sub_writes: list) -> None:
@@ -1385,6 +1455,15 @@ class WriteMediator:
                 expected_current_values = self._expected_current_values_for(
                     operation, object_type, object_id, changes, action_type_name
                 )
+                if operation == "update":
+                    changes = self._drop_values_the_pipeline_produced(
+                        user_record, object_type, object_id, changes,
+                        expected_current_values, action_type_name,
+                    )
+                    expected_current_values = {
+                        field: value for field, value in expected_current_values.items()
+                        if field in changes
+                    }
                 resolved_sub_writes.append(
                     SubWrite(object_type, object_id, operation, changes, expected_current_values)
                 )
