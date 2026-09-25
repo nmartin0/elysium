@@ -205,7 +205,25 @@ def _arrow(rows: list[dict], type_def: dict) -> pa.Table:
         # A LINK IS A KEY, and a key is whatever the target's id is --
         # declared on the target, not here. Text is the honest default
         # for one, as it is for a field that declares no data_type.
-        if field_config.get("type") == "link":
+        #
+        # AND SO IS THE ID FIELD (PA001-G6). This branch used to cover
+        # links only, so a type declaring `data_type: integer` on its
+        # id got an int64 column here while the STREAMING path
+        # (gold_arrow.conform_arrow) gave it a string. Two paths, two
+        # answers, for the same declaration.
+        #
+        # WORSE ON A FUSED TYPE, where the dict path is the only one:
+        # fusion writes ids as text -- "keys are compared as text
+        # everywhere else in this system", as the line below has always
+        # said -- and the schema then claimed int64, so the build
+        # CRASHED with "Could not convert '7' with type str: tried to
+        # convert to int64". A type with an integer id and a second
+        # storage could not be published at all.
+        #
+        # TEXT IS THE RIGHT ANSWER, not merely the consistent one: the
+        # gold connector looks rows up with `literal=str(object_id)`,
+        # so an int64 id column would match nothing even if it built.
+        if field_config.get("type") == "link" or name == id_field:
             return pa.string()
         return arrow_type_for(field_config.get("data_type", "string"))
 
