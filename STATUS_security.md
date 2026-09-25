@@ -258,6 +258,41 @@ with two dependents, so it is recorded rather than started.
 
 ---
 
+## Session 6 — F-33 CLOSED, and a delivery defect found
+
+**F-33 measured by mutation rather than counted by reading.** Disabling
+session expiry entirely -- every expired session valid forever -- broke
+exactly ONE assertion in the repository, and the integration tier
+noticed nothing:
+
+    1 failed   tests/unit/test_session_store.py
+    2,845      other unit tests passed
+    442        integration tests passed
+
+The new test is at the WIRE, not beside the first: a second unit test
+on SessionStore would double the count and die to the same refactor.
+After it, the same mutation fails 3 tests at two layers. Commit
+`85c6e7b`. F-33's other half (the ownership check) was already closed
+by the approvals work's `may_claim`, eight tests at two layers.
+
+    controls   the original mutation      -> 3 failed, 7 passed
+               refuse EVERY session       -> 2 failed, 1 passed
+    gates      ./lint.sh clean, 8/8; 2,846 unit; 445 integration (+3)
+
+**AND THE HANDOVER ITSELF WAS THE DEFECT.** Three batches failed to
+reach the remote and the cause was my apply script, not the patches:
+`~/Downloads` still held the FIRST batch, the glob took `0001` first,
+`git am` said "already exists in index", `set -e` aborted, and nothing
+later ran. Reproduced against a fresh clone. Fixing it, my first skip
+check was also wrong -- `format-patch` WRAPS a long Subject, so a
+hand-rolled `sed` read "...are already" for "...are already fixed" and
+never matched. `git mailinfo` is git's own parser for that job.
+
+A delivery script is a deliverable, and I had only ever tested mine
+against clean directories -- never the messy one real use produces.
+
+---
+
 ## Where this leaves the list
 
     Closed, controlled      E-01  E-04  E-05  F-27
@@ -269,9 +304,12 @@ with two dependents, so it is recorded rather than started.
                             F-21         commit 39f2a94
                             F-12a        commit 6e3b413
                             F-12b        commit 2dbece9
+                            F-33         commit 85c6e7b
     Analysed, needs a nod   004-8        shape proposed above
     Next, needs a session   F-05         a TOCTOU; the test must FORCE
                                          the interleaving, not race it
+    Policy, propose first   F-08  R50  R52
+    Owner decision          E-02 residual, F-13 and F-25 (backend files)
     Need one measurement    F-05  F-12b
     Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
 
