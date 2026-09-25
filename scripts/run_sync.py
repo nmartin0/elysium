@@ -366,6 +366,22 @@ def _publish_link_tables(sync, schema: dict) -> None:
         print(f"published gold.{table_name}: {silver.num_rows} rows (link table)")
 
 
+def _outcome_for(result) -> str:
+    """Which of SyncAttempts' three outcomes this run was (PA001-A17).
+
+    A NAMED FUNCTION rather than an expression inline, because a
+    control showed the inline version was untestable: every test of
+    the history called attempts.record() directly, so the DECISION --
+    the part that was wrong -- was never exercised.
+
+    The store has supported three outcomes since it was written; this
+    recorded 'synced' for both of the first two, so a source nobody
+    has touched for a month and one that changed this morning looked
+    identical in the history an operator reads.
+    """
+    return "unchanged" if getattr(result, "unchanged", False) else "synced"
+
+
 def _build_gold(sync, config, data_dir, unsynced: set | None = None) -> int:
     """One gold table per object type, audited before it is published.
     Returns how many were refused.
@@ -580,12 +596,6 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
             storage=dict(config.mirror_storage),
         )
 
-        # WHAT THE LAKE SAYS ABOUT ITSELF, published beside the data.
-        # A lake in object storage already survives its installation
-        # being deleted; without this it cannot say what any of the
-        # data MEANS to whatever comes next.
-        publish_manifest(sync, config)
-
         failures = 0
         # WHICH TABLES DID NOT SYNC, so gold can skip exactly the
         # types that depend on them rather than all of them.
@@ -627,7 +637,14 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
                     str(exc),
                 )
                 continue
-            attempts.record(target.silo_name, target.table_name, "synced")
+            # 'unchanged' IS ITS OWN OUTCOME (PA001-A17). The store has
+            # supported three since it was written -- 'synced',
+            # 'unchanged', 'refused' -- and this recorded 'synced' for
+            # both of the first two, so a quiet source and a busy one
+            # were indistinguishable in the history an operator reads
+            # to answer "when did this last actually move?".
+            attempts.record(target.silo_name, target.table_name,
+                            _outcome_for(result))
             print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
@@ -654,6 +671,19 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
         # its own trigger, its own failure mode and its own reason to
         # exist; a sync already runs on whatever schedule the
         # deployment chose.
+        # WHAT THE LAKE SAYS ABOUT ITSELF, published beside the data --
+        # AFTER the data, not before (PA001-F6.3).
+        #
+        # It ran before the sync loop, so its table list described the
+        # PREVIOUS run: a table synced for the first time was absent
+        # from the manifest that was written moments after it appeared,
+        # and stayed absent until the NEXT sync. A lake in object
+        # storage already survives its installation being deleted;
+        # without an accurate manifest it cannot say what any of the
+        # data MEANS to whatever comes next, and a manifest describing
+        # a different moment is worse than a late one.
+        publish_manifest(sync, config)
+
         _notify_mirror_health(runtime_paths, config, attempts, targets)
         _evaluate_user_triggers(runtime_paths, config, mediator)
 

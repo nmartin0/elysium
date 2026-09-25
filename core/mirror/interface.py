@@ -57,6 +57,12 @@ class SyncResult:
     # Rows held back by an expectation, and what each rule caught
     # (GOLD-1). Zero and empty for a table that declares none.
     quarantined: int = 0
+    # WHETHER THIS RUN CHANGED ANYTHING (PA001-A17). A sync that found
+    # the source identical writes no snapshot, and recording it as
+    # "synced" makes a quiet source indistinguishable from a busy one
+    # in the attempt history -- which is the history an operator reads
+    # to answer "when did this last actually move?".
+    unchanged: bool = False
     violations: dict = dataclass_field(default_factory=dict)
 
 

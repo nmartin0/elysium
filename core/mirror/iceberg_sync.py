@@ -602,6 +602,7 @@ class IcebergMirrorSync(MirrorSync):
         with table.update_schema() as update:
             update.union_by_name(arrow_table.schema)
 
+        unchanged = False
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Delete operation did not match any records")
             # NOTHING IS WRITTEN WHEN NOTHING CHANGED.
@@ -630,6 +631,7 @@ class IcebergMirrorSync(MirrorSync):
             # timestamp at all, and `transactions` has only a business
             # date that does not move when a row is edited.
             if self._already_current(table, arrow_table):
+                unchanged = True
                 logger.info(
                     f"{identifier}: source unchanged, no new snapshot written"
                 )
@@ -708,6 +710,7 @@ class IcebergMirrorSync(MirrorSync):
             synced_at=datetime.now(UTC),
             quarantined=len(checked.quarantined) + len(duplicated),
             violations=checked.counts,
+            unchanged=unchanged,
         )
 
     def _bronze_snapshot_id(self, silo_name: str, table_name: str):
