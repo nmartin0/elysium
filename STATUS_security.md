@@ -141,6 +141,32 @@ three either way, so the consolidation is tidiness, not safety.
 
 ---
 
+## Session 3 — F-21 CLOSED
+
+`entries_for_request()` bounded the PARSE and not the READ, and said
+so in a docstring that was the opposite of true. Commit `39f2a94`.
+
+    measured    100,000 entries  634 ms /  26.6 MB -> 633 ms / 0.3 MB
+                400,000 entries  981 ms / 105.3 MB -> 628 ms / 0.3 MB
+                800,000 entries 1440 ms / 210.3 MB -> 631 ms / 0.3 MB
+    fix         _tail_lines() walks back in 64 KiB blocks, rejoining a
+                line that straddles a boundary
+    test        COUNTS BYTES READ -- timing is flaky and a memory
+                threshold is a judgement call; bytes read is the
+                property and it is an integer
+    controls    restore readlines()       -> 2 failed, 9 passed
+                ignore max_scan           -> 3 failed, 8 passed
+                drop the remainder rejoin -> 1 failed, 10 passed
+    gates       ./lint.sh clean, 8/8; 2,837 unit (+11); 442 integration
+
+THREE THINGS I GOT WRONG, all caught by running rather than reasoning:
+the property is "bounded by max_scan", not "stops at the first match",
+so at the default cap a correct read is still ~10 MB; entries come
+back OLDEST first, deliberately; and vulture found a constant in my
+own test file that nothing used.
+
+---
+
 ## Where this leaves the list
 
     Closed, controlled      E-01  E-04  E-05  F-27
@@ -148,14 +174,17 @@ three either way, so the consolidation is tidiness, not safety.
     Closed by measurement   E-08         (2,812 pass on a fresh clone)
     PARTLY closed, MINE     E-02         residual measured above
 
-    DONE, controlled        F-30         commit e909f9f
-    Reproduced, open, mine  F-21  004-8  F-12a
+    DONE, controlled        F-30         pushed as d992843
+                            F-21         commit 39f2a94
+    Reproduced, open, mine  004-8  F-12a
     Need one measurement    F-05  F-12b
     Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
 
-**F-30 is closed** (above). The next item is **F-21**: `readlines()`
-in `entries_for_request()`, where the fix and its control are both
-clear.
+**F-30 and F-21 are closed** (above). Next is **004-8**: the write
+path calls `_security_allowed()` directly at `write_mediator.py:1000`
+while `check_access()` is used at :1425, so the "single enforcement
+point" docstring and the code disagree. That one needs a call on which
+side moves before it is written.
 
 ---
 
