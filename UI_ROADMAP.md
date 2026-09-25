@@ -195,9 +195,10 @@ follow.
 
  1. [31] A read-only config view -- what this deployment is running
  2. [20] FHS paths, keeping the env overrides
- 3. [25] Log rotation
- 4. [14a] Silo, READ-ONLY half -- health_check exists, nothing shows it
- 5. [7]  The schema graph -- visible_schema plus an ECharts graph series
+ 3. [14a] Silo, READ-ONLY half -- health_check exists, nothing shows it
+ 4. [7]  The schema graph -- visible_schema plus an ECharts graph series
+
+ [25] Log rotation was 3 here and is CLOSED -- it ships. See item 25.
 
 **Small and self-contained**
 
@@ -214,7 +215,8 @@ follow.
 13. [27] A wall-clock deadline -- needs 33
 14. [29] Measure the loop -- needs 33 for real token counts
 15. [18] Cap what a step returns into context
-16. [22] SCHEMA MIGRATION -- see the ordering note below
+16. [22] Record user_version -- the migration MECHANISM already ships;
+    see the ordering note below
 17. [16] A metrics endpoint -- decide the grant and label cardinality
 18. [1]  The search bar -- five operators currently have no UI
 19. [34] An OpenAI-compatible adapter -- verify json_mode and usage
@@ -227,7 +229,8 @@ follow.
 **Bigger, or a design question wearing a feature's clothes**
 
 25. [32] Eval harness with baselines and a regression gate
-26. [21] Generated first-run password -- needs a migration [22]
+26. [21] Generated first-run password -- the column it needs already
+    migrates itself; see 22
 27. [4]  Change over time -- per-row re-authorization
 28. [10] Agent audit -- cheap to build, and the most distinctive
 29. [30] Per-request CONFIG snapshot -- makes 13 nearly free
@@ -247,14 +250,21 @@ follow.
 40. [19] The labelling experiment -- cheap to run, decides 12
 41. [12] Query with memory -- blocked on 19's answer
 
-**THE ONE ORDERING NOTE THAT OVERRIDES DIFFICULTY.** Item 22, schema
-migration, sits mid-list by effort and should be done FIRST anyway. It
-is the only item that becomes IMPOSSIBLE rather than merely urgent:
-the first schema change after someone has real data is the one that
-cannot be undone, and 21, 13, 39 and 6 all add columns.
+**THE ORDERING NOTE THAT USED TO OVERRIDE DIFFICULTY, now much
+weaker -- E-19.** This said item 22 must be done FIRST because it is
+the only item that becomes IMPOSSIBLE rather than merely urgent: the
+first schema change after real data cannot be undone, and 21, 13, 39
+and 6 all add columns.
 
-Everything else can wait its turn. That one closes a door that is
-still open.
+ADDING A COLUMN IS THE CASE THAT IS ALREADY HANDLED.
+`add_column_if_missing` does exactly that and is already used by four
+stores -- including for `must_change_password`, the very column this
+argument was built on. So the door this was holding open is not open.
+
+What remains of 22 is recording `user_version`, which matters before
+the first NON-additive change -- a backfill, a changed meaning, a
+split table, refusing a database that is too old. That is worth doing
+early, and is no longer a prerequisite for 21, 13, 39 or 6.
 
 ## Feature backlog, ranked by value to users
 
@@ -640,23 +650,47 @@ Checked rather than assumed, and the first sweep was wrong: rate
 limiting and a health endpoint both already exist. What follows is
 what a second, more careful pass confirmed missing.
 
-**22. Schema migration. Do this before anything else that persists.**
+**22. Record a schema version. The mechanism already exists; the
+version does not.**
 
-There is no user_version and no migration mechanism on ANY store --
-user_directory, artifact_store, pending_write_store. Each creates its
-tables if absent and stops there.
+CORRECTED, E-19. This entry said there was no migration mechanism on
+ANY store and that each merely creates its tables if absent. That was
+true when written and is not true now, and the original wording is
+kept below because the correction is the useful part.
 
-The moment item 21 ships a must_change_password column, every existing
-deployment has a database without it and nothing that can add it. Same
-for runtime roles, watches, or any other persisted feature on this
-list.
+WHAT ACTUALLY SHIPS: `add_column_if_missing` in
+`core/sqlite_connection.py`, used by `auth/database.py`,
+`saved_views.py`, `triggers.py` and `pending_write_persistence.py`.
+It inspects the live table and adds a column when it is absent, so an
+existing deployment does pick up a new column on next start.
 
-THIS IS WHERE PROTOTYPE AND PRODUCTION ACTUALLY DIFFER: a prototype
-can delete its database. The first schema change after someone has
-real data is the one that cannot be undone, and the machinery has to
-exist BEFORE it rather than during. Cheap now, painful later, and it
-is the only item here that becomes impossible rather than merely
-urgent.
+THE EXAMPLE THIS ENTRY CHOSE HAS ALREADY HAPPENED, and it went the
+other way. The old text argued that the moment item 21 ships a
+`must_change_password` column, every existing database lacks it with
+nothing able to add it. That column is at `core/auth/database.py:66`
+and the line that adds it to an existing table is at `:117` -- the
+same file, twelve lines further down. The feared case arrived, the
+mechanism handled it, and this entry went on describing the danger.
+
+THE REAL GAP IS NARROWER AND STILL OPEN: **`user_version` appears
+nowhere in the codebase** -- zero occurrences across `core/`, `api/`
+and `scripts/`. So no store records WHICH schema it is at. Adding a
+column is idempotent and needs no version; anything that is not --
+backfilling a value, changing a column's meaning, splitting a table,
+or deciding a database is too old to open -- has nothing to branch
+on. `PRAGMA user_version` is SQLite's own slot for this and is one
+integer per file.
+
+So this is no longer "before anything else that persists". It is
+cheap, it is still worth doing before the first non-additive change,
+and it is not the cliff the original text described.
+
+ORIGINAL WORDING, for the record: "There is no user_version and no
+migration mechanism on ANY store -- user_directory, artifact_store,
+pending_write_store. Each creates its tables if absent and stops
+there... THIS IS WHERE PROTOTYPE AND PRODUCTION ACTUALLY DIFFER: a
+prototype can delete its database... it is the only item here that
+becomes impossible rather than merely urgent."
 
 **23. Backup and restore.** Nothing exists. Several SQLite files plus
 the Iceberg warehouse and catalog, with no documented way to take a
@@ -671,11 +705,32 @@ Iceberg commit part-way -- and the audit log's log_pre/log_post
 pairing is precisely the thing that goes inconsistent. Uvicorn drains
 connections; nothing drains OUR work.
 
-**25. Log rotation.** An audit entry per field access, in a directory
-with no rotation, and profiling already showed audit I/O dominates the
-aggregate path. The failure when a disk fills is that WRITES start
-failing while READS keep working, which is confusing exactly when
-confusion is most expensive.
+**25. Log rotation. ~~Missing.~~ It ships -- CLOSED, E-19.**
+
+This said an audit entry is written per field access "in a directory
+with no rotation". There is one: `deployment/logrotate/elysium`,
+copied to `/etc/logrotate.d/elysium` by `install/install.sh:166`.
+Daily, `rotate 90`, `compress` with `delaycompress`, `create 0600
+elysium elysium`, and explicitly NO `copytruncate`.
+
+IT IS ALSO BETTER THOUGHT THROUGH THAN THIS ENTRY WAS. The audit log
+opens and closes per record -- measured at 18.3us against 4.5us for a
+persistent handle, and the slower option was chosen deliberately,
+because a persistent handle keeps writing to a rotated-away inode and
+loses records silently. That choice is what lets rename-then-create
+work with no signal delivered and no application change, and it is
+the same reason `copytruncate` is refused: it would lose any record
+written between the copy and the truncate.
+
+The rest of the entry's reasoning was sound and is why the config
+exists -- audit I/O measured 2.5 of 3.4 seconds on the aggregate path,
+and a full disk fails WRITES while READS keep working, so the system
+looks healthy while quietly recording nothing.
+
+ONE THING THE CONFIG ITSELF FLAGS, not a defect here: `rotate 90` is a
+placeholder. Retention for an audit log is a compliance decision, not
+a disk-space one, and 90 days is a common floor rather than an answer
+for any particular deployment.
 
 **26. Startup validation of things that are not config.** Roles,
 action types and function declarations are all validated at load --
