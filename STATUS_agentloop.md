@@ -1426,3 +1426,115 @@ That is the object-set composition model from round 2's LB-2 finding,
 exposed to an agent as a single tool. Worth weighing against our
 four-step vocabulary when AL-4 is designed -- fewer step kinds is
 less of the 87.5% procedure block.
+
+---
+
+## LB-1a -- the calculator tool. DONE. LB-1b still open.
+
+Palantir's answer to arithmetic is a tool: AIP Logic ships Apply
+actions, Call function, Query objects and **Calculator**, which
+"enables you to perform accurate mathematical calculations with an
+LLM". We already had the registry for it -- a `Function` protocol,
+`linear_regression` as a purely computational function with no
+ontology access, and `tools.enabled` gating in config -- so this is a
+drop-in of the same shape. **No ontology change, no backend request.**
+
+### Two properties carry it
+
+**EXACT, never float.** This project declares a `decimal` field type
+because float loses money digits, and `prompt_values.py` exists to
+stop a stored 49.990000000 reaching a model badly. A calculator
+answering in floats would reintroduce that at the last step, after
+every other layer got it right. `0.1 + 0.2` returns `0.3`;
+`12345678901234567.89 + 0.01` survives intact.
+
+**NOT AN INTERPRETER.** The expression is written by a model, and the
+model reads untrusted field values (AL-2), so `eval()` there is
+arbitrary code execution reachable from a customer's own data. The
+expression is parsed to an AST and walked against a closed whitelist;
+names, calls, attributes, subscripts, comprehensions and lambdas are
+refused as a class rather than enumerated.
+
+Every refusal is a `ValueError`, including a `SyntaxError` from the
+parser -- `_execute_step` catches `(ValueError, TypeError,
+PermissionError)`, and a SyntaxError would sail past it and out of the
+loop, which is AL-1's shape exactly.
+
+### A control corrected my own reasoning
+
+I wrote that `**` was excluded because 10**10**10 is "unbounded to
+compute" -- a denial-of-service argument. **Measured: adding Pow to
+the whitelist does NOT hang.** The Decimal context raises Overflow and
+the call returns a refusal in milliseconds. Bounded precision already
+handled it.
+
+**What DID hang was the eval() control**, where the same expression
+ran in native Python integers until the test run was killed. So
+unbounded arithmetic is a SECOND reason eval() is refused, on top of
+code execution -- and my security argument for excluding Pow was
+wrong. It stays out as a scope decision: every operator is surface
+area and nothing this serves needs one. Corrected in the module and in
+the test.
+
+### Controls, four
+
+    float instead of Decimal            3 of 28 fail
+    eval() bypassing the AST walk       6 fail -- and the run HUNG on
+                                        10**10**10 until killed
+    SyntaxError escapes as itself       1 fails
+    allow Pow                           0 fail; it is refused safely,
+                                        which is what corrected me
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2936 passed, 8 skipped  (2908 before; +28 here)
+
+mypy caught a real defect on the way: I reused one name for the binary
+and unary operator lookups, which have different arities, so a
+one-argument call was being made against a two-argument type. The
+tables are now typed by the arity each actually has.
+
+### NOT ENABLED IN ANY DEPLOYMENT
+
+`config.yaml` lists `tools.enabled: [linear_regression]`, and that
+file is deployment configuration rather than mine to change
+unilaterally. **Add `calculator` to that list to turn it on**, plus a
+`tool:calculator` grant for any role that should reach it -- the
+policy vocabulary is `tool:<name>`.
+
+### This does not close LB-1
+
+The model must still CHOOSE to call it, and LB-9 records that the loop
+under-selects tools. **LB-1b -- the number check that fails closed --
+is what catches the times it does not**, and the two were always meant
+to ship together. 1b is still blocked on the grounding decision, though
+LB-5 already closed its worst trap: it must ground against the
+RENDERED records.
+
+### The `functions/` vs `tools/` question: DO NOT RENAME
+
+Checked rather than opined.
+
+**The two words already name two different things here, and that
+matches Foundry.** `policy.yaml`'s grant vocabulary is `tool:<name>`,
+the prompt tells the model about "computational tools", and the config
+key is `tools.enabled` -- so "tool" is the outward, security-facing
+name. `functions/` and `core/functions/` are the implementation
+behind it. Foundry draws the same line: a Function is an ontology
+artefact, and "Call function" is one of four TOOLS an LLM is given.
+A tool is not a synonym for a function; it is how a function is
+exposed.
+
+**And the rename would cross three other agents' ownership.** `tool`
+already appears in `api/routes.py` (backend),
+`core/intermediate_layer/policy_validation.py` (security),
+`core/ontology/field_types.py` (backend), `core/deployment_loader.py`
+(backend), `deployment/etc/`, `templates/` and
+`scripts/lint_deployment.py` -- plus the import-linter contracts in
+`pyproject.toml`. A pure-churn rename across shared files, with four
+agents working at once, is maximally conflict-prone for no behaviour
+change.
+
+If anything is worth tidying it is the `Function` protocol's own
+docstring saying which of the two words it is, not the directory name.
