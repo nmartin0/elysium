@@ -88,11 +88,27 @@ class LoginAttemptTracker:
         if datetime.now(UTC) - window_started_at >= WINDOW:
             # The window itself has expired -- a stale record, not a
             # real, current lockout. Left in place rather than deleted
-            # here (a read-only method deleting rows would be a real,
-            # surprising side effect, and this is now a STRUCTURALLY
+            # here, because a read-only METHOD deleting rows would be a
+            # real, surprising side effect; record_failure() below is
+            # what actually resets it, the next time this username is
+            # used at all.
+            #
+            # THE CONNECTION IS NOT READ-ONLY, whatever this comment
+            # used to say (001's F-12b). It claimed "a STRUCTURALLY
             # read-only connection besides -- it couldn't delete even
-            # if it tried); record_failure() below is what actually
-            # resets it, the next time this username is used at all.
+            # if it tried", and that was false: connection() reaches
+            # open_connection() with read_only defaulting to False,
+            # which it must, because connection_with_schema() runs
+            # CREATE TABLE IF NOT EXISTS and column migrations through
+            # the same handle. PROVED by writing AND deleting a row
+            # through this very helper before correcting this.
+            #
+            # So the discipline here is a CONVENTION, not a guarantee,
+            # and saying otherwise is worse than saying nothing: a
+            # false structural claim in an auth file invites the next
+            # reader to skip a check they would otherwise make. See
+            # tests/unit/test_auth_connection_is_writable.py, which
+            # pins the truth so the claim cannot be re-made quietly.
             return False
 
         return row["failed_count"] >= MAX_ATTEMPTS
