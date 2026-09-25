@@ -1,31 +1,65 @@
 """The system prompt does not change between hops, and when it must,
 the change is confined to a TRAILING section.
 
-AR-1 measured this on the real loop over a real mediator: across seven
-hops of a real query, 96.8%-97.4% of each hop's prompt was an exact
-prefix of the previous one, the system prompt was BYTE-IDENTICAL every
-hop, and the first divergence was always inside the user message, at
-the point `gathered` grows.
+AR-1 measured this on the real loop over a real mediator. Seven hops
+of a real query as `user_alice` (region us-west, role
+customer_service), reading a customer, its email, its transactions and
+their amounts:
 
-WHY THAT MATTERS: prefill dominates here. MODEL_SELECTION-001 measured
+    hop    system    user   total   shared   reuse   diverges in
+      2      5989     218    6207     6061   97.6%   user message
+      3      5989     339    6328     6182   97.7%   user message
+      4      5989     473    6462     6303   97.5%   user message
+      5      5989     618    6607     6437   97.4%   user message
+      6      6135     732    6867     5989   87.2%   SYSTEM PROMPT
+      7      6138     847    6985     6135   87.8%   SYSTEM PROMPT
+
+WHILE THE SYSTEM PROMPT HOLDS STILL, reuse is 97.4%-97.7% and the
+divergence is in the user message where `gathered` grows -- which is
+the cheapest place it can be.
+
+ON THE HOP A WRITE BECOMES RELEVANT IT DOES NOT HOLD STILL. Once
+Transaction ids have been read, _action_state_notes() starts
+rendering, the system prompt grows (5989 -> 6135 -> 6138), and reuse
+falls about ten points. That is a REAL, MEASURED cost in the shipped
+deployment, not a hypothetical: `RecategorizeTransactions` targets
+Transaction, so any query that reaches a transaction pays it.
+
+AN EARLIER VERSION OF THIS FILE SAID THE SYSTEM PROMPT WAS
+BYTE-IDENTICAL ON EVERY HOP. That was measured with the user id
+"alice", which the shipped policy.yaml does not define -- it names her
+"user_alice" -- and resolve_user_record() returns an EMPTY UserRecord
+for an unknown id. So every read was denied, visible_schema was empty,
+and every result was null. The prompt still grew, hop by hop, which is
+exactly why the run looked healthy. The reuse figure survived
+re-measurement; the stability claim did not.
+
+WHY IT MATTERS: prefill dominates here. MODEL_SELECTION-001 measured
 ~5.4 tokens/s prefill against ~1.5 decode, so re-reading a prompt is
-most of what a hop costs. An engine can only skip re-reading a prefix
-it has already seen, and only up to the first token that differs. A
-change that moves per-hop state EARLIER in the prompt therefore costs
-the whole remainder, on every hop, forever -- while looking like a
-tidier way to render the same information.
+most of what a hop costs. An engine can only skip a prefix it has
+already seen, and only up to the first token that differs. A change
+that moves per-hop state EARLIER therefore costs the whole remainder,
+on every hop, forever -- while looking like a tidier way to render the
+same information.
 
-THE DESIGN THIS PINS is already in the code and was already explained
-in a comment: _action_state_notes() renders as its own trailing
-section "rather than inline in each action's block, because inline it
-changed the middle of the system prompt on the exact hop a write
-became relevant". That comment is correct and it cannot fail a build,
-which is the same gap test_prompt_prefix_is_user_specific.py was
-written to close for the cross-user property.
+THE DESIGN THIS PINS is already in the code and already explained in a
+comment: _action_state_notes() renders as its own trailing section
+"rather than inline in each action's block, because inline it changed
+the middle of the system prompt on the exact hop a write became
+relevant". That comment is correct and it cannot fail a build, which
+is the same gap test_prompt_prefix_is_user_specific.py was written to
+close for the cross-user property.
 
-NOT THE SAME PROPERTY AS THAT FILE, and the two pull in opposite
-directions, which is worth stating so neither is "improved" into
-breaking the other:
+THIS FILE DOES NOT CLAIM THE NOTES ARE FREE. They cost the ten points
+above. It pins only that the cost stays confined to the tail, so that
+the hops BEFORE a write becomes relevant keep their 97%, and so that
+the notes cannot migrate into the body where they would cost every hop
+of every query. Removing that cost entirely is AR-2, which is a design
+change and not this.
+
+NOT THE SAME PROPERTY AS test_prompt_prefix_is_user_specific, and the
+two pull in opposite directions, which is worth stating so neither is
+"improved" into breaking the other:
 
     test_prompt_prefix_is_user_specific  two DIFFERENT users must
                                          share almost NO prefix
@@ -34,9 +68,9 @@ breaking the other:
 
 Both hold today because the divergence between users is at the HEAD
 (the per-user schema) and the divergence between hops is at the TAIL
-(gathered). Anything that moves per-hop state toward the head breaks
-this file; anything that moves shared boilerplate toward the head
-breaks that one.
+(gathered, then the notes). Anything that moves per-hop state toward
+the head breaks this file; anything that moves shared boilerplate
+toward the head breaks that one.
 """
 
 from core.llm.agent_step_prompt import _action_state_notes, _build_system_prompt
