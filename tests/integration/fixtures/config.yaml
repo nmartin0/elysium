@@ -41,34 +41,27 @@ llm:
     # anything: it guarantees the first query after a model load
     # fails, which is the one a person is most likely to be watching.
     request_timeout_seconds: 600
-    # KEEP THE MODEL RESIDENT. This is the actual fix; the timeout
-    # increases above were treating a symptom, and I should say so
-    # plainly because I raised it twice before looking here.
+    # NO keep_alive HERE, AND THAT IS NOW DELIBERATE.
     #
-    # Ollama evicts a model, and its KV cache with it, after FIVE
-    # MINUTES of inactivity by default. This file never set
-    # keep_alive, so:
+    # I set keep_alive: -1 and the suite got SLOWER, not faster. The
+    # plan-mode test took 182s, then 257s, then 547s across three
+    # runs, the last being the one with -1. That is the opposite of
+    # what a cache should do.
     #
-    #   - every integration run started cold, because the last one
-    #     finished more than five minutes ago;
-    #   - and the two models below EVICT EACH OTHER. A step call loads
-    #     qwen3:4b, synthesis loads qwen2.5:3b, and on a 2-core box
-    #     with limited memory the next step call may pay a full load
-    #     again. deployment/etc/ uses ONE model for every call and
-    #     says why: "Two models mean Ollama loading and evicting
-    #     between them -- measured at 12-47 seconds per load on this
-    #     hardware, paid at least once per query."
+    # -1 means NEVER EVICT. deployment/etc/ can afford that because it
+    # runs ONE model. This file runs TWO (step and synthesis), and the
+    # dev bench leaves a third resident. On a 2-core VM, pinning all
+    # of them is memory pressure rather than a warm cache, and the
+    # numbers above are what that looks like.
     #
-    # THE LOAD IS THE SMALLER HALF, AND THE NUMBERS SAY SO. 12-47
-    # seconds of reload does not explain a 600-second timeout. What
-    # does is that eviction DUMPS THE KV CACHE, so every call re-reads
-    # its whole prompt at the prompt-eval rate. AR-1 measured that
-    # difference on the dev deployment: 520.89s cold against 50.58s
-    # warm on a LONGER prompt, once the prefix was cached.
-    #
-    # None of that reuse could ever appear here, which is also why no
-    # integration test has ever shown AR-1's or AR-2's effect.
-    keep_alive: -1
+    # dev's config already gives the right advice and this file does
+    # not follow it: "ONE model for every call, not a step/synthesis
+    # pair. Two models mean Ollama loading and evicting between them
+    # -- measured at 12-47 seconds per load on this hardware, paid at
+    # least once per query." Collapsing step_model and synthesis_model
+    # to one model is the change that would make keep_alive safe here,
+    # and it is not mine to make: every integration test runs against
+    # this pair.
   step_model: "qwen3:4b-instruct-2507-q4_K_M"
   synthesis_model: "qwen2.5:3b"
 

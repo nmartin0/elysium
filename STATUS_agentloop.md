@@ -3937,3 +3937,82 @@ If this is right, the step test should now finish rather than time
 out, and the whole suite should get noticeably faster. If it still
 times out, the cause is elsewhere again and I will stop guessing and
 ask for `ollama ps` output during a run.
+
+---
+
+# MY keep_alive FIX MADE IT WORSE. Reverted, and I am stopping guessing.
+
+Third run, still timing out at 600 -- **and the suite got slower**:
+
+    timeout 480          total  662s   plan test 182s
+    timeout 600          total  857s   plan test 257s
+    600 + keep_alive     total 1147s   plan test 547s
+
+**The plan test went 182 -> 257 -> 547 seconds.** It should have got
+FASTER with a cache that survives. That is the opposite.
+
+## Why my fix hurt
+
+`keep_alive: -1` means **never evict**. `deployment/etc/` can afford
+that because it runs ONE model. This fixture runs TWO -- step and
+synthesis -- and the dev bench leaves a third resident. On a 2-core
+VM, pinning all of them is memory pressure, not a warm cache.
+
+**dev's config already gives the right advice and the fixture does not
+follow it:** "ONE model for every call, not a step/synthesis pair. Two
+models mean Ollama loading and evicting between them -- measured at
+12-47 seconds per load on this hardware, paid at least once per
+query."
+
+Reverted, with that reasoning recorded in the file so the next person
+does not re-apply it.
+
+## Three wrong guesses, and what they have in common
+
+    480 -> 600      treated a symptom
+    keep_alive: -1  right principle, wrong hardware -- and I had
+                    already verified it for dev and not for here
+    (no third)      I said I would stop, so I am
+
+Each time I changed something and re-ran, which is a slow way to be
+wrong -- ~15 minutes a round on this box. **What I never did was
+measure the two candidate causes separately**, and they look identical
+from outside: one slow POST.
+
+## So: a diagnostic, not a fourth theory
+
+`scripts/diagnose_slow_call.py`. Three timed calls to the same model:
+
+    1. tiny prompt, cold      load + a few tokens
+    2. tiny prompt, again     no load, same few tokens
+    3. the REAL step prompt   no load, full prompt-eval
+
+    (1) - (2) is the MODEL LOAD
+    (3) - (2) is the PROMPT EVALUATION
+
+They have completely different fixes. Loading is keep_alive and how
+many models are resident. Reading is prompt size and prefix reuse --
+and LB-6 measured the system prompt at 87.5% fixed procedure, which is
+where any reduction would come from.
+
+It uses a 1800s timeout deliberately, so a slow call **reports its
+number** instead of timing out. A timeout tells us only that the cost
+exceeds the timeout, which is what three runs have already told us.
+
+It prints `ollama ps` before and after, because **how many models are
+resident is the thing none of my guesses checked**.
+
+    python3 -m scripts.diagnose_slow_call
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3092 passed, 8 skipped
+
+## What I am NOT doing
+
+Collapsing the fixture to one model, which is probably the real fix.
+Every integration test runs against that step/synthesis pair, and
+changing it changes what they all exercise. That is a decision for
+whoever owns the integration suite, and the diagnostic above is what
+would justify it.
