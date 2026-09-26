@@ -697,6 +697,39 @@ earlier reviewer against `ATTACH` and `PRAGMA writable_schema` and
 held. That is a negative control somebody already paid for; this
 review did not repeat it.
 
+## Session 18 — core/sqlite_connection.py reviewed, no defect
+
+Third of the fourteen unread files. **No defect found**, recorded so
+the next agent does not repeat it.
+
+**The read-only authorizer.** Allows exactly `SQLITE_SELECT`,
+`SQLITE_READ` and `SQLITE_FUNCTION`; everything else -- including
+`ATTACH` and `PRAGMA`, which have their own action codes -- falls to
+`SQLITE_DENY`. An earlier reviewer already executed it against
+`ATTACH` and `PRAGMA writable_schema`; that control was paid for and
+was not repeated.
+
+**The per-connection query deadline, which is the part I actually
+tested.** The comment argues a held connection "would get a stricter
+bound than it asked for, which is the safe direction to be wrong in".
+Both halves check out, and the second is more interesting than the
+comment says:
+
+    timeout 0.5s, connection held, queried after 0.7s -> SUCCEEDED
+
+Not a bug. `_PROGRESS_STEPS = 10_000` means the handler runs every ten
+thousand virtual-machine instructions, so a cheap query never reaches
+it whatever the wall clock says. The deadline bites expensive queries,
+which is what a query timeout is for. A held connection is therefore
+not penalised in practice, only in principle.
+
+And the assumption underneath it holds: no connection in `core/` or
+`api/` is long-lived -- every path opens, queries and closes.
+
+WORTH KNOWING, NOT A DEFECT: a progress handler does not fire while
+SQLite waits on a LOCK, so this deadline does not bound lock-wait
+time. That is bounded separately by sqlite3's default busy timeout.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
