@@ -47,6 +47,19 @@ BIDI_CONTROLS = (
 )
 ZERO_WIDTH = (0x200B, 0x200C, 0x200D, 0xFEFF)
 
+# C0 CONTROLS (ZOO-06), except the three that are layout. These have
+# no glyph either, and ESC in particular is the start of a terminal
+# escape sequence -- text that repaints somebody's screen, moves their
+# cursor or changes their colours when they cat a file or read a log.
+# A customer name is not a place for that.
+#
+# TAB, NEWLINE AND CARRIAGE RETURN ARE EXCLUDED, for the same reason
+# they are excluded everywhere else here: they are ordinary text that
+# every reader renders as layout.
+_LAYOUT = (0x09, 0x0A, 0x0D)
+C0_CONTROLS = tuple(point for point in range(0x00, 0x20)
+                     if point not in _LAYOUT) + (0x7F,)
+
 
 def invisible_characters(value) -> list[str]:
     """The names of the invisible characters in this value, in order.
@@ -66,6 +79,8 @@ def invisible_characters(value) -> list[str]:
             found.append(f"a bidirectional control (U+{point:04X})")
         elif point in ZERO_WIDTH:
             found.append(f"a zero-width character (U+{point:04X})")
+        elif point in C0_CONTROLS:
+            found.append(f"a control character (U+{point:04X})")
     return found
 
 
@@ -84,6 +99,7 @@ def describe(value) -> "str | None":
         if ord(character) not in TAG_CHARACTERS
         and ord(character) not in BIDI_CONTROLS
         and ord(character) not in ZERO_WIDTH
+        and ord(character) not in C0_CONTROLS
     )
     kinds = sorted(set(name.split(" (")[0] for name in found))
     return (

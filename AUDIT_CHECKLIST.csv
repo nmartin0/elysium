@@ -1,5 +1,5 @@
 id,set,source,severity,claim,where,probe,status
-F-01,001,001FINDINGS,HIGH,"coerce() rejects true/false; mirror sync fails permanently, misreported as drift",core/ontology/field_types.py,RP,unverified
+F-01,001,001FINDINGS,HIGH,"coerce() rejects true/false; mirror sync fails permanently, misreported as drift",core/ontology/field_types.py,RP,"NOT REPRODUCED patch 456: coerce() accepts true/false/True/TRUE/1/0/yes/no/t/f. The second half does not hold either - an unparseable boolean is reported as drift naming the column, the declared type and an example value, which is accurate rather than misleading"
 F-02,001,001FINDINGS,HIGH,cross-type actions unauthorisable by any valid policy,write_mediator.py:1236 + policy_validation.py:51,RP,"reproduced 24 Sep, owner decision pending"
 F-03,001,001FINDINGS,HIGH,KeyError 'mutations' on a cross-type action containing a delete,write_mediator.py cross-type loop,RP,"reproduced 24 Sep"
 F-04,001,001FINDINGS,MED,chat(*args **kwargs) erases the typed LLM signature at the wrapper,core/llm,IN,unverified
@@ -129,13 +129,13 @@ PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; six places s
 PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,"CONFIRMED + FIXED patch 414"
 PA001-X1,PA,PIPELINE_AUDIT,HIGH,many-valued link fields return ids the caller's MAC forbids,mediator.py:2108,P25,"CONFIRMED + FIXED patch 404"
 PA001-X2,PA,PIPELINE_AUDIT,CRITICAL,the agent crashes on any decimal or date field in the shipped config,agent_step_prompt.py:485,P26,"CONFIRMED + FIXED patch 403: one renderer at the declared scale"
-ZOO-01,ZOO,PR001 Part II,GAP,mojibake not detected,standardise/transform,P24,unverified
+ZOO-01,ZOO,PR001 Part II,GAP,mojibake not detected,standardise/transform,P24,"CONFIRMED + ADDRESSED patch 456: a declared no_misleading_text rule. Detected, never repaired - un-mangling is a guess about what somebody meant"
 ZOO-02,ZOO,PR001 Part II,GAP,zero-width space kept,standardise,P24,"CONFIRMED + ADDRESSED patch 446: a declared `no_invisible_characters` rule using the existing warn/quarantine/refuse policy. NOT stripped - cleaning is declared here. Detection BY DEFAULT is an owner decision (NEW-6)"
 ZOO-03,ZOO,PR001 Part II,SEC,Unicode tag smuggling kept (LLM-readable; invisible to reviewers),standardise,P24,"CONFIRMED + ADDRESSED patch 446: a declared `no_invisible_characters` rule using the existing warn/quarantine/refuse policy. NOT stripped - cleaning is declared here. Detection BY DEFAULT is an owner decision (NEW-6)"
 ZOO-04,ZOO,PR001 Part II,SEC,bidi override kept (Trojan Source),standardise,P24,"CONFIRMED + ADDRESSED patch 446: a declared `no_invisible_characters` rule using the existing warn/quarantine/refuse policy. NOT stripped - cleaning is declared here. Detection BY DEFAULT is an owner decision (NEW-6)"
-ZOO-05,ZOO,PR001 Part II,GAP,Cyrillic homoglyph not flagged,standardise,P24,unverified
-ZOO-06,ZOO,PR001 Part II,GAP,C0 control / ESC sequence kept,standardise,P24,unverified
-ZOO-07,ZOO,PR001 Part II,GAP,HTML entity not decoded or flagged,standardise,P24,unverified
+ZOO-05,ZOO,PR001 Part II,GAP,Cyrillic homoglyph not flagged,standardise,P24,"CONFIRMED + ADDRESSED patch 456: mixed-script detection WITHIN A WORD, so bilingual text stays quiet"
+ZOO-06,ZOO,PR001 Part II,GAP,C0 control / ESC sequence kept,standardise,P24,"CONFIRMED + FIXED patch 456: C0 controls joined the invisible set where they belong - ESC begins a terminal escape sequence. Tab, newline and carriage return stay allowed"
+ZOO-07,ZOO,PR001 Part II,GAP,HTML entity not decoded or flagged,standardise,P24,"CONFIRMED + ADDRESSED patch 456: HTML entities detected by a narrow pattern; a bare ampersand is an ampersand"
 ZOO-08,ZOO,PR001 Part II,GAP,"disguised missing N/A kept as a real value",transform,P24,"ALREADY DECLARABLE via standardise.null_if - patch 447 adds the DISCOVERY half (scripts/suggest_declarations.py), since nobody declares null_if for a value they do not know is there"
 ZOO-09,ZOO,PR001 Part II,GAP,disguised missing 999-999-9999 kept,transform,P24,"ALREADY DECLARABLE via standardise.null_if; found and suggested by patch 447"
 ZOO-10,ZOO,PR001 Part II,GAP,sentinel date 1900-01-01 parsed as real,field_types,P24,"ALREADY DECLARABLE via standardise.null_if - a known sentinel is an exact value, so null_if names it; found and suggested by patch 447"

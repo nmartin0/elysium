@@ -44,6 +44,12 @@ _KEYS = {
     # violation DOES -- warn, quarantine, refuse -- is the existing
     # policy, so this adds a rule and no new machinery.
     "no_invisible_characters": _TEXT,
+    # The other half (ZOO-01, ZOO-05, ZOO-07): text that is perfectly
+    # visible and means something other than it appears to. Same
+    # policy machinery, separate rule -- a deployment may well want to
+    # quarantine a smuggled instruction while only warning about an
+    # HTML entity somebody forgot to decode.
+    "no_misleading_text": _TEXT,
     "one_of": None,  # any scalar type
 }
 
@@ -161,6 +167,12 @@ def violation(field_def: dict, value) -> str | None:
         hiding = describe(value)
         if hiding is not None:
             return f"{hiding}"
+    if constraints.get("no_misleading_text"):
+        from core.misleading_text import describe_misleading
+
+        misleading = describe_misleading(value)
+        if misleading is not None:
+            return f"{misleading}"
     if "pattern" in constraints and not re.fullmatch(constraints["pattern"], str(value)):
         # FULL MATCH. Foundry lets a pattern pass on a substring as an
         # option; a pattern meant to shape a whole value that passes on
