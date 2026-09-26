@@ -3036,3 +3036,66 @@ is green.
 **AL-4 is complete.** Four commits: handles, the planning call, the
 executor, the gate. It is not the default and should not be until the
 bench says something.
+
+---
+
+# AL-4 MEASURED. 64% faster, one call instead of three.
+
+Same case, same question, warm cache:
+
+    step mode   3 calls   234.1s   (3.9 min)
+    plan mode   1 call     85.4s   (1.4 min)
+    saved                 148.7s   (64%)
+
+**And the plan prompt is LONGER, not shorter.** 7,114 characters
+against 6,535, because the plan instructions add ~579. That cost
++15.4s and did the work of three calls.
+
+That kills the last of my character-based reasoning. The saving is not
+fewer characters -- it is **fewer decodes**. Warm, prefill is cached
+and per-call time is almost entirely generation, so cost scales with
+the NUMBER of calls. AL-4 cuts them.
+
+**Two steps, not three.** Plan mode used 2 plan steps where the loop
+used 3 calls: a plan does not need a `finish`, because it ends when
+its last step does.
+
+**Zero parse failures, first try.** phi4-mini wrote a valid multi-step
+plan with the handle syntax on the first attempt. That was a real
+risk -- the constraint-tax literature is precisely about small models
+and structured output -- and it did not materialise on this case.
+
+## WHAT I CANNOT CLAIM FROM THIS, and the gap is mine
+
+**I do not know whether the plan used a handle.**
+
+A plan of `search_object(name=...)` then `get_field($a, email)` names
+a result the planner never saw. A plan that wrote `cust_001` directly
+would be the SAME speed, the SAME one call, and the SAME correct
+answer -- and would prove nothing about AL-4. It would mean the model
+guessed an id, which is worse than the behaviour it replaced.
+
+The bench printed timings and a pass. It did not print the plan. So
+the number above is real and the security property is still
+unverified in practice.
+
+`--show-plan` added. `next_plan()` already logged the raw response at
+DEBUG; this turns up that one logger rather than the root, so the
+output stays readable.
+
+    python3 -m scripts.llm_bench --cases one_field --mode plan --show-plan
+
+**That is the run that decides whether AL-4 works as designed**, as
+opposed to merely working.
+
+## Also still open from this data
+
+Both timed runs asked the SAME question, so the system prompt AND the
+question were cached. A different question shares the system prompt
+and not the tail, so a realistic first call sits between 70s and 521s.
+One run against `two_hops` would pin it.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3065 passed, 8 skipped  (3064 before; +1 here)

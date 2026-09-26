@@ -261,3 +261,28 @@ def test_every_case_name_is_selectable(generation_and_user):
 
     for case in CASES:
         assert case.name.isidentifier(), f"{case.name} is awkward to type"
+
+
+def test_the_plan_can_be_shown(generation_and_user, caplog):
+    """WITHOUT THIS, A PLAN-MODE RUN CANNOT BE JUDGED.
+
+    The first plan-mode run came back correct, in one call, 64% faster
+    than the loop -- and said nothing about whether the planner USED A
+    HANDLE. That is the entire security property. A plan of
+    `search_object(name=...)` then `get_field($a, email)` names a
+    result the planner never saw; a plan that wrote `cust_001`
+    directly would be the same speed and the same answer and would
+    prove nothing -- it would mean the model guessed an id, which is
+    worse than the behaviour it replaced.
+    """
+    import logging
+
+    from scripts.llm_bench import _show_plans
+
+    _show_plans()
+    plan_logger = logging.getLogger("core.llm.agent_step_prompt")
+
+    assert plan_logger.level == logging.DEBUG
+    # Turned up on that ONE logger, not the root, or the output is
+    # unreadable and nobody looks at it.
+    assert logging.getLogger().level != logging.DEBUG

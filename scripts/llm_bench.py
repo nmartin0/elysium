@@ -66,6 +66,7 @@ rather than guessed.
 from __future__ import annotations
 
 import argparse
+import logging
 import statistics
 import sys
 import time
@@ -156,8 +157,35 @@ class Timed:
             )
 
 
+def _show_plans() -> None:
+    """Print the plan the model actually wrote.
+
+    WITHOUT THIS, A PLAN-MODE RUN CANNOT BE JUDGED. The first one came
+    back correct in one call and 64% faster than the loop -- and the
+    output said nothing about whether the planner USED A HANDLE.
+
+    That is the entire security property. A plan of
+    `search_object(name=...)` then `get_field($a, email)` names a
+    result the planner never saw. A plan that wrote `cust_001`
+    directly would be the same speed and the same answer, and would
+    prove nothing at all about AL-4 -- it would mean the model
+    guessed an id, which is worse than the behaviour it replaced.
+
+    next_plan() already logs the raw response at DEBUG. This turns
+    that one logger up rather than the root, so the output stays
+    readable.
+    """
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("    %(message)s"))
+    plan_logger = logging.getLogger("core.llm.agent_step_prompt")
+    plan_logger.addHandler(handler)
+    plan_logger.setLevel(logging.DEBUG)
+
+
 def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
-        mode: str = "step") -> int:
+        mode: str = "step", show_plan: bool = False) -> int:
+    if show_plan:
+        _show_plans()
     generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
     user = resolve_user_record(
         generation.config.users, USER_ID, generation.config.security_attribute
@@ -299,6 +327,10 @@ def main() -> int:
                         help=f"trials per case (default 1; pass^k needs at "
                              f"least 2, and {DEFAULT_K} is the smallest k that "
                              f"can show a consistency gap)")
+    parser.add_argument("--show-plan", action="store_true",
+                        help="print the plan the model wrote. Use it: a fast "
+                             "correct answer proves nothing about AL-4 unless "
+                             "the plan used a handle rather than naming an id.")
     parser.add_argument("--mode", choices=("step", "plan"), default="step",
                         help="step: one model call per hop (today's loop). "
                              "plan: the whole plan in one call (AL-4). Run "
@@ -342,7 +374,7 @@ def main() -> int:
             print(f"Known: {[c.name for c in CASES]}")
             return 2
     print(f"mode {args.mode}")
-    return run(paths, args.trials, cases, args.mode)
+    return run(paths, args.trials, cases, args.mode, args.show_plan)
 
 
 if __name__ == "__main__":
