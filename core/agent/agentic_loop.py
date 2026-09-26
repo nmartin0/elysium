@@ -180,6 +180,11 @@ class AgentLoopResult:
     # failure, so how often that fires is a number worth knowing
     # before D1 changes the model underneath it.
     fabricated_finishes: tuple[str, ...] = ()
+    # Hops already spent. A resume (AL-12) continues this budget rather
+    # than being handed a fresh one: an action that proposes a write
+    # every hop would otherwise get an unbounded total, one human
+    # approval at a time.
+    hops_used: int = 0
 
     @property
     def possibly_incomplete(self) -> bool:
@@ -957,10 +962,114 @@ class AgentLoop:
         with security_cache_scope():
             return self._run(user_record, query_text, cancel_event, context, refresh_user)
 
+    def resume(self, previous: AgentLoopResult, user_record: UserRecord,
+               query_text: str, write_outcome: dict,
+               cancel_event: threading.Event | None = None,
+               context: RequestContext | None = None,
+               refresh_user: "Callable[[], UserRecord | None] | None" = None,
+               ) -> AgentLoopResult:
+        """Carries on answering after a human decided a proposed write.
+
+        AL-12. A proposed write ENDS the run: the loop returns with
+        `pending_write` set and the caller takes the decision to a
+        human. Until now that was the end of the query -- whatever the
+        question was, it went unanswered, and the person had to ask
+        again from scratch after approving.
+
+        THE WRITE HALF NEEDED NOTHING. confirm_and_execute() already
+        re-runs check_access() per sub_write against the APPROVER,
+        re-evaluates submission criteria with them acting, and
+        re-checks the proposal is still applicable against the current
+        ontology. A PendingWrite carries resolved object ids and
+        mutations, so an approval is bound to its arguments and cannot
+        be replayed against different ones. That is argument binding,
+        use-time revalidation and a stated residual window -- the
+        pattern the field converged on.
+
+        WHAT THIS ADDS IS THE READ HALF, and it is one rule.
+
+        The data gathered BEFORE the pause was read under the grants
+        the user held then. A human decision takes minutes or hours,
+        and in that time their access can be cut. Continuing would
+        produce an answer assembled partly under one set of grants and
+        partly under another, which was never authorised as a whole.
+
+        That is the same objection the loop already makes WITHIN a run,
+        where the acting user is re-resolved every hop and a change
+        stops it. A pause for human approval is the identical hazard
+        with a far longer gap, so it gets the identical answer: the
+        user is re-resolved FIRST, before anything is read or sent to
+        a model, and a change ends the run as AUTHORITY_CHANGED with
+        what was already gathered kept.
+
+        Inventing a second, different rule for the same hazard is how
+        the two drift apart.
+
+        WHY NOT RE-READ EVERYTHING instead, under current grants: it is
+        the safer option and it was considered. On this hardware every
+        re-read is real time, and the cheaper rule is already the one
+        the code applies one layer down. If a deployment ever needs
+        the stronger guarantee it should be a declared choice, not the
+        default nobody measured.
+
+        THE CALLER OWNS PERSISTENCE. This takes the previous result as
+        an argument rather than storing anything: where a paused query
+        lives between the proposal and the decision is an api/ concern,
+        and a loop that held state between requests would be a second
+        place authorisation could go stale.
+        """
+        if previous.pending_write is None:
+            # FAIL CLOSED. Resuming a run that ended for some other
+            # reason would silently grant it a second hop budget, and
+            # the write outcome below would describe something that
+            # never happened.
+            raise ValueError(
+                "resume() expects a result that proposed a write; this one "
+                f"stopped with {previous.stop_reason!r}"
+            )
+
+        # FIRST, BEFORE ANYTHING ELSE. Not after the schema is built,
+        # not after the write outcome is appended: nothing should be
+        # read or sent to a model on behalf of a user whose authority
+        # may have changed.
+        if refresh_user is not None:
+            current = refresh_user()
+            if current is None or current != user_record:
+                logger.warning("authority changed while a write awaited a decision")
+                return AgentLoopResult(
+                    gathered=list(previous.gathered),
+                    stop_reason=StopReason.AUTHORITY_CHANGED,
+                    fabricated_finishes=previous.fabricated_finishes,
+                    hops_used=previous.hops_used,
+                )
+
+        # THE MODEL IS TOLD WHAT THE HUMAN DECIDED, as a gathered entry
+        # like any other. Without it the loop would re-propose the
+        # action it just had approved, or answer as though nothing had
+        # happened.
+        #
+        # UNDER "result", NOT SPREAD FLAT, and that is not cosmetic:
+        # filter_real_data() strips any entry whose `result` is None,
+        # so a flat entry would reach the PLANNER and be invisible to
+        # SYNTHESIS -- the model would choose its next step knowing the
+        # write happened and then write an answer that never mentions
+        # it.
+        gathered = [*previous.gathered,
+                    {"step": "write_decision",
+                     "action_type": previous.pending_write.action_type_name,
+                     "result": write_outcome}]
+
+        with security_cache_scope():
+            return self._run(user_record, query_text, cancel_event, context,
+                             refresh_user, prior_gathered=gathered,
+                             hops_already_used=previous.hops_used)
+
     def _run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None,
             context: RequestContext | None = None,
-            refresh_user: "Callable[[], UserRecord | None] | None" = None) -> AgentLoopResult:
+            refresh_user: "Callable[[], UserRecord | None] | None" = None,
+            prior_gathered: list[dict] | None = None,
+            hops_already_used: int = 0) -> AgentLoopResult:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # a proposed write/cancellation/max_hops -- whichever comes
@@ -971,8 +1080,14 @@ class AgentLoop:
         # user_record is a pre-resolved UserRecord, not a raw user_id --
         # the caller resolves identity ONCE. cancel_event is checked
         # only at the top of each hop -- see module docstring.
-        gathered: list[dict] = []
-        seen_signatures = set()
+        # PRIOR STATE, for a resume (AL-12). A fresh run passes none
+        # and this is the empty list it always was. The signatures are
+        # rebuilt from it so the duplicate guard still sees what the
+        # first half of the query already did -- resuming must not
+        # hand the model a clean slate to repeat itself on.
+        gathered: list[dict] = list(prior_gathered or [])
+        seen_signatures = {_step_signature(item) for item in gathered
+                           if item.get("step") not in AgentLoop.BOOKKEEPING_STEPS}
         stop_reason = StopReason.FINISHED
         fabricated_finishes: list[str] = []
         consecutive_duplicates = 0
@@ -998,14 +1113,18 @@ class AgentLoop:
 
         deadline = context.deadline if context is not None else None
         usage = context.token_usage if context is not None else None
-        for _ in range(1, self.max_hops + 1):
+        hops_used = hops_already_used
+        for _ in range(hops_already_used + 1, self.max_hops + 1):
+            hops_used += 1
             if cancel_event is not None and cancel_event.is_set():
                 return AgentLoopResult(gathered=gathered, stop_reason=StopReason.CANCELLED,
-                                       fabricated_finishes=tuple(fabricated_finishes))
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
             if deadline is not None and time.monotonic() >= deadline:
                 logger.warning("query deadline passed, answering from what was gathered")
                 return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME,
-                                       fabricated_finishes=tuple(fabricated_finishes))
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
 
             # THE ACTING USER IS RE-RESOLVED EVERY HOP, not once per
             # request. Identity is resolved once when the request
@@ -1034,7 +1153,8 @@ class AgentLoop:
                     # when it was read, and discarding it would lose
                     # information the user was entitled to.
                     return AgentLoopResult(gathered=gathered, stop_reason=StopReason.AUTHORITY_CHANGED,
-                                       fabricated_finishes=tuple(fabricated_finishes))
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
 
             try:
                 step = next_step(
@@ -1048,7 +1168,8 @@ class AgentLoop:
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("query deadline passed during a model call")
                     return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME,
-                                       fabricated_finishes=tuple(fabricated_finishes))
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
                 raise
 
             if step["step"] == "finish":
@@ -1135,7 +1256,8 @@ class AgentLoop:
             if pending_write is not None:
                 return AgentLoopResult(gathered=gathered, pending_write=pending_write,
                                        stop_reason=StopReason.PROPOSED_WRITE,
-                                       fabricated_finishes=tuple(fabricated_finishes))
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
             if step_stop_reason is not None:
                 stop_reason = step_stop_reason
                 break
@@ -1150,11 +1272,13 @@ class AgentLoop:
             # a caller would never see.
             logger.warning(f"hit max_hops ({self.max_hops}), stopping")
             return AgentLoopResult(gathered=gathered, stop_reason=StopReason.MAX_HOPS,
-                                       fabricated_finishes=tuple(fabricated_finishes))
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
 
         # NAMED BY WHICHEVER break set it. Before this change every
         # break fell through to a bare result that read as a deliberate
         # finish -- the LB-3 defect, and why stop_reason has no safe
         # default here.
         return AgentLoopResult(gathered=gathered, stop_reason=stop_reason,
-                               fabricated_finishes=tuple(fabricated_finishes))
+                               fabricated_finishes=tuple(fabricated_finishes),
+                               hops_used=hops_used)

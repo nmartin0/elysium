@@ -1943,3 +1943,87 @@ with a much longer gap.
 
 That is the whole decision. Not a design project -- one choice, and
 option 1 is what the existing code already does one layer down.
+
+---
+
+## AL-12 -- DONE. One rule, as agreed.
+
+`AgentLoop.resume()` carries a query on after a human decides a
+proposed write. Before this, a proposal ended the query: whatever was
+asked went unanswered, and the person re-asked from scratch after
+approving.
+
+**THE WRITE HALF NEEDED NOTHING**, which is most of why this is small.
+`confirm_and_execute()` already re-runs `check_access()` per sub_write
+against the APPROVER, re-evaluates submission criteria with them
+acting, and re-checks applicability against the current ontology. A
+`PendingWrite` carries resolved object ids and mutations, so an
+approval is bound to its arguments.
+
+**THE READ HALF IS ONE RULE:** the acting user is re-resolved FIRST --
+before any read, before the write outcome is appended, before the
+model is called -- and a change ends the run as `AUTHORITY_CHANGED`
+with what was gathered kept. Identical to what the loop already does
+per hop, because inventing a second rule for the same hazard is how
+the two drift apart.
+
+### Four things the implementation needed that the design did not say
+
+**The hop budget continues.** `hops_used` is now on the result and
+`resume()` passes it through. An action proposing a write every hop
+would otherwise get an unbounded total, one approval at a time.
+
+**The duplicate guard is rebuilt from the prior gathered.** Resuming
+must not hand the model a clean slate to repeat itself on.
+
+**The write outcome goes under `result`, not spread flat.**
+`filter_real_data()` strips entries whose `result` is None, so a flat
+entry would reach the PLANNER and be invisible to SYNTHESIS -- the
+model would choose its next step knowing the write happened, then
+write an answer that never mentions it.
+
+**Resuming a run that proposed nothing raises.** It would silently
+grant a second hop budget and tell the model about a write that never
+occurred.
+
+### Controls, six, and two exposed weak tests
+
+    skip the authority re-check        2 of 9 fail
+    check authority AFTER a read       1 fails
+    fresh hop budget on resume         1 fails
+    drop the prior signatures          1 fails
+    spread the outcome flat            1 fails
+    resume a run that proposed nothing 1 fails
+
+**Controls 1 and 4 passed at first, and both diagnoses were
+interesting.**
+
+Two of my three authority tests were passing **via the per-hop
+backstop inside `_run()`**, not via the resume check -- deleting the
+resume check still ended as AUTHORITY_CHANGED, one read too late. The
+test now asserts on the READ (`visible_schema` is never called), which
+is the only thing that tells the two apart.
+
+And the duplicate test used THREE repeats, so the guard tripped either
+way: blind to the prior signatures the model simply repeats itself
+twice more within the resumed run and hits the cap anyway. Only the
+FIRST repeat distinguishes a guard that remembers from one that does
+not.
+
+That is the sixth and seventh time a control has caught a test that
+could not fail.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2965 passed, 8 skipped  (2956 before; +9 here)
+
+### The caller has to do its part, and it is not mine
+
+`resume()` takes the previous result as an argument and stores
+nothing. Where a paused query lives between the proposal and the
+decision is an `api/` concern, and a loop holding state between
+requests would be a second place authorisation could go stale.
+
+**So AL-12 is inert until `api/routes.py` persists the paused result
+and calls `resume()` after `confirm_and_execute()`.** Filed as R4.

@@ -144,3 +144,43 @@ So LB-8 is a choice between three things, and it is not mine:
    fix for the same underlying complaint.
 
 I would take 1 or 3. Tell me which and I will do my half.
+
+---
+
+## R4 -- call resume() after a write decision
+
+**Owner:** backend (`api/routes.py`)
+**Blocking:** AL-12 is inert without it, like AL-5 without R1.
+
+`AgentLoop.resume()` is built, tested and merged on `agentloop`.
+Nothing calls it.
+
+**What it needs from the route:**
+
+1. When a query returns with `result.pending_write` set, persist the
+   whole `AgentLoopResult` alongside the pending write. `gathered`,
+   `hops_used` and `fabricated_finishes` all matter -- the first two
+   are what make the resume correct rather than a fresh run.
+2. After `confirm_and_execute()` returns, call:
+
+```python
+resumed = generation.loop.resume(
+    previous,                      # the persisted AgentLoopResult
+    user_record,
+    original_query_text,
+    write_outcome,                 # confirm_and_execute()'s return
+    context=..., refresh_user=...,
+)
+```
+
+3. `refresh_user` MUST be passed. Without it the resume skips the
+   authority re-check and relies on the per-hop backstop inside the
+   loop -- which fires one read too late, after `visible_schema()` has
+   been computed for a user whose access may have been withdrawn.
+   That is the whole point of the item.
+4. Handle `resumed.stop_reason == "authority_changed"` the way the
+   route already handles it for a normal run.
+
+**Not persistence advice:** where the paused result lives is yours.
+The loop deliberately stores nothing, because a loop holding state
+between requests is a second place authorisation can go stale.
