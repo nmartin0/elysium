@@ -37,6 +37,7 @@ import logging
 from core.functions.interface import Function
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 from core.llm.prompt_values import dumps_gathered
+from core.llm.tracing import CHAT, span
 from core.ontology.schema import is_searchable_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation, evaluate_submission_criteria
 
@@ -632,11 +633,14 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
     )
 
     try:
-        raw_content = client.chat(
-            _build_system_prompt(visible_schema, tools, writes_enabled, visible_action_types),
-            user_message,
-            json_mode=True, temperature=0, deadline=deadline, usage=usage,
-        )
+        with span(CHAT, "step"):
+            raw_content = client.chat(
+                _build_system_prompt(
+                    visible_schema, tools, writes_enabled, visible_action_types
+                ),
+                user_message,
+                json_mode=True, temperature=0, deadline=deadline, usage=usage,
+            )
         # Logs the model's raw response BEFORE any parsing/validation --
         # silent by default (DEBUG), but genuinely valuable when a step's
         # PARSED result looks wrong: this is the only way to tell "the

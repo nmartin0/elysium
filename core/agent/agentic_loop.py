@@ -79,6 +79,7 @@ from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.agent_step_prompt import next_step
 from core.llm.interface import LLMAdapter, LLMUnavailable
+from core.llm.tracing import EXECUTE_TOOL, INVOKE_AGENT, span
 from core.ontology.mediator import DataMediator, security_cache_scope
 from core.ontology.schema import get_title_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
@@ -818,6 +819,9 @@ class AgentLoop:
                        context: RequestContext | None = None) -> Any:
         tool = self._tools_by_name.get(step["tool_name"])
         tool_name = step["tool_name"]
+        # THE NAME ONLY, never the arguments: a tool's args are field
+        # values the model copied out of gathered data, which is
+        # exactly what must not reach a span. See core/tracing.py.
         if tool is None:
             raise ValueError(f"Unknown tool: {tool_name!r}")
         action = f"tool:{tool_name}"
@@ -834,7 +838,9 @@ class AgentLoop:
         declared = getattr(tool, "reads_object_types", []) or []
         if declared:
             call_args["ontology"] = OntologyAccess(self.mediator, user_record, declared)
-        with self._tool_limiters[tool.name].limit():
+        with self._tool_limiters[tool.name].limit(), span(
+            EXECUTE_TOOL, tool.name, **{"gen_ai.tool.name": tool.name}
+        ):
             return tool.run(**call_args)
 
     def _step_propose_action(self, step: dict, user_record: UserRecord,
@@ -959,7 +965,7 @@ class AgentLoop:
         """
         # THE REAL SIGNATURE, not *args: a wrapper that erases the
         # typed signature is 001's F-04, and this would have been one.
-        with security_cache_scope():
+        with security_cache_scope(), span(INVOKE_AGENT, "elysium"):
             return self._run(user_record, query_text, cancel_event, context, refresh_user)
 
     def resume(self, previous: AgentLoopResult, user_record: UserRecord,
@@ -1059,7 +1065,7 @@ class AgentLoop:
                      "action_type": previous.pending_write.action_type_name,
                      "result": write_outcome}]
 
-        with security_cache_scope():
+        with security_cache_scope(), span(INVOKE_AGENT, "elysium"):
             return self._run(user_record, query_text, cancel_event, context,
                              refresh_user, prior_gathered=gathered,
                              hops_already_used=previous.hops_used)

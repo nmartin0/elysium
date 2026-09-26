@@ -66,6 +66,7 @@ import re
 
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 from core.llm.prompt_values import render_gathered
+from core.llm.tracing import CHAT, span
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +261,10 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
     system_prompt = SYSTEM_PROMPT + _INCOMPLETE_SEARCH_NOTE if possibly_incomplete else SYSTEM_PROMPT
 
     try:
-        answer = client.chat(system_prompt, user_message, json_mode=False, temperature=0, usage=usage)
+        with span(CHAT, "synthesis"):
+            answer = client.chat(
+                system_prompt, user_message, json_mode=False, temperature=0, usage=usage
+            )
     except LLMUnavailable as e:
         # LLMUnavailable, NOT requests.RequestException (F-23). This
         # caught one adapter's library exception, so once the adapters

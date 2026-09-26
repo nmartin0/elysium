@@ -2027,3 +2027,82 @@ requests would be a second place authorisation could go stale.
 
 **So AL-12 is inert until `api/routes.py` persists the paused result
 and calls `resume()` after `confirm_and_execute()`.** Filed as R4.
+
+---
+
+## AL-7 -- DONE. Spans emitted; no dependency added; no content in them.
+
+`core/llm/tracing.py`, plus the three call sites that already existed:
+`invoke_agent` around `run()` and `resume()`, `chat` at the step and
+synthesis model calls, `execute_tool` around a tool.
+
+**NO DEPENDENCY, DELIBERATELY.** `opentelemetry-sdk` is not in
+`requirements.txt` and this does not put it there -- that is a
+LIBRARY_AUDIT decision, not one to smuggle in behind a feature. The
+import is optional: without the SDK every span is a no-op, and the
+moment someone installs it the spans appear with no code change.
+
+**NO INSTRUMENTATION LIBRARY EITHER.** OpenInference and OpenLLMetry
+auto-patch SDK methods at import to instrument code nobody wrote. We
+have one loop and one adapter, both ours. Three span kinds at three
+existing places is smaller and reads in the code.
+
+### The part that matters: spans carry no content
+
+The conventions define OPTIONAL content capture --
+`gen_ai.input.messages`, `gen_ai.output.messages` -- holding the
+actual prompt and completion. **For this project that must stay off
+permanently, and not for privacy hygiene.**
+
+Every value a model is shown was released by `check_access()` to a
+named user and written to the audit log as a read by them. A trace
+exporter is none of those: no user, no MAC, no RBAC, and it lands in
+a backend with its own and usually broader access rules. A prompt in
+a span is a SECOND COPY of customer data outside the ontology --
+exactly what SECURITY_ARCHITECTURE.md means by data reached without
+going through the mediator.
+
+So the permitted attributes are a CLOSED LIST -- counts, model names,
+tool names, stop reason, hop count -- and anything else RAISES rather
+than being dropped. Dropping would leave someone believing their
+attribute was recorded, and the next person adding one would not
+learn why the list is closed.
+
+**Checked even when no tracer exists**, so a deployment without the
+SDK fails a forbidden attribute at the call site rather than
+discovering it the day tracing is switched on -- which is the day the
+data would start leaving.
+
+### Where it lives, and why the first placement was wrong
+
+I put it at `core/tracing.py` first and **lint refused it**: the
+`core/` layering contract is EXHAUSTIVE, so every child of `core` must
+be declared as a layer. That is the contract working -- a new core
+module has to be placed consciously -- and the fix would have been a
+line in `pyproject.toml`, which R2 already flags as not mine.
+
+Moved to `core/llm/tracing.py`, which is defensible on its own terms
+rather than as a workaround: every span here is a GENAI span.
+`invoke_agent`, `chat` and `execute_tool` are the conventions' own
+operations and the module knows what a model call is. `core.agent` may
+import `core.llm` under the layering contract, so all three call sites
+reach it. Lint passes with 8 contracts kept.
+
+### Controls, four
+
+    allow any attribute (open list)        9 of 19 fail
+    only check when a tracer exists        9 fail
+    swallow exceptions inside the span     1 fails
+    drop content attrs instead of raising  9 fail
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2984 passed, 8 skipped  (2965 before; +19 here)
+
+### To actually see traces
+
+`pip install opentelemetry-sdk opentelemetry-exporter-otlp` and point
+`OTEL_EXPORTER_OTLP_ENDPOINT` at a collector. Nothing in the code
+changes. Whether that dependency belongs in `requirements.txt` is
+still LIBRARY_AUDIT's call, and this deliberately does not pre-empt it.
