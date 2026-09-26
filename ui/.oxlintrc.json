@@ -32,18 +32,26 @@
     // useRef's initialiser already covered mount, so nothing about
     // when the value is read changed.
     "react/refs": "error",
-    // STILL OFF, AND RECORDED, NOT FORGOTTEN. 10 sites across 8 files
-    // in 4 packages -- RolesPanel, ApprovalsPanel, ExploreRelated,
-    // LinkTrail, SavedViews, WatchDialog, NotificationsPanel,
-    // WatchList -- re-measured at this commit by turning the rule on
-    // and reading the report. (An earlier note said 12 sites for the
-    // two rules together; that total was right, but the split was 10
-    // and 2, and the 2 were the react/refs pair fixed above.)
+    // ON as of B0's second half, with FIVE DOCUMENTED EXEMPTIONS.
     //
-    // Each fix is a behavioural change to a component -- derive the
-    // state, or reset with a key -- needing its own review and tests,
-    // so it stays an item of its own in UNIFIED_ROADMAP.md rather than
-    // being folded into this one.
-    "react/set-state-in-effect": "off"
+    // It found 10 genuine sites, all now fixed by deriving during
+    // render or resetting with a key. The five that remain are FALSE
+    // POSITIVES of one shape: `void load()` where load is an async
+    // useCallback whose setState happens after an await. Proved with
+    // three probe components -- setState directly in an effect is
+    // flagged correctly, the same code after an await inside a
+    // useCallback is flagged FALSELY, and the identical code as an
+    // inline async IIFE is not flagged at all.
+    //
+    // ON WITH EXEMPTIONS RATHER THAN OFF, deliberately, and this
+    // reverses an earlier recommendation of mine. Off is global: it
+    // buys silence at the five false sites and loses the alarm at
+    // every future real one, and this codebase produced ten real ones.
+    // Each exemption is an eslint-disable-next-line carrying its
+    // reason, so a reviewer has to justify removing it -- where a
+    // disabled rule is a silence nobody sees. Controlled both ways: a
+    // planted synchronous setState is still caught, and deleting any
+    // one exemption brings its error straight back.
+    "react/set-state-in-effect": "error"
   }
 }

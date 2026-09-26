@@ -77,6 +77,17 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
   }, [])
 
   useEffect(() => {
+    // FALSE POSITIVE, exempted rather than worked around. `load` is
+    // async and every setState in it happens AFTER an await, so nothing
+    // is set synchronously here. The rule cannot see through a
+    // useCallback to the await inside it: proved with three probe
+    // components -- setState directly in an effect is flagged correctly,
+    // the same code after an await inside a useCallback is flagged
+    // FALSELY, and the identical code written as an inline async IIFE is
+    // not flagged at all. Satisfying it would mean writing
+    // `void (async () => { await load() })()` for identical behaviour.
+    // Fetching on mount is the canonical legitimate effect.
+    // eslint-disable-next-line react/set-state-in-effect
     void load()
   }, [load])
 
