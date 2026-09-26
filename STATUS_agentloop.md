@@ -3600,3 +3600,105 @@ score.
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  3083 passed, 8 skipped  (3073 before; +10 here)
+
+---
+
+# RESEARCH: what the crash says about the next step
+
+The decimal crash was not a one-off; it was a missing seam. Every
+tool-calling framework has converged on the same principle, and we
+did not have it.
+
+**"Schema-enforced tool calls -- every tool invocation validated
+before execution, not after."** Aria, Cruxial, LangChain's
+tool-args-validation middleware, tool-arg-coerce: all of them sit
+between the model and the tool, validate arguments against the
+schema, and hand a precise error back.
+
+**The economics are stated by the LangChain middleware and they are
+exactly ours:** "Catching this at the model boundary lets the agent
+fix itself in **one extra model call** instead of a full agent-loop
+iteration." At 50-280 seconds a call, the difference between "that
+step was not usable" and a message naming the field is the difference
+between one retry and a wasted hop.
+
+**And Cruxial states our security constraint without knowing it
+exists:** "If your code maintains TWO views of each tool schema -- the
+canonical full one used internally for execution and a trimmed view
+sent to the LLM -- register the trimmed one. **The LLM can only
+satisfy the schema it was shown.**"
+
+That is `visible_schema` versus the ontology, exactly. And for us the
+reason is sharper than theirs: validating against the canonical schema
+would produce a type error about a field the caller has no grant for,
+which **confirms the field exists**. Uniform denial requires "no such
+field" and "a field you may not see" to be the same answer.
+
+**Microsoft's agent-framework issue #7588 is the failure mode to
+avoid:** arguments validated so early that nothing can repair them,
+and "the validation error becomes the tool result, and the model sees
+a wall of pydantic text." A precise message, not a dump.
+
+## Built: the boundary check
+
+Filter values are coerced against the field's declared type -- from
+the VISIBLE schema -- before the query. `coerce()` already had the
+right words:
+
+    filter 'amount': '$100' is not a number, so it cannot be stored
+    as a `decimal`. Currency symbols, thousands separators and
+    placeholder text all look like this.
+
+Catching the exception (the last patch) stops the 500. Checking here
+tells the model what to fix. Both are worth having; only the second
+turns a crash into a correction.
+
+## THREE CONTROLS PASSED, AND THE REASON IS WORTH KEEPING
+
+C1 "skip the check entirely" and C2 "drop the field name" both passed.
+
+**Because the rejection note ECHOES THE STEP**, which already contains
+`'amount'` -- and the raw pyiceberg failure reads `<class
+'decimal.ConversionSyntax'>`, which already contains `decimal`. My two
+assertions were satisfied by text this check never produced. They
+would have passed with the feature deleted.
+
+Rewritten to assert this check's own phrasing: `filter 'amount':` and
+`is not a number`.
+
+C4 "type-check link fields too" also passed -- and there **no**
+rewrite helped. A link declares no `data_type`, so it falls back to
+`string`, and coercing an id to a string always succeeds. Nothing
+could distinguish the branch. **So I deleted it.** Code a control
+cannot kill is code nobody can trust, and a special case that changes
+no outcome is just a place for a future bug to hide.
+
+## Controls, final
+
+    skip the boundary check entirely        1 of 14 fails
+    drop the field name from the message     1 fails
+    validate against the canonical schema    1 fails
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3087 passed, 8 skipped  (3083 before; +4 here)
+
+## Next steps, in the order the research supports
+
+**1. `dependent_choice`, now runnable.** The chain that crashed works
+once this lands. It is the case ReWOO's own authors warn about --
+"not the best choice for tasks requiring high adaptability and
+uncertainty of tool outputs" -- and the only one that could show
+plan mode's real boundary.
+
+**2. Auto-repair is already here and should be named.** Cruxial's
+"1-attempt auto-repair" is what AL-4's single structural revision
+does. The step loop has no equivalent: a bad step costs a hop. Worth
+considering whether the live loop should get the same precise-message
+treatment the plan path now has.
+
+**3. Coercion versus validation.** tool-arg-coerce records every type
+it fixes. We validate and pass the original through, so nothing is
+silently rewritten -- which suits a system with an audit log, and is
+worth keeping deliberately rather than by accident.

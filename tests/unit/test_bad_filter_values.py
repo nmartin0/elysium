@@ -164,3 +164,92 @@ def test_our_own_arithmetic_errors_are_not_swallowed(loop_and_user):
                 loop.run(user, "anything")
     finally:
         loop._step_search_object = real_handler
+
+
+# ------------------------------- checked at the boundary, not three layers down
+
+
+def test_the_model_is_told_which_field_and_why(loop_and_user):
+    """CATCHING AN EXCEPTION IS NOT THE SAME AS PREVENTING ONE.
+
+    Caught, the model learns "that step was not usable". Checked at
+    the boundary, it learns "filter 'amount': '$100' is not a number,
+    so it cannot be stored as a `decimal`" -- and can fix it.
+
+    The economics are why this matters: one corrective model call is
+    50-280 seconds on this hardware, so a message the model can act on
+    is the difference between one retry and a wasted hop.
+    """
+    loop, user = loop_and_user
+    loop.client = Once(_search("$100"))
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = loop.run(user, "transactions over a hundred?")
+
+    notes = [e["note"] for e in result.gathered
+             if e.get("step") == "rejected_invalid_step"]
+    assert notes, "no mistake was recorded"
+
+    # ASSERTED ON THIS CHECK'S OWN PHRASING, and two controls are why.
+    # The note ECHOES THE STEP, which already contains 'amount', and
+    # the raw pyiceberg failure reads "<class
+    # 'decimal.ConversionSyntax'>", which already contains "decimal".
+    # So asserting those two words passed with the boundary check
+    # deleted AND with the field name stripped from the message --
+    # both satisfied by text this check never produced.
+    assert "filter 'amount':" in notes[0], "does not name the field it checked"
+    assert "is not a number" in notes[0], "not this check's explanation"
+
+
+def test_a_field_the_caller_cannot_see_gets_no_type_error(loop_and_user):
+    """AGAINST THE VISIBLE SCHEMA, NEVER THE CANONICAL ONE.
+
+    The model can only satisfy the schema it was shown -- but the
+    sharper reason here is disclosure. A type error about a field the
+    caller has no grant for would CONFIRM that the field exists.
+    Uniform denial requires "no such field" and "a field you may not
+    see" to be the same answer, and this project holds that
+    everywhere else.
+
+    So a field outside the visible schema is left alone here and
+    refused downstream as an unknown field -- the existing,
+    deliberately uninformative path.
+    """
+    loop, user = loop_and_user
+    visible = loop.mediator.visible_schema(user, for_agent=True)
+    hidden = {
+        "Transaction": {
+            **visible["Transaction"],
+            "fields": {f: spec for f, spec in visible["Transaction"]["fields"].items()
+                       if f != "amount"},
+        }
+    }
+
+    # Must not raise: it is not this check's business.
+    loop._check_filter_types("Transaction", {"amount": "$100"}, hidden)
+
+
+def test_a_valid_value_passes_the_check(loop_and_user):
+    """The opposite direction, so the guard cannot be satisfied by
+    refusing everything."""
+    loop, user = loop_and_user
+    visible = loop.mediator.visible_schema(user, for_agent=True)
+
+    loop._check_filter_types("Transaction", {"amount": "199.00"}, visible)
+    loop._check_filter_types("Transaction", {"category": "hardware"}, visible)
+
+
+def test_a_link_filter_value_is_accepted(loop_and_user):
+    """A link's value is another object's id.
+
+    THERE IS NO SPECIAL CASE FOR LINKS, and a control is why. I wrote
+    one -- skip link fields -- and then could not make any test
+    distinguish it: a link declares no `data_type`, so it falls back
+    to `string`, and coercing an id to a string always succeeds. Code
+    no control can kill is code nobody can trust, so it went. This
+    asserts the behaviour that remains.
+    """
+    loop, user = loop_and_user
+    visible = loop.mediator.visible_schema(user, for_agent=True)
+
+    loop._check_filter_types("Customer", {"transactions": "t_1"}, visible)

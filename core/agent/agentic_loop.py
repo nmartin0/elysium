@@ -82,6 +82,7 @@ from core.llm.agent_step_prompt import next_plan, next_step
 from core.llm.interface import LLMAdapter, LLMUnavailable
 from core.llm.plan import MAX_PLAN_FANOUT, PlanError, resolve_step
 from core.llm.tracing import EXECUTE_TOOL, INVOKE_AGENT, span
+from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, coerce
 from core.ontology.mediator import DataMediator, security_cache_scope
 from core.ontology.schema import get_title_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
@@ -604,9 +605,71 @@ class AgentLoop:
                 titles[object_id] = value
         return titles
 
+    @staticmethod
+    def _check_filter_types(object_type: str, filter_: dict, visible_schema: dict) -> None:
+        """Every filter value must fit the field's declared type.
+
+        VALIDATED AT THE MODEL BOUNDARY, BEFORE THE QUERY, which is
+        the principle every tool-calling framework converged on:
+        "every tool invocation validated before execution, not after".
+
+        WITHOUT IT THE FAILURE ARRIVES FROM THREE LAYERS DOWN. A model
+        writing `{"amount": "$100"}` reached pyiceberg, which raised
+        decimal.InvalidOperation -- an ArithmeticError nothing caught,
+        so it left the loop as a 500. That is patched, but catching an
+        exception is not the same as preventing one: caught, the model
+        is told "that step was not usable"; checked here, it is told
+        "'$100' is not a number, so it cannot be stored as a
+        `decimal`" and can fix it.
+
+        The economics are the reason to care. One corrective model
+        call is 50-280 seconds on this hardware; a message the model
+        can act on is the difference between one retry and a wasted
+        hop, or between a hop and a crash.
+
+        == AGAINST THE VISIBLE SCHEMA, NEVER THE CANONICAL ONE ==
+
+        `visible_schema` is the MAC- and RBAC-filtered view this
+        caller was shown. Validating against the full ontology instead
+        would be wrong twice over: the model can only satisfy the
+        schema it was shown, so a canonical-only field would produce
+        an error about something it never saw -- and, worse, that
+        error would CONFIRM the field exists. Uniform denial requires
+        that "no such field" and "a field you may not see" are the
+        same answer, and a type error about a hidden field breaks it.
+
+        A field absent from the visible schema is therefore left
+        alone here and refused downstream as an unknown field, which
+        is the existing, deliberately uninformative path.
+        """
+        fields = visible_schema.get(object_type, {}).get("fields", {})
+        for name, value in (filter_ or {}).items():
+            declared = fields.get(name)
+            if declared is None:
+                # Unknown to this caller: not ours to judge, and
+                # saying anything would confirm it exists.
+                continue
+            # NO SPECIAL CASE FOR LINKS. I wrote one and no control
+            # could kill it: a link declares no `data_type`, so it
+            # falls back to `string`, and coercing an id to a string
+            # always succeeds. Code a control cannot kill is code
+            # nobody can trust.
+            if value is None:
+                continue          # a null filter is a different question
+            try:
+                coerce(value, declared.get("data_type") or DEFAULT_FIELD_DATA_TYPE)
+            except (ValueError, TypeError, decimal.DecimalException) as e:
+                # THE FIELD NAME IS ADDED HERE because coerce() does
+                # not know it. "'$100' is not a number" is true but
+                # unactionable in a filter of several fields; "filter
+                # 'amount': '$100' is not a number" says which one to
+                # change.
+                raise ValueError(f"filter {name!r}: {e}") from e
+
     def _step_search_object(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict],
                             context: RequestContext | None = None) -> Any:
+        self._check_filter_types(step["object_type"], step["filter"], visible_schema)
         object_ids = self.mediator.search_object(
             user_record, step["object_type"],
             as_equality_conditions(step["filter"]),
@@ -661,6 +724,8 @@ class AgentLoop:
     def _step_search_around(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict],
                             context: RequestContext | None = None) -> Any:
+        self._check_filter_types(step["object_type"], step.get("filter") or {},
+                                 visible_schema)
         object_ids = self.mediator.search_around(
             user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             step["link_field"],
