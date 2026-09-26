@@ -2952,3 +2952,87 @@ parse-failure sample. **pass^k needs a varying case to say anything**,
 and at temperature 0 there may not be one -- in which case the honest
 finding is "this loop is deterministic", which is worth knowing and
 costs one run to establish.
+
+---
+
+## AL-4, commit 4 of 4: the re-plan gate and the switch. DONE.
+
+`run_planned()` asks for the whole plan, runs it, and on a structural
+failure hands that string back for ONE revision.
+
+### A SIBLING OF run(), NOT A CONFIG FLAG, and that is a decision
+
+**Four features on this branch are already merged and inert**, waiting
+on wiring someone else owns -- AL-5, LB-1, AL-12, AL-7. A config flag
+would have made AL-4 the fifth.
+
+As a second entry point it is reachable from `scripts/llm_bench.py`
+TODAY, which now takes `--mode plan`. So AL-4 can be MEASURED against
+the loop it would replace before anyone decides which should be the
+default -- the only honest way to decide it, since the literature says
+neither architecture wins on accuracy and I have no claim that it
+does.
+
+    python3 -m scripts.llm_bench --cases one_field             # step
+    python3 -m scripts.llm_bench --cases one_field --mode plan # plan
+
+### One revision, on structure only
+
+The planner is told WHAT stopped it -- "step 'a' would read 40
+objects, over the limit of 20" -- and never a value. A test asserts
+that no value from the deployment appears in the revision message.
+That is the whole of shape B: a planted instruction in a field cannot
+express itself through a step id and a count.
+
+**WHY ONE.** A plan fixed before any data is read is injection-proof
+by construction, and every revision is another chance to be wrong the
+same way. The literature warns that "if replanning fires on most
+tasks, you're paying the planning cost AND the adaptation cost" -- and
+the VM run measured an uncached planning call at ~520 seconds. A third
+attempt costs more than the query is worth.
+
+### Three bounds the design did not mention
+
+**`max_hops` BOUNDS A PLAN TOO.** Without it a plan of a hundred steps
+walks straight past the limit that exists to cap how much one query
+may read: the loop enforces it per hop, and a plan has no hops to
+count. Refused before executing anything.
+
+**CANCELLATION IS CHECKED BEFORE PLANNING, not after.** Planning is
+the expensive call at ~520s uncached; checking afterwards would be
+checking too late.
+
+**WHAT WAS GATHERED SURVIVES A FAILED PLAN.** Those reads happened,
+were authorised, and are in the audit log. Discarding them would lose
+data the caller was entitled to and leave audit entries describing
+reads nobody can see the result of.
+
+### Controls, six
+
+    no revision at all                      3 of 9 fail
+    revise forever                          2 fail
+    hand the planner data, not structure     1 fails
+    drop the max_hops bound on a plan        1 fails
+    check cancellation after planning        1 fails
+    discard gathered when a plan fails       1 fails
+
+### A failure that was not mine, checked rather than assumed
+
+The first full run showed `test_sync_snapshot_semantics.py::
+test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_
+writes` failing. It is `core/mirror`, which this branch does not
+touch. **Checked instead of assumed:** it passes in isolation on my
+tree AND on a clean clone of origin/agentloop, and a second full run
+passed. Load-sensitive under the full suite, pre-existing, not mine --
+but worth backend knowing it can fail under load, since a concurrency
+test that only fails sometimes is the kind that gets re-run until it
+is green.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3064 passed, 8 skipped  (3055 before; +9 here)
+
+**AL-4 is complete.** Four commits: handles, the planning call, the
+executor, the gate. It is not the default and should not be until the
+bench says something.

@@ -77,9 +77,9 @@ from core.functions.interface import Function
 from core.functions.ontology_access import OntologyAccess
 from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
-from core.llm.agent_step_prompt import next_step
+from core.llm.agent_step_prompt import next_plan, next_step
 from core.llm.interface import LLMAdapter, LLMUnavailable
-from core.llm.plan import MAX_PLAN_FANOUT, resolve_step
+from core.llm.plan import MAX_PLAN_FANOUT, PlanError, resolve_step
 from core.llm.tracing import EXECUTE_TOOL, INVOKE_AGENT, span
 from core.ontology.mediator import DataMediator, security_cache_scope
 from core.ontology.schema import get_title_field
@@ -150,6 +150,10 @@ class StopReason:
     INVALID_STEPS = "invalid_steps"
     BLOCKED_BY_RULES = "blocked_by_rules"
     UNRECOGNISED_STEP = "unrecognised_step"
+    # Plan mode (AL-4).
+    PLAN_REFUSED = "plan_refused"        # nothing usable came back
+    PLAN_FAILED = "plan_failed"          # it ran and stopped, twice
+    PLAN_TOO_LONG = "plan_too_long"      # more steps than max_hops
 
     # A deliberate finish is the ONLY ending that means "as much as was
     # needed". A proposed write is not incomplete -- the run ended
@@ -1094,6 +1098,103 @@ class AgentLoop:
         # typed signature is 001's F-04, and this would have been one.
         with security_cache_scope(), span(INVOKE_AGENT, "elysium"):
             return self._run(user_record, query_text, cancel_event, context, refresh_user)
+
+    def run_planned(self, user_record: UserRecord, query_text: str,
+                    cancel_event: threading.Event | None = None,
+                    context: RequestContext | None = None) -> AgentLoopResult:
+        """One query, planned up front instead of hop by hop (AL-4).
+
+        A SIBLING OF run(), NOT A REPLACEMENT, and that is a decision
+        rather than caution. Four features on this branch are already
+        merged and inert waiting on wiring someone else owns; making
+        this a config flag would have been the fifth. As a second
+        entry point it is reachable from scripts/llm_bench.py today,
+        so it can be MEASURED against run() before anyone decides
+        which should be the default -- which is the only honest way to
+        decide it, given the accuracy literature says neither
+        architecture wins on its own.
+
+        ONE REVISION, ON STRUCTURE ONLY. If the plan stops, the
+        planner is told WHAT stopped it -- "step 'b' would read 34
+        objects, over the limit of 20" -- and gets one more attempt.
+        It is never told a value. A planted instruction in a field
+        cannot express itself through a step id and a count, which is
+        the property re-planning on results would give away.
+
+        WHY ONE. A plan fixed before any data is read is
+        injection-proof by construction; every revision is another
+        chance for the model to be wrong in the same way. The
+        literature's warning is that "if replanning fires on most
+        tasks, you're paying the planning cost AND the adaptation
+        cost", and at ~520s for an uncached planning call on this
+        hardware, a third attempt costs more than the query is worth.
+
+        WHAT WAS GATHERED SURVIVES A FAILURE. Those reads happened,
+        were authorised, and are in the audit log. Discarding them
+        would lose data the caller was entitled to and make the audit
+        entries describe reads nobody can see the result of.
+        """
+        with security_cache_scope(), span(INVOKE_AGENT, "elysium"):
+            return self._run_planned(user_record, query_text, cancel_event, context)
+
+    def _run_planned(self, user_record: UserRecord, query_text: str,
+                     cancel_event: threading.Event | None,
+                     context: RequestContext | None) -> AgentLoopResult:
+        visible_schema = self.mediator.visible_schema(user_record, for_agent=True)
+        writes_enabled = self.write_mediator is not None
+        # SAME CALL SHAPE AS _run() AT LINE 1343, which takes no
+        # context -- copied rather than invented, so the two cannot
+        # show the model different action sets.
+        visible_action_types = (
+            self.write_mediator.visible_action_types(user_record)
+            if self.write_mediator else {}
+        )
+        gathered: list[dict] = []
+        failure: str | None = None
+        steps_run = 0
+
+        for attempt in (1, 2):
+            if cancel_event is not None and cancel_event.is_set():
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.CANCELLED,
+                                       hops_used=steps_run)
+            try:
+                plan = next_plan(
+                    self.client, query_text, visible_schema, self.tools,
+                    writes_enabled, visible_action_types,
+                    previous_failure=failure,
+                    deadline=context.deadline if context else None,
+                    usage=context.token_usage if context else None,
+                )
+            except PlanError as e:
+                logger.warning(f"no usable plan on attempt {attempt}: {e}")
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.PLAN_REFUSED,
+                                       hops_used=steps_run)
+
+            # max_hops BOUNDS A PLAN TOO. Without this a plan of a
+            # hundred steps would walk straight past the limit that
+            # exists to cap how much one query may read -- the loop
+            # enforces it per hop, and a plan has no hops to count.
+            if len(plan) > self.max_hops:
+                logger.warning(f"plan has {len(plan)} steps, over max_hops "
+                               f"{self.max_hops}")
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.PLAN_TOO_LONG,
+                                       hops_used=steps_run)
+
+            steps_run += len(plan)
+            failure = self.execute_plan(plan, user_record, visible_schema,
+                                        gathered, context)
+            if failure is None:
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.FINISHED,
+                                       hops_used=steps_run)
+            logger.warning(f"plan attempt {attempt} stopped: {failure}")
+
+        return AgentLoopResult(gathered=gathered,
+                               stop_reason=StopReason.PLAN_FAILED,
+                               hops_used=steps_run)
 
     def resume(self, previous: AgentLoopResult, user_record: UserRecord,
                query_text: str, write_outcome: dict,

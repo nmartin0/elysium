@@ -156,7 +156,8 @@ class Timed:
             )
 
 
-def run(paths: RuntimePaths, trials: int, cases: tuple = CASES) -> int:
+def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
+        mode: str = "step") -> int:
     generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
     user = resolve_user_record(
         generation.config.users, USER_ID, generation.config.security_attribute
@@ -180,7 +181,13 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES) -> int:
         for trial in range(trials):
             before = len(timer.calls)
             try:
-                outcome = generation.loop.run(user, case.query)
+                # THE WHOLE REASON run_planned() IS A SIBLING ENTRY
+                # POINT rather than a config flag: AL-4 can be measured
+                # against the loop it replaces, today, without wiring
+                # anyone else owns.
+                outcome = (generation.loop.run_planned(user, case.query)
+                           if mode == "plan"
+                           else generation.loop.run(user, case.query))
             except KeyboardInterrupt:
                 # STOPPING IS NOT LOSING. Every trial already finished
                 # is still worth reporting, and on slow hardware
@@ -292,6 +299,10 @@ def main() -> int:
                         help=f"trials per case (default 1; pass^k needs at "
                              f"least 2, and {DEFAULT_K} is the smallest k that "
                              f"can show a consistency gap)")
+    parser.add_argument("--mode", choices=("step", "plan"), default="step",
+                        help="step: one model call per hop (today's loop). "
+                             "plan: the whole plan in one call (AL-4). Run "
+                             "both and compare -- that is what this is for.")
     parser.add_argument("--cases", help="comma-separated case names; "
                         "default all. Run one case first on slow hardware.")
     parser.add_argument("--config", help="overrides ELYSIUM_CONFIG_DIR")
@@ -330,7 +341,8 @@ def main() -> int:
             print(f"Unknown case(s): {sorted(unknown)}")
             print(f"Known: {[c.name for c in CASES]}")
             return 2
-    return run(paths, args.trials, cases)
+    print(f"mode {args.mode}")
+    return run(paths, args.trials, cases, args.mode)
 
 
 if __name__ == "__main__":

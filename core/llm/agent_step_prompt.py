@@ -906,7 +906,8 @@ Ids may only refer BACKWARDS, to steps above them. Do not include a
 
 def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
               tools: list[Function], writes_enabled: bool,
-              visible_action_types: dict, *, deadline: float | None = None,
+              visible_action_types: dict, *, previous_failure: str | None = None,
+              deadline: float | None = None,
               usage: TokenUsage | None = None) -> list[dict]:
     """The whole plan, in one model call (AL-4).
 
@@ -938,6 +939,23 @@ def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
         visible_schema, tools, writes_enabled, visible_action_types
     ) + PLAN_INSTRUCTIONS
     user_message = f"Question: {query_text}\n\nWhat is the plan?"
+    if previous_failure is not None:
+        # STRUCTURE, NEVER A VALUE, and this line is where shape B
+        # lives or dies. The executor produces strings like "step 'b'
+        # would read 34 objects, over the limit of 20" -- a step id, a
+        # count, a limit. Nothing a planted instruction inside a field
+        # can express itself through.
+        #
+        # Putting a RESULT here instead would hand the planner the
+        # untrusted data it was designed never to see, and the whole
+        # control-flow guarantee would go with it.
+        user_message = (
+            f"Question: {query_text}\n\n"
+            f"Your previous plan did not finish: {previous_failure}\n"
+            f"Write a new plan that avoids that. You have not been shown "
+            f"any data, and will not be.\n\n"
+            f"What is the plan?"
+        )
 
     try:
         with span(CHAT, "plan"):
