@@ -2475,3 +2475,77 @@ and a re-plan gate. Four commits minimum, each with its own controls,
 and the first would be the handle resolver with no model involved at
 all -- because that part is pure and testable, and getting `$a` wrong
 silently is how a plan reads the wrong object.
+
+---
+
+## AL-4, commit 1 of 4: the handle resolver
+
+Agreed shape B (re-plan on structure, not content), agreed as security
+work. This is the first of four, and it is first because **no model is
+involved in it**: a plan in, a resolved step out, pure. Getting `$a`
+wrong SILENTLY is how a plan reads the wrong object, and silence is
+exactly what a test can catch when there is no model in the way.
+
+### The rule for what counts as a handle is narrow, on purpose
+
+**A value is a handle only when the ENTIRE string is `$` plus an
+identifier.** Not a prefix, not a substring, not interpolation.
+
+**`$100` IS NOT A HANDLE.** It is a price, and a customer really can
+be called "$100 Store". Identifiers must start with a letter, so a
+leading digit settles it and nobody has to escape anything.
+
+**AN UNKNOWN HANDLE RAISES.** `$custmer` -- a typo -- treated as the
+literal string would be used as a filter value, match nothing, and let
+the plan carry on producing a confident answer about no data.
+Refusing is the only outcome that cannot be mistaken for a result.
+
+**ONLY VALUES, NEVER KEYS.** A key here is a field name, not data.
+Resolving one would let a plan choose which FIELD to read based on
+something it read earlier -- turning a data value back into control
+flow, which is the one thing this design exists to prevent.
+
+**REFERENCES POINT BACKWARDS ONLY**, which makes cycles impossible
+without a cycle check.
+
+### Two smaller decisions worth naming
+
+`PlanError` subclasses `ValueError`, because `_execute_step` catches
+`(ValueError, TypeError, PermissionError)` and a new type would sail
+past it and out of the loop -- AL-1's shape.
+
+A handle resolves to the VALUE, not a string of it. `$a` giving
+`["1", "2"]` becomes the list; a step handed `'["1", "2"]'` would
+search for an object whose id is literally a JSON array, and find
+nothing quietly.
+
+### Controls, seven
+
+    unknown handle passes through as a literal   1 of 27 fails
+    handle matches anywhere, not the whole value 1 fails
+    allow a leading digit (a price is a handle)  1 fails
+    resolve dict KEYS as well as values          1 fails
+    allow forward references                     2 fail
+    keep the id on a resolved step               1 fails
+    PlanError not a ValueError                   1 fails
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3022 passed, 8 skipped  (2995 before; +27 here)
+
+### Nothing calls it yet
+
+This is a library. The loop still asks for one step at a time. Commits
+2-4 are the plan validator wired to a model call, the executor with
+fan-out semantics, and the re-plan gate -- in that order, because each
+can be tested against the one before it.
+
+**The open question for commit 3, flagged early:** `$b` resolving to
+a list of 40 ids meets `MAX_OBJECT_IDS`, which caps a step at 20. A
+plan cannot ask the model to split the work, because the model has
+gone. Either the executor refuses the step (and shape B tells the
+planner "returned 34, over the limit of 20"), or it pages internally.
+I lean to refusing, because paging silently is how a plan reads more
+than anyone authorised in one step -- but it is a real choice and I
+will raise it again when I get there.
