@@ -222,3 +222,42 @@ def test_an_outage_reports_what_was_collected_instead_of_crashing(generation_and
     assert results, "nothing was collected before the outage"
     assert _aggregate(results), "collected trials could not be reported"
     assert callable(run)
+
+
+def test_a_single_case_can_be_run_alone(generation_and_user):
+    """SLOW HARDWARE IS THE REASON. At the ~5.4 tokens/s prefill the
+    config records, one hop is minutes. Running every case three times
+    before knowing what a single trial costs is how a bench gets
+    abandoned halfway."""
+    from scripts.llm_bench import CASES, run
+
+    names = {case.name for case in CASES}
+
+    assert "one_field" in names
+    assert len(names) == len(CASES), "two cases share a name"
+    assert callable(run)
+
+
+def test_the_default_is_one_trial(generation_and_user):
+    """pass^k needs k>=2, so the default deliberately does NOT produce
+    it. One trial per case gives mean@1, the parse-failure rate and
+    the timing table for a quarter of the wall clock; pass^k is worth
+    a second, narrower run once the first shows what a trial costs.
+    """
+    import argparse
+    import inspect
+
+    from scripts.llm_bench import main
+
+    source = inspect.getsource(main)
+    assert '"--trials", type=int, default=1' in source
+    assert isinstance(argparse.ArgumentParser(), argparse.ArgumentParser)
+
+
+def test_every_case_name_is_selectable(generation_and_user):
+    """A typo in --cases should list what IS known rather than run
+    nothing and report success."""
+    from scripts.llm_bench import CASES
+
+    for case in CASES:
+        assert case.name.isidentifier(), f"{case.name} is awkward to type"

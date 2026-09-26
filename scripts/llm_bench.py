@@ -81,7 +81,11 @@ from core.agent.evaluation import (  # noqa: E402
     aggregate,
     grade,
 )
-from core.deployment_loader import RuntimePaths, build_generation  # noqa: E402
+from core.deployment_loader import (  # noqa: E402
+    RuntimePaths,
+    build_generation,
+    resolve_runtime_paths,
+)
 from core.intermediate_layer.auth import resolve_user_record  # noqa: E402
 from core.llm.interface import LLMUnavailable  # noqa: E402
 
@@ -152,7 +156,7 @@ class Timed:
             )
 
 
-def run(paths: RuntimePaths, trials: int, k: int) -> int:
+def run(paths: RuntimePaths, trials: int, cases: tuple = CASES) -> int:
     generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
     user = resolve_user_record(
         generation.config.users, USER_ID, generation.config.security_attribute
@@ -169,11 +173,20 @@ def run(paths: RuntimePaths, trials: int, k: int) -> int:
     generation.loop.client = timer
 
     results = []
-    for case in CASES:
+    started = time.monotonic()
+    planned = len(cases) * trials
+    done = 0
+    for case in cases:
         for trial in range(trials):
             before = len(timer.calls)
             try:
                 outcome = generation.loop.run(user, case.query)
+            except KeyboardInterrupt:
+                # STOPPING IS NOT LOSING. Every trial already finished
+                # is still worth reporting, and on slow hardware
+                # somebody WILL stop a run that is taking too long.
+                print(f"\n  stopped after {len(results)} trials")
+                return _report(results, timer, partial=True)
             except LLMUnavailable as e:
                 # REPORT WHAT WE HAVE AND STOP, rather than raising.
                 #
@@ -189,12 +202,25 @@ def run(paths: RuntimePaths, trials: int, k: int) -> int:
                 return _report(results, timer, partial=True)
             graded = grade(case, outcome)
             results.append(graded)
+            done += 1
+            elapsed = time.monotonic() - started
             print(f"  {case.name:<26} trial {trial + 1}/{trials}  "
                   f"{'pass' if graded.passed else 'FAIL':<4}  "
                   f"{graded.stop_reason:<20} "
                   f"hops={graded.hops} "
                   f"calls={len(timer.calls) - before} "
-                  f"unusable={len(graded.fabricated_finishes)}")
+                  f"unusable={len(graded.fabricated_finishes)} "
+                  f"[{elapsed / 60:.1f}m]")
+            if done == 1 and planned > 1:
+                # A PROJECTION AFTER THE FIRST TRIAL, because on this
+                # hardware the difference between "twenty minutes" and
+                # "three hours" decides whether anyone waits. The
+                # config's own measurement is ~5.4 tokens/s prefill,
+                # which makes one hop minutes rather than seconds.
+                print(f"\n  first trial took {elapsed / 60:.1f} minutes. "
+                      f"{planned} trials projects to roughly "
+                      f"{elapsed * planned / 60:.0f} minutes.")
+                print("  Ctrl-C stops it and still reports what it has.\n")
 
     return _report(results, timer, partial=False)
 
@@ -256,21 +282,55 @@ def _report(results: list, timer: Timed, *, partial: bool) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default=str(REPO / "deployment" / "etc"))
-    parser.add_argument("--data", required=True,
-                        help="a synced data dir -- run scripts/run_sync.py first")
-    parser.add_argument("--log", required=True)
-    parser.add_argument("--trials", type=int, default=DEFAULT_K,
-                        help=f"trials per case (default {DEFAULT_K}: the smallest "
-                             f"k that can show a consistency gap)")
+    # DEFAULT 1, NOT DEFAULT_K, and that is about this hardware rather
+    # than about the metric. One trial per case gives mean@1, the
+    # parse-failure rate and the timing table -- two and a half of the
+    # three numbers -- for a quarter of the wall clock. pass^k needs
+    # k>=2 and is worth a second, narrower run once the first shows
+    # what a trial costs.
+    parser.add_argument("--trials", type=int, default=1,
+                        help=f"trials per case (default 1; pass^k needs at "
+                             f"least 2, and {DEFAULT_K} is the smallest k that "
+                             f"can show a consistency gap)")
+    parser.add_argument("--cases", help="comma-separated case names; "
+                        "default all. Run one case first on slow hardware.")
+    parser.add_argument("--config", help="overrides ELYSIUM_CONFIG_DIR")
+    parser.add_argument("--data", help="overrides ELYSIUM_DATA_DIR")
+    parser.add_argument("--log", help="overrides ELYSIUM_LOG_DIR")
     args = parser.parse_args()
 
+    # THE SAME THREE LOCATIONS EVERY OTHER ENTRY POINT USES, resolved
+    # the same way -- ELYSIUM_CONFIG_DIR / ELYSIUM_DATA_DIR /
+    # ELYSIUM_LOG_DIR, defaulting to deployment/etc, deployment/var/lib
+    # and deployment/var/log.
+    #
+    # THE FIRST VERSION MADE --data AND --log REQUIRED, and the first
+    # person to run it pasted the placeholders from my own
+    # instructions and got `bash: data: No such file or directory`. A
+    # bench nobody can start measures nothing. The flags remain as
+    # overrides; none of them is needed for a normal run.
+    paths = resolve_runtime_paths()
     paths = RuntimePaths(
-        config_dir=Path(args.config),
-        data_dir=Path(args.data),
-        log_dir=Path(args.log),
+        config_dir=Path(args.config) if args.config else paths.config_dir,
+        data_dir=Path(args.data) if args.data else paths.data_dir,
+        log_dir=Path(args.log) if args.log else paths.log_dir,
     )
-    return run(paths, args.trials, args.trials)
+    if not paths.data_dir.exists():
+        print(f"No data at {paths.data_dir}. Run a sync first:")
+        print("    python3 -m scripts.run_sync")
+        return 2
+    print(f"config {paths.config_dir}  data {paths.data_dir}  "
+          f"log {paths.log_dir}\n")
+    cases = CASES
+    if args.cases:
+        wanted = {name.strip() for name in args.cases.split(",")}
+        cases = tuple(c for c in CASES if c.name in wanted)
+        unknown = wanted - {c.name for c in CASES}
+        if unknown:
+            print(f"Unknown case(s): {sorted(unknown)}")
+            print(f"Known: {[c.name for c in CASES]}")
+            return 2
+    return run(paths, args.trials, cases)
 
 
 if __name__ == "__main__":

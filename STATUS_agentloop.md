@@ -2779,3 +2779,62 @@ accuracy argument it currently does not have.
 is the EXPECTED result at temperature 0, and the bench says so rather
 than quoting a pass^k that could not have varied. If some case VARIES,
 that is the finding, and it is worth more than the score.
+
+---
+
+## The bench, fixed after a real person could not start it
+
+Three failures, all mine, all found by someone trying to run it.
+
+**WRONG INVOCATION IN MY OWN INSTRUCTIONS.** I wrote `python3
+scripts/run_sync.py`. Every entry point in this project is invoked as
+`python3 -m scripts.<name>` -- INSTALL.md says so five times -- and
+the file form gives `ModuleNotFoundError: No module named 'core'`.
+
+**REQUIRED --data AND --log.** Every other entry point calls
+`resolve_runtime_paths()`, which reads `ELYSIUM_CONFIG_DIR` /
+`ELYSIUM_DATA_DIR` / `ELYSIUM_LOG_DIR` and defaults to
+`deployment/etc`, `deployment/var/lib`, `deployment/var/log`. Mine
+demanded two paths nobody has to know, and the person running it
+pasted my own placeholders and got `bash: data: No such file or
+directory`. **A bench nobody can start measures nothing.** It now
+takes no arguments; the flags remain as overrides.
+
+**NO SENSE OF HOW LONG IT WOULD TAKE.** The config's own measurement
+is ~5.4 tokens/s prefill, which makes one hop minutes rather than
+seconds. Four cases at three trials is plausibly over an hour, and I
+made that the default.
+
+### What it does about slow hardware now
+
+    default --trials 1     mean@1, the parse-failure rate and the
+                           timing table -- two and a half of the three
+                           numbers -- for a quarter of the wall clock.
+                           pass^k needs k>=2 and deserves a second,
+                           narrower run once a trial's cost is known.
+    --cases one_field      run ONE case first
+    a projection           after the first trial it prints what the
+                           whole run would take, so the choice to wait
+                           is made with a number
+    Ctrl-C reports         stopping is not losing; every finished
+                           trial is still reported
+
+### Suggested order on the VM
+
+    python3 -m scripts.llm_bench --cases one_field
+        one trial, one case. Tells you what a trial costs and whether
+        anything works at all.
+
+    python3 -m scripts.llm_bench
+        all four cases, one trial each. mean@1, parse failures, timing.
+
+    python3 -m scripts.llm_bench --cases one_field --trials 3
+        pass^3 on the cheapest case. If it comes back degenerate --
+        all three agreeing -- that is the EXPECTED result at
+        temperature 0 and the bench says so. If it VARIES, that is the
+        finding, and it is worth more than the score.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3055 passed, 8 skipped  (3052 before; +3 here)
