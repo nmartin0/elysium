@@ -2624,3 +2624,81 @@ asserts the real property: no VALUE is present.
 
 Still nothing calls it. Commit 3 is the executor with fan-out; commit
 4 is the re-plan gate and the switch.
+
+---
+
+## AL-4, commit 3 of 4: the executor
+
+`execute_plan()` runs a validated plan in order, resolving each handle
+from what earlier steps produced. Returns None, or a **structural**
+description of what stopped it -- "would read 34 objects, over the
+limit of 20", "step 'a' was refused: rejected_invalid_step". Never a
+value. That is the whole of shape B: commit 4 hands the string back to
+the planner, and a planted instruction cannot express itself through a
+step id and a count.
+
+### Three things the tests found that the design did not say
+
+**A REFUSED STEP ENDS A PLAN, and the first version carried on.**
+`_execute_step()`'s recoverable-mistake path exists so the MODEL can
+be told what it got wrong and try again next hop. A plan has no model
+left -- it is executing decisions already made. With counters passed
+as zero each time, nothing ever accumulated, so a refused step
+returned no stop reason and the plan walked into steps that assumed it
+had worked. Now any bookkeeping rejection ends it.
+
+**MOST "WRONG" VALUES DO NOT REFUSE AT ALL**, and finding a case that
+did took looking. An unknown field name returns None. An unknown
+object type returns None. That is uniform denial working as designed
+-- a caller must not learn a field or a type exists by being refused
+it -- so a plan mostly produces None results rather than failures, and
+only a structurally invalid step refuses.
+
+**That matters for commit 4** and is worth stating now: the re-plan
+gate will often see "the plan ran, everything was None", which is
+deliberately indistinguishable from "there is no such data". Telling
+the planner "step b returned nothing" is honest and says nothing it
+should not hear; trying to tell it WHY would be the thing this design
+forbids.
+
+**WHAT A STEP PRODUCED IS READ BACK FROM `gathered`.** Handlers append
+their own entries -- search_object attaches AR-4's titles that way --
+so the entries a step added ARE its result. Any other account of it
+would be free to disagree with what the model is shown.
+
+### Fan-out, as agreed
+
+A search returns a list, so `"object_id": "$a"` names many objects and
+the step runs once per object -- what the model would have done hop by
+hop, and the only reading that does not silently drop all but the
+first.
+
+**Over MAX_PLAN_FANOUT it refuses rather than pages**, as agreed.
+That cap exists because max_hops bounds how much one query may read,
+and a plan has no model left to ask for a smaller batch; paging
+internally would let one planned step read arbitrarily much under a
+limit written to prevent exactly that. It refuses BEFORE reading
+anything, and a test asserts `gathered == []`.
+
+`MAX_PLAN_FANOUT` is stated in `core/llm/plan.py` rather than imported
+from the loop, because core.llm sits below core.agent -- the same
+layering that moved the file down. A test pins the two numbers
+together so they cannot drift.
+
+### Controls, five
+
+    no fan-out, use only the first object   1 of 9 fails
+    page past the cap instead of refusing   1 fails
+    carry on after a refused step           2 fail
+    allow a list where one value belongs    1 fails
+    let the fan-out cap drift               1 fails
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3044 passed, 8 skipped  (3035 before; +9 here)
+
+Commit 4 is the re-plan gate and the switch: the loop calls
+`next_plan()`, runs it, and on a structural failure hands that string
+back for one revision. That is also where AL-2's framing paragraph
+comes out of the plan prompt.

@@ -79,6 +79,7 @@ from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.agent_step_prompt import next_step
 from core.llm.interface import LLMAdapter, LLMUnavailable
+from core.llm.plan import MAX_PLAN_FANOUT, resolve_step
 from core.llm.tracing import EXECUTE_TOOL, INVOKE_AGENT, span
 from core.ontology.mediator import DataMediator, security_cache_scope
 from core.ontology.schema import get_title_field
@@ -875,6 +876,132 @@ class AgentLoop:
             "use_tool": self._step_use_tool,
             "propose_action": self._step_propose_action,
         }
+
+    def execute_plan(self, plan: list[dict], user_record: UserRecord,
+                     visible_schema: dict, gathered: list[dict],
+                     context: RequestContext | None = None) -> str | None:
+        """Runs a validated plan, in order, resolving handles as it goes.
+
+        AL-4, commit 3. Returns None when every step ran, or a
+        STRUCTURAL description of what stopped it -- "step b returned
+        0 results", "step c would read 34 objects, over the limit of
+        20". Never a value.
+
+        THAT DISTINCTION IS THE WHOLE OF SHAPE B. Commit 4 hands this
+        string back to the planner so it can revise. A planted
+        instruction in a field cannot express itself through a count,
+        so re-planning on structure keeps the property that planning
+        on values would give away.
+
+        WHAT A STEP "PRODUCED" IS READ BACK FROM `gathered`, not from
+        a return value, and that is deliberate rather than awkward.
+        Handlers append their own entries -- search_object attaches
+        AR-4's titles that way -- so the gathered entries a step added
+        ARE its result. Taking it from anywhere else would be a second
+        account of the same thing, free to disagree with the one the
+        model is shown.
+        """
+        results: dict[str, Any] = {}
+        for step in plan:
+            step_id = step["id"]
+            try:
+                resolved = resolve_step(step, results)
+            except ValueError as e:
+                return f"step {step_id!r} could not be prepared: {e}"
+
+            targets = self._fanout_targets(resolved)
+            if isinstance(targets, str):
+                return f"step {step_id!r} {targets}"
+
+            before = len(gathered)
+            for one in targets:
+                marker = len(gathered)
+                _, _, stop_reason, pending = self._execute_step(
+                    one, user_record, visible_schema, gathered,
+                    0, 0, context,
+                )
+                # A REJECTION STOPS THE PLAN, and this is not the same
+                # check as `stop_reason`.
+                #
+                # _execute_step()'s recoverable-mistake path exists so
+                # the MODEL can be told what it got wrong and try
+                # again on the next hop. A plan has no model left --
+                # it is executing decisions already made -- so a step
+                # the mediator refused is simply the end of this plan,
+                # however forgiving the live loop would have been.
+                #
+                # Found by a test: with no counters accumulating, a
+                # bad step returned stop_reason=None and the plan
+                # carried on into steps that assumed it had worked.
+                rejected = [
+                    entry for entry in gathered[marker:]
+                    if entry.get("step") in AgentLoop.BOOKKEEPING_STEPS
+                ]
+                if rejected:
+                    return (f"step {step_id!r} was refused: "
+                            f"{rejected[0].get('step')}")
+                if pending is not None:
+                    # A PLAN THAT PROPOSES A WRITE STOPS THERE. The
+                    # remaining steps were planned on the assumption
+                    # this one succeeded, and it has not yet -- a human
+                    # has to decide first. AL-12's resume is what picks
+                    # it up.
+                    return f"step {step_id!r} proposed a write"
+                if stop_reason is not None:
+                    return f"step {step_id!r} failed: {stop_reason}"
+
+            results[step_id] = self._produced(gathered, before)
+        return None
+
+    @staticmethod
+    def _produced(gathered: list[dict], before: int) -> Any:
+        """What the steps appended since `before` actually returned.
+
+        One entry gives its value; several give a list; none gives
+        None. A later handle naming this step gets exactly what the
+        model was shown for it.
+        """
+        values = [
+            entry["result"] for entry in gathered[before:]
+            if entry.get("step") not in AgentLoop.BOOKKEEPING_STEPS
+            and "result" in entry
+        ]
+        if not values:
+            return None
+        return values[0] if len(values) == 1 else values
+
+    @staticmethod
+    def _fanout_targets(resolved: dict) -> "list[dict] | str":
+        """One step, or one per object when a handle named several.
+
+        A search returns a list, so a later `"object_id": "$a"` names
+        many objects. Running the step once per object is what the
+        model would have done hop by hop, and it is the only reading
+        that does not silently drop all but the first.
+
+        REFUSED OVER THE CAP rather than paged. MAX_OBJECT_IDS exists
+        because max_hops bounds how much one query may read, and a
+        plan has no model left to ask for a smaller batch -- paging
+        internally would let one planned step read arbitrarily much
+        under a limit written to prevent exactly that. The refusal is
+        structural, so commit 4 can hand it back.
+
+        A LIST ANYWHERE ELSE IS REFUSED. `"filter": {"region": "$a"}`
+        with a list is not an equality condition, and the filter
+        vocabulary is equality-only until LB-2 says otherwise.
+        Guessing would turn a type error into a wrong answer.
+        """
+        object_id = resolved.get("object_id")
+        if not isinstance(object_id, list):
+            for key, value in resolved.items():
+                if key != "object_ids" and isinstance(value, dict):
+                    if any(isinstance(v, list) for v in value.values()):
+                        return f"used a list of values in {key!r}, which takes one value"
+            return [resolved]
+        if len(object_id) > MAX_PLAN_FANOUT:
+            return (f"would read {len(object_id)} objects, over the limit of "
+                    f"{MAX_PLAN_FANOUT}")
+        return [{**resolved, "object_id": one} for one in object_id]
 
     def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
                        gathered: list[dict], consecutive_invalid: int, consecutive_business_rule: int,

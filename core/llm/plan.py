@@ -69,6 +69,14 @@ _HANDLE = re.compile(r"^\$([A-Za-z_][A-Za-z0-9_]*)$")
 _STEP_ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+# The most objects one planned step may fan out to. Deliberately the
+# same number as the loop's MAX_OBJECT_IDS, and stated here rather
+# than imported because core.llm sits BELOW core.agent and cannot
+# reach it -- the same layering that moved this file down. A test
+# pins the two together so they cannot drift.
+MAX_PLAN_FANOUT = 20
+
+
 class PlanError(ValueError):
     """A plan that cannot be executed as written.
 
