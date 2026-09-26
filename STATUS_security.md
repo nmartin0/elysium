@@ -910,6 +910,42 @@ branch finding in other people's docstrings -- SEC-13's "keeps the
 record of who said no", F-12a's "SEVEN REAL GRANT PATTERNS",
 SEC-19's "raises rather than falling back". Mine is the same shape.
 
+## Session 29 — I OVERSTATED SEC-24. Corrected.
+
+I filed SEC-24 as HIGH and wrote that the ordinary crash path left a
+deleted object readable indefinitely. **That is wrong**, and reading
+further into `write_mediator.py` is what showed it.
+
+BOTH delete paths write the index DIRECTLY, and both write it BEFORE
+marking the entry applied -- verified over the source rather than
+recalled:
+
+    _apply_one_delete           record_delete then mark_applied
+    _resume_one_delete_entry    record_delete then mark_applied
+
+So a delete left pending by a crash is indexed by the RESUME path when
+it applies, and never depends on the sync at all. Every `mark_applied`
+on a delete in this file is preceded by `record_delete`.
+
+MY REPRODUCTION MARKED THE ROW APPLIED WITH RAW SQL. No product path
+does that. I built a scenario the code cannot reach and then described
+it as the ordinary crash path -- which it also is not, since the crash
+path is exactly the one `_resume_one_delete_entry` covers.
+
+WHAT IS STILL TRUE: the watermark recorded `MAX(rowid)` over every row
+while both sync paths read only `status = 'applied'`, so it claimed to
+have seen rows it skipped, and the incremental path could disagree
+with a full rebuild. That is a real inconsistency and the module
+claims the opposite for itself, so the fix is KEPT -- with the
+severity corrected to LOW and the reachability stated honestly: no
+supported path reaches a consequence.
+
+WHY THIS IS RECORDED RATHER THAN EDITED AWAY. It is the same failure
+this branch has been finding in other people's work all along -- a
+claim that outruns what was checked -- and it is worse coming from the
+agent doing the finding. It also went out as HIGH into an integration
+handover, which is the moment it does the most damage.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
