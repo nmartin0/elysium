@@ -240,3 +240,81 @@ this rather than fix it.
 patch that crosses the boundary once, with this note as the reason.
 
 **Superseded by 5 above. The diagnosis in this section is wrong.**
+
+---
+
+## 7. gold history is never recorded (backend, `core/mirror/gold.py`)
+
+Found while producing a quarantine state to verify the mirror panel.
+Reproducible on every sync, both object types, on `frontend` and on
+`dev` (the line is present in both):
+
+```
+gold.Customer published, but its history was not recorded:
+  'NoneType' object is not iterable
+published gold.Customer: 4 rows
+```
+
+`core/mirror/gold.py:632` catches the exception deliberately -- the
+docstring says failing to write history must not turn a successful
+sync into a failed one, which is right -- and returns 0. So gold
+publishes correctly and **`gold_history` is silently never written**.
+The warning is the only trace.
+
+WHY IT MATTERS BEYOND ITSELF: **Q6** asks whether `gold_history` or
+the silver changelog is the history of record. If the answer is
+gold_history, it is currently empty on any deployment this affects,
+and the decision would be made about a table with nothing in it.
+
+NOT DIAGNOSED FURTHER. `record_publication` is called with
+`previous_rows`, and a None there is the obvious candidate, but I have
+not read that function and `core/mirror/` is not mine. I got one
+backend diagnosis wrong this week by reasoning instead of reading, so
+this is the observation and not a cause.
+
+TO REPRODUCE: `python -m scripts.seed_dev_silos && python -m
+scripts.run_sync` on a clean checkout.
+
+---
+
+## 8. AFTER INTEGRATION -- what is left on the front end
+
+Recorded here rather than in STATUS so it survives the merge into a
+file whoever picks this up will read.
+
+### Nothing is in progress. Everything below is blocked or decided elsewhere.
+
+**Joint work, cannot be started from one side** (000COORDINATION.md).
+Confirmed on `dev` that none of their server halves exist -- the two
+apparent hits for UI-LIVE and ALERT-1 are words in unrelated comments:
+
+| item | what the front end needs first |
+| --- | --- |
+| UI-LIVE | an SSE or websocket endpoint; none exists |
+| CONFIG-WRITE | a config write route; none exists |
+| PIPELINE-BUILDER | a pipeline definition API; none exists |
+| ACCESS-1..6 | an access-request model; none exists |
+| ALERT-1 | alert rules; none exists |
+| GOLD-3d provenance | per-object lineage from silver, deferred |
+
+**Two owner decisions land on UI that is already built.** Q5 (freshness
+targets per object type): the panel states "published N hours ago" and
+declines to judge it, because nothing defines stale. Q6 (history of
+record): Object History reads one of the two candidates -- and see
+request 7 above, one of them is empty.
+
+**e2e does not run in CI.** `.github/workflows/ci.yml` runs lint, test
+and build for `ui/` but no playwright. The 16 browser tests are the
+only thing protecting the three Blueprint override simplifications,
+since jsdom cannot see a cascade. Closing it needs uvicorn, seeded
+users and published gold in the job -- all of which the backend job
+already has the pieces for. `.github/` is not mine; this is a request
+if someone wants it.
+
+**One caveat on everything verified visually.** The browser here is
+Chromium 1194 aliased as the 1234 the toolchain expects, because
+`cdn.playwright.dev` is not in this environment's egress allowlist.
+Colour and `display` assertions are safe across builds; the nine
+geometry assertions (`boundingBox`, "sits beside its row", "nothing
+covers it") are not, and B4 now depends on them. The first CI run on a
+correct browser settles it.
