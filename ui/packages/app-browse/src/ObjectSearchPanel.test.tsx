@@ -96,7 +96,7 @@ beforeEach(() => {
   // A default, because every test renders the panel and the panel asks.
   // Live rather than mirror, so the freshness note is absent unless a
   // test deliberately asks for it.
-  mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+  mockedGetDataFreshness.mockResolvedValue({ source: 'gold', last_synced_at: null, published_at: null })
   vi.clearAllMocks()
 })
 
@@ -342,7 +342,7 @@ describe('ObjectSearchPanel -- results rendering', () => {
       // THE PROPERTY THAT KEEPS IT HONEST. A live deployment is not
       // stale and must not be told it is, or the indicator means
       // nothing wherever it appears.
-      mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+      mockedGetDataFreshness.mockResolvedValue({ source: 'gold', last_synced_at: null, published_at: null })
       mockedSearchObjects.mockResolvedValue(searchResult([]))
       renderPanel(CUSTOMER_SCHEMA)
 
@@ -350,26 +350,65 @@ describe('ObjectSearchPanel -- results rendering', () => {
       expect(screen.queryByText(/mirrored data/i)).toBeNull()
     })
 
-    it('reports when the mirror was last synced', async () => {
+    it('reports when THIS TYPE was published', async () => {
+      // GOLD-3d. Silver records when the SOURCE WAS READ, gold when a
+      // PUBLICATION WAS MADE. A source read four minutes ago but
+      // published two hours ago is two hours stale to the reader, and
+      // reporting the sync would be the flattering number.
       mockedGetDataFreshness.mockResolvedValue({
-        source: 'mirror',
+        source: 'gold',
         last_synced_at: new Date(Date.now() - 4 * 60_000).toISOString(),
+        published_at: { Customer: new Date(Date.now() - 2 * 60 * 60_000).toISOString() },
       })
       mockedSearchObjects.mockResolvedValue(searchResult([]))
       renderPanel(CUSTOMER_SCHEMA)
 
-      await waitFor(() => expect(screen.getByText(/4 minutes ago/)).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText(/published/)).toBeInTheDocument())
+      expect(screen.getByText(/2 hours ago/)).toBeInTheDocument()
+      expect(screen.queryByText(/4 minutes ago/)).not.toBeInTheDocument()
     })
 
-    it('says so when the mirror has never synced', async () => {
-      // Distinct from "synced a long time ago": never-synced data is
+    it('reports the type on screen, not some other type', async () => {
+      // A deployment publishes each type on its own clock; showing
+      // another type's time would be a number for data nobody is
+      // looking at.
+      mockedGetDataFreshness.mockResolvedValue({
+        source: 'gold',
+        last_synced_at: null,
+        published_at: {
+          Customer: new Date(Date.now() - 2 * 60 * 60_000).toISOString(),
+          Transaction: new Date(Date.now() - 90 * 60_000).toISOString(),
+        },
+      })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(screen.getByText(/2 hours ago/)).toBeInTheDocument())
+      expect(screen.queryByText(/an hour ago|90 minutes/)).not.toBeInTheDocument()
+    })
+
+    it('says nothing when this type has no publication', async () => {
+      mockedGetDataFreshness.mockResolvedValue({
+        source: 'gold',
+        last_synced_at: new Date().toISOString(),
+        published_at: { Transaction: new Date().toISOString() },
+      })
+      mockedSearchObjects.mockResolvedValue(searchResult([]))
+      renderPanel(CUSTOMER_SCHEMA)
+
+      await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalled())
+      expect(screen.queryByText(/published/)).not.toBeInTheDocument()
+    })
+
+    it('says so when nothing has been published', async () => {
+      // Distinct from "published a long time ago": unpublished data is
       // not old, it is absent, and an empty result set means something
       // different in each case.
       mockedGetDataFreshness.mockResolvedValue({ source: 'mirror', last_synced_at: null })
       mockedSearchObjects.mockResolvedValue(searchResult([]))
       renderPanel(CUSTOMER_SCHEMA)
 
-      await waitFor(() => expect(screen.getByText(/not been synced yet/i)).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText(/not been published yet/i)).toBeInTheDocument())
     })
 
     it('still shows results when the freshness check fails', async () => {
@@ -1068,19 +1107,14 @@ describe('the row count says which guarantee applies', () => {
    * of one query reads the same immutable data. The count is exact,
    * and hedging it would understate what the deployment guarantees.
    */
-  it('qualifies the count on a live deployment', async () => {
-    mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
-    // A next_page_token, because the count lives inside the PAGER and
-    // a single-page result never renders it.
-    mockedSearchObjects.mockResolvedValue({
-      ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 50),
-      next_page_token: 'p2',
-    })
-    renderPanel(CUSTOMER_SCHEMA)
-
-    expect(await screen.findByText(/at the time of this query/)).toBeInTheDocument()
-  })
-
+  /* REMOVED: 'qualifies the count on a live deployment'.
+     It asserted ' matches at the time of this query', the hedge for a
+     LIVE read where the count can move under the reader. Patch 386
+     removed live reads; the branch could not render and was comparing
+     against a source value the server had stopped sending. Deleted
+     with the branch rather than rewritten, because there is no longer
+     a deployment it describes. The pair below still holds: every read
+     is an immutable snapshot, so the count is exact. */
   it('does NOT qualify it on a mirror', async () => {
     // THE PAIR. Hedging everywhere would be as wrong as hedging
     // nowhere -- it would tell a mirror deployment its exact count is
@@ -1102,7 +1136,7 @@ describe('the row count says which guarantee applies', () => {
   it('still shows the count itself either way', async () => {
     // THE CONTROL. A change that dropped the number while adding the
     // caveat would pass both tests above.
-    mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+    mockedGetDataFreshness.mockResolvedValue({ source: 'gold', last_synced_at: null, published_at: null })
     mockedSearchObjects.mockResolvedValue({
       ...searchResult([{ id: 'c1', fields: { name: 'Ada' } }], 50),
       next_page_token: 'p2',

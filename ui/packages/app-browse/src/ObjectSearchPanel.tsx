@@ -10,6 +10,7 @@ const MAX_SCAN_LABEL = '10,000'
 import { Link } from 'react-router-dom'
 import {
   getDataFreshness,
+  publicationTime,
   getErrorMessage,
   getVisibleActionTypesCached,
   handleIfSessionExpired,
@@ -246,7 +247,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // last_synced_at -- and without it "no records available" reads as
   // "your data is empty" on a deployment that simply has not fetched
   // anything yet.
-  const neverSynced = freshness?.source === 'mirror' && !freshness.last_synced_at
+  // NOTHING PUBLISHED AT ALL, as distinct from published-and-empty.
+  // The server distinguishes them -- source 'mirror' means no type has
+  // been published yet -- and without it "no records available" reads
+  // as "your data is empty" on a deployment that simply has not
+  // published anything.
+  const neverPublished = freshness?.source === 'mirror'
+  const neverSynced = neverPublished && !freshness?.last_synced_at
+  // The clock this reader actually experiences, for the type on screen.
+  const publishedAt = publicationTime(freshness, selectedType ? [selectedType] : [])
   useEffect(() => {
     getDataFreshness()
       .then(setFreshness)
@@ -693,12 +702,23 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         </Callout>
       )}
 
-      {freshness?.source === 'mirror' && (
-        <p className="object-search__freshness">
-          {freshness.last_synced_at
-            ? `Showing mirrored data, synced ${formatTimestamp(freshness.last_synced_at)}.`
-            : 'Showing mirrored data, which has not been synced yet.'}
-        </p>
+      {/* WHEN THIS TYPE WAS PUBLISHED, not when its source was read.
+          GOLD-3d, and the distinction is the whole point: silver
+          records when the SOURCE WAS READ, gold when a PUBLICATION WAS
+          MADE, and a source read hourly but published daily is a day
+          stale to the person looking at it. Reading last_synced_at
+          here would report the earlier, more flattering clock.
+
+          This rendered NOWHERE before. It tested source === 'mirror',
+          which the server stopped sending once anything was published,
+          so a deployment reading gold showed no freshness at all --
+          checked in a browser, zero of these on screen. */}
+      {publishedAt !== null ? (
+        <p className="object-search__freshness">Showing data published {formatTimestamp(publishedAt)}.</p>
+      ) : (
+        neverPublished && (
+          <p className="object-search__freshness">Showing mirrored data, which has not been published yet.</p>
+        )
       )}
 
       {view === 'table' &&
@@ -897,8 +917,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                 of one query reads the same immutable data -- the count
                 is authoritative and a UI that hedged it would
                 understate what the deployment guarantees. */}
-            Showing {results.length} of {totalMatches}
-            {freshness?.source === 'live' ? ' matches at the time of this query' : ' matches'}
+            {/* NO LONGER HEDGED. The 'at the time of this query' variant
+                existed for a LIVE read, where the count could move
+                under the reader. Patch 386 removed live reads, so it
+                could not render -- and it was comparing against a
+                value the server had stopped sending, which is how it
+                went unnoticed. Every read is now an immutable
+                snapshot, so the count is exact and saying so plainly
+                is what the paragraph above argues for. */}
+            Showing {results.length} of {totalMatches} matches
           </span>
           <Button
             minimal

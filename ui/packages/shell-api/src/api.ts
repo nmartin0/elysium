@@ -492,8 +492,40 @@ export async function getWriteDetail(writeId: string): Promise<WriteDetailRespon
 // about to approve a write can see how fresh what they are approving
 // against actually is.
 export interface DataFreshness {
-  source: 'live' | 'mirror'
+  /** 'gold' once anything is published; 'mirror' before the first
+   *  publication. 'live' IS GONE -- patch 386 removed live reads, and
+   *  this said `'live' | 'mirror'` until GOLD-3d, so it matched
+   *  NEITHER value the server sends. Every `source === 'mirror'` test
+   *  in the app was therefore dead, and the freshness line rendered
+   *  nowhere at all: confirmed in a browser before changing it, zero
+   *  freshness nodes on a page reading published gold. */
+  source: 'gold' | 'mirror'
+  /** When the SOURCE was last read. Deliberately not the publication
+   *  time: it is what the write overlay is bounded by (F-29), and the
+   *  two were conflated once already. */
   last_synced_at: string | null
+  /** When each type was PUBLISHED, which is the clock a reader
+   *  actually experiences. Absent until the first publication. A
+   *  source read hourly but published daily is a day stale to the
+   *  person looking at it. */
+  published_at?: Record<string, string> | null
+}
+
+/**
+ * The publication time a reader of these types is actually seeing, or
+ * null if nothing relevant has been published.
+ *
+ * THE OLDEST OF THEM, matching the server's own rule for a deployment
+ * reading several types: someone comparing two objects is only as
+ * current as the staler of them. Reporting the newest would be a
+ * reassuring number that no single screen is entitled to.
+ */
+export function publicationTime(freshness: DataFreshness | null, objectTypes: string[]): string | null {
+  const published = freshness?.published_at
+  if (!published) return null
+  const times = objectTypes.map((type) => published[type]).filter((at): at is string => typeof at === 'string')
+  if (times.length === 0) return null
+  return times.reduce((oldest, at) => (at < oldest ? at : oldest))
 }
 
 export async function getDataFreshness(): Promise<DataFreshness> {
