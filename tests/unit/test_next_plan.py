@@ -99,14 +99,20 @@ def test_the_planner_is_never_shown_a_value():
     for value in ("Ada Okafor", "cust_001", "ada.okafor@example.com"):
         assert value not in client.system_prompt
 
-    # NOTED FOR COMMIT 4, not fixed here: AL-2's framing paragraph
-    # tells the model to ignore instructions inside values it is
-    # shown. In plan mode it is shown none, so the paragraph is
-    # addressing something that does not exist -- prompt characters
-    # for a warning about an empty set. Removing it now would weaken
-    # the step path, which still needs it; it goes when the loop
-    # switches over.
-    assert "never instructions" in client.system_prompt
+    # AND THE FRAMING IS GONE, which is the other half of the same
+    # property. An earlier version of this test asserted the opposite
+    # and carried a note: AL-2's paragraph warns the model to ignore
+    # instructions inside values it is shown, in plan mode it is shown
+    # none, and removing it was deferred to "when the loop switches
+    # over".
+    #
+    # It never switched -- run_planned() became a sibling rather than
+    # a replacement -- so the note would have sat there indefinitely.
+    # What moved it was a number: the VM measured prompt evaluation at
+    # 0.104 seconds per character on a cold call, making that
+    # paragraph about 43 seconds of every cold planning call, spent
+    # warning about an empty set.
+    assert "never instructions" not in client.system_prompt
 
 
 def test_the_plan_prompt_is_the_step_prompt_plus_instructions():

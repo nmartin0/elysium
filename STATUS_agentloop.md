@@ -4016,3 +4016,76 @@ Every integration test runs against that step/synthesis pair, and
 changing it changes what they all exercise. That is a decision for
 whoever owns the integration suite, and the diagnostic above is what
 would justify it.
+
+---
+
+# THE DIAGNOSTIC SETTLED IT. The prompt is 99.4% of a cold call.
+
+    model load          3.7s
+    prompt evaluation 591.1s   for 5,675 chars
+
+**No timeout was ever going to fix that**, `keep_alive` was irrelevant
+at 3.7 seconds, and both models sitting resident "Forever" was not the
+problem either. Three guesses, one measurement.
+
+**0.104 seconds per character**, cold. That is ~2.4 tokens/s prompt
+evaluation -- slower than the 5.4 the dev config assumed, which is
+worth knowing on its own.
+
+## What the 87.5% is actually made of
+
+At the measured rate, on the fixture's prompt:
+
+    schema block               1,398 chars   ~145s
+    procedure                  4,163 chars   ~433s
+      three worked examples    1,007         ~105s
+      three IMPORTANT notes      802          ~83s
+      AL-2's untrusted framing    410          ~43s
+      get_object explanation      417          ~43s
+      aggregate explanation       291          ~30s
+
+**LB-6 is now the highest-value item on the whole list**, and it is
+measured end to end rather than argued.
+
+## Cut: the framing, from planning calls only
+
+It warns the model to ignore instructions inside values it is shown. A
+planning call is shown none -- the plan is fixed before any field is
+read. **412 characters warning about an empty set, ~43 seconds of
+every cold planning call.**
+
+I flagged this when `next_plan()` was written and deferred it to "when
+the loop switches over". **It never switched** -- `run_planned()`
+became a sibling rather than a replacement -- so the note would have
+sat there indefinitely. What moved it was a number.
+
+The step path keeps it in full: that loop IS shown field values, every
+hop, and the framing is exactly as necessary as when AL-2 added it. A
+test asserts both directions, and a third asserts it through
+`next_plan()` rather than the builder -- because calling the builder
+directly cannot tell whether the CALLER passes the flag.
+
+## Controls, three
+
+    next_plan stops passing the flag          1 of 24 fails
+    the flag defaults to False (step loses it) 4 fail
+    the framing dropped for everyone           4 fail
+
+## What I am NOT cutting, and why it needs you
+
+The three worked examples (~105s) and three IMPORTANT notes (~83s) are
+the next 188 seconds. **Every one of them was added for a measured
+reason** -- the asymmetry fix, the list-of-IDs reminder, the
+get_object preference. Cutting them is a behaviour change on a small
+model, which is exactly what the constraint-tax literature warns
+about, and AL-8 plus the bench now exist to measure it.
+
+That is a proposal, not a patch: pick one, cut it, run both modes on
+all four cases, compare. I would start with the get_object
+explanation, because plan mode reaches get_object through a handle and
+may not need the prose at all.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3095 passed, 8 skipped  (3092 before; +3 here)
