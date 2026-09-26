@@ -18,6 +18,7 @@ from core.agent.evaluation import (
     CaseReport,
     EvalCase,
     ExpectedFact,
+    TrialResult,
     grade,
     pass_at_k,
     pass_hat_k,
@@ -162,14 +163,14 @@ def test_a_run_that_reads_the_expected_fact_passes(generation_and_user):
     generation, user = generation_and_user
     result = _run(generation, user, READ_EMAIL, '{"step": "finish"}')
 
-    assert grade(CASE, result.gathered, result.stop_reason).passed
+    assert grade(CASE, result).passed
 
 
 def test_a_run_that_reads_nothing_fails(generation_and_user):
     generation, user = generation_and_user
     result = _run(generation, user, '{"step": "finish"}')
 
-    graded = grade(CASE, result.gathered, result.stop_reason)
+    graded = grade(CASE, result)
     assert not graded.passed
     assert graded.missing == CASE.expected_facts
 
@@ -188,9 +189,9 @@ def test_a_run_that_read_the_right_fact_but_did_not_finish_fails():
         "result": "ada.okafor@example.com",
     }]
 
-    assert grade(CASE, gathered, StopReason.FINISHED).passed
-    assert not grade(CASE, gathered, StopReason.MAX_HOPS).passed
-    assert not grade(CASE, gathered, StopReason.REPEATED_ITSELF).passed
+    assert grade(CASE, _result(gathered, StopReason.FINISHED)).passed
+    assert not grade(CASE, _result(gathered, StopReason.MAX_HOPS)).passed
+    assert not grade(CASE, _result(gathered, StopReason.REPEATED_ITSELF)).passed
 
 
 def test_an_unrecognised_stop_reason_fails_closed():
@@ -202,7 +203,7 @@ def test_an_unrecognised_stop_reason_fails_closed():
         "result": "ada.okafor@example.com",
     }]
 
-    assert not grade(CASE, gathered, "something_new").passed
+    assert not grade(CASE, _result(gathered, "something_new")).passed
 
 
 def test_a_decimal_value_grades_against_a_plain_string_in_the_case():
@@ -223,7 +224,7 @@ def test_a_decimal_value_grades_against_a_plain_string_in_the_case():
         "result": decimal.Decimal("49.990000000"),
     }]
 
-    assert grade(case, gathered, StopReason.FINISHED).passed
+    assert grade(case, _result(gathered, StopReason.FINISHED)).passed
 
 
 def test_a_failure_keeps_its_trace(generation_and_user):
@@ -231,12 +232,27 @@ def test_a_failure_keeps_its_trace(generation_and_user):
     generation, user = generation_and_user
     result = _run(generation, user, READ_EMAIL, '{"step": "finish"}')
 
-    graded = grade(CASE, result.gathered, result.stop_reason)
+    graded = grade(CASE, result)
     assert graded.gathered == result.gathered
-    assert graded.hops == len(result.gathered)
+    # THE REAL HOP COUNT, not len(gathered). One hop can append several
+    # entries -- get_object appends one per field -- so the length was
+    # always an approximation, and hops_used is what the loop measured.
+    assert graded.hops == result.hops_used
 
 
 # ---------------------------------------------------------------- aggregate
+
+
+def _result(gathered, stop_reason, fabricated=()):
+    """The real AgentLoopResult, not a stand-in.
+
+    The grader takes the whole object now, so building one here tests
+    it against the shape the loop actually returns rather than two
+    fields chosen by hand.
+    """
+    from core.agent.agentic_loop import AgentLoopResult
+    return AgentLoopResult(gathered=list(gathered), stop_reason=stop_reason,
+                           fabricated_finishes=fabricated)
 
 
 def _trial(case_name, passed):
@@ -297,3 +313,70 @@ def test_the_summary_line_never_quotes_a_passk_that_could_not_vary():
     assert "cannot distinguish" in degenerate
     assert "pass^3" not in degenerate
     assert "pass^3" in varied
+
+
+# ------------------------------------------- the parse-failure rate beside it
+
+
+def test_unusable_replies_are_carried_into_the_report():
+    """ONE RUN, BOTH NUMBERS.
+
+    A published CPU tool-calling benchmark found that adding a
+    fallback parser for non-standard output moved one model from 0.670
+    to 0.960 and moved another DOWN from 0.880 to 0.780 -- a bigger
+    swing than any model swap in its table. next_step() fails closed
+    on every parse failure, so a low pass^k beside a high rate here is
+    a PARSING problem wearing a model problem's clothes, and swapping
+    the model would be the wrong fix.
+    """
+    from core.agent.evaluation import aggregate
+
+    reports = aggregate([
+        TrialResult(case_name="c", passed=True,
+                    fabricated_finishes=("malformed_step",)),
+        TrialResult(case_name="c", passed=True,
+                    fabricated_finishes=("malformed_step", "unparseable_reply")),
+        TrialResult(case_name="c", passed=False),
+    ])
+
+    assert reports[0].parse_failures == 3
+    assert reports[0].parse_failures_per_trial == pytest.approx(1.0)
+
+
+def test_a_clean_run_reports_no_parse_failures():
+    """The denominator has to be trustworthy: a case with none must not
+    report a rate."""
+    from core.agent.evaluation import aggregate
+
+    reports = aggregate([TrialResult(case_name="c", passed=True)])
+
+    assert reports[0].parse_failures == 0
+    assert reports[0].parse_failures_per_trial == 0.0
+
+
+def test_the_summary_mentions_unusable_replies_only_when_there_were_some():
+    """A line reading "unusable replies=0.00/trial" on every healthy
+    case is noise that teaches people to skim the line."""
+    from core.agent.evaluation import CaseReport
+
+    clean = CaseReport("c", trials=4, successes=3).summary()
+    noisy = CaseReport("c", trials=4, successes=3, parse_failures=2).summary()
+
+    assert "unusable" not in clean
+    assert "unusable replies=0.50/trial" in noisy
+
+
+def test_grade_carries_the_fabricated_finishes_through():
+    """The grader takes the whole result precisely so a field added to
+    the loop later is not invisible here -- which is what happened to
+    fabricated_finishes before this."""
+    gathered = [{
+        "step": "get_field", "object_type": "Customer",
+        "object_id": "cust_001", "field_name": "email",
+        "result": "ada.okafor@example.com",
+    }]
+
+    graded = grade(CASE, _result(gathered, StopReason.FINISHED,
+                                 fabricated=("malformed_step",)))
+
+    assert graded.fabricated_finishes == ("malformed_step",)

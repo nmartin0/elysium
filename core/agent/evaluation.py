@@ -65,7 +65,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - import only for the annotation
+    from core.agent.agentic_loop import AgentLoopResult
 
 
 @dataclass(frozen=True)
@@ -107,6 +110,10 @@ class TrialResult:
     # The gathered payload, kept so a failure can be read rather than
     # only counted. A score with no trace is a number nobody can act on.
     gathered: list[dict] = field(default_factory=list)
+    # Every reply the model could not make usable during this trial, by
+    # cause. Carried here so ONE evaluation run yields both numbers --
+    # see CaseReport.parse_failures for why the second one matters.
+    fabricated_finishes: tuple[str, ...] = ()
 
 
 def _rendered(value: Any) -> str:
@@ -122,12 +129,21 @@ def _rendered(value: Any) -> str:
     return str(render_value(value))
 
 
-def grade(case: EvalCase, gathered: list[dict], stop_reason: str) -> TrialResult:
+def grade(case: EvalCase, result: AgentLoopResult) -> TrialResult:
     """One trial, graded on what was read.
+
+    TAKES THE WHOLE RESULT, not `gathered` and `stop_reason`
+    separately. With the pieces, this function had to be edited every
+    time the loop's result gained a field -- and `fabricated_finishes`
+    is exactly such a field, added after this module was written and
+    invisible here until now. Taking the object means the grader
+    cannot silently fall behind what the loop reports.
 
     Fails CLOSED on an unknown stop reason: a run that ended in a way
     this function does not recognise is not evidence of success.
     """
+    gathered = result.gathered
+    stop_reason = result.stop_reason
     from core.agent.agentic_loop import StopReason
 
     read: set[tuple[str, str, str, str]] = set()
@@ -157,8 +173,9 @@ def grade(case: EvalCase, gathered: list[dict], stop_reason: str) -> TrialResult
         passed=passed,
         missing=missing,
         stop_reason=stop_reason,
-        hops=len(gathered),
+        hops=result.hops_used or len(gathered),
         gathered=list(gathered),
+        fabricated_finishes=result.fabricated_finishes,
     )
 
 
@@ -222,6 +239,8 @@ class CaseReport:
     case_name: str
     trials: int
     successes: int
+    # Unusable model replies across every trial of this case.
+    parse_failures: int = 0
 
     @property
     def mean_at_1(self) -> float:
@@ -254,8 +273,26 @@ class CaseReport:
         else:
             verdict = (f"pass^{DEFAULT_K}={self.pass_hat(DEFAULT_K):.1%} "
                        f"gap={self.consistency_gap(DEFAULT_K):+.1%}")
+        unusable = (f"  unusable replies={self.parse_failures_per_trial:.2f}/trial"
+                    if self.parse_failures else "")
         return (f"{self.case_name:<28} {self.successes}/{self.trials} "
-                f"mean@1={self.mean_at_1:.1%}  {verdict}")
+                f"mean@1={self.mean_at_1:.1%}  {verdict}{unusable}")
+
+    @property
+    def parse_failures_per_trial(self) -> float:
+        """How often the model produced something next_step() could not
+        use, per trial.
+
+        REPORTED BESIDE pass^k BECAUSE IT MAY MATTER MORE. A published
+        CPU tool-calling benchmark found that adding a fallback parser
+        for non-standard output moved one model from 0.670 to 0.960 and
+        moved another DOWN from 0.880 to 0.780 -- a bigger swing than
+        any model swap in its table. next_step() fails closed on every
+        parse failure, so a low pass^k with a high rate here is a
+        PARSING problem wearing a model problem's clothes, and swapping
+        the model would be the wrong fix.
+        """
+        return self.parse_failures / self.trials if self.trials else 0.0
 
     def is_degenerate(self) -> bool:
         """Every trial agreed, so pass^k cannot distinguish anything.
@@ -282,11 +319,13 @@ def aggregate(results: list[TrialResult]) -> list[CaseReport]:
     counts: dict[str, list[int]] = {}
     for result in results:
         if result.case_name not in counts:
-            counts[result.case_name] = [0, 0]
+            counts[result.case_name] = [0, 0, 0]
             order.append(result.case_name)
         counts[result.case_name][0] += 1
         counts[result.case_name][1] += int(result.passed)
+        counts[result.case_name][2] += len(result.fabricated_finishes)
     return [
-        CaseReport(case_name=name, trials=counts[name][0], successes=counts[name][1])
+        CaseReport(case_name=name, trials=counts[name][0],
+                   successes=counts[name][1], parse_failures=counts[name][2])
         for name in order
     ]

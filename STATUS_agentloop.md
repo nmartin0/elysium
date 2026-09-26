@@ -2106,3 +2106,81 @@ reach it. Lint passes with 8 contracts kept.
 `OTEL_EXPORTER_OTLP_ENDPOINT` at a collector. Nothing in the code
 changes. Whether that dependency belongs in `requirements.txt` is
 still LIBRARY_AUDIT's call, and this deliberately does not pre-empt it.
+
+---
+
+## AL-8 completed: one evaluation run now yields BOTH numbers
+
+I flagged this myself when `fabricated_finishes` landed -- the
+harness should record it per trial -- and it was the last unblocked
+piece on the list.
+
+**`grade()` NOW TAKES THE WHOLE `AgentLoopResult`**, not `gathered`
+and `stop_reason` separately. With the pieces it had to be edited
+every time the loop's result gained a field, and `fabricated_finishes`
+is exactly such a field: added after the harness was written and
+invisible to it until now. Taking the object means the grader cannot
+silently fall behind what the loop reports.
+
+`CaseReport.parse_failures_per_trial` sits beside pass^k, and the
+summary line mentions it only when there were any -- a line reading
+"unusable replies=0.00/trial" on every healthy case is noise that
+teaches people to skim.
+
+**WHY IT BELONGS BESIDE THE RELIABILITY FIGURE.** A published CPU
+tool-calling benchmark found that adding a fallback parser for
+non-standard output moved one model from 0.670 to 0.960 and moved
+another DOWN from 0.880 to 0.780 -- a bigger swing than any model swap
+in its table. `next_step()` fails closed on every parse failure, so a
+low pass^k beside a high rate here is a PARSING problem wearing a
+model problem's clothes, and swapping the model would be the wrong
+fix. That is the D1 decision, and now one run informs it.
+
+### A correction the change forced
+
+`TrialResult.hops` was `len(gathered)`. That was always an
+approximation -- one hop can append several entries, `get_object`
+appends one per field -- and a test was asserting the approximation.
+It now uses `result.hops_used`, which is what the loop measured.
+
+### Controls, four
+
+    drop fabricated_finishes from grade()   1 of 21 fails
+    never sum parse failures in aggregate   1 fails
+    always print the unusable line          1 fails
+    hops back to len(gathered)              1 fails
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  2988 passed, 8 skipped  (2984 before; +4 here)
+
+---
+
+## THE UNBLOCKED LIST IS EMPTY
+
+Every item I can both build AND switch on is done. What is left:
+
+**Four merged features waiting on wiring you own** -- AL-5 (R1), LB-1
+(config), AL-12 (R4), AL-7 (the dependency).
+
+**LB-2 is yours by its own terms.** Its entry says so: "recorded as a
+FEATURE whose priority is the owner's: propose before building." The
+filter half is buildable in my area -- `mediator.search_object()`
+already takes `conditions: list[FieldFilter]`, so the six operators
+`core/filters.py` implements are supported downstream and only the
+agent is restricted. The ordering and limit half is NOT mine:
+`search_object()` has no ordering or limit at all, so that needs
+`core/ontology/`.
+
+**AL-4 needs shape agreement**, and would subsume AL-9 and LB-7.
+
+**LB-9** I recommended as rule-based routing only; no ruling yet.
+
+**The VM items** -- AR-1's engine half, AR-3, AR-6 through AR-10, D1
+-- need hardware or owner decisions.
+
+The single highest-value action remains the VM run: AL-8, pass^k,
+`fabricated_finishes` and the parse-failure rate are all in place, so
+one session produces the reliability figure AND the number that says
+whether D1 is even the right lever.
