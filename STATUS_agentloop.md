@@ -2838,3 +2838,117 @@ made that the default.
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  3055 passed, 8 skipped  (3052 before; +3 here)
+
+---
+
+# THE VM RUN. AR-1 is complete, and it corrects me.
+
+One case, one trial, on the real model. **11.5 minutes.**
+
+## AR-1's engine half: CONFIRMED
+
+    call   chars   seconds   without reuse   skipped
+       1    6535    520.89         520.9        --
+       2    6683    116.65         532.7      78.1%
+       3    6817     50.58         543.4      90.7%
+
+**The prompts get LONGER and the calls get TEN TIMES FASTER.** Call 3
+sends 4% more than call 1 and takes 90% less time. There is no reading
+of that except that llama.cpp under Ollama is reusing the shared
+prefix, exactly as the structural half predicted at 97.4%-97.7%.
+
+**AR-1 is now closed.** The structure was confirmed in patch 001; the
+engine is confirmed here. The 90.7% skipped sits close to the ~97%
+prefix measured structurally, which is the consistency you would want.
+
+And it was measured by TIME, as the research said it had to be.
+`prompt_eval_count` would have reported total context on every call
+and shown nothing.
+
+## IT ALSO MEANS MY AL-4 COST ARGUMENT WAS OVERSTATED
+
+I justified AL-4 partly on characters: the system prompt re-sent nine
+times is 58,481 of a query's 64,527 characters, so sending it twice
+saves ~70%.
+
+**That arithmetic assumed repeated characters cost what new ones
+cost. They do not.** They are the cached prefix, and they are ~90%
+free. The 70% was a character saving being quoted as a time saving.
+
+What a later hop actually costs is DECODE -- generating the step JSON
+-- and that is roughly 51 seconds whatever the prompt length. So
+AL-4's real saving is fewer DECODES, not fewer characters:
+
+    a 9-hop query, extrapolated   ~1190s   (19.8 min)
+    of which the FIRST call is     521s    (44%)
+    the other 8 hops               ~669s   (56%)
+
+Plan-then-execute replaces those 8 hops with one plan decode plus one
+synthesis. **That is still a large saving -- but it is ~half, not 70%,
+and it comes from somewhere else than I said.** I will correct the
+proposal rather than let the number stand.
+
+## AND IT REORDERS THE LIST
+
+**The first call is 44% of the query and pays for the whole prompt at
+full price.** Nothing is cached yet. Every character of the system
+prompt is read at ~5.4 tokens/s.
+
+LB-6 measured that prompt as **87.5% fixed procedure** -- 803
+characters of schema inside 6,432. So the single highest-value
+optimisation available is not AL-4 and not AR-5: it is **making the
+system prompt shorter**, because the first call cannot cache and every
+query pays it once.
+
+That reframes several items:
+
+    LB-6 / AL-3     no longer "prompt hygiene". It is 44% of every
+                    query's wall clock, paid at full rate.
+    AL-4            still worth doing, on security first and cost
+                    second, with the cost number halved.
+    AR-2            its value is larger than I said. Breaking the
+                    prefix does not cost 10% -- it costs everything
+                    AFTER the break, at full price.
+    LB-2 operators  +504 characters on the system prompt is +504 on
+                    the uncached first call of every query. The
+                    "wait for the VM run" call was right.
+
+## The other numbers
+
+**pass^k: degenerate, as predicted.** One trial, so trivially so --
+but the bench said "all trials agreed, pass^k cannot distinguish"
+rather than quoting a meaningless 100%, which is the behaviour I
+wanted from it.
+
+**Parse failures: 0 over 3 calls.** Weak evidence from one trial, but
+phi4-mini produced three usable replies in a row on this case. Nothing
+here says the parser is the problem, and therefore nothing yet argues
+for D1 on those grounds.
+
+**hops=3, calls=3** for "What is Ada Okafor's email address?" --
+search, read, finish. It got the right answer.
+
+## A BUG FOR BACKEND, found on the way
+
+    gold.Customer published, but its history was not recorded:
+    'NoneType' object is not iterable
+    gold.Transaction published, but its history was not recorded: ...
+
+**Gold published; its history did not.** That is `core/mirror`, not
+mine, and it is worth their attention given G4 is about readers
+pinning `current_snapshot()` rather than the published tag -- a
+publish whose history is missing is exactly the state where that
+distinction stops being recoverable.
+
+Also: `deployment/var/lib/mirror is 0o775`, the permissions warning
+firing as designed.
+
+## What I would run next, if you have the time
+
+    python3 -m scripts.llm_bench            # 4 cases, 1 trial: ~45 min
+
+That gives mean@1 across a harder case (two_hops) and a bigger
+parse-failure sample. **pass^k needs a varying case to say anything**,
+and at temperature 0 there may not be one -- in which case the honest
+finding is "this loop is deterministic", which is worth knowing and
+costs one run to establish.
