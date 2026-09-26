@@ -252,8 +252,37 @@ class PendingWriteStore:
 
         A REJECTION IS RECORDED, NOT ACTED ON. It blocks invocation
         because the request is not fully approved -- the same mechanism
-        as a task nobody has looked at yet -- and keeps the record of
-        who said no.
+        as a task nobody has looked at yet.
+
+        WHAT THAT RECORD IS AND IS NOT, corrected. This used to say it
+        "keeps the record of who said no". It does not: these rows are
+        deleted with the write, both on expiry and when `reserved()`
+        consumes it. The decisions table is the STATE OF AN OPEN
+        REQUEST, not the history of one. The durable record of who said
+        no is the audit log.
+
+        A REJECTION IS NOT OVERWRITTEN BY SOMEBODY ELSE'S APPROVAL.
+        `INSERT OR REPLACE` is keyed on (write_id, task_index), so a
+        second reviewer approving a task a first had rejected replaced
+        the row and the refusal vanished -- reviewer-shopping, with no
+        trace that anyone objected. Measured:
+
+            A rejects  -> fully_approved=False, record: approver_a
+            B approves -> fully_approved=True,  record: approver_b
+
+        NOT REACHABLE THROUGH THE API TODAY, and that is said plainly
+        rather than dressed up: the route consumes the write on any
+        rejection, so no rejected write survives for a second reviewer
+        to find. This closes it at the store, because the store is what
+        a future partial-rejection feature would call -- Foundry scopes
+        a decision to "all tasks in the request that you are eligible
+        to review", which is exactly the shape that would leave a
+        rejected task sitting beside undecided ones.
+
+        THE SAME REVIEWER MAY STILL CHANGE THEIR MIND. What is refused
+        is one person overturning another's refusal, which is the
+        four-eyes property; a reviewer correcting their own click is
+        not.
         """
         with self._lock, self._connection() as conn:
             self._expire_stale(conn)
@@ -265,6 +294,18 @@ class PendingWriteStore:
                 raise IndexError(
                     f"write {write_id} has {len(pending.sub_writes)} task(s); "
                     f"no task {task_index}"
+                )
+            existing = self._decisions(conn, write_id).get(task_index)
+            if (
+                existing is not None
+                and not existing.approved
+                and approved
+                and existing.approver_user_id != approver_user_id
+            ):
+                raise PermissionError(
+                    f"task {task_index} of write {write_id} was rejected by "
+                    f"{existing.approver_user_id!r}; another reviewer cannot approve "
+                    f"over that refusal"
                 )
             conn.execute(
                 "INSERT OR REPLACE INTO pending_write_decisions "
