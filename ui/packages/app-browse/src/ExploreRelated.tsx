@@ -20,10 +20,10 @@
  */
 
 import { Tag } from '@blueprintjs/core'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { getErrorMessage, getLinkCounts, type LinkCount } from '@elysium/shell-api/api'
+import { getErrorMessage, getLinkCounts, handleIfSessionExpired, type LinkCount } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatFieldName } from '@elysium/shell-api/format'
@@ -59,34 +59,79 @@ function reverseLinkField(schema: VisibleSchema | null, target: string, objectTy
 }
 
 export default function ExploreRelated({ objectType, objectId, visibleSchema, onSessionExpired }: ExploreRelatedProps) {
-  const [links, setLinks] = useState<Record<string, LinkCount> | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  /**
+   * The counts, TAGGED WITH THE OBJECT THEY DESCRIBE.
+   *
+   * This used to be two plain pieces of state that the effect reset to
+   * null synchronously before fetching -- react/set-state-in-effect,
+   * and the reason the rule exists: setting state during an effect
+   * starts a second render, so the panel rendered once with the
+   * PREVIOUS object's counts and again empty.
+   *
+   * Which object a count describes is a fact about the count, so
+   * keeping them together lets the right value be DERIVED below. Counts
+   * for an object we are no longer looking at cannot match, so they are
+   * never shown -- where before there was a frame in which they were.
+   * A failure is tagged the same way, for the same reason: one
+   * object's error is not the next one's.
+   */
+  const [loaded, setLoaded] = useState<{
+    type: string
+    id: string
+    links?: Record<string, LinkCount>
+    error?: string
+  } | null>(null)
+
+  // Derived during render. Anything that does not match the object on
+  // screen is not for this screen, which is also what "still counting"
+  // means here.
+  const current = loaded !== null && loaded.type === objectType && loaded.id === objectId ? loaded : null
+  const links = current?.links ?? null
+  const error = current?.error ?? null
+
+  // The session callback through a ref, so this effect does not
+  // restart every time the shell re-renders -- App.tsx declares
+  // handleSessionExpired as a plain function inside the component, so
+  // it is a new identity each time. Patch 12 fixed seven of these; its
+  // guard matched only the callback ALONE in a dependency array, so
+  // these two, where it sits beside other dependencies, were missed.
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
 
   useEffect(() => {
     let stale = false
-    setLinks(null)
-    setError(null)
 
     getLinkCounts(objectType, objectId)
       .then((result) => {
-        if (!stale) setLinks(result)
+        if (!stale) setLoaded({ type: objectType, id: objectId, links: result })
       })
       .catch((caught) => {
         if (stale) return
-        if (getErrorMessage(caught).includes('401')) {
-          onSessionExpired()
-          return
-        }
-        setError(getErrorMessage(caught))
+        // Checked by STATUS, not by searching the message for "401".
+        //
+        // The string test could never fire for the case it was written
+        // for: api/auth_dependency.py answers an expired session with
+        // detail "Invalid or expired session", a sentence with no
+        // digits in it, and api.ts puts that detail in the message. It
+        // was also wrong the other way -- any message that happened to
+        // contain "401", an id or a count, logged the person out.
+        //
+        // handleIfSessionExpired reads err.status on a real ApiError
+        // instance, which is the thing actually being asked about.
+        if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
+        setLoaded({ type: objectType, id: objectId, error: getErrorMessage(caught) })
       })
 
-    // Guards against a slow response for the PREVIOUS object landing
-    // after a faster one for the object now on screen -- which would
-    // show one record's links under another's name.
+    // STILL NEEDED after tagging, which is not obvious. Tagging stops
+    // a stale result being DISPLAYED, but a late response for a
+    // previous object would still overwrite a NEWER one already
+    // stored -- and that newer one does match, so it would vanish.
     return () => {
       stale = true
     }
-  }, [objectType, objectId, onSessionExpired])
+  }, [objectType, objectId])
 
   if (error !== null) return <ErrorState>{error}</ErrorState>
   if (links === null) return <LoadingState inline label="Counting related records…" />

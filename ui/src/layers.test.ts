@@ -100,3 +100,98 @@ describe('cascade layers', () => {
     }
   })
 })
+
+describe('nothing we write escapes the cascade order', () => {
+  /**
+   * 09-S1-02, closed the other way round -- MEASURED, not assumed.
+   *
+   * The audit recorded the layer architecture as declared and never
+   * used: six of seven layers empty, every rule unlayered, and a
+   * choice between migrating in one pass or deleting the declaration.
+   * Its own follow-up already doubted that, which is why the
+   * front-end brief says to re-measure before acting.
+   *
+   * Re-measured against the BUILT bundle: `npm run build`, then a walk
+   * over every emitted stylesheet counting top-level rules inside and
+   * outside a layer block. ZERO unlayered rules. 2,954 in vendor, 205
+   * in components, 2 in tokens. So the half-migrated cascade the
+   * finding feared does not exist, and neither prescribed action
+   * applies -- there is nothing to migrate, and deleting a
+   * declaration that every rule already obeys would create the exact
+   * inversion the file above describes.
+   *
+   * FOUR LAYERS ARE EMPTY AND THAT IS NOT A DEFECT. `overrides` is
+   * documented in layers.css as one that SHOULD stay empty;
+   * `utilities` has no helper yet; `base` and `layout` hold rules that
+   * currently sit fine in `components`. Inventing rules to fill them
+   * is the speculative code PRINCIPLES 7 forbids, and splitting
+   * existing rules across layers changes the cascade in a way jsdom
+   * cannot see.
+   *
+   * WHAT WAS ACTUALLY MISSING was an assertion. layers.css says
+   * plainly that "nothing in this repository can catch that", of an
+   * unlayered rule silently beating every layer. That was true. This
+   * is the catch, and it is the only part of 09-S1-02 worth building:
+   * it pins the property the finding cared about, without the
+   * migration the measurement says is unnecessary.
+   *
+   * SOURCE, NOT BUILD, for the same reason as the tests above -- a
+   * unit test cannot run vite. That is a real limit: this proves every
+   * rule we AUTHOR is layered, not that the bundler kept it that way.
+   * The build was measured by hand at the commit that added this.
+   */
+
+  /** Rules in a stylesheet that sit outside every `@layer` block. */
+  function unlayeredRules(css: string): string[] {
+    const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
+    const found: string[] = []
+    let depth = 0
+    let layerDepth: number | null = null
+    let start = 0
+
+    for (let i = 0; i < withoutComments.length; i += 1) {
+      const char = withoutComments[i]
+      if (char === '{') {
+        const prelude = withoutComments.slice(start, i).trim().replace(/\s+/g, ' ')
+        if (/^@layer\b/.test(prelude) && layerDepth === null) {
+          layerDepth = depth
+        } else if (layerDepth === null && !prelude.startsWith('@')) {
+          // A real rule, at no enclosing layer. An at-rule such as
+          // @media is not itself a rule; its CONTENTS are checked by
+          // the same walk once we descend into them.
+          found.push(prelude.slice(0, 60))
+        }
+        depth += 1
+        start = i + 1
+      } else if (char === '}') {
+        depth -= 1
+        if (layerDepth !== null && depth === layerDepth) layerDepth = null
+        start = i + 1
+      } else if (char === ';') {
+        start = i + 1
+      }
+    }
+    return found
+  }
+
+  it('finds rules at all, so an empty parse cannot pass', () => {
+    // THE CONTROL INSIDE THE TEST. Every assertion below is an
+    // absence; a parser that silently matched nothing would report
+    // perfect compliance. This proves the walk sees real rules by
+    // checking it finds them when the layer wrapper is removed.
+    const stripped = read('packages/shell-api/src/index.css').replace(/@layer components \{/, '{')
+
+    expect(unlayeredRules(stripped).length).toBeGreaterThan(50)
+  })
+
+  it('puts every rule we author inside a layer', () => {
+    const offenders: string[] = []
+    for (const sheet of allStylesheets()) {
+      // layers.css itself holds only the declaration and the import.
+      if (sheet === join('src', 'layers.css')) continue
+      for (const rule of unlayeredRules(read(sheet))) offenders.push(`${sheet}: ${rule}`)
+    }
+
+    expect(offenders).toEqual([])
+  })
+})

@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 
 const getSilos = vi.fn()
+const getDataFreshness = vi.fn()
 
 vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
-  return { ...actual, getSilos: () => getSilos() }
+  return { ...actual, getSilos: () => getSilos(), getDataFreshness: () => getDataFreshness() }
 })
 
 const { default: Silos } = await import('./Silos')
@@ -38,6 +39,11 @@ const HEALTHY = [
 beforeEach(() => {
   vi.clearAllMocks()
   getSilos.mockResolvedValue(HEALTHY)
+  getDataFreshness.mockResolvedValue({
+    source: 'gold',
+    last_synced_at: null,
+    published_at: { Customer: new Date(Date.now() - 60 * 60_000).toISOString(), Ticket: new Date().toISOString() },
+  })
 })
 
 describe('Silos', () => {
@@ -59,10 +65,17 @@ describe('Silos', () => {
 
   it('shows which object types each silo backs', async () => {
     // The operational question when one is down: what stops working.
+    //
+    // SCOPED TO THE SILO TABLE. A bare getByText('Customer') matched
+    // once when this was the only table on the panel; the publication
+    // table added beside it names the same types, for a different
+    // reason. Asking the page was always ambiguous -- it just had only
+    // one possible answer.
     render(<Silos onSessionExpired={() => {}} />)
 
-    expect(await screen.findByText('Customer')).toBeInTheDocument()
-    expect(screen.getByText('Ticket')).toBeInTheDocument()
+    const table = await screen.findByRole('table', { name: 'Silos and the object types they back' })
+    expect(within(table).getByText('Customer')).toBeInTheDocument()
+    expect(within(table).getByText('Ticket')).toBeInTheDocument()
   })
 
   it('reports a failure rather than an empty screen', async () => {
@@ -161,5 +174,56 @@ describe('Silos -- the join key', () => {
       expect(cell?.textContent).not.toMatch(/customer_ididentifier/)
       expect(cell?.textContent).toMatch(/customer_id identifier/)
     })
+  })
+})
+
+describe('what has been published, beside what it came from', () => {
+  /**
+   * GOLD-3d. This panel is about SOURCES and stays that way, but a
+   * silo answering tells you nothing about whether anything was
+   * published from it -- and published gold is the only thing Elysium
+   * reads. A silo can be green while every read of its types fails.
+   */
+  it('lists each backed type and when it was published', async () => {
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByRole('heading', { name: /published to gold/i })).toBeInTheDocument()
+
+    const table = screen.getByRole('table', { name: 'Object types and when each was published' })
+    expect(within(table).getByText('Customer')).toBeInTheDocument()
+    expect(within(table).getByText('1 hour ago')).toBeInTheDocument()
+  })
+
+  it('says which types have NEVER been published, and what that costs', async () => {
+    // THE HALF THAT MATTERS. A type backed by a silo but absent from
+    // published_at is one whose reads FAIL. A table listing only what
+    // IS published would be a page of reassuring green that omits the
+    // failure.
+    getDataFreshness.mockResolvedValue({
+      source: 'gold',
+      last_synced_at: null,
+      published_at: { Customer: new Date().toISOString() },
+    })
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/never been published/i)).toBeInTheDocument()
+    expect(screen.getByText(/Reads of Ticket will fail/)).toBeInTheDocument()
+  })
+
+  it('warns for every unpublished type, not just the first', async () => {
+    getDataFreshness.mockResolvedValue({ source: 'mirror', last_synced_at: null })
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/Reads of Customer, Ticket will fail/)).toBeInTheDocument()
+  })
+
+  it('says nothing about publication when freshness cannot be read', async () => {
+    // The two fetches are INDEPENDENT: a freshness failure must not
+    // blank the silo table, which is what this panel is for.
+    getDataFreshness.mockRejectedValue(new Error('nope'))
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('primary_sql')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /published to gold/i })).not.toBeInTheDocument()
   })
 })

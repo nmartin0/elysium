@@ -105,6 +105,81 @@ describe('token layers', () => {
     expect(ours.filter((token) => !defined.has(token))).toEqual([])
   })
 
+  it('references every token it defines', () => {
+    // THE CONVERSE (09-S2-02), and it belongs here rather than in a
+    // file of its own: the test above already computes both sets, and
+    // two halves of one property kept apart is the drift both exist
+    // to prevent.
+    //
+    // A token defined and never read is not harmless. tokens.css is
+    // read as the vocabulary -- someone scanning it for "the token
+    // for a control border" finds --border-control and uses it,
+    // believing it is the established answer, when nothing has ever
+    // rendered with it.
+    //
+    // THREE WERE UNREAD, and the third is why this pairs with the
+    // dead-rule check in theme.test.ts: --text-on-danger and
+    // --fill-danger existed only for `button.danger`, a rule whose
+    // markup had already gone. A dead rule keeps its tokens looking
+    // alive, so neither guard finds that pair alone.
+    const defined = new Set([...tokens.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map((match) => match[1]))
+    // EVERY PLACE A TOKEN CAN BE READ, and tokens.css is one of them:
+    // the semantic layer consumes the primitives, so leaving it out
+    // would report every --grey-* and --blue-* as unread. Found by
+    // doing exactly that.
+    const referenced = new Set(
+      [tokens, ...stylesheets, read('src/layers.css')].flatMap((css) =>
+        [...css.matchAll(/var\(\s*(--[a-z0-9-]+)/g)]
+          .map((match) => match[1])
+          .filter((token): token is string => token !== undefined),
+      ),
+    )
+    // And by name from a module: a few are read or set from JS rather
+    // than through var().
+    const byName = new Set(
+      readAll().flatMap(([, source]) =>
+        [...source.matchAll(/['"`](--[a-z0-9-]+)['"`]/g)]
+          .map((match) => match[1])
+          .filter((token): token is string => token !== undefined),
+      ),
+    )
+
+    // AND IT MUST FIND THEM: an empty `defined` would pass vacuously.
+    expect(defined.size).toBeGreaterThan(20)
+    expect(referenced.size).toBeGreaterThan(20)
+
+    // PRIMITIVES ARE EXEMPT, and the reason is the whole judgement in
+    // this test. Layer 1 is a RAMP -- a palette declared once, named
+    // by what the colours ARE. Layer 2 is role names, which must have
+    // a consumer or they are vocabulary with no meaning.
+    //
+    // FOUND BY DELETING THE THREE UNREAD SEMANTIC TOKENS: it orphaned
+    // --red-500 and --grey-300 underneath them. Deleting those in turn
+    // would have taken the ONLY red out of the palette -- and
+    // --red-500 is #b3261e, the exact literal index.css carried before
+    // the token system absorbed it. The next person needing a
+    // destructive colour would have had no red to reach for and would
+    // have written the hex, which is the regression the palette exists
+    // to prevent and which 'keeps raw colours out of the stylesheets
+    // entirely' above would then have caught one commit too late.
+    //
+    // So an unread PRIMITIVE is a palette entry nobody has needed yet.
+    // An unread SEMANTIC token is rot. Only the second is an error.
+    //
+    // NOTED, NOT FIXED: --grey-300 is now the one gap in an otherwise
+    // contiguous ramp, and it is also the only grey with no blue cast
+    // (#999999 against #abb3bf and #5f6b7c either side), which
+    // DEV_UI 8.1 says the darks want. That looks like a mistake in the
+    // ramp rather than an unused step, but it is a palette decision
+    // and not this commit's business.
+    const unread = [...defined].filter(
+      (token): token is string =>
+        token !== undefined && !PRIMITIVE.test(token) && !referenced.has(token) && !byName.has(token),
+    )
+
+    expect(unread).toEqual([])
+  })
+
   it('overrides only semantic tokens in the dark theme, never primitives', () => {
     // A dark theme redefining --grey-700 would change what the NAME
     // means rather than which grey a surface uses, and every other

@@ -27,7 +27,7 @@ import { Callout, HTMLTable } from '@blueprintjs/core'
 import { getErrorMessage, getMetrics, handleIfSessionExpired } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface SlowRoute {
   route: string
@@ -62,12 +62,23 @@ export default function MetricsPanel({ onSessionExpired }: MetricsPanelProps) {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // The session callback through a ref, so this effect has NO
+  // dependencies. App.tsx declares handleSessionExpired as a plain
+  // function inside the component, so it is a new identity on every
+  // render -- and this effect listed it, so every parent render tore
+  // the effect down and rebuilt it. The linter never flagged these
+  // two; the structural test in useLatest.test.tsx did.
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
+
   useEffect(() => {
     void (getMetrics() as Promise<Metrics>).then(setMetrics).catch((err: unknown) => {
-      if (handleIfSessionExpired(err, onSessionExpired)) return
+      if (handleIfSessionExpired(err, latestSessionExpired.current)) return
       setError(getErrorMessage(err))
     })
-  }, [onSessionExpired])
+  }, [])
 
   if (error !== null) return <ErrorState>{error}</ErrorState>
   if (metrics === null) return <LoadingState />

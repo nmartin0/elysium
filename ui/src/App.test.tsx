@@ -135,14 +135,68 @@ describe('App -- the three-state boot sequence (checking / loggedOut / loggedIn)
     // itself does the right thing.
     mockedGetMyVisibleSchema.mockResolvedValue({})
     render(<App />)
-    await waitFor(() => expect(screen.getByText('query screen')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'testuser' }))
+    // WAIT FOR THE THING THIS TEST CLICKS, not for something else that
+    // happens to arrive first.
+    //
+    // This used to wait for "query screen" and then immediately click
+    // the user menu. Those are fed by SEPARATE fetches -- App makes
+    // three independent useFetchOnLogin calls, for visibleSchema,
+    // visibleApps and currentUser -- and only the first gates the
+    // screen. So the username could still be absent when the click
+    // happened, and the trigger read "Account" instead.
+    //
+    // It passed everywhere it was run, until a slower machine ran the
+    // full suite and it did not. Reproduced deliberately by resolving
+    // getCurrentUser 120ms late: fails the same way on this commit AND
+    // on the one before the change that surfaced it, which is what
+    // identifies it as a racy test rather than a regression.
+    const trigger = await screen.findByRole('button', { name: 'testuser' })
+
+    fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
 
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
     expect(mockedLogout).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('query screen')).not.toBeInTheDocument()
+  })
+})
+
+describe('App -- the screen and the username arrive separately', () => {
+  it('waits for the user menu even when the username is slow', async () => {
+    /**
+     * THE RACE, MADE PERMANENT rather than left to a fast machine.
+     *
+     * App makes three independent useFetchOnLogin calls --
+     * visibleSchema, visibleApps and currentUser -- and only the first
+     * gates the screen. A test that waits for "query screen" and then
+     * reaches for the username is asserting on something it never
+     * waited for; the trigger reads "Account" until currentUser lands.
+     *
+     * It passed on every machine it was run on until a slower one ran
+     * the full suite. Reproduced by resolving getCurrentUser 120ms
+     * late, which failed identically on the commit BEFORE the change
+     * that surfaced it -- so: a racy test, not a regression.
+     *
+     * This keeps that delay, so the ordering is exercised on every run
+     * instead of depending on how loaded the machine is.
+     */
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    mockedGetCurrentUser.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' }), 120),
+        ),
+    )
+    render(<App />)
+
+    // The screen is up FIRST, with no username yet -- the state the
+    // old test clicked into.
+    await waitFor(() => expect(screen.getByText('query screen')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'testuser' })).not.toBeInTheDocument()
+
+    // And the username follows.
+    expect(await screen.findByRole('button', { name: 'testuser' })).toBeInTheDocument()
   })
 })
 

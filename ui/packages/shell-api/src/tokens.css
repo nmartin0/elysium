@@ -118,26 +118,23 @@
     /* Blueprint's own focus blue, so our controls ring the same as its. */
     --accent-focus: var(--blue-400);
 
-    /* Danger, and the text that sits on it. A FILL, not a surface --
-   * "surface" names a layer in the depth hierarchy (chrome, config,
-   * content, sunken), and theme.test.ts enforces that every one of
-   * those is redefined for dark mode. A destructive button's fill is
-   * not part of that hierarchy and must NOT move with the theme: this
-   * red is dark enough for white text either way, and a destructive
-   * control that changed colour with the theme would be the one thing
-   * users most need to recognise instantly.
+    /* NO DANGER FILL TOKEN, and no control-border token, deliberately
+   * -- 09-S2-02, and worth knowing before anyone adds them back.
    *
-   * Added because index.css carried #b3261e and #ffffff as literals,
-   * which made a destructive button the one element the token system
-   * did not describe. */
-    --fill-danger: var(--red-500);
-    --text-on-danger: var(--white);
-
-    /* A visible edge on a transparent control -- a secondary button has
-   * no fill of its own, so its border is what makes it a button.
-   * Distinct from --border-subtle, which separates surfaces and is
-   * deliberately near-invisible. */
-    --border-control: var(--grey-300);
+   * --fill-danger and --text-on-danger existed for a single rule,
+   * `button.danger`, whose markup had already gone: the one component
+   * that used it moved to Blueprint's own intent="danger", which is
+   * theme-aware where a fixed red was not. The tokens outlived the
+   * rule and the rule outlived its markup, so neither the dead-rule
+   * check nor the unread-token check could see the pair alone.
+   *
+   * --border-control described a secondary button's edge. Blueprint
+   * draws its own, and the standing rule is that Blueprint wins.
+   *
+   * A destructive control gets intent="danger" from the library. If
+   * something ever genuinely cannot, bring back a token AND its user
+   * in the same commit -- a token with no rule is a vocabulary word
+   * with no meaning, which is how these three got here. */
 
     /* --- Elevation --------------------------------------------------
    * ONE level. An earlier version defined raised, overlay and inset;
@@ -177,12 +174,6 @@
    * the 24px WCAG 2.2 target-size floor by a comfortable margin. */
     --sidebar-rail: 56px;
     --config-width: 288px;
-
-    /* Below this, three columns leave the content unusable -- 532px
-   * cannot hold a results table. DERIVED from that arithmetic rather
-   * than cited: two-column layouts commonly break at 992, and a third
-   * column needs more room. */
-    --three-column-min: 1100px;
 
     /* WCAG 2.2 SC 2.5.8 (AA) floor. 44px is the AAA figure and the
    * recommended aim for primary controls. */

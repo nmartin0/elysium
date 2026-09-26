@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { Button, TextArea } from '@blueprintjs/core'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
-import { createObjectNote, getErrorMessage, getObjectNotes } from '@elysium/shell-api/api'
+import { createObjectNote, getErrorMessage, getObjectNotes, handleIfSessionExpired } from '@elysium/shell-api/api'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import { formatTimestamp } from '@elysium/shell-api/format'
 
@@ -57,6 +57,13 @@ export default function ObjectNotes({
       setAdded([...added, created])
       setText('')
     } catch (err: unknown) {
+      // F-31. The READ above routes a 401 through useFetchOnce; this
+      // write did not, so an expired session printed "Invalid or
+      // expired session" beside the box and left the person there --
+      // still typing, already logged out, with nothing telling them
+      // to sign in again. Every other write path in app-browse
+      // already called this; this was the one that did not.
+      if (handleIfSessionExpired(err, onSessionExpired)) return
       setSaveError(getErrorMessage(err))
     } finally {
       setSaving(false)

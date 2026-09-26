@@ -84,3 +84,96 @@ describe('the trail', () => {
     expect(await screen.findByRole('navigation', { name: 'How you got here' })).toBeInTheDocument()
   })
 })
+
+describe('the trail when the origin changes', () => {
+  /**
+   * WHAT THE SYNCHRONOUS RESET WAS FOR, and what must survive removing
+   * it. The title belongs to a specific object; showing the PREVIOUS
+   * object's title above a new trail is a wrong answer presented
+   * confidently -- "Customer Ada Okafor > Transactions" when you are
+   * looking at Bo Nilsson's transactions.
+   */
+  it('never shows the previous object title after moving', async () => {
+    vi.mocked(getObjectDetail).mockResolvedValue({ fields: { name: 'Ada Okafor' } })
+    const { rerender } = render(
+      <MemoryRouter>
+        <LinkTrail origin={ORIGIN} targetType="Transaction" visibleSchema={SCHEMA} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('Customer Ada Okafor')).toBeInTheDocument()
+
+    // The next object's fetch never settles, so whatever is on screen
+    // is what a reader sees for as long as it takes.
+    vi.mocked(getObjectDetail).mockReturnValue(new Promise(() => {}))
+    rerender(
+      <MemoryRouter>
+        <LinkTrail
+          origin={{ type: 'Customer', id: 'cust_002', field: 'customer_id' }}
+          targetType="Transaction"
+          visibleSchema={SCHEMA}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText('Customer Ada Okafor')).not.toBeInTheDocument()
+    expect(screen.getByText('Customer cust_002')).toBeInTheDocument()
+  })
+
+  it('shows the new title once it arrives', async () => {
+    vi.mocked(getObjectDetail).mockResolvedValue({ fields: { name: 'Ada Okafor' } })
+    const { rerender } = render(
+      <MemoryRouter>
+        <LinkTrail origin={ORIGIN} targetType="Transaction" visibleSchema={SCHEMA} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('Customer Ada Okafor')).toBeInTheDocument()
+
+    vi.mocked(getObjectDetail).mockResolvedValue({ fields: { name: 'Bo Nilsson' } })
+    rerender(
+      <MemoryRouter>
+        <LinkTrail
+          origin={{ type: 'Customer', id: 'cust_002', field: 'customer_id' }}
+          targetType="Transaction"
+          visibleSchema={SCHEMA}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Customer Bo Nilsson')).toBeInTheDocument()
+  })
+
+  it('does not reuse a title across two types that share an id', async () => {
+    /**
+     * FOUND BY A CONTROL, not by design: dropping the type check from
+     * the derivation passed every other test here. Ids are scoped per
+     * type -- getObjectDetail takes both -- so "cust_001" can exist
+     * under two types, and matching on id alone would label one with
+     * the other's title.
+     *
+     * An untested guard is indistinguishable from a speculative one,
+     * which is why this exists rather than the check being deleted.
+     */
+    vi.mocked(getObjectDetail).mockResolvedValue({ fields: { name: 'Ada Okafor' } })
+    const { rerender } = render(
+      <MemoryRouter>
+        <LinkTrail origin={ORIGIN} targetType="Transaction" visibleSchema={SCHEMA} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('Customer Ada Okafor')).toBeInTheDocument()
+
+    // Same id, different type, and this fetch never settles.
+    vi.mocked(getObjectDetail).mockReturnValue(new Promise(() => {}))
+    rerender(
+      <MemoryRouter>
+        <LinkTrail
+          origin={{ type: 'Account', id: 'cust_001', field: 'customer_id' }}
+          targetType="Transaction"
+          visibleSchema={SCHEMA}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText(/Ada Okafor/)).not.toBeInTheDocument()
+    expect(screen.getByText('Account cust_001')).toBeInTheDocument()
+  })
+})

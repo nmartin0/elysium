@@ -25,7 +25,7 @@ import {
 } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface WatchListProps {
   onSessionExpired: () => void
@@ -54,17 +54,47 @@ export default function WatchList({ onSessionExpired }: WatchListProps) {
   const [triggers, setTriggers] = useState<Trigger[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  /**
+   * The session callback through a ref, so `load` has NO dependencies
+   * and the effect below runs once.
+   *
+   * MEASURED BEFORE THE FIX: three renders of the parent, three
+   * fetches. App.tsx declares handleSessionExpired as a plain function
+   * inside the component, so it is a new identity on every render;
+   * `load` was built with useCallback([onSessionExpired]) and run from
+   * useEffect([load]), so each parent render rebuilt `load` and
+   * refired the effect. Exactly the bug useFetchOnce's own notes
+   * record -- the schema fetched three times per page load -- in a
+   * panel that does not use useFetchOnce because it needs to REFETCH
+   * after an action.
+   */
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
+
   const load = useCallback(async () => {
     try {
       setTriggers(await getTriggers())
       setError(null)
     } catch (caught: unknown) {
-      if (handleIfSessionExpired(caught, onSessionExpired)) return
+      if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
       setError(getErrorMessage(caught))
     }
-  }, [onSessionExpired])
+  }, [])
 
   useEffect(() => {
+    // FALSE POSITIVE, exempted rather than worked around. `load` is
+    // async and every setState in it happens AFTER an await, so nothing
+    // is set synchronously here. The rule cannot see through a
+    // useCallback to the await inside it: proved with three probe
+    // components -- setState directly in an effect is flagged correctly,
+    // the same code after an await inside a useCallback is flagged
+    // FALSELY, and the identical code written as an inline async IIFE is
+    // not flagged at all. Satisfying it would mean writing
+    // `void (async () => { await load() })()` for identical behaviour.
+    // Fetching on mount is the canonical legitimate effect.
+    // eslint-disable-next-line react/set-state-in-effect
     void load()
   }, [load])
 
@@ -76,7 +106,7 @@ export default function WatchList({ onSessionExpired }: WatchListProps) {
       // another after a reload.
       await load()
     } catch (caught: unknown) {
-      if (handleIfSessionExpired(caught, onSessionExpired)) return
+      if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
       setError(getErrorMessage(caught))
     }
   }

@@ -25,7 +25,7 @@ import {
   saveSavedView,
   type ServerSavedView,
 } from '@elysium/shell-api/api'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import WatchDialog from './WatchDialog'
@@ -63,23 +63,83 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
   // another menu level: a threshold needs a number and a choice, and
   // a submenu that asks for both is a form pretending not to be one.
   const [watching, setWatching] = useState<ServerSavedView | null>(null)
+  /**
+   * Counts OPENINGS, and is the watch dialog's key.
+   *
+   * The dialog holds a form about one saved view. It stays mounted
+   * with isOpen toggling, so without something to clear it, everything
+   * typed for one view is still there when the next is opened. It used
+   * to clear itself in an effect -- react/set-state-in-effect, and an
+   * INCOMPLETE clear: five pieces of state were reset and the
+   * threshold was not, so a number set for one view followed you to
+   * the next. Measured before changing it.
+   *
+   * A key is React's own answer for "reset all state when the identity
+   * changes", and unlike a list of setters it cannot be incomplete.
+   *
+   * WHY A COUNTER RATHER THAN view_id, stated carefully because a
+   * control corrected an earlier version of this comment. Keying on
+   * `watching?.view_id ?? 'closed'` resets just as well -- including
+   * on reopening the SAME view, because the key passes through
+   * 'closed' in between. Both pass the tests below. The difference is
+   * that the id key changes on CLOSING, remounting the dialog at the
+   * moment it is being dismissed and cutting Blueprint's exit
+   * transition; the counter changes only on opening, so the closing
+   * instance survives to animate out.
+   *
+   * NOT TESTED, AND SAID SO: jsdom runs no transitions, so nothing
+   * here can tell the two apart. That is the reason this is written
+   * down rather than left as an obvious-looking choice.
+   */
+  const [opened, setOpened] = useState(0)
 
   const params = new URLSearchParams(location.search)
   const objectType = params.get('type') ?? ''
+
+  /**
+   * The session callback through a ref, so `load` has NO dependencies
+   * and the effect below runs once.
+   *
+   * MEASURED BEFORE THE FIX: three renders of the parent, three
+   * fetches. App.tsx declares handleSessionExpired as a plain function
+   * inside the component, so it is a new identity on every render;
+   * `load` was built with useCallback([onSessionExpired]) and run from
+   * useEffect([load]), so each parent render rebuilt `load` and
+   * refired the effect. Exactly the bug useFetchOnce's own notes
+   * record -- the schema fetched three times per page load -- in a
+   * panel that does not use useFetchOnce because it needs to REFETCH
+   * after an action.
+   */
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
 
   const load = useCallback(async () => {
     try {
       setViews(await getSavedViews())
     } catch (caught: unknown) {
-      if (onSessionExpired && handleIfSessionExpired(caught, onSessionExpired)) return
+      const expired = latestSessionExpired.current
+      if (expired && handleIfSessionExpired(caught, expired)) return
       // A POPOVER THAT CANNOT LIST is still one that can save.
       // Failing quietly here beats an error banner over a search that
       // is working.
       setViews([])
     }
-  }, [onSessionExpired])
+  }, [])
 
   useEffect(() => {
+    // FALSE POSITIVE, exempted rather than worked around. `load` is
+    // async and every setState in it happens AFTER an await, so nothing
+    // is set synchronously here. The rule cannot see through a
+    // useCallback to the await inside it: proved with three probe
+    // components -- setState directly in an effect is flagged correctly,
+    // the same code after an await inside a useCallback is flagged
+    // FALSELY, and the identical code written as an inline async IIFE is
+    // not flagged at all. Satisfying it would mean writing
+    // `void (async () => { await load() })()` for identical behaviour.
+    // Fetching on mount is the canonical legitimate effect.
+    // eslint-disable-next-line react/set-state-in-effect
     void load()
   }, [load])
 
@@ -121,7 +181,7 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
       setOpen(false)
       setName('')
     } catch (caught: unknown) {
-      if (onSessionExpired) handleIfSessionExpired(caught, onSessionExpired)
+      if (latestSessionExpired.current) handleIfSessionExpired(caught, latestSessionExpired.current)
     }
   }
 
@@ -130,13 +190,13 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
       await deleteSavedView(viewId)
       await load()
     } catch (caught: unknown) {
-      if (onSessionExpired) handleIfSessionExpired(caught, onSessionExpired)
+      if (latestSessionExpired.current) handleIfSessionExpired(caught, latestSessionExpired.current)
     }
   }
 
   return (
     <>
-      <WatchDialog view={watching} onClose={() => setWatching(null)} onSessionExpired={onSessionExpired} />
+      <WatchDialog key={opened} view={watching} onClose={() => setWatching(null)} onSessionExpired={onSessionExpired} />
       <Popover
         isOpen={open}
         onInteraction={(next) => {
@@ -184,6 +244,7 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
                         event.stopPropagation()
                         setOpen(false)
                         setWatching(view)
+                        setOpened((count) => count + 1)
                       }}
                     />
                     <Button

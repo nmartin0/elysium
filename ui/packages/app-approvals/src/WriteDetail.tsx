@@ -15,7 +15,7 @@
  */
 
 import { Callout, HTMLTable, Tag } from '@blueprintjs/core'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   type WriteDetailResponse,
@@ -36,6 +36,17 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
   const [detail, setDetail] = useState<WriteDetailResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // The session callback through a ref, so this effect does not
+  // restart every time the shell re-renders -- App.tsx declares
+  // handleSessionExpired as a plain function inside the component, so
+  // it is a new identity each time. Patch 12 fixed seven of these; its
+  // guard matched only the callback ALONE in a dependency array, so
+  // these two, where it sits beside other dependencies, were missed.
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
+
   useEffect(() => {
     let cancelled = false
     getWriteDetail(writeId)
@@ -43,7 +54,7 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
         if (!cancelled) setDetail(loaded)
       })
       .catch((caught) => {
-        if (handleIfSessionExpired(caught, onSessionExpired)) return
+        if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
         if (!cancelled) setError(getErrorMessage(caught))
       })
     // Cancelled rather than left to resolve into an unmounted
@@ -52,7 +63,7 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
     return () => {
       cancelled = true
     }
-  }, [writeId, onSessionExpired])
+  }, [writeId])
 
   if (error !== null) return <ErrorState>{error}</ErrorState>
   if (detail === null) return <LoadingState inline label="Loading the changes…" />

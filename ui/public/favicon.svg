@@ -1,0 +1,44 @@
+<!--
+  favicon.svg -- a mark, not a logo.
+
+  10-S2-02: there was no icon link at all, so every page load issued a
+  browser-initiated request for /favicon.ico and got a 404. Reproduced
+  against the real serving path rather than reasoned about: FastAPI's
+  app.frontend(fallback="index.html") answers a NAVIGATION with the
+  SPA shell, but a favicon request carries an image Accept header, so
+  the fallback correctly declines it and the 404 stands.
+
+  DELIBERATELY NOT BRANDING. UI_ROADMAP records that this project has
+  no logo -- zero SVGs in ui/ before this one -- and that splash
+  screens, export lockups and marketing marks are a brand-asset
+  project rather than a usability one. That judgement stands; this is
+  the smallest thing that stops a 404 on every load, and a real mark
+  should replace it whenever the brand question is actually answered.
+
+  SVG RATHER THAN .ICO so the repository stays free of binary assets:
+  a text file can be read, reviewed and diffed in a patch, and this one
+  can carry its own reasoning, which an .ico cannot.
+
+  IT FOLLOWS THE BROWSER'S THEME. An SVG favicon may carry its own
+  <style>, including a prefers-color-scheme query -- which a raster
+  icon cannot. The navy reads on a light tab strip and the light blue
+  reads on a dark one; a single fixed colour would disappear into one
+  of them. Colours are the accent pair from DEV_UI 8.3 (#1762b6 light,
+  #5fa1f3 dark), not new values.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Elysium">
+  <style>
+    .mark { fill: #1762b6; }
+    .glyph { fill: #f8fafd; }
+    @media (prefers-color-scheme: dark) {
+      .mark { fill: #5fa1f3; }
+      .glyph { fill: #0c1723; }
+    }
+  </style>
+  <rect class="mark" width="32" height="32" rx="7" />
+  <!-- An E in three bars: legible at 16px, where a letterform with
+       thin strokes turns to mush. -->
+  <rect class="glyph" x="9" y="8" width="14" height="3.5" rx="1.25" />
+  <rect class="glyph" x="9" y="14.25" width="11" height="3.5" rx="1.25" />
+  <rect class="glyph" x="9" y="20.5" width="14" height="3.5" rx="1.25" />
+</svg>

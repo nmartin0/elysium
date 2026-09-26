@@ -11,11 +11,11 @@
  * something nobody can reason about on a real ontology.
  */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getLinkCounts } from '@elysium/shell-api/api'
+import { ApiError, getLinkCounts } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ExploreRelated from './ExploreRelated'
@@ -34,10 +34,15 @@ const SCHEMA: VisibleSchema = {
   Transaction: { fields: { customer_id: { type: 'link', target: 'Customer' } } },
 }
 
-function renderPanel(schema: VisibleSchema | null = SCHEMA) {
+function renderPanel(schema: VisibleSchema | null = SCHEMA, onSessionExpired: () => void = vi.fn()) {
   return render(
     <MemoryRouter>
-      <ExploreRelated objectType="Customer" objectId="cust_001" visibleSchema={schema} onSessionExpired={vi.fn()} />
+      <ExploreRelated
+        objectType="Customer"
+        objectId="cust_001"
+        visibleSchema={schema}
+        onSessionExpired={onSessionExpired}
+      />
     </MemoryRouter>,
   )
 }
@@ -143,5 +148,192 @@ describe('ExploreRelated', () => {
     renderPanel()
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Counting related records…'))
+  })
+})
+
+describe('ExploreRelated -- an expired session', () => {
+  /**
+   * FOUND WHILE FIXING F-31, and worse than the item itself.
+   *
+   * This panel LOOKED handled: its catch tested
+   * `getErrorMessage(caught).includes('401')` before calling
+   * onSessionExpired. But api/auth_dependency.py answers an expired
+   * session with `detail: "Invalid or expired session"` -- a sentence
+   * containing no digits at all -- and api.ts puts that detail in the
+   * message. So the branch could never run for the case it was
+   * written for, and the code READ as correct while doing nothing.
+   *
+   * The string test was also wrong in the other direction: any
+   * message that happened to contain "401" -- a note, an object id, a
+   * count -- would have logged the person out.
+   */
+  it('sends the person back to login when the session has expired', async () => {
+    mockedGetLinkCounts.mockRejectedValue(new ApiError(401, 'Invalid or expired session'))
+    const onSessionExpired = vi.fn()
+
+    renderPanel(SCHEMA, onSessionExpired)
+
+    await waitFor(() => expect(onSessionExpired).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not log the person out over a message that merely mentions 401', async () => {
+    // The string match this replaces would have fired on this.
+    mockedGetLinkCounts.mockRejectedValue(new ApiError(500, 'Upstream job 401 failed'))
+    const onSessionExpired = vi.fn()
+
+    renderPanel(SCHEMA, onSessionExpired)
+
+    await waitFor(() => expect(screen.getByText(/Upstream job 401 failed/)).toBeInTheDocument())
+    expect(onSessionExpired).not.toHaveBeenCalled()
+  })
+})
+
+describe('ExploreRelated -- the shell re-rendering', () => {
+  it('counts links once across parent renders, not once per render', async () => {
+    /**
+     * The same defect patch 12 fixed in seven panels, in one its guard
+     * did not match: onSessionExpired sat BESIDE objectType and
+     * objectId in the dependency array rather than alone.
+     */
+    mockedGetLinkCounts.mockResolvedValue({})
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    await waitFor(() => expect(mockedGetLinkCounts).toHaveBeenCalled())
+
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_001" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_001" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(mockedGetLinkCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('still refetches when the OBJECT changes, which is the point', async () => {
+    // The opposite direction: dropping onSessionExpired must not also
+    // drop the dependencies that genuinely should refetch.
+    mockedGetLinkCounts.mockResolvedValue({})
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    await waitFor(() => expect(mockedGetLinkCounts).toHaveBeenCalledTimes(1))
+
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_002" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(mockedGetLinkCounts).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('ExploreRelated -- moving to another object', () => {
+  /**
+   * WHAT THE SYNCHRONOUS RESET WAS FOR, and what must survive removing
+   * it. Counts belong to a specific object. Showing the previous
+   * object's link counts under a new one is a wrong answer presented
+   * confidently -- and unlike a missing count, nothing about it looks
+   * wrong on screen.
+   */
+  it('never shows the previous object counts while the next is loading', async () => {
+    mockedGetLinkCounts.mockResolvedValue({
+      transactions: { target: 'Transaction', count: 7, cardinality: 'many' },
+    })
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    expect(await screen.findByText('7 Transaction')).toBeInTheDocument()
+
+    // The next object's count never settles, so what is on screen is
+    // what a reader sees for as long as it takes.
+    mockedGetLinkCounts.mockReturnValue(new Promise(() => {}))
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_002" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText('7 Transaction')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Counting related records…')
+  })
+
+  it('clears a previous failure rather than showing it over new counts', async () => {
+    // The error is reset too, and for the same reason: a failure for
+    // one object is not a failure for the next.
+    mockedGetLinkCounts.mockRejectedValue(new Error('the counter fell over'))
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    expect(await screen.findByText(/the counter fell over/)).toBeInTheDocument()
+
+    mockedGetLinkCounts.mockReturnValue(new Promise(() => {}))
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_002" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText(/the counter fell over/)).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Counting related records…')
+  })
+
+  it('does not reuse counts across two types that share an id', async () => {
+    // FOUND BY A CONTROL: dropping the type from the tag passed every
+    // other test. Ids are scoped per type -- getLinkCounts takes both
+    // -- so matching on id alone would label one type's counts with
+    // another's name.
+    mockedGetLinkCounts.mockResolvedValue({
+      transactions: { target: 'Transaction', count: 7, cardinality: 'many' },
+    })
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    expect(await screen.findByText('7 Transaction')).toBeInTheDocument()
+
+    mockedGetLinkCounts.mockReturnValue(new Promise(() => {}))
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Account" objectId="cust_001" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText('7 Transaction')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Counting related records…')
+  })
+
+  it('does not let a slow earlier response overwrite a newer one', async () => {
+    /**
+     * THE STALE GUARD, which tagging does NOT make redundant -- also
+     * found by a control, because removing it passed everything else.
+     *
+     * Tagging stops a stale result being displayed. It does not stop
+     * one being STORED: a late response for the previous object would
+     * overwrite the newer object's counts, and those newer counts DO
+     * match, so they would vanish and the panel would fall back to
+     * "counting" forever.
+     */
+    let settleFirst: ((value: unknown) => void) | undefined
+    mockedGetLinkCounts.mockReturnValueOnce(
+      new Promise((resolve) => {
+        settleFirst = resolve
+      }) as never,
+    )
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+
+    // Move on before the first ever answers; the second is immediate.
+    mockedGetLinkCounts.mockResolvedValue({
+      payments: { target: 'Payment', count: 3, cardinality: 'many' },
+    })
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_002" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('3 Payment')).toBeInTheDocument()
+
+    // Now the first object's answer finally arrives.
+    await act(async () => {
+      settleFirst?.({ transactions: { target: 'Transaction', count: 7, cardinality: 'many' } })
+    })
+
+    expect(screen.getByText('3 Payment')).toBeInTheDocument()
+    expect(screen.queryByText('7 Transaction')).not.toBeInTheDocument()
   })
 })

@@ -156,6 +156,40 @@ describe('QueryPanel -- other failure statuses', () => {
     await waitFor(() => expect(screen.getByText('Permissions changed since this query started.')).toBeInTheDocument())
   })
 
+  it('never shows [object Object] when detail is not a sentence', async () => {
+    /**
+     * The F-32 shape, in the one place that reads a body itself
+     * because query() returns a raw Response rather than throwing.
+     *
+     * NOT REACHABLE FROM THIS PANEL TODAY, and worth saying: /query
+     * takes `query: str` and the panel always sends a string, so
+     * FastAPI's validation handler -- the one thing that answers with
+     * a LIST detail -- cannot currently be provoked from here. The
+     * test exists so that adding a constraint to QueryRequest is a
+     * backend change rather than a frontend regression, and because
+     * `detail?: string` was an assertion about an unchecked body
+     * either way.
+     */
+    mockedQuery.mockResolvedValue(
+      fakeResponse(422, { detail: [{ type: 'missing', loc: ['body', 'query'], msg: 'Field required' }] }),
+    )
+    render(<QueryPanel onSessionExpired={vi.fn()} />)
+
+    submit('a question')
+
+    await waitFor(() => expect(screen.getByText('query: Field required')).toBeInTheDocument())
+    expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument()
+  })
+
+  it('falls back to the generic message for a detail shape we do not know', async () => {
+    mockedQuery.mockResolvedValue(fakeResponse(400, { detail: { code: 17 } }))
+    render(<QueryPanel onSessionExpired={vi.fn()} />)
+
+    submit('a question')
+
+    await waitFor(() => expect(screen.getByText('Request failed (400)')).toBeInTheDocument())
+  })
+
   it('falls back to a generic "Request failed (status)" when the body has no detail', async () => {
     mockedQuery.mockResolvedValue(fakeResponse(500, {}))
     render(<QueryPanel onSessionExpired={vi.fn()} />)

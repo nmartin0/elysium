@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout } from '@blueprintjs/core'
-import { confirmWrite, getDataFreshness, getErrorMessage, handleIfSessionExpired, type DataFreshness } from '../api'
+import {
+  confirmWrite,
+  getDataFreshness,
+  getErrorMessage,
+  handleIfSessionExpired,
+  publicationTime,
+  type DataFreshness,
+} from '../api'
 import { formatFieldName, formatTimestamp, formatValue } from '../format'
 
 // The real shape of one proposed change, as the backend's own /query
@@ -205,13 +212,36 @@ export default function PendingWriteCard({ pendingWrite, onSessionExpired, onRes
           deliberately: this is precisely the moment someone needs to
           know how current the values they are approving against
           actually are. */}
-      {freshness?.source === 'mirror' && (
-        <Callout intent="warning" title="Data may not be current">
-          {freshness.last_synced_at
-            ? `These values were last synced ${formatTimestamp(freshness.last_synced_at)}.`
-            : 'These values have not been synced yet.'}
-        </Callout>
-      )}
+      {(() => {
+        // THE OLDEST PUBLICATION AMONG THE TYPES THIS WRITE TOUCHES.
+        // A write spanning two types is only as current as the staler
+        // of them, and this is the moment someone decides whether the
+        // values they are approving against are good enough.
+        //
+        // PUBLICATION, NOT SYNC: silver records when the source was
+        // READ, gold when it was PUBLISHED, and the second is the one
+        // the reader experiences. This block tested source ===
+        // 'mirror' until GOLD-3d, which the server stopped sending
+        // once anything was published -- so the warning this comment
+        // describes has not appeared on any published deployment.
+        const types = (pendingWrite.sub_writes ?? []).map((sub) => sub.object_type)
+        const published = publicationTime(freshness, types)
+        if (published !== null) {
+          return (
+            <Callout intent="warning" title="Data may not be current">
+              {`These values were published ${formatTimestamp(published)}.`}
+            </Callout>
+          )
+        }
+        if (freshness?.source !== 'mirror') return null
+        return (
+          <Callout intent="warning" title="Data may not be current">
+            {freshness.last_synced_at
+              ? `These values were last synced ${formatTimestamp(freshness.last_synced_at)}, and not yet published.`
+              : 'These values have not been published yet.'}
+          </Callout>
+        )
+      })()}
       {error && <Callout intent="danger">{error}</Callout>}
       <div className="pending-write__actions">
         {/* Each button's own loading reflects ONLY its own, real,

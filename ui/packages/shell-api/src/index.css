@@ -114,10 +114,14 @@
  * chrome and all. A DEFINITE height gives the track an upper bound and
  * the overflow rules start working.
  *
- * dvh rather than vh: on mobile browsers the toolbars slide away, and
- * vh measures the largest viewport, which leaves a fixed shell taller
- * than the screen. The vh line above is the fallback for anything that
- * does not know dvh.
+ * The lock itself is on `.app-frame` below, with the dvh reasoning
+ * beside it. This block ended with a second copy of that reasoning
+ * until 09-S3-03, which also said "the vh line above" -- and the vh
+ * line is BELOW, inside a rule this comment does not introduce. Both
+ * were left behind when the lock moved to the outermost element: the
+ * text stayed where the rule used to be, so it described a position
+ * that had stopped being true. A stale comment is worse than none,
+ * because it is believed.
  */
   /* --- The frame: header on top, everything else below ---------------
  *
@@ -259,22 +263,23 @@
 
   .app__nav {
     flex: 1;
-  }
+    /* SPECIFICITY NO LONGER DOES THE WORK HERE -- the cascade LAYER
+   does. These three overrides were written with two and three
+   classes stacked because Blueprint's own rule out-specified a
+   single class of ours, and at the time our CSS was unlayered, so
+   specificity was the only lever. It is not any more: our rules sit
+   in `components` and Blueprint's in `vendor`, and layer order beats
+   specificity outright, whatever the selectors are.
 
-  /* .app__nav.bp6-menu, not just .app__nav alone -- a real, FOURTH
-   occurrence of this same class of bug this migration, caught the
-   same reliable way as the third (queried the real browser directly
-   for the actual matching CSS rule, not guessed): Blueprint's own
-   .bp6-menu rule sets a real, solid white background by default
-   (Menu is normally used floating on its own light surface, like
-   inside a Popover -- confirmed exactly this via UserMenu's own real,
-   correctly-white popover panel). This Menu is different: embedded
-   directly in the dark sidebar itself, not floating on its own light
-   surface, so it needs transparent, not Blueprint's own default.
-   Two real classes together for genuinely higher specificity than
-   Blueprint's own single-class rule, the same proven approach as
-   every other fix of this kind this migration. */
-  .app__nav.bp6-menu {
+   Simplified with a real test behind each, not on reasoning: three
+   e2e assertions on the COMPUTED style now cover exactly the
+   properties Blueprint would otherwise set, and all three fail when
+   the rules are removed -- checked before simplifying. They assert
+   the outcome rather than the selector, so they hold whichever
+   mechanism wins and fail if neither does. */
+    /* Blueprint's .bp6-menu sets a solid white background: a Menu
+     normally floats on its own light surface. This one is embedded in
+     the dark sidebar. */
     background: transparent;
   }
 
@@ -318,26 +323,9 @@
     gap: 0.5rem;
     width: 100%;
     text-align: left;
-  }
-
-  /* .user-menu__trigger.bp6-button.bp6-minimal, not just .user-menu__
-   trigger alone -- a real, third occurrence of the same class of bug
-   this project has now hit three times, confirmed precisely this
-   time via the browser's own real, matched CSS rules (not grepped
-   from minified source, not reasoned about): Blueprint's own
-   .bp6-button:not([class*="bp6-intent-"]) rule sets this button's
-   default text color, and that :not()+attribute selector carries
-   TWO class-level selectors worth of specificity -- genuinely higher
-   than this file's own single-class .user-menu__trigger rule, which
-   is why the plain version above lost outright, regardless of source
-   order (confirmed directly: computed color was Blueprint's own dark,
-   light-theme default, not this rule's #f2f2f3, before this fix).
-   Three real classes together, all genuinely present on this same
-   element (confirmed via the real DOM's own classList), for
-   specificity that's safely, unambiguously higher than Blueprint's
-   own two-class-level rule -- not just tied with it and hoping source
-   order still favors this file. */
-  .user-menu__trigger.bp6-button.bp6-minimal {
+    /* Blueprint's .bp6-button:not([class*="bp6-intent-"]) sets a dark
+     default meant for a light surface. On the dark header that is
+     nearly invisible. See the layer note above .app__nav. */
     color: var(--text-on-chrome);
   }
 
@@ -699,10 +687,13 @@
  * fault the `button` rule below had, just less visible because it set
  * borders and padding rather than colour.
  *
- * Two plain controls remain: ObjectSearchPanel's search box and
- * QueryPanel's textarea. Everything else is a Blueprint widget and
- * styles itself. */
-  .object-search__controls input,
+ * ONE plain control remains: QueryPanel's textarea. Everything else
+ * is a Blueprint widget and styles itself.
+ *
+ * It said TWO until 09-S2-01. The other was ObjectSearchPanel's search
+ * box, which became a Blueprint InputGroup -- so the rule kept naming
+ * a control that had stopped existing, and the comment kept counting
+ * it. */
   .query-panel__input {
     padding: 0.5rem 0.6rem;
     border: 1px solid var(--border-subtle);
@@ -878,10 +869,6 @@
     overflow-x: auto;
   }
 
-  button.danger {
-    background: var(--fill-danger);
-  }
-
   /* A muted FACT, not a warning. read_from_mirror is deployment-wide, so
  * this is present on every view when it is on -- and a permanent
  * warning is one people stop seeing. Secondary text, small, no icon. */
@@ -891,27 +878,7 @@
     font-size: 0.85rem;
   }
 
-  .object-search__controls {
-    display: flex;
-    gap: 0.6rem;
-    margin-bottom: 1rem;
-  }
-
-  .object-search__controls select {
-    padding: 0.5rem 0.6rem;
-    border: 1px solid var(--border-subtle);
-    border-radius: 6px;
-    font-size: 1rem;
-    background: var(--surface-content);
-    min-width: 10rem;
-  }
-
-  .object-search__controls input {
-    flex: 1;
-  }
-
   .object-search__status,
-.object-search__empty,
 
 /* CardList/Card, not a bare <ul>/<li> -- see ObjectSearchPanel.tsx's
    own comment on why Card must be CardList's own DIRECT child
@@ -926,6 +893,12 @@
      instead (likely much larger than this one card), not the
      intended, real element. */
     position: relative;
+
+    /* Blueprint's CardList gives a direct-child Card
+     `display: flex; align-items: center` -- its single-line list row
+     default -- which lays this card's title, subtitle and fields
+     table out side by side. See the layer note above .app__nav. */
+    display: block;
   }
 
   /* A real, second Blueprint-CSS-override lesson this migration, beyond
@@ -944,10 +917,6 @@
    real, genuinely-present classes together on each side of the child
    combinator (0,4,0), reliably beating Blueprint's own 0,2,0 rule
    regardless of source order. */
-  .object-search__results.bp6-card-list > .object-search__result.bp6-card {
-    display: block;
-  }
-
   /* The real "stretched link" pattern (the same one Bootstrap's own
    stretched-link utility uses) -- deliberately NOT the whole card's
    own visible content wrapped in one <Link> (this file's own earlier,
@@ -1151,11 +1120,6 @@
     margin: 0;
   }
 
-  .action-form__field input:disabled {
-    background: var(--surface-sunken);
-    color: var(--text-secondary);
-  }
-
   .action-form__actions {
     display: flex;
     gap: 0.5rem;
@@ -1289,7 +1253,21 @@
   /* Below the three-column minimum an expanded sidebar OVERLAYS rather
  * than pushing, because pushing would leave the content unusable.
  * This is the "Auto" mode a mainstream enterprise component library
- * ships as its default: push at desktop widths, overlay below. */
+ * ships as its default: push at desktop widths, overlay below.
+ *
+ * WHERE 1100 COMES FROM, kept here because this is the only place the
+ * number is used. Rail 56 plus an open sidebar 240 leaves 532px of
+ * content below 1100 -- which cannot hold a results table. DERIVED
+ * from that arithmetic rather than cited, though it sits near the 992
+ * where two-column layouts commonly break, a third column needing
+ * more room.
+ *
+ * It lived on a `--three-column-min: 1100px` token until 09-S2-02,
+ * which nothing read and nothing could: a custom property is not
+ * allowed in a media query's condition, so the token could only ever
+ * restate this number, never supply it. The two had already drifted
+ * by one -- the token said 1100, the query fires at 1099 -- which is
+ * the drift a second copy always eventually produces. */
   @media (max-width: 1099px) {
     /* BELOW the header, not over it. An earlier `top` of zero covered
      the global header entirely -- the product name, theme toggle and
@@ -1355,14 +1333,6 @@
   input[type='checkbox'],
   [role='button'] {
     min-height: var(--target-min);
-  }
-
-  /* A single filter above the content it filters. Not a sidebar: that
- * pattern is for more than five filters, and one input in a 288px
- * column is mostly empty grey. */
-  .schema-panel__toolbar {
-    max-width: 420px;
-    margin-bottom: var(--space-normal);
   }
 
   /* --- Schema's parameter and field tables --------------------------

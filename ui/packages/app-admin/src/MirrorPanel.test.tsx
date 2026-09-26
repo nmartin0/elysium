@@ -39,6 +39,8 @@ function table(overrides = {}) {
     last_attempt_at: new Date().toISOString(),
     last_attempt_outcome: 'synced',
     last_attempt_detail: null,
+    quarantined_rows: 0,
+    quarantine_reason: null,
     snapshots: [],
     ...overrides,
   }
@@ -106,6 +108,79 @@ describe('a refused sync', () => {
 
     expect(await screen.findByText(/out of date/)).toBeInTheDocument()
     expect(screen.queryByText(/fetched but not served/)).toBeNull()
+  })
+
+  it('says how many rows were held back, and why', async () => {
+    /**
+     * OPEN_RISKS item 1, and GOLD-3d. A quarantined row is absent from
+     * silver BY DESIGN, and absence reads as loss: 2 served against 4
+     * fetched says nothing about whether 2 were rejected on purpose,
+     * dropped by a bug, or never existed. The server has sent
+     * quarantined_rows and quarantine_reason all along; nothing read
+     * them, and MirrorTableState did not even declare them.
+     */
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [
+        table({
+          silver_rows: 2,
+          bronze_rows: 4,
+          quarantined_rows: 2,
+          quarantine_reason: "'N/A' is not an integer",
+        }),
+      ],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/2 held back/)).toBeInTheDocument()
+    expect(screen.getByText(/'N\/A' is not an integer/)).toBeInTheDocument()
+  })
+
+  it('does not call a fully explained gap a refusal', async () => {
+    /**
+     * THE CORRECTION, and the reason this is not just a new column.
+     * The existing tag says "fetched but not served -- the last sync
+     * was refused" for ANY bronze/silver gap. When the gap is exactly
+     * what validation held back, nothing was refused: the sync worked
+     * and did its job. Telling an admin their sync was refused sends
+     * them looking for an incident that did not happen.
+     */
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table({ silver_rows: 2, bronze_rows: 4, quarantined_rows: 2, quarantine_reason: 'bad dates' })],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/2 held back/)).toBeInTheDocument()
+    expect(screen.queryByText(/was refused/)).not.toBeInTheDocument()
+  })
+
+  it('still names a refusal when quarantine explains only part of the gap', async () => {
+    // 5 fetched, 2 served, 1 quarantined: two rows are unaccounted
+    // for, which IS the refused-sync state and must still be said.
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table({ silver_rows: 2, bronze_rows: 5, quarantined_rows: 1, quarantine_reason: 'bad dates' })],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/was refused/)).toBeInTheDocument()
+    expect(screen.getByText(/1 held back/)).toBeInTheDocument()
+  })
+
+  it('says nothing about quarantine when nothing was held back', async () => {
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table({ silver_rows: 7, bronze_rows: 7, quarantined_rows: 0 })],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('primary_sql.transactions')).toBeInTheDocument()
+    expect(screen.queryByText(/held back/)).not.toBeInTheDocument()
   })
 
   it('says WHY the last sync was refused', async () => {

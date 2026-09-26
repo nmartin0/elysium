@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Callout } from '@blueprintjs/core'
-import { query } from '@elysium/shell-api/api'
+import { messageFromErrorBody, query } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 
 import AnswerTrace from './AnswerTrace'
@@ -55,10 +55,9 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
         return
       }
 
-      // response.json() itself is typed `any` by TypeScript's own
-      // built-in lib -- asserted to the real, known response body
-      // shape here, matching api/routes.py's own documented contract
-      // for the query route.
+      // ASSERTED, NOT VALIDATED, and only for the SUCCESS shapes below
+      // -- api/routes.py's own documented contract for 200 and 202.
+      // The failure branch does not trust it; see below.
       const body = (await response.json()) as QueryResponseBody
 
       if (response.status === 202) {
@@ -69,9 +68,23 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
       } else {
         // 403 (stale permissions were already fine at query time but
         // something else denied it), 409 (permissions changed mid-
-        // request), or anything else -- shown exactly as the backend
-        // phrased it, not reinterpreted client-side.
-        setError(body.detail || `Request failed (${response.status})`)
+        // request), or anything else -- shown as the backend phrased
+        // it when it is a sentence, not reinterpreted client-side.
+        //
+        // NARROWED RATHER THAN ASSERTED. `detail?: string` above is a
+        // claim about a body nothing has checked: fetch's own .json()
+        // is `any`, so TypeScript cannot object if a list arrives, and
+        // ApiError's identical read put the literal text
+        // "[object Object]" on screen in F-32.
+        //
+        // NOT A REPRODUCED BUG HERE, said plainly: /query takes
+        // `query: str` and this panel always sends a string, so
+        // FastAPI's validation handler -- the one shape that returns a
+        // LIST detail -- cannot currently be reached from here. This
+        // removes the claim rather than fixing an observed failure,
+        // and it is what makes adding a constraint to QueryRequest
+        // later a backend change rather than a frontend regression.
+        setError(messageFromErrorBody(body) ?? `Request failed (${response.status})`)
       }
     } catch {
       setError('Could not reach the server.')

@@ -19,13 +19,39 @@
     ],
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn",
-    // OFF, AND RECORDED, NOT FORGOTTEN. The plugin turns these on by
-    // default; they found 12 sites (10 and 2) when first run. Each fix
-    // is a behavioural change to a component -- derive the state, or
-    // reset with a key -- needing its own review and tests, so they are
-    // an item of their own in UNIFIED_ROADMAP.md rather than folded into
-    // the commit that made the hook rules run.
-    "react/set-state-in-effect": "off",
-    "react/refs": "off"
+    // react/refs is ON as of B0's first half. It found 2 sites, both
+    // the same "latest ref" pattern in the two hooks every package
+    // shares -- useFetchOnce and useDeferredWrite -- each writing
+    // ref.current during render to keep an inline-arrow callback fresh
+    // without making it an effect dependency.
+    //
+    // FIXED RATHER THAN EXEMPTED, on one concrete ground: React's own
+    // compiler refuses to optimise a hook that writes a ref during
+    // render, and it says so in the diagnostic. Two shared hooks
+    // bailing out is not a local cost. Both now write in an effect;
+    // useRef's initialiser already covered mount, so nothing about
+    // when the value is read changed.
+    "react/refs": "error",
+    // ON as of B0's second half, with FIVE DOCUMENTED EXEMPTIONS.
+    //
+    // It found 10 genuine sites, all now fixed by deriving during
+    // render or resetting with a key. The five that remain are FALSE
+    // POSITIVES of one shape: `void load()` where load is an async
+    // useCallback whose setState happens after an await. Proved with
+    // three probe components -- setState directly in an effect is
+    // flagged correctly, the same code after an await inside a
+    // useCallback is flagged FALSELY, and the identical code as an
+    // inline async IIFE is not flagged at all.
+    //
+    // ON WITH EXEMPTIONS RATHER THAN OFF, deliberately, and this
+    // reverses an earlier recommendation of mine. Off is global: it
+    // buys silence at the five false sites and loses the alarm at
+    // every future real one, and this codebase produced ten real ones.
+    // Each exemption is an eslint-disable-next-line carrying its
+    // reason, so a reviewer has to justify removing it -- where a
+    // disabled rule is a silence nobody sees. Controlled both ways: a
+    // planted synchronous setState is still caught, and deleting any
+    // one exemption brings its error straight back.
+    "react/set-state-in-effect": "error"
   }
 }

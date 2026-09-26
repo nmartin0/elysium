@@ -3,10 +3,64 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 10-S2-02. Without this the browser asks for /favicon.ico on
+         every load and gets a 404 -- reproduced against the real
+         serving path, not assumed: the SPA fallback answers a
+         navigation but correctly declines an image request.
+
+         KNOWN LIMIT, stated rather than left to be rediscovered: a
+         browser that does not understand an SVG icon falls back to
+         requesting /favicon.ico, which is still absent, so those
+         clients keep the 404. Closing that needs a binary .ico, and a
+         binary asset wants the brand decision UI_ROADMAP defers. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Elysium</title>
   </head>
   <body>
     <div id="root"></div>
+    <!-- 10-S2-01. This is a React SPA: with scripting disabled the div
+         above stays empty and the page is blank white, which reads as
+         a broken server rather than a disabled setting.
+
+         STYLED INLINE, DELIBERATELY. In a production build the
+         stylesheet is a real <link> and would apply, but in dev Vite
+         injects CSS through the module graph -- which is JavaScript,
+         and therefore exactly what is unavailable here. A noscript
+         depending on the stylesheet is unstyled in the one mode where
+         it matters most.
+
+         Wording follows DEV_UI 9.7's error state: plain language,
+         what is unchanged, and a way out. No code, no stack trace. -->
+    <noscript>
+      <div
+        style="
+          max-width: 34rem;
+          margin: 4rem auto;
+          padding: 1.5rem;
+          border: 1px solid #cdd5e0;
+          border-radius: 10px;
+          font-family:
+            system-ui,
+            -apple-system,
+            'Segoe UI',
+            Roboto,
+            sans-serif;
+          line-height: 1.5;
+          color: #1d2a3a;
+          background: #f8fafd;
+        "
+      >
+        <h1 style="margin: 0 0 0.75rem; font-size: 1.25rem">Elysium needs JavaScript</h1>
+        <p style="margin: 0 0 0.75rem">
+          This page is an application rather than a document, so it is built in your browser. With scripting turned off
+          there is nothing for it to build.
+        </p>
+        <p style="margin: 0">
+          Nothing is wrong with your data and nothing has been changed. Enable JavaScript for this site and reload, or
+          ask whoever administers this deployment if the setting is not yours to change.
+        </p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

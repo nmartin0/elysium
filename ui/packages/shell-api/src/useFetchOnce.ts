@@ -53,7 +53,32 @@ export function useFetchOnce<T>(fetcher: () => Promise<unknown>, onSessionExpire
    * "once" from running repeatedly -- so the hook takes that on.
    */
   const latest = useRef({ fetcher, onSessionExpired })
-  latest.current = { fetcher, onSessionExpired }
+  /**
+   * Written in an effect, NOT during render.
+   *
+   * Writing a ref while rendering is what react/refs forbids, and the
+   * rule was switched off in .oxlintrc.json rather than obeyed. Two
+   * reasons to obey it, one of them concrete: React's own compiler
+   * refuses to optimise a hook that does this, and these two hooks are
+   * shared by every package -- so the bail-out is not local. The other
+   * is that a render may be thrown away under concurrent rendering,
+   * and a ref written during one is a side effect that happened
+   * anyway.
+   *
+   * MOUNT IS STILL COVERED, which is the thing to check before
+   * believing this is equivalent: useRef's own initialiser above
+   * already holds the first render's pair, and the effect below reads
+   * latest.current when it runs, AFTER this effect. So the very first
+   * fetch sees the right values without this assignment ever having
+   * run. Every LATER render is what this keeps fresh -- which is what
+   * a rejection arriving after a re-render reads.
+   *
+   * No dependency array: it must run after every render, which is
+   * exactly what being a ref was for.
+   */
+  useEffect(() => {
+    latest.current = { fetcher, onSessionExpired }
+  })
 
   useEffect(() => {
     let cancelled = false

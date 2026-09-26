@@ -10,7 +10,7 @@ import {
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatTimestamp } from '@elysium/shell-api/format'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /**
  * What the mirror holds, table by table.
@@ -40,10 +40,21 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
     try {
       setSyncMessage((await startMirrorSync()).detail)
     } catch (caught: unknown) {
-      if (handleIfSessionExpired(caught, onSessionExpired)) return
+      if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
       setSyncMessage(getErrorMessage(caught))
     }
   }
+
+  // The session callback through a ref, so this effect has NO
+  // dependencies. App.tsx declares handleSessionExpired as a plain
+  // function inside the component, so it is a new identity on every
+  // render -- and this effect listed it, so every parent render tore
+  // the effect down and rebuilt it. The linter never flagged these
+  // two; the structural test in useLatest.test.tsx did.
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -55,7 +66,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
         })
         .catch((caught: unknown) => {
           if (cancelled) return
-          if (handleIfSessionExpired(caught, onSessionExpired)) return
+          if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
           setError(getErrorMessage(caught))
         })
     }
@@ -81,7 +92,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
       cancelled = true
       clearInterval(timer)
     }
-  }, [onSessionExpired])
+  }, [])
 
   if (error) return <ErrorState>{error}</ErrorState>
   if (!state) return <LoadingState label="Reading the mirror…" />
@@ -168,8 +179,17 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
         <tbody>
           {state.tables.map((table) => {
             const identifier = `${table.silo}.${table.table}`
-            const behind =
-              table.silver_rows !== null && table.bronze_rows !== null && table.bronze_rows !== table.silver_rows
+            const held = table.quarantined_rows ?? 0
+            const gap =
+              table.silver_rows !== null && table.bronze_rows !== null ? table.bronze_rows - table.silver_rows : 0
+            /* A GAP QUARANTINE FULLY EXPLAINS IS NOT A REFUSAL.
+             * Bronze took 4, validation held 2 back, silver serves 2:
+             * the sync worked and did its job. The tag below used to
+             * say "the last sync was refused" for any gap at all,
+             * which sends an admin looking for an incident that did
+             * not happen. Only the UNEXPLAINED remainder is evidence
+             * of one. */
+            const behind = gap !== 0 && gap !== held
             return (
               <React.Fragment key={identifier}>
                 <tr>
@@ -201,6 +221,16 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                   <td>{table.silver_rows ?? '—'}</td>
                   <td>
                     {table.bronze_rows ?? '—'}
+                    {held > 0 && (
+                      /* WHAT WAS HELD BACK, beside the counts it
+                         explains. Its own tag rather than a footnote:
+                         this is the difference between "we lost rows"
+                         and "we refused rows", and an admin reading a
+                         row count needs it at the same moment. */
+                      <Tag minimal intent="primary" style={{ marginInlineStart: '0.5rem' }}>
+                        {held} held back{table.quarantine_reason ? ` — ${table.quarantine_reason}` : ''}
+                      </Tag>
+                    )}
                     {behind && (
                       /* THE GAP, NAMED. Bronze took rows that silver
                        refused to interpret, which means the last sync
@@ -216,7 +246,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                           deployment serving 67 against 7 fetched,
                           where nothing had been dropped and silver was
                           simply out of date. */}
-                        {table.bronze_rows! > table.silver_rows!
+                        {gap > 0
                           ? 'fetched but not served — the last sync was refused'
                           : 'serving more than was last fetched — silver is out of date'}
                       </Tag>

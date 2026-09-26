@@ -22,7 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   // Default: a live deployment, so no freshness notice. Individual
   // tests override this to exercise the mirror-backed case.
-  mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+  mockedGetDataFreshness.mockResolvedValue({ source: 'gold', last_synced_at: null, published_at: null })
 })
 
 function singleObjectWrite(overrides: Partial<PendingWrite> = {}): PendingWrite {
@@ -337,7 +337,7 @@ describe('PendingWriteCard -- in-flight and failure handling', () => {
 
 describe('data freshness notice', () => {
   it('shows nothing for a live deployment -- there is genuinely nothing to warn about', async () => {
-    mockedGetDataFreshness.mockResolvedValue({ source: 'live', last_synced_at: null })
+    mockedGetDataFreshness.mockResolvedValue({ source: 'gold', last_synced_at: null, published_at: null })
     render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
     // Waits for the fetch to settle before asserting absence, so this
@@ -375,11 +375,48 @@ describe('data freshness notice', () => {
     expect(await screen.findByText(/7 minutes ago/)).toBeInTheDocument()
   })
 
-  it('says so plainly when the mirror has never synced', async () => {
+  it('reports the OLDEST publication among the types the write touches', async () => {
+    // A write spanning two types is only as current as the staler of
+    // them. Reporting the newer one would be a reassuring number this
+    // screen is not entitled to, at the moment someone decides whether
+    // the values are good enough to approve against.
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'gold',
+      last_synced_at: null,
+      published_at: {
+        Customer: new Date(Date.now() - 30 * 60_000).toISOString(),
+        Transaction: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+      },
+    })
+
+    const twoTypes = singleObjectWrite({
+      sub_writes: [
+        {
+          object_type: 'Customer',
+          object_id: 'cust_001',
+          changes: { name: 'Ada' },
+          expected_current_values: { name: 'Bo' },
+        },
+        {
+          object_type: 'Transaction',
+          object_id: 'txn_001',
+          changes: { amount: 5 },
+          expected_current_values: { amount: 4 },
+        },
+      ],
+    })
+
+    render(<PendingWriteCard pendingWrite={twoTypes} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+
+    expect(await screen.findByText(/3 hours ago/)).toBeInTheDocument()
+    expect(screen.queryByText(/30 minutes ago/)).not.toBeInTheDocument()
+  })
+
+  it('says so plainly when nothing has been published', async () => {
     mockedGetDataFreshness.mockResolvedValue({ source: 'mirror', last_synced_at: null })
     render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
 
-    expect(await screen.findByText(/have not been synced yet/i)).toBeInTheDocument()
+    expect(await screen.findByText(/have not been published yet/i)).toBeInTheDocument()
   })
 
   it('renders no notice, and no error, if the freshness call fails', async () => {
