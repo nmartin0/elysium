@@ -173,3 +173,67 @@ def test_invisible_characters_arrive_visible():
         )
         # And it is still THERE, escaped -- not silently dropped.
         assert json.loads(rendered)[0]["result"] == f"Ada{planted}"
+
+
+# ------------------------------- and omitted where no data is shown (AL-4)
+
+
+def test_a_planning_call_omits_the_framing_entirely():
+    """IT WARNS ABOUT VALUES THE PLANNER IS NEVER SHOWN.
+
+    A planning call has no `gathered`: the plan is fixed before any
+    field is read. Telling the model to ignore instructions inside
+    data it will not receive is 412 characters of prompt for nothing.
+
+    AND THOSE CHARACTERS ARE NOT FREE, which is why this is worth a
+    test rather than a shrug. Measured on the VM: prompt evaluation
+    runs at 0.104 seconds per character on a cold call -- 591.9s for a
+    5,675-character prompt, against 3.7s to load the model. This
+    paragraph costs about 43 seconds of every cold planning call.
+    """
+    from core.llm.agent_step_prompt import _build_system_prompt as build
+
+    step_prompt = build(SCHEMA, [], False, {})
+    plan_prompt = build(SCHEMA, [], False, {}, data_is_shown=False)
+
+    assert "never instructions" in step_prompt
+    assert "never instructions" not in plan_prompt
+    assert 350 < len(step_prompt) - len(plan_prompt) < 500
+
+
+def test_the_step_path_still_gets_it():
+    """THE HALF THAT MUST NOT CHANGE. The step loop IS shown field
+    values, every hop, so the framing is exactly as necessary there as
+    it was when AL-2 added it."""
+    from core.llm.agent_step_prompt import _build_system_prompt as build
+
+    default = build(SCHEMA, [], False, {})
+
+    assert "never instructions" in default, (
+        "the default must keep the framing; only a planning call omits it"
+    )
+
+
+def test_next_plan_asks_for_the_shorter_prompt():
+    """Asserted through next_plan(), not by calling the builder --
+    a control found that calling the builder directly cannot tell
+    whether the CALLER passes the flag."""
+    import json
+
+    from core.llm.agent_step_prompt import next_plan
+
+    seen = {}
+
+    class Recording:
+        max_concurrent_requests = 1
+
+        def chat(self, system_prompt, user_message, *a, **k):
+            seen["system"] = system_prompt
+            return json.dumps({"plan": [
+                {"id": "a", "step": "search_object",
+                 "object_type": "Ticket", "filter": {}},
+            ]})
+
+    next_plan(Recording(), "anything", SCHEMA, [], False, {})
+
+    assert "never instructions" not in seen["system"]
