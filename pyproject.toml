@@ -39,6 +39,26 @@ target-version = "py312"
 # F821/B018 project-wide.
 exclude = ["vulture_whitelist.py"]
 
+[project]
+# DECLARED SO THE EXTRA BELOW CAN ACTUALLY BE INSTALLED. Without a
+# name and a version, `pip install -e ".[identity]"` fails with
+# "`project` must contain ['version'] properties" -- so the extra was
+# a declaration no command could satisfy, which is why splink was
+# installed on nobody's machine and eight tests skipped everywhere.
+#
+# Elysium is RUN FROM A CHECKOUT, not installed as a library: the
+# runtime dependencies stay in requirements.txt with their locks, and
+# this table exists for the extra and nothing else.
+name = "elysium"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[tool.setuptools]
+# The packages an editable install puts on the path. Named explicitly
+# because automatic discovery finds `deployment`, `tests` and the
+# worktree directories too.
+packages = ["core", "api", "adapters", "scripts"]
+
 [project.optional-dependencies]
 # PROBABILISTIC IDENTITY RESOLUTION (GOLD-6), optional because
 # inference is off by default and this brings 186 MB across seven
