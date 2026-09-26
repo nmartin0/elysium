@@ -16,10 +16,20 @@
 
 import { HTMLTable, Tag } from '@blueprintjs/core'
 import { getDeploymentConfig } from '@elysium/shell-api/api'
+import { formatTimestamp } from '@elysium/shell-api/format'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
 interface DeploymentConfigBody {
+  /** WHEN this configuration was loaded, and a digest over the four
+   *  config files' bytes. The server has sent both since the endpoint
+   *  existed and this panel declared neither, so "what is this
+   *  deployment running" could not answer "since when" -- which is the
+   *  first question when behaviour changed and nobody remembers a
+   *  deploy. The digest discloses WHETHER the files changed, never
+   *  what is in them. */
+  loaded_at: string
+  source_digest: string
   llm_provider: string
   step_model: string
   synthesis_model: string
@@ -45,6 +55,27 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
         // Grouped by what a reader is looking for, not by the order the
         // config happens to declare them.
         const groups: [string, [string, React.ReactNode][]][] = [
+          [
+            // FIRST, because it identifies WHICH configuration the rest
+            // of this page describes. Every value below is only true of
+            // one generation, and without this the page reads as
+            // timeless.
+            'This configuration',
+            [
+              ['Loaded', formatTimestamp(config.loaded_at)],
+              [
+                // SHORTENED for reading, full value in the title. A
+                // digest is compared, not read: the first characters
+                // are enough to tell two apart at a glance, and the
+                // whole thing is one hover away when it has to be
+                // pasted somewhere.
+                'Source digest',
+                <span key="source-digest" title={config.source_digest}>
+                  <code>{config.source_digest.slice(0, 12)}</code>
+                </span>,
+              ],
+            ],
+          ],
           [
             'Model',
             [
