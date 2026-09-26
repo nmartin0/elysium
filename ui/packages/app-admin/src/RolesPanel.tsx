@@ -50,7 +50,22 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
   const [notice, setNotice] = useState<string | null>(null)
   const [selected, setSelected] = useState('')
   const [newName, setNewName] = useState('')
-  const [draft, setDraft] = useState<Set<string>>(new Set())
+  /**
+   * The edit in progress, TAGGED WITH WHAT IT WAS AN EDIT TO.
+   *
+   * This used to be a plain Set that an effect reset whenever the
+   * selected role or the loaded view changed -- react/set-state-in-
+   * effect, and the shape the rule names: the panel rendered once with
+   * the PREVIOUS role's grants and again with the new ones.
+   *
+   * An edit only means anything against the role and the server state
+   * it was made against, so keeping all three together lets the right
+   * value be DERIVED. A draft for a role we are no longer editing, or
+   * against a view the server has since replaced, simply does not
+   * match -- so it is never shown, where before there was a frame in
+   * which it was.
+   */
+  const [edited, setEdited] = useState<{ role: string; view: RolesView; grants: Set<string> } | null>(null)
 
   /**
    * The session callback through a ref, so `load` has NO dependencies
@@ -95,14 +110,17 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
     })()
   }, [load])
 
-  // THE DRAFT STARTS AS WHAT THE ROLE HOLDS NOW, so an edit is a change
-  // to something visible rather than a list typed from memory.
-  useEffect(() => {
-    if (view === null) return
-    setDraft(new Set(selected === NEW_ROLE ? [] : (view.roles[selected] ?? [])))
-  }, [selected, view])
-
   const groups = useMemo(() => (view === null ? [] : groupGrants(view.grantable)), [view])
+
+  // THE DRAFT STARTS AS WHAT THE ROLE HOLDS NOW, so an edit is a change
+  // to something visible rather than a list typed from memory. Derived
+  // rather than restored: the baseline, unless an edit was made
+  // against exactly this role and this view.
+  const baseline = useMemo(
+    () => new Set(view === null || selected === NEW_ROLE ? [] : (view.roles[selected] ?? [])),
+    [view, selected],
+  )
+  const draft = edited !== null && edited.role === selected && edited.view === view ? edited.grants : baseline
 
   async function act(action: () => Promise<unknown>, done: string) {
     setNotice(null)
@@ -210,11 +228,14 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
                 label={grant}
                 checked={draft.has(grant)}
                 onChange={() =>
-                  setDraft((now) => {
-                    const next = new Set(now)
+                  setEdited(() => {
+                    // Built from `draft`, which is already the edit if
+                    // there is one and the baseline if there is not --
+                    // so this needs no branch of its own.
+                    const next = new Set(draft)
                     if (next.has(grant)) next.delete(grant)
                     else next.add(grant)
-                    return next
+                    return { role: selected, view: view, grants: next }
                   })
                 }
               />

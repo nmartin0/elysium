@@ -160,3 +160,71 @@ describe('a refusal', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/your own role/)
   })
 })
+
+describe('the draft when the selection or the server state changes', () => {
+  /**
+   * WHAT THE SYNCHRONOUS RESET WAS FOR. The draft starts as what the
+   * role holds NOW, so an edit is a change to something visible rather
+   * than a list typed from memory. Two ways that can go wrong, neither
+   * of which had a test:
+   *
+   *   an edit to one role carried over to another -- proposing grants
+   *   nobody asked for, under a name nobody checked
+   *
+   *   an edit surviving a reload -- so the draft describes a version
+   *   of the role the server no longer has
+   */
+  it('does not carry an edit from one role to another', async () => {
+    open()
+    const picker = await screen.findByLabelText('Role to change')
+
+    fireEvent.change(picker, { target: { value: 'reader' } })
+    fireEvent.click(await screen.findByLabelText('read:C'))
+    // Switch away and back is not the test -- switching to a DIFFERENT
+    // role must show that role's own grants.
+    fireEvent.change(picker, { target: { value: 'admin' } })
+
+    expect((screen.getByLabelText('manage:users') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('read:C') as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByLabelText('read:A') as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('proposes the other role from ITS OWN grants, not the edited one', async () => {
+    // The consequence, asserted at the boundary rather than on a
+    // checkbox: what actually reaches the server.
+    open()
+    const picker = await screen.findByLabelText('Role to change')
+
+    fireEvent.change(picker, { target: { value: 'reader' } })
+    fireEvent.click(await screen.findByLabelText('read:C'))
+    fireEvent.change(picker, { target: { value: 'admin' } })
+    fireEvent.click(screen.getByLabelText('read:A'))
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+
+    await waitFor(() => expect(mockedPropose).toHaveBeenCalledWith('admin', ['manage:users', 'read:A']))
+  })
+
+  it('starts again from the server state after a change is approved', async () => {
+    // Approving reloads the roles; the draft must follow the new
+    // server state rather than keeping an edit made against the old.
+    vi.mocked(getRoleChanges).mockResolvedValueOnce([change({ role_name: 'reader', proposed_by: 'bob' })])
+    open()
+    fireEvent.change(await screen.findByLabelText('Role to change'), { target: { value: 'reader' } })
+    fireEvent.click(await screen.findByLabelText('read:C'))
+    expect((screen.getByLabelText('read:C') as HTMLInputElement).checked).toBe(true)
+
+    // The reload returns a role that now holds read:C already and has
+    // lost read:A -- a different set from the draft on screen.
+    vi.mocked(getRoles).mockResolvedValue({
+      source: 'the store',
+      roles: { reader: ['read:B', 'read:C'], admin: ['manage:users'] },
+      grantable: ['manage:users', 'manage:roles', 'read:A', 'read:B', 'read:C'],
+    })
+    vi.mocked(getRoleChanges).mockResolvedValue([])
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+
+    await waitFor(() => expect((screen.getByLabelText('read:A') as HTMLInputElement).checked).toBe(false))
+    expect((screen.getByLabelText('read:B') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('read:C') as HTMLInputElement).checked).toBe(true)
+  })
+})
