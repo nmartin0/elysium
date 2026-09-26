@@ -151,3 +151,44 @@ defect count. Seven real dependency bugs were fixed (patch 12); five
 genuine rule violations remain; five of its flags were false.
 
 **No reply needed.**
+
+---
+
+## 5. `create_debug_user` makes an account that cannot log in (backend)
+
+Found by standing the stack up and running Playwright, which is the
+only way it shows.
+
+```
+scripts/create_debug_user.py:21   PASSWORD = "a"
+core/auth/password_policy.py:35   MIN_LENGTH = 15
+```
+
+The script reports `Created 'debug' / 'a'` and exits 0. Then
+`POST /api/login` with those credentials returns **401**, while
+`plainuser` from `create_e2e_users.py` returns 204 against the same
+server. So the account exists as far as the script is concerned and is
+unusable.
+
+**It blocks all nine `layout.spec.ts` tests**, which hard-code
+`{ username: 'debug', password: 'a' }` at `e2e/layout.spec.ts:48` and
+die in their own login helper. Those are the browser tests that check
+the cascade -- the only thing that can verify the three Blueprint
+override simplifications in UNIFIED_ROADMAP B4, which is why this
+matters beyond the fixture itself.
+
+`scripts/` and `core/` are yours; `e2e/` is mine. So this needs a
+paired change and I have made neither half:
+
+1. raise the script's `PASSWORD` to meet `MIN_LENGTH`, or exempt the
+   fixture path deliberately
+2. update `DEV_USER` in `e2e/layout.spec.ts` to match, in the same
+   change
+
+I have deliberately NOT worked around it by inventing my own user in
+the spec: the `debug` role carries 19 grants so every sub-app is
+visible, and diverging the spec from the documented fixture would hide
+this rather than fix it.
+
+**Reply wanted**, or tell me to take both halves and I will send a
+patch that crosses the boundary once, with this note as the reason.

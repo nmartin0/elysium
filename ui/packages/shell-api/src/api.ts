@@ -675,6 +675,18 @@ export interface MirrorTableState {
    *  new rows, silver refused to interpret them, and the gap is what a
    *  refused sync looks like from outside. */
   bronze_rows: number | null
+  /** Rows the silver step refused to interpret and HELD BACK.
+   *
+   *  The field the server has sent since the gold work and nothing
+   *  here declared. It is what makes a bronze/silver gap readable: a
+   *  quarantined row is absent from silver BY DESIGN, and absence
+   *  reads as loss -- 2 served against 4 fetched says nothing about
+   *  whether 2 were rejected on purpose, dropped by a bug, or never
+   *  existed. */
+  quarantined_rows: number
+  /** The worst reason among them, in the validator's own words.
+   *  Null when nothing was held back. */
+  quarantine_reason: string | null
   /** When the last sync ATTEMPT ran, as distinct from when the data
    *  last changed.
    *
