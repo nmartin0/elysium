@@ -3870,3 +3870,70 @@ timeout is set from warm-call evidence has the same hole.
 that actually tests resistance -- plan mode's pass shows the question
 never arose, which is a different and weaker-sounding claim that
 happens to be the stronger one architecturally.
+
+---
+
+# I RAISED A TIMEOUT TWICE AND THE CAUSE WAS SOMEWHERE ELSE
+
+600 was not enough either. Raising it again would be exactly the
+"chasing the number" I said I would stop doing, so I looked for the
+cause instead.
+
+**`tests/integration/fixtures/config.yaml` never set `keep_alive`.**
+
+    deployment/etc/       keep_alive: -1   ONE model
+    integration fixture   (unset)          TWO models
+
+Ollama evicts a model, and its KV cache with it, after **five minutes**
+of inactivity by default. So:
+
+- **every integration run started cold**, because the previous one
+  finished more than five minutes earlier;
+- and the two models **evict each other**. A step call loads
+  qwen3:4b, synthesis loads qwen2.5:3b, and on a 2-core box the next
+  step call may pay a full load again.
+
+**THE LOAD IS THE SMALLER HALF, AND THE NUMBERS SAY SO.** dev's config
+measures a load at 12-47 seconds -- which does not explain a
+600-second timeout. What does is that eviction **dumps the KV cache**,
+so every call re-reads its whole prompt at the prompt-eval rate. AR-1
+measured exactly that: **520.89s cold against 50.58s warm on a LONGER
+prompt**.
+
+## This is my mistake, twice over
+
+I had the finding. Round 2's research said plainly: *"keep_alive rule
+(Most Critical): Ollama unloads the model (and dumps the cache) after
+5 minutes of inactivity by default."* I checked `deployment/etc`,
+found `-1`, wrote "verified, not assumed; no action" -- **and never
+checked the fixture**.
+
+Then I raised the timeout 480 -> 600 and wrote a comment arguing the
+pattern mattered more than the number. It did. I just had the wrong
+pattern: not "a cold call is expensive" but "**nothing here was ever
+allowed to be warm**".
+
+Verifying one of two config files and reporting it as verified is the
+failure. Both files set up a model; I only read the one I had been
+looking at.
+
+## It also explains something I had not noticed
+
+**No integration test has ever shown AR-1's or AR-2's effect.** Every
+call in that suite paid full prompt-eval, because the cache never
+survived between them. The prefix-reuse work is real and was invisible
+in the one place it was being exercised end to end.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3092 passed, 8 skipped
+
+## The re-run
+
+    python3 -m pytest tests/integration/test_prompt_injection_e2e.py -m integration -v
+
+If this is right, the step test should now finish rather than time
+out, and the whole suite should get noticeably faster. If it still
+times out, the cause is elsewhere again and I will stop guessing and
+ask for `ollama ps` output during a run.

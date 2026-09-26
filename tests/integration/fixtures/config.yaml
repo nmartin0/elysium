@@ -41,6 +41,34 @@ llm:
     # anything: it guarantees the first query after a model load
     # fails, which is the one a person is most likely to be watching.
     request_timeout_seconds: 600
+    # KEEP THE MODEL RESIDENT. This is the actual fix; the timeout
+    # increases above were treating a symptom, and I should say so
+    # plainly because I raised it twice before looking here.
+    #
+    # Ollama evicts a model, and its KV cache with it, after FIVE
+    # MINUTES of inactivity by default. This file never set
+    # keep_alive, so:
+    #
+    #   - every integration run started cold, because the last one
+    #     finished more than five minutes ago;
+    #   - and the two models below EVICT EACH OTHER. A step call loads
+    #     qwen3:4b, synthesis loads qwen2.5:3b, and on a 2-core box
+    #     with limited memory the next step call may pay a full load
+    #     again. deployment/etc/ uses ONE model for every call and
+    #     says why: "Two models mean Ollama loading and evicting
+    #     between them -- measured at 12-47 seconds per load on this
+    #     hardware, paid at least once per query."
+    #
+    # THE LOAD IS THE SMALLER HALF, AND THE NUMBERS SAY SO. 12-47
+    # seconds of reload does not explain a 600-second timeout. What
+    # does is that eviction DUMPS THE KV CACHE, so every call re-reads
+    # its whole prompt at the prompt-eval rate. AR-1 measured that
+    # difference on the dev deployment: 520.89s cold against 50.58s
+    # warm on a LONGER prompt, once the prefix was cached.
+    #
+    # None of that reuse could ever appear here, which is also why no
+    # integration test has ever shown AR-1's or AR-2's effect.
+    keep_alive: -1
   step_model: "qwen3:4b-instruct-2507-q4_K_M"
   synthesis_model: "qwen2.5:3b"
 
