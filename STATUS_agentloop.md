@@ -1825,3 +1825,121 @@ not a budget.
     D2     llama-server, which gates AR-3 and AR-8
     D3/D6  AR-9 heterogeneous models, AR-10 fine-tuning
     bench  scripts/llm_bench.py, asked for four times
+
+---
+
+# AL-7 and AL-12, researched harder. One of my own claims narrows.
+
+## AL-7 — OTel IS the right target. No better precedent exists.
+
+Checked the alternatives rather than assuming. The three
+OTel-aligned instrumentation libraries are OpenInference (Arize
+Phoenix), OpenLLMetry (Traceloop, acquired by ServiceNow in March
+2026) and OpenLIT. **All three emit OpenTelemetry spans and align
+with the GenAI semantic conventions**, and OpenLLMetry's own
+conventions were UPSTREAMED into OpenTelemetry. So they are not
+competing standards; OTel GenAI is where they converge.
+
+**Three refinements that change the recommendation:**
+
+**The stability problem is already solved at the collector.**
+OpenTelemetry ships a `genainormalizerprocessor` that rewrites
+OpenInference and OpenLLMetry attributes into GenAI semconv, with
+built-in mapping tables for both. Whatever dialect anything emits gets
+normalised downstream. There is also an explicit opt-in env var,
+`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`, which
+exists precisely so an application can adopt the unstable vocabulary
+deliberately.
+
+**We should emit spans ourselves, not adopt an instrumentation
+library.** Those libraries auto-patch SDK methods at import time to
+instrument code nobody wrote. We have ONE loop and ONE adapter, both
+ours. Auto-instrumentation buys nothing and costs a dependency that
+patches at import. Emitting `invoke_agent` / `chat` / `execute_tool`
+directly is a few lines at the three places that already exist.
+
+**And a warning worth heeding:** instrumenting with two libraries
+produces DUPLICATE spans. A Rust project's own research on this
+concluded: "Do not introduce a third independent telemetry dialect or
+treat unreleased OTel main as a stable standard." Both halves apply.
+
+**REVISED RECOMMENDATION:** emit OTel GenAI spans from our own code,
+behind config, with no instrumentation-library dependency. Still a
+LIBRARY_AUDIT call for the `opentelemetry-sdk` dependency itself.
+
+## AL-12 — MY CLAIM WAS TOO BROAD. The write half is already right.
+
+I said resuming after a proposed write is "a security design question,
+not plumbing", and implied the whole thing needed designing. **Half of
+it is already built and already matches the canonical pattern.**
+
+### What the precedent says
+
+Another agent team has written this problem up exactly (OpenAI Codex
+discussion 41780, "Approval Caches Need an Authorization Identity"):
+
+> It still may be stale if the user revoked authority... Time freshness
+> cannot establish that permission remains the same.
+
+> Time staleness and authorization staleness are therefore independent
+> dimensions.
+
+Their answer, and the same answer from MCP approval design and from
+production tool-permission guidance, is a four-part recipe:
+
+    bind the approval to the ARGUMENTS   so an old approval cannot be
+                                         replayed against changed ones
+    bind it to an AUTHORIZATION VERSION  so a role change invalidates it
+    REVALIDATE AT USE TIME               "the decisive check sits at the
+                                         consumption point"
+    ACCEPT A RESIDUAL WINDOW             "authorization can change again
+                                         after the check but before the
+                                         tool effect"
+
+One source lists as an explicit test case: "Remove the user's role
+between planning and execution."
+
+### We already do three of the four
+
+`confirm_and_execute()` re-runs `check_access()` per sub_write against
+the APPROVER at confirm time, re-evaluates submission criteria with
+the approver acting, and re-checks the proposal is still applicable
+against the current ontology -- deliberately at confirm rather than
+apply, "because the failure would otherwise arrive AFTER a human
+approved it". And a `PendingWrite` carries resolved object ids and
+mutations, so an approval is structurally bound to its arguments.
+
+**That is use-time revalidation, argument binding, and a stated
+residual window, already.** The write side of AL-12 needs nothing.
+
+### What is actually left, in plain English
+
+Today the agent reads some data, proposes a write, and the run STOPS.
+A human approves later, and the write executes under a fresh
+permission check. That part is fine.
+
+AL-12 asks the agent to CARRY ON answering the original question after
+the human approves. The awkward part is the data it read BEFORE the
+pause.
+
+Say it reads a customer's records at 9am and proposes a change. The
+human approves at 2pm. In between, that user's access could have been
+cut. If the agent now writes an answer mixing what it saw at 9am with
+what it can see at 2pm, part of that answer was never authorised as a
+whole.
+
+**The loop already refuses to do this within a single run** -- it
+re-resolves the user every hop and stops if anything changed, for
+exactly this reason. A pause for human approval is the same problem
+with a much longer gap.
+
+**TWO OPTIONS, and I would take the first:**
+
+1. **On resume, re-resolve the user. If anything changed, stop and
+   keep what was gathered** -- identical to what `authority_changed`
+   already does. Cheap, consistent, and no new rule to reason about.
+2. **On resume, re-read everything under current permissions.** Safest
+   and most expensive; on this hardware every re-read is real time.
+
+That is the whole decision. Not a design project -- one choice, and
+option 1 is what the existing code already does one layer down.
