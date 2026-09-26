@@ -474,3 +474,91 @@ failure this project already names** -- five lists that drifted, and
 the entry marked "blocking everything below it" that had been fixed
 weeks earlier. Mine exists only because I may not edit yours, and it
 should stop existing as soon as you have taken the rows.
+
+---
+
+## 56 of 145 source files have no owner, including the auth gate
+
+NEEDS: owner (the map itself), then backend
+
+SUPERSEDES the ownership half of my earlier request. I reported two
+unowned files found by accident and guessed there were more. A
+systematic pass says **56**.
+
+### Method, so you can re-run it rather than trust me
+
+Take every backticked path pattern in `000COORDINATION.md`'s ownership
+table, expand `/**` and trailing `/`, and `fnmatch` every tracked
+`*.py` outside `tests/` and `ui/` against them.
+
+    145 source files
+     89 matched by some rule
+     56 matched by none
+
+My first attempt used `startswith` and reported 60, wrongly including
+`core/pending_write_*.py` and other glob-owned files. Corrected before
+reporting; the 56 is from the fnmatch version.
+
+### What is in the 56
+
+Not obscure. Among them:
+
+    api/auth_dependency.py            get_current_user -- the session
+                                      gate every protected route passes
+    core/sqlite_connection.py         open_connection's read_only
+                                      authorizer, the engine-enforced
+                                      guarantee an earlier reviewer
+                                      executed against ATTACH and
+                                      PRAGMA writable_schema
+    scripts/bootstrap_root.py         creates the very first admin
+    core/role_store.py                where roles live once edited
+    core/role_changes.py              the role-approval path
+    core/ontology/object_type_validation.py
+                                      refuses a type declaring no
+                                      security -- the deny-by-default
+                                      that ACCESS_CONTROL_PROPOSAL
+                                      calls better than both lakehouse
+                                      vendors
+    api/request_size_limit_middleware.py   a DoS guard
+    api/reload.py                     configuration reload
+    core/secret_references.py         SEC-05's half
+    core/ontology/submission_criteria.py   F-08's skip
+    scripts/backup_deployment.py, scripts/restore_deployment.py
+                                      handle credentials.db
+
+Several are more security-load-bearing than files that ARE assigned.
+
+### Why this matters beyond tidiness
+
+An unowned file has no agent to route a finding to, and no agent whose
+job it is to look. SEC-05 sat in one. F-08 looked blocked because of
+one. Gerrit's code-owners documentation states the consequence
+directly: "files that are not owned by anyone cannot be approved since
+there is no code owner that can grant the approval. Due to this it is
+recommended to avoid code owner configurations that leave files
+without code owners." The canonical remedy is a catch-all default so
+every file has at least one owner, plus an audit for unowned files --
+GitHub's tooling ships `--unowned` for exactly this.
+
+ASKED FOR:
+  1. a catch-all line in `000COORDINATION.md` -- backend by default,
+     since that is where the coordinating role sits;
+  2. explicit assignment for the security-load-bearing files above,
+     which I would expect to be mine but will not claim unilaterally;
+  3. a check, so this cannot silently regrow. The method above is
+     eight lines of Python and could live beside `lint.sh`'s other
+     whole-repository checks.
+
+### And the two ownership documents disagree (SEC-11)
+
+`001SECURITY.txt` lists `scripts/create_*_user.py` as mine.
+`000COORDINATION.md`'s table does not mention it.
+
+I edited both user scripts for F-30 (patch `d992843`, now on the
+remote) on the authority of the document that lists them. If the table
+is the authority rather than the work list, that edit crossed a line I
+was told twice not to cross -- and I could not have told, because the
+two documents disagree and neither says which wins.
+
+Not asking for the patch to be reverted; asking for the two documents
+to be reconciled and for one of them to be named as authoritative.
