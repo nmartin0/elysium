@@ -20,10 +20,26 @@ WHAT A RULE SAYS:
       primary: primary_sql     # whose id the entity keeps
 
 MATCHED EXACTLY, ON STANDARDISED VALUES. Silver has already trimmed,
-collapsed and NFC-normalised these (GOLD-1), so "exactly" here means
-after the cleaning a deployment declared -- not after some fuzzy
-comparison this module invents. Anything looser is inference, and
-inference goes through proposals.
+collapsed and NFC-normalised the MATCH FIELDS (GOLD-1), so "exactly"
+here means after the cleaning a deployment declared -- not after some
+fuzzy comparison this module invents. Anything looser is inference,
+and inference goes through proposals.
+
+THE SECURITY FIELD IS THE EXCEPTION, and it changes what happens
+below. Since the pipeline stopped standardising it -- because a
+whitespace rule was measurably moving access boundaries -- the
+security value arrives here EXACTLY AS THE SOURCE HOLDS IT. So two
+storages holding "us-west " and "us-west" for the same entity now
+DISAGREE, and the merge is refused and sent to review rather than
+merged.
+
+THAT IS THE CONSERVATIVE ANSWER AND IT IS THE RIGHT ONE, for the
+reason stated at the refusal itself: "Merging would silently decide
+who can see the result." A merge is exactly where an untidy security
+value must not be quietly resolved. But it is a REAL BEHAVIOUR CHANGE
+-- a deployment with untidy region values will see merges it used to
+get land in the review queue instead, which is a queue somebody has
+to work through.
 
 THE ENTITY ID IS DERIVED, NEVER INVENTED. It is the primary source's
 id where that source has the row, and `<storage>:<id>` otherwise. A
