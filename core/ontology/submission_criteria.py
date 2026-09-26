@@ -363,6 +363,66 @@ def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | No
     return value_spec
 
 
+# The operators that ORDER two values. `equals`, `not_equals` and `in`
+# are safe on any pair -- Python compares mismatched types as unequal
+# rather than raising -- so only these need guarding.
+_ORDERING = frozenset({"greater_than", "less_than",
+                       "greater_than_or_equal", "less_than_or_equal"})
+
+
+def _comparable(operator_name: str, actual, expected) -> bool:
+    """Can these two values be ordered at all, and meaningfully?
+
+    WHY THIS EXISTS. An action's declared parameter `type:` is NOT
+    enforced anywhere. propose_action() checks that REQUIRED parameters
+    are present and that no UNDECLARED ones were sent -- presence and
+    names, never types. So a parameter declared `type: number` arrives
+    as whatever the caller sent, and reaches this comparison. Measured
+    before fixing, on a criterion `amount less_than 1000`:
+
+        amount = 5000     -> refused, correctly
+        amount = "5000"   -> TypeError: '<' not supported between
+                             instances of 'str' and 'int'
+        amount = None     -> TypeError
+        amount = [1, 2]   -> TypeError
+        amount = True     -> PASSED
+
+    TWO DIFFERENT FAULTS. The TypeErrors escape a criteria evaluator as
+    an unhandled exception from caller-supplied input, which surfaces
+    as a 500 rather than a refusal -- fail-closed, but a crash is not a
+    decision and the message carries internals.
+
+    THE BOOL IS THE ONE THAT MATTERS. `True < 1000` is True in Python,
+    because bool is a subclass of int. So a guard reading "amount must
+    be under 1000" is SATISFIED by a value that is not an amount, and
+    the action proceeds. That is a criterion bypassed with a value
+    nobody would call a number.
+
+    REFUSING, NOT RAISING AND NOT PASSING. A criterion that cannot be
+    evaluated has not been satisfied; treating "I could not tell" as
+    "allowed" is the opposite of how every other gate in this project
+    resolves doubt. The caller gets the criterion's own description,
+    which is what a real violation returns, so a probe cannot tell a
+    type mismatch from a genuine refusal.
+
+    NOT A TYPE SYSTEM. Enforcing declared parameter types belongs in
+    propose_action() beside the presence check, and would be a larger
+    change reaching every action definition. This closes the hole where
+    it bites without pretending to be that.
+    """
+    if operator_name not in _ORDERING:
+        return True
+    # bool BEFORE int: isinstance(True, int) is True, which is exactly
+    # how True slipped through a numeric guard.
+    if isinstance(actual, bool) != isinstance(expected, bool):
+        return False
+    try:
+        operator_fn = _OPERATORS[operator_name]
+        operator_fn(actual, expected)
+    except TypeError:
+        return False
+    return True
+
 def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dict | None,
                                   parameters: dict, user_record: UserRecord | None,
                                   proposer: UserRecord | None = None) -> None:
@@ -425,6 +485,12 @@ def evaluate_submission_criteria(criteria: list[dict] | None, current_state: dic
         operator_fn = _OPERATORS.get(operator_name)
         if operator_fn is None:
             raise ValueError(f"Unknown submission_criteria operator: {operator_name!r}")
+
+        if not _comparable(operator_name, actual_value, expected_value):
+            # FAIL CLOSED. A criterion that cannot be evaluated has not
+            # been satisfied -- see _comparable() for why this is a
+            # refusal rather than a crash or a pass.
+            raise SubmissionCriteriaViolation(criterion["description"])
 
         if not operator_fn(actual_value, expected_value):
             raise SubmissionCriteriaViolation(criterion["description"])

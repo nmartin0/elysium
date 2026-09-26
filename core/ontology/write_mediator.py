@@ -993,19 +993,47 @@ class WriteMediator:
         than as one 65-line body with cyclomatic complexity 26.
         """
         if operation == "create":
-            mac_allowed = True
-        else:
-            mac_allowed = (
-                user_record.security_value is not None
-                and self._adapter_mediator._security_allowed(
-                    object_type, object_id, user_record.security_value
-                )
+            # NO ROW TO CONSULT, so MAC cannot be evaluated and the
+            # execute: grant is the whole check. check_access() has no
+            # way to express that -- it would read a security value
+            # from an object that does not exist yet and deny -- so
+            # this branch stays as it was. Inventing a skip-MAC
+            # parameter to route it through would weaken the chokepoint
+            # in order to tidy a docstring, which is the wrong trade.
+            self.audit_log.log_access(
+                user_record.user_id, object_type, object_id, execute_action_id,
+                mac_allowed=True, rbac_allowed=rbac_allowed,
             )
-        self.audit_log.log_access(
-            user_record.user_id, object_type, object_id, execute_action_id,
-            mac_allowed, rbac_allowed,
-        )
-        if not mac_allowed:
+            return
+
+        # THROUGH THE CHOKEPOINT (004-8). This computed MAC inline and
+        # logged it by hand -- the same two gates check_access() makes,
+        # minus one thing only it does: on a MAC denial it asks whether
+        # the object's security value could be resolved AT ALL, and
+        # records log_security_resolution_failed() when it could not.
+        # That distinguishes an orphaned MDO record -- a data-integrity
+        # signal -- from an ordinary mismatch. It is called from
+        # exactly ONE place in core/, inside check_access(), so a path
+        # that does not go through there cannot emit it. The same
+        # broken object therefore produced that signal on a READ and
+        # silence on a WRITE.
+        #
+        # THE SHAPE IS ALREADY USED TWO FUNCTIONS AWAY: approver
+        # eligibility (_eligible_sub_write_indexes) branches to
+        # authorize() for a create and check_access() otherwise, and
+        # says reuse "means eligibility here cannot drift from
+        # eligibility anywhere else". This is that, applied to the
+        # proposer.
+        #
+        # RBAC IS RE-DECIDED HERE AND THAT IS DELIBERATE. It was
+        # already settled upstream at propose_action() and is always
+        # True by now; rbac_allowed is still passed in so the create
+        # branch above can log it accurately. One dict lookup buys a
+        # single place that decides, which is the point.
+        if not check_access(
+            self._adapter_mediator, user_record, self.roles,
+            object_type, object_id, execute_action_id,
+        ):
             raise PermissionError(f"{user_record.user_id!r} cannot modify this {object_type}")
 
     def _expected_current_values_for(self, operation: str, object_type: str, object_id: Any,
@@ -1047,6 +1075,76 @@ class WriteMediator:
                 f"{changes[id_field]!r} -- these must match."
             )
         return {}
+
+    def _drop_values_the_pipeline_produced(self, user_record: UserRecord, object_type: str,
+                                            object_id: Any, changes: dict,
+                                            source_values: dict, action_type_name: str) -> dict:
+        """Removes fields whose "new" value is what the caller was SHOWN.
+
+        THE FEEDBACK LOOP (R50), and it is the write-path half of
+        CONCERN-3. Silver standardises on the way in -- NFC, trim,
+        collapse whitespace (patch 337) -- so a source row holding
+        `"  Ada   Okafor "` is SERVED as `"Ada Okafor"`. A form
+        prefilled from the served value, saved by somebody who edited a
+        DIFFERENT field, proposes `name = "Ada Okafor"`, and the write
+        path puts that into the customer's own row. A transformation
+        nobody chose, attributed to somebody who never typed it, and
+        the original is gone.
+
+        NOTHING PREVIOUSLY NOTICED. _expected_current_values_for()
+        reads through _adapter_mediator, which is bound to the SOURCE,
+        so the lost-update check compares source against source and
+        passes. The proposed value was never compared against what the
+        caller was shown.
+
+        THE TEST IS "DIFFERENT FROM THE SOURCE, IDENTICAL TO THE
+        SERVED VALUE". A field equal to the source is not an echo --
+        it is a no-op, harmless, and left alone. A field equal to
+        neither is a real edit and is kept.
+
+        WHAT THIS COSTS SOMEBODY WHO MEANT IT: a caller who genuinely
+        wants to set the source to the standardised form cannot, and
+        that case is INDISTINGUISHABLE from the echo -- the bytes are
+        identical. Preserving the customer's own data is the
+        conservative reading of an ambiguity we cannot resolve, and
+        the alternative silently destroys it. Stated here rather than
+        discovered.
+
+        DROPPED, NOT REFUSED. Refusing the whole action would block a
+        legitimate edit to a neighbouring field, which is the common
+        case -- the echo arrives alongside a real change, not instead
+        of one.
+
+        FAILS TO TODAY'S BEHAVIOUR, NOT OPEN. get_field() returns None
+        for a field the caller may not read, and None is also a real
+        value, so an unreadable field cannot be compared and is kept.
+        That is the pre-R50 behaviour for that field and no weaker:
+        this guard protects the customer's DATA, it is not an
+        authorization gate, and MAC and RBAC already ran above.
+        """
+        kept = {}
+        for field_name, proposed in changes.items():
+            if field_name not in source_values or proposed == source_values[field_name]:
+                kept[field_name] = proposed
+                continue
+            # What a caller reading this object would have been shown:
+            # published gold, through the read mediator, with their own
+            # grants applied.
+            served = self.mediator.get_field(user_record, object_type, object_id, field_name)
+            if served is not None and proposed == served:
+                self.audit_log.log_echoed_value_not_written(
+                    user_record.user_id, object_type, object_id, field_name
+                )
+                continue
+            kept[field_name] = proposed
+
+        if not kept:
+            raise ValueError(
+                f"Action {action_type_name!r} on {object_type} {object_id!r} would change "
+                f"nothing: every value proposed is the one already shown to the caller. "
+                f"The source holds a different form of it, which this refuses to overwrite."
+            )
+        return kept
 
     def _refuse_cross_compartment(self, user_record, action_type_name: str,
                                   action_def: dict, parameters: dict,
@@ -1357,6 +1455,15 @@ class WriteMediator:
                 expected_current_values = self._expected_current_values_for(
                     operation, object_type, object_id, changes, action_type_name
                 )
+                if operation == "update":
+                    changes = self._drop_values_the_pipeline_produced(
+                        user_record, object_type, object_id, changes,
+                        expected_current_values, action_type_name,
+                    )
+                    expected_current_values = {
+                        field: value for field, value in expected_current_values.items()
+                        if field in changes
+                    }
                 resolved_sub_writes.append(
                     SubWrite(object_type, object_id, operation, changes, expected_current_values)
                 )
@@ -1445,12 +1552,70 @@ class WriteMediator:
         for object_type, object_id, criteria in self._criteria_for(pending):
             if not criteria:
                 continue
+            self._refuse_criteria_this_write_cannot_answer(pending, criteria)
             current_state = self._read_current_state_for_criteria(
                 object_type, object_id, criteria,
             )
             evaluate_submission_criteria(
                 criteria, current_state, pending.parameters, approver,
                 proposer=pending.proposer,
+            )
+
+    def _refuse_criteria_this_write_cannot_answer(self, pending: PendingWrite,
+                                                   criteria: list) -> None:
+        """Refuses a stored write a NEW parameter rule cannot be tested on.
+
+        THE UNSTATED PRECONDITION (001's F-08), made concrete at the
+        confirm path. A "parameter" criterion is silently SKIPPED when
+        its field is absent from the call's parameters, and at PROPOSE
+        time that is right: a rule about `amount` has nothing to say
+        about an action never given an amount, and required-ness is
+        validated before criteria are ever evaluated (propose_action,
+        the "Missing required parameter" raise).
+
+        AT CONFIRM THE ORDERING DOES NOT HOLD, because the two halves
+        come from different moments. _criteria_for() deliberately reads
+        the CURRENT action definition -- "a write proposed before a
+        four-eyes rule was added must still obey it" -- while
+        pending.parameters was captured under the definition in force
+        when it was proposed. REPRODUCED before fixing:
+
+            stored parameters : {'employee_id': 'e1'}
+            new rule          : amount less_than 1000
+            verdict           : PASSED -- silently skipped
+
+            the same rule with `amount` supplied -> correctly refused
+
+        So a rule added today is skipped precisely BECAUSE the write
+        predates it, which is the exact opposite of what _criteria_for
+        promises.
+
+        NARROW ON PURPOSE: only a parameter the CURRENT definition
+        declares `required: true` can be absent for this reason. An
+        OPTIONAL parameter being absent is the legitimate case the skip
+        was designed for and is indistinguishable from it, so it is
+        left alone -- widening this would start inventing violations.
+
+        REFUSES RATHER THAN SKIPS, following _fields_no_longer_declared
+        and log_write_unapplyable: a stored write that cannot be judged
+        under today's rules is re-proposed, not waved through. Fail
+        closed is this project's posture everywhere else.
+        """
+        declared = (self.action_types.get(pending.action_type_name) or {}).get("parameters") or {}
+        for criterion in criteria:
+            if criterion.get("check") != "parameter":
+                continue
+            field_name = criterion.get("field")
+            if field_name in pending.parameters:
+                continue
+            if not (declared.get(field_name) or {}).get("required"):
+                # Optional and unsupplied: the skip's original, correct case.
+                continue
+            raise ValueError(
+                f"This write was proposed before {field_name!r} became a required "
+                f"parameter of {pending.action_type_name!r}, so the rule "
+                f"{criterion.get('description') or field_name!r} cannot be checked "
+                f"against it. Re-propose the action."
             )
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool,

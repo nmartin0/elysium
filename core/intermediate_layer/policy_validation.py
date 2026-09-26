@@ -28,16 +28,32 @@ lifetime of a running deployment. Checking here, once, at startup, is
 strictly better: catches the exact same bug, for free at runtime,
 before the deployment ever serves a single real request.
 
-THE SEVEN REAL GRANT PATTERNS -- found by grepping every real call site
-that constructs an action_id string to pass to authorize(), not
-assumed or invented:
-  - "manage:users" -- an exact, fixed literal (core/user_directory.py,
-    api/routes.py). No object/field/action to reference at all.
-  - "discover:action_types" -- an exact, fixed literal (core/ontology/
-    write_mediator.py's own visible_action_types()), same shape as
-    manage:users above -- a single, blanket grant, not per-action-
-    type, so nothing further to validate against once the literal
-    string itself matches.
+THE REAL GRANT PATTERNS -- found by grepping every real call site that
+constructs an action_id string to pass to authorize(), not assumed or
+invented.
+
+NO COUNT IS STATED HERE, DELIBERATELY (001's F-12a). This said "THE
+SEVEN REAL GRANT PATTERNS" and then listed six, having fallen three
+behind the code: manage:roles and manage:escalation arrived with
+runtime role editing, manage:deployment with the config surface, and
+none of the three reached this prose. A number maintained by hand
+beside a list maintained by code is a claim that goes stale silently,
+and this module exists to stop exactly that class of drift elsewhere.
+
+The EXACT LITERALS are not repeated here either, for the same reason --
+they are EXACT_GRANTS at the bottom of this file, which is what the
+validator actually reads. tests/unit/test_grant_patterns_documented.py
+fails if one of them stops being mentioned in this docstring, so the
+two cannot drift apart again without something going red.
+
+  - THE EXACT, FIXED LITERALS -- see EXACT_GRANTS below for the list
+    that is actually enforced. Today: manage:users (core/
+    user_directory.py, api/routes.py), manage:roles, manage:escalation,
+    manage:deployment, and discover:action_types (core/ontology/
+    write_mediator.py's own visible_action_types()). Each is a single,
+    blanket grant with no object/field/action to reference, so there is
+    nothing further to validate once the literal string itself
+    matches.
   - "execute:<ActionName>" -- ActionName must be a real, declared
     action_type (core/ontology/write_mediator.py).
   - "tool:<ToolName>" -- ToolName must be in this deployment's own
@@ -57,9 +73,9 @@ different thing from a permission and is why the two were confused.
   - "read:<Type>" (no dot) -- Type must be real; the TYPE-level read
     grant gating schema visibility itself (core/ontology/mediator.py).
 
-Anything that doesn't match ANY of these seven patterns is rejected
+Anything that doesn't match ANY of these patterns is rejected
 outright, not silently accepted -- almost certainly a typo of one of
-the seven above (e.g. a stray colon, a misspelled prefix), and letting
+those above (e.g. a stray colon, a misspelled prefix), and letting
 it through unchecked would just be a DIFFERENT, undetectable version
 of the same silent-typo problem this module exists to catch.
 

@@ -2,9 +2,20 @@
 access_control.py  (the single canonical enforcement point -- generic, org-agnostic)
 
 check_access() is the ONLY function in the whole project that decides
-"is this allowed." Every surface that touches protected data --
-DataMediator's reads, WriteMediator's writes, MemoryGuard's memory
-reads -- calls THIS, never reimplements the combination itself.
+"is this allowed" for an object that EXISTS. Every surface that touches
+protected data -- DataMediator's reads, WriteMediator's updates and
+deletes, MemoryGuard's memory reads -- calls THIS, never reimplements
+the combination itself.
+
+ONE STATED EXCEPTION, because an absolute claim here was false and
+being believed (001's 004-8). A CREATE has no row for MAC to consult,
+so WriteMediator gates it on the execute: grant alone and audits it
+directly -- see _authorize_sub_write()'s own create branch for why
+adding a skip-MAC parameter here would weaken this function to tidy a
+sentence. Everything else on the write path came THROUGH here in the
+same change; before it, the write path computed MAC inline and so
+could never emit log_security_resolution_failed(), which is called
+from this function and nowhere else.
 
 Takes a pre-resolved UserRecord, not a raw user_id + users dict --
 resolution happens ONCE per request (see core/intermediate_layer/

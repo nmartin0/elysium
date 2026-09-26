@@ -16,6 +16,7 @@ than failing, so re-running after a reboot costs nothing.
 
 import sys
 
+from core.auth.development_only import refuse_unless_development
 from core.deployment_loader import load_deployment, resolve_runtime_paths
 from core.user_directory import UserDirectory
 
@@ -28,6 +29,19 @@ ACCOUNTS = [("debug", "a"), ("colleague", "a")]
 
 
 def main() -> int:
+    # THE GUARD THIS SCRIPT DID NOT HAVE (001's F-30). It creates
+    # 'debug' / 'a' itself -- the very account create_debug_user.py
+    # refuses to create without this flag -- so its absence here made
+    # that refusal walkable-around rather than enforced. First, before
+    # any work: a script that is going to refuse should refuse before
+    # it touches a deployment.
+    if refuse_unless_development(
+        "scripts.create_colleague_user",
+        "'debug' and 'colleague', both with password 'a' and every grant "
+        "the deployment defines",
+    ):
+        return 1
+
     paths = resolve_runtime_paths()
     config = load_deployment(paths.config_dir)
 
