@@ -449,3 +449,28 @@ keep happening and the finder will keep being whoever trips over it.
 MEANWHILE: nothing edited outside my files. Reported here and directly
 to the human, per 000COORDINATION.md's rule that a security defect in
 someone else's area is said immediately rather than filed.
+
+---
+
+## Fold FINDINGS_security.csv into AUDIT_CHECKLIST.csv
+
+NEEDS: backend
+
+WHAT: append the ten rows of `FINDINGS_security.csv` to
+`AUDIT_CHECKLIST.csv`, then delete mine.
+
+WHY: they are findings no audit raised, originated on this branch, and
+until now they existed only as prose in this file. None appears as a
+row in the checklist; "unowned" appears in it nowhere. A requests file
+is read once and merges into nothing.
+
+The schema is identical -- `id,set,source,severity,claim,where,probe,
+status`, checked equal in code -- so this is an append, not a
+transcription. Every runnable probe was executed before the file was
+written.
+
+MEANWHILE: the register lives on my branch. **Two registers is the
+failure this project already names** -- five lists that drifted, and
+the entry marked "blocking everything below it" that had been fixed
+weeks earlier. Mine exists only because I may not edit yours, and it
+should stop existing as soon as you have taken the rows.

@@ -593,6 +593,50 @@ control:
 
 Nothing further is buildable inside this agent's ownership.
 
+## Session 14 — FINDINGS_security.csv: the bugs, somewhere they survive
+
+**THE PROBLEM THIS FIXES.** Ten findings originated on this branch
+that no audit raised. Until now every one lived only in prose -- nine
+sections of `REQUESTS_security.md` and a handful of commit messages.
+Checked: NONE of them exists as a row in `AUDIT_CHECKLIST.csv`, and
+"unowned" appears in it nowhere at all. A requests file is read once,
+by one agent, and then merges into nothing. That is how a finding is
+lost without anybody deciding to drop it -- the same failure
+`BACKLOG.md` was created to end, and the same reason the checklist is
+a CSV rather than prose.
+
+`FINDINGS_security.csv` uses the **identical schema** to
+`AUDIT_CHECKLIST.csv` -- `id,set,source,severity,claim,where,probe,
+status`, verified equal -- so backend can append the rows rather than
+transcribe them. Ten rows: 2 HIGH, 1 SEC, 3 MED, 2 LOW, 2 INFO.
+
+**EVERY RUNNABLE PROBE WAS RUN before the file was written**, not
+after:
+
+    SEC-01  'us-west ' -> 'us-west'
+    SEC-02  customer's _silo -> 'primary_sql'
+    SEC-05  hunter2 still present after expand_secrets()
+    SEC-06  secret_references named in 0 ownership lists
+    SEC-09  0 hits for executor.shutdown
+
+A probe that has never been executed is a guess with a prompt in front
+of it (RULES.md 1), and a register of unrunnable probes would be worse
+than no register.
+
+WHAT IT HOLDS: SEC-01 the security field standardised; SEC-02 lineage
+overwriting a customer column; SEC-03 a declared _silo crashing gold;
+SEC-04 a criterion added after a write, skipped (FIXED here); SEC-05
+a plaintext credential reaching the lake manifest; SEC-06 two unowned
+files; SEC-07 E-02's residual and why a global cap cannot work;
+SEC-08 whether manage:deployment is a MAC bypass for aggregates;
+SEC-09 the executor drained only incidentally; SEC-10 a flaky
+concurrency test reported twice.
+
+ONE ASK OF BACKEND: fold these into `AUDIT_CHECKLIST.csv` and this
+file can go. It exists because I may not edit that one, not because
+two registers are a good idea -- and two lists is the exact failure
+the project already knows about.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
