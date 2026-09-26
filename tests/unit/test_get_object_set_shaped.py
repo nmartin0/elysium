@@ -126,7 +126,7 @@ def test_the_prompt_teaches_the_batched_shape_not_the_n_plus_1_one():
     # get_field per id -- the model was doing exactly what it was told.
     # A vocabulary the prompt does not teach is a vocabulary the model
     # will not use.
-    prompt = _build_system_prompt({}, [], False, {}, [])
+    prompt = _build_system_prompt({}, [], False, {})
 
     assert '"object_ids"' in prompt
     assert '{"step": "get_field", "object_type": "Transaction", "object_id": 1' not in prompt

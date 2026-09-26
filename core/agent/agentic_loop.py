@@ -62,6 +62,7 @@ Used by: scripts/run_deployment.py, api/routes.py, and directly by
          tests/integration/
 """
 
+import decimal
 import json
 import logging
 import threading
@@ -77,9 +78,13 @@ from core.functions.interface import Function
 from core.functions.ontology_access import OntologyAccess
 from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
-from core.llm.agent_step_prompt import next_step
+from core.llm.agent_step_prompt import next_plan, next_step
 from core.llm.interface import LLMAdapter, LLMUnavailable
+from core.llm.plan import MAX_PLAN_FANOUT, PlanError, resolve_step
+from core.llm.tracing import EXECUTE_TOOL, INVOKE_AGENT, span
+from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, coerce
 from core.ontology.mediator import DataMediator, security_cache_scope
+from core.ontology.schema import get_title_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
 from core.request_context import RequestContext
@@ -101,19 +106,127 @@ logger = logging.getLogger(__name__)
 MAX_OBJECT_IDS = 20
 
 
+class StopReason:
+    """Why the loop stopped. Exactly one of these, always.
+
+    LB-3 AND AL-6 ARE ONE DEFECT, which is why this is one change.
+    AL-6 said "four booleans instead of one stop reason"; LB-3 said
+    "three code-detected failures presented as complete answers". They
+    are the same hole from two ends: four of the ways this loop can end
+    set NO boolean at all, so the result was byte-identical to a
+    deliberate finish and every caller read it as one.
+
+    MEASURED BEFORE THIS CHANGE, by driving the real loop into each:
+
+        deliberate finish   every flag False
+        DUPLICATE spiral    every flag False   <- indistinguishable
+        UNKNOWN step kind   every flag False   <- indistinguishable
+
+    The unknown-step case was the worst of them. It stops on hop one
+    with nothing gathered, so synthesis received zero records and said
+    "no matching records were found (either none exist, or they're
+    outside your access scope)" -- blaming the customer's data or the
+    caller's own permissions for what was a model failure. That is not
+    a missing feature; it is a wrong answer delivered confidently.
+
+    ONE FIELD RATHER THAN A FIFTH BOOLEAN. A fifth would have the same
+    shape as the four that already failed: nothing forces a new stop to
+    set one, so the next one added defaults to silence exactly as these
+    did. A single required reason cannot be left unset -- a new stop
+    has to name itself.
+
+    THE BOOLEANS BELOW ARE DERIVED FROM THIS, not stored beside it. 27
+    call sites read them and none construct one, so they keep working
+    unchanged while there is only one thing to keep correct. Two
+    parallel representations of one fact is how they drift.
+    """
+
+    FINISHED = "finished"
+    MAX_HOPS = "max_hops"
+    CANCELLED = "cancelled"
+    AUTHORITY_CHANGED = "authority_changed"
+    RAN_OUT_OF_TIME = "ran_out_of_time"
+    PROPOSED_WRITE = "proposed_write"
+    # The four that used to say nothing at all.
+    REPEATED_ITSELF = "repeated_itself"
+    INVALID_STEPS = "invalid_steps"
+    BLOCKED_BY_RULES = "blocked_by_rules"
+    UNRECOGNISED_STEP = "unrecognised_step"
+    # Plan mode (AL-4).
+    PLAN_REFUSED = "plan_refused"        # nothing usable came back
+    PLAN_FAILED = "plan_failed"          # it ran and stopped, twice
+    PLAN_TOO_LONG = "plan_too_long"      # more steps than max_hops
+
+    # A deliberate finish is the ONLY ending that means "as much as was
+    # needed". A proposed write is not incomplete -- the run ended
+    # because a human has to decide, and what was gathered is whole.
+    COMPLETE = frozenset({FINISHED, PROPOSED_WRITE})
+
+
 @dataclass
 class AgentLoopResult:
     gathered: list[dict]
     pending_write: PendingWrite | None = None
-    cancelled: bool = False
-    hit_max_hops: bool = False
-    # The acting user's authority changed mid-query and the loop
-    # stopped. Distinct from cancelled: nobody asked for this, and the
-    # caller should say something different about it.
-    authority_changed: bool = False
-    # E-11: the query's deadline passed. Like hit_max_hops, what was
-    # gathered is kept, and synthesis is told it may be incomplete.
-    ran_out_of_time: bool = False
+    # REQUIRED IN PRACTICE though it carries a default: the default is
+    # the one ending that needs no explanation, and every other return
+    # in _run() names its own.
+    stop_reason: str = StopReason.FINISHED
+    # EVERY unusable reply this run produced, in order, by cause --
+    # "unparseable_reply", "malformed_step", "unrecognised_step".
+    #
+    # stop_reason names only the LAST one, and only when it ended the
+    # run. A fabricated finish that gets nudged and is followed by a
+    # genuine finish leaves stop_reason saying FINISHED and no trace
+    # anywhere but a log line, so the RATE was not measurable from a
+    # result at all.
+    #
+    # WHY THE RATE IS WORTH HAVING. A published CPU tool-calling
+    # benchmark found that adding a fallback parser for non-standard
+    # output moved one model from 0.670 to 0.960 and moved another
+    # DOWN from 0.880 to 0.780 -- a bigger swing than any model swap
+    # in its table. Our next_step() fails closed on every parse
+    # failure, so how often that fires is a number worth knowing
+    # before D1 changes the model underneath it.
+    fabricated_finishes: tuple[str, ...] = ()
+    # Hops already spent. A resume (AL-12) continues this budget rather
+    # than being handed a fresh one: an action that proposes a write
+    # every hop would otherwise get an unbounded total, one human
+    # approval at a time.
+    hops_used: int = 0
+
+    @property
+    def possibly_incomplete(self) -> bool:
+        """Whether synthesis must be told this answer may be partial.
+
+        The route previously computed `hit_max_hops or ran_out_of_time`
+        itself, which was right about those two and silent about the
+        four endings that set no flag. Asking the result instead means
+        a stop added later is covered without every caller being
+        revisited -- the failure this whole change is about.
+        """
+        return self.stop_reason not in StopReason.COMPLETE
+
+    @property
+    def cancelled(self) -> bool:
+        return self.stop_reason == StopReason.CANCELLED
+
+    @property
+    def hit_max_hops(self) -> bool:
+        return self.stop_reason == StopReason.MAX_HOPS
+
+    @property
+    def authority_changed(self) -> bool:
+        """The acting user's authority changed mid-query and the loop
+        stopped. Distinct from cancelled: nobody asked for this, and
+        the caller should say something different about it."""
+        return self.stop_reason == StopReason.AUTHORITY_CHANGED
+
+    @property
+    def ran_out_of_time(self) -> bool:
+        """E-11: the query's deadline passed. Like hit_max_hops, what
+        was gathered is kept, and synthesis is told it may be
+        incomplete."""
+        return self.stop_reason == StopReason.RAN_OUT_OF_TIME
 
 
 def _object_ids_in(step: dict) -> list:
@@ -431,15 +544,164 @@ class AgentLoop:
     # step out into several gathered entries, an auto-executed action
     # records its own, and a proposed action stops the loop instead.
 
+    def _titles_for(self, user_record: UserRecord, object_type: str,
+                    object_ids: list, visible_schema: dict,
+                    context: RequestContext | None) -> dict:
+        """A display name beside each id, where the ontology declares one.
+
+        AR-4: a search returns bare ids -- ["cust_001", "cust_002"] --
+        and the model has no idea which is which. It then spends hops
+        reading names back one at a time to find out, and an answer
+        built before it does cites an id at the user.
+
+        THE DECLARATION ALREADY EXISTED AND WAS WIRED TO NOTHING.
+        `title_field` is Palantir's "title key" ("the property that
+        acts as a display name for objects of this type"), validated
+        at schema load by object_type_validation.py, declared in the
+        shipped deployment as `title_field: name`, with a runtime
+        lookup in schema.py -- and get_title_field() had ZERO
+        production call sites. This is the caller it was built for.
+
+        EVERY TITLE IS A REAL, AUTHORISED, AUDITED READ. Not a
+        shortcut around the mediator: each goes through get_field()
+        with the caller's own UserRecord, so RBAC, MAC and the audit
+        entry all happen exactly as if the model had asked. Reading a
+        name the caller may not see would be a disclosure dressed as a
+        convenience -- and get_title_field()'s own docstring says
+        callers must decide visibility separately, which is what the
+        `fields` check below is.
+
+        THE COST IS REAL AND BOUNDED: up to MAX_OBJECT_IDS extra reads
+        per search, each with its own audit entry. That audit volume
+        is correct rather than noise -- the values genuinely were read
+        -- but it is a change in what a busy deployment's log looks
+        like.
+
+        DEGRADES TO SILENCE. No declared title, a title the caller
+        cannot see, or a refusal on any single object: that object
+        simply has no name here. The ids are unchanged either way, so
+        nothing the model does next depends on this having worked.
+        """
+        title_field = get_title_field(visible_schema, object_type)
+        if title_field is None:
+            return {}
+        # DECLARED IS NOT VISIBLE. A type can name a title field the
+        # caller has no grant to read.
+        if title_field not in visible_schema.get(object_type, {}).get("fields", {}):
+            return {}
+
+        titles = {}
+        for object_id in object_ids[:MAX_OBJECT_IDS]:
+            try:
+                value = self.mediator.get_field(
+                    user_record, object_type, object_id, title_field, context=context,
+                )
+            except (ValueError, TypeError, PermissionError):
+                # The same three the step loop treats as a recoverable
+                # mistake. A title is decoration; losing one must not
+                # cost the step that earned the ids.
+                continue
+            if value is not None:
+                titles[object_id] = value
+        return titles
+
+    @staticmethod
+    def _check_filter_types(object_type: str, filter_: dict, visible_schema: dict) -> None:
+        """Every filter value must fit the field's declared type.
+
+        VALIDATED AT THE MODEL BOUNDARY, BEFORE THE QUERY, which is
+        the principle every tool-calling framework converged on:
+        "every tool invocation validated before execution, not after".
+
+        WITHOUT IT THE FAILURE ARRIVES FROM THREE LAYERS DOWN. A model
+        writing `{"amount": "$100"}` reached pyiceberg, which raised
+        decimal.InvalidOperation -- an ArithmeticError nothing caught,
+        so it left the loop as a 500. That is patched, but catching an
+        exception is not the same as preventing one: caught, the model
+        is told "that step was not usable"; checked here, it is told
+        "'$100' is not a number, so it cannot be stored as a
+        `decimal`" and can fix it.
+
+        The economics are the reason to care. One corrective model
+        call is 50-280 seconds on this hardware; a message the model
+        can act on is the difference between one retry and a wasted
+        hop, or between a hop and a crash.
+
+        == AGAINST THE VISIBLE SCHEMA, NEVER THE CANONICAL ONE ==
+
+        `visible_schema` is the MAC- and RBAC-filtered view this
+        caller was shown. Validating against the full ontology instead
+        would be wrong twice over: the model can only satisfy the
+        schema it was shown, so a canonical-only field would produce
+        an error about something it never saw -- and, worse, that
+        error would CONFIRM the field exists. Uniform denial requires
+        that "no such field" and "a field you may not see" are the
+        same answer, and a type error about a hidden field breaks it.
+
+        A field absent from the visible schema is therefore left
+        alone here and refused downstream as an unknown field, which
+        is the existing, deliberately uninformative path.
+        """
+        fields = visible_schema.get(object_type, {}).get("fields", {})
+        for name, value in (filter_ or {}).items():
+            declared = fields.get(name)
+            if declared is None:
+                # Unknown to this caller: not ours to judge, and
+                # saying anything would confirm it exists.
+                continue
+            # NO SPECIAL CASE FOR LINKS. I wrote one and no control
+            # could kill it: a link declares no `data_type`, so it
+            # falls back to `string`, and coercing an id to a string
+            # always succeeds. Code a control cannot kill is code
+            # nobody can trust.
+            if value is None:
+                continue          # a null filter is a different question
+            try:
+                coerce(value, declared.get("data_type") or DEFAULT_FIELD_DATA_TYPE)
+            except (ValueError, TypeError, decimal.DecimalException) as e:
+                # THE FIELD NAME IS ADDED HERE because coerce() does
+                # not know it. "'$100' is not a number" is true but
+                # unactionable in a filter of several fields; "filter
+                # 'amount': '$100' is not a number" says which one to
+                # change.
+                raise ValueError(f"filter {name!r}: {e}") from e
+
     def _step_search_object(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict],
                             context: RequestContext | None = None) -> Any:
-        return self.mediator.search_object(
+        self._check_filter_types(step["object_type"], step["filter"], visible_schema)
+        object_ids = self.mediator.search_object(
             user_record, step["object_type"],
             as_equality_conditions(step["filter"]),
             visible_schema=visible_schema,
             context=context,
         )
+        self._append_search_result(step, user_record, object_ids, visible_schema,
+                                   gathered, context)
+        return STEP_HANDLED
+
+    def _append_search_result(self, step: dict, user_record: UserRecord,
+                              object_ids: Any, visible_schema: dict,
+                              gathered: list[dict],
+                              context: RequestContext | None,
+                              object_type: str | None = None) -> None:
+        """Appends the step's own entry, so `result` keeps its shape.
+
+        TITLES SIT BESIDE `result`, NEVER INSIDE IT. The model copies
+        ids out of `result` to use as object_id in its next step; a
+        list of {"id":..., "name":...} objects would invite it to pass
+        the whole object where an id belongs. The list stays a list of
+        ids and the names are a sibling key it can read but need not
+        understand.
+        """
+        entry = {**step, "result": object_ids}
+        titled_type = object_type or step["object_type"]
+        if isinstance(object_ids, list) and titled_type:
+            titles = self._titles_for(user_record, titled_type,
+                                      object_ids, visible_schema, context)
+            if titles:
+                entry["titles"] = titles
+        gathered.append(entry)
 
     def _step_get_field(self, step: dict, user_record: UserRecord,
                         visible_schema: dict, gathered: list[dict],
@@ -462,11 +724,23 @@ class AgentLoop:
     def _step_search_around(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict],
                             context: RequestContext | None = None) -> Any:
-        return self.mediator.search_around(
+        self._check_filter_types(step["object_type"], step.get("filter") or {},
+                                 visible_schema)
+        object_ids = self.mediator.search_around(
             user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             step["link_field"],
             context=context,
         )
+        # THE IDS ARE OF THE LINK'S TARGET, NOT step["object_type"].
+        # search_around("Customer", link_field="transactions") returns
+        # Transaction ids, so titling them as Customers would read the
+        # wrong type's title_field -- or, worse, read a field that
+        # happens to exist on both.
+        target = (visible_schema.get(step["object_type"], {})
+                  .get("fields", {}).get(step["link_field"], {}).get("target"))
+        self._append_search_result(step, user_record, object_ids, visible_schema,
+                                   gathered, context, object_type=target)
+        return STEP_HANDLED
 
     @staticmethod
     def _reject_unknown_fields(step: dict, visible_schema: dict) -> None:
@@ -616,6 +890,9 @@ class AgentLoop:
                        context: RequestContext | None = None) -> Any:
         tool = self._tools_by_name.get(step["tool_name"])
         tool_name = step["tool_name"]
+        # THE NAME ONLY, never the arguments: a tool's args are field
+        # values the model copied out of gathered data, which is
+        # exactly what must not reach a span. See core/tracing.py.
         if tool is None:
             raise ValueError(f"Unknown tool: {tool_name!r}")
         action = f"tool:{tool_name}"
@@ -632,7 +909,9 @@ class AgentLoop:
         declared = getattr(tool, "reads_object_types", []) or []
         if declared:
             call_args["ontology"] = OntologyAccess(self.mediator, user_record, declared)
-        with self._tool_limiters[tool.name].limit():
+        with self._tool_limiters[tool.name].limit(), span(
+            EXECUTE_TOOL, tool.name, **{"gen_ai.tool.name": tool.name}
+        ):
             return tool.run(**call_args)
 
     def _step_propose_action(self, step: dict, user_record: UserRecord,
@@ -668,11 +947,163 @@ class AgentLoop:
             "propose_action": self._step_propose_action,
         }
 
+    def execute_plan(self, plan: list[dict], user_record: UserRecord,
+                     visible_schema: dict, gathered: list[dict],
+                     context: RequestContext | None = None) -> str | None:
+        """Runs a validated plan, in order, resolving handles as it goes.
+
+        AL-4, commit 3. Returns None when every step ran, or a
+        STRUCTURAL description of what stopped it -- "step b returned
+        0 results", "step c would read 34 objects, over the limit of
+        20". Never a value.
+
+        THAT DISTINCTION IS THE WHOLE OF SHAPE B. Commit 4 hands this
+        string back to the planner so it can revise. A planted
+        instruction in a field cannot express itself through a count,
+        so re-planning on structure keeps the property that planning
+        on values would give away.
+
+        WHAT A STEP "PRODUCED" IS READ BACK FROM `gathered`, not from
+        a return value, and that is deliberate rather than awkward.
+        Handlers append their own entries -- search_object attaches
+        AR-4's titles that way -- so the gathered entries a step added
+        ARE its result. Taking it from anywhere else would be a second
+        account of the same thing, free to disagree with the one the
+        model is shown.
+        """
+        results: dict[str, Any] = {}
+        for step in plan:
+            step_id = step["id"]
+            try:
+                resolved = resolve_step(step, results)
+            except ValueError as e:
+                return f"step {step_id!r} could not be prepared: {e}"
+
+            targets = self._fanout_targets(resolved)
+            if isinstance(targets, str):
+                return f"step {step_id!r} {targets}"
+
+            before = len(gathered)
+            for one in targets:
+                marker = len(gathered)
+                _, _, stop_reason, pending = self._execute_step(
+                    one, user_record, visible_schema, gathered,
+                    0, 0, context,
+                )
+                # A REJECTION STOPS THE PLAN, and this is not the same
+                # check as `stop_reason`.
+                #
+                # _execute_step()'s recoverable-mistake path exists so
+                # the MODEL can be told what it got wrong and try
+                # again on the next hop. A plan has no model left --
+                # it is executing decisions already made -- so a step
+                # the mediator refused is simply the end of this plan,
+                # however forgiving the live loop would have been.
+                #
+                # Found by a test: with no counters accumulating, a
+                # bad step returned stop_reason=None and the plan
+                # carried on into steps that assumed it had worked.
+                rejected = [
+                    entry for entry in gathered[marker:]
+                    if entry.get("step") in AgentLoop.BOOKKEEPING_STEPS
+                ]
+                if rejected:
+                    return (f"step {step_id!r} was refused: "
+                            f"{rejected[0].get('step')}")
+                if pending is not None:
+                    # A PLAN THAT PROPOSES A WRITE STOPS THERE. The
+                    # remaining steps were planned on the assumption
+                    # this one succeeded, and it has not yet -- a human
+                    # has to decide first. AL-12's resume is what picks
+                    # it up.
+                    return f"step {step_id!r} proposed a write"
+                if stop_reason is not None:
+                    return f"step {step_id!r} failed: {stop_reason}"
+
+            results[step_id] = self._produced(gathered, before)
+        return None
+
+    @staticmethod
+    def _produced(gathered: list[dict], before: int) -> Any:
+        """What the steps appended since `before` actually returned.
+
+        One entry gives its value; several give a list; none gives
+        None. A later handle naming this step gets exactly what the
+        model was shown for it.
+        """
+        values = [
+            entry["result"] for entry in gathered[before:]
+            if entry.get("step") not in AgentLoop.BOOKKEEPING_STEPS
+            and "result" in entry
+        ]
+        if not values:
+            return None
+        return values[0] if len(values) == 1 else values
+
+    @staticmethod
+    def _fanout_targets(resolved: dict) -> "list[dict] | str":
+        """One step, or one per object when a handle named several.
+
+        A search returns a list, so a later `"object_id": "$a"` names
+        many objects. Running the step once per object is what the
+        model would have done hop by hop, and it is the only reading
+        that does not silently drop all but the first.
+
+        REFUSED OVER THE CAP rather than paged. MAX_OBJECT_IDS exists
+        because max_hops bounds how much one query may read, and a
+        plan has no model left to ask for a smaller batch -- paging
+        internally would let one planned step read arbitrarily much
+        under a limit written to prevent exactly that. The refusal is
+        structural, so commit 4 can hand it back.
+
+        A LIST ANYWHERE ELSE IS REFUSED. `"filter": {"region": "$a"}`
+        with a list is not an equality condition, and the filter
+        vocabulary is equality-only until LB-2 says otherwise.
+        Guessing would turn a type error into a wrong answer.
+        """
+        # A LIST INSIDE A LIST IS A HANDLE WRAPPED BY MISTAKE, and
+        # the first real fan-out run produced exactly that:
+        #
+        #   {"step": "get_object", "object_ids": ["$b"], ...}
+        #
+        # where $b was already ["1", "2"], giving [["1", "2"]].
+        # get_object then looked for an object whose id is that list,
+        # found none, and returned NOTHING -- the step did not fail,
+        # so the plan "finished" and a wrong answer came back looking
+        # clean. That silence is worse than the mistake.
+        #
+        # REFUSED STRUCTURALLY so shape B's revision can see it. The
+        # alternative -- flattening one level and carrying on -- would
+        # be guessing at what the model meant, which is the thing this
+        # executor refuses everywhere else.
+        for key, value in resolved.items():
+            if isinstance(value, list) and any(isinstance(v, list) for v in value):
+                return (f"wrapped a handle in a list in {key!r}; a search "
+                        f"result is already a list, so write \"{key}\": "
+                        f"\"$id\" rather than [\"$id\"]")
+
+        object_id = resolved.get("object_id")
+        if not isinstance(object_id, list):
+            for key, value in resolved.items():
+                if key != "object_ids" and isinstance(value, dict):
+                    if any(isinstance(v, list) for v in value.values()):
+                        return f"used a list of values in {key!r}, which takes one value"
+            return [resolved]
+        if len(object_id) > MAX_PLAN_FANOUT:
+            return (f"would read {len(object_id)} objects, over the limit of "
+                    f"{MAX_PLAN_FANOUT}")
+        return [{**resolved, "object_id": one} for one in object_id]
+
     def _execute_step(self, step: dict, user_record: UserRecord, visible_schema: dict,
                        gathered: list[dict], consecutive_invalid: int, consecutive_business_rule: int,
                        context: RequestContext | None = None
-                       ) -> tuple[int, int, bool, PendingWrite | None]:
+                       ) -> tuple[int, int, str | None, PendingWrite | None]:
         """Runs one step, counting mistakes and deciding whether to stop.
+
+        RETURNS A REASON, NOT A BOOLEAN (AL-6/LB-3). The bare
+        should_stop it used to return collapsed an unrecognised step
+        and a business-rule spiral into one value, so the caller could
+        not have named either even if it had wanted to.
 
         The dispatch is a table; what remains here is what is genuinely
         SHARED -- the two recoverable-mistake handlers, and the
@@ -682,14 +1113,15 @@ class AgentLoop:
         if handler is None:
             # An unknown step kind is not a mistake to count -- the
             # model produced something outside the schema entirely.
-            return consecutive_invalid, consecutive_business_rule, True, None
+            return (consecutive_invalid, consecutive_business_rule,
+                    StopReason.UNRECOGNISED_STEP, None)
         try:
             result = handler(step, user_record, visible_schema, gathered, context)
             if isinstance(result, _ProposalPending):
-                return 0, 0, True, result.pending
+                return 0, 0, StopReason.PROPOSED_WRITE, result.pending
             if result is not STEP_HANDLED:
                 gathered.append({**step, "result": result})
-            return 0, 0, False, None
+            return 0, 0, None, None
         except SubmissionCriteriaViolation as e:
             # MUST be caught before the generic ValueError branch below
             # -- SubmissionCriteriaViolation IS a ValueError subclass,
@@ -704,8 +1136,32 @@ class AgentLoop:
                 note=f"That action is not currently allowed: {e}. "
                      f"Try a different action, a different object, or finish if you have enough already.",
             )
-            return consecutive_invalid, new_count, should_stop, None
-        except (ValueError, TypeError, PermissionError) as e:
+            return (consecutive_invalid, new_count,
+                    StopReason.BLOCKED_BY_RULES if should_stop else None, None)
+        # decimal.DecimalException IS IN HERE BECAUSE A MODEL WRITING
+        # "$100" CRASHED /query.
+        #
+        # A filter value the model supplies is converted to the field's
+        # declared type before the query runs. On a DATE field a bad
+        # value raises ValueError and is caught here, becoming a
+        # mistake the model is told about. On a DECIMAL field it
+        # raises decimal.InvalidOperation, which is an ArithmeticError
+        # and was caught by nothing -- so it left the loop, left the
+        # handler, and became a 500.
+        #
+        # The same class of model mistake, two different outcomes,
+        # decided by which library happens to raise what. Measured:
+        # "not a number", "", "$100", True and [1, 2] all crash on
+        # `amount`; "yesterday" and "not-a-date" are recoverable on
+        # `transaction_date`.
+        #
+        # DecimalException RATHER THAN ArithmeticError, deliberately.
+        # The wider family would also swallow ZeroDivisionError and
+        # OverflowError raised by OUR code, and those are our bugs --
+        # reporting one to the model as "that step was not usable"
+        # would hide it behind a retry.
+        except (ValueError, TypeError, PermissionError,
+                decimal.DecimalException) as e:
             if isinstance(e, TypeError):
                 # A TypeError here is far more likely OUR bug than the
                 # model's -- a mediator called with the wrong arity, a
@@ -733,7 +1189,8 @@ class AgentLoop:
                      f"Check the schema above and try something valid, "
                      f"or finish if you have enough already.",
             )
-            return new_count, consecutive_business_rule, should_stop, None
+            return (new_count, consecutive_business_rule,
+                    StopReason.INVALID_STEPS if should_stop else None, None)
 
     def run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None,
@@ -749,13 +1206,231 @@ class AgentLoop:
         """
         # THE REAL SIGNATURE, not *args: a wrapper that erases the
         # typed signature is 001's F-04, and this would have been one.
-        with security_cache_scope():
+        with security_cache_scope(), span(INVOKE_AGENT, "elysium"):
             return self._run(user_record, query_text, cancel_event, context, refresh_user)
+
+    def run_planned(self, user_record: UserRecord, query_text: str,
+                    cancel_event: threading.Event | None = None,
+                    context: RequestContext | None = None) -> AgentLoopResult:
+        """One query, planned up front instead of hop by hop (AL-4).
+
+        A SIBLING OF run(), NOT A REPLACEMENT, and that is a decision
+        rather than caution. Four features on this branch are already
+        merged and inert waiting on wiring someone else owns; making
+        this a config flag would have been the fifth. As a second
+        entry point it is reachable from scripts/llm_bench.py today,
+        so it can be MEASURED against run() before anyone decides
+        which should be the default -- which is the only honest way to
+        decide it, given the accuracy literature says neither
+        architecture wins on its own.
+
+        ONE REVISION, ON STRUCTURE ONLY. If the plan stops, the
+        planner is told WHAT stopped it -- "step 'b' would read 34
+        objects, over the limit of 20" -- and gets one more attempt.
+        It is never told a value. A planted instruction in a field
+        cannot express itself through a step id and a count, which is
+        the property re-planning on results would give away.
+
+        WHY ONE. A plan fixed before any data is read is
+        injection-proof by construction; every revision is another
+        chance for the model to be wrong in the same way. The
+        literature's warning is that "if replanning fires on most
+        tasks, you're paying the planning cost AND the adaptation
+        cost", and at ~520s for an uncached planning call on this
+        hardware, a third attempt costs more than the query is worth.
+
+        WHAT WAS GATHERED SURVIVES A FAILURE. Those reads happened,
+        were authorised, and are in the audit log. Discarding them
+        would lose data the caller was entitled to and make the audit
+        entries describe reads nobody can see the result of.
+        """
+        with security_cache_scope(), span(INVOKE_AGENT, "elysium"):
+            return self._run_planned(user_record, query_text, cancel_event, context)
+
+    def _run_planned(self, user_record: UserRecord, query_text: str,
+                     cancel_event: threading.Event | None,
+                     context: RequestContext | None) -> AgentLoopResult:
+        visible_schema = self.mediator.visible_schema(user_record, for_agent=True)
+        writes_enabled = self.write_mediator is not None
+        # SAME CALL SHAPE AS _run() AT LINE 1343, which takes no
+        # context -- copied rather than invented, so the two cannot
+        # show the model different action sets.
+        visible_action_types = (
+            self.write_mediator.visible_action_types(user_record)
+            if self.write_mediator else {}
+        )
+        gathered: list[dict] = []
+        failure: str | None = None
+        steps_run = 0
+
+        for attempt in (1, 2):
+            if cancel_event is not None and cancel_event.is_set():
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.CANCELLED,
+                                       hops_used=steps_run)
+            try:
+                plan = next_plan(
+                    self.client, query_text, visible_schema, self.tools,
+                    writes_enabled, visible_action_types,
+                    previous_failure=failure,
+                    deadline=context.deadline if context else None,
+                    usage=context.token_usage if context else None,
+                )
+            except PlanError as e:
+                # AN UNUSABLE PLAN GETS THE SAME ONE REVISION AN
+                # EXECUTION FAILURE GETS, and the first VM run is why.
+                #
+                # The instructions were fixed to teach `"object_ids":
+                # "$b"`, the model wrote exactly that, and the
+                # validator rejected it -- and the query died on the
+                # spot with no second chance, because only EXECUTION
+                # failures fed the revision. A plan that is nearly
+                # right is the case shape B exists for.
+                #
+                # The message is structural -- a step id and a reason
+                # name -- so it is safe to hand back. It describes the
+                # model's own output, which the planner wrote and
+                # which never contained data.
+                logger.warning(f"no usable plan on attempt {attempt}: {e}")
+                if attempt == 1:
+                    failure = str(e)
+                    continue
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.PLAN_REFUSED,
+                                       hops_used=steps_run)
+
+            # max_hops BOUNDS A PLAN TOO. Without this a plan of a
+            # hundred steps would walk straight past the limit that
+            # exists to cap how much one query may read -- the loop
+            # enforces it per hop, and a plan has no hops to count.
+            if len(plan) > self.max_hops:
+                logger.warning(f"plan has {len(plan)} steps, over max_hops "
+                               f"{self.max_hops}")
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.PLAN_TOO_LONG,
+                                       hops_used=steps_run)
+
+            steps_run += len(plan)
+            failure = self.execute_plan(plan, user_record, visible_schema,
+                                        gathered, context)
+            if failure is None:
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.FINISHED,
+                                       hops_used=steps_run)
+            logger.warning(f"plan attempt {attempt} stopped: {failure}")
+
+        return AgentLoopResult(gathered=gathered,
+                               stop_reason=StopReason.PLAN_FAILED,
+                               hops_used=steps_run)
+
+    def resume(self, previous: AgentLoopResult, user_record: UserRecord,
+               query_text: str, write_outcome: dict,
+               cancel_event: threading.Event | None = None,
+               context: RequestContext | None = None,
+               refresh_user: "Callable[[], UserRecord | None] | None" = None,
+               ) -> AgentLoopResult:
+        """Carries on answering after a human decided a proposed write.
+
+        AL-12. A proposed write ENDS the run: the loop returns with
+        `pending_write` set and the caller takes the decision to a
+        human. Until now that was the end of the query -- whatever the
+        question was, it went unanswered, and the person had to ask
+        again from scratch after approving.
+
+        THE WRITE HALF NEEDED NOTHING. confirm_and_execute() already
+        re-runs check_access() per sub_write against the APPROVER,
+        re-evaluates submission criteria with them acting, and
+        re-checks the proposal is still applicable against the current
+        ontology. A PendingWrite carries resolved object ids and
+        mutations, so an approval is bound to its arguments and cannot
+        be replayed against different ones. That is argument binding,
+        use-time revalidation and a stated residual window -- the
+        pattern the field converged on.
+
+        WHAT THIS ADDS IS THE READ HALF, and it is one rule.
+
+        The data gathered BEFORE the pause was read under the grants
+        the user held then. A human decision takes minutes or hours,
+        and in that time their access can be cut. Continuing would
+        produce an answer assembled partly under one set of grants and
+        partly under another, which was never authorised as a whole.
+
+        That is the same objection the loop already makes WITHIN a run,
+        where the acting user is re-resolved every hop and a change
+        stops it. A pause for human approval is the identical hazard
+        with a far longer gap, so it gets the identical answer: the
+        user is re-resolved FIRST, before anything is read or sent to
+        a model, and a change ends the run as AUTHORITY_CHANGED with
+        what was already gathered kept.
+
+        Inventing a second, different rule for the same hazard is how
+        the two drift apart.
+
+        WHY NOT RE-READ EVERYTHING instead, under current grants: it is
+        the safer option and it was considered. On this hardware every
+        re-read is real time, and the cheaper rule is already the one
+        the code applies one layer down. If a deployment ever needs
+        the stronger guarantee it should be a declared choice, not the
+        default nobody measured.
+
+        THE CALLER OWNS PERSISTENCE. This takes the previous result as
+        an argument rather than storing anything: where a paused query
+        lives between the proposal and the decision is an api/ concern,
+        and a loop that held state between requests would be a second
+        place authorisation could go stale.
+        """
+        if previous.pending_write is None:
+            # FAIL CLOSED. Resuming a run that ended for some other
+            # reason would silently grant it a second hop budget, and
+            # the write outcome below would describe something that
+            # never happened.
+            raise ValueError(
+                "resume() expects a result that proposed a write; this one "
+                f"stopped with {previous.stop_reason!r}"
+            )
+
+        # FIRST, BEFORE ANYTHING ELSE. Not after the schema is built,
+        # not after the write outcome is appended: nothing should be
+        # read or sent to a model on behalf of a user whose authority
+        # may have changed.
+        if refresh_user is not None:
+            current = refresh_user()
+            if current is None or current != user_record:
+                logger.warning("authority changed while a write awaited a decision")
+                return AgentLoopResult(
+                    gathered=list(previous.gathered),
+                    stop_reason=StopReason.AUTHORITY_CHANGED,
+                    fabricated_finishes=previous.fabricated_finishes,
+                    hops_used=previous.hops_used,
+                )
+
+        # THE MODEL IS TOLD WHAT THE HUMAN DECIDED, as a gathered entry
+        # like any other. Without it the loop would re-propose the
+        # action it just had approved, or answer as though nothing had
+        # happened.
+        #
+        # UNDER "result", NOT SPREAD FLAT, and that is not cosmetic:
+        # filter_real_data() strips any entry whose `result` is None,
+        # so a flat entry would reach the PLANNER and be invisible to
+        # SYNTHESIS -- the model would choose its next step knowing the
+        # write happened and then write an answer that never mentions
+        # it.
+        gathered = [*previous.gathered,
+                    {"step": "write_decision",
+                     "action_type": previous.pending_write.action_type_name,
+                     "result": write_outcome}]
+
+        with security_cache_scope(), span(INVOKE_AGENT, "elysium"):
+            return self._run(user_record, query_text, cancel_event, context,
+                             refresh_user, prior_gathered=gathered,
+                             hops_already_used=previous.hops_used)
 
     def _run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None,
             context: RequestContext | None = None,
-            refresh_user: "Callable[[], UserRecord | None] | None" = None) -> AgentLoopResult:
+            refresh_user: "Callable[[], UserRecord | None] | None" = None,
+            prior_gathered: list[dict] | None = None,
+            hops_already_used: int = 0) -> AgentLoopResult:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # a proposed write/cancellation/max_hops -- whichever comes
@@ -766,8 +1441,16 @@ class AgentLoop:
         # user_record is a pre-resolved UserRecord, not a raw user_id --
         # the caller resolves identity ONCE. cancel_event is checked
         # only at the top of each hop -- see module docstring.
-        gathered: list[dict] = []
-        seen_signatures = set()
+        # PRIOR STATE, for a resume (AL-12). A fresh run passes none
+        # and this is the empty list it always was. The signatures are
+        # rebuilt from it so the duplicate guard still sees what the
+        # first half of the query already did -- resuming must not
+        # hand the model a clean slate to repeat itself on.
+        gathered: list[dict] = list(prior_gathered or [])
+        seen_signatures = {_step_signature(item) for item in gathered
+                           if item.get("step") not in AgentLoop.BOOKKEEPING_STEPS}
+        stop_reason = StopReason.FINISHED
+        fabricated_finishes: list[str] = []
         consecutive_duplicates = 0
         consecutive_invalid = 0
         consecutive_business_rule = 0
@@ -791,12 +1474,18 @@ class AgentLoop:
 
         deadline = context.deadline if context is not None else None
         usage = context.token_usage if context is not None else None
-        for _ in range(1, self.max_hops + 1):
+        hops_used = hops_already_used
+        for _ in range(hops_already_used + 1, self.max_hops + 1):
+            hops_used += 1
             if cancel_event is not None and cancel_event.is_set():
-                return AgentLoopResult(gathered=gathered, cancelled=True)
+                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.CANCELLED,
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
             if deadline is not None and time.monotonic() >= deadline:
                 logger.warning("query deadline passed, answering from what was gathered")
-                return AgentLoopResult(gathered=gathered, ran_out_of_time=True)
+                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME,
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
 
             # THE ACTING USER IS RE-RESOLVED EVERY HOP, not once per
             # request. Identity is resolved once when the request
@@ -824,7 +1513,9 @@ class AgentLoop:
                     # way the work so far is returned: it WAS authorized
                     # when it was read, and discarding it would lose
                     # information the user was entitled to.
-                    return AgentLoopResult(gathered=gathered, authority_changed=True)
+                    return AgentLoopResult(gathered=gathered, stop_reason=StopReason.AUTHORITY_CHANGED,
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
 
             try:
                 step = next_step(
@@ -837,13 +1528,30 @@ class AgentLoop:
                 # other unavailability is still the error it always was.
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("query deadline passed during a model call")
-                    return AgentLoopResult(gathered=gathered, ran_out_of_time=True)
+                    return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME,
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
                 raise
 
             if step["step"] == "finish":
+                # A FABRICATED FINISH IS NOT A FINISH (LB-3). next_step()
+                # fails closed on an unparseable reply, a step missing
+                # required keys, or a name outside the vocabulary -- and
+                # every one of those used to arrive here looking exactly
+                # like the model deciding it was done, so the caller was
+                # told a complete answer had been produced.
+                fallback = step.get("fallback")
+                if fallback is not None:
+                    # RECORDED WHETHER OR NOT IT ENDS THE RUN. A later
+                    # genuine finish must not erase the fact that an
+                    # unusable reply was produced on the way.
+                    fabricated_finishes.append(fallback)
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)
                 if should_stop:
+                    stop_reason = fallback or StopReason.FINISHED
                     break
+                if fallback is not None:
+                    logger.warning(f"fabricated finish ({fallback}), nudged for another hop")
                 continue
 
             try:
@@ -861,6 +1569,7 @@ class AgentLoop:
                          f"field, and ask again for each id separately.",
                 )
                 if should_stop:
+                    stop_reason = StopReason.INVALID_STEPS
                     break
                 continue
             signature = _step_signature(step)
@@ -875,6 +1584,7 @@ class AgentLoop:
                          f"different, or finish if you have enough.",
                 )
                 if should_stop:
+                    stop_reason = StopReason.REPEATED_ITSELF
                     break
                 continue
 
@@ -900,13 +1610,17 @@ class AgentLoop:
                             seen_signatures.add(
                                 ("get_field", step["object_type"], object_id, field_name))
 
-            consecutive_invalid, consecutive_business_rule, should_stop, pending_write = self._execute_step(
+            consecutive_invalid, consecutive_business_rule, step_stop_reason, pending_write = self._execute_step(
                 step, user_record, visible_schema, gathered, consecutive_invalid,
                 consecutive_business_rule, context
             )
             if pending_write is not None:
-                return AgentLoopResult(gathered=gathered, pending_write=pending_write)
-            if should_stop:
+                return AgentLoopResult(gathered=gathered, pending_write=pending_write,
+                                       stop_reason=StopReason.PROPOSED_WRITE,
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
+            if step_stop_reason is not None:
+                stop_reason = step_stop_reason
                 break
         else:
             # The for loop exhausted every hop without ever break-ing --
@@ -918,6 +1632,14 @@ class AgentLoop:
             # end, and one that used to be visible only in a server log
             # a caller would never see.
             logger.warning(f"hit max_hops ({self.max_hops}), stopping")
-            return AgentLoopResult(gathered=gathered, hit_max_hops=True)
+            return AgentLoopResult(gathered=gathered, stop_reason=StopReason.MAX_HOPS,
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
 
-        return AgentLoopResult(gathered=gathered)
+        # NAMED BY WHICHEVER break set it. Before this change every
+        # break fell through to a bare result that read as a deliberate
+        # finish -- the LB-3 defect, and why stop_reason has no safe
+        # default here.
+        return AgentLoopResult(gathered=gathered, stop_reason=stop_reason,
+                               fabricated_finishes=tuple(fabricated_finishes),
+                               hops_used=hops_used)

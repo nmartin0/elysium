@@ -204,7 +204,13 @@ class OllamaAdapter:
         except requests.RequestException as e:
             # Translated at the boundary so callers never need to know
             # this adapter uses `requests` -- see LLMUnavailable.
-            raise LLMUnavailable(f"Could not reach the model at {self.base_url}: {e}") from e
+            raise LLMUnavailable(
+                f"Could not reach the model at {self.base_url}: {e}",
+                # RETRYABLE (AL-5): the socket failed, not the model.
+                # A refused connection, a reset, a read timeout --
+                # none of them say the request was wrong.
+                retryable=True,
+            ) from e
         try:
             response.raise_for_status()
         except requests.HTTPError as e:

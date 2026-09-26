@@ -35,7 +35,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.agent.agentic_loop import AgentLoop, _step_signature
+from core.agent.agentic_loop import AgentLoop, StopReason, _step_signature
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.auth import UserRecord
 from core.ontology.link_types import expand_link_types
@@ -616,7 +616,12 @@ def test_an_unknown_step_kind_stops_without_counting_a_mistake(loop_and_mediator
         WEST, mediator.visible_schema(WEST), gathered, 3, 2,
     )
 
-    assert stop is True
+    # THE REASON, NOT `True` (AL-6/LB-3). _execute_step used to return a
+    # bare should_stop, which collapsed this case and a business-rule
+    # spiral into one value -- so the caller could not have told a
+    # caller which had happened even if it had tried, and the final
+    # result named neither.
+    assert stop == StopReason.UNRECOGNISED_STEP
     assert pending is None
     # Counters pass through unchanged -- nothing was attempted, so
     # nothing succeeded or failed.
