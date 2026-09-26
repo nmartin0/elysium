@@ -637,6 +637,66 @@ file can go. It exists because I may not edit that one, not because
 two registers are a good idea -- and two lists is the exact failure
 the project already knows about.
 
+## Session 16 — first security review of the newly-assigned files
+
+The owner assigned eight security-load-bearing files to this agent.
+No security agent had reviewed any of them. `AUDIT_CHECKLIST.csv` has
+exactly ONE unverified row against the set -- R14, already half closed
+-- so the checklist was not going to find anything here. This is a
+direct read, with every claim checked by running it.
+
+**NO DEFECTS FOUND.** That is a result, recorded rather than left as
+silence, so the next agent knows what has been looked at and does not
+repeat it.
+
+### What was checked, and how
+
+**`api/auth_dependency.py` -- can any route skip the session gate?**
+Counted rather than eyeballed: 56 routes declared, 53 depend on
+`get_current_user`. The three that do not are `/login`, `/logout` and
+`/health`, all documented and correct. The `must_change_password`
+allow-list is exact-match, so every near miss (a trailing slash,
+different case, a `..` segment) fails CLOSED into the 403 rather than
+out of it.
+
+**`core/role_changes.py` -- is escalation actually prevented, and
+WHEN?** This is the same class as F-08: a guard that runs at proposal
+against state that has moved by approval. It is handled, deliberately,
+and better than F-08 was. `approval_problem` re-runs at approval
+against `latest_generation(request).config` -- NOT the request's pin
+-- and passes `proposer_holds=_current_authority(...)`, so the
+proposer's authority is re-checked against CURRENT state. The code
+carries its own account of finding the pin "quietly defeating" the
+lock. The escalation rule itself follows Kubernetes' `escalate` verb,
+checks the AUTHOR as Kubernetes checks the requester, and considers
+only what a change ADDS. `decide()` does its check-then-act in one
+statement (`AND status = 'pending'`), which is the shape F-05 was
+missing one layer up.
+
+**`core/ontology/object_type_validation.py` -- is deny-by-default
+real?** The project claims to be stricter than both lakehouse vendors
+here, so the claim was tested rather than believed:
+
+    declares security    -> accepted
+    NO security block    -> REFUSED: Object type 'Customer' has no
+                            security block declared.
+
+It holds.
+
+**`scripts/bootstrap_root.py`** -- `secrets.token_urlsafe(24)`,
+printed once, no hardcoded default. Correctly needs no
+`--yes-this-is-development` guard, which is why F-30's tripwire globs
+`create_*_user*.py` and excludes it. Worth knowing and not a defect:
+it passes `mac_value=None`, so the first admin can see no objects at
+all until given one -- fail-safe, and undocumented.
+
+### Not re-derived
+
+`core/sqlite_connection.py`'s read-only authorizer was executed by an
+earlier reviewer against `ATTACH` and `PRAGMA writable_schema` and
+held. That is a negative control somebody already paid for; this
+review did not repeat it.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
