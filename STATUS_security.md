@@ -802,6 +802,47 @@ TWO WRINKLES, WHICH IS WHY IT IS PROPOSED AND NOT BUILT:
   The CSRF cookie name is read by `ui/`, which is the frontend agent's
   file. Renaming it is a cross-agent change.
 
+## Session 25 — SEC-19 found, fix built, fix REVERTED
+
+`core/role_store.py`. `load()`'s docstring: "A STORE THAT EXISTS BUT
+CANNOT BE READ RAISES rather than falling back. Falling back to
+policy.yaml would silently restore whatever roles the store had
+replaced -- possibly grants that were deliberately withdrawn."
+
+**It does not hold across a restart.** Measured:
+
+    process 1: seeded -> ['admin', 'reader']
+    (roles.db truncated to 0 bytes)
+    process 2: load() -> None        <- use policy.yaml
+
+`role_store_meta` distinguishes an emptied TABLE, which is what it was
+built for, but not an emptied FILE: `connection_with_schema` recreates
+the schema on open and the meta row does not come back. In-process it
+DOES raise, but only because that helper caches which schemas it has
+verified -- a safety property that holds until the next restart is not
+one.
+
+**AND THEN I GOT THE FIX WRONG.** I refused when the roles tables were
+absent. That broke 13 integration tests, because `RoleChangeStore`
+SHARES `roles.db` and its own docstring says so: "Proposing creates
+the file without seeding it, so policy.yaml stays in force until
+something is actually APPROVED." A file with no roles tables is a
+NORMAL state -- a change proposed and not yet applied.
+
+So my premise, "the file exists therefore it was a role store", was
+simply false, and the suite said so in a way my eight targeted tests
+could not. Reverted: the fix and its tests both encoded the wrong
+premise, and a half-understood guard on an authority boundary is worse
+than a recorded finding.
+
+WHY NARROWING DOES NOT RESCUE IT. Refusing only when the file has NO
+tables at all would pass the tests and still lose the case where a
+later proposal recreates the change tables over a truncated file. The
+right shape is probably a startup integrity check -- the audit trail
+records applied role changes, and disagreeing with `seeded_at` is the
+signal -- rather than a guard inside `load()`. That is a design, not a
+patch, so it is recorded as SEC-19 and proposed.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
