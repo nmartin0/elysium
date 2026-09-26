@@ -37,6 +37,7 @@ import logging
 from core.functions.interface import Function
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 from core.llm.plan import PlanError, validate_plan
+from core.llm.plan import is_handle as _is_handle
 from core.llm.prompt_values import dumps_gathered
 from core.llm.tracing import CHAT, span
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE
@@ -737,8 +738,20 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
     return validated_step(parsed)
 
 
-def validated_step(parsed: dict) -> dict:
+def validated_step(parsed: dict, allow_handles: bool = False) -> dict:
     """One parsed step, normalised -- or a finish naming what was wrong.
+
+    `allow_handles` IS FOR PLAN STEPS, AND IT EXISTS BECAUSE
+    VALIDATION RUNS BEFORE RESOLUTION. A plan step may write
+    `"object_ids": "$b"` where the live path requires a list: `$b` IS
+    a list, but only after the executor substitutes it, and this
+    function runs first.
+
+    Found on the VM. The instructions were fixed to teach
+    `"object_ids": "$b"` rather than `["$b"]`, the model did exactly
+    that, and this validator rejected the correct answer -- so the
+    teaching worked and the plan was refused anyway. A check that
+    punishes the form it asked for is worse than no check.
 
     EXTRACTED SO A PLANNED STEP AND A LIVE STEP CANNOT DIVERGE
     (AL-4). next_step() asks for one step and runs it; next_plan()
@@ -788,7 +801,9 @@ def validated_step(parsed: dict) -> dict:
             object_ids = parsed["object_ids"]
             # Same reasoning as field_names below: a non-list or an
             # empty one is structurally malformed, not "read nothing".
-            if not isinstance(object_ids, list) or not object_ids:
+            if allow_handles and _is_handle(object_ids):
+                pass          # resolves to a list at execution
+            elif not isinstance(object_ids, list) or not object_ids:
                 logger.warning("malformed get_object step (object_ids must be a non-empty list), finishing")
                 return _finish_step(fallback=MALFORMED_STEP)
         field_names = parsed["field_names"]
@@ -989,7 +1004,11 @@ def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
         # THE ID IS CARRIED THROUGH validated_step() SEPARATELY,
         # because that function normalises to the live step shape and
         # drops anything it does not recognise -- including "id".
-        checked = validated_step({k: v for k, v in step.items() if k != "id"})
+        # allow_handles: a plan step may write "object_ids": "$b",
+        # which is a string until the executor resolves it.
+        checked = validated_step(
+            {k: v for k, v in step.items() if k != "id"}, allow_handles=True
+        )
         fallback = checked.get("fallback")
         if fallback is not None:
             raise PlanError(

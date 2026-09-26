@@ -89,6 +89,17 @@ class PlanError(ValueError):
     """
 
 
+def is_handle(value: Any) -> bool:
+    """Whether a value is a handle, by the one rule this module owns.
+
+    Public because the step validator needs it: validation runs BEFORE
+    resolution, so a plan step's `"object_ids": "$b"` is still a
+    string when its shape is checked. Asking here rather than matching
+    a `$` prefix over there keeps one definition of what a handle is.
+    """
+    return isinstance(value, str) and _HANDLE.match(value) is not None
+
+
 def validate_plan(plan: Any) -> list[dict]:
     """Every id declared once, every handle pointing backwards.
 

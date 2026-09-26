@@ -1188,7 +1188,24 @@ class AgentLoop:
                     usage=context.token_usage if context else None,
                 )
             except PlanError as e:
+                # AN UNUSABLE PLAN GETS THE SAME ONE REVISION AN
+                # EXECUTION FAILURE GETS, and the first VM run is why.
+                #
+                # The instructions were fixed to teach `"object_ids":
+                # "$b"`, the model wrote exactly that, and the
+                # validator rejected it -- and the query died on the
+                # spot with no second chance, because only EXECUTION
+                # failures fed the revision. A plan that is nearly
+                # right is the case shape B exists for.
+                #
+                # The message is structural -- a step id and a reason
+                # name -- so it is safe to hand back. It describes the
+                # model's own output, which the planner wrote and
+                # which never contained data.
                 logger.warning(f"no usable plan on attempt {attempt}: {e}")
+                if attempt == 1:
+                    failure = str(e)
+                    continue
                 return AgentLoopResult(gathered=gathered,
                                        stop_reason=StopReason.PLAN_REFUSED,
                                        hops_used=steps_run)

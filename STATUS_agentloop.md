@@ -3332,3 +3332,82 @@ link -- and the part I had not explained wrong.
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  3069 passed, 8 skipped  (3065 before; +4 here)
+
+---
+
+# The teaching worked. My validator then rejected the right answer.
+
+The re-run. `--show-plan` shows the model wrote exactly what the new
+instructions asked for:
+
+    {"id": "c", "step": "get_object", "object_type": "Transaction",
+     "object_ids": "$b", "field_names": ["amount"]}
+
+`"object_ids": "$b"`, unwrapped. **The fix to the prompt worked on the
+first attempt.** And then:
+
+    malformed get_object step (object_ids must be a non-empty list)
+    no usable plan on attempt 1: Step 2 ('c') is not usable
+
+**VALIDATION RUNS BEFORE RESOLUTION.** `$b` IS a list -- but only
+after the executor substitutes it, and `validated_step()` runs first.
+So a check that had just been taught to ask for that form rejected it.
+A check that punishes the shape it asked for is worse than no check.
+
+## Two fixes, and the second is the one that cost a query
+
+**`allow_handles`** on `validated_step()`, used only by the plan path.
+A handle is accepted wherever the live path needs a list; the live
+path itself still refuses a bare string there, and a genuinely empty
+list is still refused either way.
+
+**AN UNUSABLE PLAN NOW GETS THE SAME ONE REVISION AN EXECUTION FAILURE
+GETS.** It did not. Only execution failures fed the revision, so a
+plan that was nearly right died on the spot with no second chance --
+and this one was nearly right. That is exactly the case shape B exists
+for, and I had wired it to cover only half of them.
+
+Two unusable plans are still refused. One revision, not unlimited.
+
+## A CONTROL PASSED AGAINST CODE THAT NEVER HAD THE FIX
+
+Control 1 -- "validate plan steps without allow_handles" -- passed.
+Twice, for two different reasons, and both are worth recording.
+
+**First** because no test in `test_next_plan.py` used a handle in a
+LIST position. Every one used a scalar `"object_id": "$a"`, so
+removing the flag changed nothing. Added the exact plan the VM
+produced.
+
+**Then it passed again** -- because the `allow_handles=True` argument
+had been dropped from the call site entirely by a reformat between my
+edit and the control run. The control was "passing" against code where
+the fix was not present at all, which is the most useless possible
+green.
+
+Caught by grepping the call site rather than trusting the test.
+Re-applied, verified it survives `ruff --fix`, and all four controls
+now fail as they should.
+
+**The lesson is not "be careful with sed".** It is that a control that
+passes deserves the same suspicion as a test that fails, and the only
+way to settle it is to look at the code the control claims to have
+changed.
+
+## Where AL-4 stands now
+
+    one_field          handle, correct, 1 call
+    two_constraints    handle, correct, 1 call
+    link_fanout        attempt 1: wrapped handle, silently wrong
+                       attempt 2: correct handle, rejected by my
+                                  validator
+                       attempt 3: not yet run
+
+Both failures were mine -- an under-specified instruction, then a
+validator that ran before resolution. **The model has not yet got a
+plan wrong for a reason of its own.**
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3073 passed, 8 skipped  (3069 before; +4 here)

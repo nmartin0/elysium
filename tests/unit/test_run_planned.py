@@ -192,12 +192,13 @@ def test_a_plan_longer_than_max_hops_is_refused(loop_and_user):
     assert result.gathered == [], "it read something before refusing"
 
 
-def test_an_unusable_plan_is_refused_not_retried_forever(loop_and_user):
-    loop, user = loop_and_user
-
-    result = _planned(loop, user, Replies("not json at all"))
-
-    assert result.stop_reason == StopReason.PLAN_REFUSED
+# REMOVED: test_an_unusable_plan_is_refused_not_retried_forever.
+# It asserted that ONE unusable plan meant immediate refusal, which
+# was the behaviour until the VM showed that costing a whole query
+# when the plan was nearly right. The pair below supersedes it
+# exactly -- one unusable plan is revised, two are refused -- so
+# keeping it would have meant asserting the old contract and the new
+# one in the same file.
 
 
 def test_a_cancelled_query_stops_before_planning(loop_and_user):
@@ -216,3 +217,47 @@ def test_a_cancelled_query_stops_before_planning(loop_and_user):
 
     assert result.stop_reason == StopReason.CANCELLED
     assert client.messages == [], "it called the model after cancellation"
+
+
+def test_an_unusable_plan_gets_a_revision_before_being_refused(loop_and_user):
+    """FOUND ON THE VM, and it cost a whole query.
+
+    The instructions were fixed to teach `"object_ids": "$b"`. The
+    model wrote exactly that. The validator -- which runs BEFORE
+    handle resolution, so `$b` is still a string -- rejected it. And
+    the query died on the spot, because only EXECUTION failures fed
+    the revision.
+
+    A plan that is nearly right is the case shape B exists for.
+    """
+    loop, user = loop_and_user
+    client = Replies("not a plan at all", GOOD_PLAN)
+
+    result = _planned(loop, user, client)
+
+    assert len(client.messages) == 2, "it gave up without revising"
+    assert result.stop_reason == StopReason.FINISHED
+
+
+def test_two_unusable_plans_are_refused(loop_and_user):
+    """One revision, not unlimited."""
+    loop, user = loop_and_user
+    client = Replies("not a plan", "still not a plan")
+
+    result = _planned(loop, user, client)
+
+    assert len(client.messages) == 2
+    assert result.stop_reason == StopReason.PLAN_REFUSED
+
+
+def test_a_handle_is_accepted_where_the_live_path_needs_a_list(loop_and_user):
+    """VALIDATION RUNS BEFORE RESOLUTION, so a plan step's
+    `"object_ids": "$b"` is a string when its shape is checked. The
+    live path must still reject a bare string there."""
+    from core.llm.agent_step_prompt import validated_step
+
+    step = {"step": "get_object", "object_type": "Transaction",
+            "object_ids": "$b", "field_names": ["amount"]}
+
+    assert validated_step(step).get("fallback") == "malformed_step"
+    assert "fallback" not in validated_step(step, allow_handles=True)

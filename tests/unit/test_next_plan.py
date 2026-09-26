@@ -224,3 +224,37 @@ def test_the_instructions_teach_the_list_form():
     assert '"object_ids": "$b"' in PLAN_INSTRUCTIONS
     assert '["$b"]' in PLAN_INSTRUCTIONS
     assert "NOT" in PLAN_INSTRUCTIONS
+
+
+def test_a_plan_may_put_a_handle_where_the_live_path_needs_a_list():
+    """THE EXACT PLAN THE MODEL WROTE ON THE VM, once the instructions
+    taught it the right form -- and which next_plan() then rejected.
+
+    A control caught that this file did not cover it: every other test
+    here uses a handle in a SCALAR position, so validating plan steps
+    without allow_handles changed nothing and the guard passed against
+    broken code. Going through next_plan() rather than calling
+    validated_step() directly is what makes the difference visible.
+    """
+    plan = _plan({"plan": [
+        {"id": "a", "step": "search_object", "object_type": "Customer",
+         "filter": {"name": "Ada Okafor"}},
+        {"id": "b", "step": "get_field", "object_type": "Customer",
+         "object_id": "$a", "field_name": "transactions"},
+        {"id": "c", "step": "get_object", "object_type": "Transaction",
+         "object_ids": "$b", "field_names": ["amount"]},
+    ]})
+
+    assert [step["id"] for step in plan] == ["a", "b", "c"]
+    assert plan[2]["object_ids"] == "$b"
+
+
+def test_a_plan_with_a_genuinely_empty_list_is_still_refused():
+    """The opposite direction: allowing a HANDLE where a list belongs
+    must not allow anything else. An empty object_ids is structurally
+    malformed whether or not handles are permitted."""
+    with pytest.raises(PlanError, match="not usable"):
+        _plan({"plan": [
+            {"id": "a", "step": "get_object", "object_type": "Customer",
+             "object_ids": [], "field_names": ["email"]},
+        ]})
