@@ -329,6 +329,60 @@ def _publish_link_tables(sync, schema: dict) -> None:
         print(f"published gold.{table_name}: {silver.num_rows} rows (link table)")
 
 
+def _targets_before_referrers(schema: dict) -> list:
+    """The object types, each after the types it links to (PA001-G8).
+
+    THE LINK AUDIT ASKS THE TARGET'S PUBLICATION whether an id
+    exists. Built in declaration order, a type could be audited
+    against its target's PREVIOUS publication -- so a new target row
+    and a new row referencing it, arriving in the SAME sync, refused
+    the referrer for pointing at a row that was published seconds
+    later.
+
+    MEASURED: `AOrder` (built first, alphabetically) was refused --
+    "1 customer value(s) point at no ZCustomer: 'c2'" -- and
+    `ZCustomer` then published c2. Nothing was wrong with the data.
+    Rename the type and the refusal moves.
+
+    A CYCLE CANNOT BE ORDERED, and the audit says so: "mutually-linked
+    types cannot both be ordered first". Those keep their declaration
+    order, which is no worse than before, and the deeper fix for them
+    is PR001-R18 (dependency-aware builds) or auditing after every
+    type is built.
+
+    DECLARATION ORDER IS THE TIE-BREAK, so a schema with no links
+    builds in exactly the order it did before and nothing moves
+    unnecessarily.
+    """
+    order = list(schema)
+    position = {name: index for index, name in enumerate(order)}
+    targets_of = {
+        name: {
+            (field.get("target") or field.get("object_type"))
+            for field in (type_def.get("fields") or {}).values()
+            if field.get("type") == "link"
+        } & set(order) - {name}
+        for name, type_def in schema.items()
+    }
+
+    built: list = []
+    done: set = set()
+    remaining = list(order)
+    while remaining:
+        ready = [name for name in remaining if targets_of[name] <= done]
+        if not ready:
+            # A CYCLE. Take the earliest-declared remaining type and
+            # carry on: no ordering satisfies it, and refusing to
+            # build would be worse than auditing it against the
+            # previous publication, which is what happened before.
+            ready = [min(remaining, key=lambda name: position[name])]
+        for name in ready:
+            built.append(name)
+            done.add(name)
+            remaining.remove(name)
+    return [(name, schema[name]) for name in built]
+
+
 def _outcome_for(result) -> str:
     """Which of SyncAttempts' three outcomes this run was (PA001-A17).
 
@@ -373,7 +427,7 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None) -> int:
     # rather than something derived from a source.
     decisions = MergeDecisionStore(data_dir / "identity_decisions.db")
     refused = 0
-    for object_type, type_def in (config.schema or {}).items():
+    for object_type, type_def in _targets_before_referrers(config.schema or {}):
         storage = type_def.get("storage") or {}
         identifier = f"{storage.get('silo')}.{storage.get('table')}"
         try:
