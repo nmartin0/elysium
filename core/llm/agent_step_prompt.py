@@ -38,6 +38,7 @@ from core.functions.interface import Function
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 from core.llm.prompt_values import dumps_gathered
 from core.llm.tracing import CHAT, span
+from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE
 from core.ontology.schema import is_searchable_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation, evaluate_submission_criteria
 
@@ -122,7 +123,50 @@ def _describe_object_type(object_type: str, definition: dict) -> str:
         if field_info["type"] == "link":
             field_descriptions.append(f"{field_name} (link -> {field_info['target']})")
         else:
-            field_descriptions.append(f"{field_name} (data)")
+            # THE DECLARED TYPE, not the bare word "data" (LB-2).
+            #
+            # The model was told `amount (data)` and `occurred_on
+            # (data)` -- the same thing for money and for a date -- so
+            # it could not tell a number from a string from a date in
+            # the schema it was reasoning over.
+            #
+            # ALREADY INCONSISTENT WITH F-17, which is what makes this
+            # a correction rather than a feature: _describe_actions()
+            # states an action parameter's type in prose
+            # (`new_from_balance (number, required)`) while an object
+            # field said nothing. One prompt, two answers to the same
+            # question.
+            #
+            # MEASURED AT +18 CHARACTERS over the shipped deployment's
+            # nine visible fields, against a 4,966-character system
+            # prompt -- which matters because AL-3 found that prompt is
+            # re-sent every hop and I had been adding to it without
+            # measuring.
+            #
+            # NOTHING NEW BECOMES POSSIBLE. The agent's filters are
+            # still equality-only; widening those is the rest of LB-2
+            # and is the owner's call (F-18). This only stops the
+            # schema lying by omission about what it holds.
+            #
+            # AN UNDECLARED FIELD IS A STRING, and says so.
+            #
+            # DEFAULT_FIELD_DATA_TYPE is what the rest of the system
+            # already treats it as -- core/ontology/constraints.py does
+            # exactly `field_def.get("data_type") or
+            # DEFAULT_FIELD_DATA_TYPE`, and the mirror uses the same
+            # default when a column has no declared type. Falling back
+            # to the word "data" here would be the same lie by
+            # omission this change exists to remove, and would leave
+            # the prompt mixing `amount (decimal)` with `name (data)`
+            # -- worse than the uniform ignorance it replaced.
+            #
+            # MEASURED AGAIN AFTER THIS, because the first attempt was
+            # wrong: I estimated +18 characters assuming every field
+            # declares a type. Only two of the shipped deployment's
+            # nine do, so falling back to "data" moved just 3
+            # characters and left seven fields still unlabelled.
+            declared = field_info.get("data_type") or DEFAULT_FIELD_DATA_TYPE
+            field_descriptions.append(f"{field_name} ({declared})")
 
         # Same rule core/ontology/mediator.py enforces for real --
         # see is_searchable_field()'s docstring for why this can't be

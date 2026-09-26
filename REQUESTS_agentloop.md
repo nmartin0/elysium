@@ -184,3 +184,64 @@ resumed = generation.loop.resume(
 **Not persistence advice:** where the paused result lives is yours.
 The loop deliberately stores nothing, because a loop holding state
 between requests is a second place authorisation can go stale.
+
+---
+
+## R5 -- ordering and a limit on search_object()
+
+**Owner:** backend (`core/ontology/mediator.py`)
+**Severity:** a class of question is currently UNANSWERABLE, not slow.
+
+`search_object()` takes conditions and returns ids. It has no
+ordering and no limit. So "the five largest transactions" cannot be
+answered: the agent must fetch every match and rank them itself, and
+`MAX_OBJECT_IDS` caps a fetch at 20. Beyond 20 rows the question has
+no correct answer available at all. **Filters cannot fix this** -- a
+filter narrows, it does not rank.
+
+**THIS IS A NAMED, UNIVERSAL PATTERN.** "Queries include sections such
+as LIMIT N or FETCH FIRST N ROWS. The pushdown for such a query is
+called a TOP-N PUSHDOWN." Trino, Starburst, DuckDB and Databricks all
+implement it; Databricks ships `pushdown.sortLimit.enabled` for
+ORDER BY plus LIMIT, enabled by default.
+
+**And Foundry has it in the API we already model on.** Search Objects
+takes `orderBy` (a list of fields each with a direction) and
+`pageSize`/`pageToken`.
+
+**Guidance written for LLM agents specifically calls our current shape
+the anti-pattern:** "Ask the LLM to use query pushdown and keep the
+application layer thin. Don't fetch everything and filter the results
+in TypeScript. Use database aggregation for metrics and summaries
+rather than computing them from raw rows."
+
+### What I am asking for
+
+```python
+def search_object(self, user_record, object_type, conditions=None,
+                  visible_schema=None, context=None, outcome=None,
+                  order_by=None,   # [(field, "asc"|"desc"), ...]
+                  limit=None):     # int
+```
+
+**ORDER AND LIMIT TOGETHER, not separately.** "Always combine a sort
+with a LIMIT -- sort pushdown failure is most costly when there is no
+limit, because the engine must sort the entire result set."
+
+**MAC IS THE PART THAT NEEDS YOUR JUDGEMENT, not mine.** This project
+applies MAC in Python per object AFTER the engine returns, deliberately
+-- it is never pushed into a query. A `limit` pushed to the engine
+would therefore cap the rows BEFORE MAC filters them, so a caller
+could ask for 5 and receive 2, with the other 3 silently dropped for
+being out of compartment. Worse, the count itself leaks: "you may see
+2 of the top 5" is information about rows the caller cannot read.
+
+I do not know which way you want that resolved -- over-fetch then
+trim, or refuse to push a limit at all -- and it is squarely a
+security-model decision in a file I do not own. **That is the real
+content of this request.**
+
+### My half
+
+Once it exists, exposing it to the agent is mine: a step vocabulary
+for ordering, the prompt text, and the tests. Say when.
