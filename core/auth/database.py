@@ -115,5 +115,10 @@ def connection(db_path: Path):
             # "already exists" is also swallowed for "read-only" or
             # "locked".
             add_column_if_missing("users", "must_change_password", "INTEGER NOT NULL DEFAULT 0"),
+            # WHICH SOURCE CREATED THIS ROW (E-02's residual). Nullable,
+            # so every row written before this column existed migrates
+            # without a value and is simply never counted against a
+            # budget -- see login_attempt_tracker.record_failure().
+            add_column_if_missing("login_attempts", "source", "TEXT"),
         ),
     )

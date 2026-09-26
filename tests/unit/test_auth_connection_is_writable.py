@@ -48,7 +48,8 @@ def test_the_connection_can_write(db_path):
     """The plain fact the comment denied."""
     with connection(db_path) as conn:
         conn.execute(
-            "INSERT INTO login_attempts VALUES ('probe', 1, '2026-01-01T00:00:00+00:00')"
+            "INSERT INTO login_attempts (username, failed_count, window_started_at)"
+            " VALUES ('probe', 1, '2026-01-01T00:00:00+00:00')"
         )
         conn.commit()
 
@@ -62,7 +63,8 @@ def test_and_it_can_delete(db_path):
     """Verbatim the thing that "couldn't delete even if it tried"."""
     with connection(db_path) as conn:
         conn.execute(
-            "INSERT INTO login_attempts VALUES ('probe', 1, '2026-01-01T00:00:00+00:00')"
+            "INSERT INTO login_attempts (username, failed_count, window_started_at)"
+            " VALUES ('probe', 1, '2026-01-01T00:00:00+00:00')"
         )
         conn.commit()
         conn.execute("DELETE FROM login_attempts WHERE username = 'probe'")
@@ -93,7 +95,8 @@ def test_is_locked_out_leaves_an_expired_row_alone(db_path):
     claimed to be a guarantee."""
     with connection(db_path) as conn:
         conn.execute(
-            "INSERT INTO login_attempts VALUES ('long_gone', 3, '2020-01-01T00:00:00+00:00')"
+            "INSERT INTO login_attempts (username, failed_count, window_started_at)"
+            " VALUES ('long_gone', 3, '2020-01-01T00:00:00+00:00')"
         )
         conn.commit()
 
@@ -120,7 +123,8 @@ def test_a_genuinely_read_only_connection_would_refuse(db_path):
     try:
         with pytest.raises(sqlite3.DatabaseError):
             conn.execute(
-                "INSERT INTO login_attempts VALUES ('x', 1, '2026-01-01T00:00:00+00:00')"
+                "INSERT INTO login_attempts (username, failed_count, window_started_at)"
+                " VALUES ('x', 1, '2026-01-01T00:00:00+00:00')"
             )
     finally:
         conn.close()

@@ -600,3 +600,57 @@ lands, which vulture tolerates because its paths include `tests`. I
 did not edit `api/routes.py`. The owner approved my taking that file
 for this and for E-02 SUBJECT TO YOUR AGREEMENT -- say the word and I
 will do both in one change, since they touch the same file.
+
+---
+
+## E-02: pass the caller's source into record_failure
+
+NEEDS: backend
+
+WHAT: at `api/routes.py`'s login route, where `record_failure` is
+called on a failed attempt, pass the caller's address:
+
+    request.app.state.login_attempt_tracker.record_failure(
+        body.username, source=request.client.host,
+    )
+
+One keyword argument. `source=None` is the default and keeps today's
+behaviour exactly, so nothing changes until this lands.
+
+WHY: field lengths were bounded by patch 321, but the NUMBER of
+distinct usernames one window can hold was not. Measured: 400
+unauthenticated requests with legal-length usernames wrote 400 rows
+and 122,880 bytes -- ~307 bytes each, extrapolating to ~28 MB at
+100 req/s and ~276 MB at 1,000, over one window, with no account.
+
+The bound is BUILT AND TESTED on the security branch: one source may
+start tracking 50 distinct usernames per window. Eleven tests, three
+controls fired.
+
+WHY PER SOURCE AND NOT A GLOBAL CAP, since I proposed a cap first and
+withdrew it: a global cap is unsafe in BOTH eviction directions.
+Evicting old rows lets an attacker flood junk usernames until a
+victim's failed-attempt row goes with them, resetting the lockout that
+protects them. Refusing new rows lets an attacker fill the table so no
+NEW username gets lockout protection at all. Both are complete
+bypasses. A per-source budget can only be spent by its own source.
+
+WHICH SOURCE VALUE TO USE IS YOURS TO PICK, and it matters.
+`request.client.host` is the peer address, which behind a reverse
+proxy is the PROXY -- every caller would share one budget and the
+first enumeration would exhaust it for everybody. If the deployment
+terminates TLS at a proxy (INSTALL.md says it should), the honest
+source is the right-most trusted entry of `X-Forwarded-For`, not the
+header's left-most value, which a caller controls. I did not want to
+decide your trusted-proxy story inside a store in `core/`.
+
+MEANWHILE: nothing. The parameter exists, defaults to None, and no
+caller passes it, so the residual is still open in the running
+product. I did not edit `api/routes.py`.
+
+KNOWN LIMIT, stated rather than discovered later: this bounds per
+source, so total storage is (active sources x 50) rather than an
+absolute number. An attacker with many addresses is bounded
+per-address. That is the standard limitation of source-based
+throttling and the reason the OWASP guidance pairs it with device
+cookies rather than treating it as complete.

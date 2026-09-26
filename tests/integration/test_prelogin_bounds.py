@@ -133,8 +133,10 @@ class TestExpiredAttemptsAreDeleted:
         old = (datetime.now(UTC) - WINDOW - timedelta(minutes=1)).isoformat()
         live = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
         with sqlite3.connect(db) as conn:
-            conn.execute("INSERT INTO login_attempts VALUES ('long_gone', 3, ?)", (old,))
-            conn.execute("INSERT INTO login_attempts VALUES ('still_counting', 2, ?)", (live,))
+            insert = ("INSERT INTO login_attempts "
+                      "(username, failed_count, window_started_at) VALUES (?, ?, ?)")
+            conn.execute(insert, ("long_gone", 3, old))
+            conn.execute(insert, ("still_counting", 2, live))
 
         client.post("/api/login", json={"username": "someone_else", "password": "wrong-but-long-enough"})
 
