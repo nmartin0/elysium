@@ -505,6 +505,51 @@ first, and it is a load-time check in the ontology loader --
 request rather than a patch. Recorded here so the rule exists before
 the first thing that would break it.
 
+## Session 12 — F-08 CLOSED, and it was mine after all
+
+I had recorded F-08 as blocked because its fix looked like it belonged
+in `core/ontology/submission_criteria.py`, which `000COORDINATION.md`
+assigns to nobody. `AUDIT_CHECKLIST.csv`'s own `where` column says
+`write_mediator.py` — mine — and the checklist was right. I had
+checked the symptom's location rather than the fix's.
+
+**The precondition is an ORDERING, and it holds in one of the two
+places criteria are evaluated.** At propose, required-ness is
+validated before any criterion runs, so a rule guarding a required
+parameter cannot be dodged by omitting it. At CONFIRM the two halves
+come from different moments: `_criteria_for()` deliberately reads the
+CURRENT definition while `pending.parameters` was captured under the
+old one.
+
+    stored parameters : {'employee_id': 'e1'}
+    new rule          : amount less_than 1000
+    verdict           : PASSED -- silently skipped
+
+A rule added today is skipped precisely because the write predates it,
+which is the opposite of what `_criteria_for` promises. No audit
+report raised this; it came out of reading the precondition.
+
+    fix        refuse at confirm when an absent parameter is one the
+               CURRENT definition declares required; optional-absent
+               is the legitimate skip and is left alone
+    controls   remove the guard        -> 2 failed, 5 passed
+               refuse on ANY absence   -> 2 failed, 5 passed
+    gates      ./lint.sh clean, 8/8; 2,873 unit (+7); 445 integration
+
+Commit `b33f929`.
+
+## A mistake worth recording: I reset onto a stale remote
+
+Starting this session I ran `git reset --hard origin/security` without
+running `git log origin/security..HEAD` first, and destroyed the
+commit carrying the security-attribute proposal (patch 0022), which
+had not yet been applied on the other side.
+
+RULES.md 19 exists for exactly this and names it as having already
+happened twice. Recovered from the reflog and verified tree-identical
+to what was shipped, so nothing was lost — but it was lost for a
+minute, and only because the reflog had it.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
@@ -542,7 +587,7 @@ remaining item is a decision, another agent's file, or both:
                                          api/routes.py -> requested
     DONE, controlled        R50          commit 25e9158
     PROPOSED                R52          seven rules, session 11
-    Policy, propose first   F-08         (file has no owner)
+    DONE, controlled        F-08         commit b33f929
     Owner decision          E-02 residual, F-13 and F-25 (backend files)
     Need one measurement    F-05  F-12b
     Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
