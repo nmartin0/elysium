@@ -119,7 +119,7 @@ PA001-G6,PA,PIPELINE_AUDIT,MED,integer ids served as strings; FK values stringif
 PA001-G7,PA,PIPELINE_AUDIT,LOW,link check compares ids without type normalisation,gold.py:130,P17,"LATENT AND PINNED patch 434: harmless only while ids and links are both text, which a test now asserts"
 PA001-G8,PA,PIPELINE_AUDIT,MED,link check depends on build order within one sync,run_sync.py:296,P17,unverified
 PA001-G9,PA,PIPELINE_AUDIT,HIGH,one refused table silently skips gold for all types,run_sync.py:430,IN,"CONFIRMED + FIXED patch 424: per-type, and the skip is named with its reason"
-PA001-G10,PA,PIPELINE_AUDIT,LOW,"silo named gold/gold_history/bronze_*/changelog_*/quarantine_* collides",gold_view.py:38,IN,unverified
+PA001-G10,PA,PIPELINE_AUDIT,LOW,"silo named gold/gold_history/bronze_*/changelog_*/quarantine_* collides",gold_view.py:38,IN,"CONFIRMED + FIXED patch 438: refused at load. Measured - a silo named gold made silver and gold THE SAME TABLE, silently"
 PA001-G11,PA,PIPELINE_AUDIT,LOW,gold republishes unchanged types every sync,gold.py,MR2,"interacts with patch 394 retention"
 PA001-G12,PA,PIPELINE_AUDIT,LOW,decimal scale differs by path; the API emits floats,api + mediator,IN,"PROMPT HALF FIXED patch 403 (one declared rendering); the API float half is still open"
 PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared text field (newlines),standardise.py:34,P21,"CONFIRMED + FIXED patch 417"

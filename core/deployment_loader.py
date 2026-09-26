@@ -308,6 +308,55 @@ def _require_str(value, description: str) -> None:
         )
 
 
+# Namespaces the pipeline writes for itself. A silo may not be called
+# one of these, nor anything that would produce one (PA001-G10).
+RESERVED_SILO_NAMES = ("gold", "gold_history")
+RESERVED_SILO_PREFIXES = ("bronze_", "changelog_", "quarantine_")
+
+
+def _refuse_reserved_silo_names(data_silos_raw: dict) -> None:
+    """A silo may not be named after a layer (PA001-G10).
+
+    THE PIPELINE WRITES ITS LAYERS AS NAMESPACES: a silo `p` produces
+    `p` (silver), `bronze_p`, `changelog_p` and `quarantine_p`, and
+    gold lives in `gold` with its history in `gold_history`. A silo
+    called `gold` therefore has its SILVER table at `gold.Thing` --
+    which is exactly where the gold publication goes.
+
+    MEASURED: with a silo named `gold`, silver and gold became the
+    same table. No error, no warning; the publication simply
+    overwrote the copy it was derived from, and every read after that
+    served a table that was its own source.
+
+    A PREFIX COLLIDES TOO, less obviously. A silo named `bronze_x` has
+    its silver at `bronze_x`, which is where silo `x` keeps its
+    bronze. The two deployments' tables would interleave in one
+    namespace.
+
+    REFUSED AT LOAD, with the layer named, because this is a
+    CONFIGURATION mistake and the moment to say so is before any data
+    moves. It is also unfixable afterwards: by the time the collision
+    shows, the tables have already been written over each other.
+    """
+    silos = (data_silos_raw or {}).get("data_silos") or {}
+    for name in silos:
+        if name in RESERVED_SILO_NAMES:
+            raise ValueError(
+                f"A data silo may not be called {name!r}: the pipeline "
+                f"writes its own {name!r} namespace, so this silo's silver "
+                f"tables and the gold publications would be the same tables. "
+                f"Rename the silo."
+            )
+        if name.startswith(RESERVED_SILO_PREFIXES):
+            layer = next(p for p in RESERVED_SILO_PREFIXES if name.startswith(p))
+            raise ValueError(
+                f"A data silo may not be called {name!r}: {layer!r} is the "
+                f"prefix the pipeline uses for its own {layer.rstrip('_')} "
+                f"namespaces, so this silo's tables would share a namespace "
+                f"with another silo's {layer.rstrip('_')}. Rename the silo."
+            )
+
+
 def validate_identifier_types(schema_raw: dict, policy_raw: dict) -> None:
     # Runs BEFORE anything else below even attempts to interpret
     # schema_raw/policy_raw's own contents -- core/ontology/action_
@@ -422,6 +471,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     data_silos_raw = load_yaml(base_path / "data_silos.yaml")
 
     validate_identifier_types(schema_raw, policy_raw)
+    _refuse_reserved_silo_names(data_silos_raw)
 
     # tools.enabled is genuinely OPTIONAL -- a deployment with no tools
     # declared (or no "tools" section at all) is completely valid, unlike
