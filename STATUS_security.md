@@ -550,6 +550,49 @@ happened twice. Recovered from the reflog and verified tree-identical
 to what was shipped, so nothing was lost — but it was lost for a
 minute, and only because the reflog had it.
 
+## Session 13 — E-12 verified; my area is swept
+
+E-12 ("no graceful shutdown; the executor is never drained") was the
+last row in `AUDIT_CHECKLIST.csv` touching a file I own that I had not
+personally verified. The roadmap records it tested by patch 326; I had
+taken that on trust.
+
+**Verified by control, not by the test's existence.**
+`tests/integration/test_graceful_shutdown.py` runs the app under a
+REAL uvicorn on a free port, starts a confirm that takes 1.5 s,
+requests shutdown mid-write, and asserts the write and both audit
+entries completed. Dropping `GRACE_SECONDS` from 30 to 0:
+
+    assert outcome.get("status") == 200   -> FAILED
+
+So the test genuinely observes the grace period rather than passing
+regardless. E-12 is closed.
+
+ONE THING WORTH KNOWING RATHER THAN REDISCOVERING: there is no
+explicit `executor.shutdown(wait=...)` anywhere. The executor is
+drained INDIRECTLY, because `/query` submits to it through
+`run_in_executor` and the request awaits the future -- so uvicorn
+waiting for in-flight requests waits for the executor work too. That
+is correct today and it is INCIDENTAL: a future path that submits to
+the executor WITHOUT a request awaiting it would not be drained by
+anything, and nothing would object. Recorded here rather than guarded,
+because no such path exists and PRINCIPLES.md 7 says not to build for
+a caller that does not exist.
+
+### The sweep is complete
+
+Every row in the checklist whose `where` names a file this agent owns
+is now closed with a control, or verified already fixed with a
+control:
+
+    F-08  F-12b  F-21  004-8  R50            fixed here
+    E-01  E-04  E-05  E-12                   verified already fixed
+    E-02                                     attack closed; residual
+                                             measured and needs the
+                                             caller's source identity
+
+Nothing further is buildable inside this agent's ownership.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
