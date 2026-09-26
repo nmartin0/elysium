@@ -31,8 +31,8 @@ F-27,001,001FINDINGS,HIGH,"crash recovery loses deletes, reports success, writes
 F-28,001,001FINDINGS,MED,"rebuild_deleted_index() documented as the recovery path, never called",write_log.py,IN,"fixed patch 397"
 F-29,001,001FINDINGS,MED,sync timestamp taken after the read: a blind window,iceberg_sync.py,RP,"= PA001-A5 (partly fixed)"
 F-30,001,001FINDINGS,MED,create_colleague_user.py bypasses create_debug_user.py's safety guard,scripts/,IN,unverified
-F-31,001,001FINDINGS,LOW,ObjectNotes.submit() is the only error handler ignoring session expiry,ui/,IN,unverified
-F-32,001,001FINDINGS,LOW,apiFetchOrThrow reads an untyped body.detail,ui/,IN,unverified
+F-31,001,001FINDINGS,LOW,ObjectNotes.submit() is the only error handler ignoring session expiry,ui/,IN,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
+F-32,001,001FINDINGS,LOW,apiFetchOrThrow reads an untyped body.detail,ui/,IN,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
 F-33,001,001FINDINGS,MED,two critical auth controls each defended by exactly ONE test,tests/unit,RP,unverified
 N-01,001,001FINDINGS,NOFIX,duplicated denial-logging block (rule of three says wait),core/intermediate_layer,IN,"recorded as do-not-fix"
 N-02,001,001FINDINGS,NOFIX,user_directory bare commit() (convention split),core/auth,IN,"recorded as do-not-fix"
@@ -65,23 +65,23 @@ E-15,E2,ELYSIUM-FLAWS-2,DOCS,requirements.txt says a lockfile is deferred; both 
 E-16,E2,ELYSIUM-FLAWS-2,DOCS,README says the pending-write store is in-process memory,README.md,MC,unverified
 E-17,E2,ELYSIUM-FLAWS-2,DOCS,README says links cannot cross data silos; they can,README.md,MC,unverified
 E-18,E2,ELYSIUM-FLAWS-2,DOCS,SECURITY_ARCHITECTURE heads a closed hole as THE REAL HOLE,SECURITY_ARCHITECTURE.md,MC,unverified
-E-19,E2,ELYSIUM-FLAWS-2,DOCS,UI_ROADMAP wrong on log rotation and migrations; the true gap is narrower,UI_ROADMAP.md,MC,unverified
+E-19,E2,ELYSIUM-FLAWS-2,DOCS,UI_ROADMAP wrong on log rotation and migrations; the true gap is narrower,UI_ROADMAP.md,MC,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
 E-20,E2,ELYSIUM-FLAWS-2,DOCS,six roadmap files overlap plus four *_PLAN.md,docs,MC,"owner decision: propose only"
 E-21,E2,ELYSIUM-FLAWS-2,OWNER,repository visibility vs LICENSE,LICENSE,IN,"owner decision; source-available is a recognised pattern"
 REVISE-7,E2,REVISE-THIS-FILE,GUARD,"section 7: 7 claims verified correct (SQL injection, read-only conn, timing, lockout, uniform denial, CSRF, headers)",various,RP,"negative controls; a break is a regression"
-CSS-S1-01,UI,AUDIT-09-css,DEFECT,"one selector defined twice; the first is dead and its comment describes removed behaviour",ui/ app.css,IN,unverified
-CSS-S1-02,UI,AUDIT-09-css,DEFECT,cascade-layer architecture declared and never used; 6 of 7 layers empty in the build,ui/ layers.css,IN,unverified
-CSS-S2-01,UI,AUDIT-09-css,DEAD,four rules for markup the Blueprint migration removed,ui/,IN,unverified
-CSS-S2-02,UI,AUDIT-09-css,DEAD,three custom properties defined and never used,ui/,IN,unverified
-CSS-S3-01,UI,AUDIT-09-css,GUARD,duplicate-selector test sees 101 of 148 selectors and no compound selector,ui/ tests,IN,unverified
-CSS-S3-02,UI,AUDIT-09-css,GUARD,the !important check covers three of four stylesheets,ui/ tests,IN,unverified
-CSS-S3-03,UI,AUDIT-09-css,COSMETIC,a duplicated comment block,ui/,IN,unverified
-UI-S1-01,UI,AUDIT-10,DOCS,"ui/README says no design system; the UI is built on Blueprint",ui/README.md,MC,unverified
-UI-S1-02,UI,AUDIT-10,DOCS,app-schema missing from the workspace listing (third omission),ui/README.md,MC,unverified
-UI-S1-03,UI,AUDIT-10,DOCS,per-package contents are a snapshot of an earlier codebase,ui/README.md,MC,unverified
-UI-S1-04,UI,AUDIT-10,DOCS,"five checks claimed, four listed, all four run; the React plugin is off",ui/ tooling,MC,unverified
-UI-S2-01,UI,AUDIT-10,MINOR,no <noscript> fallback,ui/index.html,IN,unverified
-UI-S2-02,UI,AUDIT-10,MINOR,no favicon link; every page load 404s,ui/index.html,IN,unverified
+CSS-S1-01,UI,AUDIT-09-css,DEFECT,"one selector defined twice; the first is dead and its comment describes removed behaviour",ui/ app.css,IN,"ALREADY FIXED before LLM4 started - reported by them, spot-checked by LLM1 on the frontend branch"
+CSS-S1-02,UI,AUDIT-09-css,DEFECT,cascade-layer architecture declared and never used; 6 of 7 layers empty in the build,ui/ layers.css,IN,"REWORDED, not just closed. LLM4 measured the BUILT bundle: vendor 2954, components 199, tokens 2, UNLAYERED 0. Neither prescribed action applies - nothing to migrate, and deleting a declaration every rule obeys would invert the cascade. Four layers are empty and layers.css documents three of those as deliberate. The real gap was a missing guard, added in layers.test.ts. Verified by LLM1: every stylesheet is wrapped and layers.css says overrides "should stay empty by design""
+CSS-S2-01,UI,AUDIT-09-css,DEAD,four rules for markup the Blueprint migration removed,ui/,IN,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
+CSS-S2-02,UI,AUDIT-09-css,DEAD,three custom properties defined and never used,ui/,IN,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
+CSS-S3-01,UI,AUDIT-09-css,GUARD,duplicate-selector test sees 101 of 148 selectors and no compound selector,ui/ tests,IN,"ALREADY FIXED before LLM4 started - reported by them, spot-checked by LLM1 on the frontend branch: theme.test.ts now has a test named ""sees every rule, not a fraction of them"" - the regex that saw 1 of 204 rules is gone"
+CSS-S3-02,UI,AUDIT-09-css,GUARD,the !important check covers three of four stylesheets,ui/ tests,IN,"ALREADY FIXED before LLM4 started - reported by them, spot-checked by LLM1 on the frontend branch"
+CSS-S3-03,UI,AUDIT-09-css,COSMETIC,a duplicated comment block,ui/,IN,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
+UI-S1-01,UI,AUDIT-10,DOCS,"ui/README says no design system; the UI is built on Blueprint",ui/README.md,MC,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
+UI-S1-02,UI,AUDIT-10,DOCS,app-schema missing from the workspace listing (third omission),ui/README.md,MC,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
+UI-S1-03,UI,AUDIT-10,DOCS,per-package contents are a snapshot of an earlier codebase,ui/README.md,MC,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
+UI-S1-04,UI,AUDIT-10,DOCS,"five checks claimed, four listed, all four run; the React plugin is off",ui/ tooling,MC,"ALREADY FIXED before LLM4 started - reported by them, spot-checked by LLM1 on the frontend branch: the oxlint react plugin is ON in ui/.oxlintrc.json"
+UI-S2-01,UI,AUDIT-10,MINOR,no <noscript> fallback,ui/index.html,IN,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
+UI-S2-02,UI,AUDIT-10,MINOR,no favicon link; every page load 404s,ui/index.html,IN,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
 PA001-F1,PA,PIPELINE_AUDIT,CRITICAL,a new source column freezes bronze/silver/changelog permanently while sync reports success,iceberg_sync.py:842/969/424,P1;P2,"CONFIRMED + FIXED patch 406 (with A9)"
 PA001-F2,PA,PIPELINE_AUDIT,CRITICAL,any bronze failure makes silver re-derive from the previous bronze snapshot,iceberg_sync.py:364/424/872,P1-B,"CONFIRMED + FIXED patch 407"
 PA001-F3,PA,PIPELINE_AUDIT,HIGH,"stringified bronze changes what silver accepts; coerce('5.0',integer) still raises",field_types.py:214,P3,"partly fixed 82881ef"
@@ -293,3 +293,5 @@ LLM3-5,COORD,request from LLM3,ANSWERED,"seven security items read unverified wh
 LLM3-6,COORD,request from LLM3,ANSWERED,"000COORDINATION.md and 001SECURITY.txt both named api/csrf.py; the file is api/csrf_middleware.py. An agent grepping for it would conclude the CSRF layer was missing",000COORDINATION.md 001SECURITY.txt,"verified 26 Sep","patch 448"
 LLM3-7,COORD,request from LLM3,ANSWERED,"a word-in-source test asserted two literal strings appeared in create_debug_user.py - the shape AGENTS.md:470 calls not a test, and it blocked sharing the guard across three scripts (which is how F-30 happened). Replaced with a behavioural check that RUNS the script",tests/unit/test_template_is_a_valid_deployment.py,"control verified","patch 448"
 AL-R1,COORD,request from LLM2,BLOCKED ON MERGE,"wire RetryingLLMAdapter into the generation in core/deployment_loader.py - AL-5 is inert without it. CANNOT BE DONE ON backend: the adapter only exists on agentloop, so the import would fail. Must land on dev after that branch merges",core/deployment_loader.py,"verified 26 Sep","scheduled"
+LLM4-1,COORD,request from LLM4,ANSWERED,"sixteen front-end rows corrected - five were already fixed before LLM4 began and eleven they closed themselves. CSS-S1-02 REWORDED rather than closed: its two prescribed actions both became wrong once every rule was layered",AUDIT_CHECKLIST.csv,"spot-checked 26 Sep","patch 449"
+LLM4-2,COORD,request from LLM4,ANSWERED,"UI_ROADMAP item 21/22 rested on must_change_password being a column nothing could add. It exists at core/auth/database.py:66 with a migration at :117 - both line numbers verified. Item 21 may be further along than it reads",core/auth/database.py UI_ROADMAP.md,"verified 26 Sep","OWNER - whoever owns UI_ROADMAP item 21"
