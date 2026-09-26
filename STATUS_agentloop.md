@@ -1678,3 +1678,150 @@ AL-8's runner should record `fabricated_finishes` per trial alongside
 pass/fail. Then one VM run gives both the reliability figure and the
 parse-failure rate, and D1 can be decided against the second rather
 than assumed against the first.
+
+---
+
+# THE LIST, AUDITED — and research on everything still open
+
+20 commits. Here is where all 33 items stand, and what the literature
+says about each one still needing a decision.
+
+## DONE (13)
+
+    LB-1   arithmetic in prose        calculator + number check
+    LB-3   silent partial answers     one stop reason (with AL-6)
+    LB-5   records as Python repr     rendered through prompt_values
+    AL-2   planner reads raw data     step 1: framing + escaping
+    AL-3   48,704 chars over 9 hops   MEASURED: 64,527, a third more
+    AL-5   no retries                 built; INERT until R1
+    AL-6   four booleans              one stop reason
+    AL-8   no reliability evaluation  pass^k, grader, aggregation
+    LB-6   52% procedure              MEASURED: 87.5%
+    F-17   parameters as strings      list shapes fixed
+    F-04   chat(*args)                ALREADY FIXED before I started
+    AR-2   per-hop notes in prompt    moved; 87% -> 96% reuse
+    AR-4   bare ids                   title_field, wired at last
+
+Plus `fabricated_finishes`, which was not on the list: the
+parse-failure rate was not measurable and now is.
+
+## HALF DONE (1)
+
+    AR-1   prefix-cache reuse   structure confirmed (97.4-97.7%);
+                                the ENGINE half needs a VM
+
+## DECLINED, with reasons (2)
+
+    AL-11  cancellation between hops only. The module docstring makes
+           this a deliberate boundary, and the in-flight model call is
+           the expensive part. Refining the cheap half is motion.
+    AR-5   constrain the step choice fully. Our own measurement
+           (19.7% -> 11.0%) and the literature both say this hurts
+           small models. Recommend CLOSING as declined.
+
+## BLOCKED ON YOU (17) — researched below
+
+---
+
+# Research on the open questions
+
+## AL-7 tracing — CANONICAL VOCABULARY EXISTS, but it is NOT stable
+
+OpenTelemetry's GenAI semantic conventions define exactly the shape we
+would need: `invoke_agent` (the run) -> `chat` (each model call) ->
+`execute_tool` (each tool call), with `gen_ai.*` attributes for model,
+tokens and tool names. `gen_ai.operation.name` even includes `plan`,
+which is AL-4's planner. Claude Code itself emits these.
+
+**THE CAVEAT MATTERS FOR A LIBRARY DECISION.** Despite many blog posts
+saying otherwise, as of mid-2026 **every `gen_ai.*` attribute carries
+the "Development" badge — not one is marked Stable**, the conventions
+moved to a separate `semantic-conventions-genai` repository to
+version independently, and there is no public stabilisation timeline.
+
+**RECOMMENDATION:** adopt the vocabulary, not a hard dependency. An
+optional exporter behind `tools.enabled`-style config gives portable
+traces now without pinning core to an unstable spec. That is a
+LIBRARY_AUDIT decision and I have not touched it.
+
+## AL-12 resume after a proposed write — CANONICAL, and it has a
+## security wrinkle that is ours alone
+
+The pattern is settled: `interrupt()` + a durable checkpoint + resume
+by `thread_id`, with three canonical human actions — **approve, edit,
+reject**. State is persisted at the interrupt point and execution
+resumes exactly where it left off. The stated discipline is that
+anything before the interrupt may re-run, so the boundary must be
+chosen deliberately.
+
+**OUR WRINKLE IS NOT IN THE LITERATURE.** This loop re-resolves the
+acting user EVERY HOP and stops if their authority changed, because an
+answer assembled partly under one set of grants and partly under
+another was never authorised as a whole. A resume spans HUMAN decision
+latency — minutes, maybe hours. So resuming means:
+
+- re-resolving authority at resume, not trusting the checkpoint
+- deciding what happens to data gathered under the OLD grants, which
+  is the same torn-read objection the loop already names
+
+**That makes AL-12 a security design question, not plumbing.** I would
+not build it without agreement on those two points.
+
+## LB-9 routing / AR-7 plan caching — CLEAR, and it says DO LESS
+
+The production consensus: **"Start with rule-based routing plus a
+semantic cache, then graduate to semantic and predictive routing only
+once you have the traffic volume and labeled data to justify it."**
+
+**AND A DIRECT WARNING AGAINST AR-7 AS A FIRST MOVE:** "Semantic
+caching is the pattern teams reach for first and the one production
+data supports least. That is an embedding-model call on 100% of
+requests to skip the LLM call on some fraction of them."
+
+**On our hardware that argument is stronger still.** `config.yaml`
+records model loads costing 12-47 seconds on this box, which is why
+the deployment uses ONE model for every call. An embedding model for
+a semantic cache is a second model on a machine that cannot afford
+the first one twice.
+
+**RECOMMENDATION:** LB-9 as RULE-BASED routing only — deterministic
+questions never enter the loop. Defer AR-7 until there is traffic
+data. A cascade is also wrong here: it "adds the overhead of the cheap
+model call on every query", and we have one model.
+
+## LB-7 tool arguments transcribed — already answered by round 2
+
+The design-patterns taxonomy states it directly for the dual-LLM
+pattern: results from untrusted data are "stored in a memory that the
+privileged LLM can manipulate **by reference only**". CaMeL's whole
+point is that the planner names a value it cannot read.
+
+So LB-7 is not a separate item — it is what AL-4 has to do anyway, and
+it is the DATA-flow half that plan-then-execute alone does not fix.
+**Recommend folding LB-7 into AL-4.**
+
+## AL-10 token budget — no canonical answer, and one real trap
+
+Cost-aware routing and budget tracking are common in gateway
+libraries, but nothing prescribes a per-query token budget for a
+single-tenant local deployment where tokens cost time rather than
+money. The honest framing here is LATENCY, not cost.
+
+**THE TRAP, restated because it is easy to miss:**
+`TokenUsage.unreported` counts calls whose provider reported nothing.
+A budget enforced on reported tokens silently does not apply when the
+provider is quiet. A budget that can fail open without saying so is
+not a budget.
+
+## Still purely yours
+
+    R1     one line in deployment_loader.py. SIX checks, still unwired
+    config calculator in tools.enabled + a tool:calculator grant, or
+           LB-1 stays dormant and 1b withholds head-arithmetic
+    R3     free-text reconciliation. Foundry's OSv2 guarantees
+           read-your-writes; ours is the deprecated V1 behaviour
+    D1     Qwen3-4B-Instruct-2507 has the BFCL lead and Apache 2.0 --
+           but MEASURE THE PARSE-FAILURE RATE FIRST
+    D2     llama-server, which gates AR-3 and AR-8
+    D3/D6  AR-9 heterogeneous models, AR-10 fine-tuning
+    bench  scripts/llm_bench.py, asked for four times
