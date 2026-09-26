@@ -692,3 +692,96 @@ be replaced when you thread the directory through -- that is the point
 of writing it down rather than leaving a comment.
 
 I did not edit `api/routes.py`.
+
+---
+
+## SEC-17: the `__Host-` prefix is ATOMIC across our two files
+
+NEEDS: backend (two lines in `api/routes.py`)
+
+**I built this, measured it, and then did NOT ship my half. The reason
+is the useful part of this request.**
+
+### What it is
+
+OWASP's Session Management cheat sheet: "`__Host-` -- the cookie must
+be set with Secure, must not have a Domain attribute, and must use
+Path=/. Prevents subdomain forgery and HTTPS downgrade attacks.
+Recommended for session IDs." NIST SP 800-63B says a session cookie
+"SHOULD have the '__Host-' prefix and set 'Path=/'".
+
+Elysium ALREADY satisfies every constraint it enforces -- Secure,
+`Path=/`, no `Domain`. The prefix changes nothing we send; it makes the
+BROWSER enforce them, closing a sibling subdomain planting a cookie
+this origin then trusts. Only the SESSION cookie: the CSRF cookie is
+read by name from JavaScript in `ui/`, which is a third agent's file.
+
+### Why my half alone would be worse than nothing
+
+The prefix must be CONDITIONAL -- a `__Host-` cookie requires Secure,
+and local dev sets `ELYSIUM_COOKIE_SECURE=false`, so an unconditional
+prefix means nobody can log in locally. So the name becomes a
+FUNCTION, `session_cookie_name()`, decided at call time alongside the
+flag so the two cannot disagree.
+
+`api/routes.py` reads the cookie in two places by importing the
+CONSTANT:
+
+    :636   session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME)
+    :1097  session_token = request.cookies.get(SESSION_COOKIE_NAME)
+
+With my side changed and yours not, MEASURED:
+
+    set_session_cookie writes : __Host-elysium_session
+    routes.py:636/1097 read   : elysium_session
+    -> DISAGREE: logout would not invalidate server-side
+
+**And the test suite cannot see it.** `tests/integration/conftest.py`
+:226 sets `ELYSIUM_COOKIE_SECURE=false` for every test, so the suite
+only ever exercises the UNPREFIXED path. I ran it: **208 passed** with
+my half applied and yours not. A green suite and a broken logout in
+production is the exact shape this project keeps finding, so I
+reverted rather than commit it.
+
+### The change, both sides
+
+`core/auth/auth_cookies.py` (mine) gains:
+
+```python
+def session_cookie_name() -> str:
+    return f"__Host-{SESSION_COOKIE_NAME}" if _cookie_secure() else SESSION_COOKIE_NAME
+```
+
+and `set_session_cookie`/`clear_session_cookie` use it.
+
+`api/auth_dependency.py` (mine) reads at call time instead of through
+an import-time alias:
+
+```python
+def get_current_user(request: Request) -> UserRecord:
+    session_token = request.cookies.get(session_cookie_name())
+```
+
+`api/routes.py` (YOURS) needs the same, two lines:
+
+```python
+# :636 -- an alias is bound at import, before anything sets the env var
+session_token = request.cookies.get(session_cookie_name())   # in the body
+# :1097
+session_token = request.cookies.get(session_cookie_name())
+```
+
+plus `session_cookie_name` in the import at :130.
+
+### One more thing worth fixing while you are there
+
+The suite forcing `ELYSIUM_COOKIE_SECURE=false` globally means NO test
+ever runs the production cookie configuration. That is a blind spot
+independent of this change -- it is why the breakage above is
+invisible. A single test that sets it true and asserts the cookie
+name round-trips through set -> read would have caught this, and
+would catch the next one.
+
+MEANWHILE: nothing committed, nothing degraded. Say the word and I
+will land both halves in one patch, or apply mine the moment yours is
+ready.
