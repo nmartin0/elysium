@@ -265,8 +265,13 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
  *   - a list of {msg, loc}, from the validation handler
  * Anything else returns null and the caller uses its generic message,
  * because a shape we have not seen is one we cannot render honestly.
+ *
+ * EXPORTED because QueryPanel needs it too: /query returns a raw
+ * Response rather than throwing -- it has four outcomes to branch on
+ * by status -- so it reads the body itself and had the same unchecked
+ * `body.detail` this was written to replace.
  */
-function messageFromErrorBody(body: unknown): string | null {
+export function messageFromErrorBody(body: unknown): string | null {
   if (typeof body !== 'object' || body === null || !('detail' in body)) return null
   const detail: unknown = (body as { detail: unknown }).detail
 
