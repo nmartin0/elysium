@@ -210,3 +210,17 @@ def test_validated_step_is_the_same_function_both_paths_use():
     assert good["step"] == "search_object"
     assert bad["step"] == "finish"
     assert bad["fallback"] == "malformed_step"
+
+
+def test_the_instructions_teach_the_list_form():
+    """FOUND BY THE FIRST REAL FAN-OUT RUN. The instructions only ever
+    showed a handle in a SCALAR position -- `"object_id": "$a"` -- so
+    the model generalised to `["$b"]` for a list one. Reasonable
+    inference, wrong answer, and my prompt under-specified it.
+
+    The executor now refuses that shape, but a refusal costs a whole
+    extra planning call at ~60-280s. Teaching it is the cheaper half.
+    """
+    assert '"object_ids": "$b"' in PLAN_INSTRUCTIONS
+    assert '["$b"]' in PLAN_INSTRUCTIONS
+    assert "NOT" in PLAN_INSTRUCTIONS

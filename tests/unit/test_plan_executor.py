@@ -212,3 +212,72 @@ def test_a_plan_stops_at_the_step_that_failed(loop_and_user):
 
     assert failure is not None
     assert not any(e["step"] == "get_field" for e in gathered)
+
+
+# ------------------------------------ the mistake the first fan-out run made
+
+
+def test_a_handle_wrapped_in_a_list_is_refused(loop_and_user):
+    """FOUND BY THE FIRST REAL FAN-OUT RUN, and it failed SILENTLY.
+
+    phi4-mini wrote, for "the amounts of all of Ada's transactions":
+
+        {"id": "b", "step": "get_field", "object_id": "$a",
+         "field_name": "transactions"},
+        {"id": "c", "step": "get_object", "object_ids": ["$b"],
+         "field_names": ["amount"]}
+
+    `$b` was already ["1", "2"], so ["$b"] resolved to [["1", "2"]].
+    get_object looked for an object whose id is that list, found none,
+    and returned nothing. THE STEP DID NOT FAIL. The plan "finished",
+    the answer was wrong, and the re-plan gate never fired.
+
+    That silence is worse than the mistake. Refused structurally now,
+    so shape B's one revision can see it.
+
+    NOT FLATTENED. Dropping a level and carrying on would be guessing
+    at what the model meant, which this executor refuses everywhere
+    else -- and a guess that happens to be right teaches nobody.
+    """
+    loop, user = loop_and_user
+    plan = [
+        SEARCH,
+        {"id": "b", "step": "get_object", "object_type": "Customer",
+         "object_ids": ["$a"], "field_names": ["email"]},
+    ]
+
+    failure, gathered = _run(loop, user, plan)
+
+    assert failure is not None
+    assert "wrapped a handle in a list" in failure
+    assert "object_ids" in failure
+    # It says the CORRECT form, because a revision that cannot tell
+    # what to do instead will make the same mistake again.
+    assert '"$id"' in failure
+
+
+def test_an_unwrapped_handle_in_a_list_position_works(loop_and_user):
+    """THE OPPOSITE DIRECTION, so the guard cannot be satisfied by
+    refusing every list. This is the form the instructions now teach."""
+    loop, user = loop_and_user
+    plan = [
+        SEARCH,
+        {"id": "b", "step": "get_object", "object_type": "Customer",
+         "object_ids": "$a", "field_names": ["email"]},
+    ]
+
+    failure, gathered = _run(loop, user, plan)
+
+    assert failure is None, failure
+    assert any(e.get("field_name") == "email" for e in gathered)
+
+
+def test_an_ordinary_list_of_literals_is_still_fine(loop_and_user):
+    """field_names is a list of plain strings and must stay one."""
+    loop, user = loop_and_user
+    plan = [{"id": "a", "step": "get_object", "object_type": "Customer",
+             "object_ids": ["cust_001"], "field_names": ["email", "region"]}]
+
+    failure, _ = _run(loop, user, plan)
+
+    assert failure is None, failure

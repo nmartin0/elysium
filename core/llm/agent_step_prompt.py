@@ -900,6 +900,11 @@ Each step needs an "id". A later step may use an earlier step's result
 by writing $<id> where a value goes -- $a above means "whatever step a
 found". You will NOT be shown those values; name them and move on.
 
+A step that searches, or reads a link field, gives back a LIST of ids.
+Use that handle directly where a list belongs -- write
+"object_ids": "$b", NOT "object_ids": ["$b"]. Wrapping it puts a list
+inside a list and finds nothing.
+
 Ids may only refer BACKWARDS, to steps above them. Do not include a
 "finish" step: the plan ends when its last step does."""
 

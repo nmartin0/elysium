@@ -995,6 +995,27 @@ class AgentLoop:
         vocabulary is equality-only until LB-2 says otherwise.
         Guessing would turn a type error into a wrong answer.
         """
+        # A LIST INSIDE A LIST IS A HANDLE WRAPPED BY MISTAKE, and
+        # the first real fan-out run produced exactly that:
+        #
+        #   {"step": "get_object", "object_ids": ["$b"], ...}
+        #
+        # where $b was already ["1", "2"], giving [["1", "2"]].
+        # get_object then looked for an object whose id is that list,
+        # found none, and returned NOTHING -- the step did not fail,
+        # so the plan "finished" and a wrong answer came back looking
+        # clean. That silence is worse than the mistake.
+        #
+        # REFUSED STRUCTURALLY so shape B's revision can see it. The
+        # alternative -- flattening one level and carrying on -- would
+        # be guessing at what the model meant, which is the thing this
+        # executor refuses everywhere else.
+        for key, value in resolved.items():
+            if isinstance(value, list) and any(isinstance(v, list) for v in value):
+                return (f"wrapped a handle in a list in {key!r}; a search "
+                        f"result is already a list, so write \"{key}\": "
+                        f"\"$id\" rather than [\"$id\"]")
+
         object_id = resolved.get("object_id")
         if not isinstance(object_id, list):
             for key, value in resolved.items():

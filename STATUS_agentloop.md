@@ -3244,3 +3244,91 @@ quoted two decimal places off n=1.
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  3065 passed, 8 skipped
+
+---
+
+# THE FAN-OUT CASE FAILED, and found a defect that failed SILENTLY
+
+`link_fanout` is the case I added because no plan had ever resolved a
+handle to more than one id. It failed on the first run. That is the
+case earning its place.
+
+## What the model wrote
+
+    {"id": "a", "step": "search_object", "object_type": "Customer",
+     "filter": {"name": "Ada Okafor"}},
+    {"id": "b", "step": "get_field", "object_type": "Customer",
+     "object_id": "$a", "field_name": "transactions"},
+    {"id": "c", "step": "get_object", "object_type": "Transaction",
+     "object_ids": ["$b"], "field_names": ["amount"]}
+
+**Steps a and b are right.** It searched by name, then read the link
+field to get the transaction ids -- which is exactly what the schema
+block tells it to do, since links "cannot be searched directly --
+reach them with get_field on an object you already have the ID for".
+
+**Step c is `["$b"]`.** `$b` was already `["1", "2"]`, so that
+resolved to `[["1", "2"]]`.
+
+## THE DEFECT IS NOT THE MISTAKE. IT IS THE SILENCE.
+
+`get_object` looked for an object whose id is the list `["1","2"]`,
+found none, and returned nothing. **The step did not fail.** The plan
+reported `finished`, the re-plan gate never fired, and a wrong answer
+came back looking clean.
+
+That is uniform denial working as designed -- a nonexistent id returns
+None rather than an error -- meeting a plan that has no model left to
+notice. In the hop-by-hop loop the model would have seen an empty
+result and tried something else. A plan cannot.
+
+## MY PROMPT UNDER-SPECIFIED IT
+
+The instructions only ever showed a handle in a SCALAR position --
+`"object_id": "$a"`. The model generalised to `["$b"]` for a list
+position. **That is a reasonable inference from what I wrote.**
+
+Both halves fixed:
+
+**Taught.** The instructions now say a search or a link read gives
+back a list, and to write `"object_ids": "$b"` rather than `["$b"]`.
+Cheaper than a refusal, which costs a whole extra planning call at
+60-280s.
+
+**Made visible.** A resolved value that is a list containing a list is
+refused structurally, so shape B's one revision can see it. The
+message names the correct form, because a revision that cannot tell
+what to do instead will make the same mistake again.
+
+**NOT FLATTENED.** Dropping a level and carrying on would be guessing
+at what the model meant -- the thing this executor refuses everywhere
+else -- and a guess that happens to be right teaches nobody.
+
+## Controls
+
+    remove the nested-list refusal (back to silent)   1 fails
+    remove the instruction                            1 fails
+    an unwrapped handle in a list position            still works
+    an ordinary list of literals                      still works
+
+The last two matter: a guard that refused every list would pass the
+first test and break `field_names`.
+
+## What this does to the AL-4 picture
+
+    one_field          handle used, correct, 1 call
+    two_constraints    handle used, correct, 1 call
+    link_fanout        handle used CORRECTLY at step b, wrapped
+                       wrongly at step c, silently wrong answer
+
+So plan mode is 2 for 3 on real cases, and the failure was in MY
+instructions rather than the model's reasoning. It got the hard part
+right -- naming a result it could not see, twice, then traversing a
+link -- and the part I had not explained wrong.
+
+**This is why it is still a sibling entry point and not the default.**
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3069 passed, 8 skipped  (3065 before; +4 here)
