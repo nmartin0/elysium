@@ -766,6 +766,42 @@ would be refused as a conflict: a crash traded for a silently wrong
 answer. It needs a typed round-trip, which is more than a tail-end
 change, so it is recorded rather than half-built.
 
+## Session 22 — auth_cookies.py reviewed; SEC-17 recorded
+
+**No defect.** The two things this shape usually gets wrong are both
+handled: login issues a fresh session token AND a fresh CSRF token
+(`routes.py:1081,1088`), so there is no session fixation and the CSRF
+value does not outlive a login; logout invalidates server-side and
+clears both cookies. `secure` defaults to True even when unset, and
+the docstring's argument for that -- fail loud locally rather than
+quiet in production -- is right.
+
+**SEC-17, a recommendation rather than a defect.** Neither cookie uses
+the `__Host-` name prefix. OWASP's Session Management cheat sheet:
+"`__Host-` -- the cookie must be set with Secure, must not have a
+Domain attribute, and must use Path=/. Prevents subdomain forgery and
+HTTPS downgrade attacks. Recommended for session IDs." NIST SP 800-63B
+says a session cookie SHOULD have it.
+
+WHAT MAKES IT WORTH RAISING: Elysium ALREADY satisfies every
+constraint the prefix enforces -- Secure, Path=/, no Domain attribute.
+The prefix does not change what we set; it makes the BROWSER enforce
+it, which closes the case a sibling subdomain plants a cookie the
+parent trusts. That is documented as a real session-fixation route,
+not a theoretical one.
+
+TWO WRINKLES, WHICH IS WHY IT IS PROPOSED AND NOT BUILT:
+
+  A `__Host-` cookie REQUIRES Secure. Local dev sets
+  ELYSIUM_COOKIE_SECURE=false, so the browser would silently refuse
+  the cookie and nobody could log in -- unless the prefix is
+  conditional on that same flag. That is a design choice, and it is
+  the same dev/prod tension the module's docstring already reasons
+  about for `secure` itself.
+
+  The CSRF cookie name is read by `ui/`, which is the frontend agent's
+  file. Renaming it is a cross-agent change.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
