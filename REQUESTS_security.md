@@ -157,3 +157,32 @@ and the route change land together and those tests are rewritten to
 prove the overshoot is gone.
 
 I did not edit `api/routes.py`.
+
+---
+
+## R52 rule 5: refuse an imputed security field at load time
+
+NEEDS: backend
+
+WHAT: when imputation exists at all, `core/deployment_loader.py`
+should refuse to load a schema where the field named by a type's
+`security:` declaration is also declared imputable -- naming both, the
+way a type with no `security` declaration is already refused today.
+
+WHY: MAC decides which OBJECTS exist for a reader. An estimated
+compartment is an invented clearance, and a row whose region was
+guessed is a row shown to the wrong people -- invisibly, because
+nothing downstream can tell an imputed value from an observed one.
+Every other rule in the R52 policy is about data quality; this one is
+about who sees what, which is why it is the one worth enforcing in
+code rather than documenting.
+
+The full policy is in `STATUS_security.md`, session 11.
+
+MEANWHILE: nothing. Measured first -- Elysium imputes nowhere today,
+so there is nothing to refuse yet and no gap open. This is a request
+to schedule the check ALONGSIDE the first imputation feature, not
+before it, so the constraint lands with the capability rather than
+after it.
+
+I did not edit `core/deployment_loader.py`.
