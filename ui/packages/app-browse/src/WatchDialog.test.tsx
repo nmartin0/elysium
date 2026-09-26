@@ -125,6 +125,83 @@ describe('an action', () => {
   })
 })
 
+describe('the parameter the matched objects are passed as', () => {
+  /**
+   * The effect that set this synchronously when the chosen action
+   * changed was react/set-state-in-effect. What it was FOR had no
+   * test: switching actions must not keep the previous action's
+   * parameter, which would send objects as a parameter the new action
+   * does not have.
+   *
+   * Two actions with DIFFERENT parameter names, which the single
+   * fixture above could not express.
+   */
+  beforeEach(() => {
+    vi.mocked(getVisibleActionTypes).mockResolvedValue({
+      RecategorizeTransactions: {
+        executable: true,
+        automatable: true,
+        parameters: {
+          transaction_ids: { type: 'object_reference_list', object_type: 'Transaction' },
+          also_transactions: { type: 'object_reference_list', object_type: 'Transaction' },
+        },
+      },
+      FlagTransactions: {
+        executable: true,
+        automatable: true,
+        parameters: {
+          flagged_ids: { type: 'object_reference_list', object_type: 'Transaction' },
+          other_ids: { type: 'object_reference_list', object_type: 'Transaction' },
+        },
+      },
+    })
+  })
+
+  it('defaults to the chosen action\u2019s own first parameter', async () => {
+    open()
+    fireEvent.change(await screen.findByLabelText('Action to propose'), {
+      target: { value: 'FlagTransactions' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }))
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ action_parameter: 'flagged_ids' })),
+    )
+  })
+
+  it('does not carry a parameter across to an action that lacks it', async () => {
+    open()
+    const action = await screen.findByLabelText('Action to propose')
+
+    fireEvent.change(action, { target: { value: 'RecategorizeTransactions' } })
+    fireEvent.change(screen.getByLabelText('Parameter for matched objects'), {
+      target: { value: 'also_transactions' },
+    })
+    // Now switch: 'also_transactions' does not exist on FlagTransactions.
+    fireEvent.change(action, { target: { value: 'FlagTransactions' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }))
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ action_parameter: 'flagged_ids' })),
+    )
+  })
+
+  it('remembers a deliberate choice while the action stays the same', async () => {
+    open()
+    fireEvent.change(await screen.findByLabelText('Action to propose'), {
+      target: { value: 'RecategorizeTransactions' },
+    })
+    fireEvent.change(screen.getByLabelText('Parameter for matched objects'), {
+      target: { value: 'also_transactions' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }))
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ action_parameter: 'also_transactions' })),
+    )
+  })
+})
+
 describe('when the server refuses', () => {
   it('shows its reason', async () => {
     mockedCreate.mockRejectedValue(new Error('You cannot notify the role analyst.'))

@@ -57,7 +57,21 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   const [roles, setRoles] = useState<string[]>([])
   const [recipients, setRecipients] = useState<string[]>([])
   const [actionName, setActionName] = useState('')
-  const [target, setTarget] = useState('')
+  /**
+   * The parameter chosen PER ACTION, rather than one string reset by
+   * an effect whenever the action changed.
+   *
+   * That effect was react/set-state-in-effect: switching action
+   * rendered once with the previous action's parameter and again with
+   * the new default. Keying the choice by action makes the right value
+   * DERIVABLE -- a choice made for one action simply is not a choice
+   * for another -- so there is nothing to reset and no second render.
+   *
+   * It also keeps a deliberate choice across a there-and-back switch,
+   * which the reset threw away. That is a small improvement rather
+   * than the point, and it is tested.
+   */
+  const [targetByAction, setTargetByAction] = useState<Record<string, string>>({})
   const [values, setValues] = useState<Record<string, string>>({})
   const [refusal, setRefusal] = useState<string | null>(null)
   // WHAT COULD NOT BE LOADED, named rather than hidden. The dialog stays
@@ -109,9 +123,9 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
 
   const chosen = actions.find((action) => action.name === actionName) ?? null
 
-  useEffect(() => {
-    setTarget(chosen?.targets[0] ?? '')
-  }, [chosen])
+  // Derived during render: this action's own choice, or its own first
+  // parameter. Never another action's.
+  const target = targetByAction[actionName] ?? chosen?.targets[0] ?? ''
 
   async function watch() {
     if (view === null) return
@@ -198,7 +212,15 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
             <HTMLSelect
               value={target}
               aria-label="Parameter for matched objects"
-              onChange={(event) => setTarget(event.currentTarget.value)}
+              onChange={(event) => {
+                // READ BEFORE THE UPDATER. React nullifies the synthetic
+                // event's currentTarget once the handler returns, and a
+                // functional setState runs LATER -- so reading it inside
+                // the callback throws "Cannot read properties of null".
+                // Caught by the tests added with this change.
+                const value = event.currentTarget.value
+                setTargetByAction((current) => ({ ...current, [actionName]: value }))
+              }}
               options={chosen.targets}
             />
           </FormGroup>
