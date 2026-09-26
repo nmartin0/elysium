@@ -81,13 +81,12 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   // reporting success, which is the view-state matrix's one rule.
   const [unloaded, setUnloaded] = useState<string[]>([])
 
+  // NO RESET HERE ANY MORE. SavedViews gives this dialog a fresh key
+  // per opening, so every instance starts with its own state -- which
+  // is both simpler than clearing five setters and complete, where
+  // clearing them was not: the threshold was never in that list.
   useEffect(() => {
     if (view === null) return
-    setRefusal(null)
-    setActionName('')
-    setRecipients([])
-    setValues({})
-    setUnloaded([])
     void (async () => {
       const failed: string[] = []
       try {

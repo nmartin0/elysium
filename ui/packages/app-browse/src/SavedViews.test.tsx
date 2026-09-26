@@ -216,3 +216,49 @@ describe('watching a saved view', () => {
     )
   })
 })
+
+describe('opening the watch dialog a second time', () => {
+  /**
+   * WHAT THE BATCH RESET IN WatchDialog WAS FOR. The dialog stays
+   * mounted with isOpen toggling, so without something to clear it,
+   * everything typed for one view is still there when the next is
+   * opened -- and the person is looking at a form that describes a
+   * different saved view.
+   *
+   * Tested HERE rather than in WatchDialog's own file because the
+   * replacement is a key at this call site: a fresh instance per
+   * opening, which is React's own answer for "reset all state when the
+   * identity changes".
+   */
+  it('starts a different view with an empty threshold', async () => {
+    mockedList.mockResolvedValue([aView(), aView({ view_id: 'v2', name: 'Refunds' })])
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /watch high value/i }))
+    fireEvent.change(await screen.findByLabelText('How many'), { target: { value: '99' } })
+    fireEvent.click(screen.getByRole('button', { name: /close/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /watch refunds/i }))
+
+    expect(((await screen.findByLabelText('How many')) as HTMLInputElement).value).toBe('10')
+  })
+
+  it('starts the SAME view fresh when reopened', async () => {
+    // Reopening the same view must reset too -- a key on the view id
+    // alone would not, because the id has not changed.
+    mockedList.mockResolvedValue([aView()])
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /watch high value/i }))
+    fireEvent.change(await screen.findByLabelText('How many'), { target: { value: '99' } })
+    fireEvent.click(screen.getByRole('button', { name: /close/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /watch high value/i }))
+
+    expect(((await screen.findByLabelText('How many')) as HTMLInputElement).value).toBe('10')
+  })
+})
