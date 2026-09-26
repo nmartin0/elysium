@@ -434,6 +434,77 @@ verified-already-fixed, or waiting on a person:
                     in 000COORDINATION.md
     R52             policy, propose before implementing
 
+## Session 11 — R52: the imputation policy, proposed
+
+R52 asks for one and says to propose before implementing. This is the
+proposal. Nothing here is built, and on purpose.
+
+**MEASURED FIRST: Elysium imputes NOWHERE today.** Grepped `core/` for
+impute/fillna/interpolate/fill_missing: no hits outside an unrelated
+comment in `write_log.py`. The only missing-value handling is silver
+mapping DECLARED sentinels ("N/A", "-", "unknown", "") to NULL, which
+is the OPPOSITE of imputation -- it removes a fake value rather than
+inventing one, and only where a deployment declared the sentinel.
+
+**SO THE POLICY IS FREE TO ADOPT NOW,** which is the argument for
+writing it before anything needs it. There is nothing to migrate, and
+it constrains work that does not exist yet: GOLD-6's survivorship, the
+FUSION matcher, and the whole R51-R63 statistical band. A rule written
+after the first imputation lands is not a rule, it is a migration.
+
+### The seven rules
+
+1. **Never impute into served data.** Gold serves an observed value or
+   NULL. An estimate is never substituted into the property a reader
+   believes was measured.
+
+2. **An estimate is its OWN declared property**, with its own name and
+   its own classification -- never a silent replacement of the
+   observed one. This is R38's value-kinds idea applied narrowly.
+
+3. **Every imputed value carries provenance**: that it was imputed, by
+   which method, from what inputs. A value indistinguishable from an
+   observation IS an observation, to everybody downstream.
+
+4. **The agent must never be handed an imputed value as observed.** It
+   writes fluent prose from whatever it is given and cannot tell the
+   difference -- and LB-1 already records that it computes figures in
+   prose without a check.
+
+5. **Imputation must never touch the security field.** THIS IS THE
+   SECURITY-SPECIFIC RULE AND IT IS NOT NEGOTIABLE. MAC decides which
+   objects exist for a reader; an estimated compartment is an invented
+   clearance, and a row whose region was guessed is a row shown to the
+   wrong people. `security` is declared per type and the guess would
+   be invisible at the point it mattered.
+
+6. **An imputed value is never written back to a source.** R50's guard
+   already refuses to propagate the pipeline's own output into a
+   customer's row; an estimate is the worse case of the same loop,
+   because it was never anybody's data at all.
+
+7. **NULL is a legitimate answer.** "We do not know" is information,
+   and a pipeline that cannot say it will say something else instead.
+
+### The precedent, which is unusually blunt
+
+The audit's own Part II conclusion: a 2024 VLDB evaluation of twelve
+automatic data-repair algorithms found MOST INTRODUCE MORE ERRORS THAN
+THEY REMOVE, and its standing recommendation across the cleaning band
+is "suggest, never infer" -- the same shape as the pipeline builder,
+where the machine proposes and a person decides. R57 reaches the same
+conclusion from the statistical side: conformal thresholds or none,
+and P27 measured our own FUSION design auto-accepting about half its
+merges wrongly on the fields enterprise tables actually have.
+
+### What I did NOT do
+
+No code. No enforcement. Rule 5 is the one I would want enforced
+first, and it is a load-time check in the ontology loader --
+`core/deployment_loader.py`, which backend owns -- so even that is a
+request rather than a patch. Recorded here so the rule exists before
+the first thing that would break it.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
@@ -470,7 +541,8 @@ remaining item is a decision, another agent's file, or both:
     Reproduced and pinned   F-05         commit a0cf84d; fix needs
                                          api/routes.py -> requested
     DONE, controlled        R50          commit 25e9158
-    Policy, propose first   F-08  R52
+    PROPOSED                R52          seven rules, session 11
+    Policy, propose first   F-08         (file has no owner)
     Owner decision          E-02 residual, F-13 and F-25 (backend files)
     Need one measurement    F-05  F-12b
     Not yet triaged         F-33 F-13 F-12a F-25 F-08 R50 R52
