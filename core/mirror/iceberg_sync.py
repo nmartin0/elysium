@@ -54,6 +54,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
 )
 
+from core.mirror.bronze_text import bronze_text
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.changelog import MAX_DELETED_FRACTION, diff_snapshots
 from core.mirror.drift_policy import (
@@ -995,8 +996,10 @@ class IcebergMirrorSync(MirrorSync):
 
             arrow_table = pa.table({
                 column: pa.array(
-                    [None if row.get(column) is None else str(row.get(column))
-                     for row in raw_rows],
+                    # CANONICAL TEXT, NOT repr (PA001-S2). `str()` on a
+                    # memoryview is its ADDRESS; on bytes and on a JSON
+                    # column it is Python syntax nothing else parses.
+                    [bronze_text(row.get(column)) for row in raw_rows],
                     type=pa.string(),
                 )
                 for column in columns
@@ -1247,7 +1250,12 @@ class IcebergMirrorSync(MirrorSync):
         arrow_table = pa.table({
             **{
                 column: pa.array(
-                    [None if row.get(column) is None else str(row.get(column)) for row in rows],
+                    # THE SAME ENCODING AS BRONZE (PA001-S2): the
+                    # changelog DIFFS these strings, so a value whose
+                    # text differs run to run -- a memoryview's address,
+                    # a dict in another order -- records edits that
+                    # never happened.
+                    [bronze_text(row.get(column)) for row in rows],
                     type=pa.string(),
                 )
                 for column in columns

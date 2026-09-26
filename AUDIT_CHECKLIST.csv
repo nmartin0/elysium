@@ -123,7 +123,7 @@ PA001-G10,PA,PIPELINE_AUDIT,LOW,"silo named gold/gold_history/bronze_*/changelog
 PA001-G11,PA,PIPELINE_AUDIT,LOW,gold republishes unchanged types every sync,gold.py,MR2,"interacts with patch 394 retention"
 PA001-G12,PA,PIPELINE_AUDIT,LOW,decimal scale differs by path; the API emits floats,api + mediator,IN,"PROMPT HALF FIXED patch 403 (one declared rendering); the API float half is still open"
 PA001-S1,PA,PIPELINE_AUDIT,HIGH,default standardisation flattens every declared text field (newlines),standardise.py:34,P21,"CONFIRMED + FIXED patch 417"
-PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes become Python repr",iceberg_sync.py:810,IN,unverified
+PA001-S2,PA,PIPELINE_AUDIT,MED,"SQLAlchemy+str(): JSON, arrays, UUID, bytes become Python repr",iceberg_sync.py:810,IN,"CONFIRMED + FIXED patch 437: a memoryview became a POINTER ADDRESS, so unchanged rows produced different bronze every run. The full declared-encoding design stays PR001-R3"
 PA001-I1,PA,PIPELINE_AUDIT,MED,every gold and quarantine table reported as broken silver,integrity.py:193,P20,"CONFIRMED + FIXED patch 433; a SECOND false alarm found and fixed - quarantined rows counted as missing"
 PA001-M1,PA,PIPELINE_AUDIT,MED,pyiceberg 0.12 CAN expire snapshots; six places said it cannot,iceberg_sync.py:84/538 ELT_ROADMAP.md:328 + 3 tests,P22,"CONFIRMED + FIXED patch 402: audit right, I was wrong; gold now expires under the 7-day margin; all six claims corrected"
 PA001-C1,PA,PIPELINE_AUDIT,HIGH,a malformed decimal crashes with an unreadable message (InvalidOperation),field_types.py:224 transform.py:130,P23,"CONFIRMED + FIXED patch 414"
