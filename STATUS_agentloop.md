@@ -4249,3 +4249,88 @@ faster per cold call -> cut them. Any case that passes with and fails
 without -> they earn their place and this ends here. Anything in
 between is n=1 and needs more trials before anyone touches the
 default.
+
+---
+
+# THE EXAMPLES EARN THEIR PLACE. I was wrong, and the run said so.
+
+I proposed cutting them and had the literature behind me:
+"over-prompting" is a named phenomenon, and a 6.7B model measured 23.5
+zero-shot against 18.0 one-shot -- worse WITH an example. Ours is 4B
+with three, all the same shape.
+
+**Both arms ran. The answer was the other one.**
+
+    WITH examples     plan mode 3 of 3 (earlier runs)
+    WITHOUT examples  plan mode 3 of 5
+
+**`link_fanout` PASSED with them and FAILED without -- same case, same
+model, same mode.** That is a direct before-and-after, not an
+inference.
+
+## What the model got wrong without them
+
+    a step with no "id" at all
+    an invented step name, "get_transaction_amount"
+    a list of values in a filter that takes one
+    a plan with no steps in it
+
+**EVERY ONE IS A FORMAT ERROR. Not one is a reasoning error.**
+
+That is why the literature did not transfer, and it is the part worth
+keeping. **Over-prompting indicts examples that teach a TASK**, where
+they bias a model toward surface patterns instead of reasoning.
+**These teach a SCHEMA.** A model that has never seen the shape of a
+plan does not infer it from prose, however carefully the prose is
+written.
+
+I had the distinction available and did not make it. The examples
+show `{"step": ..., "object_type": ...}` literally; the "over-prompting"
+papers are about classification and translation, where the output
+shape is obvious and only the ANSWER is demonstrated. Different
+function, and I should have asked which kind ours were before
+proposing the cut.
+
+## The timing contributed nothing, and that is worth recording
+
+    prompt sizes  5,777-6,003 chars   a 4% spread
+    times            52.2-459.4s      a 9x spread
+
+**Wall-clock on this box cannot support a speed conclusion at n=1.**
+The 119-second saving I calculated is inside the noise. Any future
+prompt-size argument needs repeated trials or it is arithmetic
+dressed as evidence.
+
+## The scaffolding is gone
+
+`include_examples`, `INCLUDE_EXAMPLES` and `--no-examples` are all
+removed. I said the losing arm would take the switch with it. **A flag
+left behind after its question is answered is how the losing arm comes
+back by accident**, and a test asserts neither the parameter nor the
+module global exists.
+
+Kept: the reworded IMPORTANT note. It used to say "(like [1, 2]
+**above**)", pointing at the third example -- the coupling that made
+this more than a delete. It now stands alone, which is correct either
+way.
+
+## The other arm never ran
+
+`--mode plan` with examples timed out at 600s on its first call and
+reported nothing. So the comparison above rests on EARLIER runs of the
+same cases rather than a paired run. That is weaker than it should be,
+and the reason is the same one as everywhere else: a cold call on this
+hardware costs more than the timeout allows.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3100 passed, 8 skipped
+
+## What this says about the 188 seconds
+
+The IMPORTANT notes (~83s) are the remaining candidate. **I would not
+touch them now.** They are instructions rather than demonstrations,
+which is the category this run just showed matters -- and the same
+run showed a 4B model losing the output format the moment prompt text
+was removed.
