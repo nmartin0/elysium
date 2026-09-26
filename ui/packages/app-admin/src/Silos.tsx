@@ -18,6 +18,8 @@ import { getSilos } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
+import { getDataFreshness, type DataFreshness } from '@elysium/shell-api/api'
+import { formatTimestamp } from '@elysium/shell-api/format'
 
 interface SiloBackedField {
   object_type: string
@@ -36,8 +38,85 @@ interface SiloStatus {
   failure: string | null
 }
 
+/**
+ * Which object types have been published, and which have not.
+ *
+ * THE SECOND HALF IS THE POINT. A type backed by a silo but absent
+ * from published_at is one whose reads FAIL -- the server logs it
+ * loudly at startup and raises on read (GOLD-8) -- and nothing in the
+ * UI said so. A table listing only what IS published would be a page
+ * of reassuring green that omits the failure.
+ */
+function Publication({ silos, freshness }: { silos: SiloStatus[]; freshness: DataFreshness }) {
+  const backed = [...new Set(silos.flatMap((silo) => silo.object_types))].sort()
+  const published = freshness.published_at ?? {}
+  const missing = backed.filter((type) => !(type in published))
+
+  return (
+    <section className="silos__publication">
+      <h3>Published to gold</h3>
+      {backed.length === 0 ? (
+        <p className="bp6-text-muted">No object types are backed by a silo.</p>
+      ) : (
+        <>
+          {missing.length > 0 && (
+            <ErrorState title="Some types have never been published">
+              {`Reads of ${missing.join(', ')} will fail until a sync publishes them.`}
+            </ErrorState>
+          )}
+          <HTMLTable
+            compact
+            striped
+            className="silos__publication-table"
+            aria-label="Object types and when each was published"
+          >
+            <thead>
+              <tr>
+                <th>Object type</th>
+                <th>Published</th>
+              </tr>
+            </thead>
+            <tbody>
+              {backed.map((type) => (
+                <tr key={type}>
+                  <td>{type}</td>
+                  <td>
+                    {published[type] ? (
+                      formatTimestamp(published[type])
+                    ) : (
+                      <Tag minimal intent="warning">
+                        never
+                      </Tag>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </HTMLTable>
+        </>
+      )}
+    </section>
+  )
+}
+
 export default function Silos({ onSessionExpired }: { onSessionExpired: () => void }) {
   const { data: silos, error } = useFetchOnce<SiloStatus[]>(() => getSilos(), onSessionExpired)
+  /**
+   * WHAT HAS BEEN PUBLISHED, beside what it came FROM.
+   *
+   * GOLD-3d: this panel is about SOURCES and stays that way, but a
+   * source that answers tells you nothing about whether anything was
+   * published from it -- and published gold is the only thing Elysium
+   * reads (GOLD-8). A silo can be green while every read of its types
+   * fails.
+   *
+   * SEPARATE FETCH, not folded into getSilos: freshness is a property
+   * of the deployment, identical for every caller, and the route
+   * deliberately needs no grant so that the people most likely to need
+   * it can see it. Its failure is not worth failing this panel over,
+   * so an absent answer renders nothing.
+   */
+  const { data: freshness } = useFetchOnce<DataFreshness>(() => getDataFreshness(), onSessionExpired)
 
   /**
    * Which silos are expanded, by name.
@@ -77,7 +156,9 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
               </Callout>
             )}
 
-            <HTMLTable compact striped className="silos__table">
+            {freshness !== null && <Publication silos={silos} freshness={freshness} />}
+
+            <HTMLTable compact striped className="silos__table" aria-label="Silos and the object types they back">
               <thead>
                 <tr>
                   <th>Silo</th>

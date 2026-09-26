@@ -384,7 +384,11 @@ describe('ObjectSearchPanel -- results rendering', () => {
       renderPanel(CUSTOMER_SCHEMA)
 
       await waitFor(() => expect(screen.getByText(/2 hours ago/)).toBeInTheDocument())
-      expect(screen.queryByText(/an hour ago|90 minutes/)).not.toBeInTheDocument()
+      // "1 hour ago" is what formatTimestamp renders for 90 minutes.
+      // A first version excluded /an hour ago|90 minutes/, which
+      // matches NEITHER -- so it passed while proving nothing. Found
+      // by the same wording tripping a test one commit later.
+      expect(screen.queryByText(/1 hour ago/)).not.toBeInTheDocument()
     })
 
     it('says nothing when this type has no publication', async () => {
