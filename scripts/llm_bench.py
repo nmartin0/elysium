@@ -347,11 +347,6 @@ def main() -> int:
                         help=f"trials per case (default 1; pass^k needs at "
                              f"least 2, and {DEFAULT_K} is the smallest k that "
                              f"can show a consistency gap)")
-    parser.add_argument("--no-examples", action="store_true",
-                        help="drop the three worked examples from the prompt "
-                             "(~1,148 chars, ~119s of a cold call). Run with "
-                             "and without on the same cases: that is the only "
-                             "thing that settles whether they earn it.")
     parser.add_argument("--show-plan", action="store_true",
                         help="print the plan the model wrote. Use it: a fast "
                              "correct answer proves nothing about AL-4 unless "
@@ -398,14 +393,7 @@ def main() -> int:
             print(f"Unknown case(s): {sorted(unknown)}")
             print(f"Known: {[c.name for c in CASES]}")
             return 2
-    if args.no_examples:
-        # Set before any prompt is built, and reported, because a
-        # number from an unlabelled arm is worthless.
-        import core.llm.agent_step_prompt as step_prompt
-
-        step_prompt.INCLUDE_EXAMPLES = False
-    print(f"mode {args.mode}  examples "
-          f"{'OFF' if args.no_examples else 'on'}")
+    print(f"mode {args.mode}")
     return run(paths, args.trials, cases, args.mode, args.show_plan)
 
 
