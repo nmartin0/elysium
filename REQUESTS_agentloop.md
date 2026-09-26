@@ -236,10 +236,86 @@ could ask for 5 and receive 2, with the other 3 silently dropped for
 being out of compartment. Worse, the count itself leaks: "you may see
 2 of the top 5" is information about rows the caller cannot read.
 
-I do not know which way you want that resolved -- over-fetch then
-trim, or refuse to push a limit at all -- and it is squarely a
-security-model decision in a file I do not own. **That is the real
-content of this request.**
+**RESEARCHED, AND THE ANSWER IS NOT "IT DEPENDS".** There is a
+canonical idiom for exactly this, and it is neither of the two
+options I offered.
+
+### What the industry does by default, and why we cannot
+
+The default answer is PRE-FILTERING: push the policy into the query so
+the engine never returns a row the caller may not see. Postgres RLS is
+"an enforced, invisible WHERE clause... applied by the engine, on
+every access path". The stated benefit is precisely our problem:
+pre-filtering "reduces exposure, improves performance, and **makes
+pagination deterministic**", because "**pagination breaks when
+enforcement happens after retrieval**".
+
+**We have rejected that deliberately** -- MAC is applied in Python per
+object after the engine returns, never moved into a query, and that is
+a documented decision, not an oversight.
+
+The same source says what to do when you cannot pre-filter: "If the
+datastore cannot enforce the rule directly, **use a carefully bounded
+fallback** and treat any post-retrieval filtering as a higher-risk
+exception."
+
+### The bounded fallback, stated exactly
+
+A cursor-paginated registry store writes the idiom down in three
+rules, and two of them are the non-obvious part:
+
+1. Fetch `limit + 1` rows in page order, apply the visibility filter,
+   return at most `limit`.
+2. "**The 'more rows?' signal must come from the raw DB row count, not
+   the post-filter item count.** Fetching limit+1 and testing
+   `rows.len() > limit` is the sentinel; comparing the filtered
+   `items.len()` against limit sends clients to a phantom empty page
+   whenever the filter drops a row on the final page."
+3. "**The next cursor must anchor on the last scanned row, not the
+   last kept item.** If a whole page is filtered out, anchoring on the
+   last kept item yields None and terminates pagination early even
+   though the database had more matching rows."
+
+A production search path states the loop form: "Pagination loop (up to
+10 pages x 100 per page) ensures post-filtering doesn't silently
+reduce result count."
+
+### So: DO NOT PUSH THE LIMIT. Over-fetch in a bounded loop.
+
+    order in the engine       yes -- ordering is not a security
+                              decision, and sorting without a limit is
+                              the expensive case anyway
+    limit in the engine       NO
+    the limit lives in the    scan in pages, MAC each page, stop when
+    caller                    N authorised rows are found OR a scan
+                              budget is exhausted
+
+**AND THIS FIXES THE LEAK, rather than trading it away.** With a
+pushed limit the caller asks for 5, gets 2, and the shortfall says
+"three rows you may not see existed in the top five" -- which is
+information about rows they cannot read, and breaks the uniform-denial
+property this project holds everywhere else. With a bounded scan the
+caller gets 5, or fewer with "the scan budget was reached". The second
+message is about OUR scan, not about their permissions, and it is the
+same thing a search already says when it finds little.
+
+**It is also simply more correct.** A pushed limit can return 2 when
+50 authorised rows sit just below the cut. The bounded scan returns
+the right 5.
+
+### One thing worth knowing while you are here
+
+There is published work on timing side-channels against post-filtered
+row-level security ("Plaintext Recovery Against Post-Filtering Access
+Control"): the time to apply the policy "depends on the size of the
+intermediate result **before** the policy has been applied", so
+response time can leak how many rows matched pre-MAC. Postgres
+mitigates with `security barrier` and LEAKPROOF operators.
+
+Not part of this request, and not new -- it is a property our
+apply-MAC-after design already has. But if anyone ever argues for
+pushing MAC into the query, that paper is the argument FOR it, and it
+should be weighed against whatever made us choose otherwise.
 
 ### My half
 
