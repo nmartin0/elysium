@@ -2270,3 +2270,80 @@ is a real hole, and it is the one half nobody has proposed fixing.
 2. **Operator vocabulary -- now, or after the VM run?** I recommend
    after, and would rather be overruled than ship it unmeasured.
 3. **Ordering and limit -- file R5 for backend, or close as declined?**
+
+---
+
+# LB-2's three questions, researched
+
+## 1. Data types in the schema -- PRECEDENT IS UNANIMOUS
+
+Text-to-SQL is the closest studied analogue: a natural-language
+question, a schema in the prompt, a structured query out. **Every
+description of what a schema block contains includes types.** "The
+schema of a database defines the tables, columns, COLUMN TYPES and
+foreign key connections between tables" -- that is the standard
+formulation, repeated across the literature, and worked examples
+annotate each column with its type (`order_id BIGINT`,
+`order_placed_at TIMESTAMPTZ`).
+
+**Richer column metadata measurably helps.** MCI-SQL: "we assign
+metadata-complete contexts to each column, which SIGNIFICANTLY
+IMPROVES the accuracy of column filtering", with the reasoning that
+"LLMs require sufficiently rich metadata to understand individual
+columns".
+
+**THE USUAL COUNTER-ARGUMENT DOES NOT APPLY TO US.** Most of that
+research is about PRUNING schemas -- "including the entire database
+schema can exceed context windows or introduce noise that leads to
+hallucinated queries". That concern is about hundreds of tables. Ours
+is 2 object types and 9 visible fields, already pruned by MAC and
+RBAC before the model sees it, and the addition measures +18
+characters.
+
+One honest note against: BASE-SQL found that for a SMALL open-source
+model, better column linking gave improvement that was "not
+significant". So the gain may be small for phi4-mini. The cost is 18
+characters and it removes an inconsistency F-17 already created.
+
+## 2. Operator vocabulary -- no new precedent, and the old one holds
+
+Nothing found changes the position. The case against shipping it
+unmeasured is the same one that made me withdraw AR-5: for a sub-3B
+class model "a schema can be a material part of the generation
+problem", and the failure mode is a wrong answer in a valid shape.
++504 characters on every hop of every query is exactly that kind of
+change, and AL-8 plus the parse-failure rate now exist to measure it.
+
+## 3. Ordering and limit -- THE STRONGEST CASE OF THE THREE
+
+**It has a name and everyone implements it.** "Queries include
+sections such as LIMIT N or FETCH FIRST N ROWS. The pushdown for such
+a query is called a TOP-N PUSHDOWN." Trino, Starburst, DuckDB and
+Databricks all do it; Databricks ships
+`pushdown.sortLimit.enabled` for "top-N queries (combination of ORDER
+BY and LIMIT)", on by default. Foundry's own Search Objects API takes
+`orderBy` (field plus direction, multiple fields) and
+`pageSize`/`pageToken`.
+
+**And the guidance aimed specifically at LLM agents says our current
+shape is the anti-pattern.** Retool's: "Ask the LLM to use query
+pushdown and keep the application layer thin. DON'T FETCH EVERYTHING
+AND FILTER THE RESULTS IN TYPESCRIPT. Use database aggregation
+(COUNT, SUM, GROUP BY) for metrics and summaries rather than
+computing them from raw rows."
+
+**Why SQL agents work at all, put plainly:** "GROUP BY, aggregates,
+subqueries, CTEs, UNION, ORDER BY, and HAVING all work IN THE ENGINE.
+Results come back as rows. The agent doesn't need to know anything
+about the underlying data model."
+
+Ours does none of that for ordering. The agent must pull rows and
+reason over them -- and `MAX_OBJECT_IDS` caps that at 20, so "the five
+largest transactions" is not merely slow, it is **unanswerable beyond
+20 rows**. Filters cannot fix it: a filter narrows, it does not rank.
+
+**Also worth noting: sorting without a limit is the expensive case.**
+"Always combine a sort with a LIMIT -- sort pushdown failure is most
+costly when there is no limit, because the engine must sort the entire
+result set." So if ordering is added, the limit should come with it,
+not after.
