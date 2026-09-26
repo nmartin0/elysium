@@ -4089,3 +4089,96 @@ may not need the prose at all.
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  3095 passed, 8 skipped  (3092 before; +3 here)
+
+---
+
+# RESEARCH on the three proposals, and an honest answer about unblocking
+
+## The prompt cuts: the literature supports it MORE than I assumed
+
+I said "each was added for a measured reason, so cutting is a
+behaviour change". True. But the field has a name for the other side
+of it, and I had not looked.
+
+**"OVER-PROMPTING"** (arXiv 2509.13196) is a named phenomenon:
+"excessive examples in prompts lead to diminished performance in
+LLMs, challenges the conventional wisdom about in-context few-shot
+learning" -- studied across "instruction-tuned LLMs of varying sizes".
+
+**AND EXAMPLES MEASURABLY HURT A SMALL MODEL** in "Prompt Programming
+for Large Language Models: Beyond the Few-Shot Paradigm" (arXiv
+2102.07350): "the simple colon prompt 1-shot performed significantly
+worse than 0-shot. Indeed, we found this was true more generally of
+low-shot prompts across a variety of tasks." Their table: 6.7B model,
+0-shot 23.5, 1-shot **18.0**. One example made it worse.
+
+Ours is a 4B model with THREE worked examples.
+
+**THE MECHANISM NAMED IS OURS TOO.** A survey on zero-shot design
+invokes no free lunch: "providing examples inevitably introduces bias
+to the prediction algorithm. In cases where out-of-distribution
+samples occur, applying few-shot learning can hinder the inference
+process." Our three examples are all the same task shape -- a worked
+sequence over `ex_001` and `f_a` -- so a question unlike them is
+exactly the out-of-distribution case.
+
+**And ordering alone is worth a benchmark's whole range**: "The order
+in which few-shot examples are permutated in prompts can impact
+performance, ranging from the state-of-the-art to a random guess."
+Three examples in a fixed order is an unexamined choice, not a
+neutral one.
+
+**THE COUNTER STILL STANDS.** Few-shot is recommended precisely "when
+zero-shot doesn't work", and the IMPORTANT notes are not examples at
+all -- they are instructions that fixed specific measured failures
+(the asymmetry fix, the list-of-IDs reminder). Those are a different
+category from the worked examples and should be cut separately if at
+all.
+
+**REVISED RECOMMENDATION:** cut the three worked EXAMPLES first, not
+the get_object explanation. They are the largest block (1,007 chars,
+~105s), they are the category the literature actually indicts, and
+they are all one shape. Keep the IMPORTANT notes until the examples
+have been measured.
+
+## AL-4 as default: the literature says keep both
+
+Nothing found supports flipping a default on three low-uncertainty
+cases. ReWOO's authors name adaptability as the weakness; LLMCompiler
+keeps replanning precisely because plans go wrong. **A sibling entry
+point is the honest state** until `dependent_choice` runs.
+
+## The fixture's two models: dev's own config is the precedent
+
+No external research needed -- `deployment/etc/config.yaml` already
+argues it in measured terms, and the diagnostic showed model load at
+3.7s, so collapsing to one model is about memory pressure rather than
+load time. Still not my file.
+
+---
+
+# DOES AGREEING UNBLOCK ALL THE WORK? NO.
+
+**Eleven items remain blocked after agreeing to all three**, and the
+reason is worth being precise about: agreement unblocks BUILDING; it
+does not unblock VERIFYING, and it does not do other people's edits.
+
+    R1 retry wiring          backend edits deployment_loader.py
+    R4 resume wiring         backend edits api/routes.py
+    calculator in config     deployment/etc -- one line
+    OTel dependency          LIBRARY_AUDIT + requirements.txt
+    R5 order_by/limit        backend implements it
+    R3 free-text reconcile   backend implements it
+    dependent_choice         needs a VM run to write against evidence
+    prompt cuts measured     needs VM runs, both modes, four cases
+    AL-4 as default          needs dependent_choice first
+    step-mode injection      times out: 578s prompt vs 600s limit
+    AR-3/6/7/8/9/10, D1      VM, llama-server, or owner decisions
+
+**The single structural fact:** I cannot run the model. Every
+remaining verification is a command someone else types. That has been
+true since the VM run began and it is the real bottleneck, not the
+decisions.
+
+**What agreement DOES unblock, today:** the prompt cut. I can build it
+and hand it over; you measure it. That is one item of eleven.
