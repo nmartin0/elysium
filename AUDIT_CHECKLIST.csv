@@ -100,7 +100,7 @@ PA001-A6,PA,PIPELINE_AUDIT,HIGH,served snapshots frozen until reload; pins can m
 PA001-A7,PA,PIPELINE_AUDIT,HIGH,"source column names executed as SQL: reserved word, alias, a-b expression, subquery EXECUTED",sqlite_adapter.py:433,P4-G;P8,"ALREADY FIXED by LIB-3 patch 390; all four shapes verified safe on the bronze path and pinned by tests patch 416"
 PA001-A8,PA,PIPELINE_AUDIT,HIGH,decimal equals/in crashed; range refused,mirror_adapter.py:333 filters.py:57,P9,"FIXED ce14480 + patch 396"
 PA001-A9,PA,PIPELINE_AUDIT,HIGH,the changelog schema cannot widen; changes are lost,iceberg_sync.py:1025,P4-H,"CONFIRMED + FIXED patch 406: F1 was incomplete without it"
-PA001-A10,PA,PIPELINE_AUDIT,MED,a declared type change has no path forward,iceberg_sync.py:525,P4-I,unverified
+PA001-A10,PA,PIPELINE_AUDIT,MED,a declared type change has no path forward,iceberg_sync.py:525,P4-I,"CONFIRMED + FIXED patch 444: refused with the remedy named, --rebuild performs it, and GOLD follows silver - the first version left gold broken with Mismatch in fields"
 PA001-A11,PA,PIPELINE_AUDIT,HIGH,manifest publishes data_silos.yaml verbatim including credentials,manifest.py:62,P15,"CONFIRMED + FIXED patch 427: an allow-list of silo keys; connection blocks never published"
 PA001-A12,PA,PIPELINE_AUDIT,MED,bronze copies every column reversing the stated policy,iceberg_sync.py:805,P1-A,"NOT REPRODUCED patch 443 - the claim is BACKWARDS. ELT_ROADMAP states this behaviour deliberately with a 1.8x storage measurement and a lineage justification; no document contradicts it. Behaviour pinned. See NEW-5 for the real consequence"
 PA001-A13,PA,PIPELINE_AUDIT,MED,changelog has no bronze snapshot id and no UPDATE before-image,iceberg_sync.py,IN,"partly fixed 97954d6"

@@ -242,6 +242,83 @@ def _report_type_drift(silo_name: str, table_name: str,
         )
 
 
+class DeclaredTypeChanged(ValueError):
+    """A field's declared type no longer matches the mirror's column
+    (PA001-A10).
+
+    Iceberg refuses to change a column's type in place, and rightly:
+    reinterpreting stored bytes is not a schema edit. Until now that
+    surfaced as pyiceberg's own message --
+
+        ValidationError: Cannot change column type: amount: string -> long
+
+    -- which names neither the table, nor the declaration that caused
+    it, nor anything to do about it. The operator changed one line of
+    YAML and the pipeline stopped, permanently, with a message about
+    a column.
+
+    THERE IS A PATH, and it was simply never written down: drop the
+    silver table and re-sync. BRONZE IS UNTOUCHED, holding every raw
+    value as text, so nothing is re-read from a source that may have
+    moved on. What is lost is silver's snapshot history for that one
+    table -- real, worth stating, and not the same as losing data.
+
+    `--rebuild silo.table` does it, for the same reason
+    `--accept-deletions` exists: the dangerous option should be
+    spelled out by a person who has read what it costs, not implied by
+    a retry.
+    """
+
+
+def _refuse_a_changed_declared_type(table, arrow_table, identifier: str,
+                                     rebuild: set) -> None:
+    """Stop before Iceberg does, and say what to do (PA001-A10).
+
+    Iceberg refuses a column type change in place -- correctly, since
+    reinterpreting stored bytes is not a schema edit. Its message
+    names the column and nothing else:
+
+        ValidationError: Cannot change column type: amount: string -> long
+
+    Not the table, not the declaration that caused it, not a remedy.
+    An operator who changed one line of YAML got a permanent stop and
+    a sentence about a column.
+
+    WIDENING IS NOT A TYPE CHANGE and is left alone: a NEW column is
+    added by the widening path above, and this compares only columns
+    that exist on both sides.
+    """
+    # ARROW AGAINST ARROW. The table's own schema converted back to
+    # Arrow is the only comparison that cannot disagree with itself
+    # about how a type is spelled.
+    # SAME TYPE, TWO SPELLINGS. Iceberg's Arrow round trip returns
+    # `large_string` where we wrote `string`, and `large_binary` for
+    # `binary` -- identical storage, different pyarrow objects. Left
+    # unnormalised, EVERY text column looked like a type change and
+    # the check refused every second sync.
+    def _same(left, right) -> bool:
+        pairs = {("string", "large_string"), ("binary", "large_binary")}
+        one, two = str(left), str(right)
+        return one == two or (one, two) in pairs or (two, one) in pairs
+
+    existing = {field.name: field.type for field in table.schema().as_arrow()}
+    changed = [
+        (field.name, str(existing[field.name]), str(field.type))
+        for field in arrow_table.schema
+        if field.name in existing and not _same(existing[field.name], field.type)
+    ]
+    if not changed or identifier in rebuild:
+        return
+    described = "; ".join(f"{name}: {was} -> {now}" for name, was, now in changed)
+    raise DeclaredTypeChanged(
+        f"{identifier}: the declared type of {described} no longer matches the "
+        f"mirror. Iceberg cannot change a column's type in place. To rebuild "
+        f"this table's silver from bronze -- which keeps every raw value and "
+        f"discards only silver's snapshot history for this table:\n"
+        f"    python -m scripts.run_sync --rebuild {identifier}"
+    )
+
+
 class SuspectedPartialRead(ValueError):
     """More of a table vanished in one sync than a real deletion
     plausibly explains (PA001-F4).
@@ -349,12 +426,16 @@ class IcebergMirrorSync(MirrorSync):
                     duplicate_policy: DuplicatePolicy | None = None,
                     object_types: frozenset | None = None,
                     link_pair: tuple = (),
-                    accept_deletions: bool = False) -> SyncResult:
+                    accept_deletions: bool = False,
+                    rebuild: set | None = None) -> SyncResult:
         # HELD FOR THIS CALL so the drift check can ask the write log
         # by OBJECT TYPE (PA001-A1). Per-call rather than per-instance
         # because one IcebergMirrorSync syncs every table in turn.
         self._object_types = frozenset(object_types or ())
         self._accept_deletions = accept_deletions
+        # Tables the operator has asked to rebuild ("silo.table"), for
+        # a declared type change Iceberg cannot apply in place.
+        self._rebuild: set = set(rebuild or ())
         adapter = self.adapters.get(silo_name)
         if adapter is None:
             raise ValueError(
@@ -565,6 +646,25 @@ class IcebergMirrorSync(MirrorSync):
             table = self._catalog.load_table(identifier)
         except NoSuchTableError:
             table = self._catalog.create_table(identifier, schema=arrow_table.schema)
+        else:
+            _refuse_a_changed_declared_type(table, arrow_table, identifier,
+                                             self._rebuild)
+            if identifier in self._rebuild:
+                # REBUILT ON THE OPERATOR'S WORD. Dropping and
+                # recreating is the only way Iceberg allows a column's
+                # type to change, and bronze still holds every raw
+                # value as text -- so this is not a re-read of a source
+                # that may have moved on. It costs silver's snapshot
+                # history for this one table, which is why it is asked
+                # for rather than assumed.
+                logger.warning(
+                    f"{identifier}: rebuilding silver for a changed declared "
+                    f"type -- its snapshot history is discarded; bronze is "
+                    f"untouched"
+                )
+                self._catalog.drop_table(identifier)
+                table = self._catalog.create_table(
+                    identifier, schema=arrow_table.schema)
 
         # overwrite(), never append() -- a full refresh. Verified
         # directly that this REPLACES the table's contents rather than

@@ -582,12 +582,48 @@ def _audit_either(type_def: dict, rows: "list[dict] | None", arrow_table,
 
 
 def _columns_changed(table, arrow_schema) -> bool:
-    """Whether the published table holds different columns than this
-    build produces. Names only: a type change is a different problem,
-    and the audit is where that belongs."""
-    published = {field.name for field in table.schema().fields}
-    building = set(arrow_schema.names)
-    return published != building
+    """Whether the published table cannot hold what this build
+    produces -- different column NAMES, or a different column TYPE.
+
+    THE TYPE HALF WAS DELIBERATELY DEFERRED, in this docstring's own
+    earlier words: "Names only: a type change is a different problem,
+    and the audit is where that belongs." THE AUDIT DOES NOT HANDLE
+    IT. Measured on a real deployment after changing one declared type
+    from `date` to `string`: silver rebuilt correctly and gold then
+    failed with
+
+        FAILED  gold.Transaction: Mismatch in fields
+
+    so a deployment that followed the instruction printed by the
+    silver refusal ended up with a working silver and a broken gold.
+    An instruction that leaves you half-fixed is worse than none.
+
+    GOLD IS DERIVED, which is why rebuilding is the answer here and a
+    refusal is the answer in silver: every gold row comes from silver,
+    which still has them. What a rebuild costs is this type's
+    publication tags and its gold_history -- stated in the sync's
+    output rather than hidden.
+
+    SPELLINGS ARE NORMALISED for the same reason as in the sync:
+    Iceberg's Arrow round trip returns `large_string` where we wrote
+    `string`, and treating that as a change would rebuild gold on
+    every single sync.
+    """
+    published = {field.name: field.field_type for field in table.schema().fields}
+    if set(published) != set(arrow_schema.names):
+        return True
+
+    def _same(left, right) -> bool:
+        pairs = {("string", "large_string"), ("binary", "large_binary")}
+        one, two = str(left), str(right)
+        return one == two or (one, two) in pairs or (two, one) in pairs
+
+    existing = {field.name: field.type for field in table.schema().as_arrow()}
+    return any(
+        not _same(existing[field.name], field.type)
+        for field in arrow_schema
+        if field.name in existing
+    )
 
 
 def _write_conflicts(catalog, object_type: str, conflicts: list) -> None:

@@ -531,7 +531,8 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None) -> int:
     return refused
 
 
-def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
+def run_sync(runtime_paths=None, accept_deletions: set | None = None,
+              rebuild: set | None = None) -> int:
     """Syncs every ontology-referenced table. Returns the number of
     tables that FAILED -- 0 meaning a fully successful run, so a
     caller (and __main__ below) can use it directly as an exit code.
@@ -545,6 +546,11 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
     it is asked, so it is not a config key.
     """
     accepted = set(accept_deletions or ())
+    # `rebuild` names tables ("silo.table") whose SILVER may be dropped
+    # and rebuilt because a declared type changed and Iceberg cannot
+    # apply that in place (PA001-A10). Bronze is untouched, so no raw
+    # value is lost; silver's snapshot history for that table is.
+    rebuilding = set(rebuild or ())
     # The sync has its own invariant asserts -- that the committed
     # snapshot holds exactly what was written -- so it needs the same
     # guarantee the server does.
@@ -634,6 +640,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
                     target.expectations, target.duplicate_policy,
                     target.object_types, target.link_pair,
                     f"{target.silo_name}.{target.table_name}" in accepted,
+                    rebuilding,
                 )
             except Exception as exc:
                 # Per-table, deliberately -- see this module's docstring.
@@ -710,10 +717,20 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None) -> int:
 if __name__ == "__main__":
     _parser = argparse.ArgumentParser(description=__doc__)
     _parser.add_argument(
+        "--rebuild", action="append", default=[], metavar="SILO.TABLE",
+        help="drop and rebuild this table's SILVER because a declared type "
+             "changed. Iceberg cannot change a column's type in place. "
+             "Bronze is untouched, so every raw value survives; what is "
+             "discarded is silver's snapshot history for this table. "
+             "Repeatable.",
+    )
+    _parser.add_argument(
         "--accept-deletions", action="append", default=[], metavar="SILO.TABLE",
         help="let this table sync even though more than half its rows are gone. "
              "Without it the sync refuses and leaves the mirror as it was, "
              "because a partially failed read looks exactly like a mass "
              "deletion. Repeatable.",
     )
-    sys.exit(run_sync(accept_deletions=set(_parser.parse_args().accept_deletions)))
+    _args = _parser.parse_args()
+    sys.exit(run_sync(accept_deletions=set(_args.accept_deletions),
+                       rebuild=set(_args.rebuild)))
