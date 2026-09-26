@@ -186,3 +186,152 @@ before it, so the constraint lands with the capability rather than
 after it.
 
 I did not edit `core/deployment_loader.py`.
+
+---
+
+## Resolve the security attribute from bronze, and carry it as a system column
+
+NEEDS: backend
+
+### The defect, reproduced
+
+`Customer` declares `security: field: region`, and `region` is declared
+`type: data` beside `name` and `email`. Silver standardises every
+string field by default and nothing exempts it. Run directly against
+`core/mirror/standardise.py` with the shipped `Customer.region`
+declaration:
+
+    rules applied to Customer.region:
+      {'unicode': 'NFC', 'trim': True, 'collapse_whitespace': True}
+
+    source 'us-west '  ->  served 'us-west'   CHANGED
+    source ' us-west'  ->  served 'us-west'   CHANGED
+
+The MAC check is an exact string comparison against the user's own
+value. So for a customer row whose source `region` holds a trailing
+space:
+
+    BEFORE the pipeline   'us-west ' matches nobody. The row is
+                          invisible to every user in the system.
+    AFTER  the pipeline   'us-west' matches. The row is visible to
+                          every us-west user.
+
+A whitespace rule changed who may see a customer. No audit entry, no
+approval, no way for anyone downstream to tell it happened. The trim
+may well produce the *intended* answer -- the space was probably a
+typo -- but that is an access-control decision being taken by a text
+cleaning rule.
+
+### This decision was already made once, the other way
+
+`UNIFIED_ROADMAP.md:1290`, on type coercion for live reads:
+
+    THE SECURITY-VALUE PATH IS DELIBERATELY EXCLUDED -- it is compared
+    for equality against the user's own, and changing the
+    representation of one side of the comparison that decides
+    authorization is not worth tidying a region name for.
+
+That reasoning transfers to standardisation word for word. It was not
+carried across when standardisation was built (patch 337). This is a
+gap between two features, not a wrong decision in either.
+
+### Why it is structural rather than a missed exemption
+
+Precedent says our shape is ORTHODOX, so the answer is not to
+redesign. Snowflake: "A row access policy is a schema-level object
+that determines whether a given row in a table or view can be viewed"
+-- and "the attribute values come from the table to be protected by
+the row access policy". PostgreSQL RLS is the same: `CREATE POLICY` is
+a catalog object, and "if no policy exists for the table, a
+default-deny policy is used". Databricks ABAC: "the policy lives on
+the catalog and is evaluated by Unity Catalog before the query reaches
+the runtime."
+
+So: policy outside the data, attribute read from a column of the data.
+That is exactly Elysium, and Elysium already satisfies the harder half
+-- the rules live in policy.yaml and are enforced in Python, never
+pushed into a query.
+
+THE DIFFERENCE IS WHAT SITS IN BETWEEN. In Snowflake and Postgres the
+policy reads the column at query time, from the table as it is.
+Nothing stands between the column and the policy. Elysium has a
+pipeline there, and it rewrites the column on the way past. The label
+being "in the data" is not the problem; the policy reading a column
+the pipeline is allowed to transform is.
+
+Four separate features reach for that column, three of them ours:
+standardisation (fires today, shown above), R50's write-back (guarded
+in patch 25e9158), R52's imputation (unbuilt), and the write-down
+check in SECURITY_ARCHITECTURE.md. Four chances for four people to
+move an access boundary while doing something reasonable to "a text
+column". Exempting each one separately is a rule that has to be
+remembered four times.
+
+### The proposal, which is mostly already planned
+
+Resolve the security value ONCE, from BRONZE -- the raw, untouched
+copy -- and carry it as a system column, `_security_value`, alongside
+the ones silver already adds: `_silo`, `_source_table`, `_row_hash`,
+`_synced_at`. The read path compares against THAT, never against the
+customer's own column.
+
+TWO PIECES OF THIS ALREADY EXIST:
+
+  - The system-column convention. `core/mirror/lineage.py` already
+    namespaces Elysium's own metadata with a leading underscore,
+    visibly apart from the customer's fields.
+  - The column itself. ELT_ROADMAP.md already plans "a materialised
+    MAC column", because "aggregation cannot be pushed down today
+    because MAC is not always a column" -- `via_field` types resolve
+    their security by following a link, so no engine can filter on it.
+    ELT_ROADMAP is explicit that "a materialised MAC column NEEDS
+    somewhere to put it, which is the transform stage."
+
+So this is not new work so much as joining two planned things and
+stating the rule that follows.
+
+WHAT IT BUYS:
+  - the customer's `region` column becomes an ordinary column again,
+    free to be cleaned, because nothing depends on it for access;
+  - standardisation, imputation, write-back and cross-object copying
+    all stop being able to move the boundary, structurally, rather
+    than by four separate exemptions;
+  - `via_field` security becomes pushable, which is the performance
+    win ELT_ROADMAP wanted anyway.
+
+WHAT IT COSTS, honestly:
+  - it is your file and your stage;
+  - "resolved once from bronze" needs defining against a legitimate
+    change -- a customer really moving region must propagate, so it is
+    recomputed per sync from that sync's raw copy, and commit 9549a37
+    already pins what happens when an object changes compartment;
+  - `via_field` is the harder half: materialising a value reached by
+    following a link is real work, and is exactly what ELT_ROADMAP
+    says the transform stage is for;
+  - bronze is then trusted for this. It already is -- silver is built
+    from it -- so this is not new trust, but it is worth naming.
+
+MEANWHILE: nothing, and I have not edited `core/mirror/`. The
+whitespace behaviour is live today. If you want an interim step that
+is smaller than the full column, exempting the declared security field
+from `rules_for()` would close the reproduced case on its own.
+
+### Two smaller questions this raised
+
+1. `/admin/mirror`'s row counts are raw table counts, not MAC-filtered.
+   The docstring already reasons about this -- gated on
+   `manage:deployment`, and "a count is still a fact about how much
+   there is" -- so it is a considered decision. The question I cannot
+   answer from here: an administrator also has a MAC value, and these
+   counts span every compartment. Is `manage:deployment` intended to
+   be a MAC bypass for aggregates? AGENTS.md's invariant says a
+   `GROUP BY` pushed into SQL "would aggregate rows the caller cannot
+   see", which is the same shape. Worth stating either way.
+
+2. Quarantined rows have no gold object, so under any
+   inherit-from-gold model there is nothing for them to inherit from.
+   `quarantine_report.py` already reaches the right answer for the
+   right reason -- counts and rule names shown, values never, because
+   "the value that failed is often the sensitive thing". Recorded here
+   only because a future provenance feature will be tempted to show
+   them.
