@@ -2549,3 +2549,78 @@ planner "returned 34, over the limit of 20"), or it pages internally.
 I lean to refusing, because paging silently is how a plan reads more
 than anyone authorised in one step -- but it is a real choice and I
 will raise it again when I get there.
+
+---
+
+## AL-4, commit 2 of 4: asking for the whole plan
+
+`next_plan()` asks once for every step. **The planner is never shown a
+value** -- there is no `gathered` in a planning call, which is the
+point rather than an omission. A test asserts it by checking that no
+data value appears in the prompt.
+
+### Two things the contract and the tests forced
+
+**THE PLAN MODULE MOVED DOWN A LAYER, and import-linter is what said
+so.** I put it in `core/agent/` in commit 1, where the executor lives.
+The moment the PLANNER needed it too, the contract refused:
+`core.agent` sits ABOVE `core.llm`, so the prompt module cannot reach
+up into the loop.
+
+That is the story `core/filters.py` already tells about itself -- it
+"started inside core/ontology and moved out because core.functions
+sits BELOW ontology here and needs it too... A vocabulary that the
+bottom layer cannot reach is in the wrong place, and the contract said
+so." A plan is a message format BETWEEN planner and executor, so it
+belongs in the layer both can reach. Now `core/llm/plan.py`.
+
+**THE STEP-SHAPE CHAIN WAS EXTRACTED, NOT COPIED.** `validated_step()`
+is now one function both paths use. Two copies would drift, and the
+drift would be silent: a shape a plan accepts and the live path
+refuses fails HALFWAY THROUGH a plan, with the reads before it already
+done and already audited. Same lesson as LB-5, one layer up.
+
+### What a plan is refused for
+
+    unparseable reply              named in next_step()'s vocabulary
+    no "plan" key                  refused
+    a step missing required keys   the SHARED check, not a second one
+    an unrecognised step kind      refused
+    a "finish" inside a plan       a plan ends when its last step
+                                   does; a finish would execute as a
+                                   no-op and look like success
+    a forward handle               caught before anything runs
+
+**AN OUTAGE IS RAISED, NOT SWALLOWED.** `next_step()` finishes on
+`LLMUnavailable` because it has real gathered context and the best
+available answer beats an error. A plan that was never written has
+nothing to execute, so an empty plan would read as "nothing to do".
+
+### Controls, five
+
+    skip per-step validation in a plan      2 of 13 fail
+    allow a finish inside a plan            1 fails
+    swallow an outage, return an empty plan 1 fails
+    show the planner the gathered data      1 fails
+    build a second schema description       2 fail
+
+### One thing noted, not fixed
+
+AL-2's untrusted-data framing tells the model to ignore instructions
+inside values it is shown. **In plan mode it is shown none**, so that
+paragraph warns about an empty set -- prompt characters for nothing.
+Removing it now would weaken the step path, which still needs it. It
+goes in commit 4, when the loop switches over.
+
+A first version of the "never shown a value" test asserted the phrase
+"Gathered so far" appeared nowhere, and failed -- on the framing
+paragraph, which mentions it while carrying no data. The test now
+asserts the real property: no VALUE is present.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3035 passed, 8 skipped  (3022 before; +13 here)
+
+Still nothing calls it. Commit 3 is the executor with fan-out; commit
+4 is the re-plan gate and the switch.

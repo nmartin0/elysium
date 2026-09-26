@@ -17,7 +17,7 @@ never read.
 
 import pytest
 
-from core.agent.plan import (
+from core.llm.plan import (
     PlanError,
     resolve_handles,
     resolve_step,

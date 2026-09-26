@@ -12,6 +12,17 @@ values". It is CaMeL's rule word for word -- untrusted results are
 held in memory the privileged model "can manipulate by reference
 only".
 
+IT LIVES IN core/llm/ BECAUSE THE CONTRACT SAID SO, and the story is
+the same one core/filters.py tells about itself. It was written in
+core/agent/, where the executor lives -- and the moment the PLANNER
+needed it too, import-linter refused: core.agent sits ABOVE core.llm,
+so the prompt module cannot reach up into the loop.
+
+A plan is a message format BETWEEN the two. The planner writes it, the
+executor runs it, and a vocabulary the lower layer cannot reach is in
+the wrong place. filters.py moved down for exactly this reason; so
+does this.
+
 NO MODEL IS INVOLVED IN THIS FILE, deliberately, and it is the first
 commit for that reason. Handle resolution is pure: a plan in, a
 resolved step out. Getting `$a` wrong SILENTLY is how a plan reads the
@@ -70,8 +81,14 @@ class PlanError(ValueError):
     """
 
 
-def validate_plan(plan: list[dict]) -> None:
+def validate_plan(plan: Any) -> list[dict]:
     """Every id declared once, every handle pointing backwards.
+
+    TAKES `Any` AND RETURNS THE PLAN. It validates the type itself --
+    a caller passing `parsed.get("plan")` has no idea what it holds,
+    which is the whole reason to call this -- and returning the
+    validated list lets the caller use it without a second cast or a
+    separate narrowing step that could drift from the check.
 
     CHECKED BEFORE ANYTHING RUNS. A plan whose third step names a
     handle that does not exist is broken whether or not the first two
@@ -112,6 +129,7 @@ def validate_plan(plan: list[dict]) -> None:
                     f"before them."
                 )
         seen.add(step_id)
+    return plan
 
 
 def _handles_in(value: Any) -> list[str]:

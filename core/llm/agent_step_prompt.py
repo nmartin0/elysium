@@ -36,6 +36,7 @@ import logging
 
 from core.functions.interface import Function
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
+from core.llm.plan import PlanError, validate_plan
 from core.llm.prompt_values import dumps_gathered
 from core.llm.tracing import CHAT, span
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE
@@ -733,6 +734,27 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
         logger.warning(f"unparseable model response, finishing: {e}")
         return _finish_step(fallback=UNPARSEABLE_REPLY)
 
+    return validated_step(parsed)
+
+
+def validated_step(parsed: dict) -> dict:
+    """One parsed step, normalised -- or a finish naming what was wrong.
+
+    EXTRACTED SO A PLANNED STEP AND A LIVE STEP CANNOT DIVERGE
+    (AL-4). next_step() asks for one step and runs it; next_plan()
+    asks for several and runs them later. Two copies of this chain
+    would drift, and the drift would be silent: a plan accepting a
+    shape the live path rejects is a plan that fails halfway
+    through, after real reads and real audit entries.
+
+    That is the LB-5 lesson one layer up -- the prompt and the
+    grounding check had two renderings of the same records, and
+    they matched only by accident.
+
+    RETURNS A FINISH WITH A `fallback` on anything unusable, which
+    is what next_step() already did. next_plan() reads that as a
+    refusal instead, since a plan has nothing to finish.
+    """
     step = parsed.get("step")
 
     if step == "finish":
@@ -863,3 +885,100 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
 
     logger.warning(f"unrecognized step {step!r}, finishing")
     return _finish_step(fallback=UNRECOGNISED_STEP)
+
+
+PLAN_INSTRUCTIONS = """
+
+Answer by writing the WHOLE plan at once, as one JSON object:
+
+  {"plan": [
+    {"id": "a", "step": "search_object", "object_type": "<type>", "filter": {...}},
+    {"id": "b", "step": "get_field", "object_type": "<type>", "object_id": "$a", "field_name": "<field>"}
+  ]}
+
+Each step needs an "id". A later step may use an earlier step's result
+by writing $<id> where a value goes -- $a above means "whatever step a
+found". You will NOT be shown those values; name them and move on.
+
+Ids may only refer BACKWARDS, to steps above them. Do not include a
+"finish" step: the plan ends when its last step does."""
+
+
+def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
+              tools: list[Function], writes_enabled: bool,
+              visible_action_types: dict, *, deadline: float | None = None,
+              usage: TokenUsage | None = None) -> list[dict]:
+    """The whole plan, in one model call (AL-4).
+
+    THE PLANNER IS NEVER SHOWN A VALUE. There is no `gathered` here --
+    that is the point, not an omission. A planted instruction in a
+    field value cannot change which steps run, because the steps are
+    chosen before any field is read. This is the control-flow half of
+    the dual-LLM pattern; the data-flow half is the mediator, which
+    this project already has.
+
+    SAME SYSTEM PROMPT AS next_step(), plus the plan instructions.
+    Building a second description of the schema, the tools and the
+    actions is how two descriptions drift -- and a plan written
+    against a schema the executor does not share is a plan that fails
+    after real reads.
+
+    EVERY STEP GOES THROUGH validated_step(), the same function the
+    live path uses. A shape accepted here and refused there would fail
+    halfway through a plan, with the reads before it already done and
+    already audited.
+
+    RAISES PlanError on anything unusable, naming the cause in the
+    same vocabulary next_step() uses for a fabricated finish. The
+    caller decides what to do with it -- commit 4's re-plan gate will
+    hand the reason back to the planner as structure, never as
+    content.
+    """
+    system_prompt = _build_system_prompt(
+        visible_schema, tools, writes_enabled, visible_action_types
+    ) + PLAN_INSTRUCTIONS
+    user_message = f"Question: {query_text}\n\nWhat is the plan?"
+
+    try:
+        with span(CHAT, "plan"):
+            raw_content = client.chat(
+                system_prompt, user_message,
+                json_mode=True, temperature=0, deadline=deadline, usage=usage,
+            )
+    except LLMUnavailable:
+        # NOT CAUGHT HERE. Unlike next_step(), there is no gathered
+        # context to fall back on -- a plan that was never written
+        # cannot be partially executed, so the caller must see the
+        # outage rather than an empty plan.
+        raise
+
+    logger.debug(f"raw plan response: {raw_content!r}")
+    try:
+        parsed = json.loads(raw_content)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"expected a JSON object, got {type(parsed).__name__}")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise PlanError(f"{UNPARSEABLE_REPLY}: {e}") from e
+
+    plan = validate_plan(parsed.get("plan"))
+
+    for position, step in enumerate(plan):
+        # THE ID IS CARRIED THROUGH validated_step() SEPARATELY,
+        # because that function normalises to the live step shape and
+        # drops anything it does not recognise -- including "id".
+        checked = validated_step({k: v for k, v in step.items() if k != "id"})
+        fallback = checked.get("fallback")
+        if fallback is not None:
+            raise PlanError(
+                f"Step {position} ({step['id']!r}) is not usable: {fallback}"
+            )
+        if checked["step"] == "finish":
+            # A PLAN HAS NOTHING TO FINISH. It ends when its last step
+            # does, and a "finish" inside one is either the model
+            # misreading the instructions or padding -- both of which
+            # would execute as a no-op and look like success.
+            raise PlanError(
+                f"Step {position} ({step['id']!r}) is a finish; a plan ends "
+                f"with its last step"
+            )
+    return plan
