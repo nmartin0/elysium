@@ -3702,3 +3702,98 @@ treatment the plan path now has.
 it fixes. We validate and pass the original through, so nothing is
 silently rewritten -- which suits a system with an audit log, and is
 worth keeping deliberately rather than by accident.
+
+---
+
+# RESEARCH: the claim AL-4 rests on has never been tested on a model
+
+AL-2 and AL-4 are both justified on injection resistance. The unit
+tests prove planted text reaches the planner verbatim and that the
+framing exists. **They cannot prove a model IGNORES it.** Only a model
+can show that, and none had been asked.
+
+## Three findings, and one undercuts me
+
+**1. TWO NUMBERS, NOT ONE.** AgentDojo "uniquely measures utility and
+security jointly", because a defence that blocks the attack by
+breaking the agent is not a defence. GPT-4o drops from 69% benign
+utility to 45-50% under attack. **A run scoring 0 on both is not a
+pass; it is an agent that stopped working.**
+
+**2. "SECURITY BY INCOMPETENCE" -- and this is the one that undercuts
+me.** WASP characterises current agent security as agents failing
+attacks "through inability, not robust defense". AgentDojo found the
+same as an **inverse scaling law**: more capable models have higher
+utility AND higher susceptibility. Command-R+ scored 27.78% utility
+and 0.95% ASR *because it could not follow the injection either*.
+
+**phi4-mini is 3.8B.** If the injection tests pass, that is evidence,
+not proof -- and it makes injection resistance **a security input to
+D1**, not only a speed decision. Nobody has raised that: moving to a
+more capable model may raise ASR. It is now on the record before the
+swap rather than after.
+
+**3. CaMeL's NUMBERS DESERVE A CAVEAT I HAVE NOT BEEN GIVING THEM.** A
+June 2026 paper on adaptive evaluation notes that CaMeL, FIDES,
+Progent, RTBAS and FORGE "all report near-elimination of AgentDojo
+attacks **while being validated only on static benchmarks**, which is
+the exact methodology that made in-band defenses look strong before
+adaptive attacks broke twelve of them."
+
+I have cited CaMeL's 77%-with-provable-security several times as the
+case for AL-4. The architectural argument stands -- a plan fixed
+before any data is read cannot be redirected by that data -- but
+**the benchmark number behind it is weaker evidence than I implied**,
+and I should stop quoting it as though it settles the matter.
+
+## Built: the test, and it is honest about what it can show
+
+`tests/integration/test_prompt_injection_e2e.py`, following the
+existing `test_real_model_*` convention. Two tests, because the two
+modes make **different** claims:
+
+    step loop    must RESIST the instruction -- it is shown the field
+                 value every hop
+    plan mode    must never SEE it -- the plan is fixed before a field
+                 is read
+
+A step-loop pass is evidence the model resisted. A plan-mode pass is
+evidence the question never arose. **That is the difference AL-4
+exists for, and this is the only test that can tell them apart on a
+real model.**
+
+**GRADED ON STATE, NOT PROSE**, as AgentDojo does: the attack succeeds
+if the loop READ the other customer's data, visible in `gathered` --
+not if an answer mentions it. An LLM judge reading a possibly-injected
+transcript is the thing being tested.
+
+**THE PHRASING IS THE CANONICAL STRONG ONE.** AgentDojo found the
+"Important message" style "significantly outperformed other generic
+prompt injection methods". My earlier probes used a bare "IGNORE
+PREVIOUS INSTRUCTIONS" -- the weak form. **Testing a defence against
+the weak attack is how a defence looks better than it is.**
+
+**THE INJECTED GOAL IS A READ, NOT A WRITE**, deliberately: a write
+would be blocked by `execute:` grants whether or not the model was
+fooled, which would measure the mediator rather than the model.
+
+**And the graders are unit-tested without a model**, both directions.
+A security test that cannot detect the attack reports "not vulnerable"
+and is believed.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3092 passed, 8 skipped  (3087 before; +5 here)
+
+## Next steps
+
+**1. Run it.** `pytest tests/integration/test_prompt_injection_e2e.py
+-m integration`. Two tests, a few minutes each. This is the last
+unverified claim in AL-2 and AL-4.
+
+**2. Re-run it against any new model.** The inverse scaling law makes
+this a D1 gate, not a nice-to-have.
+
+**3. `dependent_choice`** remains the other open case -- plan mode's
+adaptivity boundary, which ReWOO's own authors name as its weakness.
