@@ -335,3 +335,117 @@ from `rules_for()` would close the reproduced case on its own.
    "the value that failed is often the sensitive thing". Recorded here
    only because a future provenance feature will be tempted to show
    them.
+
+---
+
+## A plaintext database password reaches the lake manifest
+
+NEEDS: backend (the manifest) — and an OWNER for
+`core/secret_references.py`, which has neither
+
+SEVERITY: I would call this HIGH for any deployment using the
+SQLAlchemy adapter. It does not fire on the shipped SQLite demo.
+
+### The composition, each half verified
+
+**Half one — nothing refuses a literal credential (R14).**
+`core/secret_references.py` supports `${VAR}` substitution, and its
+docstring gives exactly the dangerous example:
+
+    url: "postgresql+psycopg://elysium:hunter2@db.internal/warehouse"
+
+But `${VAR}` is OPT-IN. Run against the literal form:
+
+    expand_secrets(cfg) -> {'url':
+      'postgresql+psycopg://elysium:hunter2@db.internal/warehouse'}
+
+Passed through untouched. Nothing refuses it, warns, or records it.
+
+**Half two — `data_silos.yaml` is published into the lake verbatim
+(PA001-A11).** `core/mirror/manifest.py`:
+
+    PUBLISHABLE = ("ontology_schema.yaml", "data_silos.yaml", "policy.yaml")
+    ...
+    "files": {name: content for name, content in sorted(files.items())
+              if name in PUBLISHABLE}
+
+That is file CONTENTS, not names, and nothing expands or redacts on
+the way.
+
+### Why this is worse than either half alone
+
+`manifest.py`'s own comment, four lines below the allow-list, states
+the rule this breaks:
+
+    credentials.db, secrets/
+                 -- a lake reader must never become a credential
+                    reader, and the whole point of a lake is that many
+                    things read it.
+
+The exclusion of `credentials.db` is careful and right. The INCLUSION
+of `data_silos.yaml` two lines above silently reopens the same door,
+because `data_silos.yaml` is precisely where a database URL with an
+inline password lives. The stated invariant is defeated by its own
+allow-list.
+
+And the lake is world-readable on at least one real machine. `run_sync`
+prints it at every sync:
+
+    deployment/var/lib/mirror is 0o775: anyone with an account on this
+    host can read the whole gold layer
+
+So on such a host the chain is: any local account -> lake -> manifest
+-> `data_silos.yaml` -> the customer's database password.
+
+### Blast radius, stated precisely rather than dramatised
+
+- **Does NOT fire on the shipped deployment.** `data_silos.yaml`
+  declares `adapter: sqlite` with `path: dev_fixtures/mediator.db` --
+  a path, no credential.
+- **Fires for any SQLAlchemy silo**, because
+  `adapters/sqlalchemy_adapter.py` takes `connection["url"]` and "url
+  IS THE WHOLE CONNECTION", which for PostgreSQL carries the password
+  inline. That adapter exists to read a customer's real database, so
+  this is the intended production path rather than an exotic one.
+- A deployment that already uses `${VAR}` is unaffected. The defect is
+  that nothing makes them.
+
+### What I would ask for
+
+1. **Refuse a literal credential at load** (R14). A `url` whose
+   userinfo carries a password that is not a `${VAR}` reference should
+   fail the load, naming the silo and the variable to set -- the same
+   shape as `MissingSecret`, whose docstring already argues that
+   refusing at load "names the variable" while substituting an empty
+   string produces an error naming the database instead.
+2. **Or redact on publish**, in `manifest.py`, so the allow-list stops
+   depending on the file being clean.
+3. **Ideally both.** They fail differently: (1) stops the credential
+   existing in the file, (2) stops it leaving even if it does.
+
+I would not pick between them for you; (1) is the root and (2) is the
+containment.
+
+### And a second unowned file
+
+`core/secret_references.py` is named in NO ownership list -- not
+security's, not backend's, not agentloop's, not the front end's. That
+is the second such file after `core/ontology/submission_criteria.py`.
+Both are security-relevant, and I found both by accident while looking
+for something else, which suggests there are more.
+
+`000COORDINATION.md` has no catch-all rule. The canonical remedy is
+one: Gerrit's code-owners documentation says "files that are not owned
+by anyone cannot be approved since there is no code owner that can
+grant the approval. Due to this it is recommended to avoid code owner
+configurations that leave files without code owners", and the standard
+fix is a default rule so every file has at least one owner. GitHub's
+tooling ships an `--unowned` audit for exactly this.
+
+ASKED FOR: a default owner line in `000COORDINATION.md`, plus a check
+that every `.py` file matches an ownership rule. Without it, this will
+keep happening and the finder will keep being whoever trips over it.
+
+MEANWHILE: nothing edited outside my files. Reported here and directly
+to the human, per 000COORDINATION.md's rule that a security defect in
+someone else's area is said immediately rather than filed.
