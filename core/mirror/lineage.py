@@ -33,6 +33,44 @@ SOURCE_TABLE_COLUMN = "_source_table"
 ROW_HASH_COLUMN = "_row_hash"
 LINEAGE_COLUMNS = (SILO_COLUMN, SOURCE_TABLE_COLUMN, ROW_HASH_COLUMN)
 
+# EVERY COLUMN THE PIPELINE WRITES FOR ITSELF, in one place so the
+# check that refuses a collision cannot drift from the set it guards.
+# The fusion and link-id columns are declared in their own modules;
+# importing them here would make lineage depend on both, so they are
+# named and a test asserts the two lists agree.
+SYSTEM_COLUMNS = (*LINEAGE_COLUMNS, "_fused_from", "_link_id")
+
+
+def collides_with_a_system_column(names) -> list[str]:
+    """Which of these names the pipeline would overwrite.
+
+    WHY THIS EXISTS. `with_lineage` spreads its own values AFTER the
+    row, so last-write-wins destroyed any source column called
+    `_silo`, `_source_table` or `_row_hash`:
+
+        source: {'customer_id': 'c1', '_silo': 'CUSTOMER VALUE'}
+        silver: {'customer_id': 'c1', '_silo': 'primary_sql'}
+
+    No error, no warning, no drift report. Leading underscores are not
+    exotic -- they appear routinely in exports, staging tables and
+    ORM-generated schemas.
+
+    AND IF THE ONTOLOGY DECLARES THE NAME it is worse in a different
+    way: gold's schema gains the column twice and the build raises
+    "Column _silo does not exist in schema" -- an opaque message at
+    gold-build time rather than a refusal at load.
+
+    THE SECURITY CASE IS WHY IT IS URGENT. A type declaring
+    `security: field: _silo` would compare every reader against the
+    string "primary_sql" -- identical for every row in the silo. Not
+    the wrong compartment: NO compartment. Remote, but it is the same
+    failure class as standardising the security field, and it costs
+    one list to close.
+
+    FOUND BY THE SECURITY AGENT (LLM3).
+    """
+    return sorted(set(names) & set(SYSTEM_COLUMNS))
+
 BRONZE_SNAPSHOT_PROPERTY = "elysium.bronze_snapshot_id"
 
 
@@ -61,7 +99,39 @@ def _encodable(value):
 
 
 def with_lineage(rows: list[dict], columns, silo_name: str, table_name: str) -> list[dict]:
-    """Each row, carrying where it came from and what it held."""
+    """Each row, carrying where it came from and what it held.
+
+    REFUSES A SOURCE COLUMN OF ITS OWN NAME rather than overwriting
+    it. The values below are spread AFTER the row, so last-write-wins
+    silently destroyed any source column called `_silo`,
+    `_source_table` or `_row_hash` -- and a source column need not be
+    declared in the ontology to be present here.
+
+    THE LOAD-TIME CHECK CANNOT SEE THIS ONE: it reads the schema, and
+    this is a column the SOURCE has. So the refusal lives at the point
+    of loss, which is also the only place that knows.
+
+    REFUSING COSTS A SYNC; overwriting costs a column, silently, for
+    as long as nobody looks.
+    """
+    # ONLY THE COLUMNS THIS FUNCTION WRITES. The wider SYSTEM_COLUMNS
+    # set includes `_link_id`, which ELYSIUM ITSELF adds to a join
+    # table (PA001-A2's composite key), and `_fused_from`, which gold
+    # adds -- so checking the wide set here refused Elysium's own
+    # columns and broke every many-to-many sync. Caught by the suite,
+    # not by reasoning.
+    #
+    # The load-time check uses the wide set, correctly: a DECLARED
+    # field of any of those names is a mistake wherever it appears.
+    clashes = sorted(set(columns) & set(LINEAGE_COLUMNS))
+    if clashes:
+        raise ValueError(
+            f"{silo_name}.{table_name} has {', '.join(repr(c) for c in clashes)}, "
+            f"which the pipeline writes for itself -- copying this table would "
+            f"replace {'those columns' if len(clashes) > 1 else 'that column'} "
+            f"with Elysium's own value. Rename the source column, or exclude it "
+            f"from the declared fields."
+        )
     return [
         {
             **row,

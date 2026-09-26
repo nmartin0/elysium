@@ -314,6 +314,48 @@ RESERVED_SILO_NAMES = ("gold", "gold_history")
 RESERVED_SILO_PREFIXES = ("bronze_", "changelog_", "quarantine_")
 
 
+def _refuse_system_column_names(schema_raw: dict) -> None:
+    """A declared field may not be named after a system column.
+
+    The pipeline writes `_silo`, `_source_table`, `_row_hash`,
+    `_fused_from` and `_link_id` itself. A DECLARED field of the same
+    name makes gold's schema gain the column twice and the build
+    raises "Column _silo does not exist in schema" -- opaque, at
+    gold-build time, and (per PA001-G5) it used to take every later
+    type down with it.
+
+    REFUSED AT LOAD instead, naming the field and the column, because
+    this is a configuration mistake and the moment to say so is before
+    any data moves.
+
+    THE COLUMN the field reads is checked as well as the field NAME:
+    `region: {column: _silo}` collides just as surely and reads less
+    obviously.
+    """
+    from core.mirror.lineage import collides_with_a_system_column
+
+    for object_type, type_def in (schema_raw.get("object_types") or {}).items():
+        declared = type_def.get("fields") or {}
+        names = set(declared)
+        names.update(
+            config.get("column", name)
+            for name, config in declared.items()
+            if isinstance(config, dict)
+        )
+        id_column = (type_def.get("storage") or {}).get("id_column")
+        if id_column:
+            names.add(id_column)
+        clashes = collides_with_a_system_column(names)
+        if clashes:
+            raise ValueError(
+                f"{object_type} declares {', '.join(repr(c) for c in clashes)}, "
+                f"which the pipeline writes for itself. Rename the field or "
+                f"its `column:` -- a column of that name is overwritten with "
+                f"Elysium's own value, and a type whose SECURITY field "
+                f"collided would compare every reader against the same string."
+            )
+
+
 def _refuse_reserved_silo_names(data_silos_raw: dict) -> None:
     """A silo may not be named after a layer (PA001-G10).
 
@@ -472,6 +514,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
 
     validate_identifier_types(schema_raw, policy_raw)
     _refuse_reserved_silo_names(data_silos_raw)
+    _refuse_system_column_names(schema_raw)
 
     # tools.enabled is genuinely OPTIONAL -- a deployment with no tools
     # declared (or no "tools" section at all) is completely valid, unlike
