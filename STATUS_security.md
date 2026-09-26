@@ -730,6 +730,42 @@ WORTH KNOWING, NOT A DEFECT: a progress handler does not fire while
 SQLite waits on a LOCK, so this deadline does not bound lock-wait
 time. That is bounded separately by sqlite3's default busy timeout.
 
+## Session 20 — two files clean, one latent finding (SEC-16)
+
+**`core/auth/credential_store.py` — no defect.** Both password-change
+paths handle sessions correctly, which was the thing worth checking
+after SEC-14: self-change calls `invalidate_other_sessions(username,
+session_token)`, keeping your own and ending the rest; an
+administrator's reset calls `invalidate_all_sessions()` AND sets
+`must_change_password`. The policy is applied on all three
+password-setting routes (self-change, admin reset, user creation); the
+CLI scripts bypass it deliberately and are all guarded, which F-30
+already established.
+
+**`core/pending_write_serialisation.py` — SEC-16, latent.**
+
+    to_row(... expected_current_values={'amount': Decimal('49.99')})
+    -> TypeError: Object of type Decimal is not JSON serializable
+
+Same for `date`, `datetime` and `bytes`. `expected_current_values` is
+read from the SOURCE; `field_types.py` returns real `date`/`datetime`
+objects, and the shipped ontology declares `decimal` for money (with a
+comment explaining why it is not `number`) and `date` for
+`transaction_date`.
+
+NOT REACHABLE TODAY: the one shipped action, `RecategorizeTransactions`,
+writes only `category`, a plain string. It fires the day an action
+touches `amount` or `transaction_date`, and the failure is a 500 at
+propose rather than a clean refusal.
+
+**`default=str` IS THE WRONG FIX AND THAT IS THE USEFUL PART.**
+`expected_current_values` is compared against a freshly read value at
+confirm -- the lost-update check. Stringifying a Decimal would make
+the stored expectation never match the live value, so every such write
+would be refused as a conflict: a crash traded for a silently wrong
+answer. It needs a typed round-trip, which is more than a tail-end
+change, so it is recorded rather than half-built.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
