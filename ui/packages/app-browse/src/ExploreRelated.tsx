@@ -20,7 +20,7 @@
  */
 
 import { Tag } from '@blueprintjs/core'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { getErrorMessage, getLinkCounts, handleIfSessionExpired, type LinkCount } from '@elysium/shell-api/api'
@@ -62,6 +62,17 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
   const [links, setLinks] = useState<Record<string, LinkCount> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // The session callback through a ref, so this effect does not
+  // restart every time the shell re-renders -- App.tsx declares
+  // handleSessionExpired as a plain function inside the component, so
+  // it is a new identity each time. Patch 12 fixed seven of these; its
+  // guard matched only the callback ALONE in a dependency array, so
+  // these two, where it sits beside other dependencies, were missed.
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
+
   useEffect(() => {
     let stale = false
     setLinks(null)
@@ -84,7 +95,7 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
         //
         // handleIfSessionExpired reads err.status on a real ApiError
         // instance, which is the thing actually being asked about.
-        if (handleIfSessionExpired(caught, onSessionExpired)) return
+        if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
         setError(getErrorMessage(caught))
       })
 
@@ -94,7 +105,7 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
     return () => {
       stale = true
     }
-  }, [objectType, objectId, onSessionExpired])
+  }, [objectType, objectId])
 
   if (error !== null) return <ErrorState>{error}</ErrorState>
   if (links === null) return <LoadingState inline label="Counting related records…" />

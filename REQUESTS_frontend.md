@@ -108,6 +108,13 @@ remaining half to 10 sites / 8 files / 4 packages.
 `ui/.oxlintrc.json` next to the rule, which is the copy a reader is
 most likely to hit.
 
+**Correction, patch 16:** the dependency bug was in NINE panels, not
+seven. Patch 12's own guard matched `onSessionExpired` only when it
+was ALONE in a dependency array, so WriteDetail
+(`[writeId, onSessionExpired]`) and ExploreRelated
+(`[objectType, objectId, onSessionExpired]`) were passed over. Both
+fixed, and the guard widened.
+
 ---
 
 ## 4. react/set-state-in-effect is imprecise, and B0's count is not the defect count

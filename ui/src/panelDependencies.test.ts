@@ -60,8 +60,16 @@ describe('the shell re-rendering does not restart a panel', () => {
   it('never depends on onSessionExpired in a hook dependency array', () => {
     // The shape IS the bug: a loader or an effect that restarts
     // because the parent handed down a fresh arrow.
+    //
+    // THIS PATTERN WAS TOO NARROW WHEN FIRST WRITTEN. It matched only
+    // `}, [onSessionExpired])` -- the callback ALONE -- and so passed
+    // over `}, [writeId, onSessionExpired])` in WriteDetail and
+    // `}, [objectType, objectId, onSessionExpired])` in ExploreRelated,
+    // which have exactly the same defect. A guard is worth only what
+    // it matches, and the first version matched the two examples in
+    // front of me rather than the rule.
     const offenders = panelSources()
-      .filter(({ source }) => /\}, \[\s*onSessionExpired\s*\]\)/.test(source))
+      .filter(({ source }) => /\},\s*\[[^\]]*\bonSessionExpired\b[^\]]*\]\)/.test(source))
       .map(({ file }) => file)
 
     expect(offenders).toEqual([])

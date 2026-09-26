@@ -187,3 +187,45 @@ describe('ExploreRelated -- an expired session', () => {
     expect(onSessionExpired).not.toHaveBeenCalled()
   })
 })
+
+describe('ExploreRelated -- the shell re-rendering', () => {
+  it('counts links once across parent renders, not once per render', async () => {
+    /**
+     * The same defect patch 12 fixed in seven panels, in one its guard
+     * did not match: onSessionExpired sat BESIDE objectType and
+     * objectId in the dependency array rather than alone.
+     */
+    mockedGetLinkCounts.mockResolvedValue({})
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    await waitFor(() => expect(mockedGetLinkCounts).toHaveBeenCalled())
+
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_001" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_001" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(mockedGetLinkCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('still refetches when the OBJECT changes, which is the point', async () => {
+    // The opposite direction: dropping onSessionExpired must not also
+    // drop the dependencies that genuinely should refetch.
+    mockedGetLinkCounts.mockResolvedValue({})
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    await waitFor(() => expect(mockedGetLinkCounts).toHaveBeenCalledTimes(1))
+
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_002" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(mockedGetLinkCounts).toHaveBeenCalledTimes(2))
+  })
+})
