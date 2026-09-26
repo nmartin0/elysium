@@ -154,7 +154,53 @@ genuine rule violations remain; five of its flags were false.
 
 ---
 
-## 5. `create_debug_user` makes an account that cannot log in (backend)
+## 5. WITHDRAWN -- `create_debug_user` is fine; the lockout was mine
+
+**This request was wrong and is withdrawn before anyone acted on it.**
+Left in place rather than deleted, because a request that was filed
+and quietly removed teaches nobody anything.
+
+WHAT I CLAIMED: that `create_debug_user.py` sets `PASSWORD = "a"`
+against `MIN_LENGTH = 15` in `password_policy.py`, producing an account
+that cannot log in and blocking all nine `layout.spec.ts` tests. I
+asked for a paired change across the ownership boundary.
+
+WHAT IS ACTUALLY TRUE, checked before writing the patch rather than
+after:
+
+- `password_problem` is called from ONE place, `api/routes.py:2677`.
+  It is not called by `create_user` and not called at login. The
+  policy was never in the path, so `MIN_LENGTH` is irrelevant here.
+- `credentials.db` held exactly one row:
+  `('debug', 5, '2026-09-26T06:17:42Z')`.
+  `MAX_ATTEMPTS = 5`, `WINDOW = 15 minutes`.
+
+**I locked the account out myself.** I ran `layout.spec.ts` BEFORE
+creating the debug user. Its nine tests each tried to log in, spending
+all five attempts against a username that did not exist yet. I then
+created the user four minutes later -- inside the window -- so every
+attempt after that was refused by the rate limiter, which correctly
+answers with the same generic "Invalid username or password" it gives
+a wrong password. Once the window passed, the same credentials
+returned **204** on the first try.
+
+`create_debug_user.py` is correct. `layout.spec.ts`'s `DEV_USER` is
+correct. Nothing in `scripts/` or `core/` needs changing, and no
+cross-boundary patch is wanted.
+
+WHAT I SHOULD HAVE DONE: read the failing mechanism before naming a
+cause. Two greps -- who calls `password_problem`, and what is in
+`login_attempts` -- would have got there, and I reached for the first
+plausible explanation instead because a short password beside a long 
+minimum looked like an answer.
+
+The investigation did find a real defect, in a file that IS mine; see
+the commit "Make the layout suite runnable twice in a row".
+
+---
+
+## 6. (was 5, superseded -- kept for the record)
+
 
 Found by standing the stack up and running Playwright, which is the
 only way it shows.
@@ -192,3 +238,5 @@ this rather than fix it.
 
 **Reply wanted**, or tell me to take both halves and I will send a
 patch that crosses the boundary once, with this note as the reason.
+
+**Superseded by 5 above. The diagnosis in this section is wrong.**

@@ -215,7 +215,20 @@ test.describe('the checkboxes added since the sweep', () => {
 
   test('a Watch recipient sits on one line with its label', async ({ page }) => {
     await page.goto('/browse?type=Customer')
-    await page.getByRole('button', { name: /saved views/i }).click()
+
+    // OPEN THE POPOVER BY EITHER LABEL, because this test's own saved
+    // view changes it.
+    //
+    // NOT IDEMPOTENT UNTIL THIS. The trigger reads "Saved views" until
+    // the current URL matches a saved view, and then takes that view's
+    // NAME -- which the comment below already explains, for the save.
+    // The same thing is true on ARRIVAL: once this test has run once,
+    // its own view matches /browse?type=Customer, so the second run
+    // found no "Saved views" button and timed out. It passed alone and
+    // failed in a full run for that reason, which is the signature of
+    // a test leaving state behind rather than a real defect.
+    const popover = page.getByRole('button', { name: /saved views|e2e layout check/i }).first()
+    await popover.click()
     await page.getByPlaceholder(/name this view/i).fill('e2e layout check')
     await page.getByRole('button', { name: /^(save|update)$/i }).click()
 
@@ -240,5 +253,15 @@ test.describe('the checkboxes added since the sweep', () => {
 
     expect(await control.evaluate((element) => getComputedStyle(element).flexDirection)).not.toBe('column')
     expect((await control.boundingBox())!.height).toBeLessThan(40)
+
+    // PUT THE DEPLOYMENT BACK. A saved view is real, persisted data on
+    // whatever server this ran against -- not a fixture that vanishes
+    // with the browser. Leaving it behind is what made the run above
+    // depend on whether this test had ever run before, and on a shared
+    // dev server it accumulates one stray view per run forever.
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'e2e layout check', exact: true }).click()
+    await page.getByRole('button', { name: 'Forget e2e layout check' }).click()
+    await expect(page.getByRole('button', { name: 'e2e layout check', exact: true })).toBeHidden()
   })
 })
