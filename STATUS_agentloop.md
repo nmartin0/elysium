@@ -3099,3 +3099,79 @@ One run against `two_hops` would pin it.
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  3065 passed, 8 skipped  (3064 before; +1 here)
+
+---
+
+# AL-4 VERIFIED. The planner used a handle.
+
+The plan phi4-mini actually wrote:
+
+    {"plan": [
+      {"id": "a", "step": "search_object", "object_type": "Customer",
+       "filter": {"name": "Ada Okafor"}},
+      {"id": "b", "step": "get_field", "object_type": "Customer",
+       "object_id": "$a", "field_name": "email"}
+    ]}
+
+**`"object_id": "$a"`.** It named a result it had not seen, and could
+not have seen. It did not write `cust_001` -- there was no way for it
+to know that string exists.
+
+And `"name": "Ada Okafor"` came from the QUESTION, which is the user's
+own words and trusted input, not from any field value.
+
+**That is the control-flow half of the dual-LLM pattern, holding on
+real output from a 3.8B model.** Until this run it was a design I
+could argue for and a property my tests asserted against fixtures.
+Now it is a thing the model actually did.
+
+## The numbers, finally complete
+
+    step mode   3 calls   234.1s
+    plan mode   1 call     85.4s    64% faster
+    plan mode   1 call     62.2s    73% faster (warmer)
+
+Two plan steps against three loop calls: a plan needs no `finish`.
+Zero parse failures across both plan runs -- the format did not defeat
+the model, which the constraint-tax literature said was the risk.
+
+## What is still NOT established, stated plainly
+
+    n = 1 case, 1 trial       the simplest case in the set
+    warm cache, same question both runs; a cold or novel question
+                              sits somewhere between 70s and 521s
+    single-element fan-out    `$a` held one id. A plan whose handle
+                              resolves to twenty objects has never run
+                              against a real model
+    no adversarial run        nothing has planted text and watched a
+                              real planner ignore it. The unit tests
+                              cover it; the model has not been asked
+
+So: **AL-4 is verified as designed, on one easy case.** That is a very
+different claim from "AL-4 should be the default", and I am not making
+the second one.
+
+## What would make the case, in order
+
+    --cases two_hops --mode plan --show-plan
+        a question needing a real chain, and the first plan whose
+        handle might resolve to several objects
+
+    --cases one_field --mode plan --trials 3
+        does the same question produce the same plan every time? At
+        temperature 0 it should. If it does not, the planner is the
+        non-deterministic part and pass^k finally has something to
+        measure
+
+    the whole set, both modes
+        the comparison that decides the default
+
+## Where this leaves the list
+
+AL-4 is complete and now evidenced: faster by 64-73%, correct, and
+using handles as designed. Its security argument no longer rests on my
+reading of CaMeL alone.
+
+It is still NOT the default, and should not be until `two_hops` and a
+fan-out case have run. The sibling entry point exists precisely so
+that decision can wait for evidence instead of preceding it.
