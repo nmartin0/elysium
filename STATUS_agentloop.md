@@ -2347,3 +2347,131 @@ largest transactions" is not merely slow, it is **unanswerable beyond
 costly when there is no limit, because the engine must sort the entire
 result set." So if ordering is added, the limit should come with it,
 not after.
+
+---
+
+# AL-4 -- THE PROPOSAL. Not built.
+
+I have said "AL-4 needs shape agreement" six times without writing the
+shape. That is the gap, and this closes it.
+
+## What it is, concretely
+
+Today the model is asked for ONE step, the step runs, and it is asked
+again. Seven model calls to answer "what are Ada's transaction
+amounts".
+
+Plan-then-execute asks once, for all of it:
+
+```json
+{"plan": [
+  {"id": "a", "step": "search_object", "object_type": "Customer",
+   "filter": {"name": "Ada Okafor"}},
+  {"id": "b", "step": "search_around", "object_type": "Customer",
+   "link_field": "transactions", "of": "$a"},
+  {"id": "c", "step": "get_field", "object_type": "Transaction",
+   "object_id": "$b", "field_name": "amount"}
+]}
+```
+
+**`$a` IS THE WHOLE POINT.** The planner never sees `cust_001`, never
+sees "Ada Okafor" coming back out of the database. It names a result
+it cannot read. 001AGENTLOOP already specifies this -- "the planner
+sees HANDLES, not values" -- and it is CaMeL's rule word for word:
+results from untrusted data are held in memory the privileged model
+"can manipulate **by reference only**".
+
+## Why it is worth doing, in order of how well I can defend it
+
+**1. SECURITY, and this is the strong one.** AL-2 is currently closed
+with a prompt instruction, which LB-10 correctly calls insufficient.
+The real fix is that a planted instruction in a field value cannot
+change the plan, because the plan was fixed before any value was
+read. That is the control-flow half of the dual-LLM pattern, and
+CaMeL reports 77% of AgentDojo tasks solved with provable security
+against 84% undefended.
+
+**WE ALREADY HAVE THE DATA-FLOW HALF** -- compartments, the
+`check_access()` chokepoint, functions receiving a capability rather
+than a mediator, the write-down check. This is the missing half, and
+the taxonomy is explicit that plan-then-execute alone does NOT fix
+data flow: "we cannot prevent a prompt injection in the calendar data
+from altering the CONTENT of the email sent".
+
+**2. COST, and it is measured.** From AL-3's own numbers -- 9 hops,
+64,527 characters, of which 58,481 is the system prompt re-sent nine
+times:
+
+    today, 9 hops        system prompt x9   58,481
+                         user messages       6,046
+                         TOTAL              64,527
+
+    plan-then-execute    system prompt x2   12,996
+                         user messages      ~6,046
+                         TOTAL             ~19,042
+
+    saving                                 ~45,485  (70%)
+
+LB-6 found the system prompt is 87.5% fixed procedure. Sending it
+twice instead of nine times is the only change that attacks that
+directly.
+
+**3. IT SUBSUMES THREE OTHER ITEMS.** AL-9 is the same item seen twice
+-- Palantir's stated cost of prompted tool calling is exactly AL-4's
+complaint, that an agent "can only call a single tool at a time, so
+they may take longer to answer complex queries". LB-7 (tool arguments
+transcribed by the model) is what `$a` fixes. AL-2 step 2 is this.
+
+**4. ACCURACY: NO CLAIM.** "Neither architecture guarantees lower
+token use, lower latency, or higher accuracy." Pick by the failure
+mode you can live with. I will not argue AL-4 answers more questions
+correctly, and AL-8 exists to find out.
+
+## The crux, and it is a real decision for you
+
+**RE-PLANNING REOPENS THE HOLE IT CLOSES.** A plan fixed before any
+data is read is injection-proof by construction. The moment the
+planner is shown a result and asked to revise, it is reading untrusted
+data again and the guarantee is gone -- the taxonomy warns that "if
+replanning fires on most tasks, you're paying the planning cost AND
+the adaptation cost".
+
+But a plan that can never adapt is brittle in ways this loop already
+handles: an empty search, more than MAX_OBJECT_IDS results, a field
+that does not exist.
+
+**Three shapes, and I would take the second:**
+
+    A. NO RE-PLANNING. Strongest guarantee, least useful. A failed
+       step ends the run with what was gathered.
+
+    B. RE-PLAN ON STRUCTURE, NOT CONTENT. The planner is told a step
+       FAILED and why in structural terms -- "search_object returned
+       0 results", "returned 34, over the limit of 20" -- and never
+       the values. Injection-proof is preserved, because a planted
+       string cannot express itself through a count. This is the
+       CaMeL shape: the privileged model learns the SHAPE of what
+       came back, not its content.
+
+    C. FULL RE-PLANNING. The planner sees results. Most capable,
+       and it is the status quo with extra steps -- the guarantee
+       is gone.
+
+## What I would need
+
+1. **Which shape.** I recommend B.
+2. **Agreement that this is security work**, not performance work --
+   it changes who should review it and what the commit argues.
+3. **Whether to do it before or after the VM run.** It is a large
+   change and AL-8 could measure it. But it is the only item whose
+   justification does NOT rest on accuracy, so it is also the one
+   that least needs the harness first.
+
+## What I would NOT do
+
+Build it as one patch. It is `next_step` becoming `next_plan`, a plan
+validator, an executor with handle resolution and fan-out semantics,
+and a re-plan gate. Four commits minimum, each with its own controls,
+and the first would be the handle resolver with no model involved at
+all -- because that part is pure and testable, and getting `$a` wrong
+silently is how a plan reads the wrong object.
