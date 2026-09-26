@@ -4182,3 +4182,70 @@ decisions.
 
 **What agreement DOES unblock, today:** the prompt cut. I can build it
 and hand it over; you measure it. That is one item of eleven.
+
+---
+
+# The prompt cut, built as a MEASUREMENT rather than a deletion
+
+The three worked examples are now behind `include_examples`, default
+TRUE, with `scripts/llm_bench.py --no-examples` as the other arm.
+
+    with examples   5,562 chars   ~578s cold
+    without         4,414 chars   ~459s cold
+    saved           1,148 chars   ~119s
+
+**NOTHING SHIPS AS A BEHAVIOUR CHANGE.** The default is unchanged, so
+a deployment sees exactly what it saw yesterday. One run with and one
+without, on the same cases, is the only thing that settles whether
+119 seconds of examples earns its place.
+
+**WHY A FLAG AND NOT A DELETE.** The literature is genuinely split.
+Against them: "over-prompting" is a named phenomenon, and "Beyond the
+Few-Shot Paradigm" measured a 6.7B model at 23.5 zero-shot against
+18.0 one-shot -- worse WITH an example. Ours is 4B with three, all the
+same shape, which is the out-of-distribution case where examples are
+said to hinder. For them: few-shot is recommended precisely "when
+zero-shot doesn't work", and each was added after a measured failure.
+
+**A COUPLING MADE THIS MORE THAN A DELETE.** The first IMPORTANT note
+read "check EVERY ID from a list result (like [1, 2] **above**)" --
+and "above" WAS the third example. Cutting them would have left the
+note pointing at text that is not there, which is worse than either
+arm. Reworded to stand alone, so both arms read correctly.
+
+**THE IMPORTANT NOTES ARE UNTOUCHED, deliberately.** They are not
+demonstrations; they are instructions that fixed specific measured
+failures, and the literature indicting examples says nothing about
+them. A control confirms cutting them fails.
+
+**A MODULE-LEVEL SWITCH, NOT PLUMBING.** Threading a flag from the
+bench through `AgentLoop.run()` and `next_step()` would touch the
+request path for an experiment, and that plumbing would outlive the
+experiment. The bench sets it; nothing else should. Whichever arm
+loses, the switch goes with it.
+
+## Controls, four
+
+    flag defaults to False (silent deletion)   2 of 6 fail
+    the flag does nothing                       2 fail
+    restore the dangling "above" reference      1 fails
+    cut the IMPORTANT notes too                 1 fails
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3101 passed, 8 skipped  (3095 before; +6 here)
+
+## The two runs that settle it
+
+    python3 -m scripts.llm_bench --mode plan
+    python3 -m scripts.llm_bench --mode plan --no-examples
+
+Four cases each, one trial. The header prints `examples on` or
+`examples OFF`, because a number from an unlabelled arm is worthless.
+
+**WHAT WOULD DECIDE IT:** same pass/fail on all four cases and ~119s
+faster per cold call -> cut them. Any case that passes with and fails
+without -> they earn their place and this ends here. Anything in
+between is n=1 and needs more trials before anyone touches the
+default.
