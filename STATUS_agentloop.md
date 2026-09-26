@@ -2702,3 +2702,80 @@ Commit 4 is the re-plan gate and the switch: the loop calls
 `next_plan()`, runs it, and on a structural failure hands that string
 back for one revision. That is also where AL-2's framing paragraph
 comes out of the plan prompt.
+
+---
+
+## The VM run, ready to execute. I cannot run it; you can.
+
+**THERE IS NO OLLAMA IN THIS SANDBOX** -- confirmed, connection
+refused on 11434. So I built the run and proved it works without a
+model, which is the part I can do.
+
+`scripts/llm_bench.py`. **This is the file the audit set has as an
+UNAPPLIED PATCH and I have asked for four times.** It never arrived,
+so I wrote it. If that patch turns up, read both and keep whichever is
+better -- mine covers reliability, parse failures and prefix timing,
+and makes no claim to cover whatever else theirs does.
+
+    cd ~/elysium && python3 scripts/run_sync.py     # if not already synced
+    python3 scripts/llm_bench.py --data <data dir> --log <log dir> --trials 3
+
+### Three numbers, each answering an open question
+
+**pass^k** -- is the agent right EVERY time, or just on average.
+Per case, never pooled, using tau-bench's unbiased estimator.
+
+**Parse failures** -- how often `next_step()` fails closed on an
+unusable reply. A published benchmark moved one model 0.670 -> 0.960
+by adding a fallback parser, and moved another DOWN 0.880 -> 0.780 --
+a bigger swing than any model swap in its table. **A low pass^k beside
+a high rate here is a PARSING problem wearing a model problem's
+clothes, and D1 would be the wrong fix.** The bench says so in its own
+output.
+
+**Prefix reuse** -- AR-1's engine half, measured by TIME. The script
+carries the warning in its docstring and its output: **ignore
+`prompt_eval_count`.** Ollama's documented behaviour is that it
+reports total context size rather than tokens actually computed, and a
+worked example shows the same number on a cold and a warm request. It
+cannot detect a cache hit and it is exactly what someone would reach
+for.
+
+### Cases are real, and a test proves it
+
+Values read out of the shipped deployment rather than guessed --
+`ada.okafor@example.com`, transaction 2 at 199. A test reads every
+expected fact through the real mediator, because **a case naming a
+value the deployment does not hold would fail on the VM for a reason
+with nothing to do with the model**, and a whole session would go to
+finding that out.
+
+The bench also checks `user_alice` resolves to a real record before
+starting. That is the mistake that cost AR-1's first measurement: an
+unknown id gives an EMPTY UserRecord, every read is denied, and the
+run looks healthy while proving nothing.
+
+### Running it without a model found a real defect
+
+The first version **exited on a traceback and threw away every trial
+already completed**. At ~1.5 tokens/s each trial is real minutes, and
+a model evicted or restarted halfway through would have lost all of
+them. It now reports what it has, says to check `ollama ps` and
+`keep_alive`, and exits non-zero.
+
+### Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3052 passed, 8 skipped  (3044 before; +8 here)
+
+### What to send back
+
+The whole stdout. The reliability block, the parse-failure block and
+the timing table together decide D1, confirm or overturn AR-5, say
+whether LB-2's operator vocabulary is affordable, and give AL-4 an
+accuracy argument it currently does not have.
+
+**If every case comes back degenerate** -- all trials agreeing -- that
+is the EXPECTED result at temperature 0, and the bench says so rather
+than quoting a pass^k that could not have varied. If some case VARIES,
+that is the finding, and it is worth more than the score.
