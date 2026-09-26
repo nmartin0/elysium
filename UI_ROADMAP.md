@@ -191,14 +191,48 @@ Numbers in brackets are the item numbers in the sections below, which
 do not change. Where two orderings disagree, the note says which to
 follow.
 
+**HOW THE "BUILT" MARKS ABOVE WERE CHECKED, 2026-09-26.**
+
+Ten entries in this queue describe work that has shipped. A roadmap
+listing solved problems is worse than no roadmap -- somebody schedules
+the work, or argues an ordering, from a state of the world that has
+passed -- and this is the second time it has needed saying here (see
+items 22 and 25, corrected under E-19).
+
+VERIFIED IN A RUNNING BROWSER against a real server with published
+gold, not by reading code:
+
+  the nav carries Query, Browse, Schema, Admin, APPROVALS and
+  NOTIFICATIONS -- so [2] "there is no REVIEWER screen... nowhere for
+  anyone else to see a pending write at all" and [9]/[39] watch-to-
+  notify both describe a gap that is filled
+
+  an object detail page carries notes, history and related links --
+  [6], [4] and [3]
+
+VERIFIED IN THE SOURCE, named so the next reader can check the same
+way rather than trusting this paragraph: [31] DeploymentConfig.tsx,
+[14a] Silos.tsx, [7] SchemaGraph.tsx, [1] FilterBar.tsx's
+`operatorsFor` (all seven operators, not two), [10] AnswerTrace.tsx,
+[13] RolesPanel.tsx's `proposeRoleChange`, [42] SelectionBar.tsx's
+count, [8] SchemaGraph.tsx.
+
+WHAT THIS DOES NOT CLAIM. "Built" here means the thing the entry says
+does not exist DOES exist. It does not mean every design question in
+the entry body is settled -- [2] still carries an open question about
+who may approve, and that outliving the screen is normal. And no
+BACKEND entry has been re-checked: those are not mine to judge, I got
+one such diagnosis wrong this week by reasoning instead of reading,
+and a wrongly-closed backend item is worse than a stale one.
+
 **Nearly free -- the work exists, it just is not wired**
 
- 1. [31] A read-only config view -- what this deployment is running
- 2. [20] FHS paths, keeping the env overrides
- 3. [14a] Silo, READ-ONLY half -- health_check exists, nothing shows it
- 4. [7]  The schema graph -- visible_schema plus an ECharts graph series
+ 1. [20] FHS paths, keeping the env overrides
 
- [25] Log rotation was 3 here and is CLOSED -- it ships. See item 25.
+ [31] a read-only config view, [14a] the silo READ-ONLY half and [7]
+ the schema graph were 1, 3 and 4 here and are all BUILT:
+ DeploymentConfig.tsx, Silos.tsx and SchemaGraph.tsx. [25] log
+ rotation was 3 and ships. See the verification note below.
 
 **Small and self-contained**
 
@@ -218,27 +252,26 @@ follow.
 16. [22] Record user_version -- the migration MECHANISM already ships;
     see the ordering note below
 17. [16] A metrics endpoint -- decide the grant and label cardinality
-18. [1]  The search bar -- five operators currently have no UI
-19. [34] An OpenAI-compatible adapter -- verify json_mode and usage
-20. [35] Multi-silo reads -- parallel fan-out inside a request
-21. [23] Backup and restore -- SQLite online backup, not file copies
-22. [3]  Object Views -- link counts are the value
-23. [17] Measure where the effective window ends -- needs 29
-24. [9]/[39] Watch to notify -- needs a scheduler [38]
+18. [34] An OpenAI-compatible adapter -- verify json_mode and usage
+19. [35] Multi-silo reads -- parallel fan-out inside a request
+20. [23] Backup and restore -- SQLite online backup, not file copies
+21. [17] Measure where the effective window ends -- needs 29
+
+ [1] the search bar, [3] Object Views and [9]/[39] watch-to-notify
+ were 18, 22 and 24 here and are all BUILT. See the verification note.
 
 **Bigger, or a design question wearing a feature's clothes**
 
 25. [32] Eval harness with baselines and a regression gate
 26. [21] Generated first-run password -- the column it needs already
     migrates itself; see 22
-27. [4]  Change over time -- per-row re-authorization
-28. [10] Agent audit -- cheap to build, and the most distinctive
-29. [30] Per-request CONFIG snapshot -- makes 13 nearly free
-30. [2]  The Approvals inbox -- who may approve is undecided
-31. [40] Watch to ask -- mostly free once 2 exists
-32. [8]  The instance graph -- the expansion protocol IS the design
-33. [13] Runtime role editing -- needs 30
-34. [6]  Notes attached to objects
+27. [30] Per-request CONFIG snapshot
+28. [40] Watch to ask
+29. [8]  The instance graph -- the expansion protocol IS the design
+
+ [4] change over time, [10] the agent audit, [2] the Approvals inbox,
+ [13] runtime role editing and [6] notes were 27, 28, 30, 33 and 34
+ here and are all BUILT. See the verification note.
 35. [14b] Silo EDITING -- needs per-adapter allowlists
 36. [37]/[38] --workers and the scheduler: ONE decision, two doors
 
@@ -272,20 +305,36 @@ Ranked by what a user cannot do without it, not by what it costs us.
 Each entry records what it provides and what stands in its way, so the
 argument does not have to be reconstructed.
 
-**1. The search bar.** Filter pills showing what is applied, and a
-property picker whose input adapts to the field's type. Right now a
-user cannot filter by a numeric range, a date, or "contains" AT ALL --
-five of the seven operators the vocabulary supports have no UI -- and
-applied filters are invisible once you leave the Charts tab. Most real
-questions ("accounts over 10k", "opened last week") are unanswerable
-from the interface. Everything else here improves a tool that works;
-this makes it work.
+**1. The search bar.** ~~Five operators have no UI.~~ BUILT.
 
-**2. The Approvals inbox.** propose_action and confirm_and_execute
-both exist, the artifact store exists, and there is no REVIEWER
-screen. There is nowhere for anyone else to see a pending write at
-all -- no list endpoint exists. That is a broken feature rather than a
-missing one.
+FilterBar.tsx offers all seven -- `operatorsFor` picks by field type,
+and the pills in ActiveFilters.tsx render range, date_range, in,
+not_in, contains and relative_date, not just equality. The questions
+this entry called unanswerable ("accounts over 10k", "opened last
+week") are the two it now answers directly.
+
+The original text, for the record: "Right now a user cannot filter by
+a numeric range, a date, or 'contains' AT ALL -- five of the seven
+operators the vocabulary supports have no UI -- and applied filters
+are invisible once you leave the Charts tab... Everything else here
+improves a tool that works; this makes it work."
+
+**2. The Approvals inbox.** ~~There is no reviewer screen.~~ THE
+SCREEN IS BUILT; the design question is what remains.
+
+Approvals is in the nav -- confirmed in a running browser, not
+inferred -- and `getAwaitingWrites` is the list endpoint this entry
+says does not exist. ApprovalsPanel.tsx lists pending writes and
+WriteDetail.tsx opens one.
+
+WHAT IS STILL OPEN is the question the queue line always carried:
+WHO MAY APPROVE. A screen existing does not settle that, and the two
+outliving each other is normal -- which is why this entry is corrected
+rather than closed. The original text said "there is nowhere for
+anyone else to see a pending write at all -- no list endpoint exists.
+That is a broken feature rather than a missing one." The first
+sentence is now false; the judgement in the second is what motivated
+building it.
 
 The design questions this entry used to list are now settled -- see
 "Approvals: the design, and why the actor is not an object". Note
