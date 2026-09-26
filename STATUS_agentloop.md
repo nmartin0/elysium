@@ -3411,3 +3411,112 @@ plan wrong for a reason of its own.**
 
     ./lint.sh          PASS (8 contracts kept)
     pytest tests/unit  3073 passed, 8 skipped  (3069 before; +4 here)
+
+---
+
+# link_fanout PASSES. Fan-out verified end to end.
+
+    {"id": "a", "step": "search_object", "object_type": "Customer",
+     "filter": {"name": "Ada Okafor"}},
+    {"id": "b", "step": "get_field", "object_type": "Customer",
+     "object_id": "$a", "field_name": "transactions"},
+    {"id": "c", "step": "get_object", "object_type": "Transaction",
+     "object_ids": "$b", "field_names": ["amount"]}
+
+Three steps, ONE model call, both amounts gathered, graded pass.
+`$b` resolved to two transaction ids and `get_object` fanned out
+across them -- the path that had only ever been unit-tested.
+
+**AL-4 is now 3 for 3 on real cases**, with handles used correctly in
+every one, and both earlier failures were mine rather than the
+model's.
+
+---
+
+# RESEARCH: is this the right way to build it?
+
+Asked to check the implementation against precedent. **It has close
+published antecedents, and I should say plainly that the design is
+not novel.**
+
+## LLMCompiler (Kim et al., arXiv 2312.04511) is the same design
+
+Its Planner emits tasks carrying placeholder variables; a **Task
+Fetching Unit** replaces them "after replacing their placeholder
+variables (e.g., the variable $1 and $2 in Task $3) with actual
+values"; an Executor runs the tasks.
+
+**That is `resolve_handles()` and `execute_plan()`, and even the `$`
+sigil matches.** I did not know this when I built it -- 001AGENTLOOP
+specified "the planner sees HANDLES, not values" and I took it from
+there. Arriving independently at a published design is reassuring
+about the design and says nothing good about my literature search; I
+should have looked before building, not after.
+
+## ReWOO (Xu et al.) is where the cost argument comes from
+
+"By planning all steps upfront and using placeholders (e.g. #E1, #E2)
+for intermediate results, ReWOO significantly reduces token
+consumption. These placeholders are replaced with actual values during
+execution, **eliminating the need to include full tool outputs in each
+reasoning step**."
+
+That is precisely what the VM measured: one call instead of three, and
+the saving coming from not re-sending accumulated results. LangChain's
+own summary puts it as "removes the need to always use an LLM for each
+task while still allowing tasks to depend on previous task results...
+by permitting variable assignment in the planner's output".
+
+## WHAT I AM NOT DOING, AND WHY
+
+**PARALLEL EXECUTION -- LLMCompiler's whole differentiator.** It
+dispatches independent tasks concurrently and reports a 1.8x speedup
+on HotpotQA. Mine is strictly sequential.
+
+**Declined deliberately.** Their parallelism wins because each task is
+a TOOL CALL that may hit a network or another model. Ours are mediator
+reads against a local lake -- sub-second -- while the single model
+call is 51-280 seconds. Parallelising the cheap part of a query whose
+cost is 99% one model call buys nothing, and it would put concurrent
+reads inside one `security_cache_scope`, which is a security question
+I would not open for no measured gain.
+
+Worth revisiting only if a step ever becomes expensive -- a remote
+silo, or a tool that calls out.
+
+**DYNAMIC REPLANNING ON RESULTS.** LLMCompiler supports it; ReWOO does
+not. I sit between them on purpose: one revision, on STRUCTURE only.
+That restriction is CaMeL's, not theirs -- showing the planner results
+would hand it the untrusted data the whole design exists to keep away,
+and neither paper is solving for prompt injection.
+
+**So the shape is: LLMCompiler's structure, ReWOO's token discipline,
+CaMeL's information restriction on the revision.** That combination I
+have not found published, and it is the only part worth calling ours.
+
+## A PRODUCTION IMPLEMENTATION HIT MY EXACT BUG CLASS
+
+NVIDIA's NeMo Agent Toolkit, PR #1105: *"fix(rewoo): replace
+placeholder IFF type is str -- We did not guard the string
+substitution of a placeholder... prevents potential TypeErrors when
+processing non-string values."*
+
+**That is the same category as both link_fanout failures**: a
+placeholder substituted into a position whose type nobody checked. A
+shipped ReWOO implementation had it too. It is not a sign I was
+careless; it is a sign this is the sharp edge of the pattern, and it
+argues for more type-shape tests around resolution rather than fewer.
+
+## AND ReWOO STATES THE LIMITATION I SHOULD BE QUOTING
+
+"ReWOO agents... may not be the best choice for tasks requiring high
+adaptability and uncertainty of tool outputs."
+
+That is AL-4's honest caveat, from the people who built it. Our three
+passing cases are all low-uncertainty: a name that exists, a link that
+resolves. A question whose right next step genuinely depends on what
+came back is where plan-then-execute is weakest, and the case set does
+not contain one.
+
+**That is the next case worth adding**, and it is more informative
+than another easy pass.
