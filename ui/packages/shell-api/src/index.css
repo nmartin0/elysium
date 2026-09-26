@@ -263,22 +263,23 @@
 
   .app__nav {
     flex: 1;
-  }
+    /* SPECIFICITY NO LONGER DOES THE WORK HERE -- the cascade LAYER
+   does. These three overrides were written with two and three
+   classes stacked because Blueprint's own rule out-specified a
+   single class of ours, and at the time our CSS was unlayered, so
+   specificity was the only lever. It is not any more: our rules sit
+   in `components` and Blueprint's in `vendor`, and layer order beats
+   specificity outright, whatever the selectors are.
 
-  /* .app__nav.bp6-menu, not just .app__nav alone -- a real, FOURTH
-   occurrence of this same class of bug this migration, caught the
-   same reliable way as the third (queried the real browser directly
-   for the actual matching CSS rule, not guessed): Blueprint's own
-   .bp6-menu rule sets a real, solid white background by default
-   (Menu is normally used floating on its own light surface, like
-   inside a Popover -- confirmed exactly this via UserMenu's own real,
-   correctly-white popover panel). This Menu is different: embedded
-   directly in the dark sidebar itself, not floating on its own light
-   surface, so it needs transparent, not Blueprint's own default.
-   Two real classes together for genuinely higher specificity than
-   Blueprint's own single-class rule, the same proven approach as
-   every other fix of this kind this migration. */
-  .app__nav.bp6-menu {
+   Simplified with a real test behind each, not on reasoning: three
+   e2e assertions on the COMPUTED style now cover exactly the
+   properties Blueprint would otherwise set, and all three fail when
+   the rules are removed -- checked before simplifying. They assert
+   the outcome rather than the selector, so they hold whichever
+   mechanism wins and fail if neither does. */
+    /* Blueprint's .bp6-menu sets a solid white background: a Menu
+     normally floats on its own light surface. This one is embedded in
+     the dark sidebar. */
     background: transparent;
   }
 
@@ -322,26 +323,9 @@
     gap: 0.5rem;
     width: 100%;
     text-align: left;
-  }
-
-  /* .user-menu__trigger.bp6-button.bp6-minimal, not just .user-menu__
-   trigger alone -- a real, third occurrence of the same class of bug
-   this project has now hit three times, confirmed precisely this
-   time via the browser's own real, matched CSS rules (not grepped
-   from minified source, not reasoned about): Blueprint's own
-   .bp6-button:not([class*="bp6-intent-"]) rule sets this button's
-   default text color, and that :not()+attribute selector carries
-   TWO class-level selectors worth of specificity -- genuinely higher
-   than this file's own single-class .user-menu__trigger rule, which
-   is why the plain version above lost outright, regardless of source
-   order (confirmed directly: computed color was Blueprint's own dark,
-   light-theme default, not this rule's #f2f2f3, before this fix).
-   Three real classes together, all genuinely present on this same
-   element (confirmed via the real DOM's own classList), for
-   specificity that's safely, unambiguously higher than Blueprint's
-   own two-class-level rule -- not just tied with it and hoping source
-   order still favors this file. */
-  .user-menu__trigger.bp6-button.bp6-minimal {
+    /* Blueprint's .bp6-button:not([class*="bp6-intent-"]) sets a dark
+     default meant for a light surface. On the dark header that is
+     nearly invisible. See the layer note above .app__nav. */
     color: var(--text-on-chrome);
   }
 
@@ -909,6 +893,12 @@
      instead (likely much larger than this one card), not the
      intended, real element. */
     position: relative;
+
+    /* Blueprint's CardList gives a direct-child Card
+     `display: flex; align-items: center` -- its single-line list row
+     default -- which lays this card's title, subtitle and fields
+     table out side by side. See the layer note above .app__nav. */
+    display: block;
   }
 
   /* A real, second Blueprint-CSS-override lesson this migration, beyond
@@ -927,10 +917,6 @@
    real, genuinely-present classes together on each side of the child
    combinator (0,4,0), reliably beating Blueprint's own 0,2,0 rule
    regardless of source order. */
-  .object-search__results.bp6-card-list > .object-search__result.bp6-card {
-    display: block;
-  }
-
   /* The real "stretched link" pattern (the same one Bootstrap's own
    stretched-link utility uses) -- deliberately NOT the whole card's
    own visible content wrapped in one <Link> (this file's own earlier,

@@ -158,9 +158,13 @@ test.describe('Blueprint controls keep their own layout', () => {
      * to find: it was in shared CSS, so searching components for
      * `<Checkbox` found nothing.
      *
-     * Our stylesheets are UNLAYERED while Blueprint sits in a `vendor`
-     * layer, so any bare element selector we write outranks Blueprint
-     * regardless of specificity. `label` beats `.bp6-control`.
+     * OUR RULES SIT IN A `components` LAYER and Blueprint in `vendor`,
+     * so ours win on LAYER ORDER regardless of specificity. This said
+     * our stylesheets were UNLAYERED, which was true when written and
+     * is not now: measured in the built bundle, zero unlayered rules.
+     * The conclusion is unchanged -- ours still outranks Blueprint --
+     * but for the opposite reason, and the old wording would send
+     * someone to defend a property the build no longer has.
      */
     const control = page.locator('.workspace__filter .bp6-control').first()
 
@@ -265,3 +269,74 @@ test.describe('the checkboxes added since the sweep', () => {
     await expect(page.getByRole('button', { name: 'e2e layout check', exact: true })).toBeHidden()
   })
 })
+
+test.describe('Blueprint defaults our own rules have to beat', () => {
+  /**
+   * THREE OVERRIDES NOTHING CHECKED. Each was found once, by hand, by
+   * inspecting a live element's computed style -- their own comments
+   * in index.css say so. None of them had a test, so the only thing
+   * holding them in place was that nobody touched them.
+   *
+   * They are the cases where Blueprint's own rule out-specifies a
+   * single class of ours, which is why they were written with two and
+   * three classes stacked. Layer order now settles it instead, and
+   * these assert the OUTCOME rather than the selector -- so they hold
+   * whichever mechanism is doing the work, and fail if neither is.
+   */
+  test.beforeEach(async ({ page }) => {
+    await login(page, DEV_USER)
+  })
+
+  test("the sidebar nav is transparent, not Blueprint's white menu", async ({ page }) => {
+    // Blueprint's .bp6-menu sets a solid white background, because a
+    // Menu normally floats on its own light surface. This one is
+    // embedded in the dark sidebar.
+    const nav = page.locator('.app__nav')
+    await expect(nav).toBeVisible()
+
+    const background = await nav.evaluate((element) => getComputedStyle(element).backgroundColor)
+
+    // Fully transparent, whatever notation the browser reports.
+    expect(background).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
+  })
+
+  test('the user menu trigger uses our chrome text colour', async ({ page }) => {
+    // Blueprint's .bp6-button:not([class*="bp6-intent-"]) sets a dark
+    // default meant for a light surface. On the dark header it is
+    // nearly invisible.
+    const trigger = page.locator('.user-menu__trigger')
+    await expect(trigger).toBeVisible()
+
+    const [actual, expected] = await trigger.evaluate((element) => [
+      getComputedStyle(element).color,
+      getComputedStyle(element).getPropertyValue('--text-on-chrome').trim(),
+    ])
+
+    // Compared against the TOKEN, not a hard-coded colour, so a
+    // deliberate theme change does not read as a regression.
+    expect(toRgb(expected)).toBe(actual)
+  })
+
+  test('a result card stacks its content rather than laying it in a row', async ({ page }) => {
+    // Blueprint's CardList gives a direct-child Card
+    // `display: flex; align-items: center` -- its single-line list row
+    // default. These cards hold a title, a subtitle and a fields
+    // table, which that lays out side by side.
+    await page.goto('/browse?type=Customer')
+    const card = page.locator('.object-search__result').first()
+    await expect(card).toBeVisible()
+
+    const display = await card.evaluate((element) => getComputedStyle(element).display)
+
+    expect(display).toBe('block')
+  })
+})
+
+/** Normalise a CSS colour to the browser's own rgb() form, so a token
+ *  written as a hex can be compared with a computed value. */
+function toRgb(colour: string): string {
+  const canvas = colour
+  return canvas.startsWith('#')
+    ? `rgb(${[1, 3, 5].map((i) => parseInt(canvas.slice(i, i + 2), 16)).join(', ')})`
+    : canvas
+}
