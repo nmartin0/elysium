@@ -21,9 +21,12 @@ evaluated inside `confirm_and_execute()`, and
 ontology has since dropped. Nothing here grants anything.
 """
 
+import base64
+import datetime as _datetime
 import json
 from dataclasses import asdict
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from core.intermediate_layer.auth import UserRecord
@@ -36,7 +39,99 @@ from core.ontology.write_mediator import PendingWrite, SubWrite
 # filling the gaps with defaults -- produces a write that looks
 # complete and means something nobody wrote, which is the failure this
 # project keeps finding in other forms.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# THE MARKER A TAGGED VALUE CARRIES.
+#
+# Deliberately implausible as a real column or parameter name. A dict
+# in the payload that already holds this key is REFUSED at store time
+# rather than round-tripped wrongly -- see _encode().
+_TAG = "__elysium_type__"
+
+
+class UnstorablePendingWrite(ValueError):
+    """A pending write holds a value this cannot round-trip."""
+
+
+def _encode(value: Any) -> Any:
+    """Plain JSON, with the types a source column actually produces.
+
+    WHY THIS EXISTS (SEC-16). to_row() used plain json.dumps with no
+    fallback, and `expected_current_values` is READ FROM THE SOURCE.
+    `field_types.py` returns real `date` and `datetime` objects, and
+    the shipped ontology declares `decimal` for money -- with a comment
+    explaining why it is not `number` -- and `date` for
+    transaction_date. Measured before fixing:
+
+        to_row(... {'amount': Decimal('49.99')})
+        -> TypeError: Object of type Decimal is not JSON serializable
+
+    which fails the proposal with a 500 rather than a refusal. It did
+    not fire only because the one shipped action writes a string field.
+
+    WHY NOT default=str, WHICH IS THE OBVIOUS FIX AND IS WRONG.
+    `expected_current_values` is compared against a freshly READ value
+    at confirm -- the lost-update check. A stringified Decimal would
+    never equal the live Decimal, so every such write would be refused
+    as a conflict: a crash traded for a silently wrong answer, which
+    is the worse failure and the harder one to notice.
+
+    SO THE TYPE TRAVELS WITH THE VALUE. Decimal goes as its exact
+    string, never through float, for the reason the ontology already
+    gives for choosing `decimal` over `number`.
+
+    A COLLIDING DICT IS REFUSED, NOT GUESSED AT. A payload dict that
+    already holds the marker key cannot be distinguished from a tagged
+    one on the way back, so storing it would corrupt it silently. That
+    is the failure this project keeps finding in other forms, so it
+    raises instead -- and the caller hears it, because store() is
+    documented to raise rather than be best-effort.
+    """
+    if isinstance(value, bool) or value is None or isinstance(value, int | float | str):
+        # bool BEFORE int: isinstance(True, int) is True.
+        return value
+    if isinstance(value, Decimal):
+        return {_TAG: "decimal", "v": str(value)}
+    if isinstance(value, _datetime.datetime):
+        # datetime BEFORE date: datetime is a subclass of date.
+        return {_TAG: "datetime", "v": value.isoformat()}
+    if isinstance(value, _datetime.date):
+        return {_TAG: "date", "v": value.isoformat()}
+    if isinstance(value, bytes):
+        return {_TAG: "bytes", "v": base64.b64encode(value).decode("ascii")}
+    if isinstance(value, dict):
+        if _TAG in value:
+            raise UnstorablePendingWrite(
+                f"a value holds the reserved key {_TAG!r}, which cannot be told "
+                f"apart from a tagged value when read back"
+            )
+        return {key: _encode(inner) for key, inner in value.items()}
+    if isinstance(value, list | tuple):
+        return [_encode(inner) for inner in value]
+    raise UnstorablePendingWrite(
+        f"cannot store a value of type {type(value).__name__!r}: {value!r}"
+    )
+
+
+def _decode(value: Any) -> Any:
+    """The inverse of _encode(), restoring the original TYPE."""
+    if isinstance(value, list):
+        return [_decode(inner) for inner in value]
+    if not isinstance(value, dict):
+        return value
+    kind = value.get(_TAG)
+    if kind is None:
+        return {key: _decode(inner) for key, inner in value.items()}
+    raw = value["v"]
+    if kind == "decimal":
+        return Decimal(raw)
+    if kind == "datetime":
+        return _datetime.datetime.fromisoformat(raw)
+    if kind == "date":
+        return _datetime.date.fromisoformat(raw)
+    if kind == "bytes":
+        return base64.b64decode(raw)
+    raise UnreadablePendingWrite(f"unknown tagged type {kind!r}")
 
 
 def _serialise_datetime(value: datetime) -> str:
@@ -56,14 +151,14 @@ def to_row(pending: PendingWrite) -> str:
     """One pending write, as JSON."""
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
-        "sub_writes": [asdict(sub) for sub in pending.sub_writes],
+        "sub_writes": [_encode(asdict(sub)) for sub in pending.sub_writes],
         "user_id": pending.user_id,
         "description": pending.description,
         "action_type_name": pending.action_type_name,
         "origin": pending.origin,
         "proposed_at": _serialise_datetime(pending.proposed_at),
         "proposed_under_generation": pending.proposed_under_generation,
-        "parameters": pending.parameters,
+        "parameters": _encode(pending.parameters),
         "proposer": asdict(pending.proposer),
     }
     return json.dumps(payload)
@@ -96,14 +191,14 @@ def from_row(raw: str) -> PendingWrite:
 
     try:
         return PendingWrite(
-            sub_writes=tuple(SubWrite(**sub) for sub in payload["sub_writes"]),
+            sub_writes=tuple(SubWrite(**_decode(sub)) for sub in payload["sub_writes"]),
             user_id=payload["user_id"],
             description=payload["description"],
             action_type_name=payload["action_type_name"],
             origin=payload["origin"],
             proposed_at=_parse_datetime(payload["proposed_at"]),
             proposed_under_generation=payload["proposed_under_generation"],
-            parameters=payload["parameters"],
+            parameters=_decode(payload["parameters"]),
             proposer=UserRecord(**payload["proposer"]),
         )
     except (KeyError, TypeError, ValueError) as e:
