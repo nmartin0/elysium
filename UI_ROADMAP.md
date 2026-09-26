@@ -215,7 +215,21 @@ way rather than trusting this paragraph: [31] DeploymentConfig.tsx,
 [14a] Silos.tsx, [7] SchemaGraph.tsx, [1] FilterBar.tsx's
 `operatorsFor` (all seven operators, not two), [10] AnswerTrace.tsx,
 [13] RolesPanel.tsx's `proposeRoleChange`, [42] SelectionBar.tsx's
-count, [8] SchemaGraph.tsx.
+count.
+
+[8] WAS LISTED HERE AND IS NOT BUILT -- my error, corrected before
+anyone relied on it. I cited SchemaGraph.tsx for BOTH [7] and [8]. It
+is [7]: the SCHEMA graph, object types as nodes. [8] is the INSTANCE
+graph, actual objects expanded one hop at a time, and SchemaGraph's
+own header draws the distinction I walked past -- "BOUNDED BY OBJECT
+TYPES, not objects ... which is why this needs none of the
+count-before-expand machinery AN INSTANCE GRAPH WOULD".
+
+It stays at 29 in the queue below, where it always was; only this
+paragraph was wrong. The failure was matching a component by NAME and
+asking whether something called "graph" exists, which is the same
+shape of mistake as a test that passes because it looked at a
+fraction of its subject.
 
 WHAT THIS DOES NOT CLAIM. "Built" here means the thing the entry says
 does not exist DOES exist. It does not mean every design question in
@@ -267,7 +281,12 @@ and a wrongly-closed backend item is worse than a stale one.
     migrates itself; see 22
 27. [30] Per-request CONFIG snapshot
 28. [40] Watch to ask
-29. [8]  The instance graph -- the expansion protocol IS the design
+29. [8]  The instance graph -- the expansion protocol IS the design.
+    BACKEND READY, work entirely frontend: search_around,
+    count_objects and get_object all exist. But `searchAround` has NO
+    CLIENT FUNCTION in ui/packages/shell-api/src/api.ts, so the UI
+    cannot reach the endpoint at all -- that is the first step, not
+    the graph.
 
  [4] change over time, [10] the agent audit, [2] the Approvals inbox,
  [13] runtime role editing and [6] notes were 27, 28, 30, 33 and 34
