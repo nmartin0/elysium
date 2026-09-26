@@ -843,6 +843,44 @@ records applied role changes, and disagreeing with `seeded_at` is the
 signal -- rather than a guard inside `load()`. That is a design, not a
 patch, so it is recorded as SEC-19 and proposed.
 
+## Session 27 — the last two files. FOURTEEN OF FOURTEEN REVIEWED.
+
+**`core/pending_write_persistence.py` — no defect.** The module is a
+location, not a behaviour, and the claims it makes hold: the
+`reserved` migration is present so a database from before that column
+does not fail every claim; decisions are keyed `(write_id,
+task_index)`, which gives reads the index they filter by without a
+second one; and decisions are deleted with their write both on expiry
+and on consumption, so nothing orphans.
+
+**`core/auth/password_policy.py` — one LOW finding, SEC-22, recorded
+not fixed.** The policy itself is well-made and follows NIST SP 800-63B
+r4 properly -- length over composition, an offline blocklist because a
+self-hosted deployment may have no internet, and a first version's
+miss already fixed (it accepted "correct horse battery staple" because
+the list held it without spaces; separators are stripped now). I ran
+fourteen cases against it and thirteen behaved exactly as documented.
+
+The one that did not:
+
+    password_problem("kettle harbour velvet", "e") -> refused
+
+The username test is a SUBSTRING test, and nothing enforces a minimum
+username length -- `CreateUserRequest` declares plain `username: str`.
+A user named `e` cannot choose an ordinary passphrase, and the message
+"must not contain your username" reads as nonsense to them.
+
+**NOT FIXED, DELIBERATELY.** The remedy LOOSENS a security check, and
+loosening one while closing a branch is the wrong moment for it. It
+also needs a minimum username length decided alongside, which is not
+mine. NIST's intent is "do not use your username as your password",
+not "no password may contain any letter of it".
+
+### The lane is closed
+
+Fourteen files, all read. Seven produced findings; seven were verified
+clean and are recorded as such so nobody repeats them.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
