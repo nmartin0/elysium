@@ -3520,3 +3520,83 @@ not contain one.
 
 **That is the next case worth adding**, and it is more informative
 than another easy pass.
+
+---
+
+# A LIVE CRASH IN /query, found while writing a harder bench case
+
+Building the "high uncertainty" case ReWOO's authors warn about, I
+chained an aggregate into a filter and the whole thing died on an
+uncaught `decimal.InvalidOperation`.
+
+**It is not a plan-mode bug. It is reachable from today's loop.**
+
+    {"step": "search_object", "object_type": "Transaction",
+     "filter": {"amount": "$100"}}
+
+## The defect is an asymmetry, not a missing try
+
+A filter value is converted to the field's declared type before the
+query runs. Measured across field types:
+
+    transaction_date  "yesterday"      ValueError        recoverable
+    transaction_date  "not-a-date"     ValueError        recoverable
+    amount            "not a number"   InvalidOperation  CRASH
+    amount            ""               InvalidOperation  CRASH
+    amount            "$100"           InvalidOperation  CRASH
+    amount            True             InvalidOperation  CRASH
+    amount            [1, 2]           InvalidOperation  CRASH
+
+`_execute_step` catches `(ValueError, TypeError, PermissionError)`.
+`decimal.InvalidOperation` is an `ArithmeticError`, so it was caught
+by nothing: out of the loop, out of the handler, into a 500.
+
+**The same class of model mistake, two different outcomes, decided by
+which library happens to raise what.**
+
+**AND `"$100"` IS NOT AN EXOTIC INPUT.** The schema tells the model
+`amount` is searchable and -- since LB-2's data types landed -- that
+it is a decimal. A user asking about money and a model writing the
+currency symbol is the ordinary case, not the adversarial one. This is
+AL-1's shape: a model-written value crashing /query outside the error
+handling.
+
+## The fix, and why it is narrow
+
+`decimal.DecimalException` added to the caught set. **Not
+`ArithmeticError`**, which would also swallow `ZeroDivisionError` and
+`OverflowError` raised by OUR code -- reporting one of those to the
+model as "that step was not usable" would hide a real bug behind a
+retry until someone noticed the answers were wrong.
+
+## Controls, three, and one exposed a test of the standard library
+
+    revert to the three original types    5 of 10 fail
+    catch ArithmeticError (too wide)      1 fails
+    reject every decimal filter           1 fails
+
+**The second one passed at first.** My "not too wide" test asserted
+that `ZeroDivisionError` is not a `DecimalException` -- true of
+Python, true regardless of what this code catches, and it passed
+happily with the clause widened. **It tested the standard library.**
+
+Rewritten to raise `ZeroDivisionError` from inside a handler and
+assert it escapes. That is the difference between checking a claim
+about types and checking the `except` clause that was actually
+changed.
+
+## What this says about the bench case that found it
+
+I have not added `dependent_choice` yet, because the plan I wrote to
+check the case was answerable is what crashed. Once this lands the
+chain is runnable and the case can be written against evidence rather
+than hope.
+
+**The case earned its keep before existing**, which is the second time
+this session that writing a harder case found a defect rather than a
+score.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3083 passed, 8 skipped  (3073 before; +10 here)

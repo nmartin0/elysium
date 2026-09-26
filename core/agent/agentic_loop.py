@@ -62,6 +62,7 @@ Used by: scripts/run_deployment.py, api/routes.py, and directly by
          tests/integration/
 """
 
+import decimal
 import json
 import logging
 import threading
@@ -1072,7 +1073,30 @@ class AgentLoop:
             )
             return (consecutive_invalid, new_count,
                     StopReason.BLOCKED_BY_RULES if should_stop else None, None)
-        except (ValueError, TypeError, PermissionError) as e:
+        # decimal.DecimalException IS IN HERE BECAUSE A MODEL WRITING
+        # "$100" CRASHED /query.
+        #
+        # A filter value the model supplies is converted to the field's
+        # declared type before the query runs. On a DATE field a bad
+        # value raises ValueError and is caught here, becoming a
+        # mistake the model is told about. On a DECIMAL field it
+        # raises decimal.InvalidOperation, which is an ArithmeticError
+        # and was caught by nothing -- so it left the loop, left the
+        # handler, and became a 500.
+        #
+        # The same class of model mistake, two different outcomes,
+        # decided by which library happens to raise what. Measured:
+        # "not a number", "", "$100", True and [1, 2] all crash on
+        # `amount`; "yesterday" and "not-a-date" are recoverable on
+        # `transaction_date`.
+        #
+        # DecimalException RATHER THAN ArithmeticError, deliberately.
+        # The wider family would also swallow ZeroDivisionError and
+        # OverflowError raised by OUR code, and those are our bugs --
+        # reporting one to the model as "that step was not usable"
+        # would hide it behind a retry.
+        except (ValueError, TypeError, PermissionError,
+                decimal.DecimalException) as e:
             if isinstance(e, TypeError):
                 # A TypeError here is far more likely OUR bug than the
                 # model's -- a mediator called with the wrong arity, a
