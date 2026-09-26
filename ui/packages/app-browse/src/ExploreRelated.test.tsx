@@ -11,7 +11,7 @@
  * something nobody can reason about on a real ontology.
  */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -227,5 +227,113 @@ describe('ExploreRelated -- the shell re-rendering', () => {
     )
 
     await waitFor(() => expect(mockedGetLinkCounts).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('ExploreRelated -- moving to another object', () => {
+  /**
+   * WHAT THE SYNCHRONOUS RESET WAS FOR, and what must survive removing
+   * it. Counts belong to a specific object. Showing the previous
+   * object's link counts under a new one is a wrong answer presented
+   * confidently -- and unlike a missing count, nothing about it looks
+   * wrong on screen.
+   */
+  it('never shows the previous object counts while the next is loading', async () => {
+    mockedGetLinkCounts.mockResolvedValue({
+      transactions: { target: 'Transaction', count: 7, cardinality: 'many' },
+    })
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    expect(await screen.findByText('7 Transaction')).toBeInTheDocument()
+
+    // The next object's count never settles, so what is on screen is
+    // what a reader sees for as long as it takes.
+    mockedGetLinkCounts.mockReturnValue(new Promise(() => {}))
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_002" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText('7 Transaction')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Counting related records…')
+  })
+
+  it('clears a previous failure rather than showing it over new counts', async () => {
+    // The error is reset too, and for the same reason: a failure for
+    // one object is not a failure for the next.
+    mockedGetLinkCounts.mockRejectedValue(new Error('the counter fell over'))
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    expect(await screen.findByText(/the counter fell over/)).toBeInTheDocument()
+
+    mockedGetLinkCounts.mockReturnValue(new Promise(() => {}))
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_002" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText(/the counter fell over/)).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Counting related records…')
+  })
+
+  it('does not reuse counts across two types that share an id', async () => {
+    // FOUND BY A CONTROL: dropping the type from the tag passed every
+    // other test. Ids are scoped per type -- getLinkCounts takes both
+    // -- so matching on id alone would label one type's counts with
+    // another's name.
+    mockedGetLinkCounts.mockResolvedValue({
+      transactions: { target: 'Transaction', count: 7, cardinality: 'many' },
+    })
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+    expect(await screen.findByText('7 Transaction')).toBeInTheDocument()
+
+    mockedGetLinkCounts.mockReturnValue(new Promise(() => {}))
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Account" objectId="cust_001" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText('7 Transaction')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Counting related records…')
+  })
+
+  it('does not let a slow earlier response overwrite a newer one', async () => {
+    /**
+     * THE STALE GUARD, which tagging does NOT make redundant -- also
+     * found by a control, because removing it passed everything else.
+     *
+     * Tagging stops a stale result being displayed. It does not stop
+     * one being STORED: a late response for the previous object would
+     * overwrite the newer object's counts, and those newer counts DO
+     * match, so they would vanish and the panel would fall back to
+     * "counting" forever.
+     */
+    let settleFirst: ((value: unknown) => void) | undefined
+    mockedGetLinkCounts.mockReturnValueOnce(
+      new Promise((resolve) => {
+        settleFirst = resolve
+      }) as never,
+    )
+    const { rerender } = renderPanel(SCHEMA, vi.fn())
+
+    // Move on before the first ever answers; the second is immediate.
+    mockedGetLinkCounts.mockResolvedValue({
+      payments: { target: 'Payment', count: 3, cardinality: 'many' },
+    })
+    rerender(
+      <MemoryRouter>
+        <ExploreRelated objectType="Customer" objectId="cust_002" visibleSchema={SCHEMA} onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('3 Payment')).toBeInTheDocument()
+
+    // Now the first object's answer finally arrives.
+    await act(async () => {
+      settleFirst?.({ transactions: { target: 'Transaction', count: 7, cardinality: 'many' } })
+    })
+
+    expect(screen.getByText('3 Payment')).toBeInTheDocument()
+    expect(screen.queryByText('7 Transaction')).not.toBeInTheDocument()
   })
 })

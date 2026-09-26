@@ -59,8 +59,35 @@ function reverseLinkField(schema: VisibleSchema | null, target: string, objectTy
 }
 
 export default function ExploreRelated({ objectType, objectId, visibleSchema, onSessionExpired }: ExploreRelatedProps) {
-  const [links, setLinks] = useState<Record<string, LinkCount> | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  /**
+   * The counts, TAGGED WITH THE OBJECT THEY DESCRIBE.
+   *
+   * This used to be two plain pieces of state that the effect reset to
+   * null synchronously before fetching -- react/set-state-in-effect,
+   * and the reason the rule exists: setting state during an effect
+   * starts a second render, so the panel rendered once with the
+   * PREVIOUS object's counts and again empty.
+   *
+   * Which object a count describes is a fact about the count, so
+   * keeping them together lets the right value be DERIVED below. Counts
+   * for an object we are no longer looking at cannot match, so they are
+   * never shown -- where before there was a frame in which they were.
+   * A failure is tagged the same way, for the same reason: one
+   * object's error is not the next one's.
+   */
+  const [loaded, setLoaded] = useState<{
+    type: string
+    id: string
+    links?: Record<string, LinkCount>
+    error?: string
+  } | null>(null)
+
+  // Derived during render. Anything that does not match the object on
+  // screen is not for this screen, which is also what "still counting"
+  // means here.
+  const current = loaded !== null && loaded.type === objectType && loaded.id === objectId ? loaded : null
+  const links = current?.links ?? null
+  const error = current?.error ?? null
 
   // The session callback through a ref, so this effect does not
   // restart every time the shell re-renders -- App.tsx declares
@@ -75,12 +102,10 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
 
   useEffect(() => {
     let stale = false
-    setLinks(null)
-    setError(null)
 
     getLinkCounts(objectType, objectId)
       .then((result) => {
-        if (!stale) setLinks(result)
+        if (!stale) setLoaded({ type: objectType, id: objectId, links: result })
       })
       .catch((caught) => {
         if (stale) return
@@ -96,12 +121,13 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
         // handleIfSessionExpired reads err.status on a real ApiError
         // instance, which is the thing actually being asked about.
         if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
-        setError(getErrorMessage(caught))
+        setLoaded({ type: objectType, id: objectId, error: getErrorMessage(caught) })
       })
 
-    // Guards against a slow response for the PREVIOUS object landing
-    // after a faster one for the object now on screen -- which would
-    // show one record's links under another's name.
+    // STILL NEEDED after tagging, which is not obvious. Tagging stops
+    // a stale result being DISPLAYED, but a late response for a
+    // previous object would still overwrite a NEWER one already
+    // stored -- and that newer one does match, so it would vanish.
     return () => {
       stale = true
     }
