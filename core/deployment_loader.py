@@ -56,6 +56,7 @@ from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
+from core.llm.retrying_adapter import RetryingLLMAdapter
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.ontology.action_types import validate_action_types
@@ -698,7 +699,29 @@ def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
             f"Unknown LLM provider {config.llm_provider!r} -- registered "
             f"providers: {sorted(_LLM_ADAPTER_REGISTRY.keys())}"
         )
-    return ConcurrencyLimitedLLMAdapter(adapter_class(model, config.llm_connection))
+    # RETRY OUTSIDE THE LIMITER, NOT INSIDE (AL-R1, requested by the
+    # agent-loop agent and checked here before wiring).
+    #
+    # ConcurrencyLimitedLLMAdapter.chat holds `with
+    # self._limiter.limit()` around the call, so a retry nested INSIDE
+    # it would sleep while holding a slot -- turning a transient
+    # failure into a throughput collapse for every other caller.
+    # Outside, a sleeping retry holds nothing and re-queues like any
+    # other request.
+    #
+    # WITHOUT THIS WIRING THE WRAPPER WAS INERT: built, tested, and
+    # constructed by nothing, so AL-5's retry behaviour did not exist
+    # in any running deployment. It could not be wired from the
+    # backend branch either -- the module only arrived with the
+    # agentloop merge, so this is the first commit where the import
+    # resolves.
+    #
+    # ONLY `retryable` FAILURES ARE RETRIED, which the wrapper
+    # enforces: a refusal, a bad request or a timeout that has already
+    # passed its deadline raises on the first attempt.
+    return RetryingLLMAdapter(
+        ConcurrencyLimitedLLMAdapter(adapter_class(model, config.llm_connection))
+    )
 
 
 def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | None:
