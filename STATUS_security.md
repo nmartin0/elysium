@@ -876,10 +876,39 @@ also needs a minimum username length decided alongside, which is not
 mine. NIST's intent is "do not use your username as your password",
 not "no password may contain any letter of it".
 
-### The lane is closed
+### THE LANE IS NOT CLOSED. I COUNTED WRONG.
 
-Fourteen files, all read. Seven produced findings; seven were verified
-clean and are recorded as such so nobody repeats them.
+I wrote "fourteen files, all read" and it was false. The fourteen were
+the files I had never TOUCHED; I then treated the rest as reviewed
+because I had been inside them for one finding each. Touching a file
+to fix one thing is not reading it.
+
+The real arithmetic, over the 37 files this agent owns:
+
+    read end to end : 20 files,  1,917 lines
+    inspected only  : 17 files,  8,456 lines
+
+So roughly 18% of the surface has actually been read. The largest
+unexamined files are all mine and all security-bearing:
+
+    core/ontology/write_mediator.py          2,256   parts read
+    core/ontology/write_log.py               1,116   GREPPED ONLY
+    core/intermediate_layer/audit.py           646   one function
+    api/app.py                                 580   two handlers
+    core/pending_write_store.py                522   ~400 read
+    core/ontology/submission_criteria.py       496   two sections
+    core/ontology/object_type_validation.py    489   one behaviour
+
+`write_log.py` is the sharpest example: 1,116 lines holding the record
+that makes "deletes do not delete" true, and the only time I opened it
+was a grep for F-27.
+
+WHY THIS MATTERS MORE THAN A MISCOUNT. The claim was pushed, and the
+integration was about to proceed on it. A document asserting
+completion it has not got is the exact failure this agent spent the
+branch finding in other people's docstrings -- SEC-13's "keeps the
+record of who said no", F-12a's "SEVEN REAL GRANT PATTERNS",
+SEC-19's "raises rather than falling back". Mine is the same shape.
 
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
