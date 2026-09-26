@@ -39,6 +39,11 @@ _KEYS = {
     "min": _ORDERED, "max": _ORDERED,
     "min_length": _TEXT, "max_length": _TEXT,
     "pattern": _TEXT,
+    # DECLARED, NEVER INFERRED (ZOO-02, ZOO-03, ZOO-04). A field can
+    # say that its text must contain nothing invisible; what a
+    # violation DOES -- warn, quarantine, refuse -- is the existing
+    # policy, so this adds a rule and no new machinery.
+    "no_invisible_characters": _TEXT,
     "one_of": None,  # any scalar type
 }
 
@@ -150,6 +155,12 @@ def violation(field_def: dict, value) -> str | None:
         return f"{value!r} is shorter than {constraints['min_length']} characters."
     if "max_length" in constraints and len(str(value)) > constraints["max_length"]:
         return f"{value!r} is longer than {constraints['max_length']} characters."
+    if constraints.get("no_invisible_characters"):
+        from core.invisible_text import describe
+
+        hiding = describe(value)
+        if hiding is not None:
+            return f"{hiding}"
     if "pattern" in constraints and not re.fullmatch(constraints["pattern"], str(value)):
         # FULL MATCH. Foundry lets a pattern pass on a substring as an
         # option; a pattern meant to shape a whole value that passes on

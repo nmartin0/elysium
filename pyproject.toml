@@ -183,6 +183,12 @@ layers = [
     # not what a role is. deployment_loader is its only caller today,
     # and any layer may reach it without creating a cycle.
     "immutable",
+    # invisible_text, another leaf importing nothing but the standard
+    # library. It knows which codepoints have no glyph and nothing
+    # else -- not what a field is, not what a row is. Two callers
+    # today: core.ontology.constraints declares the rule, and the
+    # mirror reports it. A leaf both can reach without a cycle.
+    "invisible_text",
     # config_history, a leaf like artifact_store: its own SQLite store,
     # importing nothing from core but the shared connection helper.
     "config_history",
