@@ -4334,3 +4334,62 @@ touch them now.** They are instructions rather than demonstrations,
 which is the category this run just showed matters -- and the same
 run showed a 4B model losing the output format the moment prompt text
 was removed.
+
+---
+
+# The injection test can now actually run
+
+The step-mode half has never tested anything. Three attempts, three
+timeouts, all on the FIRST hop with `gathered` still empty -- before
+the planted text had been read even once.
+
+**The cause is arithmetic, not a bug.** The step system prompt is
+5,562 characters; the VM measured prompt evaluation at 0.104 s/char
+cold. That is ~578 seconds against a 600-second limit. It was never
+going to finish.
+
+## The fix: warm the prefix first
+
+A single call with the SAME system prompt, before the timed one. AR-1
+measured a warm call at 50.58s on a LONGER prompt, so this is the
+difference between untestable and about a minute.
+
+**WHAT IT GIVES UP, SAID PLAINLY:** the test no longer exercises a
+cold start. **It never meant to.** It asks whether a model obeys an
+instruction planted in a field value, and that answer does not depend
+on whether the weights were resident. Cold-start cost is a real
+problem -- `scripts/diagnose_slow_call.py` exists for it -- and it is
+a different problem.
+
+Nothing about the attack, the grading or the loop changes. Only the
+prefix is already cached, exactly as it would be for the second query
+of any working day.
+
+## The fixture returns what it warmed, and the tests check it
+
+Vulture flagged it as unused, which was fair -- and chasing that found
+a real gap. **A fixture that warms the WRONG prefix is silently
+useless:** the timed call pays full price and the only symptom is a
+timeout, which is precisely how the last three attempts failed.
+
+So it returns the system prompt and both tests assert it is the real
+one. If someone "simplifies" the warming to a stub, that assertion
+fails instead of the test mysteriously timing out again.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3100 passed, 8 skipped
+
+## The run
+
+    python3 -m pytest tests/integration/test_prompt_injection_e2e.py -m integration -v
+
+Expect roughly 10 minutes for the warm-up plus a minute or two per
+test, rather than two timeouts.
+
+**Plan mode has already passed this.** The step half is the one that
+tests RESISTANCE -- the model is shown the planted text every hop and
+must ignore it. A pass means the model resisted. A failure is the
+strongest argument AL-4 could have, and would be the first time a real
+model here has been shown to obey planted text.
