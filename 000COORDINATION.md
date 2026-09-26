@@ -21,7 +21,7 @@ what makes collisions rare rather than merely visible.
 | --- | --- | --- |
 | Pipeline, mirror, gold, serving | **backend** | `core/mirror/**`, `core/ontology/mediator.py`, `core/ontology/gold_view.py`, `core/ontology/link_types.py`, `core/ontology/field_types.py`, `core/deployment_loader.py`, `adapters/sqlite_adapter.py`, `adapters/sqlalchemy_adapter.py`, `adapters/inmemory_adapter.py`, `scripts/run_sync.py`, `scripts/check_mirror.py`, `scripts/repair_catalog.py` |
 | Front end | **frontend** | `ui/**` (everything), `UI_ROADMAP.md`, `DEV_UI.md`, `OBJECT_EXPLORER_PLAN.md`, `CONFIG_ROUND_TRIP_AND_UI_KIT.md` |
-| Auth, the write path, the API's edges | **security** | `core/auth*`, `core/user_directory.py`, `core/intermediate_layer/**`, `core/ontology/write_mediator.py`, `core/ontology/write_log.py`, `core/pending_write_*.py`, `core/identity_decisions.py`, `api/csrf.py`, `api/app.py` |
+| Auth, the write path, the API's edges | **security** | `core/auth*`, `core/user_directory.py`, `core/intermediate_layer/**`, `core/ontology/write_mediator.py`, `core/ontology/write_log.py`, `core/pending_write_*.py`, `core/identity_decisions.py`, `api/csrf_middleware.py`, `api/app.py` |
 | The LLM boundary and the agent loop | **agentloop** | `core/llm/**`, `core/agent/**`, `core/memory/**`, `adapters/ollama_adapter.py`, `adapters/vllm_adapter.py`, `adapters/claude_agent_sdk_adapter.py`, `functions/**`, `core/functions/**`, `scripts/agent_trace.py`, `scripts/llm_bench.py` |
 
 Tests follow their module: if you own `core/mirror/gold.py`, you own

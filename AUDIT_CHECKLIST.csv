@@ -27,7 +27,7 @@ F-23,001,001FINDINGS,HIGH,"synthesis catches RequestException, not LLMUnavailabl
 F-24,001,001FINDINGS,LOW,Claude SDK adapter passes the system prompt as argv (~128 KB ceiling),claude_agent_sdk_adapter.py,RP,unverified
 F-25,001,001FINDINGS,HIGH,generation numbers repeat after restart and are consumed by rejected loads,deployment_loader.py,RP,unverified
 F-26,001,001FINDINGS,HIGH,"mirror overlay returns only the latest edit, serving stale values",write_log.py,RP,"= PA001-A4, fixed 529b235"
-F-27,001,001FINDINGS,HIGH,"crash recovery loses deletes, reports success, writes a fabricated create",write path recovery,RP,unverified
+F-27,001,001FINDINGS,HIGH,"crash recovery loses deletes, reports success, writes a fabricated create",write path recovery,RP,"ALREADY FIXED (patch 311) - verified: write_mediator.py dispatch is exhaustive and names F-27 at three sites"
 F-28,001,001FINDINGS,MED,"rebuild_deleted_index() documented as the recovery path, never called",write_log.py,IN,"fixed patch 397"
 F-29,001,001FINDINGS,MED,sync timestamp taken after the read: a blind window,iceberg_sync.py,RP,"= PA001-A5 (partly fixed)"
 F-30,001,001FINDINGS,MED,create_colleague_user.py bypasses create_debug_user.py's safety guard,scripts/,IN,unverified
@@ -37,7 +37,7 @@ F-33,001,001FINDINGS,MED,two critical auth controls each defended by exactly ONE
 N-01,001,001FINDINGS,NOFIX,duplicated denial-logging block (rule of three says wait),core/intermediate_layer,IN,"recorded as do-not-fix"
 N-02,001,001FINDINGS,NOFIX,user_directory bare commit() (convention split),core/auth,IN,"recorded as do-not-fix"
 N-03,001,001FINDINGS,NOFIX,Protocol vs ABC split (document the Protocol side),core/,IN,"recorded as do-not-fix"
-004-1,004,004FINDINGS,MED,lint.sh lockfile step sets FAILED=1 which nothing reads,lint.sh,RP,unverified
+004-1,004,004FINDINGS,MED,lint.sh lockfile step sets FAILED=1 which nothing reads,lint.sh,RP,"ALREADY FIXED (patch 316-317) - verified: lint.sh's own comment records that the dead FAILED=1 was replaced by a real status"
 004-2,004,004FINDINGS,MED,documentation references 7 files/symbols that do not exist,docs,MC,unverified
 004-3,004,004FINDINGS,LOW,incomplete tools->functions rename,config + core/functions,IN,"documented patch 396"
 004-4,004,004FINDINGS,LOW,three comments contradict each other or the code,core/,IN,unverified
@@ -47,14 +47,14 @@ N-03,001,001FINDINGS,NOFIX,Protocol vs ABC split (document the Protocol side),co
 004-8,004,004FINDINGS,LOW,WriteMediator calls _security_allowed() directly rather than check_access(),write_mediator.py,IN,unverified
 004-S1,004,004FINDINGS,MED,session tokens stored in plaintext,core/auth,IN,"= E-03, owner decision"
 004-S2,004,004FINDINGS,MED,expired sessions never purged,core/auth,IN,"= E-03"
-E-01,E2,ELYSIUM-FLAWS-2,SEC,validation errors reflect request bodies including secrets,api/app.py,IN,unverified
-E-02,E2,ELYSIUM-FLAWS-2,SEC,unauthenticated disk exhaustion via login_attempts (100 KB -> 16.3 MB),core/auth,RP,unverified
+E-01,E2,ELYSIUM-FLAWS-2,SEC,validation errors reflect request bodies including secrets,api/app.py,IN,"ALREADY FIXED (patch 322-324) - verified by LLM1: api/app.py has a validation_errors_without_values handler. Reported by LLM3, who found seven of their nineteen already done"
+E-02,E2,ELYSIUM-FLAWS-2,SEC,unauthenticated disk exhaustion via login_attempts (100 KB -> 16.3 MB),core/auth,RP,"ALREADY FIXED (patch 311) - verified: login_attempt_tracker prunes. LLM3 corrected their own claim afterwards: the ATTACK is closed, the class is not"
 E-03,E2,ELYSIUM-FLAWS-2,SEC,"session tokens in plain text, never reaped",core/auth,IN,"owner decision (forces re-login)"
-E-04,E2,ELYSIUM-FLAWS-2,SEC,CSRF token compared with != rather than compare_digest,api/csrf,IN,unverified
-E-05,E2,ELYSIUM-FLAWS-2,SEC,no Permissions-Policy header,api/app.py,IN,unverified
+E-04,E2,ELYSIUM-FLAWS-2,SEC,CSRF token compared with != rather than compare_digest,api/csrf,IN,"ALREADY FIXED (patch 321) - verified: csrf_middleware.py uses secrets.compare_digest, with a comment naming E-04"
+E-05,E2,ELYSIUM-FLAWS-2,SEC,no Permissions-Policy header,api/app.py,IN,"ALREADY FIXED - verified: api/app.py sets a Permissions-Policy header on every response"
 E-06,E2,ELYSIUM-FLAWS-2,SEC,failure kinds are runtime exception class names,api,IN,"owner decision"
 E-07,E2,ELYSIUM-FLAWS-2,CORR,a link's id type depends on the read path,mediator,IN,"= PA001-G6; owner decision"
-E-08,E2,ELYSIUM-FLAWS-2,CORR,17 unit tests fail on a fresh clone,tests/unit,RP,unverified
+E-08,E2,ELYSIUM-FLAWS-2,CORR,17 unit tests fail on a fresh clone,tests/unit,RP,"ALREADY FIXED - verified: the whole suite passes on a fresh clone, checked on every patch today"
 E-09,E2,ELYSIUM-FLAWS-2,CORR,no CI of any kind,.github/,IN,"audit set 2 says CI added at 3799d90"
 E-10,E2,ELYSIUM-FLAWS-2,CORR,mirror read path 8-10x slower than live; ~86% catalog load,mirror_adapter.py,RP,unverified
 E-11,E2,ELYSIUM-FLAWS-2,CORR,model calls have no deadline and discard token counts,core/llm,IN,"partly addressed since"
@@ -289,3 +289,7 @@ LLM3-3,SECURITY,reported by LLM3,OPEN,"the general principle: the security attri
 NEW-5,NEW,found while checking A12,OPEN,"an UNDECLARED source column is copied into the lake in the clear - measured: an SSN the ontology never declared sits in a bronze parquet file. It has no field grant and reaches no read path, so 'we only expose what the ontology declares' is true of the READ PATHS and false of the LAKE. The decision record mentions storage and lineage and not this",core/mirror/iceberg_sync.py _write_bronze,"measured 25 Sep","OWNER DECISION - opt-out per silo, encryption at rest, or accept and document"
 LLM3-4,SECURITY,consequence of patch 441,RECORDED,"identity compares security values to decide a merge, and they are no longer standardised - so two storages holding 'us-west ' and 'us-west' now REFUSE the merge and send it to review rather than merging. Conservative and correct, but a real change: untidy region values mean more review queue",core/mirror/identity.py,"measured 26 Sep","PINNED patch 445"
 NEW-6,NEW,found while doing ZOO-03/04,OPEN,"the invisible-character rule is OPT-IN, so a deployment that has not heard of tag smuggling declares nothing and is not protected. Detecting by default would change what every existing deployment reports",core/ontology/constraints.py,"reasoned","OWNER DECISION - default on or off"
+LLM3-5,COORD,request from LLM3,ANSWERED,"seven security items read unverified while UNIFIED_ROADMAP recorded them fixed - the CSV and the roadmap disagreed and the CSV is what 001SECURITY.txt points agents at. All seven verified by LLM1 and corrected",AUDIT_CHECKLIST.csv,"verified 26 Sep","patch 448"
+LLM3-6,COORD,request from LLM3,ANSWERED,"000COORDINATION.md and 001SECURITY.txt both named api/csrf.py; the file is api/csrf_middleware.py. An agent grepping for it would conclude the CSRF layer was missing",000COORDINATION.md 001SECURITY.txt,"verified 26 Sep","patch 448"
+LLM3-7,COORD,request from LLM3,ANSWERED,"a word-in-source test asserted two literal strings appeared in create_debug_user.py - the shape AGENTS.md:470 calls not a test, and it blocked sharing the guard across three scripts (which is how F-30 happened). Replaced with a behavioural check that RUNS the script",tests/unit/test_template_is_a_valid_deployment.py,"control verified","patch 448"
+AL-R1,COORD,request from LLM2,BLOCKED ON MERGE,"wire RetryingLLMAdapter into the generation in core/deployment_loader.py - AL-5 is inert without it. CANNOT BE DONE ON backend: the adapter only exists on agentloop, so the import would fail. Must land on dev after that branch merges",core/deployment_loader.py,"verified 26 Sep","scheduled"

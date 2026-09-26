@@ -133,11 +133,34 @@ def test_the_debug_role_invents_no_permission():
     }
 
 
-def test_the_debug_script_refuses_without_the_flag():
-    # A guard rather than a warning: this script exists to be run
-    # without thinking, which is exactly the property that gets it run
-    # somewhere it should not be.
-    source = (DEPLOYMENT.parent.parent / "scripts" / "create_debug_user.py").read_text()
+def test_the_debug_script_refuses_without_the_flag(monkeypatch, tmp_path):
+    """The guard REFUSES, checked by running it.
 
-    assert "--yes-this-is-development" in source
-    assert "REFUSING" in source
+    THIS USED TO ASSERT TWO WORDS APPEARED IN THE SOURCE FILE --
+    "--yes-this-is-development" and "REFUSING". AGENTS.md already
+    records that shape as not a test: "A test asserting a WORD appears
+    in source is not a test", because it is satisfied by deleting the
+    behaviour and leaving the word in a comment.
+
+    IT ALSO BLOCKED A REAL IMPROVEMENT. Three scripts need this guard;
+    two carried inline copies and one did not, which is how F-30
+    happened. Sharing the guard moves those literal strings out of
+    create_debug_user.py and would have failed this test for doing the
+    right thing. Reported by the security agent (LLM3), whose own
+    behavioural version globs every create_*_user script -- this one
+    covers the same ground on this branch so there is no gap in
+    between.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.create_debug_user"],
+        capture_output=True, text=True, cwd=DEPLOYMENT.parent.parent,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
+    )
+
+    assert result.returncode != 0, "the script ran without the flag"
+    said = (result.stdout + result.stderr).lower()
+    assert "development" in said, (
+        "the refusal does not tell the operator what to do instead")

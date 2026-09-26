@@ -22,7 +22,7 @@ branch you would switch to, and git will refuse.
                                       policy_validation, auth)
     core/ontology/write_mediator.py  core/ontology/write_log.py
     core/pending_write_*.py          core/identity_decisions.py
-    api/csrf.py                      api/app.py
+    api/csrf_middleware.py                      api/app.py
     scripts/create_*_user.py
     tests/unit/test_* for the above
 
