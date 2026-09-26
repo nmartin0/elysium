@@ -78,7 +78,28 @@ def _csrf_headers(client):
     # the one piece it does NOT attach for us, since only real,
     # same-origin JS is meant to know to do that -- see api/
     # csrf_middleware.py's own docstring).
-    return {"X-CSRF-Token": client.cookies.get("elysium_csrf")}
+    token = client.cookies.get("elysium_csrf")
+    # SAY WHAT IS WRONG. Without this, a client with no session
+    # produces {"X-CSRF-Token": None} and the failure surfaces from
+    # inside the HTTP library as
+    #
+    #     TypeError: Header value must be str or bytes, not
+    #     <class 'NoneType'>
+    #
+    # naming neither the cookie, nor the client, nor the login that
+    # did not happen. That message cost an investigation that could
+    # not reproduce it (MERGE-1): it describes a malformed header when
+    # what occurred is that a session was never established.
+    #
+    # MERGE-1 IS INTERMITTENT -- it passed on retry with nothing
+    # fixed -- so this does not prevent it. It makes the next
+    # occurrence reportable instead of mysterious.
+    assert token is not None, (
+        "this client has no elysium_csrf cookie, so no session was "
+        "established -- the login before this call did not take. "
+        f"Cookies present: {sorted(client.cookies.keys())}"
+    )
+    return {"X-CSRF-Token": token}
 
 
 def _capture_session(client):
