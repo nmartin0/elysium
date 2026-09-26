@@ -10,9 +10,11 @@ get_enabled_functions([]) is a valid, common case, not an error.
 """
 
 from core.functions.interface import Function
+from functions.calculator import CalculatorFunction
 from functions.linear_regression import LinearRegressionFunction
 
 _FUNCTION_REGISTRY: dict[str, type] = {
+    "calculator": CalculatorFunction,
     "linear_regression": LinearRegressionFunction,
 }
 

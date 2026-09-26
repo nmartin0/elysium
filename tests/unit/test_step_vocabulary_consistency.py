@@ -83,7 +83,7 @@ def test_every_step_the_prompt_teaches_has_a_handler():
     # The third side, and the one nobody thinks of. Teaching the model a
     # vocabulary nothing can execute wastes a hop per attempt -- roughly
     # 190 seconds on the CPU-only deployment this was found on.
-    prompt = _build_system_prompt({}, [], True, {}, [])
+    prompt = _build_system_prompt({}, [], True, {})
     taught = set(re.findall(r'"step":\s*"([a-z_]+)"', prompt))
     taught.discard("finish")  # handled by the loop, not by a handler
 
@@ -95,7 +95,7 @@ def test_every_step_the_prompt_teaches_has_a_handler():
 def test_the_prompt_teaches_every_step_that_has_a_handler():
     # The other direction. A handler nothing is told about is dead code
     # -- it cannot be reached, because only the model emits steps.
-    prompt = _build_system_prompt({}, [], True, {}, [])
+    prompt = _build_system_prompt({}, [], True, {})
     taught = set(re.findall(r'"step":\s*"([a-z_]+)"', prompt))
 
     # use_tool and propose_action are conditional on the deployment

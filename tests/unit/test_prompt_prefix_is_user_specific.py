@@ -66,8 +66,8 @@ def test_two_users_with_disjoint_schemas_share_almost_no_prefix():
     ABOVE the schema, which would take this into the thousands.
     """
     shared = _shared_prefix(
-        _build_system_prompt(CUSTOMER, [], False, {}, []),
-        _build_system_prompt(SHIPMENT, [], False, {}, []),
+        _build_system_prompt(CUSTOMER, [], False, {}),
+        _build_system_prompt(SHIPMENT, [], False, {}),
     )
 
     assert shared <= MAX_SHARED_CHARS, (
@@ -83,7 +83,7 @@ def test_the_schema_appears_before_the_examples():
     A character budget catches the large regression; this catches the
     intent directly, and says which way round the file must stay.
     """
-    prompt = _build_system_prompt(CUSTOMER, [], False, {}, [])
+    prompt = _build_system_prompt(CUSTOMER, [], False, {})
 
     assert prompt.index("Customer") < prompt.index("PLACEHOLDER")
 
@@ -96,7 +96,7 @@ def test_the_same_user_gets_a_byte_identical_prompt():
     evaluation is already the dominant cost. The goal is divergence
     BETWEEN users, not noise within one.
     """
-    first = _build_system_prompt(CUSTOMER, [], False, {}, [])
-    second = _build_system_prompt(CUSTOMER, [], False, {}, [])
+    first = _build_system_prompt(CUSTOMER, [], False, {})
+    second = _build_system_prompt(CUSTOMER, [], False, {})
 
     assert first == second

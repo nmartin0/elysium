@@ -23,7 +23,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
+from core.agent.agentic_loop import AgentLoop, StopReason
 from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
@@ -115,7 +115,9 @@ def test_business_rule_violation_produces_rejected_business_rule_not_invalid_ste
 
     assert gathered[-1]["step"] == "rejected_business_rule"
     assert "must currently be closed" in gathered[-1]["note"]
-    assert (consecutive_invalid, consecutive_business_rule, should_stop, pending) == (0, 1, False, None)
+    # None, not False: _execute_step returns the REASON it stopped, and
+    # None means it did not (AL-6/LB-3).
+    assert (consecutive_invalid, consecutive_business_rule, should_stop, pending) == (0, 1, None, None)
 
 
 def test_invalid_step_does_not_affect_the_business_rule_counter(loop):
@@ -145,10 +147,12 @@ def test_business_rule_rejections_stop_at_their_own_cap(loop):
     gathered = []
 
     _, count, should_stop, _ = loop._execute_step(_reopen_step(), lead, visible_schema, gathered, 0, 0)
-    assert should_stop is False
+    assert should_stop is None
     _, count, should_stop, _ = loop._execute_step(_reopen_step(), lead, visible_schema, gathered, 0, count)
     assert count == 2
-    assert should_stop is True
+    # NAMED, so a caller can say which cap was hit rather than only
+    # that one was.
+    assert should_stop == StopReason.BLOCKED_BY_RULES
 
 
 def test_a_genuine_success_resets_both_counters(loop):
@@ -184,7 +188,7 @@ def test_propose_action_step_is_rejected_gracefully_when_writes_are_disabled():
 
     assert gathered[-1]["step"] == "rejected_invalid_step"
     assert "Writes are not enabled" in gathered[-1]["note"]
-    assert (consecutive_invalid, consecutive_business_rule, should_stop, pending) == (1, 0, False, None)
+    assert (consecutive_invalid, consecutive_business_rule, should_stop, pending) == (1, 0, None, None)
 
 
 def test_rejected_business_rule_is_bookkeeping_stripped_before_synthesis():

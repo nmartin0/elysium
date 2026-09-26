@@ -16,7 +16,7 @@ import requests
 
 from adapters.ollama_adapter import OllamaAdapter
 from core.llm import synthesis_prompt
-from core.llm.agent_step_prompt import next_step
+from core.llm.agent_step_prompt import UNPARSEABLE_REPLY, next_step
 from core.llm.interface import LLMUnavailable
 from core.ontology.action_types import validate_action_types
 
@@ -63,7 +63,11 @@ class TestF15ValidJsonThatIsNotAnObject:
     def test_each_shape_finishes_instead_of_crashing(self, payload):
         step = next_step(_Answering(payload), "who?", SCHEMA, [], [], False, {})
 
-        assert step == {"step": "finish"}
+        # NAMES ITS CAUSE (LB-3). Finishing here is right -- there may be
+        # real gathered context -- but it used to be indistinguishable
+        # from the model deciding it was done, so the caller was told a
+        # complete answer had been produced from an unusable reply.
+        assert step == {"step": "finish", "fallback": UNPARSEABLE_REPLY}
 
     def test_an_object_still_works(self):
         step = next_step(_Answering('{"step": "finish"}'), "who?", SCHEMA, [], [], False, {})
@@ -79,7 +83,7 @@ class TestF15ValidJsonThatIsNotAnObject:
         with caplog.at_level(logging.WARNING):
             step = next_step(_Answering('"finish"'), "who?", SCHEMA, gathered, [], False, {})
 
-        assert step == {"step": "finish"}
+        assert step == {"step": "finish", "fallback": UNPARSEABLE_REPLY}
         assert gathered == [{"step": "search_object", "result": ["cust_001"]}]
 
 

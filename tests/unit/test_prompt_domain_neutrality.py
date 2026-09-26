@@ -92,7 +92,7 @@ def _step_prompt():
     no ontology to describe is something it says about ITSELF, which is
     exactly what a domain noun here would be.
     """
-    return _build_system_prompt({}, [], False, {}, [])
+    return _build_system_prompt({}, [], False, {})
 
 
 def test_the_step_prompt_names_no_ontology_noun():
