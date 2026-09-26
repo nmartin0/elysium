@@ -2184,3 +2184,89 @@ The single highest-value action remains the VM run: AL-8, pass^k,
 `fabricated_finishes` and the parse-failure rate are all in place, so
 one session produces the reliability figure AND the number that says
 whether D1 is even the right lever.
+
+---
+
+# LB-2 -- THE PROPOSAL. Not built. Its entry requires this first.
+
+LB-2 says so itself: "This is F-18 on the roadmap, where it is
+recorded as a FEATURE whose priority is the owner's: propose before
+building." So this is the work, and the decision is yours.
+
+## It splits cleanly, and only one half is mine
+
+    the FILTER vocabulary   mine. mediator.search_object() already
+                            takes `conditions: list[FieldFilter]`, so
+                            the seven operators core/filters.py
+                            implements -- equals, in, not_in, range,
+                            date_range, relative_date, contains -- are
+                            supported DOWNSTREAM already. Only the
+                            agent is restricted, by
+                            as_equality_conditions() collapsing its
+                            filter on the way in.
+
+    ORDERING and LIMIT      NOT mine. search_object() has no ordering
+                            and no limit at all. Foundry treats both
+                            as first-class (`orderBy` with field and
+                            direction, `pageSize`/`pageToken`). Adding
+                            them is core/ontology/, so it needs
+                            backend whatever you decide here.
+
+## The data types, which are the enabling half
+
+The schema shown to the model renders every field as `name (data)`.
+It does not say whether a field is a string, a number or a date -- so
+the model could not choose a typed operator even if it knew one
+existed.
+
+**This is already inconsistent with what F-17 landed.** Action
+parameters DO state their type in the prose -- `new_from_balance
+(number, required)` -- while object fields do not. Same prompt, two
+answers to the same question.
+
+## The cost, measured rather than argued
+
+Because I have been inflating this prompt without measuring, and said
+so:
+
+    system prompt today          4966 chars (schema is 803, 16.2%)
+    data types on 9 fields       +18 chars
+    operator vocabulary block   +504 chars
+    both                        5488 chars  (+10.5%)
+
+Over the 9 hops AL-3 measured, the system prompt is re-sent every hop,
+so the pair costs **+4,698 characters per query**. AR-2 recovered
+about nine points of prefix reuse; this spends some of that back.
+
+**THE TWO HALVES HAVE VERY DIFFERENT PRICES.** Data types cost
+**+18 characters** and fix an inconsistency the prompt already has.
+The operator vocabulary costs **28 times more** and adds capability.
+
+## What I would do, and why
+
+**Take the data types now.** +18 chars, removes an inconsistency with
+F-17, and makes the model's schema honest about what it is looking at.
+It is not a feature -- nothing new becomes possible -- so F-18's
+"owner's priority" framing arguably does not even cover it.
+
+**Hold the operator vocabulary until the VM run.** It is +504 chars on
+every hop of every query, and the literature that made me withdraw
+AR-5 says the same thing here: a bigger prompt on a 3.8B model is not
+free, and the concerning case is a wrong answer in a valid shape.
+AL-8 and the parse-failure rate now exist precisely so this kind of
+change can be measured rather than assumed. Shipping it blind is what
+IDEAS.md's 19.7% -> 11.0% looked like on the way in.
+
+**Ordering and limit: file for backend, or drop.** Without them, a
+question like "the five largest transactions" cannot be answered
+properly however good the filters are -- the agent must pull
+everything and reason over it, which MAX_OBJECT_IDS caps at 20. That
+is a real hole, and it is the one half nobody has proposed fixing.
+
+## The questions, in the order that unblocks most
+
+1. **Data types in the schema block -- yes?** +18 chars, no new
+   capability. I would take it today.
+2. **Operator vocabulary -- now, or after the VM run?** I recommend
+   after, and would rather be overruled than ship it unmeasured.
+3. **Ordering and limit -- file R5 for backend, or close as declined?**
