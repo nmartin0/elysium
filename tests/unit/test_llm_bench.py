@@ -42,15 +42,22 @@ class Scripted:
             self._unusable -= 1
             return "not json at all"
         for case in CASES:
-            if case.query in user_message:
-                fact = case.expected_facts[0]
-                if f'"field_name": "{fact.field_name}"' in user_message:
-                    return '{"step": "finish"}'
-                return (
-                    f'{{"step": "get_field", "object_type": "{fact.object_type}", '
-                    f'"object_id": "{fact.object_id}", '
-                    f'"field_name": "{fact.field_name}"}}'
-                )
+            if case.query not in user_message:
+                continue
+            # EVERY expected fact, not just the first. link_fanout
+            # needs two reads, and a stand-in that answers one of them
+            # would let a case pass here that a real model would fail.
+            for fact in case.expected_facts:
+                already = (f'"object_id": "{fact.object_id}"' in user_message
+                           and f'"field_name": "{fact.field_name}"' in user_message)
+                if not already:
+                    return (
+                        f'{{"step": "get_field", '
+                        f'"object_type": "{fact.object_type}", '
+                        f'"object_id": "{fact.object_id}", '
+                        f'"field_name": "{fact.field_name}"}}'
+                    )
+            return '{"step": "finish"}'
         return '{"step": "finish"}'
 
 

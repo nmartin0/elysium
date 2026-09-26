@@ -122,12 +122,32 @@ CASES = (
         ),
     ),
     EvalCase(
-        name="two_hops",
+        # RENAMED FROM two_hops, WHICH IT NEVER WAS. The plan it
+        # actually produced was a search with TWO FILTERS and one
+        # read -- two constraints, not two hops. It is a real case and
+        # worth keeping; the name was just wrong, and a case set that
+        # lies about what it covers is worse than a smaller one.
+        name="two_constraints",
         query="What is the email address of the customer in the us-west region "
               "whose name is Ada Okafor?",
         user_id=USER_ID,
         expected_facts=(
             ExpectedFact("Customer", "cust_001", "email", "ada.okafor@example.com"),
+        ),
+    ),
+    EvalCase(
+        # THE CASE THE SET WAS MISSING, and the gap only became visible
+        # once --show-plan printed what the model wrote: every plan so
+        # far resolved its handle to a SINGLE id, so the fan-out path
+        # and the MAX_PLAN_FANOUT refusal have never run against a
+        # real model. cust_001 has exactly two transactions, so a
+        # correct plan must traverse the link and read BOTH.
+        name="link_fanout",
+        query="What are the amounts of all of Ada Okafor's transactions?",
+        user_id=USER_ID,
+        expected_facts=(
+            ExpectedFact("Transaction", "1", "amount", "49.99"),
+            ExpectedFact("Transaction", "2", "amount", "199"),
         ),
     ),
 )

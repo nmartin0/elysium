@@ -3175,3 +3175,72 @@ reading of CaMeL alone.
 It is still NOT the default, and should not be until `two_hops` and a
 fan-out case have run. The sibling entry point exists precisely so
 that decision can wait for evidence instead of preceding it.
+
+---
+
+# Two more plan-mode runs. A handle again, and a flaw in my case set.
+
+## two_constraints (was two_hops): handle used again
+
+    {"plan": [
+      {"id": "a", "step": "search_object", "object_type": "Customer",
+       "filter": {"name": "Ada Okafor", "region": "us-west"}},
+      {"id": "b", "step": "get_field", "object_type": "Customer",
+       "object_id": "$a", "field_name": "email"}
+    ]}
+
+`$a` again, and **both constraints from the question** correctly
+pulled into one filter. Passed, one call, 51.27s.
+
+## MY CASE WAS MISNAMED, and --show-plan is what exposed it
+
+I called that case `two_hops`. **It is not two hops.** The plan is a
+search with two filters and one read -- two CONSTRAINTS. Renamed to
+`two_constraints`, which is what it tests and a real thing to test.
+
+A case set that lies about what it covers is worse than a smaller one,
+and I would not have noticed without printing the plan.
+
+**So the fan-out path has still never run against a real model.**
+Every plan so far resolved its handle to a SINGLE id, which means the
+fan-out semantics and the `MAX_PLAN_FANOUT` refusal -- two of commit
+3's three controls -- remain unit-tested only.
+
+Added `link_fanout`: *"What are the amounts of all of Ada Okafor's
+transactions?"* `cust_001` has exactly two, so a correct plan must
+traverse the link and read BOTH. Expected facts are `49.99` and `199`,
+verified readable through the real mediator by the existing test.
+
+## pass^3: 3/3, and still degenerate
+
+Three trials of `one_field` in plan mode, all passing, zero parse
+failures. **pass^3 = 1.0 but degenerate** -- it cannot distinguish,
+because nothing varied.
+
+That is the expected result at temperature 0 and it closes the
+question rather than leaving it open: **this loop does not vary, so
+pass^k will not say anything about this deployment** unless something
+changes. Worth knowing; it means reliability effort belongs elsewhere.
+
+## AND IT CORRECTS MY SPEED CLAIM
+
+Three trials, IDENTICAL 7,114-character prompts, fully cached:
+
+    119.36s    101.66s    113.65s
+
+Same input, same output, **18% spread** -- and earlier runs of the
+same thing took 62.16s and 85.39s. So plan mode has been measured
+between **51s and 119s for identical work**, a better-than-2x range
+driven by machine noise rather than anything in the code.
+
+I said "64% faster" and then "73% faster". **Neither number is
+trustworthy from one sample each.** What the data supports is the
+direction and the order of magnitude: plan mode is roughly two to four
+times faster than the loop on this case, one call against three. The
+percentage needs repeated trials of BOTH modes, and I should not have
+quoted two decimal places off n=1.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3065 passed, 8 skipped
