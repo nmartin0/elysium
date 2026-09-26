@@ -1552,12 +1552,70 @@ class WriteMediator:
         for object_type, object_id, criteria in self._criteria_for(pending):
             if not criteria:
                 continue
+            self._refuse_criteria_this_write_cannot_answer(pending, criteria)
             current_state = self._read_current_state_for_criteria(
                 object_type, object_id, criteria,
             )
             evaluate_submission_criteria(
                 criteria, current_state, pending.parameters, approver,
                 proposer=pending.proposer,
+            )
+
+    def _refuse_criteria_this_write_cannot_answer(self, pending: PendingWrite,
+                                                   criteria: list) -> None:
+        """Refuses a stored write a NEW parameter rule cannot be tested on.
+
+        THE UNSTATED PRECONDITION (001's F-08), made concrete at the
+        confirm path. A "parameter" criterion is silently SKIPPED when
+        its field is absent from the call's parameters, and at PROPOSE
+        time that is right: a rule about `amount` has nothing to say
+        about an action never given an amount, and required-ness is
+        validated before criteria are ever evaluated (propose_action,
+        the "Missing required parameter" raise).
+
+        AT CONFIRM THE ORDERING DOES NOT HOLD, because the two halves
+        come from different moments. _criteria_for() deliberately reads
+        the CURRENT action definition -- "a write proposed before a
+        four-eyes rule was added must still obey it" -- while
+        pending.parameters was captured under the definition in force
+        when it was proposed. REPRODUCED before fixing:
+
+            stored parameters : {'employee_id': 'e1'}
+            new rule          : amount less_than 1000
+            verdict           : PASSED -- silently skipped
+
+            the same rule with `amount` supplied -> correctly refused
+
+        So a rule added today is skipped precisely BECAUSE the write
+        predates it, which is the exact opposite of what _criteria_for
+        promises.
+
+        NARROW ON PURPOSE: only a parameter the CURRENT definition
+        declares `required: true` can be absent for this reason. An
+        OPTIONAL parameter being absent is the legitimate case the skip
+        was designed for and is indistinguishable from it, so it is
+        left alone -- widening this would start inventing violations.
+
+        REFUSES RATHER THAN SKIPS, following _fields_no_longer_declared
+        and log_write_unapplyable: a stored write that cannot be judged
+        under today's rules is re-proposed, not waved through. Fail
+        closed is this project's posture everywhere else.
+        """
+        declared = (self.action_types.get(pending.action_type_name) or {}).get("parameters") or {}
+        for criterion in criteria:
+            if criterion.get("check") != "parameter":
+                continue
+            field_name = criterion.get("field")
+            if field_name in pending.parameters:
+                continue
+            if not (declared.get(field_name) or {}).get("required"):
+                # Optional and unsupplied: the skip's original, correct case.
+                continue
+            raise ValueError(
+                f"This write was proposed before {field_name!r} became a required "
+                f"parameter of {pending.action_type_name!r}, so the rule "
+                f"{criterion.get('description') or field_name!r} cannot be checked "
+                f"against it. Re-propose the action."
             )
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool,
