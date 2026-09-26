@@ -297,6 +297,13 @@ def _targets_for_type(type_def: dict):
         if id_type is not None:
             types_by_storage[storage_key][storage["id_column"]] = id_type
 
+    # WHICH FIELD DECIDES WHO MAY SEE A ROW. A type whose security is
+    # reached through a link (`via_field`) has no such column of its
+    # own, and `.get` returning None then matches no field name --
+    # which is correct here and NOT a fix for that case. See the
+    # commit message.
+    security_field = (type_def.get("security") or {}).get("field")
+
     for field_name, field_config in type_def.get("fields", {}).items():
         if field_config.get("via_table"):
             # A reverse link -- lives in the OTHER type's table, which is
@@ -323,6 +330,32 @@ def _targets_for_type(type_def: dict):
             rules = rules_for(field_config)
         except ValueError as e:
             raise ValueError(f"Field {field_name!r}: {e}") from None
+        if field_name == security_field:
+            # THE SECURITY FIELD IS NOT STANDARDISED, and this is the
+            # SAME DECISION UNIFIED_ROADMAP.md already records for type
+            # coercion, in its own words:
+            #
+            #   THE SECURITY-VALUE PATH IS DELIBERATELY EXCLUDED -- it
+            #   is compared for equality against the user's own, and
+            #   changing the representation of one side of the
+            #   comparison that decides authorization is not worth
+            #   tidying a region name for.
+            #
+            # It was not carried across when standardisation was built,
+            # and the consequence is measurable. A customer whose
+            # source `region` is "us-west " (a trailing space):
+            #
+            #   LIVE   read: {'name': None}    -- invisible
+            #   MIRROR read: {'name': 'Ada'}   -- VISIBLE
+            #
+            # A whitespace rule moved an access boundary. No audit
+            # entry, no approval, and nothing downstream can tell the
+            # difference between "we corrected a typo" and "we widened
+            # access", because to the pipeline they are one operation.
+            #
+            # FOUND BY THE SECURITY AGENT (LLM3) and reproduced here
+            # before acting on it.
+            rules = None
         if rules is not None:
             standardisation_by_storage[storage_key][column] = rules
         try:

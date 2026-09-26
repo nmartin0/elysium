@@ -90,12 +90,20 @@ class TestDeclaringTheRules:
             "storage": {"silo": "s", "table": "customers", "id_column": "customer_id"},
             "security": {"field": "region"},
             "fields": {"region": {"type": "data"},
+                       "name": {"type": "data"},
                        "raw": {"type": "data", "standardise": False}},
         }}}
 
         target = resolve_sync_targets(schema)[0]
 
-        assert "region" in target.standardisation and "raw" not in target.standardisation
+        # `name`, NOT `region`. This used to assert that the SECURITY
+        # field was standardised, which was the defect LLM3 found: a
+        # trimmed region made a row VISIBLE in the mirror that the
+        # source kept hidden. This test's purpose is that rules reach
+        # the target and `standardise: false` is honoured, and `name`
+        # shows both without asserting the thing that was wrong.
+        assert "name" in target.standardisation and "raw" not in target.standardisation
+        assert "region" not in target.standardisation
 
     def test_a_bad_rule_names_the_field(self):
         schema = {"object_types": {"Customer": {
