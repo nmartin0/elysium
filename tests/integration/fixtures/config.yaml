@@ -21,7 +21,26 @@ llm:
     # full Ollama restart in between -- ruling out a stuck/hung process
     # as the cause). This is a genuine hardware-capacity accommodation,
     # not a workaround for a hang or a bug.
-    request_timeout_seconds: 480
+    #
+    # RAISED AGAIN, 480 -> 600, ON A NEW MEASUREMENT: a COLD first call
+    # exceeds 480. scripts/llm_bench.py timed one at 520.89s against
+    # the dev deployment -- whose schema is SMALLER than this fixture's
+    # -- and the injection test here died at exactly `read timeout=480`
+    # on its first hop, with `gathered` still empty.
+    #
+    # THE PATTERN MATTERS MORE THAN THE NUMBER. 240 -> 480 -> 600 is
+    # chasing a figure, and it stops here for a reason rather than
+    # another increment: a cold call is a DIFFERENT COST from a warm
+    # one, not a slower one. Nothing is cached, so the whole prompt is
+    # read at the ~5.4 tokens/s prompt-eval rate. deployment/etc/
+    # config.yaml already chose 600 on exactly that reasoning -- "240
+    # timed out on the first hop" -- so this is now aligned with it
+    # rather than guessed separately.
+    #
+    # A timeout below the cost of a cold call does not protect
+    # anything: it guarantees the first query after a model load
+    # fails, which is the one a person is most likely to be watching.
+    request_timeout_seconds: 600
   step_model: "qwen3:4b-instruct-2507-q4_K_M"
   synthesis_model: "qwen2.5:3b"
 
