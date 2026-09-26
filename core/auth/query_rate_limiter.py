@@ -87,6 +87,79 @@ class QueryRateLimiter:
 
         return row["query_count"] >= MAX_QUERIES_PER_WINDOW
 
+    def try_record_query(self, user_id: str) -> bool:
+        """Records one query and says whether it was allowed, atomically.
+
+        THE DEFECT THIS REPLACES (001's F-05). record_query() is
+        already atomic; the SEQUENCE around it was not. api/routes.py
+        did:
+
+            if query_rate_limiter.is_rate_limited(user_id):   # txn 1
+                raise HTTPException(429, ...)
+            query_rate_limiter.record_query(user_id)          # txn 2
+
+        Another caller checks between those two lines, sees the same
+        count, and is let through. Neither method is wrong; the
+        sequence is. MEASURED: with the count at 19 of 20, two callers
+        both check, both pass, both record, and the count reaches 21.
+        The overshoot is (callers inside the window) - 1, so with the
+        default pool of four the realistic worst case is three past the
+        limit.
+
+        ONE IMMEDIATE TRANSACTION, which is also what the precedent
+        says for this algorithm specifically. A naive token bucket has
+        a race "potentially resulting in a request above the limit
+        passing through", and the published remedy is that checking and
+        updating happen in a single operation. Ours is a FIXED WINDOW,
+        which is the algorithm that answer is easiest for -- fixed
+        window counters can be implemented with an atomic
+        increment-and-get, unlike algorithms that need multiple steps.
+
+        RETURNS A BOOL RATHER THAN RAISING, so the route keeps its own
+        HTTPException and its own message. A store that raised an HTTP
+        concern would put a second opinion about status codes in
+        core/, which is not where that belongs.
+
+        DOES NOT INCREMENT WHEN IT REFUSES. A refused query cost no
+        model call, so counting it would extend the lockout for work
+        that never happened -- and would let a client that keeps
+        retrying hold its own window open forever.
+
+        is_rate_limited() STAYS, for a caller that only wants to ask
+        without consuming. Nothing in the product does today; it is the
+        honest primitive and removing it would be a separate decision.
+        """
+        with connection(self._db_path) as conn, immediate_transaction(conn):
+            row = conn.execute(
+                "SELECT query_count, window_started_at FROM query_rate_limits WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+
+            now = datetime.now(UTC)
+            window_expired = (
+                row is None
+                or now - datetime.fromisoformat(row["window_started_at"]) >= WINDOW
+            )
+            if window_expired:
+                conn.execute(
+                    """
+                    INSERT INTO query_rate_limits (user_id, query_count, window_started_at)
+                    VALUES (?, 1, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET query_count = 1, window_started_at = excluded.window_started_at
+                    """,
+                    (user_id, now.isoformat()),
+                )
+                return True
+
+            if row["query_count"] >= MAX_QUERIES_PER_WINDOW:
+                return False
+
+            conn.execute(
+                "UPDATE query_rate_limits SET query_count = query_count + 1 WHERE user_id = ?",
+                (user_id,),
+            )
+            return True
+
     def record_query(self, user_id: str) -> None:
         # An immediate transaction: this counter is read, compared
         # against its window, then written. Without it two concurrent

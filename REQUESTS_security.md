@@ -562,3 +562,41 @@ two documents disagree and neither says which wins.
 
 Not asking for the patch to be reverted; asking for the two documents
 to be reconciled and for one of them to be named as authoritative.
+
+---
+
+## F-05: the two-line swap in api/routes.py, ready to apply
+
+NEEDS: backend
+
+WHAT: replace `api/routes.py:3378-3380`
+
+    if request.app.state.query_rate_limiter.is_rate_limited(current_user.user_id):
+        raise HTTPException(status_code=429, detail="Too many queries -- please wait before trying again")
+    request.app.state.query_rate_limiter.record_query(current_user.user_id)
+
+with
+
+    if not request.app.state.query_rate_limiter.try_record_query(current_user.user_id):
+        raise HTTPException(status_code=429, detail="Too many queries -- please wait before trying again")
+
+WHY: the two calls are separate transactions, so another caller checks
+between them, sees the same count and is let through. Measured: at 19
+of 20, two callers both pass and the count reaches 21. Bounded at
+(callers inside the window) - 1, so with the default pool of four the
+realistic worst case is three past the limit.
+
+`try_record_query()` is BUILT AND TESTED on the security branch -- one
+immediate transaction, returns a bool so the route keeps its own
+status code and message, and does not increment when it refuses. Ten
+tests, two controls fired.
+
+`is_rate_limited()` is deliberately kept for a caller that only wants
+to ask without consuming. Nothing uses it after this swap; removing it
+is a separate decision and not mine to take.
+
+MEANWHILE: nothing. The method has no production caller until this
+lands, which vulture tolerates because its paths include `tests`. I
+did not edit `api/routes.py`. The owner approved my taking that file
+for this and for E-02 SUBJECT TO YOUR AGREEMENT -- say the word and I
+will do both in one change, since they touch the same file.
