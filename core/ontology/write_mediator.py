@@ -1660,6 +1660,7 @@ class WriteMediator:
             # made before a constraint existed must not slip through by
             # being approved after it -- re-evaluated at the point of use.
             self._refuse_constraint_violations(pending.sub_writes)
+            self._refuse_if_the_proposer_lost_the_grant(pending)
             unapplyable = self._fields_no_longer_declared(pending)
             if unapplyable:
                 self.audit_log.log_write_unapplyable(
@@ -1864,6 +1865,69 @@ class WriteMediator:
                     problems.append(f"{sub_write.object_type}.{field_name}: {reason}")
         if problems:
             raise ConstraintViolation("; ".join(problems))
+
+    def _refuse_if_the_proposer_lost_the_grant(self, pending: PendingWrite) -> None:
+        """Refuses a write whose proposer may no longer run this action.
+
+        THE INVARIANT THIS WAS MISSING. SECURITY_ARCHITECTURE.md:
+        "AUTHORITY IS NEVER STORED. It is re-evaluated at the point of
+        use, against the CURRENT generation. A pending write survives a
+        restart and a reload, so a decision taken at proposal would be
+        taken under rules that may no longer exist."
+
+        Confirm already re-evaluates plenty -- submission criteria
+        against the approver, constraints, fields the ontology no
+        longer declares, and MAC against the approver. It did NOT
+        re-evaluate the PROPOSER's own execute: grant, so an action
+        whose grant was revoked from a role after proposal could still
+        be approved and run. Runtime role editing makes that a live
+        path rather than a theoretical one: manage:roles exists,
+        role_changes.py applies it, and the queue's TTL is fifteen
+        minutes.
+
+        AGAINST self.roles, WHICH IS THE CURRENT GENERATION'S. That is
+        the whole point; comparing against the roles captured at
+        proposal would re-store exactly the authority this refuses to
+        store.
+
+        WHAT THIS DOES NOT CATCH, said plainly rather than left to be
+        discovered. `pending.proposer` is a snapshot, so a proposer who
+        has since been DISABLED, DELETED, or MOVED TO ANOTHER ROLE is
+        not detected here -- that needs the user directory, which this
+        mediator does not hold and which is wired in api/routes.py.
+        Filed in REQUESTS_security.md. Note that disable_user() and
+        delete_user() already delete the account's SESSIONS in the same
+        transaction, so a disabled proposer cannot themselves act; what
+        survives is the queued write somebody else may approve.
+
+        A ValueError, matching _fields_no_longer_declared, so the route
+        answers 409 -- the request is no longer applicable, rather than
+        the approver being forbidden.
+        """
+        if pending.proposed_under_generation == self.generation:
+            # NOTHING HAS CHANGED, so there is nothing to re-evaluate.
+            # The grant was checked at propose_action() against these
+            # very roles; asking again would be the same question to
+            # the same data.
+            #
+            # THIS IS ALSO WHAT KEEPS THE CHECK HONEST. Written without
+            # it, the check fired on every confirm and broke 23 tests
+            # that build a PendingWrite directly and never went through
+            # propose_action -- so it was refusing writes whose
+            # proposer had lost nothing. A guard that fires when
+            # nothing changed is not enforcing the invariant, it is
+            # just failing.
+            return
+
+        execute_action_id = f"execute:{pending.action_type_name}"
+        if authorize(pending.proposer, self.roles, execute_action_id):
+            return
+        raise ValueError(
+            f"This write can no longer be applied: {pending.proposer.user_id!r} no "
+            f"longer holds {execute_action_id!r} under configuration generation "
+            f"{self.generation}. It was proposed under generation "
+            f"{pending.proposed_under_generation}. Re-propose it if it is still wanted."
+        )
 
     def _fields_no_longer_declared(self, pending: PendingWrite) -> list[str]:
         """Fields this write targets that the current ontology lacks.

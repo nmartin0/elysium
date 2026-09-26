@@ -654,3 +654,41 @@ absolute number. An attacker with many addresses is bounded
 per-address. That is the standard limitation of source-based
 throttling and the reason the OWASP guidance pairs it with device
 cookies rather than treating it as complete.
+
+---
+
+## A disabled proposer's queued write can still be approved
+
+NEEDS: backend (api/routes.py)
+
+WHAT: at confirm, before invoking, check that the proposer is still an
+enabled, existing user -- `request.app.state.user_directory`
+`.is_user_disabled(pending.proposer.user_id)` and `user_exists(...)`
+-- and refuse with the same 409 shape as the other
+no-longer-applicable refusals.
+
+WHY: `SECURITY_ARCHITECTURE.md:298` -- "AUTHORITY IS NEVER STORED. It
+is re-evaluated at the point of use, against the CURRENT generation."
+I have closed the part I can reach (commit on this branch): the
+proposer's `execute:` grant is now re-checked when the configuration
+generation has changed.
+
+`pending.proposer` is a SNAPSHOT, so a proposer since DISABLED,
+DELETED or MOVED TO ANOTHER ROLE still carries a role_name that grants
+the action, and passes my check. `WriteMediator` holds `self.roles`
+and `self.action_types` but no user directory, so it cannot ask.
+
+THE SCENARIO THAT MATTERS: an account is disabled for cause -- a
+suspected compromise -- and `disable_user()` correctly deletes its
+sessions in the same transaction, so the account cannot act. What
+survives is the write it already queued, which another reviewer may
+approve for up to the fifteen-minute TTL. An operator disabling an
+account would reasonably expect that to stop work in flight.
+
+MEANWHILE: the generation-change half is done and tested. The gap is
+pinned by a test named
+`test_a_disabled_proposer_is_NOT_caught_here`, which should FAIL and
+be replaced when you thread the directory through -- that is the point
+of writing it down rather than leaving a comment.
+
+I did not edit `api/routes.py`.
