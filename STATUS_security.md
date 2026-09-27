@@ -986,6 +986,52 @@ that usually traverses. Probed with four encodings:
 **No unauthenticated surface beyond that.** One router, mounted under
 `/api`, behind the auth dependency.
 
+## Session 33 — object_type_validation.py reviewed. No defect.
+
+The load-time gate that decides whether a schema is acceptable at all,
+and where the deny-by-default guarantee lives. It holds up.
+
+`_validate_security` refuses a type with NO security block, refuses
+one declaring BOTH `field` and `via_field` -- because
+`_get_security_value` checks `field` first and would silently ignore
+the other -- refuses one declaring NEITHER, requires `security.field`
+to be a plain data field and `security.via_field` to be a link, and
+detects a circular `via_field` chain with a `visited` set passed down
+per call rather than shared, so validating one type cannot leak into
+another.
+
+`_validate_field_data_types` rejects an unknown `data_type` at load
+rather than at sync time, and refuses a link field declaring one at
+all -- a link's value is the target's id, and its type is the target's
+business.
+
+### And it corrected one of my own records
+
+`id_type` is declared on the STORAGE block, beside the `id_column` it
+describes -- not under `fields`. My SEC-25 probe named
+`fields.<id>.data_type`, which is the wrong knob. Re-checked against
+the right one:
+
+    storage.id_type=decimal    -> accepted at load
+    storage.id_type=date       -> accepted at load
+    storage.id_type=timestamp  -> accepted at load
+
+So SEC-25 stands -- an id really can be a Decimal or a date, and the
+audit writer really did raise on every access decision for such a type
+-- but the declaration I cited did not govern it. Probe corrected in
+the register. Second time a claim of mine has needed tightening; this
+one survived, SEC-24's did not.
+
+### One observation, not a finding
+
+Nothing validates that the security field's `data_type` is comparable
+to a user's `security_value`, which is TEXT. A `security.field`
+declaring `data_type: decimal` or `date` would be served as a Decimal
+or a date and compare unequal to every user's value, so the type would
+be invisible to everyone. That is FAIL-CLOSED, which is why it is not
+filed: no allow-side risk, and the useful version of this concern is
+already SEC-01.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
