@@ -19,7 +19,7 @@ F-15,001,001FINDINGS,HIGH,valid non-object JSON from the model gives an uncaught
 F-16,001,001FINDINGS,LOW,64 assertion-free tests (regraded by the audit itself),tests,MC,unverified
 F-17,001,001FINDINGS,LOW,every action parameter shown to the model as a quoted string,agent_step_prompt.py,IN,unverified
 F-18,001,001FINDINGS,INFO,agent limited to equality filters,agentic_loop.py,IN,"open; = LB-2"
-F-19,001,001FINDINGS,MED,a reverse link accepted as security.via_field; read path crashes,ontology validation,RP,unverified
+F-19,001,001FINDINGS,MED,a reverse link accepted as security.via_field; read path crashes,ontology validation,RP,"NOT REPRODUCED patch 458. _validate_security() already refuses a via_field naming no field, a data field, or an unknown target - the four tests for it exist. My reproduction was WRONG TWICE: I passed {} as the `only` argument, which silently validates nothing and returns cleanly. Patch 458 refuses that call instead"
 F-20,001,001FINDINGS,MED,mirror stringifies literals for three operators and not two,mirror_adapter.py,IN,"fixed patch 333 per PA001-A8"
 F-21,001,001FINDINGS,MED,entries_for_request() readlines() loads the whole audit log,core/intermediate_layer/audit.py,IN,unverified
 F-22,001,001FINDINGS,HIGH,Ollama adapter leaks 3 of 4 failure modes past LLMUnavailable,adapters/ollama_adapter.py,RP,"fixed patch 389"
