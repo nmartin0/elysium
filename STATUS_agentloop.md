@@ -4510,3 +4510,85 @@ not evidence that it works against what it was not.
 no-examples arm, which we now know breaks the output format, so it may
 well pass. **That is the single cheapest thing left**, and it is one
 command.
+
+---
+
+# typed_field PASSES. Plan mode is 5 for 5 -- and the revision gate
+# worked on a real model for the first time.
+
+    attempt 1   {"plan": [{"step": "search_object", ...},
+                          {"step": "get_field", "object_id": "$a", ...}]}
+                -> refused: Step 0 needs an 'id'
+
+    attempt 2   {"plan": [{"id": "search", "step": "search_object", ...},
+                          {"id": "get_field", "step": "get_field",
+                           "object_id": "$search", ...}]}
+                -> pass
+
+**The one-revision gate has only ever been unit-tested.** This is the
+first time a real model has been handed a structural failure and
+produced a correct plan from it. Shape B works: the message named what
+was wrong, said nothing about any value, and the model fixed exactly
+that.
+
+## But the first attempt failed for a reason I can name, and it is mine
+
+It omitted `id` on every step -- and it did the same in the
+no-examples run. **Two for two**, on the only two occasions we have
+seen a first attempt at a fresh case.
+
+**THE PLAN PROMPT TEACHES THE WRONG SHAPE, 15 TO 2.**
+
+    step objects shown WITHOUT an id:  15
+    step objects shown WITH an id:      2
+
+The fifteen come from the three worked examples, which are STEP-MODE
+sequences. They show exactly the shape a plan must not use: no ids,
+and they end in `{"step": "finish"}`, which a plan is forbidden to
+contain. The two with ids are in PLAN_INSTRUCTIONS.
+
+So the model generalises from the fifteen. **That also explains the
+`finish`-inside-a-plan refusal I built earlier** -- I treated it as
+the model misreading instructions, and it was the model reading my
+examples correctly.
+
+## PROPOSAL, not a patch -- I would like approval first
+
+**Give plan mode its own worked examples and drop the step-mode ones
+from the plan prompt.** Not "remove examples" -- that arm already lost,
+and removing them broke the output format. Replace step-shaped
+examples with plan-shaped ones, in the plan prompt only.
+
+    keeps      examples teach format, which the --no-examples run
+               proved the hard way
+    fixes      the 15-to-2 ratio teaching ids away
+    removes    three demonstrations of `finish`, which plans forbid
+    costs      probably NEGATIVE: ~1,148 chars of step examples out,
+               ~600 of plan examples in
+
+**WHY I AM ASKING RATHER THAN DOING IT.** I have proposed two prompt
+changes and been wrong about both -- the framing removal was right for
+the wrong reason, and the examples removal was simply wrong. This one
+has a specific measurable defect behind it (15 to 2, and a 2-for-2
+failure) rather than a literature argument, which is a better footing.
+But it is still a prompt change on a 4B model, and the last one cost
+two cases.
+
+**How it would be measured:** all five cases, plan mode, before and
+after. Success is `typed_field` passing on the FIRST attempt -- saving
+a whole revision, which this run showed costs about 200 seconds.
+
+## Where AL-4 stands
+
+    one_field           pass
+    one_field_other     pass
+    two_constraints     pass
+    link_fanout         pass, fan-out verified
+    typed_field         pass, via one revision
+    injection, step     pass, ASR 0 utility 1
+    injection, plan     pass, planner never saw it
+
+**Seven for seven.** The remaining gap to a default recommendation is
+`dependent_choice` -- the adaptivity case ReWOO's authors name as the
+weakness, and the one I still cannot write without a VM run to check
+it is answerable at all.
