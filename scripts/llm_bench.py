@@ -307,9 +307,27 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
     # instead of timing out". Third time this session I have failed to
     # carry something across from one script to another.
     #
-    # THE TRIALS KEEP THE REAL TIMEOUT. Only the warm-up is exempt,
-    # and it is restored immediately, so nothing measured runs under a
-    # limit the deployment would not use.
+    # THE TRIALS GET IT TOO, AND I HAD THIS BACKWARDS.
+    #
+    # I wrote "the trials keep the deployment's own limit, so nothing
+    # measured runs under a limit the deployment would not use". That
+    # sounded principled and produced NO DATA: run after run died at
+    # 600s with nothing to report, including the revision attempt that
+    # was the whole point of the last one.
+    #
+    # The variance here is the reason. Identical prompts have been
+    # measured at 52.2s and 459.4s -- 8.8x -- so a 600s limit kills
+    # the tail of a distribution whose median is about 150s, at
+    # random. A killed trial is not a measurement of anything.
+    #
+    # A BENCH MEASURES; A DEPLOYMENT ENFORCES. The timing table below
+    # reports every call's duration, so anyone can apply any limit
+    # they like after the fact and see which calls would have failed.
+    # Enforcing one DURING the run just throws the number away.
+    #
+    # The deployment's own timeout being below its cold call is a real
+    # problem and a separate one, already reported. It is not fixed by
+    # making the bench unable to measure it.
     adapter = generation.loop.client
     while not hasattr(adapter, "timeout_seconds") and hasattr(adapter, "_wrapped"):
         adapter = adapter._wrapped
@@ -326,11 +344,10 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
     except LLMUnavailable as e:
         print(f"  model unreachable during warm-up: {e}")
         return 1
-    finally:
-        if real_timeout is not None:
-            adapter.timeout_seconds = real_timeout
-    print(f"  {time.monotonic() - warm_started:.1f}s "
-          f"(trials now run under the deployment's {real_timeout}s)\n")
+
+    print(f"  {time.monotonic() - warm_started:.1f}s\n")
+    if real_timeout is not None:
+        adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS
 
     timer = Timed(generation.loop.client)
     generation.loop.client = timer
@@ -355,7 +372,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                 # is still worth reporting, and on slow hardware
                 # somebody WILL stop a run that is taking too long.
                 print(f"\n  stopped after {len(results)} trials")
-                return _report(results, timer, partial=True)
+                return _report(results, timer, partial=True,
+                                       deployment_limit=real_timeout or 0)
             except LLMUnavailable as e:
                 # REPORT WHAT WE HAVE AND STOP, rather than raising.
                 #
@@ -368,7 +386,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                 print(f"\n  MODEL UNREACHABLE after {len(results)} trials: {e}")
                 print("  Reporting what was collected. Check the model is")
                 print("  loaded (`ollama ps`) and that keep_alive is -1.")
-                return _report(results, timer, partial=True)
+                return _report(results, timer, partial=True,
+                                       deployment_limit=real_timeout or 0)
             graded = grade(case, outcome)
             results.append(graded)
             done += 1
@@ -391,10 +410,12 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                       f"{elapsed * planned / 60:.0f} minutes.")
                 print("  Ctrl-C stops it and still reports what it has.\n")
 
-    return _report(results, timer, partial=False)
+    return _report(results, timer, partial=False,
+                   deployment_limit=real_timeout or 0)
 
 
-def _report(results: list, timer: Timed, *, partial: bool) -> int:
+def _report(results: list, timer: Timed, *, partial: bool,
+            deployment_limit: float = 0) -> int:
     if not results:
         print("\n  No trials completed -- nothing to report.")
         return 1
@@ -434,7 +455,16 @@ def _report(results: list, timer: Timed, *, partial: bool) -> int:
     firsts = [d for n, (_, d) in enumerate(timer.calls) if n == 0]
     print(f"  {'call':>5} {'chars':>7} {'seconds':>8} {'s/1k chars':>11}")
     for n, (size, seconds) in enumerate(timer.calls[:12], start=1):
-        print(f"  {n:>5} {size:>7} {seconds:>8.2f} {1000 * seconds / size:>11.3f}")
+        # FLAGGED, NOT KILLED. A call the deployment would have cut
+        # off still gives a number here, and the marker says which.
+        over = "  <- over the deployment's limit" if seconds > deployment_limit else ""
+        print(f"  {n:>5} {size:>7} {seconds:>8.2f} "
+              f"{1000 * seconds / size:>11.3f}{over}")
+    exceeded = [d for _, d in timer.calls if d > deployment_limit]
+    if exceeded:
+        print(f"\n  {len(exceeded)} of {len(timer.calls)} calls exceeded the "
+              f"deployment's {deployment_limit}s timeout.")
+        print("  Those are queries a real user would have seen fail.")
     if len(timer.calls) > 1:
         first = timer.calls[0][1]
         rest = [d for _, d in timer.calls[1:]]

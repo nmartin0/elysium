@@ -4787,3 +4787,66 @@ half an hour instead of ten minutes.
 are a larger timeout, a shorter prompt, or accepting that the first
 query of a session fails. **The third is what happens today, silently,
 and it is the only one nobody has chosen.**
+
+---
+
+# I HAD IT BACKWARDS: a bench measures, a deployment enforces
+
+The warm-up worked -- 591.3s, and attempt 1 produced a plan. **Then
+the revision timed out at 600s**, on a system prompt already cached
+by the two calls before it.
+
+## The variance is the reason, and it is enormous
+
+    identical 7,114-char prompts    101.7 - 119.4s    1.2x
+    identical work, across runs      62.2 - 119.4s    1.9x
+    plan calls, 5,777-6,003 chars    52.2 - 459.4s    8.8x
+
+**A 600s limit kills the tail of a distribution whose median is about
+150s, at random.**
+
+## What I wrote one patch ago, and why it was wrong
+
+> "The trials keep the deployment's own limit, restored in a
+> `finally`, so nothing measured runs under a limit the deployment
+> would not use."
+
+That sounded principled. **It produced no data** -- run after run died
+at 600s with nothing to report, including the revision attempt that
+was the entire point of the last one.
+
+**A killed trial is not a measurement of anything.** The bench's job
+is to produce numbers; the deployment's job is to enforce limits.
+Conflating them means neither happens.
+
+## So: every duration is reported, and the ones a deployment would
+## have cut off are MARKED
+
+       2    6000   700.00     116.667  <- over the deployment's limit
+
+       1 of 2 calls exceeded the deployment's 600s timeout.
+       Those are queries a real user would have seen fail.
+
+Anyone can apply any limit after the fact. Enforcing one during the
+run throws the number away -- **and the deployment's timeout being
+below its own cold call is a real problem that is not fixed by making
+the bench unable to measure it.**
+
+## A test had to be replaced, not adjusted
+
+`test_the_timeout_is_restored_even_when_the_warm_up_fails` asserted
+the `finally` that restored the deployment limit. **It was pinning the
+behaviour that was throwing the measurements away.** Replaced with one
+asserting the opposite, and saying so, rather than deleted quietly.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3110 passed, 8 skipped  (3109 before; +1 here)
+
+## The re-run
+
+    python3 -m scripts.llm_bench --cases dependent_choice --mode plan --show-plan
+
+Attempt 1 already produces a plan containing the right idea. This is
+the first run that can actually SEE whether the revision fixes it.

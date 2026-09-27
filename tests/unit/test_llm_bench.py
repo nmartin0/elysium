@@ -345,6 +345,44 @@ def test_the_warm_up_matches_the_mode(generation_and_user):
     assert not plan.startswith(step), "the prefixes genuinely differ"
 
 
+def test_a_slow_call_is_flagged_rather_than_killed():
+    """A BENCH MEASURES; A DEPLOYMENT ENFORCES. I had this backwards.
+
+    I wrote "the trials keep the deployment's own limit, so nothing
+    measured runs under a limit the deployment would not use". That
+    sounded principled and produced NO DATA: run after run died at
+    600s with nothing to report, including the revision attempt that
+    was the whole point of one of them.
+
+    The variance is the reason. Identical prompts have been measured
+    at 52.2s and 459.4s -- 8.8x -- so a 600s limit kills the tail of a
+    distribution whose median is about 150s, at random, and a killed
+    trial measures nothing.
+
+    So every call's duration is reported and the ones a deployment
+    would have cut off are MARKED. Anyone can apply any limit after
+    the fact; enforcing one during the run throws the number away.
+    """
+    import contextlib
+    import io
+
+    from core.agent.evaluation import TrialResult
+    from scripts.llm_bench import _report
+
+    class Calls:
+        calls = [(6000, 120.0), (6000, 700.0)]
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        _report([TrialResult(case_name="c", passed=True)], Calls(),
+                partial=False, deployment_limit=600)
+    out = buffer.getvalue()
+
+    assert "over the deployment's limit" in out, "the slow call is not marked"
+    assert "1 of 2 calls exceeded" in out, "no count of what would have failed"
+    assert "700.00" in out, "the number itself was thrown away"
+
+
 def test_the_warm_up_is_exempt_from_the_deployment_timeout(generation_and_user):
     """A CALL WHOSE JOB IS TO BE SLOW SHOULD NOT BE KILLED FOR IT.
 
@@ -364,31 +402,31 @@ def test_the_warm_up_is_exempt_from_the_deployment_timeout(generation_and_user):
     assert WARM_UP_TIMEOUT_SECONDS >= 1200, "too short to absorb a cold call"
 
     source = inspect.getsource(run)
-    # Raised, then restored in a finally -- so a warm-up that RAISES
-    # still leaves the trials on the deployment's own limit.
     assert "adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS" in source
-    assert "finally:" in source
-    assert source.index("finally:") < source.index('print(f"  {time.monotonic()')
 
 
-def test_the_timeout_is_restored_even_when_the_warm_up_fails():
-    """THE POINT OF THE finally. If a warm-up failure left 1800s in
-    place, every trial afterwards would run under a limit the
-    deployment would never use -- and a hung call would burn half an
-    hour instead of ten minutes."""
-    from scripts.llm_bench import WARM_UP_TIMEOUT_SECONDS
+def test_the_generous_timeout_is_not_restored_and_that_is_deliberate():
+    """THIS TEST USED TO ASSERT THE OPPOSITE.
 
-    class Adapter:
-        timeout_seconds = 600
+    It checked that the real timeout was restored in a `finally`
+    after the warm-up, so trials ran under the deployment's limit.
+    That was the design, and the design was wrong: it produced no
+    data, run after run.
 
-    adapter = Adapter()
-    real = adapter.timeout_seconds
-    try:
-        adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS
-        raise RuntimeError("the warm-up failed")
-    except RuntimeError:
-        pass
-    finally:
-        adapter.timeout_seconds = real
+    Now the generous timeout stays for the trials too, and the report
+    marks any call the deployment would have cut off. The old test
+    asserted the behaviour that was throwing the measurements away,
+    which is why it is replaced rather than deleted quietly.
+    """
+    import inspect
 
-    assert adapter.timeout_seconds == 600
+    from scripts.llm_bench import run
+
+    source = inspect.getsource(run)
+
+    assert "adapter.timeout_seconds = real_timeout" not in source, (
+        "the trials are back under a limit that kills them at random"
+    )
+    assert "deployment_limit=real_timeout" in source, (
+        "the real limit must still be REPORTED, just not enforced"
+    )
