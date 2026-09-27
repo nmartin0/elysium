@@ -4,19 +4,19 @@ F-02,001,001FINDINGS,HIGH,cross-type actions unauthorisable by any valid policy,
 F-03,001,001FINDINGS,HIGH,KeyError 'mutations' on a cross-type action containing a delete,write_mediator.py cross-type loop,RP,"reproduced 24 Sep"
 F-04,001,001FINDINGS,MED,chat(*args **kwargs) erases the typed LLM signature at the wrapper,core/llm,IN,unverified
 F-05,001,001FINDINGS,MED,rate-limit check and increment are separate transactions,api rate limiting,IN,unverified
-F-06,001,001FINDINGS,MED,DeploymentConfigResponse duplicates DeploymentConfig field-for-field,api/routes.py,MC,unverified
-F-07,001,001FINDINGS,LOW,identical via_table destructuring at four sites,core/ontology,MC,unverified
+F-06,001,001FINDINGS,MED,DeploymentConfigResponse duplicates DeploymentConfig field-for-field,api/routes.py,MC,"CONFIRMED patch 459, NOT FIXED. DeploymentConfigResponse is still in api/routes.py - a SHARED read-only file under 000COORDINATION, with three agents working. Deferred deliberately, not forgotten"
+F-07,001,001FINDINGS,LOW,identical via_table destructuring at four sites,core/ontology,MC,"CONFIRMED patch 459 and UNDERSTATED: seven sites, not four. Five READ the route (three with via_target_column, two without - a deliberate split between link and reverse-link resolution) and two in gold_view WRITE it during rebinding, which is a different operation. A helper is feasible (adapters sits above core) but LOW value against cross-file risk mid-run"
 F-08,001,001FINDINGS,LOW,submission_criteria parameter-skip safe only via an unstated precondition,write_mediator.py,IN,unverified
 F-09,001,001FINDINGS,LOW,MemoryGuard.put() uses a private mediator method; flattens None to empty string,core/memory,IN,unverified
-F-10,001,001FINDINGS,LOW,_generation(request) called 31x where a Depends() exists,api/routes.py,MC,unverified
-F-11,001,001FINDINGS,LOW,mediator() test fixture duplicated seven times,tests/unit,MC,unverified
-F-12a,001,001FINDINGS,LOW,"THE SEVEN REAL GRANT PATTERNS enumerates six, omits manage:deployment",policy docs,IN,unverified
+F-10,001,001FINDINGS,LOW,_generation(request) called 31x where a Depends() exists,api/routes.py,MC,"CONFIRMED patch 459 and GROWN: the audit counted 31 _generation(request) calls; there are 55. In api/routes.py, shared and read-only. Deferred"
+F-11,001,001FINDINGS,LOW,mediator() test fixture duplicated seven times,tests/unit,MC,CONFIRMED patch 459 and GROWN: the audit counted the mediator fixture duplicated 7 times; it is 21 files now
+F-12a,001,001FINDINGS,LOW,"THE SEVEN REAL GRANT PATTERNS enumerates six, omits manage:deployment",policy docs,IN,"NOT MINE: the SEVEN REAL GRANT PATTERNS comment is in core/intermediate_layer/policy_validation.py, which is LLM3's. Measured and handed over rather than edited"
 F-12b,001,001FINDINGS,LOW,login_attempt_tracker claims a structurally read-only connection; it is not,core/auth,IN,unverified
 F-12c,001,001FINDINGS,LOW,"write: rejection message claims it is not enforced anywhere; it is",policy_validation.py:51,IN,"confirmed by the F-02 reproduction"
 F-13,001,001FINDINGS,LOW,get_object() audit entries carry no request_id,core/ontology/mediator.py,IN,"NOT REPRODUCED patch 457, handed back by LLM3 as backend-owned. Measured: a get_object with a RequestContext writes an audit entry carrying that exact request_id. None only when no context is supplied, which is correct and separately tested"
 F-14,001,001FINDINGS,HIGH,parameter used only in a sub-write's criteria rejected at load,action type validation,RP,"fixed patch 389"
 F-15,001,001FINDINGS,HIGH,valid non-object JSON from the model gives an uncaught 500,agent_step_prompt.py,RP,"fixed patch 389"
-F-16,001,001FINDINGS,LOW,64 assertion-free tests (regraded by the audit itself),tests,MC,unverified
+F-16,001,001FINDINGS,LOW,64 assertion-free tests (regraded by the audit itself),tests,MC,CONFIRMED patch 459: 10 unit test files contain no assert at all. The audit regraded this itself; recorded with a current number
 F-17,001,001FINDINGS,LOW,every action parameter shown to the model as a quoted string,agent_step_prompt.py,IN,unverified
 F-18,001,001FINDINGS,INFO,agent limited to equality filters,agentic_loop.py,IN,"open; = LB-2"
 F-19,001,001FINDINGS,MED,a reverse link accepted as security.via_field; read path crashes,ontology validation,RP,"NOT REPRODUCED patch 458. _validate_security() already refuses a via_field naming no field, a data field, or an unknown target - the four tests for it exist. My reproduction was WRONG TWICE: I passed {} as the `only` argument, which silently validates nothing and returns cleanly. Patch 458 refuses that call instead"
