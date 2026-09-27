@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 // Partial mock via importOriginal, not a hand-duplicated module shape
 // -- see App.test.tsx's own header comment for the full reasoning.
@@ -64,26 +64,43 @@ function multiObjectWrite(): PendingWrite {
   }
 }
 
+/**
+ * Render and let the card SETTLE before asserting.
+ *
+ * The card fetches freshness on mount, so a synchronous test asserts
+ * against a half-rendered card and the update lands afterwards -- the
+ * act() warning these seven produced. It matters most for the
+ * ABSENCE assertions here: "not in the document" passes just as
+ * happily when the content has not arrived YET as when it never will.
+ */
+async function renderSettled(write: Parameters<typeof PendingWriteCard>[0]['pendingWrite']) {
+  render(<PendingWriteCard pendingWrite={write} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+  await waitFor(() => expect(mockedGetDataFreshness).toHaveBeenCalled())
+  await act(async () => {
+    await Promise.resolve()
+  })
+}
+
 describe('PendingWriteCard -- rendering', () => {
-  it('renders the action name and description', () => {
-    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+  it('renders the action name and description', async () => {
+    await renderSettled(singleObjectWrite())
     expect(screen.getByText('UpdateCustomerName')).toBeInTheDocument()
     expect(screen.getByText('Update the customer name')).toBeInTheDocument()
   })
 
-  it('a single-object write renders fields with NO object_type/object_id label', () => {
-    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+  it('a single-object write renders fields with NO object_type/object_id label', async () => {
+    await renderSettled(singleObjectWrite())
     expect(screen.queryByText('Customer cust_001')).not.toBeInTheDocument()
   })
 
-  it('a multi-object write gives EACH sub_write its own object_type/object_id label', () => {
-    render(<PendingWriteCard pendingWrite={multiObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+  it('a multi-object write gives EACH sub_write its own object_type/object_id label', async () => {
+    await renderSettled(multiObjectWrite())
     expect(screen.getByText('Account acct_from')).toBeInTheDocument()
     expect(screen.getByText('Account acct_to')).toBeInTheDocument()
   })
 
-  it('shows an "old -> new" transition when expected_current_values has the field', () => {
-    render(<PendingWriteCard pendingWrite={singleObjectWrite()} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+  it('shows an "old -> new" transition when expected_current_values has the field', async () => {
+    await renderSettled(singleObjectWrite())
     // "Ada Okafor" shares a text node with the trailing arrow (" → "),
     // so an exact getByText('Ada Okafor') can't match it -- a
     // substring check against the element's own full text content is
@@ -93,7 +110,7 @@ describe('PendingWriteCard -- rendering', () => {
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
   })
 
-  it('shows only the new value (no transition) when the field has no expected_current_value -- the create case', () => {
+  it('shows only the new value (no transition) when the field has no expected_current_value -- the create case', async () => {
     const createWrite = singleObjectWrite({
       sub_writes: [
         {
@@ -104,12 +121,12 @@ describe('PendingWriteCard -- rendering', () => {
         },
       ],
     })
-    render(<PendingWriteCard pendingWrite={createWrite} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+    await renderSettled(createWrite)
     expect(screen.getByText('Brand New Customer')).toBeInTheDocument()
     expect(screen.queryByText(/→/)).not.toBeInTheDocument()
   })
 
-  it('field names are formatted for display (e.g. reopen_reason -> Reopen reason)', () => {
+  it('field names are formatted for display (e.g. reopen_reason -> Reopen reason)', async () => {
     const write = singleObjectWrite({
       sub_writes: [
         {
@@ -120,11 +137,11 @@ describe('PendingWriteCard -- rendering', () => {
         },
       ],
     })
-    render(<PendingWriteCard pendingWrite={write} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+    await renderSettled(write)
     expect(screen.getByText('Reopen reason')).toBeInTheDocument()
   })
 
-  it('a null value formats as "—"', () => {
+  it('a null value formats as "—"', async () => {
     const write = singleObjectWrite({
       sub_writes: [
         {
@@ -135,7 +152,7 @@ describe('PendingWriteCard -- rendering', () => {
         },
       ],
     })
-    render(<PendingWriteCard pendingWrite={write} onSessionExpired={vi.fn()} onResolved={vi.fn()} />)
+    await renderSettled(write)
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 })

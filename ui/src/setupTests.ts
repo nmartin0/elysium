@@ -48,8 +48,9 @@ Object.defineProperty(window, 'matchMedia', {
  *
  * MEASURED: one run produces 83 of these. Most come from Blueprint's
  * internals -- Blueprint6.Icon, Popper, Blueprint6.Text -- which we do
- * not control and cannot wrap. TWENTY-FIVE come from our own
- * components, across six test files.
+ * not control and cannot wrap. Twenty-five came from our own
+ * components across six files; SEVEN ARE FIXED and eighteen remain
+ * across five.
  *
  * WHY THEY MATTER. "Not wrapped in act" means a state update landed
  * after the test stopped watching. That is exactly the failure
@@ -95,12 +96,21 @@ const THEIRS = /\b(Blueprint6\.\w+|Popper)\b/
  *  guard itself report is the only way to get this right, and it is
  *  how the number should be checked whenever it is updated. */
 const KNOWN = new Set([
-  'PendingWriteCard.test.tsx', // 7
-  'ObjectSearchPanel.test.tsx', // 7
-  'AdminPanel.test.tsx', // 5
-  'UserMenu.test.tsx', // 3
-  'MirrorPanel.test.tsx', // 2
-  'useFetchOnce.test.tsx', // 1 -- its own Harness
+  // Each entry is a count and a REASON. Two kinds are left:
+  //
+  // TRANSIENT-STATE TESTS, where the point IS the pre-settled frame --
+  // "shows Loading… before listUsers resolves" cannot await what it is
+  // asserting the absence of. Awaiting first would delete the test.
+  // The fix for these is to settle before the test ENDS, not before
+  // the assertion, and that is a different edit.
+  //
+  // NOT-YET-READ, which are probably the same mount-fetch race
+  // PendingWriteCard had and are simply not done.
+  'ObjectSearchPanel.test.tsx', // 7 -- 3 transient-state, 4 not yet read
+  'AdminPanel.test.tsx', // 5 -- 1 transient-state, 4 not yet read
+  'UserMenu.test.tsx', // 3 -- not yet read
+  'MirrorPanel.test.tsx', // 2 -- the 30s poll test, not yet read
+  'useFetchOnce.test.tsx', // 1 -- its own Harness, deliberate
 ])
 
 const reportError = console.error.bind(console)
@@ -113,12 +123,18 @@ console.error = (...args: unknown[]) => {
   // warnings as readily as ours. It caught itself on the first run.
   const text = args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ')
   if (ACT_WARNING.test(text) && !THEIRS.test(text)) {
-    const file = (expect.getState().testPath ?? '').split('/').pop() ?? ''
+    const state = expect.getState()
+    const file = (state.testPath ?? '').split('/').pop() ?? ''
     if (!KNOWN.has(file)) {
+      // THE TEST NAME, not just the file. A warning you cannot
+      // attribute to one test is half a warning: finding which of
+      // forty tests it belongs to by bisection is the work this line
+      // removes, and it is how the six files below were triaged.
       throw new Error(
-        `act() warning from our own component in ${file}, which is not on the known list in ` +
-          `setupTests.ts. A state update landed after the test stopped watching. Either await ` +
-          `what the test is really waiting for, or add the file to KNOWN and say why.\n\n${text}`,
+        `act() warning from our own component in ${file}\n` +
+          `  test: ${state.currentTestName ?? '(outside a test)'}\n` +
+          `A state update landed after the test stopped watching. Either await what the test is ` +
+          `really waiting for, or add the file to KNOWN and say why.\n\n${text}`,
       )
     }
   }
