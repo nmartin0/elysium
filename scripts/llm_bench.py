@@ -88,6 +88,10 @@ from core.deployment_loader import (  # noqa: E402
     resolve_runtime_paths,
 )
 from core.intermediate_layer.auth import resolve_user_record  # noqa: E402
+from core.llm.agent_step_prompt import (  # noqa: E402
+    PLAN_INSTRUCTIONS,
+    _build_system_prompt,
+)
 from core.llm.interface import LLMUnavailable  # noqa: E402
 
 USER_ID = "user_alice"
@@ -248,6 +252,49 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
         # looks healthy while proving nothing.
         print(f"FATAL: {USER_ID!r} has no role. Check policy.yaml.")
         return 2
+
+    # WARM THE PREFIX BEFORE TIMING ANYTHING.
+    #
+    # The first call of a run is cold, and the VM measured prompt
+    # evaluation at 0.104 seconds per character -- about 578s for the
+    # step prompt against a 600s timeout. A dependent_choice run died
+    # exactly there: the plan failed on attempt 1, and attempt 2, which
+    # would have shown the revision working, timed out instead.
+    #
+    # The integration injection test already does this and could not
+    # run without it. The bench needed it for the same reason and I
+    # did not carry it across.
+    #
+    # WITH THE REAL SYSTEM PROMPT, which is the whole point. A tiny
+    # prompt would warm the MODEL, and the diagnostic already measured
+    # that at 3.7 seconds -- nothing. The cost is evaluating the 5,500
+    # characters of system prompt, and only sending those caches them.
+    #
+    # I wrote the tiny version first and caught it against my own
+    # measurement, which is the second time this session that "warm
+    # the model" and "warm the prefix" have been quietly different
+    # things.
+    #
+    # NOT TIMED, and excluded from the table below, because it is not
+    # a trial. The timings that follow are warm ones, which is what
+    # every query after the first of the day gets anyway.
+    visible_schema = generation.mediator.visible_schema(user, for_agent=True)
+    warm_system = _build_system_prompt(
+        visible_schema, generation.loop.tools, False, {},
+        data_is_shown=(mode != "plan"),
+    )
+    if mode == "plan":
+        warm_system += PLAN_INSTRUCTIONS
+    print(f"warming the prefix ({len(warm_system)} chars)...", flush=True)
+    warm_started = time.monotonic()
+    try:
+        generation.loop.client.chat(
+            warm_system, "Reply with {}", json_mode=True, temperature=0,
+        )
+    except LLMUnavailable as e:
+        print(f"  model unreachable during warm-up: {e}")
+        return 1
+    print(f"  {time.monotonic() - warm_started:.1f}s\n")
 
     timer = Timed(generation.loop.client)
     generation.loop.client = timer

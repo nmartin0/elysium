@@ -293,3 +293,53 @@ def test_the_plan_can_be_shown(generation_and_user, caplog):
     # Turned up on that ONE logger, not the root, or the output is
     # unreadable and nobody looks at it.
     assert logging.getLogger().level != logging.DEBUG
+
+
+def test_the_warm_up_uses_the_real_system_prompt(generation_and_user):
+    """WARMING THE MODEL AND WARMING THE PREFIX ARE DIFFERENT THINGS.
+
+    The diagnostic measured model load at 3.7 seconds and prompt
+    evaluation at 591.1s for 5,675 characters. A tiny warm-up call
+    would load the model and cache nothing that matters, leaving the
+    first real call to pay full price -- which is how a
+    dependent_choice run lost its revision attempt to a 600s timeout.
+
+    I wrote the tiny version first. This asserts the size, because
+    that is the difference between warming and pretending to.
+    """
+    import inspect
+
+    from scripts.llm_bench import run
+
+    source = inspect.getsource(run)
+
+    assert "_build_system_prompt(" in source, "warms something other than the prompt"
+    assert "PLAN_INSTRUCTIONS" in source, "plan mode's prefix differs and must match"
+
+    # AND IT MUST HAPPEN BEFORE THE TIMER IS INSTALLED, or the warm-up
+    # appears in the timing table as call 1 and every prefix-reuse
+    # number in the report is measured against it.
+    #
+    # An earlier version of this test looked for a phrase from the
+    # comment instead, and failed because the phrase wrapped across
+    # two comment lines. Asserting on prose is asserting on
+    # formatting; this asserts on order.
+    assert source.index("warm_system") < source.index("timer = Timed(")
+
+
+def test_the_warm_up_matches_the_mode(generation_and_user):
+    """PLAN MODE'S PREFIX IS NOT THE STEP PREFIX. It drops the
+    untrusted-data framing and appends the plan instructions, so
+    warming the step prompt would cache a prefix the plan calls never
+    use -- all of the cost, none of the benefit."""
+    from core.llm.agent_step_prompt import PLAN_INSTRUCTIONS, _build_system_prompt
+
+    schema = {"Customer": {"id_field": "customer_id",
+                           "fields": {"name": {"type": "data"}}}}
+    step = _build_system_prompt(schema, [], False, {}, data_is_shown=True)
+    plan = _build_system_prompt(
+        schema, [], False, {}, data_is_shown=False
+    ) + PLAN_INSTRUCTIONS
+
+    assert step != plan
+    assert not plan.startswith(step), "the prefixes genuinely differ"

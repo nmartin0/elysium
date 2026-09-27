@@ -4661,3 +4661,73 @@ than the system.
 
 The plan-prompt proposal -- replacing step-shaped examples with
 plan-shaped ones, on the 15-to-2 evidence. Not touched.
+
+---
+
+# dependent_choice: the model FOUND the adaptive chain, then buried it
+
+The plan it wrote:
+
+    a  search_object Customer      name = Ada Okafor
+    b  get_field     Customer $a   transactions        -> a LIST
+    c  search_object Transaction   customer_id = $b    <- FAILED HERE
+    d  get_field     Transaction $c category
+    e  aggregate_object Transaction max amount
+    f  search_object Transaction   amount = $e, ...
+    g  get_field     Transaction $f category
+
+**Steps e, f and g are the chain I verified by hand.** The model
+worked out that the way to find the largest transaction, without ever
+seeing an amount, is to aggregate for the maximum and then filter on
+that handle. **That is the adaptivity ReWOO says plan-then-execute
+cannot do, and a 4B model reached for it unprompted.**
+
+Then it wrapped that in four steps it did not need, and step `c`
+filtered `customer_id` by a list of TRANSACTION ids -- both a type
+error and a reasoning error, since `$b` holds transaction ids, not
+customer ids.
+
+**The executor caught it, structurally, and the revision never
+happened: attempt 2 timed out.**
+
+## Which is my fault, and the fix is one I had already written
+
+The bench never warmed its prefix. The integration injection test
+does -- it could not run at all without it -- and I did not carry it
+across. So every bench run pays a cold first call at ~578s against a
+600s timeout, and `dependent_choice` lost the attempt that would have
+shown the revision working.
+
+**AND I WROTE THE WARM-UP WRONG FIRST.** A tiny "Say ok" call, which
+warms the MODEL. My own diagnostic measured model load at **3.7
+seconds** and prompt evaluation at **591.1s**. Warming the model
+caches nothing that matters. It now sends the real system prompt --
+and the PLAN prompt in plan mode, which differs: no untrusted-data
+framing, plus the plan instructions.
+
+**"Warm the model" and "warm the prefix" have now been quietly
+different things twice in this session.** The first time cost three
+timeout runs and a wrong `keep_alive` change.
+
+The warm-up runs BEFORE the timer is installed, so it does not appear
+in the prefix-reuse table as call 1 and skew every number under it. A
+control moving it after the timer fails.
+
+**A test assertion had to be rewritten too:** it looked for a phrase
+from a comment and failed because the phrase wrapped across two lines.
+Asserting on prose is asserting on formatting. It now asserts the
+ORDER of the two statements.
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3107 passed, 8 skipped  (3105 before; +2 here)
+
+## The re-run
+
+    python3 -m scripts.llm_bench --cases dependent_choice --mode plan --show-plan
+
+The warm-up costs one cold call up front and then every trial is warm.
+**The question it answers is whether the revision can turn that
+seven-step plan into a working one** -- the model already has the
+right idea in it.
