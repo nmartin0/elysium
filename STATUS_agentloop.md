@@ -4393,3 +4393,47 @@ tests RESISTANCE -- the model is shown the planted text every hop and
 must ignore it. A pass means the model resisted. A failure is the
 strongest argument AL-4 could have, and would be the first time a real
 model here has been shown to obey planted text.
+
+---
+
+# R1 IS DONE, and a finding about tools that changes item 1
+
+**Backend wired `RetryingLLMAdapter`**, with the nesting order R1
+asked for and a comment recording why. AL-5 stops being inert the
+moment that reaches dev. My accounting was stale; nine items, not ten.
+
+## NO TOOL HAS EVER BEEN CALLABLE IN THE SHIPPED DEPLOYMENT
+
+`_step_use_tool` gates every call:
+
+    action = f"tool:{tool_name}"
+    rbac_allowed = authorize(user_record, self.mediator.roles, action)
+
+**No role in `deployment/etc/policy.yaml` holds a single `tool:`
+grant.** `grep -c '^      - tool:'` returns 0.
+
+So `linear_regression` sits in `tools.enabled` and cannot be invoked
+by anyone. The mechanism has been enabled and ungranted since it
+shipped, and nothing would have shown it: the refusal is deliberately
+identical to "unknown tool", because "a caller must not learn that a
+tool EXISTS by being refused it".
+
+**This makes LB-1's config change two parts, not one**, and the second
+part is missing for every tool rather than just the new one:
+
+    tools:
+      enabled:
+        - linear_regression
+        - calculator          # 1. the tool exists
+
+    roles:
+      customer_service:
+        allowed_actions:
+          - tool:calculator   # 2. someone may call it
+
+Without part 2 the calculator is enabled and unreachable, and LB-1b
+keeps withholding correct arithmetic exactly as it does today. **Part
+1 alone does not fix the regression.**
+
+I should have checked this when I proposed "add calculator to
+tools.enabled" three turns ago. I read the config and not the policy.
