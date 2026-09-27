@@ -343,3 +343,52 @@ def test_the_warm_up_matches_the_mode(generation_and_user):
 
     assert step != plan
     assert not plan.startswith(step), "the prefixes genuinely differ"
+
+
+def test_the_warm_up_is_exempt_from_the_deployment_timeout(generation_and_user):
+    """A CALL WHOSE JOB IS TO BE SLOW SHOULD NOT BE KILLED FOR IT.
+
+    The warm-up timed out at 600s on its first outing -- arithmetic,
+    not a fault: 6,154 characters at the measured 0.104 s/char is
+    about 640 seconds. The deployment's timeout is below the cost of
+    its own cold call.
+
+    Raising the deployment's timeout would be the chasing I stopped
+    doing. This call is not a query: its entire job is to absorb the
+    cold cost so the trials afterwards are warm.
+    """
+    import inspect
+
+    from scripts.llm_bench import WARM_UP_TIMEOUT_SECONDS, run
+
+    assert WARM_UP_TIMEOUT_SECONDS >= 1200, "too short to absorb a cold call"
+
+    source = inspect.getsource(run)
+    # Raised, then restored in a finally -- so a warm-up that RAISES
+    # still leaves the trials on the deployment's own limit.
+    assert "adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS" in source
+    assert "finally:" in source
+    assert source.index("finally:") < source.index('print(f"  {time.monotonic()')
+
+
+def test_the_timeout_is_restored_even_when_the_warm_up_fails():
+    """THE POINT OF THE finally. If a warm-up failure left 1800s in
+    place, every trial afterwards would run under a limit the
+    deployment would never use -- and a hung call would burn half an
+    hour instead of ten minutes."""
+    from scripts.llm_bench import WARM_UP_TIMEOUT_SECONDS
+
+    class Adapter:
+        timeout_seconds = 600
+
+    adapter = Adapter()
+    real = adapter.timeout_seconds
+    try:
+        adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS
+        raise RuntimeError("the warm-up failed")
+    except RuntimeError:
+        pass
+    finally:
+        adapter.timeout_seconds = real
+
+    assert adapter.timeout_seconds == 600

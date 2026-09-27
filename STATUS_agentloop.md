@@ -4731,3 +4731,59 @@ The warm-up costs one cold call up front and then every trial is warm.
 **The question it answers is whether the revision can turn that
 seven-step plan into a working one** -- the model already has the
 right idea in it.
+
+---
+
+# The warm-up timed out, and that is a DEPLOYMENT finding
+
+    warming the prefix (6154 chars)... read timeout=600
+
+**Arithmetic, not a fault.** 6,154 characters at the measured 0.104
+s/char is about **640 seconds**. `deployment/etc/config.yaml` sets
+`request_timeout_seconds: 600`.
+
+**THE DEV DEPLOYMENT'S TIMEOUT IS BELOW THE COST OF ITS OWN COLD
+CALL.** Not the fixture's -- the real one. Every first query after a
+model load, or after five minutes of idle, will fail. That is the
+query a person is most likely to be watching, and nothing in the
+config says so: its comment reasons from "a 1300-token prompt at ~5.4
+tokens/sec", and the VM measured 2.4.
+
+I am not changing it. Raising a timeout is the chasing I stopped
+doing three patches ago, and `deployment/etc` is a deployment
+decision. **But it is a real hole and it is now measured.**
+
+## What I did instead: exempt the warm-up only
+
+The warm-up is not a query. **Its entire job is to absorb the cold
+cost** so the trials afterwards are warm, and a call whose purpose is
+to be slow should not be killed for being slow.
+
+`scripts/diagnose_slow_call.py` already does exactly this, for exactly
+this reason -- "so a slow call REPORTS its number instead of timing
+out". **This is the third time this session I have failed to carry
+something across from one script to another**: the warm-up itself,
+warming the prompt rather than the model, and now its timeout.
+
+**THE TRIALS KEEP THE DEPLOYMENT'S OWN LIMIT**, restored in a
+`finally` so a warm-up that RAISES cannot leave 1800s in place. A
+control removing the restore fails; without it a hung trial would burn
+half an hour instead of ten minutes.
+
+## Controls, three
+
+    no exemption (warm-up under 600s)   1 of 16 fails
+    never restore the real timeout       1 fails
+    warm-up timeout too short to help    1 fails
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3109 passed, 8 skipped  (3107 before; +2 here)
+
+## For whoever owns deployment/etc
+
+`request_timeout_seconds: 600` against a ~640s cold call. The options
+are a larger timeout, a shorter prompt, or accepting that the first
+query of a session fails. **The third is what happens today, silently,
+and it is the only one nobody has chosen.**
