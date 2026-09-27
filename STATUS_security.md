@@ -1032,6 +1032,39 @@ be invisible to everyone. That is FAIL-CLOSED, which is why it is not
 filed: no allow-side risk, and the useful version of this concern is
 already SEC-01.
 
+## Session 36 — eligible_task_indexes reviewed. No defect.
+
+The second of the two functions I flagged as highest-value unread. It
+decides WHO MAY APPROVE, and it holds up.
+
+It reuses `check_access()` rather than reimplementing the question,
+which is the same argument that made 004-8 worth fixing on the
+proposer side -- eligibility here cannot drift from eligibility
+anywhere else. A create falls back to the action grant alone because
+there is no object to read a security value from, matching every other
+create exclusion in the file.
+
+### An asymmetry that is correct, and worth writing down
+
+Eligibility calls `check_access(self.mediator, ...)` -- the READ
+mediator, which since patch 385 reads published GOLD.
+`_refuse_writes_outside_current_mac` calls
+`self._adapter_mediator._get_security_value(...)` -- the SOURCE.
+
+Two different data sources, and two different subjects: eligibility is
+about the APPROVER, the MAC re-check about the PROPOSER. That reads
+like a discrepancy and is not one. "May this person review this
+object" should be decided by what they can SEE, which is gold. "Is
+this write still legal" should be decided against what is being
+WRITTEN, which is the source. Each uses the right basis.
+
+And an approver OUTSIDE the object's compartment approving a create is
+deliberate, not a gap: `_refuse_writes_outside_current_mac` records
+why it checks the proposer rather than the approver -- requiring the
+approver to reach the object would stop a cross-org supervisor signing
+anything off, and that is a deployment owner's policy decision rather
+than a bug.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
