@@ -96,6 +96,10 @@ from core.llm.interface import LLMUnavailable  # noqa: E402
 
 USER_ID = "user_alice"
 
+# Long enough that a cold call reports rather than dies. Not a
+# deployment setting and never applied to a trial -- see the warm-up.
+WARM_UP_TIMEOUT_SECONDS = 1800
+
 CASES = (
     EvalCase(
         name="one_field",
@@ -285,16 +289,48 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
     )
     if mode == "plan":
         warm_system += PLAN_INSTRUCTIONS
+    # AND THE WARM-UP GETS ITS OWN, GENEROUS TIMEOUT.
+    #
+    # It timed out at 600s on its first outing, which is arithmetic
+    # rather than a fault: 6,154 characters at the measured 0.104
+    # s/char is about 640 seconds. The deployment's timeout is below
+    # the cost of its own cold call.
+    #
+    # RAISING THE DEPLOYMENT'S TIMEOUT IS NOT THE ANSWER -- that is
+    # the chasing I stopped doing three patches ago. But this call is
+    # not a query: its entire job is to ABSORB the cold cost so the
+    # trials afterwards are warm, and a call whose purpose is to be
+    # slow should not be killed for being slow.
+    #
+    # scripts/diagnose_slow_call.py already does exactly this, for
+    # exactly this reason -- "so a slow call REPORTS its number
+    # instead of timing out". Third time this session I have failed to
+    # carry something across from one script to another.
+    #
+    # THE TRIALS KEEP THE REAL TIMEOUT. Only the warm-up is exempt,
+    # and it is restored immediately, so nothing measured runs under a
+    # limit the deployment would not use.
+    adapter = generation.loop.client
+    while not hasattr(adapter, "timeout_seconds") and hasattr(adapter, "_wrapped"):
+        adapter = adapter._wrapped
+    real_timeout = getattr(adapter, "timeout_seconds", None)
+
     print(f"warming the prefix ({len(warm_system)} chars)...", flush=True)
     warm_started = time.monotonic()
     try:
+        if real_timeout is not None:
+            adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS
         generation.loop.client.chat(
             warm_system, "Reply with {}", json_mode=True, temperature=0,
         )
     except LLMUnavailable as e:
         print(f"  model unreachable during warm-up: {e}")
         return 1
-    print(f"  {time.monotonic() - warm_started:.1f}s\n")
+    finally:
+        if real_timeout is not None:
+            adapter.timeout_seconds = real_timeout
+    print(f"  {time.monotonic() - warm_started:.1f}s "
+          f"(trials now run under the deployment's {real_timeout}s)\n")
 
     timer = Timed(generation.loop.client)
     generation.loop.client = timer
