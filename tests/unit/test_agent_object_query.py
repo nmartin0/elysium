@@ -101,7 +101,15 @@ def test_the_agent_can_count_a_whole_set_in_one_step(loop_and_mediator):
         "step": "aggregate_object", "object_type": "Customer", "aggregate": "count",
     })
 
-    assert result == {None: 2}
+    # A BARE NUMBER, NOT {None: 2}. aggregate_by_field() returns a
+    # mapping of group to value, and with no group_by the single group
+    # is keyed by None -- a sentinel meaning "no grouping" that
+    # json.dumps renders to the model as the string "null". A model
+    # asked to count a set was shown {"null": "2"}.
+    #
+    # Unwrapped at the step handler when group_by is absent. This test
+    # asserted the artifact; it now asserts the count.
+    assert result == 2
 
 
 def test_the_agent_can_traverse_a_link(loop_and_mediator):

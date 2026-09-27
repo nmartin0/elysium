@@ -714,12 +714,36 @@ class AgentLoop:
     def _step_aggregate_object(self, step: dict, user_record: UserRecord,
                                visible_schema: dict, gathered: list[dict],
                                context: RequestContext | None = None) -> Any:
-        return self.mediator.aggregate_by_field(
+        self._check_filter_types(step["object_type"], step.get("filter") or {},
+                                 visible_schema)
+        grouped = self.mediator.aggregate_by_field(
             user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             group_by=step.get("group_by"),
             aggregate=step["aggregate"],
             field_name=step.get("field_name"),
         )
+        # AN UNGROUPED AGGREGATE IS ONE NUMBER, AND NOW LOOKS LIKE ONE.
+        #
+        # aggregate_by_field() always returns a mapping of group to
+        # value. With no group_by there is one group, keyed by None --
+        # a sentinel meaning "no grouping". json.dumps renders that key
+        # as the string "null", so a model asking for the maximum
+        # amount was shown:
+        #
+        #     "result": {"null": "199"}
+        #
+        # That is LB-5's family: an implementation artifact rendered as
+        # information. "null" is not a group the caller asked about and
+        # not a word in the ontology.
+        #
+        # CONDITIONED ON group_by BEING ABSENT, not on the key being
+        # None, and the distinction is load-bearing: a GROUPED
+        # aggregate can legitimately produce a None key when a row's
+        # group field is null. Unwrapping that would turn "the total
+        # for rows with no category" into "the total", silently.
+        if not step.get("group_by") and isinstance(grouped, dict) and len(grouped) == 1:
+            return next(iter(grouped.values()))
+        return grouped
 
     def _step_search_around(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict],

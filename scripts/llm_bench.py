@@ -150,6 +150,37 @@ CASES = (
             ExpectedFact("Transaction", "2", "amount", "199"),
         ),
     ),
+    EvalCase(
+        # THE ADAPTIVITY CASE ReWOO's OWN AUTHORS NAME AS THE WEAKNESS:
+        # plan-then-execute "may not be the best choice for tasks
+        # requiring high adaptability and uncertainty of tool outputs".
+        # Every other case here has a next step knowable in advance.
+        # This one does not: WHICH transaction to read the category of
+        # depends on a value the planner will never see.
+        #
+        # IT IS ANSWERABLE -- verified by hand before being written,
+        # because a case the system cannot satisfy tests the case
+        # rather than the system. The chain is aggregate max -> search
+        # for that value -> read that object's field, with the value
+        # flowing through a handle:
+        #
+        #     {"id": "a", "step": "aggregate_object", ... "max" ...}
+        #     {"id": "b", "step": "search_object",
+        #      "filter": {"amount": "$a"}}
+        #     {"id": "c", "step": "get_field", "object_id": "$b",
+        #      "field_name": "category"}
+        #
+        # The planner names $a and never learns it is 199. That is
+        # adaptivity WITHOUT the planner reading data, which is the
+        # thing ReWOO says plan-then-execute cannot do -- so whether
+        # the model finds this chain is the real question.
+        name="dependent_choice",
+        query="What category was Ada Okafor's largest transaction?",
+        user_id=USER_ID,
+        expected_facts=(
+            ExpectedFact("Transaction", "2", "category", "hardware"),
+        ),
+    ),
 )
 
 
