@@ -670,6 +670,27 @@ class WriteLogReader(InternalReadAdapter):
         FOR RESUMING A PENDING DELETE. Recording it blindly would undo a
         create or update applied after it -- the latest applied operation
         is what decides deleted-ness, and resuming must not reorder them.
+
+        IT COMPARES created_at AS A STRING, AND THAT IS ONLY SAFE
+        BECAUSE OF THE OFFSET FORMAT (SEC-29). `created_at` is written
+        with a plain `datetime.now(UTC).isoformat()`, which omits
+        microseconds when they are zero -- so a whole second and a
+        fraction of it are compared as `...:00+00:00` against
+        `...:00.5+00:00`. That orders correctly only because "+" is
+        0x2B and "." is 0x2E, so the whole second sorts first.
+
+        NORMALISE THE OFFSET TO "Z" AND IT SILENTLY INVERTS: "Z" is
+        0x5A, above ".", so `...:00Z` would sort AFTER `...:00.5Z` and
+        a resumed delete would supersede an operation that actually
+        came first. Nothing would fail loudly; deletes would start
+        losing races with earlier writes.
+
+        core/pending_write_store.py's own `_stamp()` pins
+        `timespec="microseconds"` for exactly this reason and says so.
+        This store relies on the coincidence instead. Recorded rather
+        than changed, because changing the stored format is a
+        migration; `tests/unit/test_write_log_timestamp_ordering.py`
+        fails if the property stops holding.
         """
         with self._connection() as conn:
             row = conn.execute(
@@ -909,6 +930,50 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
             )
             conn.commit()
 
+    @staticmethod
+    def _watermark_safe_to_claim(conn) -> int:
+        """The highest rowid the index may claim to have seen.
+
+        WHY THIS IS NOT SIMPLY MAX(rowid) (SEC-24). Both sync paths
+        read `WHERE status = 'applied'` but recorded the watermark as
+        MAX(rowid) over EVERY row. A row that was still `pending` when
+        a sync ran was therefore skipped AND passed, and when recovery
+        later marked it applied no sync would ever look at it again:
+        the next call compares two integers, finds itself current, and
+        reads nothing.
+
+        MEASURED, and the object is a deleted one:
+
+            log: del cust_001 (pending), upd cust_999 (applied)
+            sync            -> ('rebuilt', 0)   watermark = 2
+            mark del applied
+            sync            -> ('current', 0)   nothing read
+            is_deleted      -> False
+            full rebuild    -> True
+
+        `is_deleted()` reads ONLY this index, with no fallback to the
+        log, so the object stays readable indefinitely -- until
+        somebody runs scripts/rebuild_deleted_index by hand.
+
+        IT IS REACHED BY THE ORDINARY CRASH PATH. api/app.py syncs the
+        index at line 354 and resumes pending writes at line 472, so
+        every delete left pending by a crash is skipped by the sync
+        that runs before the recovery that applies it. That is F-27's
+        scenario again, one layer further on.
+
+        ONLY `pending` BLOCKS. `abandoned` is terminal -- the entry
+        changed nothing and never will -- so it can be passed safely.
+        Treating it as blocking would stall the watermark forever
+        behind a row that is never coming back.
+        """
+        lowest_pending = conn.execute(
+            "SELECT MIN(rowid) FROM write_log WHERE status = 'pending'"
+        ).fetchone()[0]
+        highest = conn.execute("SELECT MAX(rowid) FROM write_log").fetchone()[0] or 0
+        if lowest_pending is None:
+            return highest
+        return min(highest, lowest_pending - 1)
+
     def rebuild_deleted_index(self) -> int:
         """Regenerates the whole index from the log. Returns its size.
 
@@ -946,8 +1011,7 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
                 "INSERT INTO object_deleted (object_type, object_id, deleted_at) VALUES (?, ?, ?)",
                 deleted,
             )
-            self._set_watermark(
-                conn, conn.execute("SELECT MAX(rowid) FROM write_log").fetchone()[0] or 0)
+            self._set_watermark(conn, self._watermark_safe_to_claim(conn))
             newest = conn.execute(
                 "SELECT MAX(created_at) FROM write_log WHERE status = 'applied'"
             ).fetchone()[0] or ""
@@ -1047,7 +1111,7 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
                         "DELETE FROM object_deleted WHERE object_type = ? AND object_id = ?",
                         (row["object_type"], row["object_id"]),
                     )
-            self._set_watermark(conn, highest)
+            self._set_watermark(conn, self._watermark_safe_to_claim(conn))
             if rows:
                 conn.execute(
                     "INSERT OR REPLACE INTO write_log_meta (key, value) VALUES "

@@ -141,7 +141,7 @@ class TestUnresolvableReferences:
             "value": "user.favourite_colour", "description": "Nonsense.",
         }]
 
-        with pytest.raises(ValueError, match="no attribute"):
+        with pytest.raises(ValueError, match="no declared field"):
             evaluate_submission_criteria(criteria, None, {"region": "us-west"}, ALICE)
 
 
@@ -179,7 +179,7 @@ class TestTheProposerReference:
             "value": "proposer.favourite_colour", "description": "Nonsense.",
         }]
 
-        with pytest.raises(ValueError, match="no attribute"):
+        with pytest.raises(ValueError, match="no declared field"):
             evaluate_submission_criteria(criteria, None, {}, ALICE, proposer=ALICE)
 
     def test_a_parameter_cannot_stand_in_for_the_proposer(self):

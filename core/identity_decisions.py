@@ -40,6 +40,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from core.sqlite_connection import connection_with_schema
+
 PENDING = "pending"
 APPROVED = "approved"
 REJECTED = "rejected"
@@ -86,13 +88,32 @@ class MergeDecisionStore:
 
     def __init__(self, database: Path):
         self._database = database
-        with self._connection() as conn:
-            conn.executescript(SCHEMA)
+        with self._connection():
+            pass  # Creates the schema on first use, via the helper.
 
     def _connection(self):
-        conn = sqlite3.connect(self._database)
-        conn.row_factory = sqlite3.Row
-        return conn
+        """The project's own helper, which CLOSES what it opens.
+
+        THIS USED TO BE A BARE sqlite3.connect() used as
+        `with self._connection() as conn:`. That commits on a clean
+        exit and does NOT close -- the documented Python behaviour, and
+        a trap, because the `with` makes it look handled. MEASURED
+        before fixing: 100 calls to propose()/decide() left 54 file
+        descriptors open. run_sync.py builds this store on every sync
+        and decides against it per candidate pair, so a large identity
+        run ends in "Too many open files" and takes the sync with it.
+
+        connection_with_schema() closes in a `finally`, and brings WAL,
+        the per-connection query deadline and once-per-process schema
+        verification with it -- none of which this store had while it
+        opened its own connections.
+
+        IT DOES NOT AUTO-COMMIT, which the bare connection did. Every
+        writer below now commits explicitly; without that this fix
+        would have quietly stopped persisting anything, which is worse
+        than the leak.
+        """
+        return connection_with_schema(self._database, SCHEMA)
 
     def propose(self, object_type: str, left_id: str, right_id: str, score: float,
                 agreement: str = "") -> str:
@@ -119,6 +140,7 @@ class MergeDecisionStore:
                 (proposal_id, object_type, left, right, float(score), agreement,
                  datetime.now(UTC).isoformat()),
             )
+            conn.commit()
             return proposal_id
 
     def decide(self, proposal_id: str, decision: str, decided_by: str,
@@ -136,6 +158,7 @@ class MergeDecisionStore:
                 (str(uuid.uuid4()), proposal_id, decision, decided_by,
                  datetime.now(UTC).isoformat(), note),
             )
+            conn.commit()
 
     def _latest_decisions(self, conn) -> dict[str, sqlite3.Row]:
         rows = conn.execute(

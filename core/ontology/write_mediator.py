@@ -1146,6 +1146,73 @@ class WriteMediator:
             )
         return kept
 
+    def _refuse_a_chosen_compartment(self, object_type: str, field_name: str,
+                                      value_spec, action_type_name: str) -> None:
+        """A mutation may not set the security field to a chosen value.
+
+        THE HAZARD IS ALREADY NAMED, one screen down, in
+        `_resolve_mutation_value`: a `parameter.<n>` reference for the
+        security field "would let the model (or a hallucinated/injected
+        value) choose ANY security value, including one that doesn't
+        belong to the user actually authorized to perform this action."
+        Nothing refused it. Measured -- this loads today:
+
+            mutations:
+              - set: {property: region, value: parameter.target_region}
+
+        WHY THAT IS A MAC HOLE AND NOT A SCHEMA-AUTHOR'S MISTAKE. The
+        model composes an action's parameter values, and the model is
+        untrusted by this project's first principle. So the compartment
+        of a newly created object would be chosen by the least trusted
+        component in the system -- possibly one the acting user has no
+        access to at all.
+
+        AND NOTHING ELSE CATCHES IT. `_authorize_sub_write` skips MAC
+        for a create, correctly, because there is no row yet to consult.
+        `_refuse_cross_compartment` excludes creates from its write set
+        for the same reason. Both exclusions are right on their own and
+        together they leave the create path with no compartment check
+        at all, which is why this belongs here rather than in either of
+        them.
+
+        A LITERAL IS ALLOWED, AND I FIRST REFUSED IT. I wrote that a
+        literal "hardcodes one tenant's compartment into a schema every
+        tenant shares", borrowing `_resolve_mutation_value`'s wording.
+        An existing test failed -- a create setting `region: "us-west"`
+        for a us-west user -- and reading it settled the point: Elysium
+        is SINGLE-TENANT, one deployment per organisation, so a
+        compartment in a schema is a region inside one org chosen by
+        the schema's author at authoring time. That is trusted
+        configuration. The hazard named in the docstring is the
+        CALLER's value, not the author's, and conflating the two was my
+        mistake.
+
+        WHAT A LITERAL DOES STILL LEAVE OPEN is a separate matter and
+        is recorded rather than fixed here: a create is excluded from
+        `_refuse_cross_compartment`'s write set, so an action reading
+        an object in one compartment and creating one in another --
+        by literal -- is not detected as a crossing the way an UPDATE
+        is. Closing that means deriving a create's label from its
+        resolved changes, which is a change to that function and not
+        to this one.
+
+        AT PROPOSAL, BEFORE RESOLUTION. A write that cannot legally
+        happen should not reach an approval queue looking like a
+        decision somebody could take -- the argument
+        `_refuse_cross_compartment` makes for its own placement.
+        """
+        security = (self._adapter_mediator._type_schema(object_type) or {}).get("security") or {}
+        if security.get("field") != field_name:
+            return
+        if not (isinstance(value_spec, str) and value_spec.startswith("parameter.")):
+            return
+        raise PermissionError(
+            f"Action {action_type_name!r} sets {object_type}.{field_name}, the field that "
+            f"decides who may see this object, from {value_spec!r}. A caller-supplied "
+            f"parameter may not choose a compartment -- use 'user.security_value', or a "
+            f"literal the schema's author chose."
+        )
+
     def _refuse_cross_compartment(self, user_record, action_type_name: str,
                                   action_def: dict, parameters: dict,
                                   sub_writes: list) -> None:
@@ -1441,6 +1508,11 @@ class WriteMediator:
                 # Each half was tested and the SEAM between them was not,
                 # which is what the end-to-end test that found this exists
                 # for.
+                for mutation in (sw_def.get("mutations") or []):
+                    self._refuse_a_chosen_compartment(
+                        object_type, mutation["set"]["property"],
+                        mutation["set"]["value"], action_type_name,
+                    )
                 changes = {
                     mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"],
                                                                                 parameters, user_record)
@@ -1660,6 +1732,7 @@ class WriteMediator:
             # made before a constraint existed must not slip through by
             # being approved after it -- re-evaluated at the point of use.
             self._refuse_constraint_violations(pending.sub_writes)
+            self._refuse_if_the_proposer_lost_the_grant(pending)
             unapplyable = self._fields_no_longer_declared(pending)
             if unapplyable:
                 self.audit_log.log_write_unapplyable(
@@ -1864,6 +1937,69 @@ class WriteMediator:
                     problems.append(f"{sub_write.object_type}.{field_name}: {reason}")
         if problems:
             raise ConstraintViolation("; ".join(problems))
+
+    def _refuse_if_the_proposer_lost_the_grant(self, pending: PendingWrite) -> None:
+        """Refuses a write whose proposer may no longer run this action.
+
+        THE INVARIANT THIS WAS MISSING. SECURITY_ARCHITECTURE.md:
+        "AUTHORITY IS NEVER STORED. It is re-evaluated at the point of
+        use, against the CURRENT generation. A pending write survives a
+        restart and a reload, so a decision taken at proposal would be
+        taken under rules that may no longer exist."
+
+        Confirm already re-evaluates plenty -- submission criteria
+        against the approver, constraints, fields the ontology no
+        longer declares, and MAC against the approver. It did NOT
+        re-evaluate the PROPOSER's own execute: grant, so an action
+        whose grant was revoked from a role after proposal could still
+        be approved and run. Runtime role editing makes that a live
+        path rather than a theoretical one: manage:roles exists,
+        role_changes.py applies it, and the queue's TTL is fifteen
+        minutes.
+
+        AGAINST self.roles, WHICH IS THE CURRENT GENERATION'S. That is
+        the whole point; comparing against the roles captured at
+        proposal would re-store exactly the authority this refuses to
+        store.
+
+        WHAT THIS DOES NOT CATCH, said plainly rather than left to be
+        discovered. `pending.proposer` is a snapshot, so a proposer who
+        has since been DISABLED, DELETED, or MOVED TO ANOTHER ROLE is
+        not detected here -- that needs the user directory, which this
+        mediator does not hold and which is wired in api/routes.py.
+        Filed in REQUESTS_security.md. Note that disable_user() and
+        delete_user() already delete the account's SESSIONS in the same
+        transaction, so a disabled proposer cannot themselves act; what
+        survives is the queued write somebody else may approve.
+
+        A ValueError, matching _fields_no_longer_declared, so the route
+        answers 409 -- the request is no longer applicable, rather than
+        the approver being forbidden.
+        """
+        if pending.proposed_under_generation == self.generation:
+            # NOTHING HAS CHANGED, so there is nothing to re-evaluate.
+            # The grant was checked at propose_action() against these
+            # very roles; asking again would be the same question to
+            # the same data.
+            #
+            # THIS IS ALSO WHAT KEEPS THE CHECK HONEST. Written without
+            # it, the check fired on every confirm and broke 23 tests
+            # that build a PendingWrite directly and never went through
+            # propose_action -- so it was refusing writes whose
+            # proposer had lost nothing. A guard that fires when
+            # nothing changed is not enforcing the invariant, it is
+            # just failing.
+            return
+
+        execute_action_id = f"execute:{pending.action_type_name}"
+        if authorize(pending.proposer, self.roles, execute_action_id):
+            return
+        raise ValueError(
+            f"This write can no longer be applied: {pending.proposer.user_id!r} no "
+            f"longer holds {execute_action_id!r} under configuration generation "
+            f"{self.generation}. It was proposed under generation "
+            f"{pending.proposed_under_generation}. Re-propose it if it is still wanted."
+        )
 
     def _fields_no_longer_declared(self, pending: PendingWrite) -> list[str]:
         """Fields this write targets that the current ontology lacks.

@@ -697,6 +697,374 @@ earlier reviewer against `ATTACH` and `PRAGMA writable_schema` and
 held. That is a negative control somebody already paid for; this
 review did not repeat it.
 
+## Session 18 — core/sqlite_connection.py reviewed, no defect
+
+Third of the fourteen unread files. **No defect found**, recorded so
+the next agent does not repeat it.
+
+**The read-only authorizer.** Allows exactly `SQLITE_SELECT`,
+`SQLITE_READ` and `SQLITE_FUNCTION`; everything else -- including
+`ATTACH` and `PRAGMA`, which have their own action codes -- falls to
+`SQLITE_DENY`. An earlier reviewer already executed it against
+`ATTACH` and `PRAGMA writable_schema`; that control was paid for and
+was not repeated.
+
+**The per-connection query deadline, which is the part I actually
+tested.** The comment argues a held connection "would get a stricter
+bound than it asked for, which is the safe direction to be wrong in".
+Both halves check out, and the second is more interesting than the
+comment says:
+
+    timeout 0.5s, connection held, queried after 0.7s -> SUCCEEDED
+
+Not a bug. `_PROGRESS_STEPS = 10_000` means the handler runs every ten
+thousand virtual-machine instructions, so a cheap query never reaches
+it whatever the wall clock says. The deadline bites expensive queries,
+which is what a query timeout is for. A held connection is therefore
+not penalised in practice, only in principle.
+
+And the assumption underneath it holds: no connection in `core/` or
+`api/` is long-lived -- every path opens, queries and closes.
+
+WORTH KNOWING, NOT A DEFECT: a progress handler does not fire while
+SQLite waits on a LOCK, so this deadline does not bound lock-wait
+time. That is bounded separately by sqlite3's default busy timeout.
+
+## Session 20 — two files clean, one latent finding (SEC-16)
+
+**`core/auth/credential_store.py` — no defect.** Both password-change
+paths handle sessions correctly, which was the thing worth checking
+after SEC-14: self-change calls `invalidate_other_sessions(username,
+session_token)`, keeping your own and ending the rest; an
+administrator's reset calls `invalidate_all_sessions()` AND sets
+`must_change_password`. The policy is applied on all three
+password-setting routes (self-change, admin reset, user creation); the
+CLI scripts bypass it deliberately and are all guarded, which F-30
+already established.
+
+**`core/pending_write_serialisation.py` — SEC-16, latent.**
+
+    to_row(... expected_current_values={'amount': Decimal('49.99')})
+    -> TypeError: Object of type Decimal is not JSON serializable
+
+Same for `date`, `datetime` and `bytes`. `expected_current_values` is
+read from the SOURCE; `field_types.py` returns real `date`/`datetime`
+objects, and the shipped ontology declares `decimal` for money (with a
+comment explaining why it is not `number`) and `date` for
+`transaction_date`.
+
+NOT REACHABLE TODAY: the one shipped action, `RecategorizeTransactions`,
+writes only `category`, a plain string. It fires the day an action
+touches `amount` or `transaction_date`, and the failure is a 500 at
+propose rather than a clean refusal.
+
+**`default=str` IS THE WRONG FIX AND THAT IS THE USEFUL PART.**
+`expected_current_values` is compared against a freshly read value at
+confirm -- the lost-update check. Stringifying a Decimal would make
+the stored expectation never match the live value, so every such write
+would be refused as a conflict: a crash traded for a silently wrong
+answer. It needs a typed round-trip, which is more than a tail-end
+change, so it is recorded rather than half-built.
+
+## Session 22 — auth_cookies.py reviewed; SEC-17 recorded
+
+**No defect.** The two things this shape usually gets wrong are both
+handled: login issues a fresh session token AND a fresh CSRF token
+(`routes.py:1081,1088`), so there is no session fixation and the CSRF
+value does not outlive a login; logout invalidates server-side and
+clears both cookies. `secure` defaults to True even when unset, and
+the docstring's argument for that -- fail loud locally rather than
+quiet in production -- is right.
+
+**SEC-17, a recommendation rather than a defect.** Neither cookie uses
+the `__Host-` name prefix. OWASP's Session Management cheat sheet:
+"`__Host-` -- the cookie must be set with Secure, must not have a
+Domain attribute, and must use Path=/. Prevents subdomain forgery and
+HTTPS downgrade attacks. Recommended for session IDs." NIST SP 800-63B
+says a session cookie SHOULD have it.
+
+WHAT MAKES IT WORTH RAISING: Elysium ALREADY satisfies every
+constraint the prefix enforces -- Secure, Path=/, no Domain attribute.
+The prefix does not change what we set; it makes the BROWSER enforce
+it, which closes the case a sibling subdomain plants a cookie the
+parent trusts. That is documented as a real session-fixation route,
+not a theoretical one.
+
+TWO WRINKLES, WHICH IS WHY IT IS PROPOSED AND NOT BUILT:
+
+  A `__Host-` cookie REQUIRES Secure. Local dev sets
+  ELYSIUM_COOKIE_SECURE=false, so the browser would silently refuse
+  the cookie and nobody could log in -- unless the prefix is
+  conditional on that same flag. That is a design choice, and it is
+  the same dev/prod tension the module's docstring already reasons
+  about for `secure` itself.
+
+  The CSRF cookie name is read by `ui/`, which is the frontend agent's
+  file. Renaming it is a cross-agent change.
+
+## Session 25 — SEC-19 found, fix built, fix REVERTED
+
+`core/role_store.py`. `load()`'s docstring: "A STORE THAT EXISTS BUT
+CANNOT BE READ RAISES rather than falling back. Falling back to
+policy.yaml would silently restore whatever roles the store had
+replaced -- possibly grants that were deliberately withdrawn."
+
+**It does not hold across a restart.** Measured:
+
+    process 1: seeded -> ['admin', 'reader']
+    (roles.db truncated to 0 bytes)
+    process 2: load() -> None        <- use policy.yaml
+
+`role_store_meta` distinguishes an emptied TABLE, which is what it was
+built for, but not an emptied FILE: `connection_with_schema` recreates
+the schema on open and the meta row does not come back. In-process it
+DOES raise, but only because that helper caches which schemas it has
+verified -- a safety property that holds until the next restart is not
+one.
+
+**AND THEN I GOT THE FIX WRONG.** I refused when the roles tables were
+absent. That broke 13 integration tests, because `RoleChangeStore`
+SHARES `roles.db` and its own docstring says so: "Proposing creates
+the file without seeding it, so policy.yaml stays in force until
+something is actually APPROVED." A file with no roles tables is a
+NORMAL state -- a change proposed and not yet applied.
+
+So my premise, "the file exists therefore it was a role store", was
+simply false, and the suite said so in a way my eight targeted tests
+could not. Reverted: the fix and its tests both encoded the wrong
+premise, and a half-understood guard on an authority boundary is worse
+than a recorded finding.
+
+WHY NARROWING DOES NOT RESCUE IT. Refusing only when the file has NO
+tables at all would pass the tests and still lose the case where a
+later proposal recreates the change tables over a truncated file. The
+right shape is probably a startup integrity check -- the audit trail
+records applied role changes, and disagreeing with `seeded_at` is the
+signal -- rather than a guard inside `load()`. That is a design, not a
+patch, so it is recorded as SEC-19 and proposed.
+
+## Session 27 — the last two files. FOURTEEN OF FOURTEEN REVIEWED.
+
+**`core/pending_write_persistence.py` — no defect.** The module is a
+location, not a behaviour, and the claims it makes hold: the
+`reserved` migration is present so a database from before that column
+does not fail every claim; decisions are keyed `(write_id,
+task_index)`, which gives reads the index they filter by without a
+second one; and decisions are deleted with their write both on expiry
+and on consumption, so nothing orphans.
+
+**`core/auth/password_policy.py` — one LOW finding, SEC-22, recorded
+not fixed.** The policy itself is well-made and follows NIST SP 800-63B
+r4 properly -- length over composition, an offline blocklist because a
+self-hosted deployment may have no internet, and a first version's
+miss already fixed (it accepted "correct horse battery staple" because
+the list held it without spaces; separators are stripped now). I ran
+fourteen cases against it and thirteen behaved exactly as documented.
+
+The one that did not:
+
+    password_problem("kettle harbour velvet", "e") -> refused
+
+The username test is a SUBSTRING test, and nothing enforces a minimum
+username length -- `CreateUserRequest` declares plain `username: str`.
+A user named `e` cannot choose an ordinary passphrase, and the message
+"must not contain your username" reads as nonsense to them.
+
+**NOT FIXED, DELIBERATELY.** The remedy LOOSENS a security check, and
+loosening one while closing a branch is the wrong moment for it. It
+also needs a minimum username length decided alongside, which is not
+mine. NIST's intent is "do not use your username as your password",
+not "no password may contain any letter of it".
+
+### THE LANE IS NOT CLOSED. I COUNTED WRONG.
+
+I wrote "fourteen files, all read" and it was false. The fourteen were
+the files I had never TOUCHED; I then treated the rest as reviewed
+because I had been inside them for one finding each. Touching a file
+to fix one thing is not reading it.
+
+The real arithmetic, over the 37 files this agent owns:
+
+    read end to end : 20 files,  1,917 lines
+    inspected only  : 17 files,  8,456 lines
+
+So roughly 18% of the surface has actually been read. The largest
+unexamined files are all mine and all security-bearing:
+
+    core/ontology/write_mediator.py          2,256   parts read
+    core/ontology/write_log.py               1,116   GREPPED ONLY
+    core/intermediate_layer/audit.py           646   one function
+    api/app.py                                 580   two handlers
+    core/pending_write_store.py                522   ~400 read
+    core/ontology/submission_criteria.py       496   two sections
+    core/ontology/object_type_validation.py    489   one behaviour
+
+`write_log.py` is the sharpest example: 1,116 lines holding the record
+that makes "deletes do not delete" true, and the only time I opened it
+was a grep for F-27.
+
+WHY THIS MATTERS MORE THAN A MISCOUNT. The claim was pushed, and the
+integration was about to proceed on it. A document asserting
+completion it has not got is the exact failure this agent spent the
+branch finding in other people's docstrings -- SEC-13's "keeps the
+record of who said no", F-12a's "SEVEN REAL GRANT PATTERNS",
+SEC-19's "raises rather than falling back". Mine is the same shape.
+
+## Session 29 — I OVERSTATED SEC-24. Corrected.
+
+I filed SEC-24 as HIGH and wrote that the ordinary crash path left a
+deleted object readable indefinitely. **That is wrong**, and reading
+further into `write_mediator.py` is what showed it.
+
+BOTH delete paths write the index DIRECTLY, and both write it BEFORE
+marking the entry applied -- verified over the source rather than
+recalled:
+
+    _apply_one_delete           record_delete then mark_applied
+    _resume_one_delete_entry    record_delete then mark_applied
+
+So a delete left pending by a crash is indexed by the RESUME path when
+it applies, and never depends on the sync at all. Every `mark_applied`
+on a delete in this file is preceded by `record_delete`.
+
+MY REPRODUCTION MARKED THE ROW APPLIED WITH RAW SQL. No product path
+does that. I built a scenario the code cannot reach and then described
+it as the ordinary crash path -- which it also is not, since the crash
+path is exactly the one `_resume_one_delete_entry` covers.
+
+WHAT IS STILL TRUE: the watermark recorded `MAX(rowid)` over every row
+while both sync paths read only `status = 'applied'`, so it claimed to
+have seen rows it skipped, and the incremental path could disagree
+with a full rebuild. That is a real inconsistency and the module
+claims the opposite for itself, so the fix is KEPT -- with the
+severity corrected to LOW and the reachability stated honestly: no
+supported path reaches a consequence.
+
+WHY THIS IS RECORDED RATHER THAN EDITED AWAY. It is the same failure
+this branch has been finding in other people's work all along -- a
+claim that outruns what was checked -- and it is worse coming from the
+agent doing the finding. It also went out as HIGH into an integration
+handover, which is the moment it does the most damage.
+
+## Session 31 — api/app.py reviewed. No defect.
+
+Four things checked, each by running rather than reading:
+
+**The middleware order.** Starlette makes the LAST registered the
+OUTERMOST, so registration order matters and the file says so. The
+resulting stack puts the size limit OUTSIDE csrf -- an oversized body
+is rejected before anything reads it -- and the security headers
+OUTSIDE the size limit, so even a 413 carries them. The file records
+that being confirmed with an isolated three-middleware test, and the
+order is right.
+
+**The per-request security cache, which was the one I expected to
+find something in.** `/query` runs on `app.state.executor`, and
+`loop.run_in_executor` does NOT copy context the way
+`run_in_threadpool` does -- so a cache set on a pool thread and never
+cleared would persist across users. It cannot:
+`security_cache_scope()` resets in a `finally`, and the module comment
+at `mediator.py:240` already names this exact hazard -- "Executor
+threads keep their own context between tasks; a cache set and never
+reset would bring the bug back one thread at a time." Somebody found
+it before me.
+
+And it could not cross users even if it leaked: the cache holds
+OBJECT security values and links, keyed by object, never a per-user
+decision.
+
+**The SPA mount.** `app.frontend("/", directory=UI_DIST_DIR)` is
+unauthenticated by necessity -- the shell has to load before login --
+and it replaced a hand-rolled `StaticFiles` mount, which is the shape
+that usually traverses. Probed with four encodings:
+
+    /../deployment/etc/policy.yaml             404
+    /..%2f..%2fdeployment/etc/policy.yaml      404
+    /%2e%2e/%2e%2e/etc/passwd                  404
+    /../../../../etc/passwd                    404
+
+**No unauthenticated surface beyond that.** One router, mounted under
+`/api`, behind the auth dependency.
+
+## Session 33 — object_type_validation.py reviewed. No defect.
+
+The load-time gate that decides whether a schema is acceptable at all,
+and where the deny-by-default guarantee lives. It holds up.
+
+`_validate_security` refuses a type with NO security block, refuses
+one declaring BOTH `field` and `via_field` -- because
+`_get_security_value` checks `field` first and would silently ignore
+the other -- refuses one declaring NEITHER, requires `security.field`
+to be a plain data field and `security.via_field` to be a link, and
+detects a circular `via_field` chain with a `visited` set passed down
+per call rather than shared, so validating one type cannot leak into
+another.
+
+`_validate_field_data_types` rejects an unknown `data_type` at load
+rather than at sync time, and refuses a link field declaring one at
+all -- a link's value is the target's id, and its type is the target's
+business.
+
+### And it corrected one of my own records
+
+`id_type` is declared on the STORAGE block, beside the `id_column` it
+describes -- not under `fields`. My SEC-25 probe named
+`fields.<id>.data_type`, which is the wrong knob. Re-checked against
+the right one:
+
+    storage.id_type=decimal    -> accepted at load
+    storage.id_type=date       -> accepted at load
+    storage.id_type=timestamp  -> accepted at load
+
+So SEC-25 stands -- an id really can be a Decimal or a date, and the
+audit writer really did raise on every access decision for such a type
+-- but the declaration I cited did not govern it. Probe corrected in
+the register. Second time a claim of mine has needed tightening; this
+one survived, SEC-24's did not.
+
+### One observation, not a finding
+
+Nothing validates that the security field's `data_type` is comparable
+to a user's `security_value`, which is TEXT. A `security.field`
+declaring `data_type: decimal` or `date` would be served as a Decimal
+or a date and compare unequal to every user's value, so the type would
+be invisible to everyone. That is FAIL-CLOSED, which is why it is not
+filed: no allow-side risk, and the useful version of this concern is
+already SEC-01.
+
+## Session 36 — eligible_task_indexes reviewed. No defect.
+
+The second of the two functions I flagged as highest-value unread. It
+decides WHO MAY APPROVE, and it holds up.
+
+It reuses `check_access()` rather than reimplementing the question,
+which is the same argument that made 004-8 worth fixing on the
+proposer side -- eligibility here cannot drift from eligibility
+anywhere else. A create falls back to the action grant alone because
+there is no object to read a security value from, matching every other
+create exclusion in the file.
+
+### An asymmetry that is correct, and worth writing down
+
+Eligibility calls `check_access(self.mediator, ...)` -- the READ
+mediator, which since patch 385 reads published GOLD.
+`_refuse_writes_outside_current_mac` calls
+`self._adapter_mediator._get_security_value(...)` -- the SOURCE.
+
+Two different data sources, and two different subjects: eligibility is
+about the APPROVER, the MAC re-check about the PROPOSER. That reads
+like a discrepancy and is not one. "May this person review this
+object" should be decided by what they can SEE, which is gold. "Is
+this write still legal" should be decided against what is being
+WRITTEN, which is the source. Each uses the right basis.
+
+And an approver OUTSIDE the object's compartment approving a create is
+deliberate, not a gap: `_refuse_writes_outside_current_mac` records
+why it checks the proposer rather than the approver -- requiring the
+approver to reach the object would stop a cross-org supervisor signing
+anything off, and that is a deployment owner's policy decision rather
+than a bug.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
