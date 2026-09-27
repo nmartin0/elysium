@@ -242,7 +242,33 @@ class AuditLog:
         if self._generation is not None:
             entry["generation"] = self._generation
         with open(self._log_path, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+            # default=str, AND THAT IS THE RIGHT ANSWER HERE even
+            # though it was the WRONG one in
+            # pending_write_serialisation (SEC-16).
+            #
+            # THE DEFECT (SEC-25). object_id is typed Any and comes
+            # from the object's id_field, whose data_type an ontology
+            # may declare freely -- object_type_validation accepts
+            # `decimal`, `date` and `timestamp` for it, tested. This
+            # ran per access decision with a bare json.dumps, so a
+            # date-keyed or decimal-keyed type raised TypeError on
+            # EVERY read: the whole type unusable, reporting a JSON
+            # error rather than anything about the ontology.
+            #
+            # WHY STRINGIFYING IS CORRECT HERE AND WAS NOT THERE. A
+            # stored expected_current_value is COMPARED against a
+            # freshly read one, so a stringified Decimal silently
+            # stops matching and every such write is refused as a
+            # conflict. Nothing compares an audit entry to anything:
+            # it is a record for an operator, read back only to be
+            # shown. The string form of an id is exactly what a person
+            # reading a trace wants.
+            #
+            # FAIL-CLOSED EITHER WAY, which is why this is availability
+            # rather than a hole: the raise happened INSIDE the
+            # authorization path, so an access that could not be
+            # logged did not proceed.
+            f.write(json.dumps(entry, default=str) + "\n")
 
     def entries_for_request(self, request_id: str, user_id: str,
                              max_scan: int = 50_000) -> list[dict]:
