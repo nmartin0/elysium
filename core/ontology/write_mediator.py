@@ -1146,6 +1146,73 @@ class WriteMediator:
             )
         return kept
 
+    def _refuse_a_chosen_compartment(self, object_type: str, field_name: str,
+                                      value_spec, action_type_name: str) -> None:
+        """A mutation may not set the security field to a chosen value.
+
+        THE HAZARD IS ALREADY NAMED, one screen down, in
+        `_resolve_mutation_value`: a `parameter.<n>` reference for the
+        security field "would let the model (or a hallucinated/injected
+        value) choose ANY security value, including one that doesn't
+        belong to the user actually authorized to perform this action."
+        Nothing refused it. Measured -- this loads today:
+
+            mutations:
+              - set: {property: region, value: parameter.target_region}
+
+        WHY THAT IS A MAC HOLE AND NOT A SCHEMA-AUTHOR'S MISTAKE. The
+        model composes an action's parameter values, and the model is
+        untrusted by this project's first principle. So the compartment
+        of a newly created object would be chosen by the least trusted
+        component in the system -- possibly one the acting user has no
+        access to at all.
+
+        AND NOTHING ELSE CATCHES IT. `_authorize_sub_write` skips MAC
+        for a create, correctly, because there is no row yet to consult.
+        `_refuse_cross_compartment` excludes creates from its write set
+        for the same reason. Both exclusions are right on their own and
+        together they leave the create path with no compartment check
+        at all, which is why this belongs here rather than in either of
+        them.
+
+        A LITERAL IS ALLOWED, AND I FIRST REFUSED IT. I wrote that a
+        literal "hardcodes one tenant's compartment into a schema every
+        tenant shares", borrowing `_resolve_mutation_value`'s wording.
+        An existing test failed -- a create setting `region: "us-west"`
+        for a us-west user -- and reading it settled the point: Elysium
+        is SINGLE-TENANT, one deployment per organisation, so a
+        compartment in a schema is a region inside one org chosen by
+        the schema's author at authoring time. That is trusted
+        configuration. The hazard named in the docstring is the
+        CALLER's value, not the author's, and conflating the two was my
+        mistake.
+
+        WHAT A LITERAL DOES STILL LEAVE OPEN is a separate matter and
+        is recorded rather than fixed here: a create is excluded from
+        `_refuse_cross_compartment`'s write set, so an action reading
+        an object in one compartment and creating one in another --
+        by literal -- is not detected as a crossing the way an UPDATE
+        is. Closing that means deriving a create's label from its
+        resolved changes, which is a change to that function and not
+        to this one.
+
+        AT PROPOSAL, BEFORE RESOLUTION. A write that cannot legally
+        happen should not reach an approval queue looking like a
+        decision somebody could take -- the argument
+        `_refuse_cross_compartment` makes for its own placement.
+        """
+        security = (self._adapter_mediator._type_schema(object_type) or {}).get("security") or {}
+        if security.get("field") != field_name:
+            return
+        if not (isinstance(value_spec, str) and value_spec.startswith("parameter.")):
+            return
+        raise PermissionError(
+            f"Action {action_type_name!r} sets {object_type}.{field_name}, the field that "
+            f"decides who may see this object, from {value_spec!r}. A caller-supplied "
+            f"parameter may not choose a compartment -- use 'user.security_value', or a "
+            f"literal the schema's author chose."
+        )
+
     def _refuse_cross_compartment(self, user_record, action_type_name: str,
                                   action_def: dict, parameters: dict,
                                   sub_writes: list) -> None:
@@ -1441,6 +1508,11 @@ class WriteMediator:
                 # Each half was tested and the SEAM between them was not,
                 # which is what the end-to-end test that found this exists
                 # for.
+                for mutation in (sw_def.get("mutations") or []):
+                    self._refuse_a_chosen_compartment(
+                        object_type, mutation["set"]["property"],
+                        mutation["set"]["value"], action_type_name,
+                    )
                 changes = {
                     mutation["set"]["property"]: self._resolve_mutation_value(mutation["set"]["value"],
                                                                                 parameters, user_record)
