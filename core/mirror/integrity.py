@@ -319,29 +319,61 @@ def _check_declared_columns(catalog, schema: dict, silver: set[str],
         if table_name is None:
             continue
 
-        matching = [name for name in silver if name.split(".", 1)[1] == table_name]
-        if not matching:
-            report.note(
-                f"{object_type}: declared table {table_name!r} is not in the mirror"
-            )
-            continue
-
-        try:
-            present = set(catalog.load_table(matching[0]).schema().column_names)
-        except Exception:  # noqa: BLE001 - reported below as unreadable
-            report.note(f"{matching[0]}: could not be read")
-            continue
+        # BY SILO AND TABLE, not by table name alone (PA001-A18). The
+        # old match compared `name.split(".", 1)[1] == table_name`, so
+        # two silos with a table of the same name -- `customers` is
+        # not an unusual name -- matched both, and `matching[0]` took
+        # whichever sorted first. Measured: a type declaring silo `q`
+        # was checked against `p.customers` and reported a column
+        # missing from a table it does not use.
+        storages = {None: storage, **(type_def.get("additional_storage") or {})}
+        columns_by_storage: dict = {}
+        for key, block in storages.items():
+            silo = (block or {}).get("silo")
+            bare = (block or {}).get("table")
+            if silo is None:
+                # NO SILO DECLARED. Real schemas always name one; some
+                # test fixtures do not, and refusing them would break
+                # callers to fix a fault they do not have. Fall back to
+                # the bare name, which is what this check did for
+                # everybody until now -- the AMBIGUITY is the bug, and
+                # a schema with one silo has none.
+                candidates = sorted(s for s in silver
+                                     if s.split(".", 1)[1] == bare)
+                identifier = candidates[0] if candidates else f"?.{bare}"
+            else:
+                identifier = f"{silo}.{bare}"
+            if identifier not in silver:
+                report.note(
+                    f"{object_type}: declared table {identifier!r} is not in "
+                    f"the mirror"
+                )
+                continue
+            try:
+                columns_by_storage[key] = set(
+                    catalog.load_table(identifier).schema().column_names)
+            except Exception:  # noqa: BLE001 - reported below as unreadable
+                report.note(f"{identifier}: could not be read")
 
         for field_name, field_def in (type_def.get("fields") or {}).items():
             # LINKS HAVE NO COLUMN OF THEIR OWN when they are declared
             # on the far side, so their absence is not a fault.
             if field_def.get("type") == "link":
                 continue
+            # WHERE THE FIELD ACTUALLY LIVES. A fused type keeps some
+            # fields in another silo entirely, and checking every field
+            # against the PRIMARY table reported a perfectly healthy
+            # deployment as broken -- the same fault as PA001-I1, one
+            # function along.
+            where = field_def.get("storage")
+            if where not in columns_by_storage:
+                continue
             column = field_def.get("column", field_name)
-            if column not in present:
+            if column not in columns_by_storage[where]:
+                block = storages[where] or {}
                 report.note(
                     f"{object_type}.{field_name}: declared but column {column!r} "
-                    f"is missing from {matching[0]}"
+                    f"is missing from {block.get('silo')}.{block.get('table')}"
                 )
 
 
