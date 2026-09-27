@@ -670,6 +670,27 @@ class WriteLogReader(InternalReadAdapter):
         FOR RESUMING A PENDING DELETE. Recording it blindly would undo a
         create or update applied after it -- the latest applied operation
         is what decides deleted-ness, and resuming must not reorder them.
+
+        IT COMPARES created_at AS A STRING, AND THAT IS ONLY SAFE
+        BECAUSE OF THE OFFSET FORMAT (SEC-29). `created_at` is written
+        with a plain `datetime.now(UTC).isoformat()`, which omits
+        microseconds when they are zero -- so a whole second and a
+        fraction of it are compared as `...:00+00:00` against
+        `...:00.5+00:00`. That orders correctly only because "+" is
+        0x2B and "." is 0x2E, so the whole second sorts first.
+
+        NORMALISE THE OFFSET TO "Z" AND IT SILENTLY INVERTS: "Z" is
+        0x5A, above ".", so `...:00Z` would sort AFTER `...:00.5Z` and
+        a resumed delete would supersede an operation that actually
+        came first. Nothing would fail loudly; deletes would start
+        losing races with earlier writes.
+
+        core/pending_write_store.py's own `_stamp()` pins
+        `timespec="microseconds"` for exactly this reason and says so.
+        This store relies on the coincidence instead. Recorded rather
+        than changed, because changing the stored format is a
+        migration; `tests/unit/test_write_log_timestamp_ordering.py`
+        fails if the property stops holding.
         """
         with self._connection() as conn:
             row = conn.execute(
