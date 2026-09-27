@@ -4592,3 +4592,72 @@ a whole revision, which this run showed costs about 200 seconds.
 `dependent_choice` -- the adaptivity case ReWOO's authors name as the
 weakness, and the one I still cannot write without a VM run to check
 it is answerable at all.
+
+---
+
+# dependent_choice IS answerable -- and finding that out found a defect
+
+I said I could not write the adaptivity case without a VM run. That
+was wrong: the chain that would answer it was blocked by the decimal
+crash, and that is fixed, so I could check it here.
+
+**First, the crash fix works on the exact case that found it.** What
+used to be an uncaught `decimal.InvalidOperation` out of the loop is
+now:
+
+    filter 'amount': {None: Decimal('199.000000000')} is not a number
+
+A named, recoverable refusal naming the field. End to end, on the
+query that exposed it.
+
+## And that message shows the defect
+
+`aggregate_by_field()` returns a mapping of group to value. **With no
+`group_by` there is one group, keyed by None** -- a sentinel meaning
+"no grouping". `json.dumps` renders that key as the string `"null"`,
+so a model asking for a maximum was shown:
+
+    "result": {"null": "199"}
+
+**That is LB-5's family**: an implementation artifact rendered as
+information. "null" is not a group the caller asked about and not a
+word anywhere in the ontology. An existing test asserted `{None: 2}`
+for a count -- it was pinning the artifact, and now asserts `2`.
+
+**CONDITIONED ON `group_by` BEING ABSENT, not on the key being None**,
+and that distinction is load-bearing: a GROUPED aggregate can
+legitimately produce a None key when a row's group field is null.
+Unwrapping that would turn "the total for rows with no category" into
+"the total", silently -- a wrong answer rather than an ugly one. A
+control confirms it.
+
+## Which makes the adaptivity case answerable
+
+    aggregate max amount        -> $a   (199, unseen by the planner)
+    search_object amount = $a   -> $b   (transaction 2)
+    get_field $b category       -> "hardware"
+
+**The planner names `$a` and never learns it is 199.** That is
+adaptivity WITHOUT the planner reading data -- precisely the thing
+ReWOO says plan-then-execute cannot do. Whether the MODEL finds this
+chain is now the open question, and it is the one worth asking.
+
+`dependent_choice` added to the bench, verified answerable by hand
+first, because a case the system cannot satisfy tests the case rather
+than the system.
+
+## Controls, three
+
+    no unwrap (back to {null: 199})       3 of 5 fail
+    unwrap on the KEY, not on group_by    1 fails
+    unwrap a grouped result too           2 fail
+
+## Gates
+
+    ./lint.sh          PASS (8 contracts kept)
+    pytest tests/unit  3105 passed, 8 skipped
+
+## Still waiting on you
+
+The plan-prompt proposal -- replacing step-shaped examples with
+plan-shaped ones, on the 15-to-2 evidence. Not touched.
