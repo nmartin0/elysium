@@ -91,7 +91,30 @@ one company's design language.
 That changes the answer. Guarding against abandonment does not mean
 finding a bigger library; it means owning the parts we use.
 
-## Measured: the coupling is shallow
+## Measured: the coupling is shallow -- AND HAS WIDENED SINCE
+
+RE-MEASURED 2026-09-27, a fortnight after the figures below:
+
+  48 import sites, THIRTY-THREE distinct components.
+
+Ten more than when this was written, and nothing noticed, because
+nothing was looking. New since: CardList, DialogBody, DialogFooter,
+MenuDivider, H5, IconNames, ButtonGroup, PopoverNext, OverlaysProvider
+-- and `Classes`.
+
+TWO OF THOSE ARE WORSE THAN WIDGETS. `Classes` is Blueprint's CSS
+class constants, which reaches past the component boundary into the
+library's stylesheet; `OverlaysProvider` is app-level infrastructure
+in Shell.tsx. Neither is "a button with a class name", which is the
+observation the whole proposal below rests on.
+
+The conclusion still holds -- the hard parts are still unused, and a
+bigger vendor is still the wrong direction -- but the margin is
+smaller than the original numbers suggest, and it was shrinking
+silently. ui/src/blueprintSurface.test.ts now pins the set, so the
+next addition is a decision with a diff rather than a drift.
+
+The original measurement, for comparison:
 
   49 import sites, 22 distinct components.
   Button 62, Tag 42, Callout 28, InputGroup 19, FormGroup 17,
@@ -136,6 +159,12 @@ deep one and calls it safety.
      last, since they are where behaviour (not appearance) lives.
   4. Remove @blueprintjs, and add a lint rule refusing new imports of
      it, so the migration cannot silently reverse.
+
+  Step 4's lint rule CANNOT GO IN FIRST -- applied today it fails
+  against all 48 existing sites. The part that is useful now is done
+  instead: blueprintSurface.test.ts pins the set, leaving existing use
+  untouched while making growth deliberate. Adding a component is not
+  forbidden, it is a decision someone has to write down.
 
 ## The honest cost
 
