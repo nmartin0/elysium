@@ -187,3 +187,90 @@ Two on that list are mine to hand over rather than assume: **F-25**
   proposals; judging them is a different activity from checking a
   defect, and mixing the two is how a recommendation gets implemented
   because it was on a list.
+
+
+---
+
+# The recommendations, judged (added after the defects were drained)
+
+The defect triage above is done: every batch closed, the HIGH band
+gone, the MED band gone apart from what waits on an owner decision.
+What is left is 63 recommendations, and TRIAGE.md's own note said I
+had not judged them because "judging a proposal is a different
+activity from checking a defect". That was right then. It is now the
+only thing left, so here it is.
+
+## Eleven already have a verdict
+
+Not because anyone worked from this list, but because fixing defects
+kept landing on them:
+
+| | |
+| --- | --- |
+| R23 | DONE. Two declared text rules, patches 446 and 456. |
+| R24 | DONE. Mojibake and markup residue, patch 456. |
+| R25 | DONE. `suggest_declarations`, patch 447. |
+| R26 | DONE. Numeric sanity, patch 431. |
+| R3 | PARTLY. `bronze_text` (437) covers the loss cases, not the declared-encoding design. |
+| R18 | PARTLY. Targets-first ordering (440), not the cycle-safe graph. |
+| R1 | SUBSTANTIALLY MET for the pipeline. |
+| R14 | LIKELY DONE on the `security` branch; not verifiable until it merges. |
+| R9 | NOT STARTED, verified: no `run_id` exists anywhere. |
+| R22 | BLOCKED on the row-versus-table decision. |
+| R35 | NOT APPLICABLE: there is no export path to escape formulas in. |
+
+**R35 is worth a moment.** It asks for formula escaping at export time,
+against CSV injection. There is no CSV or spreadsheet export anywhere
+in `api/` or `ui/` -- so nothing can execute a formula today, and the
+recommendation is not open so much as PREMATURE. The useful form of it
+is a note on whoever builds the first export: build it WITH the
+escaping, because retrofitting it means finding every writer.
+
+## What the remaining 55 actually are
+
+They are not one queue. Four kinds, and only one of them is a
+near-term engineering question:
+
+**BLOCKED ON A DECISION ALREADY RAISED (4).** R22 and R27 are Batch C
+-- the row-versus-table question -- wearing different numbers. R52
+(imputation) and R50 (feedback-loop guard) both sit downstream of
+LLM3-3, the security-attribute carrier: whether a pipeline stage may
+write a value depends on where the security value lives. Answering
+those two decisions closes four recommendations.
+
+**INFRASTRUCTURE, UNBLOCKED, SIZEABLE (6).** R4 (one consistent read
+per silo), R5 (bounded-memory batched sync), R9 (one run id), R10
+(SCD2 changelog), R19 (source-mutation matrix in CI), R20 (Iceberg
+branches for previews). Each is a design change to the sync with
+consequences for the changelog diff and the partial-read guard, both
+of which compare WHOLE tables today. Any of them is days, not hours,
+and R5 and R4 conflict enough that the order matters.
+
+**PRODUCT DIRECTION, NOT ENGINEERING (30+).** R41, R42, R45, R48, R51,
+R53, R56-R62 and their neighbours are LLM enrichment, embeddings,
+model predictions, statistical matching and truth discovery. These are
+not "should we do this well" questions, they are "is Elysium this
+product" questions. They should not be picked off a list by whoever is
+next.
+
+**DEPENDENCY ADOPTIONS (5).** DEP-1 to DEP-6 name specific packages to
+adopt, condition or reject. Pure owner calls, and cheap ones: each is
+a yes or no about a named library.
+
+## What I would do next, if asked
+
+1. **Answer Batch C.** One question, four recommendations, seven ZOO
+   findings.
+2. **Answer LLM3-3.** One question, two recommendations, and the
+   security-attribute class.
+3. **R9, the run id.** The smallest of the infrastructure six, with
+   no conflicts, and it makes every other investigation cheaper --
+   three times this week I correlated a sync's layers by timestamp
+   because nothing else connects them.
+4. **DEP-1 to DEP-6**, whenever. Five yes-or-no answers.
+
+## What I would not do
+
+Pick a P1 off the list because it is a P1. R38, R39, R12 and R8 are
+all P1 and all large, and starting one without the two decisions above
+risks building on a shape that is about to change.

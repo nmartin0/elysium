@@ -187,32 +187,32 @@ AR-7,AR,AGENT_RESEARCH,P2,plan caching feeding router growth,agent,IN,unverified
 AR-8,AR,AGENT_RESEARCH,P3,n-gram speculative decoding,llama-server,IN,unverified
 AR-9,AR,AGENT_RESEARCH,P3,heterogeneous models with policy-gated escalation,adapters,IN,"owner decision D3"
 AR-10,AR,AGENT_RESEARCH,P3,train the small model on Elysium's task,offline,IN,"owner decision D6"
-R1,R,PR001 I,P1,land the audit's waves 1-3 before any enhancement,-,-,unverified
+R1,R,PR001 I,P1,land the audit's waves 1-3 before any enhancement,-,-,"SUBSTANTIALLY MET for the pipeline: of the audit's PA findings, the HIGH band is closed and the MED band is closed apart from items blocked on owner decisions. R1 says land the waves before any enhancement, and the enhancements added since (R23, R25, R26, R24) were all opt-in rules attached to defects being fixed, not new surface"
 R2,R,PR001 I,P2,declared incremental extraction per source table,data_silos.yaml,-,unverified
-R3,R,PR001 I,P1,canonical type-aware bronze encoding,iceberg_sync.py,-,unverified
+R3,R,PR001 I,P1,canonical type-aware bronze encoding,iceberg_sync.py,-,"PARTLY DONE patch 437: core/mirror/bronze_text.py gives structures JSON, bytes base64 and durations ISO-8601, so no value is stored as a memory address or Python repr. The FULL design - a deployment declaring how each column is rendered, with a guaranteed round trip - is NOT built"
 R4,R,PR001 I,P2,one consistent read per silo per run,run_sync.py,-,unverified
 R5,R,PR001 I,P3,bounded-memory batched sync,iceberg_sync.py,-,unverified
 R6,R,PR001 I,P1,health checks per table and object type,new,-,unverified
 R7,R,PR001 I,P2,column profiles and distribution drift,new,-,unverified
 R8,R,PR001 I,P1,independent reconciliation source to gold,new,-,unverified
-R9,R,PR001 I,P1,one run id and one run report across all layers,run_sync.py,-,unverified
+R9,R,PR001 I,P1,one run id and one run report across all layers,run_sync.py,-,"NOT STARTED, verified: no run_id exists anywhere in core/mirror or scripts. A sync's layers are correlated only by timestamp"
 R10,R,PR001 I,P2,finish the changelog as SCD2 with before-images,changelog.py,-,unverified
 R11,R,PR001 I,P1,enforced retention and orphan-file cleanup,new,-,"depends on M1"
 R12,R,PR001 I,P1,column classifications that propagate through layers,ontology,-,unverified
 R13,R,PR001 I,P1,an erasure (right-to-be-forgotten) workflow,new,-,"no doc on dev mentions it"
-R14,R,PR001 I,P2,refuse plaintext credentials,secret_references.py,-,unverified
+R14,R,PR001 I,P2,refuse plaintext credentials,secret_references.py,-,"LIKELY DONE ON THE security BRANCH, which is 15 commits ahead of dev and carries tests/unit/test_plaintext_credentials_are_refused.py. Not verifiable from here until that branch merges. Recorded rather than claimed"
 R15,R,PR001 I,P3,emit lineage as OpenLineage events,new,-,unverified
 R16,R,PR001 I,P3,publish each object type as an ODCS data contract,new,-,unverified
 R17,R,PR001 I,P3,a REST catalog so other engines can read gold,new,-,unverified
-R18,R,PR001 I,P1,dependency-aware per-type gold builds,run_sync.py,-,unverified
+R18,R,PR001 I,P1,dependency-aware per-type gold builds,run_sync.py,-,"PARTLY DONE patch 440: gold types are built targets-first, so a new row and its new target in one sync no longer refuse each other. The rest of R18 - a cycle-safe dependency graph, and auditing links after every type is built - is NOT built"
 R19,R,PR001 I,P1,source-mutation matrix and live-parity suite in CI,tests,-,unverified
 R20,R,PR001 I,P2,preview an ontology change on Iceberg branches,hot reload,-,unverified
 R21,R,PR001 I,P3,DuckDB for diff and aggregation on evidence,new,-,unverified
-R22,R,PR001 II,P1,type failures become row-level expectations,transform.py,-,unverified
-R23,R,PR001 II,P1,a text-hygiene pass and agent-boundary guard,standardise.py,-,unverified
-R24,R,PR001 II,P2,detect mojibake and markup residue,standardise.py,-,unverified
-R25,R,PR001 II,P2,detect and suggest disguised missing values,new,-,unverified
-R26,R,PR001 II,P1,numeric sanity defaults (reject NaN/inf; flag 007),field_types.py,-,unverified
+R22,R,PR001 II,P1,type failures become row-level expectations,transform.py,-,"OPEN and BLOCKED on an owner decision. Seven ZOO findings (11, 12, 15, 17, 18, 21, 22) collapse into one question: should an unparseable cell quarantine the ROW rather than refuse the TABLE? Quarantine machinery exists (core/mirror/duplicates.py, expectations) so the mechanism is there; the policy is not decided"
+R23,R,PR001 II,P1,a text-hygiene pass and agent-boundary guard,standardise.py,-,"DONE patches 446 and 456: two declared rules, no_invisible_characters (tag smuggling, bidi, zero-width, C0 controls) and no_misleading_text (mojibake, homoglyphs, HTML entities), both using the existing warn/quarantine/refuse policy. Detection by DEFAULT remains an owner decision (NEW-6)"
+R24,R,PR001 II,P2,detect mojibake and markup residue,standardise.py,-,"DONE patch 456: mojibake and HTML-entity residue are both detected by the declared no_misleading_text rule, alongside homoglyphs. Detected, never repaired"
+R25,R,PR001 II,P2,detect and suggest disguised missing values,new,-,"DONE patch 447: scripts/suggest_declarations.py reads bronze and prints the exact null_if and min/max declarations to add. Suggests, never infers, and says so in its own output"
+R26,R,PR001 II,P1,numeric sanity defaults (reject NaN/inf; flag 007),field_types.py,-,"DONE patch 431: NaN, infinities and overflow-to-infinity are refused from a number column, and non-ASCII digits from an integer one. Leading zeros deliberately still accepted, pinned by a test (ZOO-14)"
 R27,R,PR001 II,P2,declared parse formats and locales,ontology,-,unverified
 R28,R,PR001 II,P2,semantic value types with canonical keys,ontology,-,unverified
 R29,R,PR001 II,P2,"cross-field rules, FDs and denial constraints",constraints.py,-,unverified
@@ -221,7 +221,7 @@ R31,R,PR001 II,P2,suggest never infer: rule proposals for approval,new,-,unverif
 R32,R,PR001 II,P2,value clustering to approved value mappings,new,-,unverified
 R33,R,PR001 II,P2,per-cell cleaning provenance and replayable history,new,-,unverified
 R34,R,PR001 II,P3,correct at the source: owner reports and proposals,new,-,unverified
-R35,R,PR001 II,P3,export-time formula escaping,new,-,unverified
+R35,R,PR001 II,P3,export-time formula escaping,new,-,"NOT APPLICABLE YET, verified: there is no CSV or spreadsheet export anywhere in api/ or ui/. Nothing produces a file a formula could execute in. Becomes live the moment an export is built, and should be built WITH the escaping rather than after"
 R36,R,PR001 II,P1,fix the decimal crash,field_types.py,-,"DONE patch 414 (= PA001-C1)"
 R37,R,PR001 III,P2,declared derived properties,ontology,-,unverified
 R38,R,PR001 III,P1,value kinds and per-value enrichment provenance,ontology + gold,-,unverified
