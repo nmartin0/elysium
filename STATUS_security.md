@@ -946,6 +946,46 @@ claim that outruns what was checked -- and it is worse coming from the
 agent doing the finding. It also went out as HIGH into an integration
 handover, which is the moment it does the most damage.
 
+## Session 31 — api/app.py reviewed. No defect.
+
+Four things checked, each by running rather than reading:
+
+**The middleware order.** Starlette makes the LAST registered the
+OUTERMOST, so registration order matters and the file says so. The
+resulting stack puts the size limit OUTSIDE csrf -- an oversized body
+is rejected before anything reads it -- and the security headers
+OUTSIDE the size limit, so even a 413 carries them. The file records
+that being confirmed with an isolated three-middleware test, and the
+order is right.
+
+**The per-request security cache, which was the one I expected to
+find something in.** `/query` runs on `app.state.executor`, and
+`loop.run_in_executor` does NOT copy context the way
+`run_in_threadpool` does -- so a cache set on a pool thread and never
+cleared would persist across users. It cannot:
+`security_cache_scope()` resets in a `finally`, and the module comment
+at `mediator.py:240` already names this exact hazard -- "Executor
+threads keep their own context between tasks; a cache set and never
+reset would bring the bug back one thread at a time." Somebody found
+it before me.
+
+And it could not cross users even if it leaked: the cache holds
+OBJECT security values and links, keyed by object, never a per-user
+decision.
+
+**The SPA mount.** `app.frontend("/", directory=UI_DIST_DIR)` is
+unauthenticated by necessity -- the shell has to load before login --
+and it replaced a hand-rolled `StaticFiles` mount, which is the shape
+that usually traverses. Probed with four encodings:
+
+    /../deployment/etc/policy.yaml             404
+    /..%2f..%2fdeployment/etc/policy.yaml      404
+    /%2e%2e/%2e%2e/etc/passwd                  404
+    /../../../../etc/passwd                    404
+
+**No unauthenticated surface beyond that.** One router, mounted under
+`/api`, behind the auth dependency.
+
 ## THE BRANCH IS BLOCKED, and it is not a code problem
 
 `origin/security` has been at `a29594d` for FIVE consecutive rounds.
