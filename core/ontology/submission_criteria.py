@@ -261,6 +261,43 @@ class SubmissionCriteriaViolation(ValueError):
     pass
 
 
+def _refuse_undeclared_user_attribute(value_spec: str, attribute: str) -> None:
+    """Only a DECLARED field of UserRecord, not any Python attribute.
+
+    THIS WAS `hasattr` (SEC-26), which is true of every method and
+    every dunder as well as the three real fields. Measured:
+
+        user.user_id        -> 'alice'
+        user.security_value -> 'us-west'
+        user.role_name      -> 'agent'
+        user.role           -> refused           (a plausible typo)
+        user.__class__      -> <class ...>
+        user.__eq__         -> <bound method ...>
+        user.__doc__        -> 'UserRecord(...)'
+
+    WHY IT MATTERS DESPITE BEING UNLIKELY TO BE TYPED. A criterion
+    whose expected value resolves to a bound method compares unequal to
+    everything, so the rule is present, evaluated, and useless -- the
+    same shape as F-08, where a rule that looked enforced was skipped.
+    A four-eyes rule that silently never matches is worse than one that
+    refuses to load.
+
+    AND `_USER_RECORD_FIELDS` ALREADY EXISTED, one screen above, doing
+    nothing but an import-time self-check. A constant whose name says
+    it constrains something, next to code that does not use it, is the
+    kind of claim this project keeps finding wrong elsewhere.
+
+    THE CHECK NARROWS rather than widens: everything accepted before
+    and genuinely a field is still accepted. Nothing that used to work
+    stops working unless it was already meaningless.
+    """
+    if attribute not in _USER_RECORD_FIELDS:
+        raise ValueError(
+            f"submission_criteria: {value_spec!r} names no declared field of a user "
+            f"record -- available: {sorted(_USER_RECORD_FIELDS)}"
+        )
+
+
 def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | None,
                        proposer: UserRecord | None = None):
     """Resolves a criterion's `value:` side, the same way a mutation's is.
@@ -339,10 +376,7 @@ def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | No
             # decides. A skip here cannot let an approval through.
             raise _SkipCriterion
         attribute = value_spec[len(PROPOSER_PREFIX):]
-        if not hasattr(proposer, attribute):
-            raise ValueError(
-                f"submission_criteria: {value_spec!r} names no attribute of a user record"
-            )
+        _refuse_undeclared_user_attribute(value_spec, attribute)
         return getattr(proposer, attribute)
 
     if value_spec.startswith(USER_PREFIX):
@@ -354,10 +388,7 @@ def _resolve_expected(value_spec, parameters: dict, user_record: UserRecord | No
             raise ValueError(
                 f"submission_criteria: {value_spec!r} was evaluated without an acting user"
             )
-        if not hasattr(user_record, attribute):
-            raise ValueError(
-                f"submission_criteria: {value_spec!r} names no attribute of a user record"
-            )
+        _refuse_undeclared_user_attribute(value_spec, attribute)
         return getattr(user_record, attribute)
 
     return value_spec
