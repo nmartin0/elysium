@@ -88,9 +88,17 @@ from core.deployment_loader import (  # noqa: E402
     resolve_runtime_paths,
 )
 from core.intermediate_layer.auth import resolve_user_record  # noqa: E402
+from core.llm.agent_step_prompt import (  # noqa: E402
+    PLAN_INSTRUCTIONS,
+    _build_system_prompt,
+)
 from core.llm.interface import LLMUnavailable  # noqa: E402
 
 USER_ID = "user_alice"
+
+# Long enough that a cold call reports rather than dies. Not a
+# deployment setting and never applied to a trial -- see the warm-up.
+WARM_UP_TIMEOUT_SECONDS = 1800
 
 CASES = (
     EvalCase(
@@ -148,6 +156,37 @@ CASES = (
         expected_facts=(
             ExpectedFact("Transaction", "1", "amount", "49.99"),
             ExpectedFact("Transaction", "2", "amount", "199"),
+        ),
+    ),
+    EvalCase(
+        # THE ADAPTIVITY CASE ReWOO's OWN AUTHORS NAME AS THE WEAKNESS:
+        # plan-then-execute "may not be the best choice for tasks
+        # requiring high adaptability and uncertainty of tool outputs".
+        # Every other case here has a next step knowable in advance.
+        # This one does not: WHICH transaction to read the category of
+        # depends on a value the planner will never see.
+        #
+        # IT IS ANSWERABLE -- verified by hand before being written,
+        # because a case the system cannot satisfy tests the case
+        # rather than the system. The chain is aggregate max -> search
+        # for that value -> read that object's field, with the value
+        # flowing through a handle:
+        #
+        #     {"id": "a", "step": "aggregate_object", ... "max" ...}
+        #     {"id": "b", "step": "search_object",
+        #      "filter": {"amount": "$a"}}
+        #     {"id": "c", "step": "get_field", "object_id": "$b",
+        #      "field_name": "category"}
+        #
+        # The planner names $a and never learns it is 199. That is
+        # adaptivity WITHOUT the planner reading data, which is the
+        # thing ReWOO says plan-then-execute cannot do -- so whether
+        # the model finds this chain is the real question.
+        name="dependent_choice",
+        query="What category was Ada Okafor's largest transaction?",
+        user_id=USER_ID,
+        expected_facts=(
+            ExpectedFact("Transaction", "2", "category", "hardware"),
         ),
     ),
 )
@@ -218,6 +257,98 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
         print(f"FATAL: {USER_ID!r} has no role. Check policy.yaml.")
         return 2
 
+    # WARM THE PREFIX BEFORE TIMING ANYTHING.
+    #
+    # The first call of a run is cold, and the VM measured prompt
+    # evaluation at 0.104 seconds per character -- about 578s for the
+    # step prompt against a 600s timeout. A dependent_choice run died
+    # exactly there: the plan failed on attempt 1, and attempt 2, which
+    # would have shown the revision working, timed out instead.
+    #
+    # The integration injection test already does this and could not
+    # run without it. The bench needed it for the same reason and I
+    # did not carry it across.
+    #
+    # WITH THE REAL SYSTEM PROMPT, which is the whole point. A tiny
+    # prompt would warm the MODEL, and the diagnostic already measured
+    # that at 3.7 seconds -- nothing. The cost is evaluating the 5,500
+    # characters of system prompt, and only sending those caches them.
+    #
+    # I wrote the tiny version first and caught it against my own
+    # measurement, which is the second time this session that "warm
+    # the model" and "warm the prefix" have been quietly different
+    # things.
+    #
+    # NOT TIMED, and excluded from the table below, because it is not
+    # a trial. The timings that follow are warm ones, which is what
+    # every query after the first of the day gets anyway.
+    visible_schema = generation.mediator.visible_schema(user, for_agent=True)
+    warm_system = _build_system_prompt(
+        visible_schema, generation.loop.tools, False, {},
+        data_is_shown=(mode != "plan"),
+    )
+    if mode == "plan":
+        warm_system += PLAN_INSTRUCTIONS
+    # AND THE WARM-UP GETS ITS OWN, GENEROUS TIMEOUT.
+    #
+    # It timed out at 600s on its first outing, which is arithmetic
+    # rather than a fault: 6,154 characters at the measured 0.104
+    # s/char is about 640 seconds. The deployment's timeout is below
+    # the cost of its own cold call.
+    #
+    # RAISING THE DEPLOYMENT'S TIMEOUT IS NOT THE ANSWER -- that is
+    # the chasing I stopped doing three patches ago. But this call is
+    # not a query: its entire job is to ABSORB the cold cost so the
+    # trials afterwards are warm, and a call whose purpose is to be
+    # slow should not be killed for being slow.
+    #
+    # scripts/diagnose_slow_call.py already does exactly this, for
+    # exactly this reason -- "so a slow call REPORTS its number
+    # instead of timing out". Third time this session I have failed to
+    # carry something across from one script to another.
+    #
+    # THE TRIALS GET IT TOO, AND I HAD THIS BACKWARDS.
+    #
+    # I wrote "the trials keep the deployment's own limit, so nothing
+    # measured runs under a limit the deployment would not use". That
+    # sounded principled and produced NO DATA: run after run died at
+    # 600s with nothing to report, including the revision attempt that
+    # was the whole point of the last one.
+    #
+    # The variance here is the reason. Identical prompts have been
+    # measured at 52.2s and 459.4s -- 8.8x -- so a 600s limit kills
+    # the tail of a distribution whose median is about 150s, at
+    # random. A killed trial is not a measurement of anything.
+    #
+    # A BENCH MEASURES; A DEPLOYMENT ENFORCES. The timing table below
+    # reports every call's duration, so anyone can apply any limit
+    # they like after the fact and see which calls would have failed.
+    # Enforcing one DURING the run just throws the number away.
+    #
+    # The deployment's own timeout being below its cold call is a real
+    # problem and a separate one, already reported. It is not fixed by
+    # making the bench unable to measure it.
+    adapter = generation.loop.client
+    while not hasattr(adapter, "timeout_seconds") and hasattr(adapter, "_wrapped"):
+        adapter = adapter._wrapped
+    real_timeout = getattr(adapter, "timeout_seconds", None)
+
+    print(f"warming the prefix ({len(warm_system)} chars)...", flush=True)
+    warm_started = time.monotonic()
+    try:
+        if real_timeout is not None:
+            adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS
+        generation.loop.client.chat(
+            warm_system, "Reply with {}", json_mode=True, temperature=0,
+        )
+    except LLMUnavailable as e:
+        print(f"  model unreachable during warm-up: {e}")
+        return 1
+
+    print(f"  {time.monotonic() - warm_started:.1f}s\n")
+    if real_timeout is not None:
+        adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS
+
     timer = Timed(generation.loop.client)
     generation.loop.client = timer
 
@@ -241,7 +372,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                 # is still worth reporting, and on slow hardware
                 # somebody WILL stop a run that is taking too long.
                 print(f"\n  stopped after {len(results)} trials")
-                return _report(results, timer, partial=True)
+                return _report(results, timer, partial=True,
+                                       deployment_limit=real_timeout or 0)
             except LLMUnavailable as e:
                 # REPORT WHAT WE HAVE AND STOP, rather than raising.
                 #
@@ -254,7 +386,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                 print(f"\n  MODEL UNREACHABLE after {len(results)} trials: {e}")
                 print("  Reporting what was collected. Check the model is")
                 print("  loaded (`ollama ps`) and that keep_alive is -1.")
-                return _report(results, timer, partial=True)
+                return _report(results, timer, partial=True,
+                                       deployment_limit=real_timeout or 0)
             graded = grade(case, outcome)
             results.append(graded)
             done += 1
@@ -277,10 +410,12 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                       f"{elapsed * planned / 60:.0f} minutes.")
                 print("  Ctrl-C stops it and still reports what it has.\n")
 
-    return _report(results, timer, partial=False)
+    return _report(results, timer, partial=False,
+                   deployment_limit=real_timeout or 0)
 
 
-def _report(results: list, timer: Timed, *, partial: bool) -> int:
+def _report(results: list, timer: Timed, *, partial: bool,
+            deployment_limit: float = 0) -> int:
     if not results:
         print("\n  No trials completed -- nothing to report.")
         return 1
@@ -320,7 +455,16 @@ def _report(results: list, timer: Timed, *, partial: bool) -> int:
     firsts = [d for n, (_, d) in enumerate(timer.calls) if n == 0]
     print(f"  {'call':>5} {'chars':>7} {'seconds':>8} {'s/1k chars':>11}")
     for n, (size, seconds) in enumerate(timer.calls[:12], start=1):
-        print(f"  {n:>5} {size:>7} {seconds:>8.2f} {1000 * seconds / size:>11.3f}")
+        # FLAGGED, NOT KILLED. A call the deployment would have cut
+        # off still gives a number here, and the marker says which.
+        over = "  <- over the deployment's limit" if seconds > deployment_limit else ""
+        print(f"  {n:>5} {size:>7} {seconds:>8.2f} "
+              f"{1000 * seconds / size:>11.3f}{over}")
+    exceeded = [d for _, d in timer.calls if d > deployment_limit]
+    if exceeded:
+        print(f"\n  {len(exceeded)} of {len(timer.calls)} calls exceeded the "
+              f"deployment's {deployment_limit}s timeout.")
+        print("  Those are queries a real user would have seen fail.")
     if len(timer.calls) > 1:
         first = timer.calls[0][1]
         rest = [d for _, d in timer.calls[1:]]
