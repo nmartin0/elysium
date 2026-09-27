@@ -1101,6 +1101,66 @@ export async function searchAround(
   }
 }
 
+export interface ConfigGeneration {
+  generation: number
+  loaded_at: string
+  /** A digest over the four config files' bytes. It discloses WHETHER
+   *  they changed, never what is in them. */
+  source_digest: string
+}
+
+export interface ConfigHistory {
+  current_generation: number
+  /** Newest first, as the server sends them. */
+  generations: ConfigGeneration[]
+}
+
+/**
+ * What configurations this deployment has run.
+ *
+ * MOST GENERATIONS ARE RESTARTS, NOT CHANGES, which is the thing a
+ * reader needs and a flat list hides: measured on a real deployment,
+ * 44 generations carrying 2 distinct digests. A generation whose
+ * digest matches its predecessor is the same configuration loaded
+ * again. Rendering 44 undifferentiated rows would bury the two moments
+ * that actually matter.
+ */
+export async function getConfigHistory(): Promise<ConfigHistory> {
+  const response = await apiFetchOrThrow('/admin/config-history')
+  const body = (await response.json()) as { current_generation?: unknown; generations?: unknown }
+  return {
+    current_generation: typeof body.current_generation === 'number' ? body.current_generation : 0,
+    generations: Array.isArray(body.generations) ? (body.generations as ConfigGeneration[]) : [],
+  }
+}
+
+export interface ConfigDiff {
+  older: number
+  newer: number
+  /** WHICH files differ, never their contents -- the server is
+   *  deliberate about that, and a UI that asked for more would be
+   *  asking it to disclose configuration to anyone who can see this
+   *  page. */
+  changed_files: string[]
+  unchanged: boolean
+}
+
+export async function getConfigDiff(older: number, newer: number): Promise<ConfigDiff> {
+  const response = await apiFetchOrThrow(`/admin/config-history/${older}/${newer}`)
+  const body = (await response.json()) as {
+    older?: unknown
+    newer?: unknown
+    changed_files?: unknown
+    unchanged?: unknown
+  }
+  return {
+    older: typeof body.older === 'number' ? body.older : older,
+    newer: typeof body.newer === 'number' ? body.newer : newer,
+    changed_files: Array.isArray(body.changed_files) ? body.changed_files.map(String) : [],
+    unchanged: body.unchanged === true,
+  }
+}
+
 export async function getRequestTrace(requestId: string): Promise<unknown> {
   const response = await apiFetchOrThrow(`/requests/${encodeURIComponent(requestId)}/trace`)
   return response.json()

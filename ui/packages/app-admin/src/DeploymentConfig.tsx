@@ -14,9 +14,17 @@
  * request disagreeing with itself.
  */
 
-import { HTMLTable, Tag } from '@blueprintjs/core'
-import { getDeploymentConfig } from '@elysium/shell-api/api'
+import { Button, HTMLTable, Tag } from '@blueprintjs/core'
+import {
+  getConfigDiff,
+  getConfigHistory,
+  getDeploymentConfig,
+  type ConfigDiff,
+  handleIfSessionExpired,
+  type ConfigHistory,
+} from '@elysium/shell-api/api'
 import { formatTimestamp } from '@elysium/shell-api/format'
+import { useEffect, useRef, useState } from 'react'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
@@ -44,6 +52,128 @@ interface DeploymentConfigBody {
   object_type_count: number
   action_type_count: number
   role_names: string[]
+}
+
+/**
+ * What this deployment has run before, and when it actually CHANGED.
+ *
+ * A FLAT LIST WOULD BE MOSTLY NOISE. Measured on a real deployment: 44
+ * generations carrying TWO distinct digests. A generation whose digest
+ * matches its predecessor is the same configuration loaded again --
+ * a restart, not a change -- and rendering them undifferentiated
+ * buries the two moments that matter under forty-two that do not.
+ *
+ * So each row says which it is, and only a CHANGE offers a diff. The
+ * server returns WHICH FILES differ, never their contents, and this
+ * asks for nothing more: the page is visible to anyone holding
+ * manage:deployment, and file names answer "what moved" without
+ * disclosing configuration.
+ */
+function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => void }) {
+  const [history, setHistory] = useState<ConfigHistory | null>(null)
+  const [diffs, setDiffs] = useState<Record<number, ConfigDiff>>({})
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    getConfigHistory()
+      .then((next) => {
+        if (!cancelled) setHistory(next)
+      })
+      .catch((caught: unknown) => {
+        if (cancelled) return
+        // AN EXPIRED SESSION IS NOT A HISTORY FAILURE. Swallowing it
+        // here would leave someone on a page that has quietly stopped
+        // being able to load anything -- caught by
+        // sessionExpiry.test.ts, which exists because ObjectNotes did
+        // exactly this.
+        if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
+        // Anything else: a history failure must not blank the
+        // configuration above it, which is the part of this page that
+        // answers the urgent question. Nothing is rendered instead.
+        setHistory(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (history === null || history.generations.length === 0) return null
+
+  // Oldest last, as the server sends them; a generation is a CHANGE
+  // when its digest differs from the one loaded before it. The last
+  // row has nothing before it, so it is where the record begins rather
+  // than a change.
+  const rows = history.generations.map((entry, index) => {
+    const previous = history.generations[index + 1]
+    return {
+      ...entry,
+      changed: previous !== undefined && previous.source_digest !== entry.source_digest,
+      comparableWith: previous?.generation,
+    }
+  })
+
+  return (
+    <section className="deployment-config__history">
+      <h3>Configuration history</h3>
+      <HTMLTable compact striped aria-label="Configurations this deployment has run">
+        <thead>
+          <tr>
+            <th>Generation</th>
+            <th>Loaded</th>
+            <th>Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.generation}>
+              <td>
+                {row.generation}
+                {row.generation === history.current_generation && (
+                  <Tag minimal intent="primary" style={{ marginInlineStart: '0.5rem' }}>
+                    running now
+                  </Tag>
+                )}
+              </td>
+              <td>{formatTimestamp(row.loaded_at)}</td>
+              <td>
+                {row.comparableWith === undefined ? (
+                  <span className="bp6-text-muted">earliest recorded</span>
+                ) : row.changed ? (
+                  diffs[row.generation] ? (
+                    <span>{diffs[row.generation]?.changed_files.join(', ') || 'no files differ'}</span>
+                  ) : (
+                    <Button
+                      minimal
+                      small
+                      onClick={() => {
+                        const older = row.comparableWith
+                        if (older === undefined) return
+                        getConfigDiff(older, row.generation)
+                          .then((diff) => setDiffs((now) => ({ ...now, [row.generation]: diff })))
+                          .catch(() => {
+                            /* the row stays as it was; nothing to say */
+                          })
+                      }}
+                    >
+                      Which files?
+                    </Button>
+                  )
+                ) : (
+                  // NOT A CHANGE, and saying so is the point of the
+                  // column. The same configuration was loaded again.
+                  <span className="bp6-text-muted">restarted, same configuration</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </HTMLTable>
+    </section>
+  )
 }
 
 export default function DeploymentConfig({ onSessionExpired }: { onSessionExpired: () => void }) {
@@ -140,6 +270,7 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
                 </HTMLTable>
               </section>
             ))}
+            <ConfigHistorySection onSessionExpired={onSessionExpired} />
           </div>
         )
       }}
