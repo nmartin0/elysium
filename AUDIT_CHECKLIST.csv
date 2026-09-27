@@ -13,7 +13,7 @@ F-11,001,001FINDINGS,LOW,mediator() test fixture duplicated seven times,tests/un
 F-12a,001,001FINDINGS,LOW,"THE SEVEN REAL GRANT PATTERNS enumerates six, omits manage:deployment",policy docs,IN,unverified
 F-12b,001,001FINDINGS,LOW,login_attempt_tracker claims a structurally read-only connection; it is not,core/auth,IN,unverified
 F-12c,001,001FINDINGS,LOW,"write: rejection message claims it is not enforced anywhere; it is",policy_validation.py:51,IN,"confirmed by the F-02 reproduction"
-F-13,001,001FINDINGS,LOW,"get_object() audit entries carry no request_id",core/ontology/mediator.py,IN,unverified
+F-13,001,001FINDINGS,LOW,get_object() audit entries carry no request_id,core/ontology/mediator.py,IN,"NOT REPRODUCED patch 457, handed back by LLM3 as backend-owned. Measured: a get_object with a RequestContext writes an audit entry carrying that exact request_id. None only when no context is supplied, which is correct and separately tested"
 F-14,001,001FINDINGS,HIGH,parameter used only in a sub-write's criteria rejected at load,action type validation,RP,"fixed patch 389"
 F-15,001,001FINDINGS,HIGH,valid non-object JSON from the model gives an uncaught 500,agent_step_prompt.py,RP,"fixed patch 389"
 F-16,001,001FINDINGS,LOW,64 assertion-free tests (regraded by the audit itself),tests,MC,unverified
@@ -25,7 +25,7 @@ F-21,001,001FINDINGS,MED,entries_for_request() readlines() loads the whole audit
 F-22,001,001FINDINGS,HIGH,Ollama adapter leaks 3 of 4 failure modes past LLMUnavailable,adapters/ollama_adapter.py,RP,"fixed patch 389"
 F-23,001,001FINDINGS,HIGH,"synthesis catches RequestException, not LLMUnavailable",synthesis_prompt.py,RP,"fixed patch 389"
 F-24,001,001FINDINGS,LOW,Claude SDK adapter passes the system prompt as argv (~128 KB ceiling),claude_agent_sdk_adapter.py,RP,unverified
-F-25,001,001FINDINGS,HIGH,generation numbers repeat after restart and are consumed by rejected loads,deployment_loader.py,RP,unverified
+F-25,001,001FINDINGS,HIGH,generation numbers repeat after restart and are consumed by rejected loads,deployment_loader.py,RP,"NOT REPRODUCED patch 457, handed back by LLM3 as backend-owned. build_generation() replaces the per-process number with one allocated from config_history.db, whose own comment describes this exact failure. Measured across a simulated restart: 1,2,3 then 4,5,6 - no repeat. Covered by test_generation_numbering.py, which exercises a restart"
 F-26,001,001FINDINGS,HIGH,"mirror overlay returns only the latest edit, serving stale values",write_log.py,RP,"= PA001-A4, fixed 529b235"
 F-27,001,001FINDINGS,HIGH,"crash recovery loses deletes, reports success, writes a fabricated create",write path recovery,RP,"ALREADY FIXED (patch 311) - verified: write_mediator.py dispatch is exhaustive and names F-27 at three sites"
 F-28,001,001FINDINGS,MED,"rebuild_deleted_index() documented as the recovery path, never called",write_log.py,IN,"fixed patch 397"
