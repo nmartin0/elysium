@@ -191,6 +191,57 @@ Numbers in brackets are the item numbers in the sections below, which
 do not change. Where two orderings disagree, the note says which to
 follow.
 
+**WHERE THE FRONT END STANDS, 2026-09-28 — read this first.**
+
+DONE, and verifiable by `cd ui && npm run lint && npm test`: 1008
+tests in 74 files, all four lint steps, plus 16 browser tests that
+pass twice in a row. Sixteen audit rows, GOLD-3d's three UI thirds,
+B0, B4, the config identity and history panels, and guards for the
+things that had none.
+
+NEXT, in the order I would take them:
+
+ 1. **`unchanged` as a visible sync outcome.** The server now sends
+    `last_attempt_outcome: "unchanged"` -- confirmed by syncing twice
+    -- and MirrorPanel branches only on `"refused"`, so a table that
+    wrote NOTHING looks identical to one that wrote rows. Small,
+    entirely local, and the highest-value job left.
+ 2. **The eighteen remaining act() warnings.** Triaged in
+    setupTests.ts: four are transient-state tests needing a different
+    edit, fourteen are probably the mount-fetch race PendingWriteCard
+    had. Each marks a place a test is not watching what the user
+    would see -- which is exactly how App.test.tsx passed everywhere
+    until a slow machine ran it.
+ 3. **e2e in CI.** Not `.github/`'s owner, so a request. Without it
+    the 16 browser tests run only when a person runs them, and they
+    are the only thing protecting B4's cascade simplification.
+ 4. **[8] the instance graph.** Client functions are in and verified
+    against the server; four design questions are open, including one
+    I could not answer without a scaffold. See HANDOVER_frontend.md.
+
+NEEDS A SERVER CHANGE FIRST, so not ours to start:
+
+  - **Gold skipping.** `core/mirror/gold.py:78` carries `skipped` with
+    a real reason; it appears NOWHERE in `api/routes.py`. A type
+    silently absent from gold is "absence reads as loss" one layer up.
+  - **A run id per layer.** Zero occurrences anywhere yet.
+  - **`batch_id`.** Every write has one, so its presence
+    distinguishes nothing, and no endpoint resolves a batch.
+  - The six joint items below (UI-LIVE, CONFIG-WRITE,
+    PIPELINE-BUILDER, ACCESS-1..6, ALERT-1, GOLD-3d provenance). I
+    checked `dev`: none of their server halves exist.
+
+ALREADY WORKS, NO WORK NEEDED: the two opt-in text rules. They reuse
+the existing violation policy, so the quarantine display built for
+GOLD-3d surfaces them for free -- verified end to end by planting a
+zero-width space, which quarantined the row and rendered the reason.
+
+NOT STARTED, DELIBERATELY: the UI-KIT migration. Its central
+measurement decayed from 22 to 33 Blueprint components and is
+corrected in CONFIG_ROUND_TRIP_AND_UI_KIT.md;
+`blueprintSurface.test.ts` now pins the set so it cannot widen
+unnoticed.
+
 **HOW THE "BUILT" MARKS ABOVE WERE CHECKED, 2026-09-26.**
 
 Ten entries in this queue describe work that has shipped. A roadmap
