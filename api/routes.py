@@ -3375,9 +3375,20 @@ async def query(body: QueryRequest, request: Request,
     # extending core/internal_storage.py's own hierarchy); the check
     # genuinely only ever needs to read, the increment genuinely only
     # ever needs to write, and neither needs the other's capability.
-    if request.app.state.query_rate_limiter.is_rate_limited(current_user.user_id):
-        raise HTTPException(status_code=429, detail="Too many queries -- please wait before trying again")
-    request.app.state.query_rate_limiter.record_query(current_user.user_id)
+    # ATOMIC, not check-then-act (001's F-05, fixed by the security
+    # agent and inert until this line changed -- they may not edit
+    # this file).
+    #
+    # The sequence was the defect, not either method: another caller
+    # checks between the check and the increment, sees the same count,
+    # and is let through. MEASURED by them at 19 of 20, two callers
+    # both admitted. try_record_query does both in one transaction.
+    if not request.app.state.query_rate_limiter.try_record_query(
+            current_user.user_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many queries -- please wait before asking again.",
+        )
 
     loop: AgentLoop = _generation(request).loop
     synthesis_client = _generation(request).synthesis_client
