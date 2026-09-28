@@ -95,6 +95,24 @@ def validate_object_types(object_types: dict, only: str | None = None) -> None:
     every bad type rather than only the first -- while still resolving
     references against the whole schema.
     """
+    if only is not None and not isinstance(only, str):
+        # A NAME, NOT A COLLECTION. `only` narrows validation to ONE
+        # object type, and anything else silently matches nothing --
+        # so `validate_object_types(schema, {})` validates NOTHING and
+        # returns cleanly, which reads exactly like "this schema is
+        # fine".
+        #
+        # I DID THIS TWICE while checking F-19, and both times
+        # concluded from a clean return that an invalid ontology was
+        # being accepted. It is not: passing `{}` skipped every check.
+        # An argument whose wrong value looks like success is worth
+        # one line to refuse.
+        raise TypeError(
+            f"validate_object_types(only=...) takes an object type NAME or "
+            f"None, not {type(only).__name__}. Passing anything else "
+            f"validates nothing and returns as though the schema were valid."
+        )
+
     for object_type_name, type_def in object_types.items():
         if only is not None and object_type_name != only:
             continue

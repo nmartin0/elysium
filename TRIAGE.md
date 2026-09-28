@@ -187,3 +187,171 @@ Two on that list are mine to hand over rather than assume: **F-25**
   proposals; judging them is a different activity from checking a
   defect, and mixing the two is how a recommendation gets implemented
   because it was on a list.
+
+
+---
+
+# The recommendations, judged (added after the defects were drained)
+
+The defect triage above is done: every batch closed, the HIGH band
+gone, the MED band gone apart from what waits on an owner decision.
+What is left is 63 recommendations, and TRIAGE.md's own note said I
+had not judged them because "judging a proposal is a different
+activity from checking a defect". That was right then. It is now the
+only thing left, so here it is.
+
+## Eleven already have a verdict
+
+Not because anyone worked from this list, but because fixing defects
+kept landing on them:
+
+| | |
+| --- | --- |
+| R23 | DONE. Two declared text rules, patches 446 and 456. |
+| R24 | DONE. Mojibake and markup residue, patch 456. |
+| R25 | DONE. `suggest_declarations`, patch 447. |
+| R26 | DONE. Numeric sanity, patch 431. |
+| R3 | PARTLY. `bronze_text` (437) covers the loss cases, not the declared-encoding design. |
+| R18 | PARTLY. Targets-first ordering (440), not the cycle-safe graph. |
+| R1 | SUBSTANTIALLY MET for the pipeline. |
+| R14 | LIKELY DONE on the `security` branch; not verifiable until it merges. |
+| R9 | NOT STARTED, verified: no `run_id` exists anywhere. |
+| R22 | BLOCKED on the row-versus-table decision. |
+| R35 | NOT APPLICABLE: there is no export path to escape formulas in. |
+
+**R35 is worth a moment.** It asks for formula escaping at export time,
+against CSV injection. There is no CSV or spreadsheet export anywhere
+in `api/` or `ui/` -- so nothing can execute a formula today, and the
+recommendation is not open so much as PREMATURE. The useful form of it
+is a note on whoever builds the first export: build it WITH the
+escaping, because retrofitting it means finding every writer.
+
+## What the remaining 55 actually are
+
+They are not one queue. Four kinds, and only one of them is a
+near-term engineering question:
+
+**BLOCKED ON A DECISION ALREADY RAISED (4).** R22 and R27 are Batch C
+-- the row-versus-table question -- wearing different numbers. R52
+(imputation) and R50 (feedback-loop guard) both sit downstream of
+LLM3-3, the security-attribute carrier: whether a pipeline stage may
+write a value depends on where the security value lives. Answering
+those two decisions closes four recommendations.
+
+**INFRASTRUCTURE, UNBLOCKED, SIZEABLE (6).** R4 (one consistent read
+per silo), R5 (bounded-memory batched sync), R9 (one run id), R10
+(SCD2 changelog), R19 (source-mutation matrix in CI), R20 (Iceberg
+branches for previews). Each is a design change to the sync with
+consequences for the changelog diff and the partial-read guard, both
+of which compare WHOLE tables today. Any of them is days, not hours,
+and R5 and R4 conflict enough that the order matters.
+
+**PRODUCT DIRECTION, NOT ENGINEERING (30+).** R41, R42, R45, R48, R51,
+R53, R56-R62 and their neighbours are LLM enrichment, embeddings,
+model predictions, statistical matching and truth discovery. These are
+not "should we do this well" questions, they are "is Elysium this
+product" questions. They should not be picked off a list by whoever is
+next.
+
+**DEPENDENCY ADOPTIONS (5).** DEP-1 to DEP-6 name specific packages to
+adopt, condition or reject. Pure owner calls, and cheap ones: each is
+a yes or no about a named library.
+
+## What I would do next, if asked
+
+1. **Answer Batch C.** One question, four recommendations, seven ZOO
+   findings.
+2. **Answer LLM3-3.** One question, two recommendations, and the
+   security-attribute class.
+3. **R9, the run id.** The smallest of the infrastructure six, with
+   no conflicts, and it makes every other investigation cheaper --
+   three times this week I correlated a sync's layers by timestamp
+   because nothing else connects them.
+4. **DEP-1 to DEP-6**, whenever. Five yes-or-no answers.
+
+## What I would not do
+
+Pick a P1 off the list because it is a P1. R38, R39, R12 and R8 are
+all P1 and all large, and starting one without the two decisions above
+risks building on a shape that is about to change.
+
+
+---
+
+# Re-analysis: what must actually be done
+
+Asked to look at every remaining point again, rather than work down
+the list. The answer changes what "194 of 302" meant, so it is worth
+stating plainly.
+
+## The 109 rows without a verdict are not 109 jobs
+
+| | | |
+| --- | --- | --- |
+| 17 | **already done on an unmerged branch** | stale rows, now marked |
+| 47 | recommendations | judged as a group; individually unjudged |
+| 32 | other agents' open items | theirs to close |
+| 7 | Batch C | ONE decision |
+| 5 | dependency calls | five yes-or-nos |
+| 1 | mine and open | ZOO-24, a matching feature (R28) |
+
+**ONE row in the entire backlog is mine, open, and actionable** --
+ZOO-24, an email canonical form and match key. It is R28, a matching
+feature, and guessing that two spellings are one person is exactly the
+inference this design refuses to make on its own. It needs a design
+decision, not an afternoon.
+
+## The 17 matter more than their number
+
+These are items an agent has DONE and my checklist still called
+`unverified`:
+
+    agentloop   AL-2, AL-4, AL-5, AL-6, AL-7, AL-8, AL-12,
+                AR-2, AR-4, LB-1a, LB-1b, LB-3, F-04, F-17
+    security    F-08, F-21, F-30, F-33, 004-8
+
+This is COORD-1 repeating. LLM3 lost most of a session to seven rows
+that said `unverified` about work already done; LLM2 root-caused a
+defect fixed three days earlier; LLM4 reported five as "fixed before I
+started". Now there are seventeen more, and every one of them is a
+session somebody could waste.
+
+They are marked as REPORTED DONE with the agent's own words and the
+branch, and explicitly NOT as verified -- because they are not
+verifiable from here until those branches merge, and the difference
+between "reported" and "verified" is the whole lesson.
+
+## So the single highest-value action is a merge, not a fix
+
+`security` is 15 commits ahead of `dev`, `agentloop` 7, `frontend` 2.
+Merging them:
+
+  - turns 17 reported-done rows into verifiable ones
+  - lets the shared-file work (F-06, F-07, F-10, F-11) proceed, which
+    is blocked only by three agents working in the same tree
+  - stops the fourth round of re-finding
+
+Nothing I can do alone comes close to that in value.
+
+## What is genuinely blocked on a decision
+
+Two answers close eleven rows between them:
+
+  **Batch C** -- should one unparseable cell quarantine the ROW rather
+  than refuse the TABLE? Closes 7 ZOO rows and R22 and R27.
+
+  **LLM3-3** -- where does the security attribute live? Closes R50 and
+  R52, and settles the class that produced the worst finding of the
+  audit.
+
+Then five dependency yes-or-nos (DEP-1 to DEP-6), and the 30-odd
+product-direction recommendations that should not be picked off a list
+by whoever is next.
+
+## What I would NOT do now
+
+Start one of the six infrastructure recommendations. R4 and R5
+conflict, R9 is done, and the rest are days each with consequences for
+the changelog diff and the partial-read guard -- both of which compare
+WHOLE tables today. Starting one while three branches are unmerged
+means designing against a tree that is about to change.
