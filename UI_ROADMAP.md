@@ -191,6 +191,57 @@ Numbers in brackets are the item numbers in the sections below, which
 do not change. Where two orderings disagree, the note says which to
 follow.
 
+**WHERE THE FRONT END STANDS, 2026-09-28 — read this first.**
+
+DONE, and verifiable by `cd ui && npm run lint && npm test`: 1008
+tests in 74 files, all four lint steps, plus 16 browser tests that
+pass twice in a row. Sixteen audit rows, GOLD-3d's three UI thirds,
+B0, B4, the config identity and history panels, and guards for the
+things that had none.
+
+NEXT, in the order I would take them:
+
+ 1. **`unchanged` as a visible sync outcome.** The server now sends
+    `last_attempt_outcome: "unchanged"` -- confirmed by syncing twice
+    -- and MirrorPanel branches only on `"refused"`, so a table that
+    wrote NOTHING looks identical to one that wrote rows. Small,
+    entirely local, and the highest-value job left.
+ 2. **The eighteen remaining act() warnings.** Triaged in
+    setupTests.ts: four are transient-state tests needing a different
+    edit, fourteen are probably the mount-fetch race PendingWriteCard
+    had. Each marks a place a test is not watching what the user
+    would see -- which is exactly how App.test.tsx passed everywhere
+    until a slow machine ran it.
+ 3. **e2e in CI.** Not `.github/`'s owner, so a request. Without it
+    the 16 browser tests run only when a person runs them, and they
+    are the only thing protecting B4's cascade simplification.
+ 4. **[8] the instance graph.** Client functions are in and verified
+    against the server; four design questions are open, including one
+    I could not answer without a scaffold. See HANDOVER_frontend.md.
+
+NEEDS A SERVER CHANGE FIRST, so not ours to start:
+
+  - **Gold skipping.** `core/mirror/gold.py:78` carries `skipped` with
+    a real reason; it appears NOWHERE in `api/routes.py`. A type
+    silently absent from gold is "absence reads as loss" one layer up.
+  - **A run id per layer.** Zero occurrences anywhere yet.
+  - **`batch_id`.** Every write has one, so its presence
+    distinguishes nothing, and no endpoint resolves a batch.
+  - The six joint items below (UI-LIVE, CONFIG-WRITE,
+    PIPELINE-BUILDER, ACCESS-1..6, ALERT-1, GOLD-3d provenance). I
+    checked `dev`: none of their server halves exist.
+
+ALREADY WORKS, NO WORK NEEDED: the two opt-in text rules. They reuse
+the existing violation policy, so the quarantine display built for
+GOLD-3d surfaces them for free -- verified end to end by planting a
+zero-width space, which quarantined the row and rendered the reason.
+
+NOT STARTED, DELIBERATELY: the UI-KIT migration. Its central
+measurement decayed from 22 to 33 Blueprint components and is
+corrected in CONFIG_ROUND_TRIP_AND_UI_KIT.md;
+`blueprintSurface.test.ts` now pins the set so it cannot widen
+unnoticed.
+
 **HOW THE "BUILT" MARKS ABOVE WERE CHECKED, 2026-09-26.**
 
 Ten entries in this queue describe work that has shipped. A roadmap
@@ -215,7 +266,21 @@ way rather than trusting this paragraph: [31] DeploymentConfig.tsx,
 [14a] Silos.tsx, [7] SchemaGraph.tsx, [1] FilterBar.tsx's
 `operatorsFor` (all seven operators, not two), [10] AnswerTrace.tsx,
 [13] RolesPanel.tsx's `proposeRoleChange`, [42] SelectionBar.tsx's
-count, [8] SchemaGraph.tsx.
+count.
+
+[8] WAS LISTED HERE AND IS NOT BUILT -- my error, corrected before
+anyone relied on it. I cited SchemaGraph.tsx for BOTH [7] and [8]. It
+is [7]: the SCHEMA graph, object types as nodes. [8] is the INSTANCE
+graph, actual objects expanded one hop at a time, and SchemaGraph's
+own header draws the distinction I walked past -- "BOUNDED BY OBJECT
+TYPES, not objects ... which is why this needs none of the
+count-before-expand machinery AN INSTANCE GRAPH WOULD".
+
+It stays at 29 in the queue below, where it always was; only this
+paragraph was wrong. The failure was matching a component by NAME and
+asking whether something called "graph" exists, which is the same
+shape of mistake as a test that passes because it looked at a
+fraction of its subject.
 
 WHAT THIS DOES NOT CLAIM. "Built" here means the thing the entry says
 does not exist DOES exist. It does not mean every design question in
@@ -267,7 +332,12 @@ and a wrongly-closed backend item is worse than a stale one.
     migrates itself; see 22
 27. [30] Per-request CONFIG snapshot
 28. [40] Watch to ask
-29. [8]  The instance graph -- the expansion protocol IS the design
+29. [8]  The instance graph -- the expansion protocol IS the design.
+    BACKEND READY, work entirely frontend: search_around,
+    count_objects and get_object all exist. But `searchAround` has NO
+    CLIENT FUNCTION in ui/packages/shell-api/src/api.ts, so the UI
+    cannot reach the endpoint at all -- that is the first step, not
+    the graph.
 
  [4] change over time, [10] the agent audit, [2] the Approvals inbox,
  [13] runtime role editing and [6] notes were 27, 28, 30, 33 and 34

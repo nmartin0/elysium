@@ -1023,6 +1023,144 @@ export async function aggregateObjects(objectType: string, body: AggregateBody):
   return response.json()
 }
 
+/** The object set an operation runs over. ONE of `criteria` or
+ *  `conditions`, never both -- the server rejects sending both rather
+ *  than merging them, because merging needs a rule for what happens
+ *  when they disagree about the same field. `criteria` is equality per
+ *  key; `conditions` is the full vocabulary and the only one that can
+ *  express "region is us-west OR us-east". */
+export interface ObjectSetQuery {
+  criteria?: Record<string, unknown>
+  conditions?: Array<Record<string, unknown>>
+}
+
+/**
+ * How many objects match, before fetching any of them.
+ *
+ * COUNTS BEFORE EXPANSION, the same rule getLinkCounts follows and for
+ * the same reason: a person deciding whether to follow something needs
+ * to know it leads to four things or four thousand BEFORE they commit.
+ *
+ * The count is of objects THIS CALLER can see, never the raw row
+ * count. Two users legitimately get different answers, and a count
+ * ignoring MAC would leak the existence of rows outside the caller's
+ * boundary -- so it cannot disagree with the expansion that follows.
+ */
+export async function countObjects(objectType: string, query: ObjectSetQuery = {}): Promise<number> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/count`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(query),
+  })
+  const body = (await response.json()) as { count?: unknown }
+  // NARROWED, not asserted: the same unchecked-body problem F-32 fixed
+  // in apiFetchOrThrow. A non-number here would otherwise flow into
+  // arithmetic and render as NaN.
+  return typeof body.count === 'number' ? body.count : 0
+}
+
+export interface SearchAroundResult {
+  /** The ids reached, each one authorized individually. */
+  ids: string[]
+  total: number
+  /** The traversal stopped early. This does NOT mean there is more for
+   *  this caller to see -- see searchObjects' own note. Ten thousand
+   *  sources holding a hundred links each is a million targets, and
+   *  one audit line per target. */
+  scan_truncated: boolean
+}
+
+/**
+ * The objects one hop away, along a named link.
+ *
+ * MAC APPLIES ON BOTH SIDES: the caller only traverses FROM objects
+ * they can see, and every returned id is authorized individually. An
+ * ungranted or non-link field yields an empty list rather than an
+ * error -- the same uniform denial every other read path uses, so a
+ * caller learns nothing about whether the field exists.
+ *
+ * THE SOURCE SET IS A QUERY, not one object, which is what makes this
+ * different from following a link on a detail page: "everything linked
+ * to any customer in us-west" is one call.
+ */
+export async function searchAround(
+  objectType: string,
+  linkField: string,
+  query: ObjectSetQuery = {},
+): Promise<SearchAroundResult> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/search-around`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...query, link_field: linkField }),
+  })
+  const body = (await response.json()) as { ids?: unknown; total?: unknown; scan_truncated?: unknown }
+  return {
+    ids: Array.isArray(body.ids) ? body.ids.map(String) : [],
+    total: typeof body.total === 'number' ? body.total : 0,
+    scan_truncated: body.scan_truncated === true,
+  }
+}
+
+export interface ConfigGeneration {
+  generation: number
+  loaded_at: string
+  /** A digest over the four config files' bytes. It discloses WHETHER
+   *  they changed, never what is in them. */
+  source_digest: string
+}
+
+export interface ConfigHistory {
+  current_generation: number
+  /** Newest first, as the server sends them. */
+  generations: ConfigGeneration[]
+}
+
+/**
+ * What configurations this deployment has run.
+ *
+ * MOST GENERATIONS ARE RESTARTS, NOT CHANGES, which is the thing a
+ * reader needs and a flat list hides: measured on a real deployment,
+ * 44 generations carrying 2 distinct digests. A generation whose
+ * digest matches its predecessor is the same configuration loaded
+ * again. Rendering 44 undifferentiated rows would bury the two moments
+ * that actually matter.
+ */
+export async function getConfigHistory(): Promise<ConfigHistory> {
+  const response = await apiFetchOrThrow('/admin/config-history')
+  const body = (await response.json()) as { current_generation?: unknown; generations?: unknown }
+  return {
+    current_generation: typeof body.current_generation === 'number' ? body.current_generation : 0,
+    generations: Array.isArray(body.generations) ? (body.generations as ConfigGeneration[]) : [],
+  }
+}
+
+export interface ConfigDiff {
+  older: number
+  newer: number
+  /** WHICH files differ, never their contents -- the server is
+   *  deliberate about that, and a UI that asked for more would be
+   *  asking it to disclose configuration to anyone who can see this
+   *  page. */
+  changed_files: string[]
+  unchanged: boolean
+}
+
+export async function getConfigDiff(older: number, newer: number): Promise<ConfigDiff> {
+  const response = await apiFetchOrThrow(`/admin/config-history/${older}/${newer}`)
+  const body = (await response.json()) as {
+    older?: unknown
+    newer?: unknown
+    changed_files?: unknown
+    unchanged?: unknown
+  }
+  return {
+    older: typeof body.older === 'number' ? body.older : older,
+    newer: typeof body.newer === 'number' ? body.newer : newer,
+    changed_files: Array.isArray(body.changed_files) ? body.changed_files.map(String) : [],
+    unchanged: body.unchanged === true,
+  }
+}
+
 export async function getRequestTrace(requestId: string): Promise<unknown> {
   const response = await apiFetchOrThrow(`/requests/${encodeURIComponent(requestId)}/trace`)
   return response.json()

@@ -3,7 +3,9 @@ import {
   getVisibleActionTypesCached,
   resetVisibleActionTypesCache,
   ApiError,
+  countObjects,
   getErrorMessage,
+  searchAround,
   login,
   logout,
   query,
@@ -538,5 +540,85 @@ describe('getVisibleActionTypesCached', () => {
     await getVisibleActionTypesCached()
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('countObjects', () => {
+  it('posts the query and returns the count', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ count: 47 }))
+
+    await expect(countObjects('Customer', { criteria: { region: 'us-west' } })).resolves.toBe(47)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/objects/Customer/count')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ criteria: { region: 'us-west' } })
+  })
+
+  it('counts the whole visible set when asked for no query', async () => {
+    // An empty criteria dict means every object of the type the caller
+    // can see -- the server's own words. A legitimate request, not an
+    // error, and the default the graph will use on a first expansion.
+    fetchMock.mockResolvedValue(jsonResponse({ count: 4 }))
+
+    await expect(countObjects('Customer')).resolves.toBe(4)
+    expect(JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)).toEqual({})
+  })
+
+  it('does not let a non-number reach arithmetic', async () => {
+    // The F-32 shape: response.json() is `any`, so a wrong type flows
+    // straight into a caller that adds it up and renders NaN.
+    fetchMock.mockResolvedValue(jsonResponse({ count: 'lots' }))
+
+    await expect(countObjects('Customer')).resolves.toBe(0)
+  })
+})
+
+describe('searchAround', () => {
+  it('posts the link field alongside the query', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ids: ['t1', 't2'], total: 2, scan_truncated: false }))
+
+    const result = await searchAround('Customer', 'transactions', { criteria: { region: 'us-west' } })
+
+    expect(result).toEqual({ ids: ['t1', 't2'], total: 2, scan_truncated: false })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/objects/Customer/search-around')
+    expect(JSON.parse(init.body as string)).toEqual({
+      criteria: { region: 'us-west' },
+      link_field: 'transactions',
+    })
+  })
+
+  it('reports a truncated traversal rather than hiding it', async () => {
+    // scan_truncated does NOT mean there is more for this caller to
+    // see -- it means the traversal stopped. A graph that silently drew
+    // a partial hop would be a wrong answer presented confidently.
+    fetchMock.mockResolvedValue(jsonResponse({ ids: ['t1'], total: 1, scan_truncated: true }))
+
+    await expect(searchAround('Customer', 'transactions')).resolves.toMatchObject({ scan_truncated: true })
+  })
+
+  it('treats an ungranted or non-link field as empty, not as an error', async () => {
+    // Uniform denial: the server answers an ungranted field with an
+    // empty list rather than an error, so a caller learns nothing about
+    // whether the field exists. The client must not turn that silence
+    // into a thrown exception.
+    fetchMock.mockResolvedValue(jsonResponse({ ids: [], total: 0 }))
+
+    await expect(searchAround('Customer', 'secret_link')).resolves.toEqual({
+      ids: [],
+      total: 0,
+      scan_truncated: false,
+    })
+  })
+
+  it('survives a body missing every field', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({}))
+
+    await expect(searchAround('Customer', 'transactions')).resolves.toEqual({
+      ids: [],
+      total: 0,
+      scan_truncated: false,
+    })
   })
 })
