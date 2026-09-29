@@ -62,6 +62,36 @@ from fastapi import Response
 from core.auth.session_store import SESSION_LIFETIME
 
 SESSION_COOKIE_NAME = "elysium_session"
+
+
+def session_cookie_name() -> str:
+    """The session cookie's name, prefixed when it can be (SEC-17).
+
+    `__Host-` IS ENFORCED BY THE BROWSER, not by us. A cookie carrying
+    the prefix is only accepted if it is Secure, has `Path=/`, and has
+    NO `Domain` -- which means a subdomain cannot set or overwrite it.
+    Without the prefix, anything at `*.example.com` can write a
+    session cookie our host will then read.
+
+    All three conditions are already true of this cookie; the prefix
+    just asks the browser to hold us to them.
+
+    CONDITIONAL, because the prefix REQUIRES Secure and a development
+    deployment runs over http. Naming it `__Host-` there would make
+    the browser drop the cookie entirely and nobody could log in.
+
+    CALLED, NOT CONSTANT, and that is the whole reason this is a
+    function: `_cookie_secure()` reads the environment, so a name
+    captured at import time freezes whatever the environment said
+    then. FastAPI's `Cookie(alias=...)` captures at import.
+
+    REBUILT FROM A DESCRIPTION. The original diff was handed over out
+    of band and is lost -- the agent that wrote it no longer exists.
+    What survived is their guard test,
+    tests/integration/test_production_cookie_configuration.py, which
+    is the part that made rebuilding safe rather than hopeful.
+    """
+    return f"__Host-{SESSION_COOKIE_NAME}" if _cookie_secure() else SESSION_COOKIE_NAME
 CSRF_COOKIE_NAME = "elysium_csrf"
 
 # int, not timedelta -- Response.set_cookie()'s own max_age expects
@@ -90,7 +120,7 @@ def generate_csrf_token() -> str:
 
 def set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
-        key=SESSION_COOKIE_NAME,
+        key=session_cookie_name(),
         value=token,
         max_age=_MAX_AGE_SECONDS,
         httponly=True,
@@ -121,7 +151,7 @@ def clear_session_cookie(response: Response) -> None:
     # response only ever tells the browser to expire the cookie, never
     # to set a new, persistent value with weaker protection).
     response.delete_cookie(
-        key=SESSION_COOKIE_NAME, path="/", httponly=True, secure=_cookie_secure(), samesite="strict"
+        key=session_cookie_name(), path="/", httponly=True, secure=_cookie_secure(), samesite="strict"
     )
 
 

@@ -7,6 +7,8 @@ request author". Approving saves the role store and reloads, so the new
 rules take effect atomically; if the reload fails, the save is undone.
 """
 
+import pytest
+
 from tests.integration.test_api import _csrf_headers, _login  # noqa: F401
 
 
@@ -222,9 +224,21 @@ class TestApprovalsDoNotLoseEachOther:
 
         assert _approve(client, first.json()["change_id"]).status_code == 200
 
-        monkeypatch.setattr(routes, "_generation", lambda request: before_first)
-        assert _approve(client, second.json()["change_id"]).status_code == 200
-        monkeypatch.undo()
+        # A CONTEXT, NOT undo(). pytest hands the SAME monkeypatch
+        # object to every fixture and to the test, so `undo()` here
+        # also reverted the `client` fixture's own
+        # ELYSIUM_COOKIE_SECURE=false -- and from that line on,
+        # `_cookie_secure()` was True.
+        #
+        # Harmless while the session cookie had a constant name. SEC-17
+        # made the name conditional on exactly that variable, so the
+        # cookie was issued as `elysium_session` and then looked for as
+        # `__Host-elysium_session`: every later request got a 401, and
+        # it surfaced three lines on as a KeyError on a response body
+        # nobody printed.
+        with pytest.MonkeyPatch.context() as pinned:
+            pinned.setattr(routes, "_generation", lambda request: before_first)
+            assert _approve(client, second.json()["change_id"]).status_code == 200
 
         roles = client.get("/api/roles").json()["roles"]
         assert "discover:Account" in roles["editor"]

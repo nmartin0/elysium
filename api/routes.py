@@ -117,7 +117,7 @@ import logging
 import threading
 from typing import Any
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -127,10 +127,10 @@ from api.generation_dependency import get_generation, latest_generation
 from api.reload import ReloadInProgress, reload_generation
 from core.agent.agentic_loop import AgentLoop
 from core.auth.auth_cookies import (
-    SESSION_COOKIE_NAME,
     clear_csrf_cookie,
     clear_session_cookie,
     generate_csrf_token,
+    session_cookie_name,
     set_csrf_cookie,
     set_session_cookie,
 )
@@ -633,7 +633,6 @@ def change_own_password_route(
     body: ChangeOwnPasswordRequest,
     request: Request,
     current_user: UserRecord = Depends(get_current_user),
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict:
     """Changes the caller's own password. Needs the CURRENT one.
 
@@ -647,6 +646,11 @@ def change_own_password_route(
     password is known wants their other devices logged out, and to stay
     signed in on the one they are fixing it from.
     """
+    # READ FROM THE REQUEST, not Cookie(alias=...) (SEC-17). A default
+    # argument is evaluated ONCE at import, so an alias captures
+    # whatever the cookie was called then -- and the name is
+    # conditional on the environment now.
+    session_token = request.cookies.get(session_cookie_name())
     username = current_user.user_id
     tracker = request.app.state.login_attempt_tracker
     if tracker.is_locked_out(username):
@@ -1094,7 +1098,12 @@ def logout(request: Request, response: Response) -> None:
     # resolved UserRecord -- the only route with this need, so it
     # reads the cookie directly rather than adding a second shape to
     # the shared auth dependency for one caller.
-    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    # THE READ THAT BREAKS IF SEC-17 IS HALF-APPLIED. Written with
+    # the prefix and read without it, logout stops invalidating the
+    # session server-side: the browser drops its cookie and the token
+    # stays valid. 208 integration tests passed with exactly that
+    # combination, because none ran the production configuration.
+    session_token = request.cookies.get(session_cookie_name())
     if session_token is not None:
         request.app.state.session_store.invalidate_session(session_token)
     # No error even if the cookie was missing -- logging out of a

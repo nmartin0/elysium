@@ -32,9 +32,9 @@ request.app.state, built once at startup by api/app.py's create_app()
 Used by: api/routes.py (every route requiring a logged-in caller)
 """
 
-from fastapi import Cookie, HTTPException, Request
+from fastapi import HTTPException, Request
 
-from core.auth.auth_cookies import SESSION_COOKIE_NAME
+from core.auth.auth_cookies import session_cookie_name
 from core.intermediate_layer.auth import UserRecord
 
 _INVALID_SESSION_DETAIL = "Invalid or expired session"
@@ -57,9 +57,14 @@ PASSWORD_CHANGE_REQUIRED = "password_change_required"
 _ALLOWED_BEFORE_A_CHANGE = frozenset({"/api/me", "/api/me/password"})
 
 
-def get_current_user(
-    request: Request, session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME)
-) -> UserRecord:
+def get_current_user(request: Request) -> UserRecord:
+    # READ AT CALL TIME, not through Cookie(alias=...) (SEC-17).
+    # FastAPI evaluates a default argument ONCE, at import, so an
+    # alias captures whatever `session_cookie_name()` returned then --
+    # before the environment that decides it has necessarily been
+    # read. The name is conditional now, so it has to be asked for
+    # when the request arrives.
+    session_token = request.cookies.get(session_cookie_name())
     if session_token is None:
         raise HTTPException(status_code=401, detail=_INVALID_SESSION_DETAIL)
 
