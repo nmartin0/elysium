@@ -12,6 +12,20 @@
 # pinning here.
 ruff            # lint.sh -- style/correctness (see pyproject.toml's own [tool.ruff.lint] comment)
 mypy            # lint.sh -- type checking (see pyproject.toml's own [tool.mypy] comment)
+
+# THE STUBS mypy NEEDS, and it needed them all along. They were
+# declared NOWHERE -- not here, not in the lock -- and lint passed on
+# two machines only because somebody had installed them by hand. The
+# simulator's requirements removed them, and Elysium's mypy began
+# failing with "Library stubs not installed for \"yaml\"" in files
+# nothing had touched.
+#
+# An undeclared dependency that happens to be present is not a
+# dependency that is satisfied; it is one that has not been tested
+# yet.
+types-PyYAML    # core/config.py, core/mirror/manifest.py, sim's loader
+types-requests  # adapters/ollama_adapter.py, adapters/vllm_adapter.py
+types-PyMySQL   # sim/simulator/silos/mariadb.py, sim/simulator/health.py
 vulture         # lint.sh -- whole-program dead-code detection (see lint.sh's own top comment for why)
 import-linter   # lint.sh -- architectural import-boundary enforcement (see pyproject.toml's own [tool.importlinter] section)
 coverage        # AGENTS.md requires a coverage run on files you touch;

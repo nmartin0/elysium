@@ -77,7 +77,14 @@ from typing import Any
 # OPTIONAL. No SDK, no spans, no error -- and no dependency in
 # requirements.txt to argue about before the feature can exist.
 try:  # pragma: no cover - exercised by whether the SDK is installed
-    from opentelemetry import trace as _otel_trace
+    # AN IGNORE ON AN OPTIONAL IMPORT. This module deliberately
+    # adds no dependency, so whether `opentelemetry` resolves depends
+    # on what else happens to be installed -- and in the EXACT locked
+    # environment it arrives transitively as a partial namespace that
+    # mypy cannot follow: 'Module "opentelemetry" has no attribute
+    # "trace"'. The try/except below is what actually decides whether
+    # the feature exists; the checker should not be asked to.
+    from opentelemetry import trace as _otel_trace  # type: ignore[attr-defined]
 
     _TRACER: Any | None = _otel_trace.get_tracer("elysium.agent")
 except ImportError:  # pragma: no cover
