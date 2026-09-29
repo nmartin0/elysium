@@ -1,6 +1,20 @@
 # GENERATED -- do not edit by hand.
 #
-#     uv pip compile requirements.txt requirements-dev.txt --generate-hashes -o requirements-dev.lock
+#     uv pip compile requirements.txt requirements-dev.txt --generate-hashes --universal -o requirements-dev.lock
+#
+# WHY --universal, ADDED AFTER THIS LOCK PROVED UNINSTALLABLE. Without
+# it uv resolves for the GENERATING machine's Python and emits a flat
+# list with no environment markers. This lock was made on 3.12, where
+# `pgserver` applies; on 3.13 the install died with
+#
+#     ERROR: Could not find a version that satisfies the requirement
+#     pgserver==0.1.4 (from versions: none)
+#
+# even though requirements-dev.txt guards it with
+# `python_version < "3.13"`. The marker was in the requirements and
+# LOST IN THE LOCK. So the file that exists to make installs
+# reproducible could not be installed at all on the machine that gates
+# every patch.
 #
 # NOTE: that command OVERWRITES this whole file, including this
 # preamble -- uv emits its own two-line header instead. Re-apply these
@@ -162,15 +176,15 @@ blinker==1.9.0 \
     --hash=sha256:b4ce2265a7abece45e7cc896e98dbebe6cead56bcf805a3d23136d145f5445bf \
     --hash=sha256:ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc
     # via flask
-boto3==1.43.104 \
-    --hash=sha256:d26ad9b8f6066e9be90c78c1f8f0cdd82e33e0a363a1ccc5ab01008b0e48c7fd \
-    --hash=sha256:dc0c4b5c217fa38792d6b2e3c89b0d26220fd938dc173e48adab45d2d05e6977
+boto3==1.43.105 \
+    --hash=sha256:b8b6236ae7fe2724eee608c9b0649afbb86f0ec98158f39f67e64e678ec47499 \
+    --hash=sha256:e51260aed9cc1474778b5488bc6f97ad28f27a0a7002f4bbaaf8191aff1422ea
     # via
     #   -r requirements-dev.txt
     #   moto
-botocore==1.43.104 \
-    --hash=sha256:099f84876df9f6dc23a24b4d8c02da2d73c6949249761dd85585f735b825c182 \
-    --hash=sha256:a447978a815f8ac7ef2f4ba103b6a0c310e56536386974df769edb1326f3b208
+botocore==1.43.105 \
+    --hash=sha256:7abd19e1ef2c5e4a0314ca493fa7cebefabe33e559d7dd570fe2432a5431e6ec \
+    --hash=sha256:afb3e7706b123ab069d1c34571ca1fdf82528a48425574fe4693df3d039d503f
     # via
     #   aws-xray-sdk
     #   boto3
@@ -474,6 +488,10 @@ click==8.5.0 \
     #   import-linter
     #   pyiceberg
     #   uvicorn
+colorama==0.4.6 ; sys_platform == 'win32' \
+    --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
+    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
+    # via pytest
 coverage==7.16.2 \
     --hash=sha256:00d3eb96e9988c45f50cccd1f1496571ac5c1f91386ac02c4d55516eeda19a24 \
     --hash=sha256:01c6908bc613b420c26c818fe948e1b97dfd041a53c98b01c63bd8321f5c9aae \
@@ -655,7 +673,7 @@ fastapi==0.142.0 \
     --hash=sha256:0b2d2ad7f915f29f79f190e30b40bd2b2e1bdec5617faeda10c37f7c36416305 \
     --hash=sha256:a42da52ec744e7b0e8a0ea6e0cbc7292c6df3cbbda8606a91aecf5c166b156da
     # via -r requirements.txt
-fasteners==0.20 \
+fasteners==0.20 ; python_full_version < '3.13' \
     --hash=sha256:55dce8792a41b56f727ba6e123fcaee77fd87e638a6863cec00007bfea84c8d8 \
     --hash=sha256:9422c40d1e350e4259f509fb2e608d6bc43c0136f79a00db1b49046029d0b3b7
     # via pgserver
@@ -799,7 +817,7 @@ h11==0.16.0 \
     # via
     #   httpcore2
     #   uvicorn
-httpcore2==2.13.1 \
+httpcore2==2.13.1 ; sys_platform != 'emscripten' \
     --hash=sha256:e0aa977abe17e69a3b820a24542a6fa88702676d83880b8d194dcd18408e5103 \
     --hash=sha256:e1e05d4f25f7d7d496bfb96748f6f4b67657b03da069b3a68c36069f3db73d0a
     # via httpx2
@@ -807,6 +825,10 @@ httpx2==2.13.1 \
     --hash=sha256:6dff50fabc270ee5fd25d845d0b078ed20564579744d6d962850975996d2f9a4 \
     --hash=sha256:e48744a19e3af5ee48313d0ce5fe941d5422fae5705ea922a4aabf94d7800dfa
     # via -r requirements-dev.txt
+httpx2-jsfetch==1.0 ; sys_platform == 'emscripten' \
+    --hash=sha256:70a0e3eabfef7cce5ad9c629f7d01ca05e418f586646f4ddf14782e4c1454c60 \
+    --hash=sha256:cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32
+    # via httpx2
 idna==3.20 \
     --hash=sha256:a7db850025b95ded1eae8a46181a1a6c56c92c96f0e2b005d9ff8dc0210cab44 \
     --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
@@ -914,7 +936,7 @@ lazy-object-proxy==1.12.0 \
     --hash=sha256:efff4375a8c52f55a145dc8487a2108c2140f0bec4151ab4e1843e52eb9987ad \
     --hash=sha256:fdc70d81235fc586b9e3d1aeef7d1553259b62ecaae9db2167a5d2550dcc391a
     # via openapi-spec-validator
-librt==0.16.0 \
+librt==0.16.0 ; platform_python_implementation != 'PyPy' \
     --hash=sha256:001bfd59a7d45b17e3e75f2a8c6405280b35e7b84471792778e718c4f368950e \
     --hash=sha256:0058f9d68721094105917254c72ac0569117bb7b13b9769cf45d26d89f9d21cd \
     --hash=sha256:02118f56a9c36ddd07dfd9b919d9ecc117ba20a90987d56aa4c429fa34509188 \
@@ -1395,7 +1417,7 @@ pathspec==1.1.1 \
     --hash=sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a \
     --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189
     # via mypy
-pgserver==0.1.4 \
+pgserver==0.1.4 ; python_full_version < '3.13' \
     --hash=sha256:0cc5a64f40749c0e9752cd63784e63dfcf1f3e5ecd2279b6b59f7c64fb520fb4 \
     --hash=sha256:1a5d07c61d51f2abfef4ef61e2ef5cd014b994f7e09de8d3c140d2cf370e84a8 \
     --hash=sha256:206e58be4f01db433df882c6d781ea1058d604f9c23acfc6ce3401ba717bc6ad \
@@ -1413,7 +1435,7 @@ pgserver==0.1.4 \
     --hash=sha256:dc34f88561b18bc08edd98a84528f99a3720fe713a4e39a4a6210a4d009fe465 \
     --hash=sha256:fb755fe493c479fcad1a1e9923fcc1f09d15cd2fb168e563c003b29f14a80545
     # via -r requirements-dev.txt
-platformdirs==4.12.2 \
+platformdirs==4.12.2 ; python_full_version < '3.13' \
     --hash=sha256:29dbf06d96c500bc6bdbce75fb0a14d63279c93b1842f97e72a135b33e856983 \
     --hash=sha256:eab5f70271a490ef74618bb314fbb86e3c7e82fa3b9c922c2ea0e0a1a155d329
     # via pgserver
@@ -1421,7 +1443,7 @@ pluggy==1.6.0 \
     --hash=sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3 \
     --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
     # via pytest
-psutil==7.2.2 \
+psutil==7.2.2 ; python_full_version < '3.13' \
     --hash=sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372 \
     --hash=sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9 \
     --hash=sha256:11fe5a4f613759764e79c65cf11ebdf26e33d6dd34336f8a337aa2996d71c841 \
@@ -1448,7 +1470,7 @@ psycopg==3.3.6 \
     --hash=sha256:a1db9f7148b06a28606767efaca51fa6f9398c5c0a3810519be69d7000bdb631 \
     --hash=sha256:c081f2250df751a943036e42db6df4571c66cd0aabe8291a7a506512b12007d2
     # via -r requirements.txt
-psycopg-binary==3.3.6 \
+psycopg-binary==3.3.6 ; implementation_name != 'pypy' \
     --hash=sha256:05a83ac9fd52b9bca7cb5ab04b3691163170bd16f53defa27216ea3aa07ee781 \
     --hash=sha256:0a52991594ac4db888c7d39bccef331797e30cb31a95cae02cf2607f83a42dc2 \
     --hash=sha256:0bf08b749cc144f33b44a91b78e3f71c60eb07963746a0df5a100b36ce3d7475 \
@@ -1565,7 +1587,7 @@ pyarrow==25.0.1 \
     --hash=sha256:f3831aaa25c67a99f99dc8b05873cb9d64560390372e2aa197ce9dd4a3f06a44 \
     --hash=sha256:f729cfdbd36fd99d543b67a914d2de044c84ebe45be8b34902b299b608c15c8f
     # via pyiceberg
-pycparser==3.0 \
+pycparser==3.0 ; implementation_name != 'PyPy' \
     --hash=sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29 \
     --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
     # via cffi
@@ -1862,6 +1884,29 @@ python-dotenv==1.2.3 \
     --hash=sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9 \
     --hash=sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35
     # via pydantic-settings
+pywin32==312 ; sys_platform == 'win32' \
+    --hash=sha256:02ebca0f0242b75292e218065004310d6a477407c09fa449bfe4f6022bc0c0fc \
+    --hash=sha256:17948aeadbdb091f0ced6ef0841620794e68327b94ee415571c1203594b7215c \
+    --hash=sha256:3020656e34f1cf7faeb7bccd2b84653a607c6ff0c55ada85e6487d61716deabd \
+    --hash=sha256:59aba5d5940842075343a5ddc6b11f1cdf0d1567fe745290359dfbcc7c2eb831 \
+    --hash=sha256:5c1fbe4a937a73ae9297384a3da38518cbc694c68ad8a809b2e19acd350f03ed \
+    --hash=sha256:5dbc35d2b5320dc07f25fa31269cfb767471002b17de5eb067d03da68c7cb2db \
+    --hash=sha256:6017c58e12f6809fbb0555b75df144c2922a9ffd18e4b9b5afa863b6c1a9d950 \
+    --hash=sha256:772235332b5d1024c696f11cea1ae4be7930f0a8b894bb43db14e3f435f1ff7e \
+    --hash=sha256:7a27df850933d16a8eabfbaeb73d52b273e2da667f80d70b01a89d1f6828d02c \
+    --hash=sha256:9fce94568364e0155e6dfb781ac5d95903be8baf28670632beab1b523f300daa \
+    --hash=sha256:a4dd3a848290ef724347b19f301045831d8e802fa4464f491b98b1e0a081432e \
+    --hash=sha256:a77a90fbb6881238d2ca9c6fd797b25817f3768fe78d214a90137ff055a75f5b \
+    --hash=sha256:a8597d28f267b39074aef51fa593530082b39cbe5a074226096857b1fed2dfb9 \
+    --hash=sha256:b2200a054ca6d6625c4842fc56a4976a4b47f96b73dbe5538c3f813a80359f47 \
+    --hash=sha256:b457f6d628a47e8a7346ce22acb7e1a46a4a78b52e1d17e1af56871bd19a93bc \
+    --hash=sha256:c2f03a0f73f804a13c2735b99392b0cd426bb4f2c4d0178e5ac966a0f21618d5 \
+    --hash=sha256:c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3acbaaf9 \
+    --hash=sha256:d11417d84412f859b722fad0841b3614459ed0047f7542d8362e77884f6b6e8a \
+    --hash=sha256:d620900033cc7531e50727c3c8333091df5dd3ffe6d68cdca38c03f5821408d5 \
+    --hash=sha256:dab4f65ac9c4e48400a2a0530c46c3c579cd5905ecd11b80692373915269208b \
+    --hash=sha256:dc90147579a905b8635e1b0ec6514967dcb07e6e0d9c42f1477feef14cac23bb
+    # via docker
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
     --hash=sha256:0150219816b6a1fa26fb4699fb7daa9caf09eb1999f3b70fb6e786805e80375a \
@@ -2353,7 +2398,7 @@ tenacity==9.1.4 \
     --hash=sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55 \
     --hash=sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a
     # via pyiceberg
-truststore==0.10.4 \
+truststore==0.10.4 ; sys_platform != 'emscripten' \
     --hash=sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301 \
     --hash=sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981
     # via
@@ -2396,6 +2441,10 @@ typing-inspection==0.4.4 \
     #   fastapi
     #   pydantic
     #   pydantic-settings
+tzdata==2026.4 ; sys_platform == 'win32' \
+    --hash=sha256:c2169a8b0a7a5e9674da5a135ccdfb2b3e671b333ed9fed17b41f73c34476e81 \
+    --hash=sha256:f1b8bd365d8d210c55353f4d7f8d6d8561c0ba50d704b700d195a9424bba0d79
+    # via psycopg
 urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
     --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
