@@ -33,7 +33,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import (
+    add_column_if_missing,
+    connection_with_schema,
+)
 
 # HOW LONG AN ATTEMPT IS WORTH KEEPING.
 #
@@ -56,7 +59,16 @@ CREATE TABLE IF NOT EXISTS sync_attempts (
     -- Why, when it was refused. Null otherwise. The full drift report,
     -- because a reader who sees a refusal wants the column and the
     -- value, not a category.
-    detail TEXT
+    detail TEXT,
+    -- WHICH RUN THIS WAS (PR001-R9). One sync writes bronze, silver,
+    -- gold, a changelog and a manifest, and the only thing connecting
+    -- them was a timestamp -- so "what else happened in the run that
+    -- refused this table?" meant comparing clocks across five layers
+    -- and hoping no two runs overlapped.
+    --
+    -- NULLABLE: rows written before this column existed have no run to
+    -- name, and inventing one would be worse than admitting it.
+    run_id TEXT
 );
 -- Every read is "what happened to this table recently", so the pair is
 -- the index. One on time alone would still scan a table's history.
@@ -90,17 +102,26 @@ class SyncAttempts:
         self._db_path = db_path
 
     def _connection(self):
-        return connection_with_schema(self._db_path, SCHEMA)
+        # THE MIGRATION IS FOR STORES THAT ALREADY EXIST. `CREATE TABLE
+        # IF NOT EXISTS` does nothing to a table that is already there,
+        # so a deployment syncing for weeks would never gain the column
+        # and every insert naming it would fail.
+        return connection_with_schema(
+            self._db_path, SCHEMA,
+            migrations=(add_column_if_missing(
+                "sync_attempts", "run_id", "TEXT"),),
+        )
 
     def record(self, silo: str, table_name: str, outcome: str,
-               detail: str | None = None) -> None:
+               detail: str | None = None, run_id: str | None = None) -> None:
         """Records one attempt. Silent on failure -- see the class."""
         try:
             with self._connection() as conn:
                 conn.execute(
-                    "INSERT INTO sync_attempts (at, silo, table_name, outcome, detail) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (time.time(), silo, table_name, outcome, detail),
+                    "INSERT INTO sync_attempts "
+                    "(at, silo, table_name, outcome, detail, run_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (time.time(), silo, table_name, outcome, detail, run_id),
                 )
                 # EXPLICIT, because open_connection sets
                 # isolation_level='' -- an implicit transaction opens on

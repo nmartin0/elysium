@@ -158,6 +158,12 @@ QUARANTINE_SCHEMA = pa.schema([
 
 SOURCE_READ_PROPERTY = "elysium.source_read_started_at"
 
+# WHICH RUN LAST WROTE THIS TABLE (PR001-R9). A property rather than a
+# column: it describes the WRITE, not the rows, and a column would
+# change every row's hash on every run and make the unchanged check
+# meaningless.
+RUN_ID_PROPERTY = "elysium.run_id"
+
 
 BRONZE_RETENTION = {
     "history.expire.min-snapshots-to-keep": "2",
@@ -319,6 +325,20 @@ def _refuse_a_changed_declared_type(table, arrow_table, identifier: str,
     )
 
 
+def _read_properties(read_started_at: str, run_id: "str | None") -> dict:
+    """The properties every write records about the read behind it.
+
+    ONE PLACE, because there are two write paths -- the unchanged one
+    that only touches metadata, and the one that commits data -- and a
+    property set by one and not the other makes a table look as though
+    a run skipped it.
+    """
+    properties = {SOURCE_READ_PROPERTY: read_started_at}
+    if run_id is not None:
+        properties[RUN_ID_PROPERTY] = run_id
+    return properties
+
+
 class SuspectedPartialRead(ValueError):
     """More of a table vanished in one sync than a real deletion
     plausibly explains (PA001-F4).
@@ -332,7 +352,12 @@ class SuspectedPartialRead(ValueError):
 
 class IcebergMirrorSync(MirrorSync):
     def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter],
-                 write_log=None, storage: dict | None = None):
+                 write_log=None, storage: dict | None = None,
+                 run_id: "str | None" = None):
+        # WHICH RUN THIS SYNC BELONGS TO (PR001-R9). None for a
+        # script or a test outside a run, in which case the property
+        # is not written rather than invented.
+        self._run_id = run_id
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
         # customer's own data; see adapters/sqlite_adapter.py's own
@@ -763,7 +788,8 @@ class IcebergMirrorSync(MirrorSync):
                 # this records the read without inventing a version of
                 # data that did not change.
                 with table.transaction() as tx:
-                    tx.set_properties({SOURCE_READ_PROPERTY: read_started_at})
+                    tx.set_properties(_read_properties(read_started_at,
+                                                        self._run_id))
             else:
                 table.overwrite(arrow_table)
                 # AFTER THE DATA COMMIT, never before (001's F-29): a
@@ -774,7 +800,7 @@ class IcebergMirrorSync(MirrorSync):
                 # entries it covered.
                 with table.transaction() as tx:
                     tx.set_properties({
-                        SOURCE_READ_PROPERTY: read_started_at,
+                        **_read_properties(read_started_at, self._run_id),
                         # WHICH BRONZE SILVER CAME FROM: a fact about the
                         # run, so a property rather than a column.
                         **({BRONZE_SNAPSHOT_PROPERTY: str(bronze_snapshot)}
@@ -1176,6 +1202,8 @@ class IcebergMirrorSync(MirrorSync):
                     "elysium.source_silo": silo_name,
                     "elysium.source_table": table_name,
                     "elysium.layer": "bronze",
+                    **({RUN_ID_PROPERTY: self._run_id}
+                       if self._run_id else {}),
                     **({SOURCE_TYPES_PROPERTY: current_types}
                        if current_types else {}),
                     **BRONZE_RETENTION,

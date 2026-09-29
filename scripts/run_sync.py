@@ -51,6 +51,7 @@ import argparse
 import contextlib
 import json
 import sys
+import uuid
 from typing import Any
 
 from core.deployment_loader import (
@@ -399,7 +400,8 @@ def _outcome_for(result) -> str:
     return "unchanged" if getattr(result, "unchanged", False) else "synced"
 
 
-def _build_gold(sync, config, data_dir, unsynced: set | None = None) -> int:
+def _build_gold(sync, config, data_dir, unsynced: set | None = None,
+                 run_id: "str | None" = None) -> int:
     """One gold table per object type, audited before it is published.
     Returns how many were refused.
 
@@ -491,7 +493,8 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None) -> int:
             result = build_gold(sync._catalog, object_type, type_def, silver, known,
                                  additional_rows=additional,
                                  approved_pairs=decisions.approved_pairs(object_type),
-                                 retain_publications=config.retain_publications)
+                                 retain_publications=config.retain_publications,
+                                 run_id=run_id)
         except Exception as exc:  # noqa: BLE001 - per type, like a sync
             # PER TYPE, LIKE EVERY OTHER FAILURE IN THIS LOOP
             # (PA001-G5). Reading silver was already guarded a few
@@ -545,6 +548,12 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
     half this table really just go?" has a different answer every time
     it is asked, so it is not a config key.
     """
+    # ONE ID FOR THE WHOLE RUN (PR001-R9). Short and readable rather
+    # than a full UUID: it is printed, typed into a grep and read
+    # aloud. One in four billion against a few runs a day.
+    run_id = uuid.uuid4().hex[:8]
+    print(f"run {run_id}")
+
     accepted = set(accept_deletions or ())
     # `rebuild` names tables ("silo.table") whose SILVER may be dropped
     # and rebuilt because a declared type changed and Iceberg cannot
@@ -608,6 +617,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
             # runtime_paths.data_dir: read one deployment, write another.
             runtime_paths.data_dir / "mirror", build_live_read_adapters(runtime_paths),
             write_log=mediator.write_log,
+            run_id=run_id,
             # WHERE THE WAREHOUSE LIVES, from config.yaml's mirror.storage.
             # Empty means local, which is what every deployment does today.
             #
@@ -658,7 +668,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                 # incident while the second is Tuesday.
                 attempts.record(
                     target.silo_name, target.table_name, "refused",
-                    str(exc),
+                    str(exc), run_id=run_id,
                 )
                 continue
             # 'unchanged' IS ITS OWN OUTCOME (PA001-A17). The store has
@@ -668,7 +678,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
             # were indistinguishable in the history an operator reads
             # to answer "when did this last actually move?".
             attempts.record(target.silo_name, target.table_name,
-                            _outcome_for(result))
+                            _outcome_for(result), run_id=run_id)
             print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
@@ -688,7 +698,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # type kept serving its PREVIOUS publication while fresh silver
         # sat unused, and nothing in the output said so.
         failures += _build_gold(sync, config, runtime_paths.data_dir,
-                                 unsynced=unsynced)
+                                 unsynced=unsynced, run_id=run_id)
 
         # THE CONDITION IS CHECKED AFTER THE SYNC, which is the only
         # moment the facts are current. A separate scheduler would need

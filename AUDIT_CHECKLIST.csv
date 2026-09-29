@@ -195,7 +195,7 @@ R5,R,PR001 I,P3,bounded-memory batched sync,iceberg_sync.py,-,unverified
 R6,R,PR001 I,P1,health checks per table and object type,new,-,unverified
 R7,R,PR001 I,P2,column profiles and distribution drift,new,-,unverified
 R8,R,PR001 I,P1,independent reconciliation source to gold,new,-,unverified
-R9,R,PR001 I,P1,one run id and one run report across all layers,run_sync.py,-,"NOT STARTED, verified: no run_id exists anywhere in core/mirror or scripts. A sync's layers are correlated only by timestamp"
+R9,R,PR001 I,P1,one run id and one run report across all layers,run_sync.py,-,"DONE patch 466, REBUILT. One id per run, printed at both ends, in sync_attempts (with a migration for existing stores) and as a table property on bronze, silver and gold. Patch 461 built this once, was delivered and NEVER APPLIED - I did not check, which is the same reported-versus-verified gap I had been recording in others. On the rebuild the SAME call site silently failed to wire a second time"
 R10,R,PR001 I,P2,finish the changelog as SCD2 with before-images,changelog.py,-,unverified
 R11,R,PR001 I,P1,enforced retention and orphan-file cleanup,new,-,"depends on M1"
 R12,R,PR001 I,P1,column classifications that propagate through layers,ontology,-,unverified
@@ -304,4 +304,6 @@ MERGE-1,COORD,found merging agentloop,INTERMITTENT,"test_mirror_sync_endpoint::t
 SEC-20,COORD,handover from LLM3,OPEN,three tested fixes inert without api/routes.py edits,api/routes.py,handover,"PARTLY CLOSED: F-05 landed in patch 464, SEC-17 rebuilt in 465. E-02 remains - one keyword argument whose VALUE is an owner decision, because behind a proxy request.client.host is the proxy and every caller would share one budget"
 SEC-17,SEC,handover from LLM3,HIGH,"the session cookie has no __Host- prefix",core/auth/auth_cookies.py,"handover","REBUILT patch 465, the original diff being LOST with the agent. `__Host-` prefix on the session cookie: one session_cookie_name() conditional on _cookie_secure(), both writers and all THREE readers converted from import-time Cookie(alias=) to a call-time read. THEIR OWN GUARD TEST VALIDATES IT - half-applied exactly as they described, test_logout_invalidates_the_session_SERVER_SIDE fails; whole, it passes"
 TEST-1,TEST,found rebuilding SEC-17,OPEN,"test_role_changes::test_a_request_pinned_before_another_approval_keeps_it passes with the generation pin REMOVED, so it does not depend on the thing its name and docstring describe. Pre-existing, not caused by SEC-17, and needs its own investigation",tests/integration/test_role_changes.py,"measured 27 Sep","OPEN"
+
+COORD-4,COORD,found releasing,OPEN,"patch 461 (R9) was delivered, never applied, and I never verified it landed. Found only by running the program on a fresh clone of dev while gathering release evidence. Every patch since 402 should be checked the same way: delivered is not landed",process,"measured 29 Sep","CHECK WHAT ELSE IS MISSING"
 

@@ -339,7 +339,8 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
                known_ids: dict[str, set] | None = None,
                additional_rows: "dict[str, list[dict]] | None" = None,
                approved_pairs: "list[tuple[str, str]] | None" = None,
-               retain_publications: int = DEFAULT_RETAINED_PUBLICATIONS) -> GoldResult:
+               retain_publications: int = DEFAULT_RETAINED_PUBLICATIONS,
+               run_id: "str | None" = None) -> GoldResult:
     """Conform, audit and -- only if it passes -- publish one type.
 
     A TABLE THAT ALREADY HAS A PUBLICATION is written on a branch, so
@@ -491,6 +492,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
             return result
         table = catalog.load_table(identifier)
         _tag_publication(table)
+        _record_run(catalog, identifier, run_id)
         result.forgotten_publications = _forget_old_publications(
             catalog.load_table(identifier), retain_publications)
         result.published = True
@@ -526,6 +528,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
 
     audited = table.snapshot_by_name(AUDIT_BRANCH).snapshot_id
     _publish(table, audited)
+    _record_run(catalog, identifier, run_id)
     result.forgotten_publications = _forget_old_publications(
         catalog.load_table(identifier), retain_publications)
     result.published = True
@@ -826,6 +829,24 @@ def _next_publication_number(table) -> int:
         if ref.startswith(f"{PUBLISHED_TAG}-") and ref.rsplit("-", 1)[1].isdigit()
     ]
     return 1 + max(existing, default=0)
+
+
+def _record_run(catalog, identifier: str, run_id: "str | None") -> None:
+    """Which run published this gold table (PR001-R9).
+
+    CALLED FROM BOTH PUBLISH PATHS, and that is why it is a function.
+    gold has two -- a FIRST build that appends and tags, and every
+    later build through the audit branch. Wiring only the first left
+    bronze and silver carrying the id while gold said None.
+
+    RELOADED, NOT REUSED: the caller's `table` predates the publish
+    commit, and a property set through a stale handle is silently
+    lost.
+    """
+    if run_id is None:
+        return
+    with catalog.load_table(identifier).transaction() as tx:
+        tx.set_properties({"elysium.run_id": run_id})
 
 
 def _tag_publication(table) -> None:
