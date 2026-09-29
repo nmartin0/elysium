@@ -9,7 +9,6 @@ the suite is useful without one.
 import os
 
 import pytest
-
 from simulator.silos.mariadb import MariaDbBinaries, MariaDbUnavailable
 from simulator.silos.postgres import PostgresBinaries, PostgresUnavailable
 

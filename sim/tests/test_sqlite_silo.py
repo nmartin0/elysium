@@ -9,7 +9,6 @@ it fails here first.
 import sqlite3
 
 import pytest
-
 from simulator.ports import PortRegistry
 from simulator.silo import ConnectionDescriptor, Silo, SiloError
 from simulator.silos import (

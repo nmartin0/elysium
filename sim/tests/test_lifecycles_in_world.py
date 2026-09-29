@@ -9,11 +9,10 @@ and that a pack cannot declare a persistence that does not add up.
 import textwrap
 
 import pytest
-from worlds import running_world, write_pack
-
 from simulator import runner
 from simulator.relational import fetch_all
 from simulator.spec import PackError, load_spec
+from worlds import running_world, write_pack
 
 JOBS = textwrap.dedent("""
     pack: field_service

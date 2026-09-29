@@ -9,7 +9,6 @@ mock expects.
 import textwrap
 
 import pytest
-
 from simulator import runner
 from simulator.event import EventError
 from simulator.relational import count_rows, fetch_all

@@ -11,7 +11,6 @@ import textwrap
 from contextlib import contextmanager
 
 import pytest
-
 from simulator import runner
 from simulator.ports import PortRegistry
 from simulator.relational import (

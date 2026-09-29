@@ -11,7 +11,6 @@ from decimal import Decimal
 from random import Random
 
 import pytest
-
 from simulator.context import AGGREGATES, NAMESPACES, EvaluationContext, ReferenceError_
 from simulator.expression import ExpressionError, evaluate, names, parse
 from simulator.rng import RandomSource

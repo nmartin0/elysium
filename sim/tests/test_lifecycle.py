@@ -1,5 +1,4 @@
 import pytest
-
 from simulator.clock import utc
 from simulator.lifecycle import Entity, Lifecycle, Transition, advance, in_state, state_counts
 from simulator.rng import RandomSource

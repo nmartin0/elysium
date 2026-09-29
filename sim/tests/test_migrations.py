@@ -8,12 +8,11 @@ and on day forty it appears underneath whatever is reading.
 import textwrap
 
 import pytest
-from worlds import running_world, write_pack
-
 from simulator import runner
 from simulator.drift import history
 from simulator.relational import catalogue_columns, fetch_all
 from simulator.spec import PackError, load_spec
+from worlds import running_world, write_pack
 
 SHOP = textwrap.dedent("""
     pack: drifting_shop

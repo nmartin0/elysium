@@ -67,7 +67,11 @@ echo "--- lock files ---"
 python3 -m scripts.check_lockfiles || STATUS=1
 
 echo "--- import-linter ---"
-lint-imports || STATUS=1
+# PYTHONPATH=sim SO `simulator` RESOLVES. The simulator's package
+# lives at sim/simulator and is named `simulator` in its contracts --
+# import-linter imports what it analyses, and without this it reports
+# "Could not find package 'simulator' in your Python path."
+PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}sim" lint-imports || STATUS=1
 
 echo
 if [ "$STATUS" -eq 0 ]; then

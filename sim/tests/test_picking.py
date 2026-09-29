@@ -10,11 +10,10 @@ from the same one.
 import textwrap
 
 import pytest
-from worlds import running_world
-
 from simulator import runner
 from simulator.relational import fetch_all
 from simulator.spec import PackError, load_pack, load_spec
+from worlds import running_world
 
 SHOP = textwrap.dedent("""
     pack: picking_shop

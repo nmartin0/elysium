@@ -9,11 +9,10 @@ cannot be produced in one sitting if stopping loses it.
 import textwrap
 
 import pytest
-from worlds import write_pack
-
 from simulator import runner
 from simulator.relational import fetch_all
 from simulator.resume import STATE_FILENAME, ResumeError, resume, save
+from worlds import write_pack
 
 SHOP = textwrap.dedent("""
     pack: resumable

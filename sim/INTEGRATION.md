@@ -2,64 +2,70 @@
 
 `sim/` is `github.com/nmartin0/elysium-sim`, grafted in whole with its
 77 commits rather than copied, so nothing was lost when that
-repository was deleted. Its history is reachable from this one:
+repository was deleted. Its history is reachable from this one, but
+NOT through `git log -- sim/`: those commits were made when the files
+sat at that repository's root, so they carry no `sim/` paths. Use the
+graft's second parent:
 
-    git log --oneline -- sim/
+    git log --oneline <graft-commit>^2      # 77 commits, tip 13a845b
 
-## It is a separate project that happens to live here
+## It uses Elysium's toolchain, not its own
 
-It keeps its own `pyproject.toml`, `lint.sh`, `requirements*.txt`,
-`tests/`, `scripts/` and `vulture_whitelist.py`. **Eleven of its
-top-level names collide with Elysium's**, which is why it is isolated
-in a directory rather than merged into the tree.
+It arrived with its own `pyproject.toml`, `lint.sh`, `requirements*`
+and locks. **Those collided, and not gently.** Sim pinned `mypy>=1.11,
+<2`; Elysium's lock pins `mypy==2.3.1`. Installing either project's
+requirements downgraded or upgraded the other's type checker by a
+major version, and the resulting failures looked like bugs in whichever
+project you happened to lint next.
 
-Run each from its own root:
+So sim gave way. It now has no build or lint configuration of its own:
 
-    ./lint.sh                 # Elysium
+    ./lint.sh                      # both projects, 16 contracts
     python -m pytest tests/unit tests/integration
+    python -m pytest sim/tests
 
-    cd sim && ./lint.sh       # the simulator
-    cd sim && python -m pytest tests
+`pytest` with no arguments runs both suites.
 
-## What had to change in Elysium to accommodate it
+**THE `mypy<2` PIN WAS UNNECESSARY.** Sim's 55 source files pass mypy
+2.3.1 with no issues at all. The pin that caused the whole collision
+protected nothing.
 
-One file: `pytest.ini`. A bare `pytest` at the top level collected
-`sim/tests` and ERRORED before running anything, because sim's
-conftest imports `simulator`, which is only on the path from sim's own
-root. `testpaths` and `norecursedirs` now keep a bare run to Elysium's
-own suite. Nothing else in Elysium was touched: no source, no
-`pyproject.toml`, no import contract.
+## What moved where
 
-## The dependency trap, which cost an hour to find
+| from | to |
+| --- | --- |
+| sim's 8 import contracts | `pyproject.toml`, verbatim, alongside Elysium's 8 |
+| `psycopg`, `PyMySQL` | `requirements.txt` (psycopg was already there) |
+| sim's vulture whitelist | `vulture_whitelist.py`, reasons and all |
+| `postgres` / `mariadb` markers | `pytest.ini` |
+| `sim/scripts/check_controls.py` | `sim/simulator/check_controls.py` |
+| `sim/scripts/check_lockfiles.py` | deleted -- sim has no locks now |
 
-**The two projects share one Python environment and their requirement
-sets conflict.** Installing sim's requirements removed the type stubs
-Elysium's mypy needs, and Elysium's lint started failing with errors
-that had nothing to do with the simulator:
+`sim/scripts` had to go: it shadowed Elysium's `scripts` package, so
+sim's own tests imported the wrong module.
 
-    core/config.py:48: error: Library stubs not installed for "yaml"
+**RUFF FOUND 39 STYLE VIOLATIONS** in sim that its own configuration
+never looked at -- its ruff settings were identical to Elysium's but
+pointed at fewer paths. Fixed across 36 files rather than exempted.
 
-Neither project names those stubs in its own `requirements-dev.txt` --
-they arrive as transitive dependencies, so `pip install -r` for one
-project can silently take them from the other.
+## Two things that need care
 
-Three stubs are needed for BOTH lints to pass in one environment:
+`pythonpath = . sim` in `pytest.ini` puts BOTH roots on the path, so a
+new top-level package in `sim/` that shares a name with one of
+Elysium's will shadow it in exactly the way `scripts` did. Elysium is
+first, so Elysium wins -- which is the right way round, but it means
+the failure appears in SIM's tests, pointing at Elysium's code.
 
-    pip install types-PyYAML types-requests types-PyMySQL
+`lint-imports` needs `PYTHONPATH=sim` to resolve `simulator`; that is
+set in `lint.sh` at the one call site.
 
-**A separate virtualenv per project is the cleaner answer** and the
-one to adopt if this bites again. It is recorded here rather than
-fixed because changing how either project installs is a decision, not
-a tidy-up.
-
-## What has been verified
+## Verified with both present
 
 | | |
 | --- | --- |
-| Elysium lint | all checks passed, 8 import contracts kept |
+| `./lint.sh` | all checks passed, 16 contracts kept |
+| Elysium unit | 3,569 passed |
 | Elysium integration | 449 passed |
-| sim lint | all checks passed |
-| sim tests | 603 passed, 471 skipped |
-| a bare `pytest` at the top level | collects 0 sim tests |
+| sim | 596 passed, 471 skipped |
 
-The 471 skips are sim's own: they need live databases.
+The 471 skips are sim's own: they need live PostgreSQL and MariaDB.

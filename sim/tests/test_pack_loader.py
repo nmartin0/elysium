@@ -8,7 +8,6 @@ the message tells the author where to look.
 import textwrap
 
 import pytest
-
 from simulator.lifecycle import Lifecycle
 from simulator.schema import ColumnType
 from simulator.spec import PackError, load_pack, load_spec

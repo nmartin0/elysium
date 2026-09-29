@@ -9,11 +9,10 @@ the emissions just wrote -- which is the whole reason effects run last.
 import textwrap
 
 import pytest
-from worlds import running_world, write_pack
-
 from simulator import runner
 from simulator.relational import fetch_all
 from simulator.spec import PackError, load_spec
+from worlds import running_world, write_pack
 
 STOCK = textwrap.dedent("""
     pack: hardware_shop

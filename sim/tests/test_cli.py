@@ -10,7 +10,6 @@ import pathlib
 import textwrap
 
 import pytest
-
 from simulator.cli import CONNECTIONS_FILENAME, main
 
 PACK = textwrap.dedent("""
@@ -222,7 +221,6 @@ def test_a_consumer_can_read_the_world_using_only_that_file(
     # except what was written to disk, with no reference to the world
     # object or the pack.
     import psycopg
-
     from simulator import runner
     from simulator.spec import load_pack
 

@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-
 from simulator.drift import (
     AddColumn,
     AddTable,

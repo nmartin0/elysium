@@ -7,7 +7,6 @@ happily against SQL an engine rejects.
 """
 
 import pytest
-
 from simulator.dialect import MariaDbDialect, PostgresDialect, dialect_for
 from simulator.ports import PortRegistry
 from simulator.schema import Column, ColumnType, Table, identifier, money

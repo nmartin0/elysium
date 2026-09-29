@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 
 import pytest
-
 from simulator.clock import DEFAULT_COMPRESSION, SimulatedClock, day_fraction, utc
 
 

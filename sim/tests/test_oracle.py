@@ -12,7 +12,6 @@ from contextlib import contextmanager
 from decimal import Decimal
 
 import pytest
-
 from simulator import runner
 from simulator.oracle import Oracle, OracleError, Watch
 from simulator.spec import load_pack

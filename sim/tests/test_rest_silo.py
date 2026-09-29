@@ -10,7 +10,6 @@ import urllib.error
 import urllib.request
 
 import pytest
-
 from simulator.ports import PortRegistry
 from simulator.silo import SiloError
 from simulator.silos.rest import (

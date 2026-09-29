@@ -11,7 +11,6 @@ import textwrap
 from datetime import UTC, datetime
 
 import pytest
-
 from simulator.audit import (
     DANGEROUS,
     DESTRUCTIVE,

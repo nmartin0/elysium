@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from simulator.ports import PortRegistry
 from simulator.silo import SiloError
 from simulator.silos.mariadb import (
@@ -265,7 +264,6 @@ def test_two_technologies_coexist_in_one_world(tmp_path, mariadb_binaries, postg
     # own port, neither knowing about the other.
     import psycopg
     import pymysql
-
     from simulator.silos.postgres import PostgresSilo
 
     shop = MariaDbSilo(name="shop", data_dir=tmp_path / "shop", port=0, binaries=mariadb_binaries)

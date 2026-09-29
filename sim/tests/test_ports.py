@@ -2,7 +2,6 @@ import json
 import socket
 
 import pytest
-
 from simulator.ports import PORTS_FILENAME, PortConflict, PortRegistry
 
 

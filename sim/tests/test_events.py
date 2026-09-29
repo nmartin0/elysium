@@ -9,11 +9,10 @@ not change behaviour -- are all about what ends up in a database.
 import textwrap
 
 import pytest
-from worlds import running_world, write_pack
-
 from simulator import runner
 from simulator.relational import count_rows, fetch_all
 from simulator.spec import PackError, load_spec
+from worlds import running_world, write_pack
 
 SHOP = textwrap.dedent("""
     pack: hardware_shop

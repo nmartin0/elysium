@@ -67,3 +67,11 @@ sqlalchemy<3.0
 # which is what the ontology's declared types expect.
 psycopg[binary]<4.0
 
+# THE SIMULATOR'S SILOS (sim/). Grafted in from elysium-sim, which kept
+# its own requirements until they collided with these: its `mypy<2`
+# downgraded Elysium's type checker by a major version whenever either
+# project's requirements were installed. Sim now uses THIS file and
+# THIS toolchain, and these are the only two dependencies it needed
+# that Elysium did not already have.
+psycopg[binary]>=3.2,<4    # sim -- the PostgreSQL silo
+PyMySQL>=1.1,<2            # sim -- the MariaDB/MySQL silo

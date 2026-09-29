@@ -11,10 +11,9 @@ import csv
 import textwrap
 
 import pytest
-from worlds import running_world, write_pack
-
 from simulator import runner
 from simulator.spec import PackError, load_spec
+from worlds import running_world, write_pack
 
 EXPORT = textwrap.dedent("""
     pack: nightly_export

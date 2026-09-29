@@ -11,7 +11,6 @@ from decimal import Decimal
 from random import Random
 
 import pytest
-
 from simulator.context import EvaluationContext, ReferenceError_
 from simulator.generators import GENERATORS, GeneratorError, build
 

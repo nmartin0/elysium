@@ -1,5 +1,4 @@
 import pytest
-
 from simulator.clock import utc
 from simulator.rng import RandomSource
 from simulator.scheduler import (

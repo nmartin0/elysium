@@ -13,7 +13,6 @@ import sys
 import time
 
 import pytest
-
 from simulator.cleanup import ENGINES, Stray, _is_engine, clean, strays, terminate
 
 # -- what it will and will not touch ----------------------------------
@@ -153,9 +152,8 @@ def test_a_world_stopped_properly_leaves_nothing_running(tmp_path, postgres_bina
     # already leaves nothing behind, and this is only for crashes.
     import socket
 
-    from worlds import running_world
-
     from tests.test_cleanup import SMALL
+    from worlds import running_world
 
     with running_world(tmp_path, SMALL, "tidy", seed=1, days=1) as world:
         port = world.silo("ops").port

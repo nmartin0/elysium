@@ -1,5 +1,4 @@
 import pytest
-
 from simulator.rng import RandomSource, _derive_seed, sample_without_replacement, weighted_choice
 
 

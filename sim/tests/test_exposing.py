@@ -11,9 +11,8 @@ import textwrap
 import urllib.request
 
 import pytest
-from worlds import running_world
-
 from simulator.spec import PackError, load_spec
+from worlds import running_world
 
 API = textwrap.dedent("""
     pack: books_api

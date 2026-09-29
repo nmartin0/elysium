@@ -12,11 +12,10 @@ different thing wearing its name.
 import textwrap
 
 import pytest
-from worlds import running_world, write_pack
-
 from simulator import runner
 from simulator.relational import fetch_all
 from simulator.spec import PackError, load_spec
+from worlds import running_world, write_pack
 
 OOOI = textwrap.dedent("""
     pack: aviation

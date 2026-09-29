@@ -10,7 +10,6 @@ the person running a training world could not ask for it at all.
 """
 
 import pytest
-
 from simulator.spec import load_spec
 from simulator.spec.values import PackError
 

@@ -9,12 +9,11 @@ simulator could not produce.
 import textwrap
 
 import pytest
-from worlds import write_pack
-
 from simulator import runner
 from simulator.relational import fetch_all
 from simulator.spec import load_spec
 from simulator.spec.values import PackError
+from worlds import write_pack
 
 LAGGING = textwrap.dedent("""
     pack: lagging

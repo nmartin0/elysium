@@ -9,9 +9,8 @@ the console says something true about it when it does.
 import textwrap
 
 import pytest
-from worlds import running_world
-
 from simulator.console import COMMANDS, HELP, Console, ConsoleError, ConsoleExit
+from worlds import running_world
 
 PACK = textwrap.dedent("""
     pack: console_shop

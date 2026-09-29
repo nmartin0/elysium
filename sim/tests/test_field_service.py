@@ -17,7 +17,6 @@ import urllib.request
 from datetime import timedelta
 
 import pytest
-
 from simulator import runner
 from simulator.relational import fetch_all
 from simulator.spec import load_pack
