@@ -355,3 +355,66 @@ conflict, R9 is done, and the rest are days each with consequences for
 the changelog diff and the partial-read guard -- both of which compare
 WHOLE tables today. Starting one while three branches are unmerged
 means designing against a tree that is about to change.
+
+
+---
+
+# Mutation sweep: does the suite catch a broken fix?
+
+Started because TEST-1 looked like a test that passed with the thing
+it tested removed, and I did not know how many others shared that
+property. A test that cannot fail is worse than a missing one: it
+shows up as coverage.
+
+## TEST-1 was my mistake
+
+The test pins an OLD generation to stage a lost update. Removing the
+pin does not disable a fix -- it removes the SCENARIO, so the
+assertions pass trivially. That is not a control.
+
+The valid control is reverting the FIX. With `latest_generation()`
+inside the approval lock changed back to the pinned `_generation()`,
+exactly that test fails. It is a real, working test.
+
+**A CONTROL MUST BREAK THE PROTECTION, NOT THE SETUP.** Writing that
+down because I have now made the opposite mistake twice in two days --
+the other was restoring a bug's LINE rather than its BEHAVIOUR in
+patch 462.
+
+## What the sweep has verified so far
+
+Each of these was reverted at source and the suite genuinely failed:
+
+| behaviour | failures |
+| --- | --- |
+| the sync lock, in `run_sync` | 1 |
+| the sync lock, in `repair_catalog` | 1 |
+| silver's security-field exclusion (LLM3-1) | 7 |
+| the approval lock | 2 |
+| the approval re-read inside the lock | 1 |
+| the CSRF token comparison | 3 of 5 |
+
+**No uncovered behaviour found yet.**
+
+## The method has a trap, and I fell in it twice
+
+A mutation that survives proves nothing unless the WHOLE suite ran.
+Twice I selected the tests I thought were relevant, saw them pass, and
+briefly believed I had found a hole:
+
+  - CSRF "always equal" passed 230 tests -- because the file that
+    covers it, `test_csrf_constant_time.py`, was not in my selection.
+  - two lock mutations reported "no result", which was a SYNTAX ERROR
+    from my own mutation, not a test outcome.
+
+So each real mutation costs a full suite run, about eight minutes
+here. That is the honest price of this evidence, and it is why this is
+a sweep rather than an exhaustive pass.
+
+## Where to take it next
+
+The behaviours worth the eight minutes are the ones where a silent
+pass costs most and where the fix is recent: the write-path
+chokepoint, quarantine policy (warn/quarantine/refuse), the drift
+refusal, the partial-read guard, session expiry, and the two opt-in
+text rules. Each needs a full-suite run against a reverted fix.
