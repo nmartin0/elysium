@@ -1,0 +1,220 @@
+# Packaging metadata, added when the CLI arrived. Until then this file
+# configured four tools and declared no project, because nothing was
+# ever installed -- the suite ran from the source tree. A tool people
+# are meant to USE has to be installable, and `pip install -e .` is the
+# difference between handing somebody a repository and handing them a
+# command.
+[project]
+name = "elysium-sim"
+version = "0.1.0"
+description = "A simulator that presents a whole business as real databases."
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[project.scripts]
+simulator = "simulator.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["simulator", "simulator.silos", "simulator.spec"]
+
+[tool.setuptools.dynamic]
+# Read from requirements.txt rather than repeated here, so the lock
+# check in scripts/check_lockfiles.py stays the single source of truth.
+dependencies = {file = ["requirements.txt"]}
+
+[tool.ruff]
+# 120, matching the Elysium project this was split out of, and for the
+# same reason: the code here uses deliberately hand-placed formatting
+# with multi-argument signatures broken across lines for readability,
+# and 79 or 88 would fight that on every file.
+line-length = 120
+target-version = "py312"
+
+# `ruff format` is deliberately never run, here or in lint.sh. The same
+# decision as the parent project, carried over knowingly rather than by
+# default: the other three tools each detect something objectively wrong
+# (a real bug, a type mismatch, dead code), while reformatting has no
+# correct answer, only a consistent one -- and the hand-placed wrapping
+# in this codebase is authorial, not accidental. `ruff format --check`
+# remains available to run by hand.
+#
+# vulture_whitelist.py is not ordinary executable Python -- it is a
+# sequence of bare name references, which is Vulture's own required
+# format. Ruff correctly flags every line as F821 and B018 from its own
+# perspective; that is a false-positive class specific to this one file,
+# not a reason to weaken those rules everywhere.
+exclude = ["vulture_whitelist.py"]
+
+[tool.ruff.lint]
+#   E, W  -- pycodestyle
+#   F     -- pyflakes (unused imports, undefined names)
+#   I     -- import sorting, auto-fixable, no judgement calls
+#   B     -- bugbear (mutable defaults, swallowed context, non-strict zip)
+#   UP    -- pyupgrade, modernize to the target version
+# Deliberately NOT the pylint-equivalent rules (complexity, docstring
+# conventions, naming): the long explanatory docstrings in this codebase
+# are intentional and those rules would generate persistent noise
+# against choices that are deliberate.
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.mypy]
+# Not scanning tests/ deliberately: fixtures lean on dynamic patterns
+# that produce type-checker noise disproportionate to the value.
+files = ["simulator", "scripts"]
+ignore_missing_imports = true
+
+[tool.vulture]
+paths = ["simulator", "scripts", "tests", "vulture_whitelist.py"]
+min_confidence = 60
+
+[tool.importlinter]
+root_packages = ["simulator"]
+
+# The engine's internal shape, mapped against its real imports rather
+# than designed from memory. clock and rng are the foundation: they
+# import nothing of ours. scheduler sits on clock (its intensity curve
+# is a function of time of day); lifecycle sits on rng (its competing-
+# risks race draws from a stream).
+#
+# The two of them are SIBLINGS and must stay so. A scheduler that knew
+# about entities, or a lifecycle that scheduled its own future events,
+# would be the seam where the engine stops being composable -- and it is
+# a tempting shortcut the moment a pack wants a transition to fire a
+# delayed effect. The right answer there is for the simulation layer to
+# own both, which is only enforceable if this contract holds.
+#
+# `|` between siblings, NOT `:`. They read almost identically and mean
+# opposite things: in import-linter, a colon lists siblings that MAY
+# import each other, a pipe lists siblings that may not. Written with a
+# colon first, and the negative control caught it -- lifecycle importing
+# scheduler left the contract reporting KEPT.
+[[tool.importlinter.contracts]]
+name = "engine layering: scheduler and lifecycle sit on clock and rng"
+type = "layers"
+layers = ["scheduler | lifecycle", "clock | rng"]
+containers = ["simulator"]
+
+# The silo layer. simulator.silo holds the contract and nothing else;
+# the concrete kinds implement it and must never import each other.
+#
+# That sibling rule is the load-bearing half. MariaDbSilo and
+# PostgresSilo have a similar SHAPE, and the tempting move the first
+# time they both need something is for one to import from the other, or
+# for a shared "sql base" to appear between them. Both would be wrong:
+# they differ in initialisation, in whether a control program exists, in
+# how shutdown is issued, and in how readiness is established. What they
+# genuinely share is the Silo contract, and a contract is the only thing
+# they should share.
+#
+# `|` between siblings, not `:`. A colon lists siblings that MAY import
+# each other; a pipe lists siblings that may not. They read almost
+# identically and mean opposite things, and a negative control caught
+# that the wrong way round once already.
+#
+# connection and process sit BELOW the five, which is the shape the
+# measurement asked for: they hold what was identical between the two
+# SQL silos, and the five stay independent of each other. They are
+# siblings of each other too -- connection sharing and process
+# supervision are different concerns and neither should reach for the
+# other.
+[[tool.importlinter.contracts]]
+name = "concrete silos implement the contract and stay independent of each other"
+type = "layers"
+layers = ["postgres | mariadb | sqlite | filedrop | rest",
+          "connection | process | logs"]
+containers = ["simulator.silos"]
+
+# dialect renders what schema declares, so it sits above it; schema is a
+# leaf and must stay one. A schema module that reached for a dialect
+# would mean declarations knowing which engine they were destined for,
+# which is the entire distinction these two modules exist to draw.
+[[tool.importlinter.contracts]]
+name = "drift sits on relational sits on dialect sits on schema"
+type = "layers"
+layers = ["drift | oracle", "relational", "dialect", "schema"]
+containers = ["simulator"]
+
+# The value layer. expression resolves its names through context, so it
+# sits above it; context must stay a leaf. A context that reached for
+# the expression evaluator would mean the reference language depending
+# on the arithmetic that consumes it, and the two would stop being
+# separable -- which matters because templates use the same resolver
+# and must not drag arithmetic along with it.
+[[tool.importlinter.contracts]]
+name = "generators sit on expression sits on context"
+type = "layers"
+layers = ["generators", "expression", "context"]
+containers = ["simulator"]
+
+# The spec package sits on top of everything it describes -- schema,
+# lifecycle, scheduler, generators, silos -- and nothing may depend on
+# it. A pack file describes the engine; the engine must not know that
+# pack files exist, or the agnostic rule is gone by another route.
+# runner sits on world sits on everything else. The world holds state
+# and does not schedule; the runner drives it. A world reaching for the
+# runner would mean state depending on the thing that changes it, and
+# the world would stop being inspectable without running anything.
+[[tool.importlinter.contracts]]
+name = "cli sits on console sits on runner sits on world"
+type = "layers"
+layers = ["cli", "console", "runner", "world", "audit"]
+containers = ["simulator"]
+
+[[tool.importlinter.contracts]]
+name = "nothing in the engine depends on the pack spec"
+type = "forbidden"
+source_modules = [
+    "simulator.schema", "simulator.dialect", "simulator.relational",
+    "simulator.generators", "simulator.expression", "simulator.context",
+    "simulator.lifecycle", "simulator.scheduler", "simulator.clock",
+    "simulator.rng", "simulator.silo", "simulator.silos", "simulator.ports",
+]
+forbidden_modules = ["simulator.spec"]
+
+# model is data; loader turns a file into it. A model that reached for
+# the loader would mean the parsed form depending on the parser, which
+# is what makes a spec inspectable without the machinery that built it.
+[[tool.importlinter.contracts]]
+name = "the spec model knows nothing about the loader"
+type = "forbidden"
+source_modules = ["simulator.spec.model"]
+forbidden_modules = ["simulator.spec.loader"]
+
+[[tool.importlinter.contracts]]
+name = "the silo contract knows nothing about any concrete silo"
+type = "forbidden"
+source_modules = ["simulator.silo"]
+forbidden_modules = ["simulator.silos"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tests/consumer imports its own modules by name (test_connection), so
+# its directory has to be on sys.path. That is also the point: those
+# tests are a standalone client and must not reach into the package.
+# tests/ so test modules can import the shared scaffolding in
+# conftest by name; tests/consumer for the same reason, and
+# because those tests are a standalone client that must not
+# reach into the package.
+pythonpath = ["tests", "tests/consumer"]
+# Temporary directories for PASSING tests are removed immediately;
+# failures keep theirs so there is something to inspect.
+#
+# Not a tidiness preference. Every test that starts a silo initialises
+# a real PostgreSQL or MariaDB cluster, which is tens of megabytes, and
+# pytest's default is to retain the last three runs. Measured on this
+# suite: 6.1 GB of temporary data after a single run, and a second run
+# on a machine with less free space than that fails in fixture setup
+# with "No space left on device" -- 138 errors that look like a code
+# problem and are not.
+tmp_path_retention_policy = "failed"
+# Tests that need a real PostgreSQL binary on PATH are marked, so the
+# suite still runs somewhere without one and says what it skipped
+# rather than failing for an environmental reason.
+markers = [
+    "postgres: needs a real PostgreSQL installation (initdb, pg_ctl)",
+    "mariadb: needs a real MariaDB or MySQL installation (mariadbd)",
+]

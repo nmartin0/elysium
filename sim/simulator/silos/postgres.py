@@ -1,0 +1,466 @@
+"""
+postgres.py  (a silo backed by its own PostgreSQL instance)
+
+The simulator starts its own servers. It never uses a system service,
+never needs root, never touches a cluster it did not create. Each
+simulated silo gets its own instance, its own data directory, and its
+own port -- which is what a silo actually is. Separate systems in a
+real organization have separate failure domains and separate
+credentials, and an instance that can be individually killed turns
+"the database went away" from something to be mocked into something
+that simply happens.
+
+Two facts about real machines that this file exists to absorb, both
+verified directly rather than assumed:
+
+  - on DEBIAN and UBUNTU the binaries are not on path. The packages
+    install to /usr/lib/postgresql/<major>/bin and deliberately leave
+    it off path so several major versions can coexist. `which initdb`
+    comes back empty on a machine with a perfectly good PostgreSQL 16
+    on it. Discovery therefore checks path first and then those
+    directories, newest major version first.
+  - INITDB refuses to run as root, with "cannot be run as root" and a
+    hint to su to an unprivileged user. That refusal is correct and
+    this file does not work around it -- it checks first and says the
+    same thing earlier, because a caller who sees the message before
+    anything happens is better off than one who sees it in the middle
+    of a subprocess trace.
+
+Why pg_ctl rather than running `postgres` directly. pg_ctl's `-w`
+waits until the server is genuinely accepting connections rather than
+merely spawned, which is the difference between a start() that means
+something and one that returns before the port answers. It also owns
+the pid file, which is what makes a stale one detectable.
+"""
+
+import os
+import shutil
+import signal
+import subprocess
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import ClassVar
+
+from simulator.silo import ConnectionDescriptor, Silo, SiloError
+from simulator.silos.connection import SharedConnection, server_descriptor
+from simulator.silos.logs import rotate
+from simulator.silos.process import await_death, is_alive, recorded_pid
+from simulator.silos.reader import READER
+
+#: Where Debian and Ubuntu put them. Ordered newest-first at discovery
+#: so a machine with several majors installed gets the newest, which is
+#: also what `pg_ctl` in a fresh data directory expects.
+_PACKAGED_BIN_GLOB = "/usr/lib/postgresql/*/bin"
+
+#: The database initdb always creates, regardless of the superuser
+#: name. `initdb -U sim` creates the role `sim`; it does not create a
+#: database called `sim`, and assuming otherwise is a mistake worth
+#: naming here because it looks exactly like a working configuration
+#: until something tries to connect. Administrative work -- CREATE
+#: DATABASE, and asking whether one exists -- goes through this one.
+MAINTENANCE_DATABASE = "postgres"
+
+#: The role the simulator creates and owns. Not `postgres`: a superuser
+#: named after the tool makes it obvious in `pg_stat_activity` which
+#: connections belong to a simulated world.
+DEFAULT_SUPERUSER = "sim"
+
+#: How long to wait for a start or a stop before giving up. Generous --
+#: a first start runs initdb's fsync-heavy setup, and a slow machine
+#: under load is not a failure.
+TIMEOUT_SECONDS = 60
+
+
+class PostgresUnavailable(Exception):
+    """No usable PostgreSQL installation was found."""
+
+
+@dataclass(frozen=True)
+class PostgresBinaries:
+    """Where initdb and pg_ctl actually live on this machine."""
+
+    initdb: Path
+    pg_ctl: Path
+
+    @classmethod
+    def discover(cls) -> "PostgresBinaries":
+        found = {}
+        for name in ("initdb", "pg_ctl"):
+            on_path = shutil.which(name)
+            if on_path:
+                found[name] = Path(on_path)
+                continue
+            # Newest major first. sorted() on the glob is lexical, which
+            # orders "16" before "9.6" wrongly -- but PostgreSQL has not
+            # shipped a 9.x since 2021 and the packaged directories are
+            # all two-digit now, so lexical descending is correct in
+            # practice and stated here so the limit is visible.
+            candidates = sorted(Path("/").glob(_PACKAGED_BIN_GLOB.lstrip("/")), reverse=True)
+            for directory in candidates:
+                candidate = directory / name
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    found[name] = candidate
+                    break
+        missing = [name for name in ("initdb", "pg_ctl") if name not in found]
+        if missing:
+            raise PostgresUnavailable(
+                f"could not find {' and '.join(missing)} on PATH or under "
+                f"{_PACKAGED_BIN_GLOB}. Install PostgreSQL, or put its bin "
+                f"directory on PATH."
+            )
+        return cls(initdb=found["initdb"], pg_ctl=found["pg_ctl"])
+
+
+def refuse_if_root() -> None:
+    """Stop early if running as root, matching PostgreSQL's own rule.
+
+    initdb exits with "cannot be run as root" and a hint to su. This
+    raises the same thing before any directory is created, so the
+    caller is not left with a half-built world and a subprocess trace.
+    """
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        raise SiloError(
+            "PostgreSQL refuses to run as root, and so does this. Run the "
+            "simulator as an ordinary user -- the databases it creates live "
+            "under the data directory you give it and need no privileges."
+        )
+
+
+class PostgresSilo(Silo):
+    """One silo, backed by its own PostgreSQL instance."""
+
+    kind: ClassVar[str] = "postgresql"
+    requires_port: ClassVar[bool] = True
+
+    def __init__(self, name: str, data_dir: Path, port: int,
+                 binaries: PostgresBinaries | None = None,
+                 superuser: str = DEFAULT_SUPERUSER) -> None:
+        super().__init__(name, data_dir)
+        self.port = port
+        #: Discovered lazily by default so a caller does not have to
+        #: locate binaries it has no opinion about, but injectable so a
+        #: test can hand in a known-bad pair without patching.
+        self.binaries = binaries or PostgresBinaries.discover()
+        self.superuser = superuser
+        #: Holding one connection open across a block of work, and
+        #: deciding when an open one will serve. Shared with the other
+        #: SQL silo because it was 100% identical between them; see
+        #: connection.py for why that is a collaborator rather than a
+        #: base class.
+        self._connections = SharedConnection(open=self._open)
+
+    @property
+    def cluster_dir(self) -> Path:
+        return self.data_dir / "cluster"
+
+    def session(self, database: str):
+        """Hold one connection open for a block. See connection.py."""
+        return self._connections.session(database)
+
+    def connect(self, database: str = MAINTENANCE_DATABASE, *, autocommit: bool = False):
+        """A connection for one piece of work. See connection.py."""
+        return self._connections.use(database, autocommit=autocommit)
+
+    def connection(self, database: str | None = None) -> ConnectionDescriptor:
+        """How a consumer reaches this silo. See connection.py.
+
+        (The previous version put the `database or MAINTENANCE_DATABASE`
+        line above its docstring, which meant the method had no
+        docstring at all -- a string expression preceded by a statement
+        is just a string. Silent, and invisible until this was
+        rewritten.)
+        """
+        # The READER, not the owner. A consumer follows this, and no
+        # business hands a reporting tool the account that owns its
+        # schema -- see reader.py, where a measurement of what the
+        # previous answer allowed is recorded.
+        return server_descriptor(self.kind, self.port,
+                                 database or MAINTENANCE_DATABASE, READER)
+
+    @contextmanager
+    def _open(self, database: str, *, autocommit: bool):
+        """A brand new connection, closed on the way out."""
+        import psycopg
+
+        connection = psycopg.connect(
+            host="127.0.0.1", port=self.port, dbname=database, user=self.superuser,
+            autocommit=autocommit, connect_timeout=10,
+        )
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    def connection_kwargs(self, database: str = MAINTENANCE_DATABASE) -> dict[str, object]:
+        """Keyword arguments for psycopg.connect().
+
+        A dict rather than a DSN string, because every caller here
+        passes it straight to psycopg and a string would mean building
+        it only to have psycopg parse it apart again. Loopback is not a
+        parameter: the server is started with
+        listen_addresses=127.0.0.1 and connecting any other way could
+        not work.
+        """
+        return {
+            "host": "127.0.0.1",
+            "port": self.port,
+            "dbname": database,
+            "user": self.superuser,
+        }
+
+    @property
+    def log_path(self) -> Path:
+        return self.data_dir / "postgres.log"
+
+    @property
+    def pid_path(self) -> Path:
+        return self.cluster_dir / "postmaster.pid"
+
+    # -- lifecycle ---------------------------------------------------
+
+    def create(self) -> None:
+        """Initialise the cluster. Refuses rather than replacing."""
+        refuse_if_root()
+        if self.cluster_dir.exists():
+            raise SiloError(
+                f"{self.name}: {self.cluster_dir} already exists; remove the "
+                f"world's directory to rebuild it"
+            )
+        self._run([
+            str(self.binaries.initdb),
+            "-D", str(self.cluster_dir),
+            "-U", self.superuser,
+            # The OWNER connects without one -- this process built the
+            # cluster and asking itself for a credential proves nothing.
+            # The consumer accounts do need one; see
+            # _require_passwords_of_consumers.
+            "--auth=trust",
+            "--encoding=UTF8",
+        ], "initdb")
+        self._configure_statement_logging()
+        self._require_passwords_of_consumers()
+
+    def _require_passwords_of_consumers(self) -> None:
+        """Make reader and writer send a password; leave the owner alone.
+
+        Why not simply turn trust off. The simulator's own account
+        built this cluster and connects to it constantly; asking itself
+        for a credential proves nothing and would mean carrying one
+        through every internal call. What is worth exercising is
+        whether a CONSUMER can send a password -- a tool that never
+        learned to is one that works here and fails on the first real
+        deployment.
+
+        pg_hba is first-match-wins, so the two named rules go above the
+        catch-all. Written before the server starts, because pg_hba is
+        read at startup and a reload would be a second path to keep
+        right.
+        """
+        from simulator.silos.reader import READER, WRITER
+
+        rules = self.cluster_dir / "pg_hba.conf"
+        named = "".join(
+            f"host all {account} 127.0.0.1/32 scram-sha-256\n"
+            f"host all {account} ::1/128 scram-sha-256\n"
+            for account in (READER, WRITER))
+        rules.write_text(named + rules.read_text())
+
+    def _configure_statement_logging(self) -> None:
+        """Record every statement, with the account that issued it.
+
+        The mechanism a real deployment uses to answer "what did that
+        tool actually do to my database". It records ATTEMPTS: a
+        statement the grant refused still appears, which is the
+        difference between "it could not" and "it did not try".
+
+        Appended to postgresql.conf rather than passed through
+        `pg_ctl -o`, which hands its options to a SHELL -- so a prefix
+        containing `|` became a pipe and the server never started at
+        all. Found by turning this on and watching pg_ctl time out.
+        """
+        with (self.cluster_dir / "postgresql.conf").open("a") as config:
+            config.write(
+                "\n# Statement auditing, added by the simulator.\n"
+                "log_statement = 'all'\n"
+                # Pipe-separated because a statement may contain almost
+                # anything else, and the fields before it may not.
+                "log_line_prefix = '%m|%u|%d|'\n"
+                "log_min_error_statement = error\n"
+                "log_min_messages = warning\n"
+            )
+
+    def start(self) -> None:
+        # Before the server opens it. A log rotated while something is
+        # appending to it keeps being appended to under its old name,
+        # so the new file stays empty and the old one keeps growing --
+        # which is the failure this is meant to prevent.
+        rotate(self.log_path)
+
+        refuse_if_root()
+        if not self.cluster_dir.exists():
+            raise SiloError(f"{self.name}: no cluster at {self.cluster_dir}; initialise it first")
+        options = (
+            f"-p {self.port} "
+            # No UNIX socket at all. Nothing here uses one -- every
+            # connection is TCP to 127.0.0.1 -- and a socket path has a
+            # hard 107-byte limit that a deep data directory blows
+            # straight past. Found by a test whose temporary directory
+            # name was long enough: "Unix-domain socket path is too
+            # long (maximum 107 bytes)", and the server refused to
+            # start. Verified that pg_ctl -w still waits correctly and
+            # TCP still connects with this empty.
+            f"-c unix_socket_directories= "
+            # Loopback only. A simulated world that answered on a LAN
+            # interface would be a genuinely bad thing to leave running.
+            f"-c listen_addresses=127.0.0.1"
+        )
+        self._run([
+            str(self.binaries.pg_ctl),
+            "-D", str(self.cluster_dir),
+            "-l", str(self.log_path),
+            "-o", options,
+            "-w", "-t", str(TIMEOUT_SECONDS),
+            "start",
+        ], "start", include_log_on_failure=True)
+
+    def stop(self) -> None:
+        """Stop, if running. Quiet when it is not.
+
+        The pre-check is not enough, and pretending otherwise produced a
+        real failure. Between is_reachable() returning True and pg_ctl
+        actually running, the server can exit on its own -- which is
+        exactly what happens after terminate(), because the postmaster
+        removes its own pid file while shutting down. pg_ctl then fails
+        with "PID file does not exist. Is server running?" and the
+        teardown blows up on a server that had already stopped.
+
+        So the failure is re-examined rather than trusted: this method
+        promises the outcome (the server is not running) and not the
+        mechanism (pg_ctl succeeded). If the server is gone, the goal is
+        met however it got there. Anything else still raises.
+        """
+        if not self.is_reachable():
+            return
+        try:
+            self._run([
+                str(self.binaries.pg_ctl),
+                "-D", str(self.cluster_dir),
+                # `fast` rather than `smart`: smart waits for clients to
+                # disconnect, and a consumer holding an idle connection
+                # would hang the shutdown indefinitely.
+                "-m", "fast",
+                "-w", "-t", str(TIMEOUT_SECONDS),
+                "stop",
+            ], "stop")
+        except SiloError:
+            if self.is_reachable():
+                raise
+            self.pid_path.unlink(missing_ok=True)
+
+    def is_reachable(self) -> bool:
+        """Whether the postmaster this silo recorded is still alive.
+
+        Deliberately a process check rather than a connection attempt.
+        Opening a connection to answer "is it up" costs a round trip on
+        every call and, worse, would make stop() -- which asks this
+        first -- fail differently depending on how busy the server is.
+        """
+        return is_alive(recorded_pid(self.pid_path))
+
+    # -- internals ---------------------------------------------------
+
+    def _run(self, command: list[str], what: str, *, include_log_on_failure: bool = False) -> None:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT_SECONDS * 2)
+        if result.returncode == 0:
+            return
+        detail = (result.stderr or result.stdout).strip()
+        if include_log_on_failure and self.log_path.exists():
+            # pg_ctl's own failure message is usually just "could not
+            # start server"; the reason is in the server log, and making
+            # someone go find it is a bad experience at exactly the
+            # moment they are already confused.
+            tail = "\n".join(self.log_path.read_text(errors="replace").splitlines()[-10:])
+            detail = f"{detail}\n--- {self.log_path} ---\n{tail}"
+        raise SiloError(f"{self.name}: {what} failed\n{detail}")
+
+    def driver_errors(self) -> tuple[type[Exception], ...]:
+        """Everything this driver raises for a query that cannot run.
+
+        Both drivers root their exceptions at a single base, which is
+        PEP 249's own arrangement, so one entry covers the lot.
+        """
+        import psycopg
+
+        return (psycopg.Error,)
+
+    def terminate(self) -> None:
+        """Kill the server without a clean shutdown.
+
+        Not an error path -- a deliberate one. "The database went away"
+        is a condition a consumer should be tested against, and with a
+        real server it can simply be made to happen rather than mocked.
+        The port stops answering and, unlike a deleted file, nothing can
+        accidentally recreate it.
+        """
+        pid = recorded_pid(self.pid_path)
+        if pid is None:
+            return
+        try:
+            os.kill(pid, signal.SIGQUIT)
+        except (ProcessLookupError, PermissionError):
+            return
+        await_death(pid)
+
+
+# =============================================================================
+# AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+# later) that lacks this conversation's history. Update this section
+# whenever something genuinely open, deferred, or rejected comes up here.
+# =============================================================================
+#
+# RESOLVED (kept for history): binaries are discovered rather than required on
+# path, because Debian and Ubuntu install to /usr/lib/postgresql/<major>/bin and
+# deliberately leave it off path so several majors can coexist. Verified on the
+# machine this was written on: `which initdb` empty, /usr/lib/postgresql/16/bin/
+# initdb present and working. Requiring path would fail on the most common
+# Linux setup there is.
+#
+# RESOLVED: refuse_if_root() duplicates a check initdb already performs. Worth
+# it: initdb's version fires after the caller has committed to a world
+# directory, from inside a subprocess trace. This one fires before anything is
+# created and explains what to do instead.
+#
+# RESOLVED: `-m fast` on stop. `smart` waits for clients to disconnect, and a
+# consumer holding an idle connection hangs the shutdown indefinitely --
+# exactly the situation this is used in.
+#
+# RESOLVED: there was a _clear_stale_pid() here, removing a pid file left by a
+# killed server on the belief that pg_ctl would otherwise refuse to start over
+# it. A negative control showed the test passing without it, and checking
+# directly explained why: pg_ctl already detects a stale pid file and proceeds.
+# Verified by writing 4194305 into postmaster.pid and starting -- "server
+# started", no complaint. The code was doing nothing, so it is gone; the test
+# stays, now documenting the dependency assumption rather than our own code.
+#
+# RESOLVED: the Unix socket is disabled rather than relocated. It was kept
+# inside the world to avoid /tmp collisions, which was sound and ran into a
+# harder constraint: sun_path is 108 bytes, and a data directory a few levels
+# deep exceeds it. Since every connection here is TCP, the socket was pure
+# liability. MariaDB cannot do the same -- it requires one -- so that silo
+# shortens the path instead.
+#
+# DEFERRED (known, intentional, not yet built): no `restart`. Nothing needs it;
+# stop-then-start is two calls and the composite would hide which half failed.
+#
+# DEFERRED: trust authentication on a loopback socket, with no password and no
+# per-consumer role. That is right for a fictional world unreachable off the
+# machine, and it is also the thing to revisit when the simulator is used to
+# exercise a consumer's own credential handling -- a read-only role with column
+# GRANTs is the obvious next step, and PostgreSQL supports exactly that, which
+# is a large part of why this stopped being SQLite.
+#
+# DEFERRED: no cleanup of orphaned instances at process exit. If the simulator
+# is killed, its servers keep running and the next start finds the port taken --
+# reported by PortRegistry.verify_available(), which names the port, but a
+# `simulator stop --all` reading ports.json would be kinder.

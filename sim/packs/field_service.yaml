@@ -1,0 +1,550 @@
+# A small plumbing and heating firm: a dispatch office, an accounting
+# system it pushes to, and a folder the bookkeeper collects pay lines
+# from. Three silos of three different kinds, which is what a business
+# this size really looks like -- not one database with three schemas.
+#
+# The join between them is a convention, not a foreign key. dispatch
+# and books agree about invoice_id because both were told the same
+# thing, which is exactly the kind of join a system reading several
+# silos has to make work.
+
+pack: field_service
+description: A small plumbing and heating firm, across four systems.
+
+silos:
+  # The operational system: jobs, engineers, parts. On PostgreSQL
+  # because that is what a modern field-service product runs on.
+  dispatch:
+    kind: postgresql
+    database: dispatch
+    # WHAT THE ENGINEERS EARN IS NOT EVERYBODY'S BUSINESS. A real firm
+    # grants a reporting tool most of its database and not the payroll,
+    # and a consumer meeting a table it can FIND but cannot select from
+    # is a genuine production failure -- one that reads as a broken
+    # connection unless the consumer distinguishes a permission error
+    # from an outage.
+    #
+    # Worth knowing which is which: on PostgreSQL the table stays
+    # visible in pg_catalog and disappears from information_schema, so
+    # a consumer using one sees a table it cannot read and a consumer
+    # using the other does not know it exists.
+    withheld: [pay_lines]
+
+  # The accounting system, reached the way accounting SaaS really is:
+  # a paginated JSON API behind a bearer token.
+  books:
+    kind: rest
+    options: {page_size: 25}
+
+  # The bookkeeper's folder. More small businesses integrate this way
+  # than by any database connection.
+  # WHAT THE OFFICE ACTUALLY REPORTS OFF. Dawn's spreadsheets point
+  # here rather than at dispatch, because somebody once ran a report
+  # that locked the jobs table during a busy morning and it was never
+  # allowed again.
+  #
+  # It syncs twice a day, which for a firm raising a handful of jobs
+  # an hour is the difference between a copy that disagrees
+  # occasionally and one that disagrees most of the time. A four-hour
+  # refresh was tried first and left the two equal about nine hours in
+  # ten -- a trap that rarely springs is a trap nobody learns from.
+  #
+  # "The number was right this morning" is a sentence anyone in the
+  # office will recognise.
+  office:
+    kind: postgresql
+    database: office
+    replicates: dispatch
+    refresh: 12h
+
+  payroll:
+    kind: filedrop
+
+schemas:
+  dispatch:
+    tables:
+      customers:
+        columns:
+          customer_id:  {type: text, length: 64, primary_key: true, nullable: false}
+          name:         {type: text, length: 200, nullable: false}
+          phone:        {type: text, length: 32}
+          balance_owed: {type: decimal, precision: 19, scale: 4, nullable: false}
+          joined_on:    {type: date, nullable: false}
+          # WHICH BRANCH LOOKS AFTER THIS CUSTOMER. Every business
+          # partitions its records somehow -- by branch, region, cost
+          # centre, confidentiality -- and a consumer with access
+          # control needs something in the data to enforce against.
+          # With no such column every user of a connected tool sees
+          # everything, and nothing can be denied.
+          #
+          # Geography is not derivable from anything else a customer
+          # record holds, so this is drawn rather than ruled. That is
+          # honest: where somebody lives is a fact about them, not a
+          # consequence of their balance.
+          # WHEN AND BY WHOM, which is on almost every table in almost
+          # every business schema and was on none of ours. Consumers
+          # routinely key an incremental sync off `updated_at` -- "give
+          # me everything that changed since I last asked" -- and
+          # without it nothing here could exercise that at all.
+          created_at:   {type: timestamp, nullable: false}
+          updated_at:   {type: timestamp, nullable: false}
+          created_by:   {type: text, length: 64, nullable: false}
+          branch:       {type: text, length: 32, nullable: false}
+          # What kind of account they are on, which IS a consequence of
+          # the record -- see the rule in the seed step.
+          account_type: {type: text, length: 32, nullable: false}
+
+      technicians:
+        columns:
+          technician_id: {type: text, length: 64, primary_key: true, nullable: false}
+          name:          {type: text, length: 200, nullable: false}
+          hourly_rate:   {type: decimal, precision: 19, scale: 4, nullable: false}
+
+      # WHAT EACH ENGINEER IS QUALIFIED TO DO. Two tables and the one
+      # between them, which is the shape every real business has
+      # somewhere and this pack had nowhere: until now every
+      # relationship here was a foreign-key column, so the join-table
+      # case -- which any ontology models differently and any consumer
+      # resolves differently -- was entirely unexercised.
+      skills:
+        columns:
+          skill_id: {type: text, length: 64, primary_key: true, nullable: false}
+          name:     {type: text, length: 120, nullable: false}
+
+      technician_skills:
+        columns:
+          # A surrogate key rather than the pair, because this schema
+          # has no composite primary keys. NOTHING STOPS a duplicate
+          # pair being written -- the constraint that would is not
+          # expressible -- so the seed step asks for distinct picks
+          # instead. That is a promise from the pack rather than from
+          # the database, and a consumer should not assume it holds
+          # for data it did not see written.
+          technician_skill_id: {type: text, length: 64, primary_key: true,
+                                nullable: false}
+          technician_id:       {type: text, length: 64, nullable: false}
+          skill_id:            {type: text, length: 64, nullable: false}
+
+      work_orders:
+        columns:
+          work_order_id: {type: text, length: 64, primary_key: true, nullable: false}
+          customer_id:   {type: text, length: 64, nullable: false}
+          status:        {type: text, length: 32, nullable: false}
+          raised_at:     {type: timestamp, nullable: false}
+          quoted_total:  {type: decimal, precision: 19, scale: 4}
+          quoted_at:     {type: timestamp}
+          completed_at:  {type: timestamp}
+          # What the engineer actually wrote. Every other column in
+          # this pack is an identifier, a number, a date or a short
+          # label -- so anything reading this business in language had
+          # nothing to read at all. Notes are on most real work-order
+          # tables and they are where the interesting questions live.
+          notes:         {type: text, length: 600}
+          status_since:  {type: timestamp}
+
+      invoices:
+        columns:
+          invoice_id:    {type: text, length: 64, primary_key: true, nullable: false}
+          work_order_id: {type: text, length: 64, nullable: false}
+          customer_id:   {type: text, length: 64, nullable: false}
+          total:         {type: decimal, precision: 19, scale: 4, nullable: false}
+          issued_at:     {type: timestamp, nullable: false}
+          paid:          {type: boolean, nullable: false}
+          # VOIDED, NOT DELETED. Real systems mark a record dead rather
+          # than removing it, because the row is evidence even after it
+          # stops being true. A consumer that forgets `WHERE NOT
+          # is_void` overstates revenue -- silently, plausibly, and by
+          # a small enough margin that nobody checks.
+          is_void:       {type: boolean, nullable: false}
+          voided_at:     {type: timestamp}
+
+      pay_lines:
+        columns:
+          pay_line_id:   {type: text, length: 64, primary_key: true, nullable: false}
+          technician_id: {type: text, length: 64, nullable: false}
+          work_order_id: {type: text, length: 64, nullable: false}
+          amount:        {type: decimal, precision: 19, scale: 4, nullable: false}
+          earned_on:     {type: date, nullable: false}
+
+curves:
+  # A trades firm's day: nothing overnight, calls from seven, a lull
+  # at lunch, and a tail of evening emergencies.
+  working_day: [0.02, 0.01, 0.01, 0.01, 0.02, 0.10, 0.45, 0.95,
+                1.30, 1.40, 1.25, 1.10, 0.70, 1.15, 1.30, 1.20,
+                1.00, 0.70, 0.45, 0.30, 0.20, 0.12, 0.06, 0.03]
+
+lifecycles:
+  # The arc a job really takes. Cancellation is reachable from the
+  # early states only: nobody cancels a job that has been done.
+  WorkOrder:
+    initial: requested
+    persisted_to: dispatch.work_orders
+    state_column: status
+    # WHEN it reached that state, which is what lets a stopped world be
+    # picked up mid-dwell. Without it a resumed world knows what state
+    # every job is in and not how long it has been there, so every
+    # transition gated on dwell waits its full time again -- and a year
+    # built from twelve legs restarts every job's clock twelve times.
+    #
+    # It is also a column a real dispatch system would have: "how long
+    # has this been sitting at quoted" is a question a firm asks.
+    entered_column: status_since
+    states:
+      requested:
+        - {to: quoted, per_hour: 0.30}
+        - {to: cancelled, per_hour: 0.02}
+      quoted:
+        - {to: approved, per_hour: 0.08, min_dwell: 2h}
+        - {to: cancelled, per_hour: 0.01, min_dwell: 3d}
+      approved:
+        - {to: completed, per_hour: 0.06, min_dwell: 4h}
+      completed:
+        - {to: invoiced, per_hour: 0.50, min_dwell: 1h}
+      invoiced:
+        - {to: paid, per_hour: 0.02, min_dwell: 7d}
+        # Disputed, which is how an invoice really gets voided: one
+        # job, one bill, one argument about it. See the note on
+        # invoice_voided for why this became a state rather than
+        # staying a rate against the customer.
+        # The same dwell as payment, deliberately. A shorter one gave
+        # disputes a four-day head start on being paid and pushed them
+        # to a fifth of all bills -- a crisis, not a business. Matching
+        # the dwell makes the share close to the ratio of the rates,
+        # which is where a reader would expect it to be.
+        - {to: disputed, per_hour: 0.0008, min_dwell: 7d}
+      paid:
+      disputed:
+      cancelled:
+
+seed:
+  - table: dispatch.customers
+    count: 30
+    columns:
+      customer_id:  {generator: id, prefix: cust}
+      name:         {generator: template, pattern: "{customer_id} Household"}
+      phone:        {generator: template, pattern: "0117 {customer_id}"}
+      balance_owed: {generator: constant, value: "0.0000"}
+      joined_on:    {generator: now}
+      created_at:   {generator: now}
+      # Equal to created_at until something changes, which is what
+      # makes "changed since" a question worth asking.
+      updated_at:   {generator: now}
+      created_by:   {generator: weighted,
+                     options: {reception: 6, "import": 3, engineer: 1}}
+      branch:       {generator: weighted,
+                     options: {bristol: 5, bath: 3, weston: 2}}
+      # A rule the row explains, rather than a draw. Trade accounts are
+      # opened for the customers a firm expects volume from, and here
+      # that is the ones on the books at the busiest branch.
+      account_type:
+        generator: choose
+        when:
+          - if: 'branch == "bristol"'
+            then: {generator: weighted, options: {trade: 2, domestic: 3}}
+        otherwise: {generator: constant, value: domestic}
+
+  # JOBS WHOSE CUSTOMER IS NOT THERE, and this is deliberate. A work
+  # order has no branch of its own -- it belongs to the customer that
+  # does -- and that indirection is how most real records are
+  # classified. So is its failure: these six came across in a migration
+  # from the old system, their customer records did not, and the
+  # boundary for them is UNRESOLVABLE rather than merely denied.
+  #
+  # A careful consumer has to tell those two apart. One is "you may not
+  # see this"; the other is "nobody can say who this belongs to", which
+  # is a data-integrity signal rather than a permission outcome. Until
+  # a row like this existed the second case was unreachable, so nothing
+  # could be tested against it.
+  - table: dispatch.work_orders
+    count: 6
+    columns:
+      work_order_id: {generator: id, prefix: legacy}
+      customer_id:   {generator: template, pattern: "cust_gone_{work_order_id}"}
+      # NOT a lifecycle state. These rows never went through the
+      # workflow -- they arrived already finished -- and calling them
+      # `completed` made three existing tests right to complain, since
+      # a completed job here is one that earned somebody a pay line.
+      #
+      # A status outside the declared vocabulary is itself authentic:
+      # real status columns accumulate values from systems that came
+      # before, and a consumer that assumes the documented set is the
+      # whole set is wrong about most real tables.
+      status:        {generator: constant, value: archived}
+      raised_at:     {generator: now}
+      notes:         {generator: constant,
+                      value: "Migrated from the old system; customer record not found."}
+
+  # WRITTEN OUT, not generated. These are the six tickets our engineers
+  # actually hold, and the values are the point -- a lookup table is
+  # the one place where a name drawn at random is simply wrong.
+  #
+  # It used to be a template of the id, giving "Skill skill_000001",
+  # because `choice` draws WITH replacement and six draws from six
+  # options produced two called the same and none called several of
+  # the others.
+  - table: dispatch.skills
+    rows:
+      - {skill_id: skill_gas,        name: Gas Safe}
+      - {skill_id: skill_unvented,   name: Unvented hot water}
+      - {skill_id: skill_oil,        name: Oil-fired}
+      - {skill_id: skill_commercial, name: Commercial}
+      - {skill_id: skill_legionella, name: Legionella}
+      - {skill_id: skill_solar,      name: Solar thermal}
+
+  # THE SAME HOUSEHOLD, ENTERED TWICE. Reception took a call, could not
+  # find the customer, and made a new record. It happens in every firm
+  # that has a search box and a hurry, and it is the single most common
+  # thing wrong with a small business's customer table.
+  #
+  # These carry the same name and phone number as an existing record
+  # and a different id, which is exactly the shape that makes them hard:
+  # nothing in the database says they are the same person, and both
+  # have jobs against them. Deciding whether they ARE the same person,
+  # and what to do about it, is not something a simulator can answer.
+  - table: dispatch.customers
+    count: 3
+    # Copied from a real record, so the name and the phone number
+    # AGREE -- which is what makes a duplicate hard. Two independent
+    # draws would have produced one household's name against another's
+    # number, which is a different defect and not this one.
+    picks: [dispatch.customers]
+    columns:
+      customer_id:  {generator: id, prefix: cust}
+      name:         {generator: reference, from: picked.customers.name}
+      phone:        {generator: reference, from: picked.customers.phone}
+      balance_owed: {generator: constant, value: "0.0000"}
+      joined_on:    {generator: now}
+      created_at:   {generator: now}
+      updated_at:   {generator: now}
+      created_by:   {generator: constant, value: reception}
+      branch:       {generator: weighted, options: {bristol: 5, bath: 3, weston: 2}}
+      account_type: {generator: constant, value: domestic}
+
+  - table: dispatch.technicians
+    count: 4
+    columns:
+      technician_id: {generator: id, prefix: tech}
+      # Same defect, and it predates the join table: four draws from
+      # four names left three engineers called Okafor, in a firm the
+      # handover describes as having four people.
+      name:          {generator: template, pattern: "Engineer {technician_id}"}
+      hourly_rate:   {generator: decimal, min: 42, max: 68, scale: 4}
+
+  # Two skills each. `count` alongside `per` means rows PER SUBJECT,
+  # and the pick is what lets the row name a skill -- a generator
+  # returning one value could not keep the id and the name agreeing
+  # about which skill it chose.
+  - table: dispatch.technician_skills
+    per: dispatch.technicians
+    count: 2
+    picks: [dispatch.skills]
+    # TWO DIFFERENT SKILLS, not two draws that may land on the same
+    # one. Independent picks gave engineers recorded twice for the same
+    # ticket, which a table with a surrogate key and no composite
+    # constraint does permit -- but "qualified in Gas Safe and Gas
+    # Safe" is a simulator artefact, not something a firm's records
+    # would say.
+    distinct_picks: true
+    columns:
+      technician_skill_id: {generator: id, prefix: ts}
+      technician_id:       {generator: reference, from: subject.technician_id}
+      skill_id:            {generator: reference, from: picked.skills.skill_id}
+
+events:
+  # A customer calls. Jobs arrive on the working-day curve, per
+  # customer, so a firm with more customers is busier.
+  job_raised:
+    per: dispatch.customers
+    rate_per_hour: 0.02
+    curve: working_day
+    emits:
+      - table: dispatch.work_orders
+        spawns: WorkOrder
+        columns:
+          work_order_id: {generator: id, prefix: wo}
+          customer_id:   {generator: reference, from: subject.customer_id}
+          status:        {generator: constant, value: requested}
+          raised_at:     {generator: now}
+
+  # The engineer prices it up.
+  quote_issued:
+    lifecycle: WorkOrder
+    entering: quoted
+    emits:
+      - update: dispatch.work_orders
+        where: {work_order_id: {generator: reference, from: subject.work_order_id}}
+        columns:
+          quoted_total: {generator: decimal, min: 85, max: 1400, scale: 4}
+          quoted_at:    {generator: now}
+
+  # Work finished: stamp the job and record what the engineer earned.
+  job_completed:
+    lifecycle: WorkOrder
+    entering: completed
+    emits:
+      - update: dispatch.work_orders
+        where: {work_order_id: {generator: reference, from: subject.work_order_id}}
+        columns:
+          completed_at: {generator: now}
+          notes:
+            generator: prose
+            pick: {min: 2, max: 5}
+            # In the order an engineer would write them: arrive,
+            # diagnose, do the work, note the parts, advise. A shorter
+            # note is a subset of that order, never a different one.
+            sentences:
+              - "Attended site and spoke to the customer."
+              - "Found the fault on inspection; no access issues."
+              - "Carried out the repair and tested under load."
+              - "Parts used were from van stock."
+              - "Advised the customer on an annual service."
+      - table: dispatch.pay_lines
+        columns:
+          pay_line_id:   {generator: id, prefix: pay}
+          technician_id: {generator: choice,
+                          options: [tech_000001, tech_000002, tech_000003, tech_000004]}
+          work_order_id: {generator: reference, from: subject.work_order_id}
+          amount:        {generator: decimal, min: 60, max: 420, scale: 4}
+          earned_on:     {generator: now}
+
+  # Invoiced. The customer's balance goes up by what they now owe.
+  invoice_raised:
+    lifecycle: WorkOrder
+    entering: invoiced
+    emits:
+      - table: dispatch.invoices
+        columns:
+          invoice_id:    {generator: occurrence_id, prefix: inv}
+          work_order_id: {generator: reference, from: subject.work_order_id}
+          # The entity's own row travels with the transition, so the
+          # invoice knows whose job it was.
+          customer_id:   {generator: reference, from: subject.customer_id}
+          # Invoiced at what was quoted, which is the whole point of
+          # quoting -- and only reachable because the work order's own
+          # row came with the transition.
+          total:         {generator: reference, from: subject.quoted_total}
+          issued_at:     {generator: now}
+          paid:          {generator: constant, value: false}
+          is_void:       {generator: constant, value: false}
+    effects:
+      # Accounts receivable: the customer now owes this.
+      - adjust: dispatch.customers.balance_owed
+        by: {generator: reference, from: subject.quoted_total}
+        where:
+          customer_id: {generator: reference, from: subject.customer_id}
+
+  # Paid. The invoice is marked and the balance comes back down.
+  payment_received:
+    lifecycle: WorkOrder
+    entering: paid
+    emits:
+      - update: dispatch.invoices
+        where: {work_order_id: {generator: reference, from: subject.work_order_id}}
+        columns:
+          paid: {generator: constant, value: true}
+      # The customer's balance changes below, so the customer changed.
+      # A column that only records the FIRST change is worse than no
+      # column: a consumer syncing "everything since yesterday" would
+      # silently miss every row that has ever been touched twice.
+      - update: dispatch.customers
+        where: {customer_id: {generator: reference, from: subject.customer_id}}
+        columns:
+          updated_at: {generator: now}
+    effects:
+      # ...and now they do not. A negative `by`, so the sign is visible
+      # here rather than implied by a different keyword.
+      - adjust: dispatch.customers.balance_owed
+        by: {generator: expression, expression: "-subject.quoted_total"}
+        where:
+          customer_id: {generator: reference, from: subject.customer_id}
+
+  # The accounting system polls this. Refreshed often, because that is
+  # what an API is for.
+  # The customer disputed the bill. The row stays -- it is evidence
+  # that it happened -- and is marked dead instead.
+  #
+  # A TRANSITION, NOT A RATE AGAINST THE CUSTOMER, and the difference
+  # only became visible over a long run. The first version fired per
+  # customer and voided every invoice its `where` matched, which is all
+  # of them; each firing re-voided that customer's whole history. Over
+  # twenty-five days that looked like 6% voided and plausible. Over a
+  # year it was FIFTY-SIX PERCENT of the first quarter, with invoices
+  # voided up to eleven months after they were issued, because every
+  # later dispute reached back and voided them again.
+  #
+  # Keyed on the work order, one dispute now voids one bill.
+  invoice_voided:
+    lifecycle: WorkOrder
+    entering: disputed
+    emits:
+      - update: dispatch.invoices
+        where: {work_order_id: {generator: reference, from: subject.work_order_id}}
+        columns:
+          is_void:   {generator: constant, value: true}
+          voided_at: {generator: now}
+      - update: dispatch.customers
+        where: {customer_id: {generator: reference, from: subject.customer_id}}
+        columns:
+          updated_at: {generator: now}
+      # THE ENGINEER'S COMMISSION GOES BACK TOO, and this is where the
+      # three systems start disagreeing with each other rather than
+      # merely holding different amounts of the same story.
+      #
+      # A dispute lands at least a week after the job was invoiced, and
+      # payroll goes out weekly -- so by the time the commission is
+      # clawed back, the CSV covering that week has already been
+      # written and sent. The file says one figure and Dispatch says
+      # another, and neither is lying: the file is what was true when
+      # it was produced.
+      #
+      # This is the shape of cross-silo disagreement a real firm has
+      # and a single-database fixture cannot produce. Reconciling the
+      # two is somebody's Monday morning.
+      - update: dispatch.pay_lines
+        where: {work_order_id: {generator: reference, from: subject.work_order_id}}
+        columns:
+          amount: {generator: constant, value: "0.0000"}
+
+  publish_to_books:
+    every: 6h
+    emits:
+      - expose: books
+        collection: invoices
+        rows_from: dispatch.invoices
+        columns: [invoice_id, work_order_id, total, issued_at, paid]
+        # THE LAST QUARTER ONLY. The bookkeeper's system keeps a
+        # rolling window and archives the rest, which is what most
+        # small accounting packages do -- and it is a trap worth
+        # having: a tool reading this feed and believing it has every
+        # invoice will be quietly wrong about anything older.
+        #
+        # It is also most of what a simulated year costs. Firing every
+        # six hours against a growing table, this rewrote every invoice
+        # from January 1,460 times.
+        since: {column: issued_at, window: 90d}
+
+  # The bookkeeper collects this weekly.
+  payroll_export:
+    every: 7d
+    emits:
+      - publish: payroll
+        filename: {generator: template, pattern: "pay_lines_{today}.csv"}
+        rows_from: dispatch.pay_lines
+        # LAST WEEK'S EARNINGS, not every week's. Without this the
+        # export rewrote the whole table each time it fired, so a
+        # simulated year wrote the same early pay lines fifty-one
+        # times -- which is most of why a year cost 925,000 writes.
+        # A real weekly export covers the week it is named after.
+        since: {column: earned_on, window: 7d}
+        columns: [pay_line_id, technician_id, work_order_id, amount, earned_on]
+
+# The numbers this firm would notice going wrong. The oracle keeps its
+# own record of each, sampled outside whatever the simulation is
+# writing, which is the only way to catch a RESCALE: a migration that
+# multiplies a column by a hundred raises nothing, breaks no type, and
+# leaves every read succeeding.
+watches:
+  - {silo: dispatch, table: invoices,  column: total}
+  - {silo: dispatch, table: customers, column: balance_owed}
+  - {silo: dispatch, table: pay_lines, column: amount}
+  - {silo: dispatch, table: work_orders, column: work_order_id, aggregate: count}
