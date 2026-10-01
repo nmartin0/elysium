@@ -182,6 +182,24 @@ class RequestMetrics:
 def _percentile(sorted_values: list[float], fraction: float) -> "float | None":
     """None rather than zero when there is nothing to measure.
 
+    NOT `statistics.quantiles`, AND THE AUDIT THAT PROPOSED IT WAS
+    WRONG TO CALL IT TRIVIAL. Measured both ways before rejecting it:
+
+        n=1    p50 5.0   -> RAISES "must have at least two data points"
+        n=10   p99 10.0  -> 10.89
+        n=51   p99 900.0 -> 1331.52
+
+    TWO FAULTS, EITHER ENOUGH. It raises on a single request, so
+    /api/admin/metrics would fail on a process that had served one
+    query. And it INTERPOLATES, so it reports a p99 of 1331 ms when
+    the slowest request anyone made took 900. A latency figure above
+    every observed request is not a percentile of this data; it is an
+    estimate of a distribution we have no reason to assume.
+
+    Nearest-rank answers the question actually being asked -- "how
+    slow was the request at the 99th percentile" -- with a number that
+    really happened.
+
     Zero would read as "instantaneous", which is the opposite of "we do
     not know" and much more alarming to be wrong about.
     """

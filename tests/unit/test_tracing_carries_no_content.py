@@ -109,7 +109,7 @@ def test_the_three_operations_the_conventions_name():
 
 def test_it_works_with_or_without_the_sdk():
     """`opentelemetry-sdk` is NOT in requirements.txt and this does not
-    put it there -- that is a LIBRARY_AUDIT decision, not one to
+    put it there -- that is a dependency decision, not one to
     smuggle in behind a feature. Without the SDK every span is a
     no-op; with it they appear, no code change."""
     assert isinstance(is_enabled(), bool)

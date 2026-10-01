@@ -38,7 +38,7 @@ numbers themselves.
 | `AUDIT_INTAKE_PIPELINE.md` | same; 50 ids checked, every one tracked |
 | the nine agent files | `HANDOVER_*`, `REQUESTS_*`, `STATUS_*` -- 8,662 lines from three agents that no longer exist. 25 SEC findings rescued into the CSV first; every other id verified already tracked |
 | `000COORDINATION.md` | the protocol for four agents that no longer exist, and all four branches are merged. Its ownership table was already wrong -- `SEC-06` measured it matching 89 of 145 source files. Consuming it surfaced a real conversion that had been unblocked for forty patches |
-
+| `LIBRARY_AUDIT.md` | 1.1 superseded by its own Part 4.6; 1.2 MEASURED AND REJECTED, with the numbers now in `request_metrics.py` and eight tests enforcing it; 1.3 is available work, below. Parts 2-4 are reasoning about when to take a dependency, kept in `PRINCIPLES.md`'s territory |
 ---
 
 # Blocked on a decision
@@ -348,3 +348,21 @@ consistent read per silo per run), `R5` (bounded-memory batched sync),
 and `R4` and `R5` conflict enough that the order matters -- but they
 need no decision, so they stay out of this file until one of them
 does.
+
+**`LIB-3`, folding the SQLite adapter into the SQLAlchemy one as a
+dialect**, joins them, and `LIBRARY_AUDIT.md` called it the strongest
+of its three because it adds NO new dependency. `sqlite_adapter.py`
+builds SQL by string interpolation at 50 sites while
+`sqlalchemy_adapter.py` uses the expression API for the same job.
+
+The risk it carries is identifier quoting: every f-string
+interpolating a table or column name is a place where a declared
+schema controls SQL text. That is configuration rather than user
+input, which is why it has not bitten -- but a library that quotes
+identifiers correctly answers a CLASS of bug rather than its
+instances.
+
+Write-path first, with the existing tests as the parity check. 75
+files reference the SQLite adapter, most of them tests using it as the
+cheap real database, and the write path is where a mistake reaches a
+customer's database. Days, not hours -- but no decision, so not here.

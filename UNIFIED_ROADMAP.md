@@ -437,7 +437,7 @@ resolution, so gold for it is a straight conform.
           entirely. The quoting removes the bug class; the duplication
           remains.
   LIB-1..3. STOP REINVENTING, where a library does it better
-          (LIBRARY_AUDIT.md, September 23):
+          (the library audit, September 23, now consumed):
           (1) SnapshotCache -> cachetools: DOWNGRADED once the
               framework was read (rule 18). It would add a RUNTIME
               dependency to replace 52 tested lines that also refuse

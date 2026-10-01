@@ -425,7 +425,8 @@ It matters here only because some deployments are air-gapped, which
 is an argument about DISTRIBUTION -- make it optional -- not about
 whether the code can be trusted. Recorded because I used it as the
 headline argument against a library and had to correct myself
-(LIBRARY_AUDIT.md part 4.3).
+(measured when the library audit was taken, and the reason that
+audit's own Part 4.3 exists).
 
 ---
 

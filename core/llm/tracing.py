@@ -16,7 +16,7 @@ even name `plan`, which is what AL-4's planner would be.
 
 NO DEPENDENCY IS ADDED, DELIBERATELY. `opentelemetry-sdk` is not in
 requirements.txt and this does not put it there -- that is a
-LIBRARY_AUDIT decision, not one to smuggle in behind a feature. The
+dependency decision, not one to smuggle in behind a feature. The
 import is optional: without the SDK every span here is a no-op, and
 the moment someone installs it the spans appear with no code change.
 

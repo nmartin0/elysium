@@ -15,7 +15,7 @@ review; below, nothing. Both are declared per type, because only a
 deployment knows what a false merge costs it.
 
 WEIGHTS ARE DECLARED, NOT ESTIMATED, and that is a decision rather
-than a limitation (LIBRARY_AUDIT.md, GOLD-6's technology note). A
+than a limitation (GOLD-6's technology note). A
 governed system should tell a reviewer why two records scored as they
 did in terms somebody CHOSE, not terms an algorithm inferred from data
 nobody inspected -- and it routes around a reproduced bug in Splink's

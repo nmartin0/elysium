@@ -209,3 +209,48 @@ class TestTheRetentionWindow:
         metrics.forget_older_than(RETENTION_SECONDS)
 
         assert metrics.summary()["requests"] == 1
+
+
+class TestPercentilesAreNearestRankNotInterpolated:
+    """`statistics.quantiles` was proposed as a trivial replacement for
+    `_percentile`. It is not trivial and it is not correct here.
+
+    MEASURED BOTH WAYS. On one request quantiles raises "must have at
+    least two data points", so /api/admin/metrics would fail on a
+    process that had served one query. On fifty-one requests where the
+    slowest took 900 ms it reports a p99 of 1331 ms -- a latency above
+    every request anyone actually made.
+
+    These tests exist so the swap cannot be made quietly later: each
+    one fails if `_percentile` starts interpolating.
+    """
+
+    def test_a_single_value_still_answers(self):
+        from core.request_metrics import _percentile
+
+        assert _percentile([5.0], 0.50) == 5.0
+        assert _percentile([5.0], 0.99) == 5.0
+
+    def test_p99_never_exceeds_the_slowest_request(self):
+        """THE FAULT THAT MATTERS. An interpolating percentile invents
+        a number above the observed maximum."""
+        from core.request_metrics import _percentile
+
+        durations = sorted([1.0] * 50 + [900.0])
+
+        assert _percentile(durations, 0.99) <= max(durations)
+
+    def test_every_percentile_is_a_value_that_happened(self):
+        from core.request_metrics import _percentile
+
+        durations = sorted(float(n) for n in range(1, 11))
+
+        for fraction in (0.0, 0.25, 0.50, 0.99, 1.0):
+            assert _percentile(durations, fraction) in durations
+
+    def test_nothing_to_measure_is_None_not_zero(self):
+        """Zero would read as instantaneous, which is the opposite of
+        'we do not know' and much more alarming to be wrong about."""
+        from core.request_metrics import _percentile
+
+        assert _percentile([], 0.50) is None
