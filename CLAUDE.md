@@ -41,9 +41,12 @@ that have gone wrong repeatedly.
    done without a person: a decision, a product judgement, or a
    machine nobody has. Everything else has been done and the document
    it came from deleted. `QUERY_PLAN.md` was the second consumed.
-11. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
-   besides data, and why the ontology is a COPY there rather than a
-   home. Corrects an earlier conclusion in BACKLOG.md.
+11. **(consumed)** — the lake-metadata note. Its four answers are
+   built: the manifest lives at `_elysium/manifest-<generation>.json`,
+   is written on configuration change, carries no secrets, and is now
+   READ by `check_mirror`. Its one deferral — bootstrapping a
+   deployment FROM the manifest — is `BLOCKING.md` item 19.
+
 12. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.

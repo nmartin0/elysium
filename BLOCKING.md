@@ -33,6 +33,7 @@ numbers themselves.
 | --- | --- |
 | `SCALABILITY.md` | both decisions already built; benchmark numbers moved into the code that cited them |
 | `QUERY_PLAN.md` | four unbuilt UI features, all product direction; its deferred MAC argument kept below |
+| `LAKE_METADATA_NOTE.md` | three of its four answers were built; the fourth -- a reader -- is built here. Its one deferral kept below |
 
 ---
 
@@ -282,7 +283,26 @@ nothing detects.
 real object at all, which is a constraint on deployment authors rather
 than a feature.
 
-## 19. Saved SELECTIONS
+## 19. Bootstrapping a deployment FROM the lake manifest
+
+`LAKE_METADATA_NOTE.md` answered four questions about what the lake
+should hold. Three were already built -- WHERE
+(`_elysium/manifest-<generation>.json`, one per configuration
+generation), WHEN (on configuration change, not every sync) and
+SECRETS (never published; the manifest carries only the `adapter` key
+per silo). The fourth, a reader that REPORTS, is built now.
+
+**Its own deferral, kept because the reasoning is the point:**
+
+> The stronger version -- bootstrapping a new deployment FROM the
+> manifest -- is tempting and should wait. A copy that can become a
+> source of truth is a copy that can disagree with one, and the whole
+> reason this is a copy is to avoid that.
+
+**Blocked on:** whether Elysium should ever configure itself from a
+lake. It is a question about what the lake IS, not about code.
+
+## 20. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must

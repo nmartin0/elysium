@@ -42,6 +42,7 @@ will be the one with the credentials in it.
 
 import json
 import logging
+import pathlib
 from collections.abc import Mapping
 from typing import Any
 
@@ -164,6 +165,70 @@ def _silos_without_connections(content: str) -> str:
         return ("# withheld: this file could not be parsed, so no part of it\n"
                 "# could be shown to be free of credentials.\n")
     return yaml.safe_dump({"data_silos": kept}, sort_keys=True)
+
+
+def latest_published(catalog) -> "dict | None":
+    """The newest manifest in the lake, or None if there is none.
+
+    THE HALF THAT WAS MISSING. Manifests have been written since patch
+    427 and NOTHING HAS EVER READ ONE -- the sixth time in this
+    codebase that something was built, tested, and wired to nothing.
+    The lake-metadata design note answered "what a fresh Elysium does with it"
+    years before there was a reader: "reads it and REPORTS, never
+    loads it silently."
+
+    BY HIGHEST GENERATION, not by modification time: the files are
+    named `manifest-<generation>.json` and a restored lake can carry
+    any timestamps at all.
+    """
+    import json
+    import re
+
+    root = _warehouse_root(catalog)
+    directory = pathlib.Path(root.replace("file://", "")) / MANIFEST_PREFIX
+    if not directory.is_dir():
+        return None
+    best, best_generation = None, -1
+    for path in directory.glob("manifest-*.json"):
+        match = re.fullmatch(r"manifest-(\d+)\.json", path.name)
+        if match is None:
+            continue
+        generation = int(match.group(1))
+        if generation > best_generation:
+            best, best_generation = path, generation
+    if best is None:
+        return None
+    try:
+        return json.loads(best.read_text())
+    except (OSError, ValueError):
+        # UNREADABLE IS NOT ABSENT, but it is not this function's to
+        # report either: the caller says what a broken manifest means.
+        return None
+
+
+def describes_a_different_deployment(manifest: dict,
+                                      tables: set[str]) -> "str | None":
+    """What the lake's manifest claims that the catalog does not hold.
+
+    THE MISMATCH SOMEONE NEEDS TOLD ABOUT, in the note's words: "a lake
+    whose manifest describes types the running ontology does not have".
+    A preserved lake inspected before a new Elysium is configured on it
+    is exactly the case this exists for.
+
+    IT REPORTS AND NEVER REFUSES. Refusing to start over a stale copy
+    "would turn a stale copy into an outage" -- the note's reasoning,
+    and the reason this returns a sentence rather than raising.
+    """
+    claimed = set(manifest.get("tables") or ())
+    if not claimed:
+        return None
+    missing = sorted(claimed - tables)
+    if not missing:
+        return None
+    shown = ", ".join(missing[:5])
+    return (f"the lake's manifest (generation {manifest.get('generation')}) "
+            f"names {len(missing)} table(s) the catalog does not hold: "
+            f"{shown}")
 
 
 def publish(catalog, generation: int, loaded_at: str, source_digest: str,

@@ -46,6 +46,10 @@ from pathlib import Path
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.gold_history import CHANGELOG_NAMESPACE as GOLD_HISTORY_NAMESPACE
+from core.mirror.manifest import (
+    describes_a_different_deployment,
+    latest_published,
+)
 from core.mirror.quarantine_report import QUARANTINE_PREFIX
 from core.ontology.gold_view import GOLD_NAMESPACE
 
@@ -194,6 +198,8 @@ def check_mirror(catalog, schema: dict | None = None,
 
     _check_changelog_names_real_objects(catalog, silver, report)
 
+    _check_the_lake_manifest(catalog, report)
+
     if warehouse_dir is not None:
         _check_for_orphaned_data_files(catalog, warehouse_dir,
                                         silver | bronze, report)
@@ -320,6 +326,46 @@ def _row_count(catalog, identifier: str) -> "int | None":
         # report rather than a crash. That is acceptable for a check
         # whose whole job is to list what is wrong.
         return None
+
+
+def _check_the_lake_manifest(catalog, report) -> None:
+    """What the lake says about itself, against what it holds.
+
+    The lake-metadata design note answered this before there was a reader:
+    "reads it and REPORTS, never loads it silently.
+    `scripts/check_mirror` is the natural home: a lake whose manifest
+    describes types the running ontology does not have is exactly the
+    mismatch someone needs told about, and refusing to start over it
+    would turn a stale copy into an outage."
+
+    MANIFESTS HAVE BEEN WRITTEN SINCE PATCH 427 AND NOTHING READ ONE.
+    The note named the reader, its home, and why it must report rather
+    than refuse. Only the code was missing.
+
+    QUIET WITH NO MANIFEST: a lake written before manifests existed,
+    or one that has never synced, is not a fault.
+    """
+    try:
+        manifest = latest_published(catalog)
+    except Exception:  # noqa: BLE001 - an unreadable lake is reported above
+        return
+    if manifest is None:
+        return
+    # LISTED ONLY ONCE A MANIFEST EXISTS. Computing it up front ran
+    # list_namespaces on every check, which broke three existing tests
+    # whose stub catalog has no such method -- and did the work on
+    # every lake that has no manifest at all.
+    #
+    # EVERYTHING THE CATALOG LISTS, not `silver | bronze`: that
+    # reported both gold tables as missing on a healthy lake, the SAME
+    # mistake patch 476 fixed in the warehouse check four patches ago.
+    try:
+        tables = _every_catalogued_table(catalog)
+    except Exception:  # noqa: BLE001 - an unlistable catalog is reported above
+        return
+    mismatch = describes_a_different_deployment(manifest, tables)
+    if mismatch is not None:
+        report.note(mismatch)
 
 
 def _check_for_orphaned_data_files(catalog, warehouse_dir: Path,

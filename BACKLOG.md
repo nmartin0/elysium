@@ -470,7 +470,7 @@ it is lost, the lake is a directory of Parquet nobody can interpret.
    than an extension of these rules.
 
 2. ~~**Decide what the lake holds.**~~ RESEARCHED -- see
-   LAKE_METADATA_NOTE.md, which CORRECTS the split above.
+   the lake-metadata note, which CORRECTED the split above.
 
    I reasoned from the control-plane argument and concluded the
    ontology, policy and silos BELONG in the lake. That over-read it: a
@@ -555,7 +555,7 @@ it is lost, the lake is a directory of Parquet nobody can interpret.
    refusing to start over it would turn a stale copy into an outage.
 
    STILL OPEN: bootstrapping a new deployment FROM a manifest.
-   Deliberately deferred -- see LAKE_METADATA_NOTE.md.
+   Deliberately deferred -- see BLOCKING.md item 19.
 
 ## 0d. Is our Blueprint usage idiomatic? -- investigated
 
