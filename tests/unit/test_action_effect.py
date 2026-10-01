@@ -2,7 +2,7 @@
 A condition proposing a write, rather than a notice.
 
 AS THE OWNER, which is Foundry's split and the one
-TRIGGERS_AND_PLUGINS.md already states: "action effects execute AS the
+The triggers design (consumed) already stated: "action effects execute AS the
 owner. Submission criteria are evaluated against the owner; the audit
 log records the owner."
 

@@ -45,7 +45,7 @@ class TestEveryWriteChecksTheCaller:
         would need one, and would carry authority nobody granted.
 
         Automations are designed to run AS THE OWNER for this reason
-        -- see TRIGGERS_AND_PLUGINS.md -- which means passing a real
+        -- the triggers design -- which means passing a real
         user's record, not building one.
         """
         source = inspect.getsource(module)

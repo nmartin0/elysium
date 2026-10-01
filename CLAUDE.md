@@ -34,7 +34,7 @@ that have gone wrong repeatedly.
    thing. Records that this is a PIPELINE problem, that the gold layer
    is the missing slot, and that MDO already answers the permissions
    question. Nothing in it is built.
-9. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
+9. **(consumed; `BLOCKING.md` item 25)** — two features that need designing
    before building, because both touch the security model and both
    are hard to retrofit. Neither is built.
 10. **`BLOCKING.md`** — the one planning file. Work that cannot be
@@ -50,8 +50,8 @@ that have gone wrong repeatedly.
 12. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
-13. **`UI_ROADMAP.md`**, `ROADMAP.md`, `(consumed; BLOCKING.md 22)` (was OBJECT_EXPLORER_PLAN.md`,
-   `IDEAS.md` — the REASONING, not the backlog. Why a thing was
+13. **`UI_ROADMAP.md`**, `ROADMAP.md`, `IDEAS.md` — the REASONING,
+   not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written
    so a fresh session starts with the decisions made, not
    rediscovered. Read these when BACKLOG.md sends you to one.

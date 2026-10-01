@@ -1982,7 +1982,7 @@ small, each verifiable now that browser tests exist.
 
 ### 3.0 ~~Triggers~~ DONE, patches 264-280
 
-**DESIGNED, NOT BUILT** -- see TRIGGERS_AND_PLUGINS.md.
+**DESIGNED, NOT BUILT** -- see BLOCKING.md item 25.
 
 Elysium has none. Foundry's Automate is condition + effect, and the
 conditions are ontology-shaped: objects added to, removed from, or
@@ -2027,7 +2027,7 @@ a SILO; the channel comes before the boundary.
 
 The largest item. Research done; no plan written.
 
-**DESIGNED -- see TRIGGERS_AND_PLUGINS.md.** The UI boundary already
+**DESIGNED -- see BLOCKING.md item 25.** The UI boundary already
 exists: five sub-apps importing only from `@elysium/shell-api`, 113
 imports across three modules, each lazy-loaded. The work is hardening
 a boundary rather than inventing one.
@@ -2101,7 +2101,7 @@ move anyway.
 
 ### 3.25 A help assistant, separate from Query
 
-**DESIGNED -- see TRIGGERS_AND_PLUGINS.md part three.** A chat that
+**DESIGNED -- see BLOCKING.md item 25 (part three.** A chat that
 answers questions ABOUT ELYSIUM rather than about a deployment's data.
 
 Precedent is AIP Assist, and the security property is the whole

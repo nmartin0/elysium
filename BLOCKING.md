@@ -47,7 +47,7 @@ numbers themselves.
 | `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |# Blocked on a decision
 | `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
 | `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
-## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
+| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 23. Its three unanswered risks are item 25 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 
 **The sharpest one, and it outranks the rest.** Reproduced: the policy
 validator rejects every `write:` grant, while the write path demands
@@ -439,7 +439,37 @@ a separate delivery channel, not a variation on this.
 streaming endpoint, and separately whether mail delivery is in scope
 at all.
 
-## 25. Saved SELECTIONS
+## 25. Three questions triggers raise and nobody has answered
+
+Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
+are "about volume rather than authority", and none of them is a code
+gap -- each is a decision that has to be made before the first
+automation runs at scale.
+
+**Queue flooding.** `MAX_SUB_WRITES` is 20 and `DEFAULT_TTL` is 15
+minutes. An automation firing across a thousand objects either exceeds
+the sub-write cap or creates fifty pending writes that expire before
+anyone reads them. Foundry has an "execute once for all objects"
+option for exactly this; there is no equivalent here, and no stated
+answer for what happens when a condition matches more than the cap.
+
+**Four-eyes against an automation.** The criteria vocabulary can say
+"the approver must not be the proposer". If an automation proposes as
+its OWNER, the owner cannot approve it -- arguably correct, and it
+means every confirmation-required automation needs a second human
+every time it fires. The document's own words: "worth deciding
+deliberately rather than discovering."
+
+**Evaluation cadence.** When conditions should be evaluated -- the
+document argues for when the mirror changes rather than on a clock,
+but it is not settled.
+
+**Blocked on:** three answers. The first needs a cap policy, the
+second is a product decision about how much friction an automation
+should carry, and the third is a design choice with cost on both
+sides.
+
+## 26. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must
