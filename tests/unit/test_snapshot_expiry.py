@@ -146,12 +146,17 @@ class TestItNeverFailsAPublish:
                                                         caplog):
         """Retention is housekeeping. A publish that succeeded must not
         be reported as failed because the tidying afterwards did not."""
-        import core.mirror.gold as gold_module
+        # PATCHED WHERE IT NOW LIVES. `_expire_unreferenced` moved to
+        # core.mirror.iceberg_sync as `expire_unreferenced` so bronze
+        # and silver could use it too (BACKLOG.md 0d4); gold imports
+        # it INSIDE its try, so the lookup happens at call time and
+        # patching the source module is what takes effect.
+        import core.mirror.iceberg_sync as sync_module
 
         def explode(table):
             raise OSError("catalog unavailable (injected)")
 
-        monkeypatch.setattr(gold_module, "_expire_unreferenced", explode)
+        monkeypatch.setattr(sync_module, "expire_unreferenced", explode)
 
         with caplog.at_level("WARNING"):
             sync = published(publications=5, retain=2)

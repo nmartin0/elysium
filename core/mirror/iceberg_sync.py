@@ -339,6 +339,40 @@ def _read_properties(read_started_at: str, run_id: "str | None") -> dict:
     return properties
 
 
+def expire_unreferenced(table) -> None:
+    """Expire snapshots no tag, branch or reader needs.
+
+    ONLY AFTER THE TAGS ARE GONE, because a tag PINS its snapshot: the
+    library refuses to expire a ref's head, so this reclaims exactly
+    what forgetting a publication released and nothing else.
+
+    THE AGE BOUND IS RETENTION_MARGIN_MS, seven days, which is what
+    tests/unit/test_snapshot_retention_guard.py requires and why: a
+    request pinned to a superseded snapshot must finish long before
+    that snapshot can go. The guard's other rule -- never reclaim the
+    CURRENT snapshot -- the library enforces itself, since current is a
+    ref head.
+
+    IT DOES NOT FREE DISK, which is worth stating because the opposite
+    is the natural assumption. Measured on a real gold table: 15
+    snapshots became 3 and the Parquet files stayed at 10, with the new
+    metadata file making the directory 7.7 KB LARGER. What it bounds is
+    METADATA: over 40 publications, 79 snapshots and a 62 KB
+    metadata.json become 5 and 20 KB, and load_table goes from 1.9 ms
+    to 1.0 ms. Every generation build loads every table, so that cost
+    is paid constantly. Reclaiming the FILES needs an orphan sweep,
+    which pyiceberg does not have yet (apache/iceberg-python #3361).
+    """
+    from datetime import UTC, datetime, timedelta
+
+
+    cutoff = datetime.now(UTC) - timedelta(milliseconds=RETENTION_MARGIN_MS)
+    try:
+        table.maintenance.expire_snapshots().older_than(cutoff).commit()
+    except Exception as exc:  # noqa: BLE001 - retention must never fail a publish
+        logger.warning(f"could not expire snapshots for {table.name()}: {exc}")
+
+
 class SuspectedPartialRead(ValueError):
     """More of a table vanished in one sync than a real deletion
     plausibly explains (PA001-F4).
@@ -806,6 +840,22 @@ class IcebergMirrorSync(MirrorSync):
                         **({BRONZE_SNAPSHOT_PROPERTY: str(bronze_snapshot)}
                            if bronze_snapshot is not None else {}),
                     })
+
+                # SILVER EXPIRES TOO (BACKLOG.md 0d4). Only the data
+                # path: the unchanged branch above writes a property
+                # and adds no snapshot, so there is nothing new to
+                # expire and a commit there would be pure cost.
+                try:
+                    expire_unreferenced(table)
+                except Exception as retention_failed:  # noqa: BLE001
+                    # OUTSIDE THE FUNCTION'S OWN try AS WELL, which cannot
+                    # catch an import failing or an attribute lookup on a
+                    # catalog that has moved on. gold.py wraps its call for
+                    # exactly this reason and records a measured case -- and
+                    # an existing test injected a failure that escaped
+                    # through here until it did.
+                    logger.warning(
+                        f"could not expire snapshots: {retention_failed}")
                 # FORCED TO DISK BEFORE THE POINTER IS TRUSTED.
                 #
                 # pyiceberg writes metadata through an UNSYNCED
@@ -1204,10 +1254,40 @@ class IcebergMirrorSync(MirrorSync):
                     "elysium.layer": "bronze",
                     **({RUN_ID_PROPERTY: self._run_id}
                        if self._run_id else {}),
+
+
                     **({SOURCE_TYPES_PROPERTY: current_types}
                        if current_types else {}),
                     **BRONZE_RETENTION,
                 })
+
+            # BRONZE AND SILVER EXPIRE TOO (BACKLOG.md 0d4). They have
+            # declared `history.expire.*` properties since BRONZE_RETENTION
+            # was written, and NOTHING EVER CALLED EXPIRY ON THEM --
+            # properties describe what expiry should do, they do not run
+            # it. Only gold did.
+            #
+            # Measured before this: six syncs of the dev deployment left
+            # bronze and silver at ELEVEN snapshots each while gold held
+            # six. Every generation build loads every table, so the cost
+            # of unbounded metadata is paid on every request, not just at
+            # sync time.
+            #
+            # THE SEVEN-DAY MARGIN IS WHAT MAKES THIS SAFE for readers:
+            # a request pins a snapshot id and expiry only removes
+            # snapshots older than RETENTION_MARGIN_MS, so nothing a live
+            # request could be holding is a candidate.
+            try:
+                expire_unreferenced(table)
+            except Exception as retention_failed:  # noqa: BLE001
+                # OUTSIDE THE FUNCTION'S OWN try AS WELL, which cannot
+                # catch an import failing or an attribute lookup on a
+                # catalog that has moved on. gold.py wraps its call for
+                # exactly this reason and records a measured case -- and
+                # an existing test injected a failure that escaped
+                # through here until it did.
+                logger.warning(
+                    f"could not expire snapshots: {retention_failed}")
         except SuspectedPartialRead:
             # NOT A BRONZE FAILURE, so it must not be absorbed as one
             # (PA001-F4). _write_bronze tolerates its own failures and

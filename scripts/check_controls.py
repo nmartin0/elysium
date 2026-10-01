@@ -680,6 +680,30 @@ CONTROLS = [
                "TestTheLoaderRaisesIt::"
                "test_a_missing_metadata_file_is_turned_into_this"],
     ),
+    Control(
+        describes="bronze expires its own snapshots",
+        path="core/mirror/iceberg_sync.py",
+        # ANCHORED ON THE COMMENT ABOVE THE CALL, not the call itself.
+        # Bronze's call line is indented twelve spaces and silver's
+        # sixteen, so the shorter is a SUBSTRING of the longer -- a
+        # break written against it matched two places, then none.
+        old=("            # request could be holding is a candidate.\n"
+             "            try:"),
+        new=("            # request could be holding is a candidate.\n"
+             "            if False:"),
+        tests=["tests/unit/test_bronze_and_silver_expire_too.py::"
+               "TestBothLayersCallIt::test_bronze_does"],
+    ),
+    Control(
+        describes="silver expires its own snapshots",
+        path="core/mirror/iceberg_sync.py",
+        old=("                # expire and a commit there would be pure cost.\n"
+             "                try:"),
+        new=("                # expire and a commit there would be pure cost.\n"
+             "                if False:"),
+        tests=["tests/unit/test_bronze_and_silver_expire_too.py::"
+               "TestBothLayersCallIt::test_silver_does"],
+    ),
 
 ]
 
