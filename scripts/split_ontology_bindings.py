@@ -15,7 +15,7 @@ prose explaining a decision is worse than one that asks for five
 minutes of hand-editing, so this prints exactly which blocks to
 delete and leaves the file alone.
 
-(ruamel.yaml round-trips comments, and CONFIG_ROUND_TRIP_AND_UI_KIT.md
+(ruamel.yaml round-trips comments, and a round-trip editor
 already measured it keeping 104 of 104. It is not a dependency yet,
 and adding one for a one-off migration script is not the trade this
 project makes -- rule 18.)

@@ -240,7 +240,7 @@ zero-width space, which quarantined the row and rendered the reason.
 
 NOT STARTED, DELIBERATELY: the UI-KIT migration. Its central
 measurement decayed from 22 to 33 Blueprint components and is
-corrected in CONFIG_ROUND_TRIP_AND_UI_KIT.md;
+corrected by the config round-trip design (BLOCKING.md 21);
 `blueprintSurface.test.ts` now pins the set so it cannot widen
 unnoticed.
 

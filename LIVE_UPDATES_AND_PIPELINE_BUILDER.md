@@ -174,7 +174,8 @@ configurations". Matillion's own users name the specific gap: no
 version control for the pipeline logic.
 
 ELYSIUM ESCAPES THIS, but only because of a decision already made
-(CONFIG_ROUND_TRIP_AND_UI_KIT.md): the canvas writes the same YAML a
+(BLOCKING.md 21 ((consumed; see BLOCKING.md)): the canvas writes the same
+YAML a
 person would write, round-tripped byte-identically, validated by the
 loader before it lands, recorded as a generation in config_history,
 and rollback-able. A drag produces A REVIEWABLE DIFF IN GIT.
@@ -491,7 +492,8 @@ changes that data. Ordered by how badly the staleness shows.
   screen and wants it to be current.
       EVENT SOURCE: the startup and per-sync source checks.
 
-  QUARANTINE COUNTS, which do not have a panel yet (the gold-layer risk register item
+  QUARANTINE COUNTS, which do not have a panel yet (the gold-layer risk
+  register item
   1). When they land they are live data by nature: rows disappearing
   from silver is the thing an operator must see happen.
       EVENT SOURCE: _write_quarantine, one place.

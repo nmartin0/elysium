@@ -134,7 +134,8 @@ resolution, so gold for it is a straight conform.
           it gives up, INSTALL.md and config.yaml corrected -- the
           comment there still calls live reads the conservative
           default, which the code has not done for some time.
-          SURVEYED IN THE CODE -- GOLD_MIGRATION_SURVEY.md, patch 344:
+          SURVEYED IN THE CODE -- the gold migration survey, now
+          consumed ((consumed; see BLOCKING.md), patch 344:
           the blast radius is one wiring point (build_generation), the
           translation layer inside the mediator, TWO reverse-link call
           sites, ONE security comparison ("same silo and table" becomes
@@ -317,7 +318,7 @@ resolution, so gold for it is a straight conform.
           GOLD-3c (the file split) and UI-LIVE (a build finishing is an
           event).
   CONFIG-WRITE. UI EDITS REFLECTED INTO THE YAML (the owner,
-          September 22; CONFIG_ROUND_TRIP_AND_UI_KIT.md). MEASURED: the
+          September 22; BLOCKING.md item 21. MEASURED: the
           shipped files are 104 comment lines of 127 and 90 of 162, and
           PyYAML's safe_dump keeps ZERO of them; ruamel round-trip
           keeps ALL and, with indent(mapping=2, sequence=4, offset=2),
@@ -347,7 +348,7 @@ resolution, so gold for it is a straight conform.
           @blueprintjs imports.
   ACCESS-1..6. CLASSIFY THE DATA, NOT THE GRANTS -- agreed by the
           owner, September 22; the model and its audit are in
-          ACCESS_CONTROL_PROPOSAL.md. Measured burden today: a role
+          BLOCKING.md item 20. Measured burden today: a role
           needs one grant string PER FIELD PER TYPE -- 1,050 for a
           50-type deployment. The model: tags carrying policy
           (read:tag:pii), fields inheriting their type's tags,

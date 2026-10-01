@@ -40,7 +40,9 @@ numbers themselves.
 | `000COORDINATION.md` | the protocol for four agents that no longer exist, and all four branches are merged. Its ownership table was already wrong -- `SEC-06` measured it matching 89 of 145 source files. Consuming it surfaced a real conversion that had been unblocked for forty patches |
 | `LIBRARY_AUDIT.md` | 1.1 superseded by its own Part 4.6; 1.2 MEASURED AND REJECTED, with the numbers now in `request_metrics.py` and eight tests enforcing it; 1.3 is available work, below. Parts 2-4 are reasoning about when to take a dependency, kept in `PRINCIPLES.md`'s territory |
 | `OPEN_RISKS.md` | all five resolved or measured: 1, 2 and 5 fixed by earlier patches, 3 built and wired, 4's premise shown out of date in patch 490. Its 24 code citations now name what each risk WAS |---
-
+| `GOLD_MIGRATION_SURVEY.md` | every file it named was reworked; its proposed shape IS `build_gold_view`. Its parity test exists and passes (42) |
+| `ACCESS_CONTROL_PROPOSAL.md` | not built, and a change to what a grant MEANS. Below |
+| `CONFIG_ROUND_TRIP_AND_UI_KIT.md` | not built; needs a dependency decision and product direction. Below |
 # Blocked on a decision
 
 ## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
@@ -329,7 +331,46 @@ per silo). The fourth, a reader that REPORTS, is built now.
 **Blocked on:** whether Elysium should ever configure itself from a
 lake. It is a question about what the lake IS, not about code.
 
-## 20. Saved SELECTIONS
+## 20. Grant by TAG rather than by field name
+
+From `ACCESS_CONTROL_PROPOSAL.md`. Declare a vocabulary -- `pii`,
+`financial`, `internal`, `restricted` -- tag FIELDS with it, and let a
+role grant `read:tag:pii` instead of enumerating every field.
+
+**The burden it answers was counted rather than asserted**, which is
+why the proposal is worth keeping whole:
+
+        10 types x 15 fields   ->    160 grant strings PER ROLE
+        50 types x 20 fields   ->  1,050 grant strings PER ROLE
+       120 types x 25 fields   ->  3,120 grant strings PER ROLE
+
+Every one hand-written, per role, per deployment. Add a property to a
+type and every role that should see it needs editing.
+
+The shape has a real safety property: a new property is UNREADABLE
+until tagged, which is the deny-by-default behaviour already in place,
+now at field level. It also proposes inheriting tags from the type and
+declaring only exceptions.
+
+**Blocked on:** this changes what a grant MEANS, and every existing
+`policy.yaml` with it. Nothing of it is built -- no tags anywhere in
+`core/` or `api/` -- so it is a decision before it is work.
+
+## 21. Writing configuration from the UI
+
+From `CONFIG_ROUND_TRIP_AND_UI_KIT.md`. Its own finding is why it is
+hard: **the configuration files are mostly COMMENTS**, so a naive
+load-and-dump destroys the thing that makes them readable. Its design
+keeps YAML as the source of truth and round-trips through
+`ruamel.yaml`, which preserves comments.
+
+`ruamel` is not a dependency today, so this needs one of the `DEP`
+answers before it is even possible.
+
+**Blocked on:** that dependency call, and on whether configuration
+should be editable from the UI at all.
+
+## 22. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must
