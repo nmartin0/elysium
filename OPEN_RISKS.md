@@ -96,7 +96,35 @@ as evidence. Elysium has the machinery for exactly this test.
 
 ---
 
-## 3. Nothing expires a gold snapshot, and tags never expire by default
+## 3. ~~Nothing expires a gold snapshot, and tags never expire by
+##    default~~ DONE -- the mechanism exists and is wired
+
+`_forget_old_publications(table, retain)` drops the tags beyond the
+most recent N, `DEFAULT_RETAINED_PUBLICATIONS` is 30, a deployment may
+set its own through `retain_publications`, and `run_sync` passes it on
+every build. Expiry then reclaims exactly what forgetting a tag
+released, because the library refuses to expire a ref's head.
+
+BOTH CONSTRAINTS FROM THE PRECEDENT ARE MET: at least two snapshots
+survive, and the age bound is RETENTION_MARGIN_MS -- seven days, which
+is longer than any query this system runs by a wide margin.
+
+AND THE REST OF THE SHAPE LANDED LATER: patch 477 found that BRONZE
+AND SILVER declared retention properties and nothing ever called
+expiry on them. Only gold did. Both call it now.
+
+STILL TRUE, AND WORTH KEEPING HERE: expiry unreferences, ORPHAN
+CLEANUP is what reclaims bytes, and pyiceberg has no orphan sweep
+(apache/iceberg-python #3361). What this bounds is metadata.
+
+THE HEADING SAID OTHERWISE UNTIL NOW, while items 2 and 5 above were
+struck through when they were answered. A document that reports
+finished work as open is how LLM3 lost most of a session to seven
+checklist rows, and this file is read the same way.
+
+---
+
+## 3 (as originally recorded). Nothing expires a gold snapshot
 
 THE STATE TODAY: every publication tags a snapshot. Tags protect their
 snapshots from expiry -- which is deliberate, and is what keeps a
