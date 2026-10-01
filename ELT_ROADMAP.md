@@ -174,7 +174,34 @@ unbounded growth and no real history.
 **BRONZE is the bounded layer**, which inverts what the first draft of
 this roadmap assumed. It holds the source as it is now, overwritten
 each sync, retaining exactly TWO snapshots -- current and previous,
-which is all a diff needs. Bounded at roughly 2x table size.
+which is all a diff needs.
+
+~~Bounded at roughly 2x table size.~~ **NOT TODAY, MEASURED 1 October.**
+Bronze retains two SNAPSHOTS and that is now enforced -- patch 477
+found the retention properties had been declared for months with
+nothing calling expiry on them, and wired it. But EXPIRY UNREFERENCES;
+it does not delete. pyiceberg has no orphan sweep
+(apache/iceberg-python #3361), so the data files of expired snapshots
+stay on disk for ever.
+
+Eight syncs of the dev deployment, one row changed each time, with the
+retention margin shortened so expiry actually ran:
+
+    after sync 1    92 KB    2 parquet
+    after sync 4   252 KB    5 parquet
+    after sync 8   512 KB    9 parquet
+
+One file per sync, none ever reclaimed, growing at full table size --
+exactly the copy-on-write behaviour measured above, and the two-
+snapshot limit does nothing about it. OPEN_RISKS item 3 already says
+"expiry unreferences while ORPHAN CLEANUP is what actually reclaims
+bytes"; this file stated the bound as fact anyway.
+
+WHAT WOULD MAKE IT TRUE is a sweep that deletes data files no live
+snapshot references. That is a DELETION against a lake, so it is a
+decision rather than a tidy-up: it needs the same margin argument as
+expiry, and a dry run before it ever writes -- `repair_catalog`'s
+shape, not a cron job's.
 
 **SILVER is the history.** An append-only changelog, growing only with
 ACTUAL changes. This is where "full history" becomes affordable rather

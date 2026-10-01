@@ -195,6 +195,10 @@ def check_mirror(catalog, schema: dict | None = None,
     _check_changelog_names_real_objects(catalog, silver, report)
 
     if warehouse_dir is not None:
+        _check_for_orphaned_data_files(catalog, warehouse_dir,
+                                        silver | bronze, report)
+
+    if warehouse_dir is not None:
         # EVERYTHING THE CATALOG LISTS, not just the source layers.
         # Passing `silver | bronze` meant every gold table and every
         # changelog table on disk was reported as "data the catalog
@@ -316,6 +320,67 @@ def _row_count(catalog, identifier: str) -> "int | None":
         # report rather than a crash. That is acceptable for a check
         # whose whole job is to list what is wrong.
         return None
+
+
+def _check_for_orphaned_data_files(catalog, warehouse_dir: Path,
+                                    tables: set[str], report) -> None:
+    """Data files no live snapshot references (ELT_ROADMAP, corrected).
+
+    EXPIRY UNREFERENCES; IT DOES NOT DELETE. Bronze keeps two
+    snapshots and that is enforced, but the files the expired ones
+    pointed at stay on disk for ever: pyiceberg has no orphan sweep
+    (apache/iceberg-python #3361).
+
+    MEASURED on the dev deployment with the retention margin shortened
+    so expiry actually ran: 92 KB and two parquet files after one
+    sync, 512 KB and nine after eight. One file per sync, none ever
+    reclaimed. ELT_ROADMAP.md called bronze "bounded at roughly 2x
+    table size"; it is not.
+
+    THIS ONLY REPORTS, and deliberately. Deleting a data file is a
+    deletion against a lake -- it wants the same margin argument
+    expiry has and a dry run before it ever writes, which is
+    repair_catalog's shape rather than a cron job's. What was missing
+    was anybody NOTICING, so that is what this adds.
+    """
+    for identifier in sorted(tables):
+        namespace, table = identifier.split(".", 1)
+        directory = warehouse_dir / namespace / table / "data"
+        if not directory.is_dir():
+            continue
+        on_disk = list(directory.glob("*.parquet"))
+        if len(on_disk) <= _ORPHAN_TOLERANCE:
+            continue
+        try:
+            live = _files_a_snapshot_references(catalog, identifier)
+        except Exception:  # noqa: BLE001 - covered by the checks above
+            continue
+        orphaned = [path for path in on_disk if path.name not in live]
+        if len(orphaned) > _ORPHAN_TOLERANCE:
+            total = sum(path.stat().st_size for path in orphaned)
+            report.note(
+                f"{identifier}: {len(orphaned)} data file(s) "
+                f"({total // 1024} KB) that no live snapshot references. "
+                f"Expiry unreferences; nothing reclaims. See "
+                f"ELT_ROADMAP.md."
+            )
+
+
+#: HOW MANY UNREFERENCED FILES ARE ORDINARY. A write in flight and a
+#: just-expired snapshot both leave one behind legitimately, so a
+#: handful is noise; it is the unbounded GROWTH that is the finding.
+_ORPHAN_TOLERANCE = 4
+
+
+def _files_a_snapshot_references(catalog, identifier: str) -> set[str]:
+    """The data files any snapshot still in the table's history uses."""
+    table = catalog.load_table(identifier)
+    referenced: set[str] = set()
+    for snapshot in table.snapshots():
+        for manifest in snapshot.manifests(table.io):
+            for entry in manifest.fetch_manifest_entry(table.io):
+                referenced.add(entry.data_file.file_path.rsplit("/", 1)[-1])
+    return referenced
 
 
 def _check_changelog_names_real_objects(catalog, silver: set[str],
