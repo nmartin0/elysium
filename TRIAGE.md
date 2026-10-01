@@ -394,7 +394,19 @@ Each of these was reverted at source and the suite genuinely failed:
 | the approval re-read inside the lock | 1 |
 | the CSRF token comparison | 3 of 5 |
 
-**No uncovered behaviour found yet.**
+| the write-path RBAC gate | 1 |
+| the gold mass-deletion guard | 4 |
+| a declared `on_violation: fail` ignored | 2 |
+
+**No uncovered behaviour found, across nine.**
+
+**ONE RESULT IS WORTH ARGUING WITH.** The write-path RBAC gate -- the
+check that decides whether a caller may execute an action at all --
+is caught by exactly ONE test. It is covered, so the sweep passes it,
+but one test for the gate that stands between a user and every write
+is thin. Two of the nine took a whole-suite run to find their catcher
+at all, both in the second half of the unit suite, which is why these
+runs cannot be shortened.
 
 ## The method has a trap, and I fell in it twice
 
