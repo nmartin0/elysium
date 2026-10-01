@@ -45,7 +45,8 @@ numbers themselves.
 | `CONFIG_ROUND_TRIP_AND_UI_KIT.md` | not built; needs a dependency decision and product direction. Below |
 | `OBJECT_EXPLORER_PLAN.md` | phases 1 and 2 (backend) built, and the blocker they existed to remove is gone -- `in` and `not_in` are in the filter vocabulary. Phases 3-5 are frontend; below |
 | `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |# Blocked on a decision
-
+| `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
+| `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
 ## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 
 **The sharpest one, and it outranks the rest.** Reproduced: the policy
@@ -408,7 +409,37 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 24. Saved SELECTIONS
+## 24. Live updates, and the decision that shapes them
+
+Nothing is built -- no SSE, no `EventSource`, no streaming response
+anywhere in `api/`. What makes the design worth keeping is its
+security decision, which is quoted rather than summarised:
+
+> **EVENTS CARRY NO DATA.** An event says "something of this kind
+> changed", never what changed. The client then refetches through the
+> SAME authorised endpoints it already uses, so MAC, roles and every
+> permission check apply exactly as they do now.
+>
+> The alternative -- pushing the changed object down the stream --
+> would put a second, parallel read path beside the mediator, and
+> every security rule would have to be re-implemented on it
+> correctly, forever. That is how leaks happen. A hint plus a refetch
+> cannot leak: the refetch is the existing, tested path.
+
+It also notes that a hint's SCOPE needs care: "a Customer changed"
+tells a user that SOME customer changed, so hints name a TYPE and a
+kind of change and nothing more.
+
+**And a measured answer to a question the owner asked:** whether an
+alert could arrive as MAIL. SSE cannot do that -- it pushes to an open
+browser -- and Elysium has NO SMTP SUPPORT OF ANY KIND today. Mail is
+a separate delivery channel, not a variation on this.
+
+**Blocked on:** whether live updates are wanted enough to carry a
+streaming endpoint, and separately whether mail delivery is in scope
+at all.
+
+## 25. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must

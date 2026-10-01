@@ -150,7 +150,7 @@ agent available at every station rather than at one.
      what makes a tool feel like a tool.
 
   Plus the two already planned: the PIPELINE BUILDER
-  (LIVE_UPDATES_AND_PIPELINE_BUILDER.md) and ONTOLOGY VISUALISATION
+  (BLOCKING.md item 24) and ONTOLOGY VISUALISATION
   -- the type-level map, which is also how the builder draws links.
 
   And underneath all of it, UI-LIVE: a screen that does not update
@@ -812,7 +812,7 @@ that exists. A change that NARROWS access needs no second person.
 ## 13.7 What the ontology UI edits, and what it must not
 
 It edits the DECLARATION -- the same law as the pipeline builder
-(LIVE_UPDATES_AND_PIPELINE_BUILDER.md part 3.1): ontology_schema.yaml
+(BLOCKING.md item 24): ontology_schema.yaml
 and policy.yaml, round-tripped, validated before landing, recorded as
 a generation, rollback-able.
 

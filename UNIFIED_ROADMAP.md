@@ -242,7 +242,7 @@ resolution, so gold for it is a straight conform.
           session, copied per test.
   UI-LIVE. LIVE UPDATES, no manual refresh and no page reload (the
           owner, September 22; design in
-          LIVE_UPDATES_AND_PIPELINE_BUILDER.md). MEASURED TODAY: one
+          BLOCKING.md item 24). MEASURED TODAY: one
           panel polls (MirrorPanel, 30 s) and everything else uses
           useFetchOnce, which never refetches; there is no streaming
           endpoint at all. Server-sent events, not websockets: one-way
@@ -258,7 +258,7 @@ resolution, so gold for it is a straight conform.
           generation or connection held open across a hot reload, close
           within E-12's grace, caps and heartbeats, the table pruned.
   UI-LIVE-1..5. THE BUILD ORDER, from the audited inventory (parts 4-6
-          of LIVE_UPDATES_AND_PIPELINE_BUILDER.md). Every event below
+          of BLOCKING.md item 24). Every event below
           already has ONE place it can be raised from -- write_log's
           pending and applied calls, notifications.notify(),
           SyncResult's single return, gold's publication,
