@@ -14,6 +14,7 @@ account like this has no place in one.
 
 import sys
 
+from core.auth.development_only import refuse_unless_development
 from core.deployment_loader import load_deployment, resolve_runtime_paths
 from core.user_directory import UserDirectory
 
@@ -39,15 +40,10 @@ def main() -> int:
     # "development" onto a production box by accident and on purpose at
     # the same time -- and if they do, they have been told what it
     # costs.
-    if "--yes-this-is-development" not in sys.argv:
-        print(
-            f"REFUSING. This creates {USERNAME!r} with password {PASSWORD!r} and "
-            f"every grant the deployment defines.\n"
-            f"That is a back door, not an account. If this really is a "
-            f"development machine, re-run with:\n\n"
-            f"    python -m scripts.create_debug_user --yes-this-is-development\n",
-            file=sys.stderr,
-        )
+    if refuse_unless_development(
+            "scripts.create_debug_user",
+            f"{USERNAME!r} with password {PASSWORD!r} and every grant the "
+            f"deployment defines"):
         return 1
 
     paths = resolve_runtime_paths()

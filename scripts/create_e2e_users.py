@@ -25,6 +25,7 @@ back door anywhere that matters.
 
 import sys
 
+from core.auth.development_only import refuse_unless_development
 from core.deployment_loader import load_deployment, resolve_runtime_paths
 from core.user_directory import UserDirectory
 
@@ -39,14 +40,10 @@ USERS = [
 
 
 def main() -> int:
-    if "--yes-this-is-development" not in sys.argv:
-        print(
-            "REFUSING. This creates accounts with known passwords, for browser\n"
-            "tests. That is a back door on any machine that matters.\n\n"
-            "If this really is a development machine, re-run with:\n\n"
-            "    python -m scripts.create_e2e_users --yes-this-is-development",
-            file=sys.stderr,
-        )
+    if refuse_unless_development(
+            "scripts.create_e2e_users",
+            "accounts with known passwords, the two users the browser "
+            "tests log in as"):
         return 1
 
     paths = resolve_runtime_paths()

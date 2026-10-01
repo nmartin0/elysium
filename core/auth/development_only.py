@@ -19,18 +19,21 @@ password never lands outside development" -- is exactly the kind
 PRINCIPLES.md 6 says to extract, because copies quietly stop agreeing.
 
 ONE CALLER TODAY, DELIBERATELY, AND THE REASON IS NOT TASTE.
-Converting create_debug_user.py and create_e2e_users.py to this module
-is the obvious completion, and it breaks
-tests/unit/test_template_is_a_valid_deployment.py, which asserts the
-literal strings "--yes-this-is-development" and "REFUSING" appear in
-create_debug_user.py's SOURCE. Moving the guard moves the strings. That
-file is backend-owned, and 000COORDINATION.md says a failing test
-outside your area is reported rather than fixed into passing -- so the
-conversion is filed with the security agent (consumed; see AUDIT_CHECKLIST.csv) and scheduled, not smuggled
-into a security fix. See that request for why the test should be
-replaced rather than relocated: AGENTS.md already records that a test
+DONE, patch 488. create_debug_user.py and create_e2e_users.py both
+call this now, and neither keeps an inline copy.
+
+IT WAS BLOCKED BY A TEST THAT WAS NOT A TEST, and then it was not.
+`test_template_is_a_valid_deployment.py` asserted the literal strings
+"--yes-this-is-development" and "REFUSING" appeared in
+create_debug_user.py's SOURCE, so sharing the guard -- which moves
+those strings out of that file -- would have failed the suite for
+doing the right thing. AGENTS.md already records the shape: a test
 asserting a WORD appears in source is satisfied by deleting the
 behaviour and leaving the word in a comment.
+
+THAT TEST BECAME BEHAVIOURAL IN PATCH 448 AND THIS WAS NOT DONE,
+because the only record of the blocker was this comment. Found by
+consuming the coordination file it also cited, forty patches later.
 
 The durable protection does not depend on the conversion happening.
 tests/unit/test_development_guard.py CALLS each script's main() and
