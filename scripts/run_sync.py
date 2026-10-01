@@ -55,6 +55,7 @@ import uuid
 from typing import Any
 
 from core.deployment_loader import (
+    MirrorCatalogStranded,
     build_live_read_adapters,
     load_deployment_bundle,
     resolve_runtime_paths,
@@ -742,5 +743,13 @@ if __name__ == "__main__":
              "deletion. Repeatable.",
     )
     _args = _parser.parse_args()
-    sys.exit(run_sync(accept_deletions=set(_args.accept_deletions),
-                       rebuild=set(_args.rebuild)))
+    try:
+        sys.exit(run_sync(accept_deletions=set(_args.accept_deletions),
+                           rebuild=set(_args.rebuild)))
+    except MirrorCatalogStranded as stranded:
+        # A REFUSAL, NOT A CRASH. The message already names the table,
+        # what is wrong and the command that repairs it; a traceback
+        # above it just buries that under pyarrow frames the operator
+        # can do nothing with.
+        print(f"\n{stranded}", file=sys.stderr)
+        sys.exit(1)

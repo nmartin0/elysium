@@ -671,6 +671,15 @@ CONTROLS = [
         tests=["tests/unit/test_misleading_text_can_be_declared.py::TestTheDeclaredRule::test_a_violation_is_reported",
                "tests/unit/test_misleading_text_can_be_declared.py::TestTheDeclaredRule::test_the_two_rules_are_independent"],
     ),
+    Control(
+        describes="a stranded catalog refuses instead of crashing",
+        path="core/deployment_loader.py",
+        old="        except (FileNotFoundError, OSError) as missing:",
+        new="        except RuntimeError as missing:",
+        tests=["tests/unit/test_a_stranded_catalog_says_so.py::"
+               "TestTheLoaderRaisesIt::"
+               "test_a_missing_metadata_file_is_turned_into_this"],
+    ),
 
 ]
 

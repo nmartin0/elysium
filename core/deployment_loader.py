@@ -963,6 +963,15 @@ def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
     }
 
 
+class MirrorCatalogStranded(OSError):
+    """The catalog points at a metadata file that is not on disk.
+
+    A SEPARATE TYPE because the remedy is specific and nothing else
+    raises it: `scripts/repair_catalog.py`, which existed before this
+    exception and was not reachable from the failure.
+    """
+
+
 def _snapshot_ids_from_catalog(catalog, config: DeploymentConfig) -> dict:
     # {(silo, table): snapshot_id} for every mirrored table that has
     # actually synced. A table that never has is ABSENT rather than
@@ -978,6 +987,38 @@ def _snapshot_ids_from_catalog(catalog, config: DeploymentConfig) -> dict:
             table = catalog.load_table(f"{target.silo_name}.{target.table_name}")
         except (NoSuchTableError, NoSuchNamespaceError):
             continue
+        except (FileNotFoundError, OSError) as missing:
+            # THE CATALOG POINTS AT METADATA THAT IS NOT THERE. Iceberg
+            # commits in two steps -- write the metadata, then swap the
+            # catalog's pointer -- and only the pointer is made durable
+            # by SQLite. A disk filling or a power loss between them
+            # strands the table.
+            #
+            # THIS RAN BEFORE THE SYNC EVEN STARTED, inside deployment
+            # load, so the operator got a bare pyarrow traceback and
+            # NOT ONE TABLE SYNCED -- including the healthy ones.
+            # BACKLOG.md asked for the sync to "fail when the catalog
+            # and warehouse disagree, rather than reporting 0/2 with no
+            # explanation"; it was worse than that.
+            #
+            # THE REMEDY ALREADY EXISTS. scripts/repair_catalog.py was
+            # written for exactly this failure, and nothing pointed at
+            # it from the place the failure surfaces.
+            raise MirrorCatalogStranded(
+                f"{target.silo_name}.{target.table_name}: the mirror's "
+                f"catalog points at metadata that is not on disk "
+                f"({missing}). This happens when a write was interrupted "
+                f"-- a full disk, or a power loss -- between writing the "
+                f"metadata and swapping the pointer to it.\n"
+                f"\n"
+                f"To see what is stranded, and then repair it:\n"
+                f"    python -m scripts.repair_catalog\n"
+                f"    python -m scripts.repair_catalog --write\n"
+                f"\n"
+                f"Bronze and silver can also be rebuilt from source. THE "
+                f"CHANGELOG CANNOT: it is the one layer nothing can "
+                f"derive again, so repair before rebuilding."
+            ) from missing
         snapshot = table.current_snapshot()
         if snapshot is not None:
             ids[(target.silo_name, target.table_name)] = snapshot.snapshot_id
