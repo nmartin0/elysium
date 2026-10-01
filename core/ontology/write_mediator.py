@@ -1967,7 +1967,7 @@ class WriteMediator:
         has since been DISABLED, DELETED, or MOVED TO ANOTHER ROLE is
         not detected here -- that needs the user directory, which this
         mediator does not hold and which is wired in api/routes.py.
-        Filed in REQUESTS_security.md. Note that disable_user() and
+        Filed with the security agent; see AUDIT_CHECKLIST.csv. Note that disable_user() and
         delete_user() already delete the account's SESSIONS in the same
         transaction, so a disabled proposer cannot themselves act; what
         survives is the queued write somebody else may approve.

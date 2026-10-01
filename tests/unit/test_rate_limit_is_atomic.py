@@ -19,7 +19,7 @@ changes.
 
 THE ROUTE STILL HAS TO CHANGE. `try_record_query()` has no production
 caller yet: api/routes.py:3378-3380 is backend's file and the swap is
-filed in REQUESTS_security.md. Until then this is exercised by tests
+filed with the security agent (consumed; see AUDIT_CHECKLIST.csv). Until then this is exercised by tests
 only, which vulture counts (its paths include `tests`).
 
 WHICH TEST IS PRIMARY -- I HAD THIS BACKWARDS, and the control said

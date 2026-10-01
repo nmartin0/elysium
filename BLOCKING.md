@@ -36,6 +36,7 @@ numbers themselves.
 | `LAKE_METADATA_NOTE.md` | three of its four answers were built; the fourth -- a reader -- is built here. Its one deferral kept below |
 | `AUDIT_INTAKE.md` | superseded by `AUDIT_CHECKLIST.csv` by its own words; all 67 findings verified present there first; its alias table folded into the ten rows it concerns |
 | `AUDIT_INTAKE_PIPELINE.md` | same; 50 ids checked, every one tracked |
+| the nine agent files | `HANDOVER_*`, `REQUESTS_*`, `STATUS_*` -- 8,662 lines from three agents that no longer exist. 25 SEC findings rescued into the CSV first; every other id verified already tracked |
 
 ---
 
@@ -190,6 +191,29 @@ Patches 292-295 fixed all four blockers. It has only ever run as two
 apps inside one test process.
 
 **Blocked on:** somebody running it.
+
+## 13a. Twenty-five inherited security findings
+
+The security agent kept its own register because it was not allowed to
+edit `AUDIT_CHECKLIST.csv`, and said so:
+
+> ONE ASK OF BACKEND: fold these into `AUDIT_CHECKLIST.csv` and this
+> file can go. It exists because I may not edit that one, not because
+> two registers are a good idea -- and two lists is the exact failure
+> this project keeps finding.
+
+**That ask was never honoured while they existed.** Patch 487 did it:
+all 27 `SEC-` ids are now rows. Six map onto work already done under
+my numbering (`SEC-01` is `LLM3-1`, `SEC-02`/`SEC-03` are `LLM3-2`,
+`SEC-05` is `PA001-A11`, `SEC-17` was rebuilt in patch 465). One was
+withdrawn by its own author as overstated. The rest are open and
+INHERITED -- raised by somebody who can no longer be asked what they
+meant.
+
+**Blocked on:** nothing, for the tractable ones -- they are ordinary
+work now that they are on the list. Named here only because their
+provenance matters: a finding whose author is gone cannot be
+clarified, only reproduced or dropped.
 
 ## 13. The agents' reported-done work
 

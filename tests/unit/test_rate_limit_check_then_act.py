@@ -22,7 +22,7 @@ WHAT THESE TESTS ASSERT IS TODAY'S BEHAVIOUR, NOT CORRECT BEHAVIOUR.
 They pin a KNOWN, MEASURED GAP so it cannot drift silently while the
 fix is scheduled. The fix needs one atomic check-and-record and a
 change to api/routes.py, which this agent does not own -- see
-REQUESTS_security.md. When that lands, these tests flip from "pins the
+AUDIT_CHECKLIST.csv. When that lands, these tests flip from "pins the
 overshoot" to "proves it is gone", and the flip is the point: they
 fail loudly the moment the behaviour changes, in either direction.
 """

@@ -175,7 +175,7 @@ class LoginAttemptTracker:
 
         source=None KEEPS TODAY'S BEHAVIOUR EXACTLY, unbounded. No
         caller passes one yet: api/routes.py is backend's file and the
-        wiring is filed in REQUESTS_security.md. Rows written before
+        wiring is filed with the security agent (consumed; see AUDIT_CHECKLIST.csv). Rows written before
         the `source` column existed carry NULL and are never counted
         against anyone's budget.
         """

@@ -127,7 +127,8 @@ set is how someone edits ten thousand objects by accident.
 duplicate or miss rows -- the UI must not present its row count as
 authoritative during a live sort.
 
-### 3. Pending changes / approvals inbox — designed, and it is four backend pieces first
+### 3. Pending changes / approvals inbox — designed, and it is four backend
+pieces first
 
 The two-phase propose/confirm mechanism exists. This gives it a queue
 view across the org rather than only inline.
@@ -217,7 +218,8 @@ NEXT, in the order I would take them:
     are the only thing protecting B4's cascade simplification.
  4. **[8] the instance graph.** Client functions are in and verified
     against the server; four design questions are open, including one
-    I could not answer without a scaffold. See HANDOVER_frontend.md.
+    I could not answer without a scaffold. See AUDIT_CHECKLIST.csv (the
+    agent files are consumed).
 
 NEEDS A SERVER CHANGE FIRST, so not ours to start:
 

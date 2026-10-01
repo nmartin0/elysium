@@ -32,7 +32,7 @@ WHAT IT DOES NOT CATCH, tested below so the gap is visible rather than
 implied: `pending.proposer` is a snapshot, so a proposer who has since
 been DISABLED, DELETED or MOVED TO ANOTHER ROLE is not detected here.
 That needs the user directory, which this mediator does not hold.
-Filed in REQUESTS_security.md.
+Filed with the security agent; see AUDIT_CHECKLIST.csv.
 """
 
 from datetime import UTC, datetime

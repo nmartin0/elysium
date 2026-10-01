@@ -26,7 +26,7 @@ literal strings "--yes-this-is-development" and "REFUSING" appear in
 create_debug_user.py's SOURCE. Moving the guard moves the strings. That
 file is backend-owned, and 000COORDINATION.md says a failing test
 outside your area is reported rather than fixed into passing -- so the
-conversion is filed in REQUESTS_security.md and scheduled, not smuggled
+conversion is filed with the security agent (consumed; see AUDIT_CHECKLIST.csv) and scheduled, not smuggled
 into a security fix. See that request for why the test should be
 replaced rather than relocated: AGENTS.md already records that a test
 asserting a WORD appears in source is satisfied by deleting the
