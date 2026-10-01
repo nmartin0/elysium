@@ -100,7 +100,7 @@ _LLM_ADAPTER_REGISTRY: dict[str, type] = {
     # vLLM, for a deployment with concurrent users and a GPU: at one
     # request it and Ollama are within about 20%, and past four to
     # eight concurrent requests vLLM leads by two to nine times
-    # (SCALABILITY.md). An OpenAI-compatible endpoint, so this also
+    # (measured: see _default_concurrency). An OpenAI-compatible endpoint, so this also
     # reaches anything else speaking that dialect.
     "vllm": VLLMAdapter,
     # Runs the local `claude` CLI, so calls draw on the operator's
@@ -816,7 +816,9 @@ def _default_concurrency(config: dict) -> int:
     number here would only build a queue in a second place. vLLM's
     continuous batching is the opposite: it wants requests in flight,
     and past four to eight concurrent it leads Ollama by two to nine
-    times (SCALABILITY.md).
+    times -- Red Hat's GuideLLM on an A100 measured 793 output
+    tokens/sec against Ollama's 41, p99 80 ms against 673 ms, and an
+    independent test found the same direction on other hardware.
 
     THE OLD DEFAULT WAS FOUR FOR EVERYONE, which matched Ollama's cap
     BY COINCIDENCE -- so a deployment that swapped to vLLM and changed

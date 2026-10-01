@@ -5,7 +5,7 @@ WHY IT EXISTS: at one request vLLM and Ollama are within about 20%,
 and Ollama is often faster on first-response latency. Past four to
 eight concurrent requests vLLM leads by two to nine times, and at
 saturation Red Hat measured 793 output tokens a second against
-Ollama's 41 (SCALABILITY.md). So it is a per-deployment CHOICE --
+Ollama's 41, on an A100. So it is a per-deployment CHOICE --
 Ollama for a laptop or a small team, vLLM where concurrency is real --
 which is what the adapter interface is for.
 

@@ -1,7 +1,7 @@
 """Talking to vLLM, for a deployment with concurrent users (INFER-1).
 
 WHY THIS EXISTS, AND WHEN IT IS THE RIGHT CHOICE. The benchmarks in
-SCALABILITY.md are unambiguous about the shape: at ONE request vLLM
+The published benchmarks are unambiguous about the shape: at ONE request vLLM
 and Ollama are within about 20%, and Ollama is often faster on
 first-response latency because it has no scheduler queue. Past roughly
 four to eight concurrent requests vLLM leads by two to nine times, and
@@ -46,7 +46,7 @@ DEFAULT_TIMEOUT_SECONDS = 180
 # Elysium's max_concurrent_requests defaults to the same number by
 # coincidence -- so a deployment that swapped the engine and changed
 # nothing else would see no difference at all, which is the trap
-# SCALABILITY.md names. A vLLM deployment that says nothing gets a
+# the benchmarks name. A vLLM deployment that says nothing gets a
 # limit worth having.
 DEFAULT_MAX_CONCURRENT_REQUESTS = 16
 

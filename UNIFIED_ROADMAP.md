@@ -390,7 +390,7 @@ resolution, so gold for it is a straight conform.
           engines and changing nothing else would have shown no
           improvement at all.
   INFER-1. A vLLM ADAPTER, and raising the concurrency limit
-          (SCALABILITY.md). AUDITED: agent queries run through an
+          (measured; see _default_concurrency). AUDITED: agent queries run through an
           explicit ThreadPoolExecutor sized from
           max_concurrent_requests, DEFAULT 4, while ordinary reads use
           Starlette's own pool of 40 -- so reads scale to ~40 and agent
