@@ -160,9 +160,27 @@ TODAY it reads: same adapter, and `security_config["storage"] !=
 searched_config["storage"]` returns None -- "same silo AND same table",
 because a column name means nothing outside one table.
 
-ON GOLD every type is one table in one namespace, so that comparison
-stops distinguishing anything. Left as written it does not fail
-loudly.
+~~ON GOLD every type is one table in one namespace, so that comparison
+stops distinguishing anything.~~ **MEASURED 1 October, AND THE PREMISE
+IS OUT OF DATE.** `gold_view.py` rebinds each type to its OWN table:
+
+    rebound["storage"] = {"silo": GOLD_NAMESPACE,
+                          "table": object_type, ...}
+
+One namespace holds ONE TABLE PER TYPE, so `gold.Customer` and
+`gold.SupportCase` are different storages and the comparison
+distinguishes them exactly as it does two tables in one silo. This
+entry was written reading "one namespace" as "one table".
+
+Pinned by `tests/unit/test_the_pushdown_guard_holds_on_gold.py`, with
+the entry's own step 4 run against it -- removing the comparison fails
+four tests -- and a second control: making gold put every type in one
+table, the shape this feared, fails two. **So if gold ever moves that
+way, the suite says so.**
+
+STILL NOT DONE is step 2, re-keying the comparison to "same object
+type". It is no longer urgent, and measuring first is what makes the
+second pair of eyes cheap.
 
 CORRECTED, September 23, BY THE CONTROL FOR ITS OWN TESTS
 (tests/unit/test_security_pushdown_guard.py). This entry first said
