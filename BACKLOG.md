@@ -259,7 +259,7 @@ have never been seen to pass. `npm run e2e` against a running server.
 ### Needs research, then a plan, then building
 
 ~~**What Query should contain.**~~ RESEARCHED AND PLANNED -- see
-QUERY_PLAN.md. Four parts, ordered by what they depend on.
+BLOCKING.md item 17. Four parts, ordered by what they depend on.
 
 INPUT DISCOVERABILITY IS THE NAMED PROBLEM: "a long standing
 challenge for NLIs", answered by contextual suggestions beside the

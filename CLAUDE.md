@@ -37,8 +37,10 @@ that have gone wrong repeatedly.
 9. **`TRIGGERS_AND_PLUGINS.md`** — two features that need designing
    before building, because both touch the security model and both
    are hard to retrofit. Neither is built.
-10. **`QUERY_PLAN.md`** — what the Query sub-app should contain, the
-   precedent behind each part, and which parts wait for a model.
+10. **`BLOCKING.md`** — the one planning file. Work that cannot be
+   done without a person: a decision, a product judgement, or a
+   machine nobody has. Everything else has been done and the document
+   it came from deleted. `QUERY_PLAN.md` was the second consumed.
 11. **`LAKE_METADATA_NOTE.md`** — what the data lake should hold
    besides data, and why the ontology is a COPY there rather than a
    home. Corrects an earlier conclusion in BACKLOG.md.

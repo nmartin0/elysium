@@ -32,6 +32,7 @@ numbers themselves.
 | document | outcome |
 | --- | --- |
 | `SCALABILITY.md` | both decisions already built; benchmark numbers moved into the code that cited them |
+| `QUERY_PLAN.md` | four unbuilt UI features, all product direction; its deferred MAC argument kept below |
 
 ---
 
@@ -226,7 +227,62 @@ statistical matching and truth discovery. These are not "should we do
 this well" questions; they are "is Elysium this product" questions,
 and they should not be picked off a list by whoever is next.
 
-## 17. Saved SELECTIONS
+## 17. What the Query screen should contain
+
+Four features, none built, from `QUERY_PLAN.md`. They are product
+direction rather than engineering: what a question box should offer
+somebody who has never used it.
+
+1. **Example questions from the deployment.** A deployment states what
+   its data is good for; nobody else can. NOT by reusing
+   `example_queries.yaml` as it stands -- its entries are user-paired
+   for the runner. Either a separate `ui_examples:` key or a
+   `for_display: true` marker on entries that qualify; the second is
+   smaller and keeps one list.
+2. **The question, read back** -- what the system understood.
+3. **Follow-on questions** after an answer.
+4. **History** of what this person has asked.
+
+Its own order: 1 and the cheap half of 3 need nothing and would help
+immediately.
+
+**Explicitly not to be built**, and the reasoning is worth keeping:
+clarifying questions before answering (an extra model call on a system
+where the model is already the slow part, for a problem nobody has
+reported) and a conversation thread (Elysium answers questions about
+an ontology; it is not a chat assistant, and threading makes "which
+generation answered this" much harder to state).
+
+**Blocked on:** product design, and there is no front-end agent now.
+
+## 18. A starter question can leak what MAC hides
+
+From `QUERY_PLAN.md`, kept because it is a security argument rather
+than a preference, and because feature 1 above cannot ship without
+answering it.
+
+The examples name specific ids:
+
+    - user_id: user_alice
+      query: "What are cust_001's recent transactions?"
+
+Alice can see `cust_001`; Bob cannot. Showing Bob that example tells
+him a customer called `cust_001` EXISTS. He cannot read it -- MAC
+still refuses -- but he has learned it exists from a system built
+specifically to refuse that. `get_field` on a hidden object returns
+`None`, indistinguishable from "no such object", ON PURPOSE.
+
+**And the `user_id` key does not solve it.** That is the deployment
+author's assertion about who should see what, not something
+`check_access` enforces. An author adding an example under the wrong
+user, or a user's grants changing later, produces a quiet leak that
+nothing detects.
+
+**Blocked on:** whether display examples must be written to name no
+real object at all, which is a constraint on deployment authors rather
+than a feature.
+
+## 19. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must

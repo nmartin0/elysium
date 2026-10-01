@@ -1077,7 +1077,7 @@ checking it found NOW.
       owner can decide this.
     - Whether one request pins one mirror snapshot (0.5.6).
     - Query's starter questions -- deferred because a starter can leak
-      what MAC hides (QUERY_PLAN part 1).
+      what MAC hides (BLOCKING.md item 18, was QUERY_PLAN part 1).
     - The context-rot fix (R2): three paths, measured, none chosen.
 
 ### Needs a capable model -- 2.2 first
@@ -1093,7 +1093,7 @@ checking it found NOW.
 ### Product features
 
     - Query: reading the question back, follow-on questions, history
-      (QUERY_PLAN 2-4).
+      (BLOCKING.md item 17, was QUERY_PLAN 2-4).
     - Saved SELECTIONS -- a set of objects rather than a question
       (BACKLOG).
     - The search bar's five unbuilt operators (UI 18).
@@ -1940,7 +1940,7 @@ means it can now reach the lake.
 
 ### 2.1 Query's two buildable parts
 
-QUERY_PLAN.md. Deployment-stated example questions, and keeping the
+BLOCKING.md item 17. Deployment-stated example questions, and keeping the
 last question in the box so refining one clause is the default.
 
 The deployment ALREADY states good questions, in
@@ -2327,7 +2327,7 @@ rather than a plan.
                                  exist at all
     2.1   Query's starters       DEFERRED on a leak: a starter naming
                                  an id says it exists. The shape of an
-                                 answer is in QUERY_PLAN.md
+                                 answer is in BLOCKING.md 18
 
 ### Blocked on something genuinely absent
 
