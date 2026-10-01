@@ -407,7 +407,7 @@ class IcebergMirrorSync(MirrorSync):
         # column, so drift_policy refuses rather than absorbing on the
         # strength of a check that did not happen.
         self._write_log = write_log
-        # OWNER ONLY (OPEN_RISKS item 2). Read access to this
+        # OWNER ONLY (the gold-is-worth-stealing risk). Read access to this
         # directory IS read access to every object type, region and
         # classification, with no audit entry -- the ontology's
         # security is applied when data is read THROUGH it, not to

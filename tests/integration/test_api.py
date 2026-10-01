@@ -2350,7 +2350,7 @@ def test_health_reports_silos_in_aggregate_not_by_name(client):
 
 
 def test_the_visible_schema_response_carries_no_binding(client):
-    # OPEN_RISKS item 5, the browser half. The response models filter
+    # the visible_schema risk, the browser half. The response models filter
     # per field, and this holds them to it: a model gains a key far
     # more easily than it loses one, and `storage` on a field dict
     # would put the customer's table name in every browser tab.
@@ -2387,7 +2387,7 @@ def test_health_leaks_nothing_about_the_data(client):
     for leaked in ("cust_", "password", "/home/", "sqlite", ".db"):
         assert leaked not in serialized, f"/health exposed {leaked!r}"
     # "holding", "clear" and "unknown" joined the vocabulary when
-    # quarantine became visible (OPEN_RISKS item 1). All three are
+    # quarantine became visible (the invisible-quarantine risk). All three are
     # FIXED WORDS -- no count, no table name -- which is what this
     # assertion guards: /health is unauthenticated, and a value that
     # varied with the data would be a leak however small.

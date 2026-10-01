@@ -22,7 +22,7 @@ and one row changed per sync:
 
 One file per sync, none reclaimed, growing at full table size --
 which is the copy-on-write behaviour ELT_ROADMAP already measured
-elsewhere in the same file. OPEN_RISKS item 3 says plainly that
+elsewhere in the same file. the unexpiring-snapshot risk says plainly that
 "expiry unreferences while ORPHAN CLEANUP is what actually reclaims
 bytes"; the roadmap stated the bound as fact anyway.
 

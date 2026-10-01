@@ -1,5 +1,5 @@
 """
-How many publications gold keeps (OPEN_RISKS item 3).
+How many publications gold keeps (the unexpiring-snapshot risk).
 
 THE RISK AS RECORDED: nothing expires anything, so a nightly
 deployment accumulates named publications forever.

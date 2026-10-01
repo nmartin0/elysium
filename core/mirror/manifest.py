@@ -71,8 +71,8 @@ PUBLISHABLE = ("ontology_schema.yaml", "data_silos.yaml", "policy.yaml")
 # block is where its credentials live: a SQLAlchemy URL carries its
 # password inline. `${VAR}` references make that avoidable and nothing
 # REFUSES a literal, so a deployment that typed one had it copied into
-# the lake -- which, since OPEN_RISKS item 2, we describe as part of
-# the security perimeter and nothing else.
+# the lake -- which, since the gold-is-worth-stealing risk, we treat
+# as part of the security perimeter and nothing else.
 #
 # AN ALLOW-LIST, FOR THE REASON STATED ABOVE ABOUT FILES. Redacting
 # keys that "look secret" is an exclusion list by another name, and it

@@ -9,7 +9,8 @@ does not fail loudly when it stops.
 
 WHAT IT ACTUALLY BREAKS, MEASURED RATHER THAN ASSUMED. The control for
 these tests (remove the guard, run them) showed the failure is NOT a
-widening, which is what OPEN_RISKS.md first recorded. check_access()
+widening, which is what the gold-layer risk register (consumed) first
+recorded. check_access()
 runs per candidate id unconditionally after the read, so MAC is
 enforced whatever the pushdown does. The pushdown exists to make the
 database return only permitted rows, which is what makes a LIMIT

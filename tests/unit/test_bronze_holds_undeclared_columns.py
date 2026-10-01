@@ -30,7 +30,8 @@ storage and lineage grounds. Its CONSEQUENCE was not written down:
 
 An undeclared column has no field grant, appears in no silver or gold
 table, and is invisible to every read path -- and is nonetheless
-copied to disk. OPEN_RISKS item 2 already says the lake directory is
+copied to disk. the gold-is-worth-stealing risk already says the lake
+directory is
 part of the security perimeter: read access to it is read access to
 everything in it, with no audit entry.
 

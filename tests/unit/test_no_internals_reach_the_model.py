@@ -1,5 +1,5 @@
 """
-What the agent is told, and what it is not (OPEN_RISKS item 5).
+What the agent is told, and what it is not (the visible_schema risk).
 
 THE RISK AS RECORDED: visible_schema() carries binding keys -- the
 silo, the table, the column, and the table a link is resolved through

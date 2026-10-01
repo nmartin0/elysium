@@ -193,7 +193,7 @@ retention margin shortened so expiry actually ran:
 
 One file per sync, none ever reclaimed, growing at full table size --
 exactly the copy-on-write behaviour measured above, and the two-
-snapshot limit does nothing about it. OPEN_RISKS item 3 already says
+snapshot limit does nothing about it. the unexpiring-snapshot risk already says
 "expiry unreferences while ORPHAN CLEANUP is what actually reclaims
 bytes"; this file stated the bound as fact anyway.
 

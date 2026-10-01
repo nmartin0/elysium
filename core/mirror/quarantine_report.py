@@ -1,4 +1,4 @@
-"""What the pipeline held back, and why (OPEN_RISKS item 1).
+"""What the pipeline held back, and why (the invisible-quarantine risk).
 
 THE PROBLEM THIS EXISTS FOR. A quarantined row is ABSENT from silver
 and therefore from gold, by design -- it failed a rule the deployment

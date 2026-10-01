@@ -358,7 +358,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         logger.warning(f"deleted index could not be synced ({e}); "
                        f"run python -m scripts.rebuild_deleted_index")
 
-    # WHO CAN READ THE LAKE (OPEN_RISKS item 2). Reported, not
+    # WHO CAN READ THE LAKE (the gold-is-worth-stealing risk). Reported, not
     # changed: an operator may have widened it deliberately -- a
     # backup user, a read-only analytics mount -- and silently
     # revoking that at startup would break a working deployment to

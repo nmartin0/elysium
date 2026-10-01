@@ -636,7 +636,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # needs approval is not configurable, "because a setting is
             # a thing someone turns off".
             identity_inference=(config.get("mirror") or {}).get("identity_inference", False),
-            # HOW MANY NAMED PUBLICATIONS GOLD KEEPS (OPEN_RISKS item
+            # HOW MANY NAMED PUBLICATIONS GOLD KEEPS (the gold-layer risk
+            # register item
             # 3). Thirty is a month of nightlies; 0 keeps every one,
             # which is what every deployment did before this.
             retain_publications=_retain_publications(config),

@@ -145,7 +145,8 @@ def _mirror_catalog(client):
 
 
 class TestWhatWasHeldBack:
-    """OPEN_RISKS item 1. A quarantined row is absent from silver BY
+    """the invisible-quarantine risk. A quarantined row is absent from
+    silver BY
     DESIGN -- it failed a rule the deployment declared -- but absence
     reads as LOSS: 4,000 rows where the source has 4,200 says nothing
     about whether 200 were rejected, dropped, or never there.

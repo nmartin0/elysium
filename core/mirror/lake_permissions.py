@@ -1,5 +1,5 @@
 """Who can read the lake, as a decision rather than a default
-(OPEN_RISKS item 2).
+(the gold-is-worth-stealing risk).
 
 WHAT THE LAKE IS NOW. Gold holds one table per object type, keyed by
 object id, conformed, deduplicated, joined across sources, with

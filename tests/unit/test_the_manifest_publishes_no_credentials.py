@@ -9,7 +9,7 @@ SQLAlchemy URL carries its password inline:
 
 `${VAR}` references make that avoidable and nothing REFUSES a literal,
 so a deployment that typed one had it copied into the lake. Since
-OPEN_RISKS item 2 we describe the lake as part of the security
+the gold-is-worth-stealing risk we describe the lake as part of the security
 perimeter: read access to that directory is read access to everything
 in it, with no audit entry.
 

@@ -1014,7 +1014,7 @@ checking it found NOW.
     commits hundreds behind dev -- 001FINDINGS to a 1,321-test suite,
     004FINDINGS to 120d1b2, ELYSIUM-FLAWS-2 to cb94943 -- so a good
     number are already fixed, and at least one is likely overstated in
-    the way OPEN_RISKS item 5 turned out to be.
+    the way the visible_schema risk turned out to be.
 
     FIRST TO CHECK, because they are the most severe and the least
     likely to have been touched by any work so far:

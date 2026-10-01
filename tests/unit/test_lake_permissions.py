@@ -1,5 +1,5 @@
 """
-Who can read the lake (OPEN_RISKS item 2).
+Who can read the lake (the gold-is-worth-stealing risk).
 
 GOLD CHANGED WHAT THE FILES ARE WORTH, and nobody decided that it
 should. The mirror used to be a scattered copy of source tables under

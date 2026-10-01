@@ -44,8 +44,9 @@ def open_mirror_catalog(mirror_dir: Path, storage: Mapping | None = None) -> Sql
     function every time it gains a key.
     """
     # CREATED IF ABSENT, AND OWNER-ONLY, through the one function that
-    # already decides that (OPEN_RISKS item 2, patch 395). Callers used
-    # to mkdir before constructing a catalog and each could have
+    # already decides that (the gold-is-worth-stealing risk, patch
+    # 395). Callers used to mkdir before constructing a catalog and
+    # each could have
     # chosen a different mode; the factory that opens the lake is the
     # right place for the rule about who may read it.
     make_private(mirror_dir)

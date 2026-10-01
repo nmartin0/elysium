@@ -1334,7 +1334,7 @@ class MirrorTableState(BaseModel):
     bronze_rows: int | None
     # HOW MANY ROWS THE RULES HELD BACK, which is what explains a
     # silver count lower than bronze's. Absence reads as loss unless
-    # something says otherwise (OPEN_RISKS item 1). The RULE that
+    # something says otherwise (the invisible-quarantine risk). The RULE that
     # caught the most of them is named too, because "12 rows held
     # back" is a fact and "12 rows held back by required:email" is a
     # thing somebody can act on.
@@ -2143,7 +2143,7 @@ def admin_mirror_route(request: Request,
                 catalog, f"bronze_{target.silo_name}.{target.table_name}",
             ),
             # WHAT WAS HELD BACK, beside the row counts it explains
-            # (OPEN_RISKS item 1). A quarantined row is absent from
+            # (the invisible-quarantine risk). A quarantined row is absent from
             # silver by design, and absence reads as LOSS: 4,000 rows
             # where the source has 4,200 says nothing about whether
             # 200 were rejected on purpose, dropped by a bug, or never

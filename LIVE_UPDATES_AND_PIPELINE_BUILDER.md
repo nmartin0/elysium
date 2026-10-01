@@ -231,7 +231,7 @@ computes:
              it was last read successfully
     bronze   last written, row count, which snapshot
     silver   rules declared, rows warned, rows QUARANTINED and the
-             rule that caught them (OPEN_RISKS.md item 1 -- this is
+             rule that caught them (the invisible-quarantine risk -- this is
              the display that makes quarantine visible)
     gold     last publication, the audit's verdict, row count
 
@@ -491,7 +491,7 @@ changes that data. Ordered by how badly the staleness shows.
   screen and wants it to be current.
       EVENT SOURCE: the startup and per-sync source checks.
 
-  QUARANTINE COUNTS, which do not have a panel yet (OPEN_RISKS item
+  QUARANTINE COUNTS, which do not have a panel yet (the gold-layer risk register item
   1). When they land they are live data by nature: rows disappearing
   from silver is the thing an operator must see happen.
       EVENT SOURCE: _write_quarantine, one place.

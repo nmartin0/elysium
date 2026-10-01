@@ -54,7 +54,8 @@ from core.ontology.field_types import arrow_type_for
 from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
 
-# HOW MANY NAMED PUBLICATIONS TO KEEP (OPEN_RISKS item 3). Thirty is a
+# HOW MANY NAMED PUBLICATIONS TO KEEP (the unexpiring-snapshot risk). Thirty
+# is a
 # month of nightly publications: long enough to answer "what did this
 # look like when the report was wrong", short enough that the list is
 # readable. A deployment can say otherwise; 0 keeps every one, which
@@ -77,7 +78,7 @@ class GoldResult:
     problems: list[str] = field(default_factory=list)
     skipped: str | None = None
     # How many named publications were forgotten to keep the list
-    # bounded (OPEN_RISKS item 3). See _forget_old_publications.
+    # bounded (the unexpiring-snapshot risk). See _forget_old_publications.
     forgotten_publications: int = 0
     # Identity resolution's own counts (GOLD-6), zero for a type that
     # declares no rule: entities formed from more than one source,
@@ -780,7 +781,7 @@ def _next_publication_number(table) -> int:
     exist.
 
     IT USED TO COUNT THEM, in two places, which was the same number
-    until retention started forgetting old ones (OPEN_RISKS item 3).
+    until retention started forgetting old ones (the unexpiring-snapshot risk).
     Then, with three kept, the next publication was numbered four,
     collided with a tag already there, and the sequence stalled at
     2, 3, 4 FOREVER -- publishing happily while never naming a new

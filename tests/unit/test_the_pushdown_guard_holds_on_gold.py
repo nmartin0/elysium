@@ -1,6 +1,6 @@
 """
 The MAC pushdown guard still distinguishes storages on gold
-(OPEN_RISKS item 4, "the one genuinely dangerous line in GOLD-3").
+(the MAC-pushdown-on-gold risk, "the one genuinely dangerous line in GOLD-3").
 
 THE RISK AS RECORDED:
 

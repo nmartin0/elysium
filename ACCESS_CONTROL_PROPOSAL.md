@@ -116,7 +116,7 @@ act of administration.
 
 This is not only convenience. The classic leak is derived data that
 quietly lost its classification on the way -- which is exactly the
-risk gold created (OPEN_RISKS.md item 2). Propagation closes it by
+risk gold created (the gold-is-worth-stealing risk). Propagation closes it by
 construction rather than by vigilance.
 
 ## 3.4 A scanner that PROPOSES tags, never applies them
@@ -161,7 +161,7 @@ retag a field can declassify it. In Elysium this is a new action --
 Their own guidance flags "planning pipeline service-principal
 exemptions without overexposing data". Elysium's sync reads sources
 directly and necessarily sees every value, tagged or not. That is the
-same trust boundary as OPEN_RISKS.md item 2, now with a second reason
+same trust boundary as the gold-is-worth-stealing risk, now with a second reason
 to write it into INSTALL.md rather than leave it implied.
 
 ---
