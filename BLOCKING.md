@@ -34,6 +34,8 @@ numbers themselves.
 | `SCALABILITY.md` | both decisions already built; benchmark numbers moved into the code that cited them |
 | `QUERY_PLAN.md` | four unbuilt UI features, all product direction; its deferred MAC argument kept below |
 | `LAKE_METADATA_NOTE.md` | three of its four answers were built; the fourth -- a reader -- is built here. Its one deferral kept below |
+| `AUDIT_INTAKE.md` | superseded by `AUDIT_CHECKLIST.csv` by its own words; all 67 findings verified present there first; its alias table folded into the ten rows it concerns |
+| `AUDIT_INTAKE_PIPELINE.md` | same; 50 ids checked, every one tracked |
 
 ---
 

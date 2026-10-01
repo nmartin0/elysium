@@ -1,6 +1,6 @@
 id,set,source,severity,claim,where,probe,status
 F-01,001,001FINDINGS,HIGH,"coerce() rejects true/false; mirror sync fails permanently, misreported as drift",core/ontology/field_types.py,RP,"NOT REPRODUCED patch 456: coerce() accepts true/false/True/TRUE/1/0/yes/no/t/f. The second half does not hold either - an unparseable boolean is reported as drift naming the column, the declared type and an example value, which is accurate rather than misleading"
-F-02,001,001FINDINGS,HIGH,cross-type actions unauthorisable by any valid policy,write_mediator.py:1236 + policy_validation.py:51,RP,"reproduced 24 Sep, owner decision pending"
+F-02,001,001FINDINGS,HIGH,cross-type actions unauthorisable by any valid policy,write_mediator.py:1236 + policy_validation.py:51,RP,"reproduced 24 Sep, owner decision pending || ALSO: F-03, and the roadmap's F-02. The unauthorisable write: grant is ONE issue under three names -- see BLOCKING.md item 1"
 F-03,001,001FINDINGS,HIGH,KeyError 'mutations' on a cross-type action containing a delete,write_mediator.py cross-type loop,RP,"reproduced 24 Sep"
 F-04,001,001FINDINGS,MED,chat(*args **kwargs) erases the typed LLM signature at the wrapper,core/llm,IN,"REPORTED DONE on the agentloop branch, which is ahead of dev and not merged, so NOT verifiable from here yet. Their words: ""**F-04 IS ALREADY FIXED. Remove it.** `ConcurrencyLimitedLLMAdapter."". Recorded by LLM1 so nobody spends a session re-finding it (COORD-1)"
 F-05,001,001FINDINGS,MED,rate-limit check and increment are separate transactions,api rate limiting,IN,"FIXED patch 464. The security agent wrote the atomic try_record_query and covered it with 17 tests, but could not change the one line that calls it - api/routes.py is shared. The route did check-then-act across TWO transactions; they measured two callers both admitted at 19 of 20. Now wired, with a test that pins the wiring, which their 17 could not"
@@ -28,7 +28,7 @@ F-24,001,001FINDINGS,LOW,Claude SDK adapter passes the system prompt as argv (~1
 F-25,001,001FINDINGS,HIGH,generation numbers repeat after restart and are consumed by rejected loads,deployment_loader.py,RP,"NOT REPRODUCED patch 457, handed back by LLM3 as backend-owned. build_generation() replaces the per-process number with one allocated from config_history.db, whose own comment describes this exact failure. Measured across a simulated restart: 1,2,3 then 4,5,6 - no repeat. Covered by test_generation_numbering.py, which exercises a restart"
 F-26,001,001FINDINGS,HIGH,"mirror overlay returns only the latest edit, serving stale values",write_log.py,RP,"= PA001-A4, fixed 529b235"
 F-27,001,001FINDINGS,HIGH,"crash recovery loses deletes, reports success, writes a fabricated create",write path recovery,RP,"ALREADY FIXED (patch 311) - verified: write_mediator.py dispatch is exhaustive and names F-27 at three sites"
-F-28,001,001FINDINGS,MED,"rebuild_deleted_index() documented as the recovery path, never called",write_log.py,IN,"fixed patch 397"
+F-28,001,001FINDINGS,MED,"rebuild_deleted_index() documented as the recovery path, never called",write_log.py,IN,fixed patch 397 || ALSO: the roadmap's F-28. A deleted index never rebuilt is one issue under two names
 F-29,001,001FINDINGS,MED,sync timestamp taken after the read: a blind window,iceberg_sync.py,RP,"= PA001-A5 (partly fixed)"
 F-30,001,001FINDINGS,MED,create_colleague_user.py bypasses create_debug_user.py's safety guard,scripts/,IN,"REPORTED DONE on the security branch, which is ahead of dev and not merged, so NOT verifiable from here yet. Their words: ""## Session 2 — F-30 CLOSED"". Recorded by LLM1 so nobody spends a session re-finding it (COORD-1)"
 F-31,001,001FINDINGS,LOW,ObjectNotes.submit() is the only error handler ignoring session expiry,ui/,IN,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
@@ -48,26 +48,26 @@ N-03,001,001FINDINGS,NOFIX,Protocol vs ABC split (document the Protocol side),co
 004-S1,004,004FINDINGS,MED,session tokens stored in plaintext,core/auth,IN,"= E-03, owner decision"
 004-S2,004,004FINDINGS,MED,expired sessions never purged,core/auth,IN,"= E-03"
 E-01,E2,ELYSIUM-FLAWS-2,SEC,validation errors reflect request bodies including secrets,api/app.py,IN,"ALREADY FIXED (patch 322-324) - verified by LLM1: api/app.py has a validation_errors_without_values handler. Reported by LLM3, who found seven of their nineteen already done"
-E-02,E2,ELYSIUM-FLAWS-2,SEC,unauthenticated disk exhaustion via login_attempts (100 KB -> 16.3 MB),core/auth,RP,"ALREADY FIXED (patch 311) - verified: login_attempt_tracker prunes. LLM3 corrected their own claim afterwards: the ATTACK is closed, the class is not"
-E-03,E2,ELYSIUM-FLAWS-2,SEC,"session tokens in plain text, never reaped",core/auth,IN,"owner decision (forces re-login)"
+E-02,E2,ELYSIUM-FLAWS-2,SEC,unauthenticated disk exhaustion via login_attempts (100 KB -> 16.3 MB),core/auth,RP,"ALREADY FIXED (patch 311) - verified: login_attempt_tracker prunes. LLM3 corrected their own claim afterwards: the ATTACK is closed, the class is not || ALSO: REVISE finding 1. Unbounded login attempts is one issue under two names"
+E-03,E2,ELYSIUM-FLAWS-2,SEC,"session tokens in plain text, never reaped",core/auth,IN,"owner decision (forces re-login) || ALSO: 004 S1+S2, REVISE 6a+6b. Session tokens in plaintext and never reaped is ONE issue under four names"
 E-04,E2,ELYSIUM-FLAWS-2,SEC,CSRF token compared with != rather than compare_digest,api/csrf,IN,"ALREADY FIXED (patch 321) - verified: csrf_middleware.py uses secrets.compare_digest, with a comment naming E-04"
 E-05,E2,ELYSIUM-FLAWS-2,SEC,no Permissions-Policy header,api/app.py,IN,"ALREADY FIXED - verified: api/app.py sets a Permissions-Policy header on every response"
 E-06,E2,ELYSIUM-FLAWS-2,SEC,failure kinds are runtime exception class names,api,IN,"owner decision"
 E-07,E2,ELYSIUM-FLAWS-2,CORR,a link's id type depends on the read path,mediator,IN,"= PA001-G6; owner decision"
-E-08,E2,ELYSIUM-FLAWS-2,CORR,17 unit tests fail on a fresh clone,tests/unit,RP,"ALREADY FIXED - verified: the whole suite passes on a fresh clone, checked on every patch today"
-E-09,E2,ELYSIUM-FLAWS-2,CORR,no CI of any kind,.github/,IN,"audit set 2 says CI added at 3799d90"
+E-08,E2,ELYSIUM-FLAWS-2,CORR,17 unit tests fail on a fresh clone,tests/unit,RP,"ALREADY FIXED - verified: the whole suite passes on a fresh clone, checked on every patch today || ALSO: REVISE finding 3. Unit tests failing on a fresh clone is one issue under two names"
+E-09,E2,ELYSIUM-FLAWS-2,CORR,no CI of any kind,.github/,IN,audit set 2 says CI added at 3799d90 || ALSO: REVISE finding 2. No CI is one issue under two names
 E-10,E2,ELYSIUM-FLAWS-2,CORR,mirror read path 8-10x slower than live; ~86% catalog load,mirror_adapter.py,RP,unverified
 E-11,E2,ELYSIUM-FLAWS-2,CORR,model calls have no deadline and discard token counts,core/llm,IN,"partly addressed since"
 E-12,E2,ELYSIUM-FLAWS-2,CORR,no graceful shutdown; the executor is never drained,api/app.py,IN,unverified
 E-13,E2,ELYSIUM-FLAWS-2,CORR,sources are not checked at startup; health_check() never called,deployment_loader.py,IN,"addressed patch 385?"
 E-14,E2,ELYSIUM-FLAWS-2,CORR,"MemoryGuard is built, tested and never used",core/memory,IN,"owner decision: wire or delete"
-E-15,E2,ELYSIUM-FLAWS-2,DOCS,requirements.txt says a lockfile is deferred; both lockfiles exist,requirements.txt,MC,unverified
-E-16,E2,ELYSIUM-FLAWS-2,DOCS,README says the pending-write store is in-process memory,README.md,MC,unverified
+E-15,E2,ELYSIUM-FLAWS-2,DOCS,requirements.txt says a lockfile is deferred; both lockfiles exist,requirements.txt,MC,unverified || ALSO: REVISE 5a. The stale lockfile claim is one issue under two names
+E-16,E2,ELYSIUM-FLAWS-2,DOCS,README says the pending-write store is in-process memory,README.md,MC,unverified || ALSO: REVISE 5b. The pending-write store described as in-process is one issue under two names
 E-17,E2,ELYSIUM-FLAWS-2,DOCS,README says links cannot cross data silos; they can,README.md,MC,unverified
-E-18,E2,ELYSIUM-FLAWS-2,DOCS,SECURITY_ARCHITECTURE heads a closed hole as THE REAL HOLE,SECURITY_ARCHITECTURE.md,MC,unverified
+E-18,E2,ELYSIUM-FLAWS-2,DOCS,SECURITY_ARCHITECTURE heads a closed hole as THE REAL HOLE,SECURITY_ARCHITECTURE.md,MC,unverified || ALSO: REVISE 5c. The SECURITY_ARCHITECTURE heading is one issue under two names
 E-19,E2,ELYSIUM-FLAWS-2,DOCS,UI_ROADMAP wrong on log rotation and migrations; the true gap is narrower,UI_ROADMAP.md,MC,"FIXED by LLM4 on the frontend branch (patches 4-9), reported in REQUESTS_frontend.md"
 E-20,E2,ELYSIUM-FLAWS-2,DOCS,six roadmap files overlap plus four *_PLAN.md,docs,MC,"owner decision: propose only"
-E-21,E2,ELYSIUM-FLAWS-2,OWNER,repository visibility vs LICENSE,LICENSE,IN,"owner decision; source-available is a recognised pattern"
+E-21,E2,ELYSIUM-FLAWS-2,OWNER,repository visibility vs LICENSE,LICENSE,IN,owner decision; source-available is a recognised pattern || ALSO: the roadmap's entry. Repository visibility versus LICENSE is one issue under two names
 REVISE-7,E2,REVISE-THIS-FILE,GUARD,"section 7: 7 claims verified correct (SQL injection, read-only conn, timing, lockout, uniform denial, CSRF, headers)",various,RP,"negative controls; a break is a regression"
 CSS-S1-01,UI,AUDIT-09-css,DEFECT,"one selector defined twice; the first is dead and its comment describes removed behaviour",ui/ app.css,IN,"ALREADY FIXED before LLM4 started - reported by them, spot-checked by LLM1 on the frontend branch"
 CSS-S1-02,UI,AUDIT-09-css,DEFECT,cascade-layer architecture declared and never used; 6 of 7 layers empty in the build,ui/ layers.css,IN,"REWORDED, not just closed. LLM4 measured the BUILT bundle: vendor 2954, components 199, tokens 2, UNLAYERED 0. Neither prescribed action applies - nothing to migrate, and deleting a declaration every rule obeys would invert the cascade. Four layers are empty and layers.css documents three of those as deliberate. The real gap was a missing guard, added in layers.test.ts. Verified by LLM1: every stylesheet is wrapped and layers.css says overrides "should stay empty by design""

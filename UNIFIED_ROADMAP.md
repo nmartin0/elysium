@@ -390,7 +390,8 @@ resolution, so gold for it is a straight conform.
           engines and changing nothing else would have shown no
           improvement at all.
   INFER-1. A vLLM ADAPTER, and raising the concurrency limit
-          (measured; see _default_concurrency). AUDITED: agent queries run through an
+          (measured; see _default_concurrency in
+          deployment_loader). AUDITED: agent queries run through it.
           explicit ThreadPoolExecutor sized from
           max_concurrent_requests, DEFAULT 4, while ordinary reads use
           Starlette's own pool of 40 -- so reads scale to ~40 and agent
@@ -911,9 +912,9 @@ checking it found NOW.
     THE WORKING LIST IS AUDIT_CHECKLIST.csv: one row per verifiable
     claim, 273 rows, every id unique, with source, severity, the claim,
     where to look, the probe that reproduces it and a status. 203
-    unverified. The two prose intakes (AUDIT_INTAKE.md,
-    AUDIT_INTAKE_PIPELINE.md) explain; the CSV is what gets worked
-    through.
+      unverified. Two prose intakes once explained it; both have been
+      consumed into the CSV and deleted. The CSV is what gets worked
+      through.
 
     ONE GAP TO CLOSE WITH THE OWNER: the ui/ audits supplied are 09 and
     10 of a series of ten. They cite specific findings from audits 01,
@@ -925,7 +926,7 @@ checking it found NOW.
 
     A SECOND SET arrived the same day: 14 files, 13,360 lines, pinned to
     a598ed0, with 26 reproduction probes printed in full. Recorded in
-    AUDIT_INTAKE_PIPELINE.md. 154 distinct ids, and the ids understate
+    the consumed pipeline intake. 154 distinct ids, and the ids understate
     it: the test tier it ships encodes 57 separately failing
     behaviours, F6 and A15-A18 are eight findings under two headings,
     and the dirty-data zoo is 25 cases of which 20 behave wrongly. Over
@@ -1004,7 +1005,7 @@ checking it found NOW.
 ### AUDIT INTAKE, 24 September -- 78 findings, none yet checked
 
     Six audit files arrived and every finding in them is recorded in
-    AUDIT_INTAKE.md, which also maps the eleven issues that appear
+    the consumed intake, whose map of the eleven issues that appear
     under two or three different IDs across files.
 
     NOTHING IS ON THIS ROADMAP FROM THEM YET, deliberately. A finding
