@@ -482,7 +482,7 @@ transitively. **Eighteen public functions in `core/` are unreachable.**
 | --- | --- |
 | `reauthorize_conditions` | re-checks a SAVED filter against the caller's current schema |
 | `AgentLoop.resume` | resuming a query after a write decision |
-| `matching.disposition` | and it has no tests either |
+| `matching.disposition` | the propose-versus-review threshold |
 | `PendingWriteStore.claim` | claiming a persisted approval |
 
 **`reauthorize_conditions` is the one with consequences.** Its
@@ -495,7 +495,19 @@ built to say so is called by nothing.
 Wiring it changes the shape of an API response, so it is a decision
 rather than a fix, and it is recorded rather than taken.
 
-## The first attempt was wrong, and the way it was wrong matters
+## Three ways this was wrong before it was right
+
+**It ignored imports.** The first graph collected name and attribute
+references but not `import` statements, so anything only ever imported
+looked unreachable -- `run_sync` imports `SplinkMatcher`, and the
+whole matching module appeared dead.
+
+**Its caller grep required parentheses.** `disposition` is a PROPERTY.
+Patch 481 recorded it as having no tests; it has three assertions in
+`test_probabilistic_matching.py`, which the grep could not match
+either. All four have exactly one test file, and zero callers.
+
+**And the first attempt was wrong in a third way**
 
 It flagged every function called only within its own file -- including
 `escalation_problem`, the rule that you cannot grant what you do not
