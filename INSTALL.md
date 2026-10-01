@@ -11,7 +11,12 @@ actually built and reviewed; this file is purely operational.
 
 ## 1. Prerequisites
 
-- **Python 3.10 or later**
+- **Python 3.12 or later.** This said 3.10, and nothing has ever run
+  on it: 26 modules import `datetime.UTC`, which is 3.11 and later, so
+  3.10 cannot even import the package. `pyproject.toml` has said
+  `requires-python = ">=3.12"` the whole time, and the two disagreed.
+  3.12 is what the locks are generated on and 3.13 is what this is
+  developed against day to day.
 - **Node.js 22.22.2 or later (22.x, 24.15.0+, or 26+)** for the `ui/` frontend -- see `ui/package.json`'s own `engines` field for the exact, binding constraint (driven by `jsdom`'s own requirement). If you use `nvm`, `ui/.nvmrc` picks the right version automatically (`nvm use`, from inside `ui/`).
 - **[Ollama](https://ollama.com)** installed and running locally
 - Enough free RAM for whatever model you choose to run

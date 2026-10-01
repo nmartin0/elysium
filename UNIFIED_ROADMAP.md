@@ -656,7 +656,15 @@ checking it found NOW.
        E-08: find the writers (run each file alone, list what appears),
        give them their own directories -- then move CI's "created
        nothing" step after the integration tests.
-   1d. PYTHON 3.10: INSTALL.md says "3.10 or later"; the locks were
+     1d. ~~PYTHON 3.10~~ SAID 3.12, patch 479 -- the second option, and
+         the first was never available. TWENTY-SIX modules import
+         `datetime.UTC`, which is 3.11 and later, so 3.10 cannot import
+         the package at all: a CI matrix proving it would have proved
+         something false. INSTALL.md now names the version pyproject has
+         required all along, and a test holds the two files together.
+         1d (as recorded). INSTALL.md says "3.10 or later"; the locks
+         were generated on 3.12 and nothing has ever run on 3.10. Test
+         it (a CI matrix, with locks valid for both) or say 3.12.
        generated on 3.12 and nothing has ever run on 3.10. Test it (a CI
        matrix, with locks valid for both) or say 3.12.
     2. ~~E-09~~ WRITTEN, patch 319 -- .github/workflows/ci.yml, every
