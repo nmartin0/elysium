@@ -192,8 +192,22 @@ def check_mirror(catalog, schema: dict | None = None,
     if schema is not None:
         _check_declared_columns(catalog, schema, silver, report)
 
+    _check_changelog_names_real_objects(catalog, silver, report)
+
     if warehouse_dir is not None:
-        _check_catalog_covers_warehouse(catalog, warehouse_dir, silver | bronze, report)
+        # EVERYTHING THE CATALOG LISTS, not just the source layers.
+        # Passing `silver | bronze` meant every gold table and every
+        # changelog table on disk was reported as "data the catalog
+        # does not know about" -- on a healthy deployment, every run.
+        # They are listed; this check simply was not told about them.
+        #
+        # The third false alarm of this shape: PA001-I1 reported gold
+        # as having no bronze counterpart, PA001-A18 checked the wrong
+        # table for a declared column. A check that cries wolf on a
+        # working mirror teaches operators to skip it, which is worse
+        # than not having it.
+        _check_catalog_covers_warehouse(
+            catalog, warehouse_dir, _every_catalogued_table(catalog), report)
 
     return report
 
@@ -304,6 +318,96 @@ def _row_count(catalog, identifier: str) -> "int | None":
         return None
 
 
+def _check_changelog_names_real_objects(catalog, silver: set[str],
+                                         report) -> None:
+    """Every changelog entry names an object the table held.
+
+    BACKLOG.md left this explicitly unchecked: "whether every
+    changelog entry names an object that existed. The changelog is
+    append-only history whose row count deliberately matches nothing,
+    so it needs its own reasoning rather than an extension of these
+    rules."
+
+    THE REASONING. An id in the changelog is accounted for if silver
+    still holds it, OR if the changelog itself records a DELETE for
+    it. Anything else is history describing an object that is not
+    there and was never recorded as leaving -- which means either the
+    changelog gained an entry for something that never existed, or a
+    row vanished from silver without the deletion being written.
+
+    A ROW COUNT PROVES NOTHING HERE, which is why this is its own
+    function. The changelog grows forever while silver holds only the
+    current rows; the two are SUPPOSED to disagree, and the existing
+    bronze-versus-silver comparison would report every healthy
+    deployment.
+
+    QUIET WHEN THERE IS NO CHANGELOG. A deployment that has synced
+    once has silver and no history yet, and that is not a fault.
+    """
+    from core.mirror.changelog import DELETE
+
+    for identifier in sorted(silver):
+        silo, table = identifier.split(".", 1)
+        changelog_identifier = f"changelog_{silo}.{table}"
+        try:
+            entries = catalog.load_table(
+                changelog_identifier).scan().to_arrow().to_pylist()
+        except Exception:  # noqa: BLE001 - absent or unreadable, see below
+            # NOT REPORTED. A changelog that cannot be read at all is
+            # already covered by the catalog-versus-warehouse check,
+            # and a changelog that does not exist yet is ordinary.
+            continue
+        if not entries:
+            continue
+
+        id_column = _changelog_id_column(entries[0])
+        if id_column is None:
+            report.note(
+                f"{changelog_identifier}: no id column, so its entries "
+                f"cannot be matched to any object"
+            )
+            continue
+
+        try:
+            live = {
+                str(row[id_column])
+                for row in catalog.load_table(
+                    identifier).scan().to_arrow().to_pylist()
+                if id_column in row
+            }
+        except Exception:  # noqa: BLE001 - reported by the checks above
+            continue
+
+        deleted = {str(e[id_column]) for e in entries
+                   if e.get("_change") == DELETE}
+        named = {str(e[id_column]) for e in entries}
+        unaccounted = sorted(named - live - deleted)
+        if unaccounted:
+            shown = ", ".join(repr(value) for value in unaccounted[:5])
+            report.note(
+                f"{changelog_identifier}: {len(unaccounted)} id(s) in the "
+                f"history are not in {identifier} and were never recorded "
+                f"as deleted -- {shown}"
+            )
+
+
+def _changelog_id_column(entry: dict) -> "str | None":
+    """The column a changelog entry identifies its object by.
+
+    NAMED BY ELIMINATION rather than assumed: the changelog carries the
+    source row's own columns plus `_change` and the lineage columns, so
+    the id is whichever column the silver table uses as its key. The
+    first non-system column ending in `id` is the convention this
+    project already follows everywhere else.
+    """
+    for column in entry:
+        if column.startswith("_"):
+            continue
+        if column == "id" or column.endswith("_id"):
+            return column
+    return None
+
+
 def _check_declared_columns(catalog, schema: dict, silver: set[str],
                              report: IntegrityReport) -> None:
     """Every field the ontology declares should exist in silver.
@@ -375,6 +479,20 @@ def _check_declared_columns(catalog, schema: dict, silver: set[str],
                     f"{object_type}.{field_name}: declared but column {column!r} "
                     f"is missing from {block.get('silo')}.{block.get('table')}"
                 )
+
+
+def _every_catalogued_table(catalog) -> set[str]:
+    """Every table the catalog lists, in every namespace.
+
+    BY ASKING THE CATALOG rather than by listing the namespaces we
+    expect. A namespace nobody thought of -- a new layer, a rename --
+    would otherwise be reported as unknown data the moment it appears.
+    """
+    tables: set[str] = set()
+    for namespace in catalog.list_namespaces():
+        for identifier in catalog.list_tables(namespace):
+            tables.add(".".join(identifier))
+    return tables
 
 
 def _check_catalog_covers_warehouse(catalog, warehouse_dir: Path,
