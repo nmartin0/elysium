@@ -203,7 +203,7 @@ That ties triggers to the sync and gives a natural, already-scheduled
 moment — no new scheduler, which keeps `api/reload.py`'s decision
 intact.
 
-## SUPERSEDED IN PART -- see THIRD_PARTY_EXTENSIONS.md
+## SUPERSEDED IN PART -- see BLOCKING.md item 23 (THIRD_PARTY_EXTENSIONS.md
 
 The plugin half of this document assumed plugins could run in-process,
 administrator-vetted, the way Superset ships extensions. A later

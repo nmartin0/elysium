@@ -2,8 +2,9 @@
 
 Migrating the backend from fixed-at-boot to reloadable-while-running.
 
-Written before anyone starts building, like OBJECT_EXPLORER_PLAN.md and
-UI_ROADMAP.md's Vertex-lite record. The mechanism IS the design here;
+Written before anyone starts building, like the object-explorer plan
+(consumed; BLOCKING.md item 22) and UI_ROADMAP.md's Vertex-lite
+record. The mechanism IS the design here;
 the features that need it are comparatively simple once it exists.
 
 **THE PROBLEM, stated once.** Elysium reads `policy.yaml`,

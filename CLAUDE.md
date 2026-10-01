@@ -26,7 +26,7 @@ that have gone wrong repeatedly.
    be gated like users. Records one REAL HOLE (Elysium enforces
    no-read-up and not no-write-down), what would be dangerous, and
    a build order. Nothing in it is built.
-7. **`THIRD_PARTY_EXTENSIONS.md`** — how a third party extends Elysium
+7. **(consumed; `BLOCKING.md` item 23)** — how a third party extends Elysium
    when every component is assumed hostile. Records why module
    federation is DISQUALIFIED, and that a third-party adapter is just
    a silo. Nothing in it is built.
@@ -50,7 +50,7 @@ that have gone wrong repeatedly.
 12. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
-13. **`UI_ROADMAP.md`**, `ROADMAP.md`, `OBJECT_EXPLORER_PLAN.md`,
+13. **`UI_ROADMAP.md`**, `ROADMAP.md`, `(consumed; BLOCKING.md 22)` (was OBJECT_EXPLORER_PLAN.md`,
    `IDEAS.md` — the REASONING, not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written
    so a fresh session starts with the decisions made, not

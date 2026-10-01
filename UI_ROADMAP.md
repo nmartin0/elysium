@@ -81,7 +81,7 @@ this is where it shows, before four other screens depend on them.
 **Verifiable:** a role with fewer grants sees strictly fewer fields,
 and the same schema rendered for two roles differs.
 
-### 2. Object Explorer — see OBJECT_EXPLORER_PLAN.md
+### 2. Object Explorer — see BLOCKING.md item 22
 
 Expanded into its own file: it is the largest piece of this phase, it
 needs backend work that does not exist yet, and nine design questions

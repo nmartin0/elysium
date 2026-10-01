@@ -43,7 +43,8 @@ numbers themselves.
 | `GOLD_MIGRATION_SURVEY.md` | every file it named was reworked; its proposed shape IS `build_gold_view`. Its parity test exists and passes (42) |
 | `ACCESS_CONTROL_PROPOSAL.md` | not built, and a change to what a grant MEANS. Below |
 | `CONFIG_ROUND_TRIP_AND_UI_KIT.md` | not built; needs a dependency decision and product direction. Below |
-# Blocked on a decision
+| `OBJECT_EXPLORER_PLAN.md` | phases 1 and 2 (backend) built, and the blocker they existed to remove is gone -- `in` and `not_in` are in the filter vocabulary. Phases 3-5 are frontend; below |
+| `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |# Blocked on a decision
 
 ## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 
@@ -370,7 +371,44 @@ answers before it is even possible.
 **Blocked on:** that dependency call, and on whether configuration
 should be editable from the UI at all.
 
-## 22. Saved SELECTIONS
+## 22. Object Explorer phases 3 to 5
+
+Phases 1 and 2 are built. **The blocker they existed to remove is
+gone:** the plan opens with "our filter is equality only ... so
+'region is us-west OR us-east' is not expressible -- which means
+clicking two bars on a chart cannot be expressed either." `core/filters.py`
+now has `in` and `not_in`, so it is.
+
+What remains is frontend: the table, the charts, and saving and acting
+on a selection. The last of those is the same thing as item 23 below.
+
+**Blocked on:** product design, and there is no front-end agent.
+
+## 23. A plugin API, and the reason module federation is not it
+
+`THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
+is built, and whether Elysium should have them at all is a product
+question.
+
+**ITS MOST IMPORTANT FINDING IS WORTH KEEPING WHOLE**, because it is
+the kind of thing a later reader would otherwise rediscover by
+shipping it:
+
+> A federated module runs **in your page, in your origin**. It gets
+> the same DOM, the same cookies, the same `localStorage`, and the
+> same authenticated access to every `/api/*` route as Elysium itself.
+> The federation frameworks say so themselves -- they "do not claim
+> that same-realm JavaScript is a security sandbox".
+
+Module federation is the obvious answer and the wrong one. The design
+proposes JSON-RPC 2.0 over `postMessage` instead, a third-party
+adapter as a SILO, and ontology fragments declared as DATA rather than
+code.
+
+**Blocked on:** whether to have an extension story at all. Everything
+downstream of that is design work that cannot start first.
+
+## 24. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must

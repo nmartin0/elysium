@@ -1,7 +1,7 @@
 # Backlog
 
 **The one list.** Everything open, gathered from ROADMAP.md,
-UI_ROADMAP.md, IDEAS.md, OBJECT_EXPLORER_PLAN.md and
+UI_ROADMAP.md, IDEAS.md, the object-explorer plan (consumed) and
 HOT_RELOAD_PLAN.md, which had accumulated separate lists that drifted
 apart.
 

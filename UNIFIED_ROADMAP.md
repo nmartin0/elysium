@@ -1109,7 +1109,7 @@ checking it found NOW.
 
 ### Larger designs, written and unbuilt
 
-    - The plugin API (3.1, THIRD_PARTY_EXTENSIONS).
+    - The plugin API (3.1, BLOCKING.md item 23).
     - The help assistant (3.25).
     - Fusion and identity -- the gold layer (3.6).
     - Bootstrapping a deployment from a manifest (LAKE_METADATA_NOTE).
@@ -2021,7 +2021,7 @@ automation's proposal.
 ### 3.1 The plugin API
 
 **DESIGNED UNDER A STRICTER PREMISE -- see
-THIRD_PARTY_EXTENSIONS.md.** Every component untrusted, first-party
+BLOCKING.md item 23.** Every component untrusted, first-party
 included. Module federation is DISQUALIFIED; a third-party adapter is
 a SILO; the channel comes before the boundary.
 
@@ -2348,7 +2348,7 @@ rather than a plan.
 
 ### Designed, unbuilt, and worth VERIFYING before building
 
-    3.1   the plugin API         THIRD_PARTY_EXTENSIONS.md
+    3.1   the plugin API         BLOCKING.md 23 (THIRD_PARTY_EXTENSIONS.md
     3.6   fusion and identity    FUSION_AND_IDENTITY.md
     3.3   schema migrations      no design yet
 
