@@ -420,7 +420,8 @@ failures and I knew that file had tests. It was in the gap.
 patch 472 and I am leaving it visible rather than deleting it:
 
 > The write-path RBAC gate -- the check that decides whether a caller
-> may execute an action at all -- is caught by exactly ONE test. The twelve missing files contain a SECOND catcher. It is two, not
+> may execute an action at all -- is caught by exactly ONE test. The twelve
+> missing files contain a SECOND catcher. It is two, not
 one, and the argument that followed was built on an artefact of my
 own arithmetic rather than on the suite.
 
@@ -450,3 +451,54 @@ pass costs most and where the fix is recent: the write-path
 chokepoint, quarantine policy (warn/quarantine/refuse), the drift
 refusal, the partial-read guard, session expiry, and the two opt-in
 text rules. Each needs a full-suite run against a reverted fix.
+
+
+---
+
+# Reachability sweep: what is built and reached by nothing
+
+Six times this pattern turned up by accident -- a record nothing reads
+(NEW-7), an adapter nothing constructs (AL-R1), an atomic method the
+route ignored (F-05), retention properties nothing acted on (477), a
+repair tool the failure never mentioned (475), a changelog check that
+did not exist. Each was green. None was doing anything.
+
+So: a call graph over `core/`, `api/`, `adapters/` and `scripts/`,
+seeded from every name those entry points mention and walked
+transitively. **Eighteen public functions in `core/` are unreachable.**
+
+## Most are explained
+
+    is_rate_limited, record_query   what patch 464 superseded; kept
+                                    deliberately, and its tests say so
+    history_for                     NEW-7, the gold-history reader
+    pass_at_k, plug_in_pass_hat_k   evaluation helpers, used by the
+                                    bench rather than the product
+    get_field_info, get_id_field    schema accessors with other spellings
+
+## Four are built, tested, and reached by nothing
+
+| | |
+| --- | --- |
+| `reauthorize_conditions` | re-checks a SAVED filter against the caller's current schema |
+| `AgentLoop.resume` | resuming a query after a write decision |
+| `matching.disposition` | and it has no tests either |
+| `PendingWriteStore.claim` | claiming a persisted approval |
+
+**`reauthorize_conditions` is the one with consequences.** Its
+docstring says "a saved artifact is a request, never an authority",
+and `/api/saved-views` returns `view.conditions` verbatim. A view
+saved when the caller could see a field is handed back unchanged after
+they lose it, with nothing saying anything was dropped. The method
+built to say so is called by nothing.
+
+Wiring it changes the shape of an API response, so it is a decision
+rather than a fix, and it is recorded rather than taken.
+
+## The first attempt was wrong, and the way it was wrong matters
+
+It flagged every function called only within its own file -- including
+`escalation_problem`, the rule that you cannot grant what you do not
+hold, which is called twice inside `role_changes.py`. "Nothing outside
+this file names it" is normal for a helper. Only transitive
+reachability from a real entry point says anything.
