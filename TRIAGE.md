@@ -400,13 +400,33 @@ Each of these was reverted at source and the suite genuinely failed:
 
 **No uncovered behaviour found, across nine.**
 
-**ONE RESULT IS WORTH ARGUING WITH.** The write-path RBAC gate -- the
-check that decides whether a caller may execute an action at all --
-is caught by exactly ONE test. It is covered, so the sweep passes it,
-but one test for the gate that stands between a user and every write
-is thin. Two of the nine took a whole-suite run to find their catcher
-at all, both in the second half of the unit suite, which is why these
-runs cannot be shortened.
+| session expiry | 1 unit + 2 integration |
+| the partial-read guard | 4 |
+| `no_invisible_characters` ignored | 5 |
+| `no_misleading_text` ignored | 2 |
+
+**Thirteen behaviours. None uncovered.**
+
+## The sweep's own method was broken, and the sweep found it
+
+I split the unit suite as `head -160` and `tail -146`. **There are 318
+files.** Twelve in the middle NEVER RAN -- in any mutation run, for
+the whole sweep. "The whole suite" was not true when I wrote it.
+
+It surfaced because a mutation of `no_misleading_text` produced zero
+failures and I knew that file had tests. It was in the gap.
+
+**AND IT MADE A PUBLISHED RESULT WRONG.** The paragraph below is from
+patch 472 and I am leaving it visible rather than deleting it:
+
+> The write-path RBAC gate -- the check that decides whether a caller
+> may execute an action at all -- is caught by exactly ONE test. The twelve missing files contain a SECOND catcher. It is two, not
+one, and the argument that followed was built on an artefact of my
+own arithmetic rather than on the suite.
+
+Anything split by hand needs the parts to add back up to the whole,
+and nothing checked that here. A count is the cheapest possible guard
+and I did not take it.
 
 ## The method has a trap, and I fell in it twice
 
