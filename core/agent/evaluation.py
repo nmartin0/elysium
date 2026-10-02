@@ -7,7 +7,8 @@ away from the loop -- changes MODEL BEHAVIOUR. None of them can be
 shown to help without this.
 
 THE PROJECT ALREADY HAS PROOF THAT PLAUSIBLE CHANGES HERE MAKE THINGS
-WORSE. IDEAS.md records constrained decoding dropping accuracy from
+WORSE. the ideas file (consumed) records constrained decoding dropping
+accuracy from
 19.7% to 11.0%. That is AR-5, still on the list, still looking
 obviously correct. A harness is what separates the two cases.
 

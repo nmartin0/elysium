@@ -1,7 +1,8 @@
 # Backlog
 
 **The one list.** Everything open, gathered from ROADMAP.md,
-UI_ROADMAP.md, IDEAS.md, the object-explorer plan (consumed) and
+UI_ROADMAP.md, the ideas file (consumed), the object-explorer plan
+(consumed) and
 the hot-reload plan (consumed), which had accumulated separate lists that
 drifted
 apart.
@@ -1015,7 +1016,8 @@ a time. About an hour of machine time answers all four:
 - Do the pre-flight action verdicts earn their keep?
 - Can a small model work without the schema in the prompt?
 
-ITERATE rather than testing three hand-written prompts; see IDEAS.md's
+ITERATE rather than testing three hand-written prompts; see the ideas file
+(consumed)'s
 2026 research entry. Unblocked since aggregate_object became reachable
 -- three of the four would have measured the wrong thing while the
 parser silently converted those steps into a finish.

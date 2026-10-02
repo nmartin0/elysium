@@ -1,7 +1,8 @@
 """
 A parameter used only by a submission criterion is still USED.
 
-THE LANDMINE THIS DEFUSES, recorded in ROADMAP.md and IDEAS.md before
+THE LANDMINE THIS DEFUSES, recorded in ROADMAP.md and the ideas file
+(consumed) before
 it was fixed, and worth stating because the failure is the bad kind.
 
 _collect_parameter_references() feeds the validator that rejects a

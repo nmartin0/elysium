@@ -14,7 +14,8 @@ The window was narrow: disabled after the last hop but before synthesis
 finished, which is one LLM call. Narrow is not none, and the asymmetry
 was the tell.
 
-THE SESSION QUESTION THIS ANSWERS, recorded in IDEAS.md as unconfirmed:
+THE SESSION QUESTION THIS ANSWERS, recorded in the ideas file (consumed) as
+unconfirmed:
 disabling takes effect IMMEDIATELY, not at the next login. Every
 request resolves its UserRecord through get_current_user(), which
 checks is_user_disabled() -- so the exposure is one request, never one

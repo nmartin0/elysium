@@ -295,7 +295,8 @@ def _enable_wal(conn: sqlite3.Connection, db_path: Path) -> None:
     barely moves, which is the tell: this is entirely about the tail.
 
     THE RECORDED CONCERN WAS OVERSTATED AND THE MEASUREMENT SAYS SO.
-    IDEAS.md described rollback mode as one where "a writer blocks all
+    the ideas file (consumed) described rollback mode as one where "a writer
+    blocks all
     readers for the duration of its transaction". It does not -- a
     BEGIN IMMEDIATE takes a RESERVED lock, and RESERVED permits
     readers. Only the brief EXCLUSIVE phase during COMMIT blocks them,

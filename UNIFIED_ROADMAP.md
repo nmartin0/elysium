@@ -1089,7 +1089,7 @@ checking it found NOW.
       a deadline moved to E-11: a fake adapter tests them.
     - An eval harness with baselines (UI 25); the labelling experiment,
       then query with memory (UI 40, 41).
-    - Every model-behaviour question in IDEAS.md.
+    - Every model-behaviour question in the ideas file (consumed).
     - An OpenAI-compatible adapter (UI 19).
 
 ### Product features

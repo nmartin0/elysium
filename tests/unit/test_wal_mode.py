@@ -12,7 +12,8 @@ Twice the read throughput and a fifth of the worst case. The p50
 barely moves, which is the tell: this is entirely about the tail.
 
 THE RECORDED CONCERN WAS OVERSTATED, and the measurement is what said
-so. IDEAS.md described rollback mode as one where "a writer blocks all
+so. the ideas file (consumed) described rollback mode as one where "a writer
+blocks all
 readers for the duration of its transaction". It does not -- BEGIN
 IMMEDIATE takes a RESERVED lock and RESERVED permits readers. Only the
 brief EXCLUSIVE phase during COMMIT blocks them.

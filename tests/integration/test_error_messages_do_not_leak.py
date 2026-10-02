@@ -1,7 +1,8 @@
 """
 An error message tells a caller nothing their grants do not.
 
-IDEAS.md recorded this as unconfirmed: "Does any error message leak a
+the ideas file (consumed) recorded this as unconfirmed: "Does any error
+message leak a
 field name the acting user cannot read? Uniform denial is enforced on
 DATA; error text is a separate surface and has never been audited as
 one."

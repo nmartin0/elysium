@@ -15,7 +15,7 @@ PUBLISHING NEW DATA IS A GENERATION SWAP, not a separate mechanism: the
 adapters are pinned when they are built, so a reload is what moves the
 mirror forward. One publish covers both the configuration and the data
 it describes, which is also why this needs no branch-merge support --
-see IDEAS.md on pyiceberg's fast_forward_branch.
+see the ideas file (consumed) on pyiceberg's fast_forward_branch.
 """
 
 import sqlite3
