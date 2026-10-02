@@ -367,7 +367,7 @@ resolution, so gold for it is a straight conform.
               derivation must be visible or it is magic;
           (5) the scanner, proposing only;
           (6) `classify:` before any of it is exposed in an editor.
-  ALERT-1. FRESHNESS, DECIDED (DEV_UI.md 16.6): the deployment
+  ALERT-1. FRESHNESS, DECIDED (the interface design): the deployment
           declares one expected sync interval, default 24 hours;
           thresholds are multiples of it -- warn at 1.1x, fail at 2.1x,
           which is one late run and two consecutive misses -- measured

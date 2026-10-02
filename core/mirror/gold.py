@@ -315,7 +315,7 @@ def _latest_published_snapshot(table) -> int | None:
 def published_at(catalog, object_types) -> dict[str, str]:
     """{object type: when its gold table was published}, ISO-8601 UTC.
 
-    THE CLOCK A READER EXPERIENCES (DEV_UI.md 16.6). Silver records
+    THE CLOCK A READER EXPERIENCES. Silver records
     when the SOURCE WAS READ, which is what the write overlay needs;
     gold records when a PUBLICATION WAS MADE, which is what a person
     looking at an object is actually seeing. A source read hourly but

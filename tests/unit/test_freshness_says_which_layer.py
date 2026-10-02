@@ -5,7 +5,7 @@ TWO CLOCKS, AND THEY ARE NOT THE SAME INSTANT. Silver records when
 the SOURCE WAS READ; gold records when a PUBLICATION WAS MADE. A
 source read hourly but published daily is a day stale to the person
 looking at it, and no source-side timestamp says so -- which is why
-DEV_UI.md 16.6 measures freshness from the publication.
+The interface design measured freshness from the publication.
 
 AND THE SOURCE-READ TIME MUST STAY WHAT IT IS. It bounds the write
 overlay (F-29): everything applied after it is still overlaid on read.

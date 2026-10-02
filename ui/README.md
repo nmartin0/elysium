@@ -15,8 +15,8 @@ onward. It mattered because this is the first thing a new contributor
 reads, and it told them to hand-roll what the library already ships.
 The standing rule is the opposite: **Blueprint always wins** — if a
 new colour or component would mean overriding it, do not
-(`DEV_UI.md`, and `index.css`'s own note on why an element selector
-must never describe a widget the library owns).
+(the interface design, consumed, and `index.css`'s own note on why
+an element selector must never describe a widget the library owns).
 
 An npm workspace, one package per real screen or shared concern, not
 one monolithic app. **Each entry says what the package is FOR, not

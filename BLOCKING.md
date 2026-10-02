@@ -52,7 +52,7 @@ numbers themselves.
 | `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 26 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
 | `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |validator rejects every `write:` grant, while the write path demands
 | `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |one per field. So no valid policy can authorise a cross-type action at
-all.
+| `DEV_UI.md` | 1,271 lines of interface design, none of it buildable without a front-end agent. Its diagnosis, its refusals and its palette reasoning are item 27 |all.
 
 Two ways out, and they are not equivalent:
 
@@ -504,7 +504,45 @@ comparison a reviewer needs is usually agreement, not the value.
 properly or the feature waits. Showing the fields would be the easy
 version and would quietly defeat MAC.
 
-## 27. Saved SELECTIONS
+## 27. What the interface should be
+
+`DEV_UI.md`, written after the owner said the interface is BOTH
+unfinished and disjointed. **Its diagnosis is the part worth keeping**,
+because it is why a redesign would fail:
+
+> Those are two different faults with two different fixes, and
+> treating them as one is how a redesign fails: new paint on the same
+> dead ends, or a new structure that still looks like a prototype.
+
+**UNFINISHED is a craft problem** -- inconsistent spacing and density,
+tables that are HTML tables, empty states that say nothing useful,
+loading that flashes, iconography borrowed from whatever Blueprint
+offered. "Nothing is wrong, and nothing looks decided." Its fix is
+owning the components: a small kit in this repository with one answer
+each for empty, loading, error and partial.
+
+**DISJOINTED is a structure problem**, and a different fix.
+
+**AND A LIST OF REFUSALS**, which is the half a summary always drops:
+
+> - An app-building platform (Workshop). An app inside an app.
+> - Analysis notebooks (Contour, Quiver). Charts over a set, yes; a
+>   second analytical language, no.
+> - Model management, a marketplace, time-series infrastructure,
+>   geospatial.
+>
+> Palantir has thousands of engineers and customers demanding those.
+> Elysium's edge is the agent, the security model and governed writes.
+
+Its palette section carries one measured reason worth not relearning:
+white on pure black causes **halation** -- the text bleeds across the
+corneal lens, worst for readers with astigmatism and worse the longer
+the session. 21:1 contrast is not a target.
+
+**Blocked on:** a front-end agent, and on the owner's appetite for a
+redesign rather than more features.
+
+## 28. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must
