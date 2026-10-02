@@ -4,7 +4,7 @@ Proposing that two entities might be one (GOLD-6, the inferred half).
 IT NEVER DECIDES ANYTHING. Inference "only ever ADDS PROPOSALS to a
 mechanism that already works without it", and a proposed merge needs
 approval "ALWAYS. Never configurable, because a setting is a thing
-someone turns off" (FUSION_AND_IDENTITY.md). This produces candidates
+someone turns off" (the fusion-and-identity design). This produces candidates
 with a score and an explanation; the write queue decides what becomes
 of them.
 

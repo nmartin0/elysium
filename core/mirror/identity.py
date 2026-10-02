@@ -8,7 +8,7 @@ database and `9f2a` in the CRM, and the only thing saying they are the
 same person is a rule somebody wrote -- "they share an email".
 
 THE DECLARED RULE IS THE PRIMARY PATH, not a fallback
-(FUSION_AND_IDENTITY.md): "deterministic, auditable, no inference, no
+(the fusion-and-identity design): "deterministic, auditable, no inference, no
 confidence score", and "THE GOLD LAYER MUST WORK WITH ZERO
 INFERENCE". Probabilistic matching, when it lands, only ever ADDS
 PROPOSALS to this.

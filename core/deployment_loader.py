@@ -631,7 +631,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             read_from_mirror=_refuse_live_reads(config),
 
             # GOLD-6: may the pipeline PROPOSE merges it inferred?
-            # Defaults to FALSE, as FUSION_AND_IDENTITY.md requires --
+            # Defaults to FALSE, as the fusion-and-identity design requires --
             # and note the other half is NOT here: whether a proposal
             # needs approval is not configurable, "because a setting is
             # a thing someone turns off".

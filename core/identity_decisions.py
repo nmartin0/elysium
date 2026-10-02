@@ -1,6 +1,6 @@
 """Proposed merges, and what was decided about them (GOLD-6).
 
-WHY A STORE AND NOT CONFIGURATION. FUSION_AND_IDENTITY.md is explicit:
+WHY A STORE AND NOT CONFIGURATION. the fusion-and-identity design is explicit:
 "an approved inference becomes STORED DATA, not edited config",
 because "if approving a merge rewrote ontology_schema.yaml, then
 configuration -- the thing a human wrote and reviews -- would silently
@@ -29,7 +29,7 @@ WHAT IT KEEPS, AND WHAT IT REFUSES TO KEEP:
 
   AND UNMERGING IS NOT A SPECIAL CASE. A rejected pair is a decision
   like any other; a pair approved and later rejected is two rows, and
-  the latest one wins. FUSION_AND_IDENTITY calls this out: "if a merge
+  the latest one wins. The fusion design calls this out: "if a merge
   is an approved write, UN-merging is another write, with the same
   trail".
 """

@@ -9,7 +9,7 @@ only thing saying they are the same person is a rule somebody wrote.
 
 THE DECLARED RULE IS THE PRIMARY PATH: "deterministic, auditable, no
 inference, no confidence score", and "THE GOLD LAYER MUST WORK WITH
-ZERO INFERENCE" (FUSION_AND_IDENTITY.md). Probabilistic matching only
+ZERO INFERENCE" (the fusion-and-identity design). Probabilistic matching only
 ever ADDS PROPOSALS to this.
 """
 

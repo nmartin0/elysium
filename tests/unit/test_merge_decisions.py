@@ -5,7 +5,7 @@ Proposed merges, what was decided, and what a decision changes
 "AN APPROVED INFERENCE BECOMES STORED DATA, NOT EDITED CONFIG",
 because "if approving a merge rewrote ontology_schema.yaml, then
 configuration -- the thing a human wrote and reviews -- would silently
-grow entries nobody typed" (FUSION_AND_IDENTITY.md).
+grow entries nobody typed" (the fusion-and-identity design).
 
 AND THE POINT OF THIS FILE: there is no code path from a candidate to
 a merge that does not pass through a person. "Inference never decides"

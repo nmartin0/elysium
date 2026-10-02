@@ -30,7 +30,7 @@ that have gone wrong repeatedly.
    when every component is assumed hostile. Records why module
    federation is DISQUALIFIED, and that a third-party adapter is just
    a silo. Nothing in it is built.
-8. **`FUSION_AND_IDENTITY.md`** — merging records that mean the same
+8. **(consumed; `BLOCKING.md` item 26)** — merging records that mean the same
    thing. Records that this is a PIPELINE problem, that the gold layer
    is the missing slot, and that MDO already answers the permissions
    question. Nothing in it is built.

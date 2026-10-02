@@ -58,7 +58,7 @@ code BEFORE it is built, and corrected here if it was wrong.
     survivorship, audit, publish) -> ontology reads PUBLISHED gold
 
 Researched and designed in the medallion design (consumed), which extends
-ELT_ROADMAP.md and FUSION_AND_IDENTITY.md. MEASURED first: the ontology
+ELT_ROADMAP.md and the fusion-and-identity design. MEASURED first: the ontology
 reads SILVER (`<silo>.<table>`); bronze is never read; gold does not
 exist. PyIceberg 0.12 does Write-Audit-Publish -- branch writes, then
 set_current_snapshot and a tag in one commit -- tested here.
@@ -477,12 +477,12 @@ resolution, so gold for it is a straight conform.
           object in one storage and not the other is real, and a
           required property missing from the absent side makes the
           audit refuse. Gold's view no longer excludes these types.
-  GOLD-5. MULTI-SOURCE GOLD (G2, G3): FUSION_AND_IDENTITY.md's build
+  GOLD-5. MULTI-SOURCE GOLD (G2, G3): the fusion-and-identity design's build
           order -- declared identity rules, a crosswalk table,
           per-property survivorship, every contributing value kept in a
           provenance table.
   GOLD-6. TECHNOLOGY DECIDED, September 23, by installing and running
-          the candidates (FUSION_AND_IDENTITY.md). Splink is the right
+          the candidates (the fusion-and-identity design). Splink is the right
           model -- Fellegi-Sunter, MIT, and its predict() returns
           gamma_<field> per pair, so the "why did these score" the
           review needs is DATA rather than a chart; compare_two_records
@@ -2163,7 +2163,7 @@ which is a confused deputy. Attenuation only.
 
 ## Phase 3.6 — Fusion and identity
 
-**DESIGNED, NOT BUILT -- see FUSION_AND_IDENTITY.md.** Elysium follows
+**DESIGNED, NOT BUILT -- see the fusion-and-identity design.** Elysium follows
 links someone wrote down and infers none. The precedent says identity
 resolution is a PIPELINE problem, which places it in the GOLD layer
 Elysium does not have.
@@ -2349,7 +2349,7 @@ rather than a plan.
 ### Designed, unbuilt, and worth VERIFYING before building
 
     3.1   the plugin API         BLOCKING.md 23 (THIRD_PARTY_EXTENSIONS.md
-    3.6   fusion and identity    FUSION_AND_IDENTITY.md
+    3.6   fusion and identity    the fusion-and-identity design
     3.3   schema migrations      no design yet
 
 **THE REASON THAT LAST GROUP IS SEPARATE:** of the last several design

@@ -1,7 +1,7 @@
 """
 Where proposals come from, and what turns them into merges (GOLD-6).
 
-TWO INDEPENDENT SWITCHES, as FUSION_AND_IDENTITY.md requires: "is
+TWO INDEPENDENT SWITCHES, as the fusion-and-identity design requires: "is
 inference enabled?" is deployment config defaulting to FALSE, and
 "does a proposed merge need approval?" is ALWAYS -- "never
 configurable, because a setting is a thing someone turns off". Only

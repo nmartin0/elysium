@@ -49,7 +49,7 @@ numbers themselves.
 | `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
 | `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 23. Its three unanswered risks are item 25 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 | `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
-**The sharpest one, and it outranks the rest.** Reproduced: the policy
+| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 26 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
 validator rejects every `write:` grant, while the write path demands
 one per field. So no valid policy can authorise a cross-type action at
 all.
@@ -469,7 +469,42 @@ second is a product decision about how much friction an automation
 should carry, and the third is a design choice with cost on both
 sides.
 
-## 26. Saved SELECTIONS
+## 26. The merge reviewer's screen, and the MAC problem under it
+
+Identity inference is built and OFF by default, with every proposal
+requiring approval. What is not built is the screen a reviewer uses,
+and `FUSION_AND_IDENTITY.md` is specific about what it must show:
+
+- **The two records side by side**, field by field, with agreements
+  and disagreements marked -- "the reviewer's decision is made on the
+  agreement PATTERN, not the score".
+- **The score, and what drove it**: which fields contributed and how
+  much. "A number alone cannot be argued with."
+- **Provenance per field**, which silver's lineage already carries.
+
+**AND THE PROBLEM THAT IS OURS SPECIFICALLY**, kept whole because it
+is a security design rather than a UI preference:
+
+> A REVIEWER MAY NOT BE CLEARED TO SEE THE FIELDS THAT DECIDE THE
+> MATCH. Elysium is MAC-governed; the person best placed to judge
+> whether two customers are the same may not be permitted to read the
+> email address that settles it.
+
+Its answer comes from privacy-preserving record linkage: **masked
+clerical review**, where the display conceals the plaintext by
+default, presents categorical value frequencies, and gradually
+discloses selected information. A reviewer can be told that two values
+AGREE, or that a value is RARE, without being shown it.
+
+The document argues this is "a genuinely good fit for a MAC system and
+worth building rather than working around", and it is right: the
+comparison a reviewer needs is usually agreement, not the value.
+
+**Blocked on:** the frontend, and on whether masked review is built
+properly or the feature waits. Showing the fields would be the easy
+version and would quietly defeat MAC.
+
+## 27. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must

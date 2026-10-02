@@ -8,7 +8,7 @@ every property has one authoritative home, and no two storages offer a
 competing value for the same property.
 
 THAT MAKES THIS THE DETERMINISTIC HALF, and it is the half
-FUSION_AND_IDENTITY.md insists comes first: "hand-written joins are
+the fusion-and-identity design insists comes first: "hand-written joins are
 the PRIMARY path, not a fallback ... the gold layer must work with
 ZERO INFERENCE."
 

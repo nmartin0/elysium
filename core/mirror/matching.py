@@ -1,7 +1,7 @@
 """Proposing that two entities might be one (GOLD-6, the inferred
 half).
 
-THIS NEVER DECIDES ANYTHING. FUSION_AND_IDENTITY.md is explicit:
+THIS NEVER DECIDES ANYTHING. the fusion-and-identity design is explicit:
 inference "only ever ADDS PROPOSALS to a mechanism that already works
 without it", and a proposed merge needs approval "ALWAYS. Never
 configurable, because a setting is a thing someone turns off". What
@@ -9,7 +9,7 @@ this module produces is candidates with a score and an explanation.
 What happens to them is the write queue's business.
 
 TWO THRESHOLDS, from the MDM precedent recorded in
-FUSION_AND_IDENTITY.md: above the auto-propose threshold a candidate
+the fusion-and-identity design: above the auto-propose threshold a candidate
 becomes a proposal without anyone asking; between the two it goes to
 review; below, nothing. Both are declared per type, because only a
 deployment knows what a false merge costs it.
