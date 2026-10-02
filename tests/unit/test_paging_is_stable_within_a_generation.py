@@ -1,7 +1,7 @@
 """
 Paging a mirror deployment does not see rows change underneath it.
 
-UI_ROADMAP.md records: "Paging consistency is documented, not
+The UI roadmap recorded: "Paging consistency is documented, not
 guaranteed. Default paging returns the latest results and may duplicate
 or miss rows if data changes between pages. Fine for browsing, wrong
 for an export."

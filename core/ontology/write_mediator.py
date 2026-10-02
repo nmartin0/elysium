@@ -84,7 +84,7 @@ def _fields_to_columns(resolved_type_config: dict, values_by_field: dict) -> dic
 #          /actions/{action_type_name}.
 # "agent": the LLM chose it mid-query, through AgentLoop's own
 #          propose_action step. The person named in user_id still
-#          supplied every permission used -- see UI_ROADMAP.md's
+#          supplied every permission used -- see the UI roadmap (consumed).md's
 #          approvals record on why the agent is an envelope and never
 #          a principal -- but they did not pick this action.
 # WHO ASKED FOR A WRITE.
@@ -180,7 +180,8 @@ class PendingWrite:
     # TWO VALUES, not three. Whether a human then CONFIRMED an agent
     # proposal, or auto_execute skipped that step, is a fact about the
     # DECISION rather than the proposal, and belongs to whatever
-    # records the decision -- see UI_ROADMAP.md's approvals design
+    # records the decision -- see the UI roadmap (consumed).md's approvals
+    # design
     # record, step 3. Origin answers only "what put this forward".
     #
     # proposed_at is here rather than read back from

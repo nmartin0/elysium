@@ -1,7 +1,7 @@
 # Backlog
 
 **The one list.** Everything open, gathered from ROADMAP.md,
-UI_ROADMAP.md, the ideas file (consumed), the object-explorer plan
+the UI roadmap (consumed), the ideas file (consumed), the object-explorer plan
 (consumed) and
 the hot-reload plan (consumed), which had accumulated separate lists that
 drifted
@@ -1162,7 +1162,8 @@ classes and conditional formatting -- and only the first is in scope.
 
 **The keyboard model's roving-focus half. GATED, not merely
 unstarted.** I described this as "the accessibility work nobody has
-touched" and that was wrong. UI_ROADMAP.md is explicit: the FOCUS-RING
+touched" and that was wrong. the UI roadmap (consumed) is explicit: the
+FOCUS-RING
 half is the accessibility floor and is unconditional -- it is done,
 using :focus-visible so a mouse click leaves no ring. Roving focus is
 a POWER-USER feature, and the recorded gate is that "nobody has

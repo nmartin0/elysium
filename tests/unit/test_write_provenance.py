@@ -5,7 +5,7 @@ WHAT THESE PROTECT, and why user_id was not already enough: both paths
 that reach propose_action() set user_id to the same person. A person
 filling in ActionForm and the agent choosing an action mid-query are
 indistinguishable without origin, and an approvals inbox has to tell a
-reviewer which happened. See UI_ROADMAP.md's approvals design record.
+reviewer which happened. See the UI roadmap's approvals design record.
 
 The agent-path test deliberately goes through AgentLoop rather than
 calling propose_action("agent") directly. Passing the literal myself

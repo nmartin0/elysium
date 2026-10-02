@@ -50,7 +50,7 @@ that have gone wrong repeatedly.
 12. **(consumed; `BLOCKING.md`)** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
-13. **`UI_ROADMAP.md`**, `ROADMAP.md`, `the ideas file (consumed)` — the
+13. **(consumed)**, `ROADMAP.md`, `the ideas file (consumed)` — the
 REASONING,
    not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written
@@ -454,7 +454,7 @@ they drift.
 
 ## Where the work stands
 
-Build order and per-feature designs are in `UI_ROADMAP.md`. Two
+Build order and per-feature designs are in `the UI roadmap (consumed)`. Two
 things worth carrying that are not features:
 
 **Query is too slow to use**, which means Agent audit — built, tested,
@@ -467,4 +467,4 @@ discards the token counts every provider returns.
 roadmap entry said. `search_around`'s `total` is the count of what it
 already fetched, and `count_objects` has no HTTP route — so
 count-before-expand has nothing to count with. That endpoint comes
-first. The design record in `UI_ROADMAP.md` has the rest.
+first. The design record in `the UI roadmap (consumed)` has the rest.

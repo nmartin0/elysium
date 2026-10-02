@@ -3,7 +3,7 @@ A prompt near its window says so before the server truncates it.
 
 THE FAILURE IS A WORSE ANSWER, NOT A CRASH. A model given more than
 it can hold does not refuse -- it truncates and answers from what
-survived. UI_ROADMAP named this as "a risk to what already exists,
+survived. The UI roadmap named this as "a risk to what already exists,
 not a feature", and said plainly: "we have never measured where that
 begins."
 

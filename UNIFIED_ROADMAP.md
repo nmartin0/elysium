@@ -828,7 +828,8 @@ checking it found NOW.
          test_cross_silo_links records it.
        E-18 SECURITY_ARCHITECTURE.md still heads a closed hole "THE
          REAL HOLE"; the write-down check was built in patch 260.
-       E-19 UI_ROADMAP.md lists log rotation as missing -- it ships and,
+       E-19 the UI roadmap (consumed) lists log rotation as missing -- it
+       ships and,
          since 305, is installed -- and says there is no migration
          mechanism; there is one, ad hoc. The true gap is narrower: no
          store records a schema version (see item 12).
@@ -2089,7 +2090,7 @@ the concurrency limiter is per-process, and misleading elsewhere:
   it for real is the verification that remains.
 
 
-UI_ROADMAP.md states it: `--workers` breaks SQLite's single-writer
+the UI roadmap (consumed) states it: `--workers` breaks SQLite's single-writer
 assumption and the concurrency limiter's per-process state. One
 uvicorn, one core, no horizontal scale, and a deploy is downtime.
 
@@ -2409,7 +2410,7 @@ use.
 
 ### R2. ~~Context rot in the agent loop~~ MEASURED
 
-UI_ROADMAP names it as "a risk to what already exists, not a feature":
+the UI roadmap names it as "a risk to what already exists, not a feature":
 current research describes "a model's effective recall degrading as
 the token count grows, WELL BEFORE the hard context limit is reached".
 
@@ -2457,7 +2458,7 @@ a schema cache keyed by path that broke two stores sharing a file (284).
 (Original entry, kept for its reasoning:)
 
 
-UI_ROADMAP item 13: policy.yaml becomes editable while the
+the UI roadmap item 13: policy.yaml becomes editable while the
 application runs. The reload machinery it needs is built and has its
 own plan document.
 

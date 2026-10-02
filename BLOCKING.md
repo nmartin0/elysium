@@ -54,7 +54,7 @@ numbers themselves.
 | `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |one per field. So no valid policy can authorise a cross-type action at
 | `DEV_UI.md` | 1,271 lines of interface design, none of it buildable without a front-end agent. Its diagnosis, its refusals and its palette reasoning are item 27 |
 | `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 28 |
-
+| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 29, with the code evidence |
 ---
 
 # Blocked on a decision
@@ -588,7 +588,47 @@ evidence either way."
 **Blocked on:** a machine with a capable model, and someone to run
 traces on it.
 
-## 29. Saved SELECTIONS
+## 29. Context rot, and an unbounded search behind it
+
+`UI_ROADMAP.md` calls this "a risk to what already exists, not a
+feature", and it is the only part of that file that is not front-end
+work.
+
+> **Context rot.** Current research describes "a model's effective
+> recall degrading as the token count grows, WELL BEFORE the hard
+> context limit is reached", driven by tool responses carrying
+> metadata "beyond what is decision-relevant".
+>
+> Our agent accumulates `gathered` across every step and feeds it back
+> each hop. A query touching many objects therefore degrades the
+> answer BEFORE it errors -- the failure mode is a worse answer, not a
+> crash, which is the hard kind to notice. We have never measured
+> where that begins.
+
+**THE MECHANISM IS CONFIRMED IN THE CODE.** `DataMediator.search_object`
+takes no limit and returns every id the caller may see.
+`_step_search_object` then builds `entry = {**step, "result":
+object_ids}` and appends it whole. A search matching 200,000 objects
+puts 200,000 ids into `gathered`, and `gathered` goes back to the
+model on every remaining hop.
+
+Compare `get_object`, which IS bounded: `MAX_OBJECT_IDS = 20`, with a
+refusal that names the batch and the remainder. The input side is
+capped and the output side is not.
+
+**Two things are wanted, and only one is mine to do.** Item 17 is
+measurement -- task completion rate against context size at the
+midpoint of a task, which needs a capable model and is item 28's
+blocker too. Item 18 is the cap itself.
+
+**Blocked on:** a model to validate the cap against, and the
+`agentic_loop.py` comment beside `MAX_OBJECT_IDS` says exactly why
+that matters: told its limit was 20 when given 32 ids, a real model
+"came back asking for TWO, then spent the rest of its hops fetching
+one object at a time until the duplicate guard stopped it". A cap
+chosen without measuring is how that happens again.
+
+## 30. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must
