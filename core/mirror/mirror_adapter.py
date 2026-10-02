@@ -2,7 +2,8 @@
 mirror_adapter.py  (reads from the local Iceberg mirror, satisfying the
 same contract as a real, live silo adapter)
 
-Phase 4 of the read-only mirror architecture (see ROADMAP.md). This is
+Phase 4 of the read-only mirror architecture (see the roadmap (consumed)).
+This is
 a real ExternalReadAdapter -- the SAME four-method contract
 adapters/sqlite_adapter.py's own SQLiteReadAdapter implements -- so
 DataMediator, search_object(), get_field(), MDO resolution and reverse
@@ -21,7 +22,7 @@ cannot express is substring search, done in Python below -- measured
 at 16ms against 12ms in DuckDB over 100,000 rows, with Python faster
 at smaller sizes where DuckDB's per-query overhead dominates. A 4ms
 difference does not buy a dependency, a second engine, and two ways to
-express every read. See ROADMAP.md's Phase 4 section for the full
+express every read. See the roadmap (consumed)'s Phase 4 section for the full
 measurements.
 
 PUSHDOWN IS REAL, not a scan-everything-then-filter fallback --

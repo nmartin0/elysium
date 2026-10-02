@@ -2009,7 +2009,8 @@ def admin_mirror_sync_route(
     """Starts a sync, and returns before it finishes.
 
     A SYNC IS NOT INSTANT. Two seconds on the shipped fixtures, but
-    ROADMAP.md measured 500,000 rows in 2.46s and about a minute for
+    the roadmap (consumed) measured 500,000 rows in 2.46s and about a minute
+    for
     ten million. A synchronous request would hold a connection for
     that long, and the one worker process with it.
 
@@ -2782,7 +2783,7 @@ def data_freshness_route(request: Request,
                           _current_user: UserRecord = Depends(get_current_user)) -> dict:
     # How current the data a caller is reading actually is -- the
     # user-visible half of the read-only mirror architecture (see
-    # ROADMAP.md's own "Real, visible data freshness" point).
+    # the roadmap (consumed)'s own "Real, visible data freshness" point).
     #
     # A SEPARATE route rather than a field on GET /me, deliberately:
     # freshness is a property of the DEPLOYMENT, identical for every
@@ -2929,7 +2930,8 @@ def _page_bounds(page_size: int | None, page_token: str | None, total: int) -> t
     and "may lead to duplicate entries or missing items as data changes
     between page requests". Their opt-in "snapshot" mode, which
     captures the result set before paging begins, is not implemented --
-    see ROADMAP.md. Tokens are short-lived and intended for immediate
+    see the roadmap (consumed). Tokens are short-lived and intended for
+    immediate
     sequential use.
 
     An oversized page_size is clamped rather than rejected, matching

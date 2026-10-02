@@ -1,6 +1,6 @@
 """
 Tests for core/mirror/mirror_adapter.py -- Phase 4 of the read-only
-mirror architecture (see ROADMAP.md).
+mirror architecture (see the roadmap (consumed)).
 
 THE CENTRAL PROPERTY, and the reason most of this file is written as
 side-by-side comparisons rather than fixed expected values: a

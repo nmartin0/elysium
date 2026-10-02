@@ -50,7 +50,7 @@ that have gone wrong repeatedly.
 12. **(consumed; `BLOCKING.md`)** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
-13. **(consumed)**, `ROADMAP.md`, `the ideas file (consumed)` — the
+13. **(consumed)**, `the roadmap (consumed)`, `the ideas file (consumed)` — the
 REASONING,
    not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written

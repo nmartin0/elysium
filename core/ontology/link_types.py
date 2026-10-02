@@ -33,7 +33,7 @@ BACKING MECHANISMS, matching Foundry's own two:
     these keys".
 
 Foundry's third, object-backed links (a join carrying its own
-properties), is deliberately NOT adopted -- see ROADMAP.md. It is
+properties), is deliberately NOT adopted -- see the roadmap (consumed). It is
 already expressible as two ordinary one-to-many links through a real
 object type, which is arguably clearer, and their own documentation
 notes that a join table carrying extra information "is no longer a

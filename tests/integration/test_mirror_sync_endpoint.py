@@ -2,7 +2,8 @@
 Starting a sync from the panel, without waiting for it.
 
 A SYNC IS NOT INSTANT. Two seconds on the shipped fixtures, but
-ROADMAP.md measured 500,000 rows in 2.46s and about a minute for ten
+the roadmap (consumed) measured 500,000 rows in 2.46s and about a minute for
+ten
 million. A synchronous request would hold a connection for that long,
 and the ONE worker process with it.
 

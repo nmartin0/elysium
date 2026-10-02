@@ -179,7 +179,8 @@ class DeploymentConfig:
                                    # the customer's own databases live. Writes are unaffected
                                    # either way: they always go to the real database. False by
                                    # default, so the live path stays the default until a
-                                   # deployment explicitly opts in. See ROADMAP.md.
+                                   # deployment explicitly opts in. See the
+                                   # roadmap (consumed).
     action_types: dict            # NAMED action types (action-types-redesign branch) --
                                    # a deployment with none declared (the overwhelmingly
                                    # common case today) gets {} here, populated explicitly
@@ -610,7 +611,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # that has never run a sync (or simply wants live reads)
             # must stay completely valid, and the live path stays the
             # default until a deployment explicitly opts in. Phase 4 of
-            # the read-only mirror architecture; see ROADMAP.md.
+            # the read-only mirror architecture; see the roadmap (consumed).
             # `or {}` AS WELL AS A DEFAULT, because a YAML section whose
             # every line is a comment parses as None rather than an empty
             # mapping -- and a commented-out example is exactly what a
@@ -925,7 +926,8 @@ def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
     # WRITES ARE UNAFFECTED either way. load_deployment_bundle()'s own
     # write_adapters are always built live, against the customer's real
     # database -- a confirmed write must never land in a copy that the
-    # next sync would simply overwrite. See ROADMAP.md's own Phase 4
+    # next sync would simply overwrite. See the roadmap (consumed)'s own
+    # Phase 4
     # section on why the mirror stays sync-written, sole writer.
     if not config.read_from_mirror:
         return cast(

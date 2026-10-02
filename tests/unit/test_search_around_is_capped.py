@@ -11,7 +11,8 @@ TARGETS, and `check_access` writes one audit line per target.
 
 MEASURED: an audit line costs about 11 microseconds, so a
 million-target traversal spends ELEVEN SECONDS writing its own trail
-before any data reaches the caller. ROADMAP.md profiled the same shape
+before any data reaches the caller. the roadmap (consumed) profiled the same
+shape
 at 200,000 objects:
 
     _io.open      1.21s   (200,006 calls -- audit logging)

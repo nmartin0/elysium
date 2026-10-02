@@ -30,7 +30,7 @@ are written down separately in `PRINCIPLES.md`, not repeated here.
 
 **Planned future sub-apps** — modeled on Palantir Foundry's own
 ontology-aware application suite, scoped down to this project's own
-much smaller architecture — are tracked separately in `ROADMAP.md`.
+much smaller architecture — are tracked separately in `the roadmap (consumed)`.
 
 ---
 
@@ -489,7 +489,7 @@ minutes) if never confirmed.
 | A new tool | `core/functions/interface.py`'s `Function` | `core/functions/registry.py`'s registry |
 
 For a whole new sub-app (a new top-level screen in `ui/`, not a new
-backend extension point), see `ROADMAP.md`'s own prioritized list
+backend extension point), see `the roadmap (consumed)`'s own prioritized list
 first — there's a real chance it's already there.
 
 ---

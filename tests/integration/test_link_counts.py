@@ -2,7 +2,7 @@
 How far a link leads, before following it.
 
 COUNTS BEFORE EXPANSION is the whole design of the link explorer, as
-ROADMAP.md records it: show link-type counts BEFORE expansion, so
+the roadmap (consumed) records it: show link-type counts BEFORE expansion, so
 fan-out is never a surprise. A person deciding whether to follow a link
 needs to know it leads to four things or four thousand before they
 commit, and an explorer that expands first and apologises later is

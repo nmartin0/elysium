@@ -33,7 +33,7 @@ credentials.db: one process, one writer, and a file that survives a
 restart. The earlier framing had this waiting on PostgreSQL, which was
 wrong -- Postgres is warranted by sustained concurrent write pressure
 or a genuinely multi-worker deployment, and neither exists. See
-ROADMAP.md's PostgreSQL scope.
+the roadmap (consumed)'s PostgreSQL scope.
 """
 
 import json

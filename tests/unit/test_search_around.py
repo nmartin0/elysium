@@ -193,7 +193,7 @@ def test_traversal_is_batched_not_one_query_per_source_object(tmp_path):
     # customers cost 907 queries. Asserted as a DELTA against
     # search_object() alone, because that method's own per-object MAC
     # resolution is a real, pre-existing cost this inherits rather than
-    # introduces (see ROADMAP.md's deferred list).
+    # introduces (see the roadmap (consumed)'s deferred list).
     import adapters.sqlite_adapter as sqlite_adapter_module
 
     real_run_query = sqlite_adapter_module._run_query

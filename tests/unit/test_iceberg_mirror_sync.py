@@ -1,6 +1,6 @@
 """
 Tests for core/mirror/iceberg_sync.py -- Phase 2 of the read-only
-mirror architecture (see ROADMAP.md).
+mirror architecture (see the roadmap (consumed)).
 
 Every test runs against a REAL SQLite source database and a REAL,
 on-disk Iceberg mirror (a real SQLite catalog plus real Parquet
@@ -113,7 +113,8 @@ def test_a_real_source_change_is_reflected_by_the_next_sync(sync, source_db):
 
 def test_snapshot_history_is_preserved_across_syncs(sync, source_db):
     # Real time travel back to an earlier sync is a genuine capability
-    # this storage choice buys (see ROADMAP.md) -- proven here rather
+    # this storage choice buys (see the roadmap (consumed)) -- proven here
+    # rather
     # than assumed from Iceberg's reputation.
     #
     # THE SOURCE HAS TO ACTUALLY CHANGE between the two syncs. A sync

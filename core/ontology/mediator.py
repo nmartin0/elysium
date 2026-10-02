@@ -1790,7 +1790,7 @@ class DataMediator:
         #
         # MEASURED: an audit line costs about 11 microseconds, so a
         # million-target traversal spends ELEVEN SECONDS writing its
-        # own trail before any data reaches the caller. ROADMAP.md
+        # own trail before any data reaches the caller. the roadmap (consumed)
         # profiled the same shape at 200,000 objects and found
         # 200,006 open() calls dominating everything else.
         #

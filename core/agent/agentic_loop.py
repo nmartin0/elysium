@@ -1516,7 +1516,8 @@ class AgentLoop:
             # arrives, and on this deployment a query can run for
             # minutes -- long enough for an administrator to disable an
             # account or change a role and reasonably expect it to take
-            # effect. Recorded in ROADMAP.md's security backlog before
+            # effect. Recorded in the roadmap (consumed)'s security backlog
+            # before
             # this migration began.
             #
             # A CHANGE STOPS THE LOOP rather than continuing under the

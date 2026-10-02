@@ -4,7 +4,8 @@ knowledge)
 
 MirrorSync is what every concrete sync implementation (core/mirror/
 iceberg_sync.py today, any future one) must extend. Phase 2 of the
-read-only mirror architecture -- see ROADMAP.md's own "Read-only data
+read-only mirror architecture -- see the roadmap (consumed)'s own "Read-only
+data
 mirror architecture" section for the full design, and core/ontology/
 interface.py for the same interface-then-implementation convention
 this file deliberately mirrors.
@@ -20,7 +21,7 @@ snapshot. That is the whole job. It is a batch copy, not a streaming
 or incremental mechanism, and deliberately so at this stage.
 
 RUNS AS A SEPARATE PROCESS, never a background thread inside the web
-app -- a real, settled decision (see ROADMAP.md's own Phase 2 entry
+app -- a real, settled decision (see the roadmap (consumed)'s own Phase 2 entry
 for the full reasoning and its honest cost). scripts/run_sync.py is
 the real entry point; scheduling is external (cron, systemd timer).
 Nothing in this package starts a thread, owns a timer, or knows what
@@ -91,5 +92,6 @@ class MirrorSync(ABC):
     def last_synced_at(self, silo_name: str, table_name: str) -> datetime | None:
         """When this table was last successfully synced, or None if it
         never has been. The real mechanism behind the user-visible data
-        freshness the roadmap calls for -- see ROADMAP.md's own "Real,
+        freshness the roadmap calls for -- see the roadmap (consumed)'s own
+        "Real,
         visible data freshness" point."""

@@ -1,7 +1,7 @@
 """
 Tests for the REAL, structural read-only guarantee on the external
 read path -- Phase 1 of the read-only mirror initiative (see
-ROADMAP.md's own "Read-only data mirror architecture" section).
+the roadmap (consumed)'s own "Read-only data mirror architecture" section).
 
 The property under test is deliberately NOT "SQLiteReadAdapter has no
 write methods" -- that was Phase 0, and is already true by type alone

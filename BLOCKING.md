@@ -56,7 +56,7 @@ numbers themselves.
 | `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 28 |
 | `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 29, with the code evidence |
 | `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 28, section 2's one open piece is item 30, section 5 pointed here already |---
-
+| `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, is item 31 |
 # Blocked on a decision
 
 ## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
@@ -656,7 +656,33 @@ condition and the reason it sharpened:
 contract is worse than none, so the trigger is real rather than an
 excuse.
 
-## 31. Saved SELECTIONS
+## 31. External writeback, which has an answer and no implementation
+
+`ROADMAP.md` carried this as a separate design track, and the owner
+had already decided the shape:
+
+> we can retain writing to external databases, but this should be off
+> by default. It is a feature that should have to be toggled by an
+> admin, and never ship pre-configured. We'll follow Foundry's
+> precedent.
+
+**And the ambiguity in it was resolved rather than assumed.** A
+confirmed action applies to Elysium's OWN internal state immediately,
+regardless of the toggle -- because Foundry has two real webhook
+modes, a "side effect" mode where the internal change applies at once
+and the external push is best-effort afterwards, and a mode where the
+external call is part of the action.
+
+Nothing of it exists: no `writeback` anywhere in `core/`, `api/` or
+the deployment config.
+
+**Blocked on:** whether to build it now. The decision is made and the
+work is not small, so it waits on priority rather than on an answer --
+which is why it is here rather than in "not blocked": building an
+admin-toggled external write path is a security surface, and starting
+it without the owner choosing to start it would be the wrong call.
+
+## 32. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must

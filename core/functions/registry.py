@@ -38,7 +38,7 @@ def validate_function_declarations(enabled_names: list[str], object_types: dict)
     Foundry runs backward-compatibility checks before publishing a
     function, warning about breaks like dropping a function or adding a
     required parameter. Elysium has no versioning to protect (see
-    ROADMAP.md for why), but the same class of mistake is worth
+    the roadmap (consumed) for why), but the same class of mistake is worth
     catching: a function declaring an object type the ontology does not
     have would otherwise surface as a confusing failure mid-conversation,
     after a user has already asked a question.

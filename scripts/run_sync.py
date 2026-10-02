@@ -2,7 +2,7 @@
 run_sync.py  (copies the customer's own external data into Elysium's
 local mirror -- one run, then exits)
 
-Phase 2 of the read-only mirror architecture (see ROADMAP.md). A
+Phase 2 of the read-only mirror architecture (see the roadmap (consumed)). A
 SEPARATE PROCESS, deliberately, never a background thread inside the
 web app -- a real, settled decision recorded in that section, for
 three real reasons: it matches how every other entry point in

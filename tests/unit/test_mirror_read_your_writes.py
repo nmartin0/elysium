@@ -1,6 +1,6 @@
 """
 Tests for the mirror read-your-writes overlay -- the final piece of
-Phase 4 (see ROADMAP.md).
+Phase 4 (see the roadmap (consumed)).
 
 THE PROBLEM, found by testing rather than assumed: after a confirmed
 write, the customer's real database genuinely holds the new value, but

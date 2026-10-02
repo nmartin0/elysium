@@ -1,7 +1,7 @@
 """
 Tests proving WriteMediator's own real, structural independence from
 DataMediator's adapters -- Phase 0 of the read-only mirror initiative
-(see ROADMAP.md's own "Read-only data mirror architecture" section,
+(see the roadmap (consumed)'s own "Read-only data mirror architecture" section,
 and write_mediator.py's own __init__ docstring for the full story).
 
 The real point being proven here isn't "the existing test suite still

@@ -10,7 +10,7 @@ support for reading the properties of various object types, traversing
 links, and flexibly making Ontology edits", which is what makes them
 "go far beyond commonly used Functions-as-a-Service platforms". A
 function here can do the read half of that. The write half is
-deliberately excluded; see ROADMAP.md.
+deliberately excluded; see the roadmap (consumed).
 
 THE SECURITY PROPERTY, and why this is not simply "hand it a mediator".
 These functions are invoked by an LLM that chooses their arguments

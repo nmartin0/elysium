@@ -193,7 +193,8 @@ def test_an_undeclared_type_RAISES_rather_than_returning_empty(mediator):
 
 def test_a_function_declaring_an_unknown_object_type_fails_at_load():
     # Foundry runs compatibility checks before publishing a function.
-    # Elysium has no versioning to protect (see ROADMAP.md), but the
+    # Elysium has no versioning to protect (see the roadmap (consumed)), but
+    # the
     # same class of mistake is worth catching at LOAD rather than
     # mid-conversation, after a user has already asked a question.
     from core.functions.registry import _FUNCTION_REGISTRY, validate_function_declarations

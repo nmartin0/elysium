@@ -258,7 +258,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         # directly, empirically, before being relied on anywhere:
         # SELECT succeeds while INSERT/UPDATE/DELETE/DROP are all
         # genuinely denied at the engine level itself). Phase 1 of the
-        # read-only mirror initiative (see ROADMAP.md's own
+        # read-only mirror initiative (see the roadmap (consumed)'s own
         # "Read-only data mirror architecture" section).
         #
         # Phase 0 gave DataMediator its own, SEPARATE adapter
@@ -277,7 +277,8 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         # SELECT-only DATABASE CREDENTIAL, enforced by the database
         # itself rather than by Elysium's own code -- is a real,
         # separate, still-outstanding deployment concern (see
-        # ROADMAP.md, and INSTALL.md once written): confirmed directly
+        # the roadmap (consumed), and INSTALL.md once written): confirmed
+        # directly
         # against Palantir's own real, documented practice that the
         # credential is the primary enforcement point, with
         # application code as defense in depth, never the reverse.

@@ -1,7 +1,8 @@
 """
 An unattended write may not take model-supplied values.
 
-ROADMAP.md's security backlog: ontology data flows into `gathered`, and
+the roadmap (consumed)'s security backlog: ontology data flows into
+`gathered`, and
 `gathered` flows into the prompt, so a field value containing
 instructions reaches the model as text. Three gates normally sit
 between a model's decision and a write -- the execute grant, MAC per
@@ -17,7 +18,8 @@ is `parameter.<name>` is chosen BY THE MODEL, so with auto_execute
 injected text decides both WHETHER to write and WHAT to write. A
 literal lets it decide only whether -- a far smaller blast radius.
 
-ROADMAP.md also proposed requiring a submission criterion instead. That
+the roadmap (consumed) also proposed requiring a submission criterion
+instead. That
 is weaker: a criterion can be written vacuously true, so it would force
 an author to type something without forcing them to think. And its
 third proposal -- "no field the model has read" -- is not knowable at

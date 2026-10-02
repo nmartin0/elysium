@@ -389,7 +389,7 @@ def test_a_delete_action_type_reaches_the_agents_prompt(write_loop):
     was whether a delete ACTION TYPE is visible to the agent at all.
     Driving a full propose-and-apply through the loop needs a fixture
     whose parameter resolution and MAC chain are set up for it, and is
-    recorded in ROADMAP.md rather than half-built here.
+    recorded in the roadmap (consumed) rather than half-built here.
     """
     from core.llm.agent_step_prompt import _describe_actions
 

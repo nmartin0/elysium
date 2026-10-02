@@ -1341,7 +1341,8 @@ Snowflake, REST or object-store adapter. The ontology is genuinely
 silo-agnostic and the mirror is Iceberg — and there is nothing to
 connect to a customer's actual data.
 
-ROADMAP.md discusses PostgreSQL at length, but as ELYSIUM'S OWN STORE,
+the roadmap (consumed) discusses PostgreSQL at length, but as ELYSIUM'S OWN
+STORE,
 which is a different question and correctly deferred. Reading a
 customer's PostgreSQL is mentioned once, in passing, and planned
 nowhere.
@@ -1764,7 +1765,7 @@ nothing says so. Worth stating before a customer assumes otherwise.
 
 ### And the measured case for snapshot has a gap in the measurement
 
-ROADMAP.md closed incremental syncs with numbers -- 500,000 rows in
+the roadmap (consumed) closed incremental syncs with numbers -- 500,000 rows in
 2.46 seconds, linear, ten million about a minute -- and with the
 better argument that SNAPSHOT propagates deletes while APPEND cannot
 see a deleted row at all.
@@ -1823,7 +1824,8 @@ loses every approval awaiting decision.
 
 For a product whose pitch is that writes are mediated and approved,
 losing the queue on deploy is the worst fit between claim and
-behaviour. ROADMAP.md establishes SQLite suffices and that the rebuild
+behaviour. the roadmap (consumed) establishes SQLite suffices and that the
+rebuild
 is blocked on its DESIGN — who may see a queued write across a
 restart, and what a reload does to one proposed under an older
 generation — not on storage.
@@ -2382,7 +2384,7 @@ rather than by how interesting they are.
 `search_object` and `search_object_free_text` at MAX_SEARCH_SCAN.
 `search_around` -- the link traversal -- has no limit at all.
 
-That matters because it is the exact path ROADMAP.md profiled:
+That matters because it is the exact path the roadmap (consumed) profiled:
 
     _io.open      1.21s   (200,006 calls -- audit logging)
     file close    0.71s
@@ -2391,7 +2393,7 @@ That matters because it is the exact path ROADMAP.md profiled:
 
 **A 200,000-object traversal writes 200,006 audit lines.** Authorization
 was fixed, the engine was never the problem, and what remains is the
-audit trail's own volume. The entry in ROADMAP.md has "been wrong
+audit trail's own volume. The entry in the roadmap (consumed) has "been wrong
 twice, each time because a fix moved the bottleneck somewhere the
 previous profile could not see" -- and phase 0.2 moved it again,
 without touching this path.

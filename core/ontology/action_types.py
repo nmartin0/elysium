@@ -625,7 +625,7 @@ def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:
     # authored once and read forever; a warning at startup is seen by
     # whoever deployed it and by nobody afterwards.
     #
-    # The narrower rule from ROADMAP.md -- "no field the model has
+    # The narrower rule from the roadmap (consumed) -- "no field the model has
     # read" -- is not knowable here: what a model has read is a
     # property of a running query, not of a schema.
     model_supplied = [

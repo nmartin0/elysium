@@ -1,7 +1,7 @@
 """
 The prompt diverges early between users, and must keep doing so.
 
-ROADMAP.md's security backlog: prefix caching makes a cache hit
+The roadmap's security backlog: prefix caching makes a cache hit
 measurably faster than a miss, and published attacks (PROMPTPEEK,
 EarlyBird, InputSnatch) reconstruct another tenant's prompt token by
 token from latency alone, reporting up to 100% success against
@@ -73,7 +73,7 @@ def test_two_users_with_disjoint_schemas_share_almost_no_prefix():
     assert shared <= MAX_SHARED_CHARS, (
         f"two users with nothing in common share {shared} characters of prompt "
         f"prefix. A shared prefix is what a KV-cache timing attack aligns "
-        f"against -- see ROADMAP.md's security backlog before raising this budget"
+        f"against. See the roadmap's security backlog before raising this"
     )
 
 
