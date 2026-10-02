@@ -7,7 +7,7 @@ reload, "what did generation 7 contain", "what changed", and "put it
 back" had no answer.
 
 NOT SOLVED BY GIT, and assuming otherwise was a real error in the
-reasoning behind HOT_RELOAD_PLAN.md. This project's configuration
+reasoning behind the hot-reload plan. This project's configuration
 happens to live in a repository; a DEPLOYED Elysium has /etc/elysium on
 an operator's machine and no relationship to any repository.
 """

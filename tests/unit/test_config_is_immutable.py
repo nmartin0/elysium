@@ -1,5 +1,5 @@
 """
-Configuration cannot be mutated -- step 2a of HOT_RELOAD_PLAN.md.
+Configuration cannot be mutated -- step 2a of the hot-reload plan.
 
 TWO HAZARDS, and neither is hypothetical once a configuration is shared
 across concurrent requests:

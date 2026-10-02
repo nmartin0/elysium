@@ -90,7 +90,8 @@ class MirrorReadAdapter(ExternalReadAdapter):
         # Set per GENERATION, so a reload is what moves the mirror
         # forward. That makes publishing new data the same operation as
         # publishing new configuration, rather than a second mechanism
-        # with its own timing -- see HOT_RELOAD_PLAN.md step 5.
+        # with its own timing -- see the hot-reload rule "additive and
+        # destructive changes take different paths".
         # THE ICEBERG MECHANICS LIVE IN ONE PLACE (GOLD-3): the
         # snapshot cache (E-10), the filter building that quantises
         # decimals (F-20) and the literal handling that reads the

@@ -1544,7 +1544,7 @@ unnoticed:
   under the record they started with -- and on CPU-only hardware, where
   a query can run for minutes, that window was long enough to matter.
 
-  HOT_RELOAD_PLAN.md step 4a closed it. `AgentLoop.run()` takes a
+  the hot-reload plan (consumed) step 4a closed it. `AgentLoop.run()` takes a
   `refresh_user` callable and re-resolves the acting user EVERY HOP; a
   changed or disabled record stops the loop and the route answers 409.
   The gathered work is returned internally and discarded by the route,

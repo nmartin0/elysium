@@ -196,7 +196,8 @@ def _tail_lines(log_path: Path, max_lines: int) -> Iterable[str]:
 class AuditLog:
     def __init__(self, log_path: Path | None = None, generation: int | None = None):
         """`generation` identifies WHICH configuration load produced
-        these entries -- see HOT_RELOAD_PLAN.md step 1.
+        these entries -- see the hot-reload rule "evaluate at every point of
+        access, never snapshot".
 
         Held here rather than threaded through every logging call
         because this object is already built per configuration load, by

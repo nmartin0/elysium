@@ -237,7 +237,8 @@ def test_approved_create_action_actually_creates_a_new_row(wm):
 
 # --- a write that outlived the configuration it was written against ---
 #
-# HOT_RELOAD_PLAN.md step 6. The pending-write store SURVIVES a reload,
+# the hot-reload rule "a readiness gate, not an atomic swap". The pending-
+# write store SURVIVES a reload,
 # deliberately -- discarding proposals on every configuration change
 # would make an approvals inbox useless -- so the ontology a write was
 # written against may no longer describe the fields it targets.

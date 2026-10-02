@@ -1,6 +1,6 @@
 """
 Reloading configuration without a restart -- step 3 of
-HOT_RELOAD_PLAN.md.
+the hot-reload plan.
 
 Until now the only way to load edited configuration was to restart,
 which drops every session, every in-flight query and every pending

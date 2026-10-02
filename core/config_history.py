@@ -16,7 +16,7 @@ the morning now changes the running system and leaves an audit line
 saying 7 became 8, with no way to see what that WAS.
 
 NOT SOLVED BY GIT, and assuming otherwise was a real error in the
-reasoning behind HOT_RELOAD_PLAN.md. This project's own configuration
+reasoning behind the hot-reload plan. This project's own configuration
 happens to live in a repository; a DEPLOYED Elysium has
 /etc/elysium on an operator's machine and no relationship to any
 repository. "Configuration is files, therefore versionable" is true.

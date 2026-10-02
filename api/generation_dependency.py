@@ -27,7 +27,8 @@ The pin also keeps the OLD generation alive for as long as any request
 holds it: Python's refcounting frees it when the last one finishes.
 That covers memory. It does NOT cover the Iceberg snapshots the
 generation names, which expiry can delete out from under a running
-read -- see HOT_RELOAD_PLAN.md step 5h.
+read -- see the hot-reload rule "snapshot retention must respect pinned
+generations".
 """
 
 from fastapi import Request

@@ -1,6 +1,6 @@
 """
 A generation reads ONE snapshot of the mirror -- step 5a of
-HOT_RELOAD_PLAN.md.
+the hot-reload plan.
 
 WHY IT MATTERS. A sync can commit while a query is running. Without a
 pin, hop 1 reads Customer as it was BEFORE the sync and hop 5 reads

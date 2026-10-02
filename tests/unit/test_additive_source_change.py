@@ -1,7 +1,7 @@
 """
 A column added to the ontology is absorbed, not a failure.
 
-STEP 5d OF HOT_RELOAD_PLAN.md, and it turned out to be a LIVE DEFECT
+STEP 5d OF the hot-reload plan, and it turned out to be a LIVE DEFECT
 rather than the enhancement the plan described. Without this,
 declaring a new field on an existing object type broke that table's
 sync outright -- pyiceberg refusing with "PyArrow table contains more

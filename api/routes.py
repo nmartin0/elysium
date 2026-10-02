@@ -776,7 +776,7 @@ class AwaitingWriteResponse(BaseModel):
     # configuration moved on while it waited.
     #
     # A DIFFERENT STATE FROM REJECTED, which is what step 6c of
-    # HOT_RELOAD_PLAN.md asks for: rejected means a human decided
+    # the hot-reload plan asks for: rejected means a human decided
     # against it, this means nobody can act on it either way. An inbox
     # that showed an Approve button here would let a reviewer make a
     # decision, learn it was refused, and have gained nothing.
@@ -1144,7 +1144,7 @@ class DeploymentConfigResponse(BaseModel):
     # question the rest of this response cannot: two deployments with
     # identical settings below may still be different loads of
     # different files. Once configuration can be reloaded while running
-    # (HOT_RELOAD_PLAN.md) this becomes the only way to tell which
+    # (the hot-reload plan) this becomes the only way to tell which
     # generation served a given request.
     #
     # The digest is over the four config files' bytes. Safe to expose

@@ -1,5 +1,5 @@
 """
-Which configuration is this? -- step 1a of HOT_RELOAD_PLAN.md.
+Which configuration is this? -- step 1a of the hot-reload plan.
 
 Elysium reads its four config files once at startup, and until now
 nothing could say WHICH configuration was in force for a given audit

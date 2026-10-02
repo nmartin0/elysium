@@ -1,6 +1,6 @@
 """
 The acting user is re-resolved every hop -- step 4a of
-HOT_RELOAD_PLAN.md, and a security-backlog item that predates it.
+the hot-reload plan, and a security-backlog item that predates it.
 
 Identity is resolved once when a request arrives. On CPU-only hardware
 a query runs for minutes -- long enough for an administrator to disable

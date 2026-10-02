@@ -5,7 +5,8 @@ WHY IT EXISTS. The sync needs to know whether a column the ontology
 declares has gone away. Until this method, a vanished column surfaced
 as whatever the adapter's own read happened to raise -- storage
 behaviour standing in for a policy, which is the thing core/mirror/ is
-trying to stop doing (see HOT_RELOAD_PLAN.md step 5e).
+trying to stop doing (see the hot-reload rule "additive and destructive
+changes take different paths"e).
 
 It returns the TRUTH ON DISK, not the ontology's opinion of it. The
 caller already knows what it declared; the whole value is the

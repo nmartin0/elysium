@@ -2,7 +2,8 @@
 
 **The one list.** Everything open, gathered from ROADMAP.md,
 UI_ROADMAP.md, IDEAS.md, the object-explorer plan (consumed) and
-HOT_RELOAD_PLAN.md, which had accumulated separate lists that drifted
+the hot-reload plan (consumed), which had accumulated separate lists that
+drifted
 apart.
 
 Those files keep their REASONING -- why a thing was rejected, what
@@ -1359,7 +1360,8 @@ question here, and adjacent to the measurement session above.
 
 ## 7. Optional
 
-**HOT_RELOAD_PLAN.md step 5c**, sync to a branch and validate there.
+**the hot-reload plan (consumed) step 5c**, sync to a branch and validate
+there.
 Optional by design: the generation-swap approach makes branch
 validation belt-and-braces rather than load-bearing, which is why
 pyiceberg lacking fast_forward_branch never blocked anything.

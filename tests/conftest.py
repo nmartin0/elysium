@@ -180,7 +180,7 @@ def with_roles(app, **roles) -> None:
 
     It is also a rehearsal for the real thing: swapping app.state for a
     newly built, immutable configuration is exactly what a reload does
-    (HOT_RELOAD_PLAN.md steps 2 and 3). These tests were mutating in
+    (the hot-reload plan steps 2 and 3). These tests were mutating in
     place, which is the operation that becomes impossible once a
     configuration is shared across concurrent requests.
 
@@ -203,7 +203,8 @@ def with_roles(app, **roles) -> None:
     # assertion fail because the mediator was still using the previous
     # grants.
     #
-    # This is EXACTLY the torn read HOT_RELOAD_PLAN.md step 2 exists to
+    # This is EXACTLY the torn read the hot-reload rule "version is a
+    # parameter of each request" exists to
     # remove. Today these are five separate app.state attributes that
     # must be updated together and nothing enforces it; once they live
     # in one immutable DeploymentGeneration, swapping one reference
@@ -246,7 +247,8 @@ def mediator_of(app):
     """The running app's mediator, for test setup that needs it directly.
 
     Reaches through app.state.generation, because api/app.py no longer
-    keeps app.state.mediator -- see HOT_RELOAD_PLAN.md step 2e. Tests
+    keeps app.state.mediator -- see the hot-reload rule "version is a
+    parameter of each request"e. Tests
     doing direct database setup are a legitimate need and a genuinely
     different one from a route handler's; this gives them a named way
     in rather than reinstating the attribute a route could then reach.

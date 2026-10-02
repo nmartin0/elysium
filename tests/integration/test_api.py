@@ -3448,7 +3448,8 @@ def test_a_write_detail_forbids_caching_too(client):
 
 
 def test_the_listing_reports_a_write_the_ontology_has_outrun(client):
-    """HOT_RELOAD_PLAN.md step 6c, server side.
+    """the hot-reload rule "a readiness gate, not an atomic swap"c, server
+    side.
 
     A write whose field the ontology no longer declares cannot be
     approved -- confirm_and_execute() refuses it. The listing says so,

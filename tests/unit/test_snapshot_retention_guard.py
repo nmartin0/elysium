@@ -17,7 +17,8 @@ is only meaningful alongside the thing it protects against. This fails
 the moment expiry appears, which is exactly when the decision needs
 making -- and not before.
 
-THE DECISION, recorded in HOT_RELOAD_PLAN.md step 5h, and TWO rules
+THE DECISION, recorded in the hot-reload rule "snapshot retention must
+respect pinned generations", and TWO rules
 rather than one:
 
   - NEVER reclaim a table's CURRENT snapshot, whatever its age. This is
@@ -50,7 +51,8 @@ def _sources():
 
 
 def test_nothing_expires_snapshots_without_an_age_margin():
-    # When this fails, read HOT_RELOAD_PLAN.md step 5h before making it
+    # When this fails, read the hot-reload rule "snapshot retention must
+    # respect pinned generations" before making it
     # pass. The requirement is an age threshold exceeding the longest
     # possible request by an order of magnitude -- bounded by max_hops
     # and the request timeout, so the case becomes unreachable rather
@@ -64,8 +66,9 @@ def test_nothing_expires_snapshots_without_an_age_margin():
 
     assert not offenders, (
         f"snapshot expiry added without an age margin: {offenders}. A pinned "
-        f"generation's snapshot can be deleted mid-read -- see HOT_RELOAD_PLAN.md "
-        f"step 5h for why coordinating with live generations does NOT work."
+        f"generation's snapshot can be deleted mid-read. Coordinating "
+        f"with live generations instead does NOT work: retention must "
+        f"respect pinned generations, and only an age margin can."
     )
 
 

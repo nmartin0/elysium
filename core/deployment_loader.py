@@ -199,7 +199,8 @@ class DeploymentConfig:
     # distinguish from the first.
     #
     # Stamped on the audit log and on pending writes rather than kept
-    # here alone -- see HOT_RELOAD_PLAN.md step 1. This is the whole of
+    # here alone -- see the hot-reload rule "evaluate at every point of
+    # access, never snapshot". This is the whole of
     # step 1a: identity only, no reloading, no behaviour change.
     #
     # Modelled on Palantir treating version as a PARAMETER carried by
@@ -1128,7 +1129,7 @@ class DeploymentGeneration:
     SURVIVE a reload. Rebuilding them would log out every user, discard
     every pending write, and reset every lockout counter -- which would
     let an attacker clear their own rate limit by triggering a reload.
-    See HOT_RELOAD_PLAN.md for the full split.
+    See the hot-reload plan for the full split.
     """
 
     generation: int
@@ -1221,7 +1222,8 @@ def build_generation(
     PURE with respect to process state: it touches no global, mutates
     nothing, and either returns a whole generation or raises. That is
     what lets a failed reload leave the running generation untouched
-    (HOT_RELOAD_PLAN.md step 3), and what lets this be tested without
+    (the hot-reload rule "consistency semantics documented per backend"),
+    and what lets this be tested without
     a server.
 
     NOT included, deliberately: resume_pending_writes(). It recovers

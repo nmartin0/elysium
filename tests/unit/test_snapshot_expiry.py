@@ -24,7 +24,8 @@ and a 62 KB metadata.json become 5 and 20 KB, and load_table drops from
 
 THE SAFETY RULES ARE THE REPOSITORY'S OWN, written down before the
 capability existed (tests/unit/test_snapshot_retention_guard.py,
-HOT_RELOAD_PLAN.md step 5h): never reclaim the CURRENT snapshot, and
+the hot-reload rule "snapshot retention must respect pinned generations"):
+never reclaim the CURRENT snapshot, and
 expire by AGE with a margin longer than the longest possible request.
 That guard was written to fail the moment expiry appeared. It did not
 fail here only because the implementation obeys it.

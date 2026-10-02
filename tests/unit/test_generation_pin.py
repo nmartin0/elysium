@@ -1,5 +1,5 @@
 """
-One configuration per request -- step 2c of HOT_RELOAD_PLAN.md.
+One configuration per request -- step 2c of the hot-reload plan.
 
 A request reads the current DeploymentGeneration once, at entry, and
 uses that one object throughout. Two reads within one request can

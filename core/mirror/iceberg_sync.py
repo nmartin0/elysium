@@ -131,7 +131,7 @@ logger = logging.getLogger(__name__)
 # That guard fired when this landed, which is exactly what it was
 # written for: "this fails the moment expiry appears, which is exactly
 # when the decision needs making". The decision is recorded here and in
-# HOT_RELOAD_PLAN.md step 5h.
+# the hot-reload rule "snapshot retention must respect pinned generations".
 #
 # SEVEN DAYS as the age bound, and the two rules interact the way the
 # precedent says they should: "retention policies will never delete

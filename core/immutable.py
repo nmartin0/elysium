@@ -18,7 +18,7 @@ pending for recovery to notice.
 Neither happens in production code today; verified by grep before this
 was written. The point is that nothing PREVENTS them, and once a
 configuration is shared across concurrent requests (see
-HOT_RELOAD_PLAN.md), a mutation by one request is visible to every
+the hot-reload plan), a mutation by one request is visible to every
 other, mid-flight, with no error and no record.
 
 ENFORCED RATHER THAN CONVENTIONAL, following what this project already

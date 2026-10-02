@@ -1,5 +1,5 @@
 """
-DeploymentGeneration -- step 2b of HOT_RELOAD_PLAN.md.
+DeploymentGeneration -- step 2b of the hot-reload plan.
 
 THE PROPERTY THIS EXISTS FOR: everything derived from one load of the
 configuration files moves together or not at all.

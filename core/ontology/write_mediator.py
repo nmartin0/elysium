@@ -190,7 +190,7 @@ class PendingWrite:
     # no timestamp anywhere.
     origin: Origin
     proposed_at: datetime
-    # WHICH CONFIGURATION AUTHORIZED THIS -- see HOT_RELOAD_PLAN.md.
+    # WHICH CONFIGURATION AUTHORIZED THIS -- see the hot-reload plan.
     #
     # A pending write is the first thing in Elysium that OUTLIVES the
     # request that made it. Everything else is decided and finished
@@ -1714,7 +1714,8 @@ class WriteMediator:
         # accepted and then that it could not be carried out, which is
         # the worst order to learn those two things in.
         #
-        # HOT_RELOAD_PLAN.md step 6 also wants these marked unapplyable
+        # the hot-reload rule "a readiness gate, not an atomic swap" also
+        # wants these marked unapplyable
         # at RELOAD time, so an inbox never shows a proposal that
         # cannot be approved. That is a better experience and it is not
         # the correctness half -- a write must be refused whether or
@@ -1790,7 +1791,7 @@ class WriteMediator:
                 # change -- which is exactly the thing an approvals
                 # inbox makes ordinary, and which nothing could
                 # currently detect. Recorded now; what to DO about a
-                # mismatch is a later step of HOT_RELOAD_PLAN.md.
+                # mismatch is a later step of the hot-reload plan.
                 "proposed_under_generation": pending.proposed_under_generation,
                 # WHO APPROVED IT, which this entry recorded nowhere.
                 # user_id above is the PROPOSER -- correct, since the

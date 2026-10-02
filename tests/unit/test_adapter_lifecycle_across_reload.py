@@ -1,7 +1,7 @@
 """
 Old-generation adapters keep working while new ones are built.
 
-STEP 5f OF HOT_RELOAD_PLAN.md, which said refcounting retires old
+STEP 5f OF the hot-reload plan, which said refcounting retires old
 adapters for free IF they hold no process-global state -- and said to
 VERIFY that rather than assume it. sqlite_adapter had been checked; the
 mirror adapter's catalog handle had not.

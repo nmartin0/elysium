@@ -95,7 +95,8 @@ class UserDirectory:
         "comes from the same static, per-deployment policy.yaml that
         never changes across this instance's lifetime" -- which was
         true when written and stopped being true when configuration
-        became reloadable (HOT_RELOAD_PLAN.md step 3).
+        became reloadable (the hot-reload rule "consistency semantics
+        documented per backend").
 
         This object is RUNTIME STATE: it owns credentials.db and must
         SURVIVE a reload, so it is not rebuilt when configuration
