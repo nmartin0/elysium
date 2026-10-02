@@ -1,5 +1,5 @@
 """What silver checks on every row, and what it does about a failure
-(GOLD-1, MEDALLION_PIPELINE.md's S2 and S3).
+(GOLD-1, the medallion design's rules S2 and S3).
 
 THE RULES ARE THE ONES THAT ALREADY EXIST. A field's `constraints`
 block -- min/max, min_length/max_length, pattern, one_of (patch 297) --

@@ -1,5 +1,5 @@
 """Turning a source value into a canonical one WITHOUT changing what it
-means -- silver's first step (GOLD-1, MEDALLION_PIPELINE.md's S1).
+means -- silver's first step (GOLD-1, the medallion design's rule S1).
 
 THE LINE THIS DRAWS, from the research: NFC normalisation and
 whitespace cleanup are the recommended conservative baseline; case
@@ -25,6 +25,21 @@ WHAT MUST BE DECLARED, because only the deployment knows it:
                 somebody wrote it down.
 
 Every rule is per field. Nothing is inferred from the data.
+
+THE RULE THIS OBEYS, kept here rather than in a design document that
+no longer exists:
+
+    S1. Standardise -- MEANING-PRESERVING ONLY. NFC; trim and collapse
+    whitespace; declared sentinel strings ("N/A", "", "NULL", "-") to
+    null, per column, never globally; type casting to the declared
+    type; ISO formats for dates. NO case folding, NO accent stripping
+    on values. Every rule declared, never inferred.
+
+"Meaning-preserving only" is the load-bearing phrase. Case folding and
+accent stripping look like tidying and are not: they destroy
+information the source chose to record, and nothing downstream can get
+it back. A future widening of the default has to argue with this
+paragraph.
 """
 
 import unicodedata
@@ -88,7 +103,7 @@ def _collapse(value: str) -> str:
     paragraphs became one line. Nothing declared that; it was the
     DEFAULT, applied to every string field unless it opted out.
 
-    THE CONTRADICTION IS WITH OUR OWN RULE. MEDALLION_PIPELINE.md
+    THE CONTRADICTION IS WITH OUR OWN RULE. the medallion design (consumed)
     S1 says standardisation is "meaning-preserving only" -- NFC, trim,
     collapse whitespace, no case folding, no accent stripping --
     precisely because silver is what gets SERVED and what a person

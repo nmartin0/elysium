@@ -57,7 +57,7 @@ code BEFORE it is built, and corrected here if it was wrong.
     deduplicate, history, lineage) -> GOLD (conform, identity,
     survivorship, audit, publish) -> ontology reads PUBLISHED gold
 
-Researched and designed in MEDALLION_PIPELINE.md, which extends
+Researched and designed in the medallion design (consumed), which extends
 ELT_ROADMAP.md and FUSION_AND_IDENTITY.md. MEASURED first: the ontology
 reads SILVER (`<silo>.<table>`); bronze is never read; gold does not
 exist. PyIceberg 0.12 does Write-Audit-Publish -- branch writes, then
@@ -68,7 +68,7 @@ before fusion: a single-source object type needs no identity
 resolution, so gold for it is a straight conform.
 
   DECIDED BY THE OWNER, September 22 (reasoning and precedent in
-  MEDALLION_PIPELINE.md): D1 gold requires mirror mode and LIVE-READ
+  the medallion design): D1 gold requires mirror mode and LIVE-READ
   MODE IS DEMOTED -- a documented fallback, warned about at startup;
   D2 a MAC conflict REFUSES the merge and sends it for review; D3 an
   edit to a fused object is recorded against the gold entity in the
@@ -95,7 +95,7 @@ resolution, so gold for it is a straight conform.
           reverse link as security.via_field; ~~F-26 WITH F-29~~ FIXED, patch
           335; ~~item 8~~ FIXED, patch 336: the sync refuses,
           before reading the source. GOLD-0's bug list is DONE. And the owner's
-          decisions D1-D5 (MEDALLION_PIPELINE.md
+          decisions D1-D5 (the medallion design
           -- gold vs live mode, MAC on a fused entity, write target,
           default expectation policy, DuckDB), with F-28, which decides
           how deletes reach gold.

@@ -1,5 +1,5 @@
 """What silver does when two rows claim the same identity (GOLD-1,
-MEDALLION_PIPELINE.md's S4).
+the medallion design's rule S4).
 
 WHY THIS IS NOT AN ORDINARY EXPECTATION. Every other rule is about one
 row's values; this is about two rows disagreeing about who they are. An

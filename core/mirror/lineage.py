@@ -1,4 +1,4 @@
-"""Where a silver row came from (GOLD-1, MEDALLION_PIPELINE.md's S6).
+"""Where a silver row came from (GOLD-1, the medallion design's rule S6).
 
 WHY GOLD NEEDS IT: when two sources disagree about one entity's field,
 survivorship has to say which source won and a person has to be able to

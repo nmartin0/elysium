@@ -1,6 +1,6 @@
 """
 Two rows claiming one identity (GOLD-1's third stage,
-MEDALLION_PIPELINE.md's S4).
+the medallion design's rule S4).
 
 WHY IT IS NOT AN ORDINARY EXPECTATION: every other rule is about one
 row's values; this is about two rows disagreeing about who they are. An

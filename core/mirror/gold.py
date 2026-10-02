@@ -1,5 +1,5 @@
 """Gold: one table per OBJECT TYPE, audited before anyone can read it
-(GOLD-2, MEDALLION_PIPELINE.md's G1 and G4).
+(GOLD-2, the medallion design's rules G1 and G4).
 
 WHAT CHANGES FROM SILVER. Silver is one table per SOURCE TABLE, at the
 source's grain, with the source's column names. Gold is one table per

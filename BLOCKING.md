@@ -48,7 +48,7 @@ numbers themselves.
 | `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
 | `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
 | `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 23. Its three unanswered risks are item 25 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
-
+| `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
 **The sharpest one, and it outranks the rest.** Reproduced: the policy
 validator rejects every `write:` grant, while the write path demands
 one per field. So no valid policy can authorise a cross-type action at

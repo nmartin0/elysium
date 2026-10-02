@@ -13,7 +13,7 @@ address stored as
 arrived in silver as "12 High St London E1 6AN", and a note with
 paragraphs became one line. Nothing declared that.
 
-THE CONTRADICTION IS WITH OUR OWN RULE. MEDALLION_PIPELINE.md S1 says
+THE CONTRADICTION IS WITH OUR OWN RULE. the medallion design's rule S1 said
 standardisation is "meaning-preserving only" -- NFC, trim, collapse
 whitespace, NO case folding, NO accent stripping -- precisely because
 silver is what gets SERVED and what a person edits. Flattening an
@@ -104,13 +104,20 @@ class TestWhatWasAlreadyRight:
 
 class TestTheRuleMatchesItsDocumentation:
     def test_meaning_preserving_means_what_it_says(self):
-        """MEDALLION_PIPELINE.md S1 lists what standardisation may do.
-        This test exists so a future widening of the default has to
-        argue with the document rather than quietly contradict it."""
-        from pathlib import Path
+        """The S1 rule now lives in `standardise`'s own docstring, and
+        this asserts the BEHAVIOUR it describes rather than the words.
 
-        text = Path("MEDALLION_PIPELINE.md").read_text()
+        IT USED TO READ A DESIGN DOCUMENT AND ASSERT A PHRASE APPEARED
+        IN IT. That is the antipattern AGENTS.md names -- a test
+        satisfied by deleting the behaviour and leaving the words --
+        and it made that document a RUNTIME DEPENDENCY of the suite,
+        so it could not be consumed without breaking a test.
 
-        assert "meaning-preserving only" in text
-        # and the value that proves we now obey it
+        What S1 forbids, checked directly: no case folding and no
+        accent stripping."""
+        assert standardise("McDonald", DEFAULTS) == "McDonald"
+        assert standardise("MCDONALD", DEFAULTS) == "MCDONALD"
+        assert standardise("Besançon", DEFAULTS) == "Besançon"
+        assert standardise("ÅNGSTRÖM", DEFAULTS) == "ÅNGSTRÖM"
+        # and the value that proves line structure survives
         assert standardise("12 High St\nLondon", DEFAULTS) == "12 High St\nLondon"

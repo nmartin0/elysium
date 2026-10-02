@@ -1,6 +1,6 @@
 """
 Silver canonicalises values without changing what they mean (GOLD-1's
-first stage, MEDALLION_PIPELINE.md's S1).
+first stage, the medallion design's rule S1).
 
 THE LINE, from the research: NFC and whitespace cleanup are the
 conservative baseline; case folding and stripping accents are

@@ -1,6 +1,6 @@
 """
 Silver checks every row, and nothing is dropped silently (GOLD-1's
-second stage, MEDALLION_PIPELINE.md's S2 and S3).
+second stage, the medallion design's rules S2 and S3).
 
 THE RULES ALREADY EXISTED: a field's `constraints` block (patch 297) is
 evaluated when a WRITE proposes a value. The same block is an
