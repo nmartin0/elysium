@@ -57,8 +57,8 @@ code BEFORE it is built, and corrected here if it was wrong.
     deduplicate, history, lineage) -> GOLD (conform, identity,
     survivorship, audit, publish) -> ontology reads PUBLISHED gold
 
-Researched and designed in the medallion design (consumed), which extends
-ELT_ROADMAP.md and the fusion-and-identity design. MEASURED first: the ontology
+Researched and designed in the medallion, ELT and fusion-and-identity
+designs, all three now consumed. MEASURED first: the ontology
 reads SILVER (`<silo>.<table>`); bronze is never read; gold does not
 exist. PyIceberg 0.12 does Write-Audit-Publish -- branch writes, then
 set_current_snapshot and a tag in one commit -- tested here.
@@ -464,7 +464,7 @@ resolution, so gold for it is a straight conform.
           (persisted by design, which a scrape-based client is not),
           and coerce() (deliberately stricter than dateutil -- it
           refuses '2026-2-1' rather than guessing).
-  GOLD-4. HISTORY (S5): the changelog -- ELT_ROADMAP Phase 4 -- as SCD2
+  GOLD-4. HISTORY (S5): the changelog -- the ELT roadmap Phase 4 -- as SCD2
           rows by snapshot diff, deletions included; DuckDB if D5 says
           so. Needed by most_recent survivorship.
   GOLD-5. ~~MULTI-SOURCE GOLD~~ DONE, patch 374, and AUDITING IT
@@ -531,7 +531,7 @@ resolution, so gold for it is a straight conform.
           values row by row. Streaming in batches is blocked on the
           audit -- "are these ids unique" cannot be answered by a batch
           that has not seen the others.
-  GOLD-7. SCALE: batching, when a table outgrows memory (ELT_ROADMAP,
+  GOLD-7. SCALE: batching, when a table outgrows memory (the ELT roadmap,
           "the limit that actually binds").
 
 EVERYTHING BELOW CONTINUES AROUND THIS, not ahead of it: B0 and the

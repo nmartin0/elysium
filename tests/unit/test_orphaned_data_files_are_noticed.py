@@ -1,5 +1,5 @@
 """
-Data files no live snapshot references are reported (ELT_ROADMAP.md,
+Data files no live snapshot references are reported (the ELT roadmap,
 corrected 1 October).
 
 WHAT THE DOCUMENT CLAIMED: "BRONZE is the bounded layer ... retaining
@@ -21,7 +21,7 @@ and one row changed per sync:
     after sync 8   512 KB    9 parquet
 
 One file per sync, none reclaimed, growing at full table size --
-which is the copy-on-write behaviour ELT_ROADMAP already measured
+which is the copy-on-write behaviour the ELT roadmap measured
 elsewhere in the same file. the unexpiring-snapshot risk says plainly that
 "expiry unreferences while ORPHAN CLEANUP is what actually reclaims
 bytes"; the roadmap stated the bound as fact anyway.
@@ -104,7 +104,7 @@ class TestWhatIsReported:
         problems = _check(tmp_path, [f"{n}.parquet" for n in range(12)],
                            set(), monkeypatch)
 
-        assert "ELT_ROADMAP.md" in problems[0]
+        assert "the ELT roadmap" in problems[0]
         assert "Expiry unreferences" in problems[0]
 
 

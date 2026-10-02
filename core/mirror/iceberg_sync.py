@@ -1384,7 +1384,7 @@ class IcebergMirrorSync(MirrorSync):
         where that is true. Every other table answers "what is there
         now" and is rebuilt; this one answers "what happened" and can
         only grow. It is also the only table a re-sync cannot rebuild,
-        which is why ELT_ROADMAP.md calls it the reversibility line.
+        which is why this is the REVERSIBILITY LINE.
 
         SILENT ON THE FIRST RUN. A table with no previous snapshot
         would otherwise record every existing row as newly inserted --

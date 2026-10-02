@@ -50,7 +50,7 @@ numbers themselves.
 | `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 23. Its three unanswered risks are item 25 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 | `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
 | `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 26 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
-validator rejects every `write:` grant, while the write path demands
+| `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |validator rejects every `write:` grant, while the write path demands
 one per field. So no valid policy can authorise a cross-type action at
 all.
 
@@ -523,6 +523,27 @@ consistent read per silo per run), `R5` (bounded-memory batched sync),
 and `R4` and `R5` conflict enough that the order matters -- but they
 need no decision, so they stay out of this file until one of them
 does.
+
+**The ELT chain joins them too**, and its ORDER is the part worth
+keeping, because it was re-derived from the dependencies rather than
+guessed:
+
+- the changelog diff NEEDS a query engine -- it is an anti-join;
+- the changelog NEEDS durable storage, because it becomes a system of
+  record: a source database holds "now" and has no record that a
+  customer's region was us-west last March, so losing the changelog
+  loses history nothing can return. That is the REVERSIBILITY LINE,
+  the point at which the mirror stops being a cache;
+- a materialised MAC column NEEDS somewhere to put it, which is the
+  transform stage.
+
+Its phase 0 is why the order is trustworthy. The measurement that
+justified the original phase 1 was real and measured THE WRONG THING:
+counting 50,000 transactions took 35 seconds, and a synthetic
+benchmark grouped 200,000 rows in 0.3s. Profiling found **200,023
+SQLite connections** -- four per object, from per-object write-log
+consultation. **DuckDB would have optimised the 0.24s and left the
+38.7s alone.** Fixed instead: 34.90s to 1.29s, 27x.
 
 **`LIB-3`, folding the SQLite adapter into the SQLAlchemy one as a
 dialect**, joins them, and `LIBRARY_AUDIT.md` called it the strongest

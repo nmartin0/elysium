@@ -47,7 +47,7 @@ that have gone wrong repeatedly.
    READ by `check_mirror`. Its one deferral — bootstrapping a
    deployment FROM the manifest — is `BLOCKING.md` item 19.
 
-12. **`ELT_ROADMAP.md`** — the data pipeline plan: bronze, silver,
+12. **(consumed; `BLOCKING.md`)** — the data pipeline plan: bronze, silver,
    a materialised MAC column, DuckDB, MinIO. Phased, with the
    measurements behind each phase.
 13. **`UI_ROADMAP.md`**, `ROADMAP.md`, `IDEAS.md` — the REASONING,

@@ -164,7 +164,8 @@ class DeploymentConfig:
                                    # options.
                                    #
                                    # Matters once a changelog exists, since the mirror then
-                                   # holds history no source can return. See ELT_ROADMAP.md.
+                                   # holds history no source can return. See
+                                   # the ELT roadmap's reversibility line.
     retain_publications: int      # How many `published-N` tags to keep per gold table.
                                    # Bounds the LIST, not the disk -- see gold.py.
     identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --

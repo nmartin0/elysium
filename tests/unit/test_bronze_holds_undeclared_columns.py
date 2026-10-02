@@ -2,7 +2,7 @@
 Bronze holds every source column, declared or not (PA001-A12).
 
 THE FINDING SAYS THIS "REVERSES THE STATED POLICY". IT DOES NOT. The
-policy states exactly this behaviour, in ELT_ROADMAP.md, with a
+policy states exactly this behaviour, in the ELT roadmap, with a
 measurement beside it:
 
     Sync writes every column the source has, not only the declared

@@ -1278,7 +1278,7 @@ analyzer.
 
 ---
 
-## 5. The ELT pipeline -- see ELT_ROADMAP.md
+## 5. The ELT pipeline -- see BLOCKING.md
 
 A GOVERNANCE project, not a performance one -- and it started as the
 latter. Two phases are done and delivered 67x (34.90s to 0.52s) by
@@ -1305,7 +1305,7 @@ by design. Time is not the constraint anywhere.
 The trigger is a real table this size; every table we have is four to
 seven rows. The first thing to do when someone hits it is RAISE rather
 than OOM -- a sync that refuses a table it cannot hold is diagnosable,
-one the kernel kills is not. Full reasoning in ELT_ROADMAP.md.
+one the kernel kills is not. Full reasoning in the ELT roadmap (consumed).
 
 **THREE SINGLE-TEST FAILURES, none of them reproduced -- and the
 reason they were never identified was how I read the output.**

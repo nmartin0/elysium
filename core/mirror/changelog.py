@@ -8,7 +8,7 @@ that history matters to anyone, only we can keep it.
 
 That makes this the point at which the mirror stops being a CACHE and
 becomes a SYSTEM OF RECORD -- which is why durable storage landed
-first, and why ELT_ROADMAP.md calls it the reversibility line.
+first, and why this is the REVERSIBILITY LINE.
 
 WHAT THIS IS NOT. It is not change data capture. Real CDC receives a
 feed from the source; this DIFFS two snapshots we took ourselves, which

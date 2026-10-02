@@ -370,7 +370,7 @@ def _check_the_lake_manifest(catalog, report) -> None:
 
 def _check_for_orphaned_data_files(catalog, warehouse_dir: Path,
                                     tables: set[str], report) -> None:
-    """Data files no live snapshot references (ELT_ROADMAP, corrected).
+    """Data files no live snapshot references.
 
     EXPIRY UNREFERENCES; IT DOES NOT DELETE. Bronze keeps two
     snapshots and that is enforced, but the files the expired ones
@@ -380,7 +380,7 @@ def _check_for_orphaned_data_files(catalog, warehouse_dir: Path,
     MEASURED on the dev deployment with the retention margin shortened
     so expiry actually ran: 92 KB and two parquet files after one
     sync, 512 KB and nine after eight. One file per sync, none ever
-    reclaimed. ELT_ROADMAP.md called bronze "bounded at roughly 2x
+    reclaimed. the ELT roadmap called bronze "bounded at roughly 2x
     table size"; it is not.
 
     THIS ONLY REPORTS, and deliberately. Deleting a data file is a
@@ -408,7 +408,7 @@ def _check_for_orphaned_data_files(catalog, warehouse_dir: Path,
                 f"{identifier}: {len(orphaned)} data file(s) "
                 f"({total // 1024} KB) that no live snapshot references. "
                 f"Expiry unreferences; nothing reclaims. See "
-                f"ELT_ROADMAP.md."
+                f"the ELT roadmap."
             )
 
 
