@@ -606,7 +606,7 @@ lacks is the machine.
 **Blocked on:** a machine with a capable model, and about an hour of
 someone's time on it.
 
-## 29. Context rot, and an unbounded search behind it
+## 29. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
