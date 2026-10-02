@@ -61,6 +61,72 @@ def _changelog_schema(id_field: str) -> pa.Schema:
     ])
 
 
+def read_history(catalog, object_type: str, id_field: str,
+                  object_id: "str | None" = None,
+                  since: "str | None" = None,
+                  limit: int = 200) -> list[dict]:
+    """What changed, newest first. The reader this table never had.
+
+    IT WAS WRITTEN FOR MONTHS AND READ BY NOTHING -- the sixth thing in
+    this codebase built, tested and wired to nowhere. The owner has now
+    said the feature is wanted, so this is the half that makes the
+    other half worth keeping.
+
+    `values` IS DECODED HERE. The writer stores the row JSON-encoded in
+    one column, deliberately, "because an object type's properties
+    change over time and a history table that changes shape with them
+    cannot answer questions about the past in the past's terms". A
+    caller wants the dict; keeping the JSON string out of the API is
+    this function's job rather than every caller's.
+
+    NEWEST FIRST AND LIMITED, because the question is almost always
+    "what changed recently" and the table only grows. The limit is the
+    caller's, defaulted rather than optional, so no caller accidentally
+    asks for everything.
+
+    NO MAC HERE, AND THAT IS DELIBERATE. This reads the history table
+    directly and applies no access control, exactly like the rest of
+    `core/mirror`. Anything exposing it to a user -- the API route
+    does -- must filter per caller itself.
+    """
+    import json
+
+    identifier = f"{CHANGELOG_NAMESPACE}.{object_type}"
+    try:
+        table = catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError):
+        # NOT AN ERROR. A type published once has no history yet, and a
+        # deployment that has never synced has none at all.
+        return []
+
+    rows = table.scan().to_arrow().to_pylist()
+    entries = []
+    for row in rows:
+        if object_id is not None and str(row.get(id_field)) != str(object_id):
+            continue
+        changed_at = row.get(CHANGED_AT_COLUMN) or ""
+        if since is not None and changed_at < since:
+            continue
+        raw = row.get("values")
+        try:
+            values = json.loads(raw) if raw else {}
+        except (TypeError, ValueError):
+            # A row we cannot decode is still a row that changed, and
+            # saying so beats dropping it silently.
+            values = {"_undecodable": raw}
+        entries.append({
+            "object_id": row.get(id_field),
+            "change": row.get(CHANGE_COLUMN),
+            "changed_at": changed_at,
+            "publication": row.get(SNAPSHOT_COLUMN),
+            "values": values,
+        })
+
+    entries.sort(key=lambda e: (e["changed_at"], e["publication"] or ""),
+                 reverse=True)
+    return entries[:limit]
+
+
 def record_publication(catalog, object_type: str, id_field: str,
                         previous_rows: "list[dict] | None", current_rows: list[dict],
                         published_at: str, snapshot_id: Any) -> int:
