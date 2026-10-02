@@ -1,5 +1,5 @@
 """
-Bronze and silver expire their snapshots, not just gold (BACKLOG.md
+Bronze and silver expire their snapshots, not just gold (the backlog (consumed)
 0d4, "snapshot growth, observed September 19").
 
 WHAT WAS WRONG, and it is a shape this project keeps producing:

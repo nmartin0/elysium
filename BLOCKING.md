@@ -55,7 +55,7 @@ numbers themselves.
 | `DEV_UI.md` | 1,271 lines of interface design, none of it buildable without a front-end agent. Its diagnosis, its refusals and its palette reasoning are item 27 |
 | `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 28 |
 | `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 29, with the code evidence |
----
+| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 28, section 2's one open piece is item 30, section 5 pointed here already |---
 
 # Blocked on a decision
 
@@ -585,8 +585,22 @@ unresolved -- `_sub_write_validity_for_object` costs prompt tokens on
 every hop and the loop already recovers without it. "There is no
 evidence either way."
 
-**Blocked on:** a machine with a capable model, and someone to run
-traces on it.
+**BACKLOG.md specified the session that answers all of it**, and the
+specification is the useful part because it is bounded: one harness,
+one-shot calls against the real prompt, varying one thing at a time,
+**about an hour of machine time** for four questions.
+
+- Does the agent over-fetch, and would a different example change it?
+- Are aggregates chosen when they should be?
+- Do the pre-flight action verdicts earn their keep?
+- Can a small model work without the schema in the prompt?
+
+ITERATE rather than hand-writing three prompts and picking. It has
+been unblocked since `aggregate_object` became reachable; what it
+lacks is the machine.
+
+**Blocked on:** a machine with a capable model, and about an hour of
+someone's time on it.
 
 ## 29. Context rot, and an unbounded search behind it
 
@@ -628,7 +642,21 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 30. Saved SELECTIONS
+## 30. The keyboard model's roving-focus half
+
+Gated rather than unstarted, and `BACKLOG.md` recorded both the
+condition and the reason it sharpened:
+
+> the recorded condition is that "nobody has established who uses
+> Elysium daily", and the precedent sharpens it -- our results are
+> cards with links, not a grid, so `role="grid"` without the full
+> keyboard contract would be worse than native semantics.
+
+**Blocked on:** knowing whether anyone uses this daily. A partial grid
+contract is worse than none, so the trigger is real rather than an
+excuse.
+
+## 31. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must

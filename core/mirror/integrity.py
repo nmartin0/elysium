@@ -433,7 +433,7 @@ def _check_changelog_names_real_objects(catalog, silver: set[str],
                                          report) -> None:
     """Every changelog entry names an object the table held.
 
-    BACKLOG.md left this explicitly unchecked: "whether every
+    the backlog (consumed) left this explicitly unchecked: "whether every
     changelog entry names an object that existed. The changelog is
     append-only history whose row count deliberately matches nothing,
     so it needs its own reasoning rather than an extension of these

@@ -149,7 +149,8 @@ class TestItNeverFailsAPublish:
         be reported as failed because the tidying afterwards did not."""
         # PATCHED WHERE IT NOW LIVES. `_expire_unreferenced` moved to
         # core.mirror.iceberg_sync as `expire_unreferenced` so bronze
-        # and silver could use it too (BACKLOG.md 0d4); gold imports
+        # and silver could use it too (the backlog (consumed) 0d4); gold
+        # imports
         # it INSIDE its try, so the lookup happens at call time and
         # patching the source module is what takes effect.
         import core.mirror.iceberg_sync as sync_module

@@ -841,7 +841,8 @@ class IcebergMirrorSync(MirrorSync):
                            if bronze_snapshot is not None else {}),
                     })
 
-                # SILVER EXPIRES TOO (BACKLOG.md 0d4). Only the data
+                # SILVER EXPIRES TOO (the backlog (consumed) 0d4). Only the
+                # data
                 # path: the unchanged branch above writes a property
                 # and adds no snapshot, so there is nothing new to
                 # expire and a commit there would be pure cost.
@@ -1261,7 +1262,8 @@ class IcebergMirrorSync(MirrorSync):
                     **BRONZE_RETENTION,
                 })
 
-            # BRONZE AND SILVER EXPIRE TOO (BACKLOG.md 0d4). They have
+            # BRONZE AND SILVER EXPIRE TOO (the backlog (consumed) 0d4).
+            # They have
             # declared `history.expire.*` properties since BRONZE_RETENTION
             # was written, and NOTHING EVER CALLED EXPIRY ON THEM --
             # properties describe what expiry should do, they do not run

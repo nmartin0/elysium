@@ -1302,9 +1302,10 @@ Not just an architecture change -- real, concrete new capability:
 
 ---
 
-## Near-term -- SEE BACKLOG.md
+## Near-term -- SEE the backlog (consumed)
 
-> **The open items from this file now live in BACKLOG.md**, which is
+> **The open items from this file now live in the backlog (consumed)**,
+which is
 > the one list. What stays here is the REASONING -- why a thing was
 > decided, rejected or measured -- because that has been needed
 > repeatedly and a backlog entry is the wrong place for it.

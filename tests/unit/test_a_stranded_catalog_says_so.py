@@ -1,6 +1,7 @@
 """
 A catalog pointing at metadata that is not there REFUSES, and names
-the repair (BACKLOG.md, "a catalog commit and its metadata write are
+the repair (the backlog (consumed), "a catalog commit and its metadata write
+are
 not atomic").
 
 WHAT HAPPENS WITHOUT THIS. Iceberg commits in two steps -- write the
@@ -9,7 +10,8 @@ fsyncs the pointer while pyiceberg's metadata write is unsynced. A
 full disk or a power loss between them strands the table: the catalog
 names a file that never landed.
 
-BACKLOG.md recorded it as the most serious thing its audit turned up,
+the backlog (consumed) recorded it as the most serious thing its audit
+turned up,
 and asked for the sync to "fail when the catalog and warehouse
 disagree, rather than reporting 0/2 with no explanation."
 

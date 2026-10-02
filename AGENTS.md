@@ -161,7 +161,8 @@ the reflog.
 
 This cost work three times in one session. The last time it orphaned
 three commits, noticed only because a finding recorded twice was
-missing from BACKLOG.md both times. Recovering them meant reading the
+missing from the backlog (consumed) both times. Recovering them meant
+reading the
 reflog and cherry-picking across a branch point.
 
 Resetting is the right way to guarantee a clean base and should stay.
@@ -379,7 +380,8 @@ what failed. Both test suites already print it:
     FAIL packages/a/src/b.test.ts > describe > it
 
 THREE "UNEXPLAINED" FLAKES IN ONE SESSION WERE NOT UNEXPLAINED. Each
-was recorded as unidentifiable -- twice in BACKLOG.md, escalated once
+was recorded as unidentifiable -- twice in the backlog (consumed), escalated
+once
 as needing a verbose reporter -- and each time the name had been
 printed and thrown away by the pipe used to read it.
 

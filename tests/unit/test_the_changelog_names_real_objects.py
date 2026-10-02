@@ -1,8 +1,8 @@
 """
-Every changelog entry names an object the table held (BACKLOG.md
+Every changelog entry names an object the table held (the backlog (consumed)
 section 0c, item 1).
 
-BACKLOG.md left this explicitly unchecked, and said why:
+the backlog (consumed) left this explicitly unchecked, and said why:
 
     "whether every changelog entry names an object that existed. The
     changelog is append-only history whose row count deliberately

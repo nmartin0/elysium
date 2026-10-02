@@ -1002,7 +1002,8 @@ def _snapshot_ids_from_catalog(catalog, config: DeploymentConfig) -> dict:
             # THIS RAN BEFORE THE SYNC EVEN STARTED, inside deployment
             # load, so the operator got a bare pyarrow traceback and
             # NOT ONE TABLE SYNCED -- including the healthy ones.
-            # BACKLOG.md asked for the sync to "fail when the catalog
+            # the backlog (consumed) asked for the sync to "fail when the
+            # catalog
             # and warehouse disagree, rather than reporting 0/2 with no
             # explanation"; it was worse than that.
             #

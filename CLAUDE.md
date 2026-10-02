@@ -14,7 +14,7 @@ that have gone wrong repeatedly.
 3. **`PRINCIPLES.md`** — eleven principles, each learned from a real
    failure. Principle 2 (negative controls) is the one that catches
    the most.
-4. **`BACKLOG.md`** — the ONE list of what is open. Five files used to
+4. **(consumed)** — the ONE list of what is open. Five files used to
    carry their own and they drifted apart; the entry marked "blocking
    everything below it" had been fixed weeks earlier and no list said
    so.
@@ -55,7 +55,7 @@ REASONING,
    not the backlog. Why a thing was
    decided, rejected or measured, and what a precedent said. Written
    so a fresh session starts with the decisions made, not
-   rediscovered. Read these when BACKLOG.md sends you to one.
+   rediscovered. Read these when the backlog (consumed) sends you to one.
 
 **The commit log is documentation.** `git log` carries the reasoning
 for every decision, including the ones that were reversed and why.

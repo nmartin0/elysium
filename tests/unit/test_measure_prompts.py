@@ -184,7 +184,8 @@ class TestQuestionSelection:
         assert len(labels) == len(set(labels))
 
     def test_the_labels_are_the_ones_documented(self):
-        # Pinned because they appear in BACKLOG.md's findings and in
+        # Pinned because they appear in the backlog (consumed)'s findings
+        # and in
         # the instructions a person follows. Renaming one silently
         # would make a recorded result unreproducible.
         from scripts.measure_prompts import QUESTIONS
