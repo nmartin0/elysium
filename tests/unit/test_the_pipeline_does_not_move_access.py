@@ -15,7 +15,7 @@ because to the pipeline, "correct a typo" and "widen access" are the
 same operation.
 
 THE DECISION WAS ALREADY MADE, FOR TYPE COERCION, and written down in
-UNIFIED_ROADMAP.md:
+the unified roadmap (consumed):
 
     THE SECURITY-VALUE PATH IS DELIBERATELY EXCLUDED -- it is compared
     for equality against the user's own, and changing the

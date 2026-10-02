@@ -332,7 +332,7 @@ def _targets_for_type(type_def: dict):
             raise ValueError(f"Field {field_name!r}: {e}") from None
         if field_name == security_field:
             # THE SECURITY FIELD IS NOT STANDARDISED, and this is the
-            # SAME DECISION UNIFIED_ROADMAP.md already records for type
+            # SAME DECISION the unified roadmap already records for type
             # coercion, in its own words:
             #
             #   THE SECURITY-VALUE PATH IS DELIBERATELY EXCLUDED -- it

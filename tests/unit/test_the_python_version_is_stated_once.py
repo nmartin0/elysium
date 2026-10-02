@@ -1,6 +1,6 @@
 """
 INSTALL.md and pyproject.toml agree about which Python this needs
-(UNIFIED_ROADMAP item 1d).
+(the unified roadmap's item 1d).
 
 WHAT THEY SAID. INSTALL.md: "Python 3.10 or later". pyproject.toml:
 `requires-python = ">=3.12"`. The roadmap recorded the disagreement

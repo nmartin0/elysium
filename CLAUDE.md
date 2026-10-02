@@ -11,58 +11,32 @@ that have gone wrong repeatedly.
 2. **`RULES.md`** — the working method as generic rules, distilled
    from this file, `AGENTS.md` and `PRINCIPLES.md`. Read it if you
    want the method without the project's specifics.
-3. **`PRINCIPLES.md`** — eleven principles, each learned from a real
-   failure. Principle 2 (negative controls) is the one that catches
-   the most.
-4. **(consumed)** — the ONE list of what is open. Five files used to
-   carry their own and they drifted apart; the entry marked "blocking
-   everything below it" had been fixed weeks earlier and no list said
-   so.
-5. **`UNIFIED_ROADMAP.md`** — START HERE for what to do next. Nine
-   planning documents hold ~8,500 lines between them; each is right
-   about its own area and none can say what comes first. This one is
-   the ordering, by dependency, and points at the others for detail.
-6. **`SECURITY_ARCHITECTURE.md`** — whether objects and actions should
-   be gated like users. Records one REAL HOLE (Elysium enforces
-   no-read-up and not no-write-down), what would be dangerous, and
-   a build order. Nothing in it is built.
-7. **(consumed; `BLOCKING.md` item 23)** — how a third party extends Elysium
-   when every component is assumed hostile. Records why module
-   federation is DISQUALIFIED, and that a third-party adapter is just
-   a silo. Nothing in it is built.
-8. **(consumed; `BLOCKING.md` item 26)** — merging records that mean the same
-   thing. Records that this is a PIPELINE problem, that the gold layer
-   is the missing slot, and that MDO already answers the permissions
-   question. Nothing in it is built.
-9. **(consumed; `BLOCKING.md` item 25)** — two features that need designing
-   before building, because both touch the security model and both
-   are hard to retrofit. Neither is built.
-10. **`BLOCKING.md`** — the one planning file. Work that cannot be
-   done without a person: a decision, a product judgement, or a
-   machine nobody has. Everything else has been done and the document
-   it came from deleted. `QUERY_PLAN.md` was the second consumed.
-11. **(consumed)** — the lake-metadata note. Its four answers are
-   built: the manifest lives at `_elysium/manifest-<generation>.json`,
-   is written on configuration change, carries no secrets, and is now
-   READ by `check_mirror`. Its one deferral — bootstrapping a
-   deployment FROM the manifest — is `BLOCKING.md` item 19.
+3. **`PRINCIPLES.md`** — why the design is the way it is, and the
+   reasoning behind decisions that look odd from outside.
+4. **`BLOCKING.md`** — **the one planning file, and the only one.**
+   Everything in it needs a person: a decision, a product judgement,
+   or a machine nobody has. Anything that could be built has been
+   built, and the document it came from has been deleted.
+5. **`AUDIT_CHECKLIST.csv`** — one row per verifiable claim, with its
+   source, severity, where to look, and a status. Sortable, so "did we
+   cover everything?" is a question a command answers rather than a
+   memory.
+6. **`SECURITY_ARCHITECTURE.md`** — the security model as built.
+7. **`INSTALL.md`** and **`README.md`** — for running it.
 
-12. **(consumed; `BLOCKING.md`)** — the data pipeline plan: bronze, silver,
-   a materialised MAC column, DuckDB, MinIO. Phased, with the
-   measurements behind each phase.
-13. **(consumed)**, `the roadmap (consumed)`, `the ideas file (consumed)` — the
-REASONING,
-   not the backlog. Why a thing was
-   decided, rejected or measured, and what a precedent said. Written
-   so a fresh session starts with the decisions made, not
-   rediscovered. Read these when the backlog (consumed) sends you to one.
+**THERE USED TO BE THIRTY-FIVE MORE.** They were worked to exhaustion
+one at a time: every item checked against the CODE rather than taken
+at its word, what could be done done, what could not moved to
+`BLOCKING.md` with what would unblock it, and everything else worth
+keeping moved into the code it describes — a measured fact in a
+deleted file is a measured fact lost.
 
-**The commit log is documentation.** `git log` carries the reasoning
-for every decision, including the ones that were reversed and why.
-When something looks odd, read the commit that introduced it before
-changing it — several times the odd thing was deliberate and the
-comment said so.
-
+That last step is the one that cost. `SCALABILITY.md` was cited six
+times from `core/`, `adapters/` and `tests/`; `HOT_RELOAD_PLAN.md`
+from twenty-six places, all of them by STEP NUMBER. A comment saying
+"see step 5h" is worth nothing without the document. A comment saying
+"snapshot retention must respect pinned generations" is worth
+something on its own.
 ## You do not push. The workflow is patches.
 
 You have no credentials. The user applies everything.
@@ -199,7 +173,7 @@ Silver rebuilds FROM BRONZE, without re-reading the customer's
 database. Verified on the live mirror when `amount` became `decimal`
 and `transaction_date` became `date`.
 
-The mirror administration surface (UNIFIED_ROADMAP 0.5.4) should offer
+The mirror administration surface (the unified roadmap 0.5.4) should offer
 this as a button; today it needs a person with a Python prompt.
 
 **Backend changes need `uvicorn` restarted.** Frontend changes do not
@@ -454,7 +428,8 @@ they drift.
 
 ## Where the work stands
 
-Build order and per-feature designs are in `the UI roadmap (consumed)`. Two
+Build order and per-feature designs were in the UI roadmap, now
+consumed into `BLOCKING.md` items 22 and 29. Two
 things worth carrying that are not features:
 
 **Query is too slow to use**, which means Agent audit — built, tested,
@@ -467,4 +442,4 @@ discards the token counts every provider returns.
 roadmap entry said. `search_around`'s `total` is the count of what it
 already fetched, and `count_objects` has no HTTP route — so
 count-before-expand has nothing to count with. That endpoint comes
-first. The design record in `the UI roadmap (consumed)` has the rest.
+first. `BLOCKING.md` has what survived of the rest.

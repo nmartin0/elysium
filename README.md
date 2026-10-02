@@ -17,11 +17,16 @@ single-tenant system.
 quality tooling, and a real production install. This file is
 architecture, configuration, and the reasoning behind both.
 
-**What is left to build is ONE list: the first section of
-`UNIFIED_ROADMAP.md`, "WHAT IS LEFT".** The other planning documents
-hold reasoning; that section is the answer to "what next", in the order
-it will be built. It is kept in one place deliberately -- every second
-copy of a list in this project has drifted from the first.
+**What is left is ONE file: `BLOCKING.md`.** Everything in it needs a
+person -- a decision, a product judgement, a machine nobody has.
+Anything that could be done has been done, and the document it came
+from has been deleted; thirty-five planning documents were worked to
+exhaustion and removed, their reasoning moved into the code it
+describes.
+
+It is one file deliberately. Every second copy of a list in this
+project has drifted from the first, and the roadmap that preceded this
+one found seven built things still described as open.
 
 **The real, recurring engineering principles this project has
 actually developed by** — verification discipline, testing

@@ -627,7 +627,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # of its own design.
             #
             # A DEPLOYMENT MAY STILL TURN IT OFF, and the direct-read
-            # path stays for now: see UNIFIED_ROADMAP phase 0.5. It is
+            # path stays for now: see the unified roadmap phase 0.5. It is
             # a secondary option on the way to deprecation, and its
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.

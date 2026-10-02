@@ -57,6 +57,10 @@ numbers themselves.
 | `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 29, with the code evidence |
 | `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 28, section 2's one open piece is item 30, section 5 pointed here already |---
 | `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, is item 31 |
+| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 32-35; its one correction to me is in item 29 |# Blocked on a decision
+
+---
+
 # Blocked on a decision
 
 ## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
@@ -619,12 +623,20 @@ work.
 > crash, which is the hard kind to notice. We have never measured
 > where that begins.
 
-**THE MECHANISM IS CONFIRMED IN THE CODE.** `DataMediator.search_object`
-takes no limit and returns every id the caller may see.
-`_step_search_object` then builds `entry = {**step, "result":
-object_ids}` and appends it whole. A search matching 200,000 objects
-puts 200,000 ids into `gathered`, and `gathered` goes back to the
-model on every remaining hop.
+**CORRECTED, patch 505.** Patch 502 recorded this as an UNBOUNDED
+search putting 200,000 ids into `gathered`. **That was wrong.**
+`MAX_SEARCH_SCAN` is 10,000 in `mediator.py`, applied by asking for
+`MAX_SEARCH_SCAN + 1` so that "we stopped looking" can be told apart
+from "that was all of them", and truncating with `scan_truncated` set
+on the outcome. I read `search_object`'s signature, saw no `limit`
+parameter, and did not read far enough into its body.
+
+**What is actually true is still worth recording.** The cap is 10,000
+ids, `_step_search_object` builds `entry = {**step, "result":
+object_ids}` and appends it whole, and `gathered` goes back to the
+model on every remaining hop. Ten thousand ids is on the order of
+tens of thousands of tokens re-sent per hop, against an agent that
+runs eight hops.
 
 Compare `get_object`, which IS bounded: `MAX_OBJECT_IDS = 20`, with a
 refusal that names the batch and the remainder. The input side is
@@ -682,7 +694,53 @@ which is why it is here rather than in "not blocked": building an
 admin-toggled external write path is a security surface, and starting
 it without the owner choosing to start it would be the wrong call.
 
-## 32. Saved SELECTIONS
+## 32. PostgreSQL row-level security for MAC
+
+Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
+Elysium enforces MAC in the mediator today; pushing it into the
+database would make it true for any caller, not just ours.
+
+**The hazard is already measured and recorded in the schema:**
+`via_field:` CANNOT be pushed down, and `ontology_schema.yaml` says
+so, because a join-shaped predicate forces a full scan. The
+row-level-security guidance is "keep predicates join-free", and
+Databricks' SecureView barrier forces full scans for the same reason.
+
+**Blocked on:** PostgreSQL being a supported silo in production, which
+it is not. `pgserver` has no wheel for Python 3.13 (item 14), so the
+real-PostgreSQL tests cannot run on the machine that gates patches.
+
+## 33. The help assistant
+
+A larger design, written and unbuilt. It would be an agent explaining
+Elysium itself rather than a customer's data.
+
+**Blocked on:** whether it is wanted. It is the one feature on the
+list that competes with documentation rather than extending the
+product.
+
+## 34. The search bar's five unbuilt operators
+
+Front-end work on a bar whose backend vocabulary is already closed and
+built -- `core/filters.py` has seven operators, `in` and `not_in`
+among them.
+
+**Blocked on:** a front-end agent, and on item 22, since the operators
+and Object Explorer's filter UI are the same surface.
+
+## 35. The watch layout check, never seen to pass
+
+Rewritten in patch 290 and never once observed passing:
+
+    cd ui && npx playwright test -g "Watch recipient"
+
+It is not known to be broken. It is known to be unobserved, which is a
+different thing and worth keeping separate -- a test nobody has
+watched run is not evidence.
+
+**Blocked on:** somebody running it. One command.
+
+## 36. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must
