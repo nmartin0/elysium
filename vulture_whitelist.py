@@ -35,6 +35,7 @@ login
 logout
 logout_all
 request_trace_route
+published_history_route
 list_notes_route
 create_note_route
 silos_route

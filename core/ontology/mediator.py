@@ -1898,6 +1898,65 @@ class DataMediator:
             }
         return counts
 
+    def filter_published_history(self, user_record: UserRecord,
+                                  object_type: str, object_id: str,
+                                  entries: list[dict],
+                                  context: RequestContext | None = None
+                                  ) -> list[dict]:
+        """Which recorded changes this caller may see, and which fields.
+
+        IT TAKES THE ENTRIES RATHER THAN READING THEM, and that is the
+        import contract talking rather than taste: `core/ontology` may
+        not reach into `core/mirror`, and the first version of this
+        imported `gold_history` and broke the layering check. The
+        caller reads the lake; this decides access. Splitting it the
+        other way -- the route filtering -- would put access control in
+        two places, which is what `edit_history` refused to do.
+
+        THE SAME RULE edit_history SETTLED, from Foundry: "users who
+        have access to the current state of an object can access the
+        entire history of the object". Authorization is the SAME check
+        as reading the object. No separate grant, and no way to learn
+        about an object's past that you could not learn about its
+        present.
+
+        FIELDS ARE FILTERED PER FIELD, because a history entry carries
+        the whole row as it stood -- including fields the caller may
+        never read, and PAST values of fields they can read today. A
+        caller granted read:Customer but not read:Customer.email must
+        not receive the email address merely because it changed.
+
+        AN ENTRY WITH EVERY FIELD FILTERED OUT IS STILL RETURNED, with
+        empty values, for edit_history's reason: the FACT that this
+        object changed at a given time is what a history is for.
+
+        UNIFORM DENIAL: a caller who may not read the object gets an
+        empty list, so the answer never distinguishes "no history" from
+        "not allowed" from "no such object".
+        """
+        if not check_access(self, user_record, self.roles, object_type,
+                            object_id, f"read:{object_type}", context):
+            return []
+
+        type_def = (self.schema.get(object_type) or {})
+        readable = {
+            field_name
+            for field_name in (type_def.get("fields") or {})
+            if authorize(user_record, self.roles,
+                         f"read:{object_type}.{field_name}")
+        }
+        return [
+            {
+                "change": entry.get("change"),
+                "changed_at": entry.get("changed_at"),
+                "publication": entry.get("publication"),
+                "values": {name: value
+                           for name, value in (entry.get("values") or {}).items()
+                           if name in readable},
+            }
+            for entry in entries
+        ]
+
     def edit_history(self, user_record: UserRecord, object_type: str, object_id: Any,
                       limit: int | None = None, offset: int = 0,
                      context: RequestContext | None = None) -> tuple[list[dict], int]:

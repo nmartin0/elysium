@@ -2432,6 +2432,77 @@ def _note_kind(object_type: str, object_id: str) -> str:
     return f"note:{object_type}:{object_id}"
 
 
+class PublishedChangeResponse(BaseModel):
+    """One recorded change to an object, as the mirror saw it."""
+
+    change: str
+    changed_at: str
+    publication: "str | None" = None
+    values: dict
+
+
+@router.get("/objects/{object_type}/{object_id}/published-history",
+            response_model=list[PublishedChangeResponse])
+def published_history_route(
+    object_type: str, object_id: str, request: Request,
+    limit: int = 50,
+    current_user: UserRecord = Depends(get_current_user),
+) -> list:
+    """What the MIRROR recorded changing about one object.
+
+    DISTINCT FROM /edit-history, and both are wanted. Edit history
+    answers "who changed this through Elysium"; this answers "what
+    changed in the SOURCE between publications". A row edited in the
+    customer's own database appears here and never there.
+
+    AUTHORIZED AS THE OBJECT IS, the rule edit_history settled from
+    Foundry's precedent, and the filtering is the mediator's job rather
+    than this route's -- a route that filtered would be a second place
+    deciding one question.
+
+    A caller who cannot read the object gets an empty list, not an
+    error: uniform denial, so the response never distinguishes "no
+    history" from "not allowed" from "no such object".
+    """
+    from core.mirror.gold_history import HistoryNotRecorded, read_history
+
+    mediator = _generation(request).mediator
+    type_def = (mediator.schema.get(object_type) or {})
+    id_field = type_def.get("id_field")
+    if id_field is None:
+        return []
+
+    # THE CATALOG COMES FROM AN ADAPTER THAT ALREADY HOLDS ONE. Every
+    # MirrorReadAdapter is handed the same catalog at construction, so
+    # asking one is asking the deployment's. A live-read deployment has
+    # none, and has published nothing either.
+    catalog = next(
+        (getattr(adapter, "_catalog", None)
+         for adapter in mediator.adapters.values()
+         if getattr(adapter, "_catalog", None) is not None),
+        None,
+    )
+    if catalog is None:
+        return []
+
+    try:
+        entries = read_history(catalog, object_type, id_field,
+                               object_id=object_id,
+                               limit=min(limit, MAX_PAGE_SIZE))
+    except HistoryNotRecorded:
+        # Nothing has ever changed for this type. Ordinary, and
+        # indistinguishable from denial by design.
+        return []
+
+    # ACCESS IS THE MEDIATOR'S, NOT THIS ROUTE'S. Reading the lake is
+    # I/O the ontology layer may not do; deciding who sees what is not
+    # a decision this route may make. Each does the half it owns.
+    return mediator.filter_published_history(
+        current_user, object_type, object_id, entries,
+        context=RequestContext.new(),
+    )
+
+
 @router.get("/objects/{object_type}/{object_id}/notes",
             response_model=list[NoteResponse])
 def list_notes_route(object_type: str, object_id: str, request: Request,
