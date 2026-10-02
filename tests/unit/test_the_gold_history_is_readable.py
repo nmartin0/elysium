@@ -32,6 +32,7 @@ from core.mirror.gold_history import (
     CHANGE_COLUMN,
     CHANGED_AT_COLUMN,
     SNAPSHOT_COLUMN,
+    HistoryNotRecorded,
     read_history,
 )
 
@@ -149,11 +150,33 @@ class TestNarrowingIt:
 
 
 class TestWhatIsNotAnError:
-    def test_a_type_with_no_history_table(self):
-        """A type published once has no history yet, and a deployment
-        that has never synced has none at all. Neither is a fault."""
-        assert read_history(_Catalog(missing=True), "Customer",
-                            "customer_id") == []
+    def test_a_type_with_no_history_table_RAISES(self):
+        """ABSENT IS NOT EMPTY. The first version returned [] for both,
+        and the command above it then asserted "a type published only
+        once has no history yet" -- which it could not know.
+
+        Run on a real deployment it printed exactly that, and the
+        output could not distinguish a writer that had never recorded
+        from a reader dropping every row. Same collapse S3 avoids with
+        NoSuchBucket against NoSuchKey."""
+        with pytest.raises(HistoryNotRecorded):
+            read_history(_Catalog(missing=True), "Customer", "customer_id")
+
+    def test_an_empty_table_is_not_the_same_answer(self):
+        """A table that exists and holds nothing is stranger than no
+        table: the writer creates it on the first CHANGE, so it has no
+        path to produce an empty one."""
+        assert read_history(_Catalog([]), "Customer", "customer_id") == []
+
+    def test_absence_is_ordinary_not_a_fault(self):
+        """MEASURED: two syncs of the dev deployment with no data
+        change leave no table at all, because record_publication
+        returns before creating one when the diff is empty."""
+        import inspect
+
+        from core.mirror.gold_history import HistoryNotRecorded as absent
+
+        assert "not a fault" in inspect.getdoc(absent).lower()
 
     def test_a_row_whose_values_will_not_decode(self):
         """It is still a row that changed. Saying so beats dropping it

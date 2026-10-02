@@ -27,7 +27,7 @@ import sys
 
 from core.deployment_loader import load_deployment, resolve_runtime_paths
 from core.mirror.catalog import open_mirror_catalog
-from core.mirror.gold_history import read_history
+from core.mirror.gold_history import HistoryNotRecorded, read_history
 
 
 def _id_field(schema: dict, object_type: str) -> "str | None":
@@ -74,16 +74,32 @@ def main() -> int:
               f"Declared types: {declared}", file=sys.stderr)
         return 1
 
-    entries = read_history(catalog, args.object_type, id_field,
-                           object_id=args.object_id, since=args.since,
-                           limit=args.limit)
+    # THREE ANSWERS, NOT ONE. The first version printed the same
+    # sentence for all of them -- "a type published only once has no
+    # history yet" -- which it could not know, and which told an
+    # operator running it on a real deployment nothing about whether
+    # the writer had failed, the table was empty, or the filters had
+    # excluded everything.
+    try:
+        entries = read_history(catalog, args.object_type, id_field,
+                               object_id=args.object_id, since=args.since,
+                               limit=args.limit)
+    except HistoryNotRecorded:
+        print(f"no history table for {args.object_type}: nothing has "
+              f"changed since it was first published.\n"
+              f"The writer creates the table on the first CHANGE, so this "
+              f"is the ordinary state for a type whose rows have been "
+              f"stable -- not a fault.")
+        return 0
+
     if not entries:
-        # NOT AN ERROR, and the distinction matters: a type published
-        # once has no history yet, which is different from a type whose
-        # history was lost.
-        scope = f" for {args.object_id!r}" if args.object_id else ""
-        print(f"no recorded changes for {args.object_type}{scope}. "
-              f"A type published only once has no history yet.")
+        narrowed = args.object_id is not None or args.since is not None
+        if narrowed:
+            print(f"the history for {args.object_type} exists and holds no "
+                  f"change matching those filters.")
+        else:
+            print(f"the history for {args.object_type} exists and is EMPTY: "
+                  f"the writer has run and found nothing to record.")
         return 0
 
     for entry in entries:

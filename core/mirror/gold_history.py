@@ -61,6 +61,26 @@ def _changelog_schema(id_field: str) -> pa.Schema:
     ])
 
 
+class HistoryNotRecorded(LookupError):
+    """No history table exists for this type.
+
+    DIFFERENT FROM AN EMPTY ONE, AND NOT A FAULT. `record_publication`
+    returns before creating the table when `previous_rows is None` (a
+    first publication) or when the diff is empty, so a type that has
+    never changed has no table at all -- MEASURED: two syncs of the dev
+    deployment with no data change leave none.
+
+    An empty table therefore means something stranger than no table: it
+    was created by a change and then held nothing, which the writer has
+    no path to produce.
+
+    The distinction exists because the caller cannot otherwise tell
+    "nothing has changed" from "the reader found nothing", and the
+    first version of this collapsed them into one sentence that
+    asserted the first.
+    """
+
+
 def read_history(catalog, object_type: str, id_field: str,
                   object_id: "str | None" = None,
                   since: "str | None" = None,
@@ -95,9 +115,19 @@ def read_history(catalog, object_type: str, id_field: str,
     try:
         table = catalog.load_table(identifier)
     except (NoSuchTableError, NoSuchNamespaceError):
-        # NOT AN ERROR. A type published once has no history yet, and a
-        # deployment that has never synced has none at all.
-        return []
+        # ABSENT IS NOT EMPTY, and the caller is told which.
+        #
+        # The first version of this returned [] for both, and the
+        # command above it then said "a type published only once has no
+        # history yet" -- an assertion it could not support. Run against
+        # a real deployment it printed exactly that, and I could not
+        # tell from the output whether the writer had never recorded,
+        # the table held nothing, or the reader was dropping every row.
+        #
+        # That is the same collapse S3 avoids with NoSuchBucket against
+        # NoSuchKey, and the same one patch 505 found in
+        # `get_raw_field`. I made it here while fixing it there.
+        raise HistoryNotRecorded(identifier) from None
 
     rows = table.scan().to_arrow().to_pylist()
     entries = []
