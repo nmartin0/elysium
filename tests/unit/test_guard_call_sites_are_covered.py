@@ -1,36 +1,35 @@
 """
-Three guards are CALLED, and nothing tested that they are.
+Three guards are called, and these tests say where.
 
-HOW THIS WAS FOUND. SEC-27 turned out to be a guard that was written,
-called, AND tested -- where every test called the method directly, so
-deleting the call left all eight passing. That raised the obvious
-question: how many others?
+THE CLAIM THAT CREATED THIS FILE WAS FALSE, and the correction is the
+point of reading it. Patch n reported that deleting any of these three
+calls left every related test passing:
 
-A SWEEP ANSWERED IT. Fifty-three guard-shaped functions in `core/` and
-`api/` (`_refuse_*`, `_check_*`, `_validate_*`, `_reject_*`), of which
-eighteen are called directly by tests. For the six with exactly one
-call site, the call was deleted and the tests naming the guard were
-run:
-
-    _refuse_system_column_names      caught
-    _refuse_reserved_silo_names      caught
     _validate_auto_execute           NOT CAUGHT
     _validate_effects_are_reachable  NOT CAUGHT
     _reject_unknown_fields           NOT CAUGHT
 
-Verified by hand for the first of those three with a wider net --
-fifty-two tests across four files passed with the call gone.
+ALL THREE ARE CAUGHT. Re-measured against two hundred test files
+instead of the handful my sweep script chose: deleting
+`_validate_auto_execute`'s call fails three tests, and the other two
+fail two each.
 
-WHY THESE THREE MATTER. `auto_execute` decides whether an action runs
-WITHOUT confirmation from a person. `_validate_effects_are_reachable`
-holds an action to mutating only the types its parameters can reach.
-`_reject_unknown_fields` refuses a field the model named that the
-caller cannot see.
+WHY THE SWEEP WAS WRONG. It picked which tests to run with
+`grep -rl <guard> tests/` -- the files that MENTION the guard by name.
+A test exercising the path through it has no reason to name it, so the
+sweep ran a tiny and arbitrary slice and read silence as absence. The
+same mistake found `_check_filter_types` "uncovered" when
+`test_bad_filter_values.py` catches it.
 
-WHY SOURCE CHECKS RATHER THAN BEHAVIOURAL ONES. The failure is the
-CALL's absence, and a behavioural test for "this path runs a guard" is
-a test for the guard again -- which is exactly what already existed
-and exactly what did not catch it.
+SEC-27, WHICH STARTED ALL THIS, IS STILL REAL: there, deleting the
+call left the whole suite green, measured the same way these were
+re-measured. One true instance does not make a pattern, and I built a
+sweep that manufactured three more.
+
+THESE TESTS ARE KEPT ANYWAY, as call-site pins rather than as a fix
+for a gap. They state where each guard is called, so moving one out of
+`validate_action_types` is visible in a diff rather than silent -- a
+smaller claim than the one they were written for.
 """
 
 import re
