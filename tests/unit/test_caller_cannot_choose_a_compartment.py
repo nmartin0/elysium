@@ -115,3 +115,46 @@ class TestWhatMustStillBeAllowed:
         error to report, not this guard's to raise badly."""
         mediator._refuse_a_chosen_compartment(
             "NoSuchType", "region", "parameter.x", "MakeCustomer")
+
+
+class TestTheGuardIsActuallyCalled:
+    """Every test above calls `_refuse_a_chosen_compartment` DIRECTLY.
+
+    That proves the guard works and proves NOTHING about it running.
+    Measured: deleting the call from `propose_action` left all eight of
+    them passing -- which is the exact shape this codebase has produced
+    seven times now, a tested mechanism wired to nothing.
+
+    SEC-27 was raised by the security agent, which no longer exists, so
+    nobody could be asked whether the call site had ever been covered.
+    It had not.
+    """
+
+    def test_propose_action_calls_it(self):
+        """THE REGRESSION TEST. A source check rather than a behavioural
+        one because the failure is the CALL's absence, and a behavioural
+        test for 'this code path runs a guard' is a test for the guard
+        again."""
+        import re
+        from pathlib import Path
+
+        source = Path("core/ontology/write_mediator.py").read_text()
+        i = source.index("self._refuse_a_chosen_compartment(")
+        enclosing = None
+        for match in re.finditer(r"^    def (\w+)", source[:i], re.M):
+            enclosing = match.group(1)
+
+        assert enclosing == "propose_action", enclosing
+
+    def test_it_is_called_for_every_mutation(self):
+        """A guard applied to the first mutation only would pass a
+        single-mutation test and miss the second `set:` in a real
+        action."""
+        from pathlib import Path
+
+        source = Path("core/ontology/write_mediator.py").read_text()
+        i = source.index("self._refuse_a_chosen_compartment(")
+        before = source[:i]
+
+        assert "for mutation in" in before[-400:]
+
