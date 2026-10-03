@@ -28,10 +28,11 @@ refused in policy.yaml is refused here.
 
 import json
 import logging
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import connection_with_schema, open_connection
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,14 @@ CREATE TABLE IF NOT EXISTS role_store_meta (
     value TEXT NOT NULL
 );
 """
+
+
+class RoleStoreUnreadable(RuntimeError):
+    """The role store exists and cannot be read.
+
+    ITS OWN TYPE because the remedy is specific and the alternative --
+    falling back to policy.yaml -- is the failure being prevented.
+    """
 
 
 class RoleStore:
@@ -71,18 +80,72 @@ class RoleStore:
         falling back. Falling back to policy.yaml would silently restore
         whatever roles the store had replaced -- possibly grants that
         were deliberately withdrawn.
+
+        READ-ONLY, WHICH IS WHAT MAKES THE PARAGRAPH ABOVE TRUE. It was
+        not. `_connection()` goes through `connection_with_schema`,
+        which CREATES the tables when they are missing, so a ZERO-BYTE
+        roles.db -- a valid SQLite database with no tables -- was given
+        a schema, found no `seeded_at`, returned None, and fell back.
+        MEASURED: the file grew from 0 to 20,480 bytes merely by being
+        loaded.
+
+        THAT IS SEC-19, SURVIVING ITS OWN FIX. The security agent
+        raised "a truncated roles.db silently hands authority back to
+        policy.yaml". A truncated file does raise. An EMPTY one did
+        not, and a zero-byte store is exactly what a full disk, an
+        interrupted copy, or a restore that created the file and copied
+        nothing leaves behind.
         """
         if not self._db_path.exists():
             return None
-        with self._connection() as conn:
-            seeded = conn.execute(
-                "SELECT value FROM role_store_meta WHERE key = 'seeded_at'",
-            ).fetchone()
-            if seeded is None:
-                return None
-            rows = conn.execute(
-                "SELECT role_name, definition FROM roles ORDER BY role_name",
-            ).fetchall()
+
+        try:
+            with open_connection(self._db_path, read_only=True) as conn:
+                # AN EMPTY DATABASE IS DAMAGE; A SHARED ONE IS NOT.
+                # roles.db holds TWO stores' tables -- the roles and the
+                # changes proposed to them -- so a file created by the
+                # change store has tables but not ours, and has simply
+                # never been seeded. A file with NO tables at all is the
+                # zero-byte case: a full disk, an interrupted copy, a
+                # restore that made the file and copied nothing.
+                #
+                # The first version of this raised on both and broke
+                # thirteen role-change tests, which was the right
+                # failure to have: the legitimate shared-file path is
+                # the one that looks like damage from inside one store.
+                tables = {
+                    row[0] for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    ).fetchall()
+                }
+                if not tables:
+                    raise sqlite3.DatabaseError("the file holds no tables")
+                if "role_store_meta" not in tables:
+                    return None
+
+                seeded = conn.execute(
+                    "SELECT value FROM role_store_meta WHERE key = 'seeded_at'"
+                ).fetchone()
+                if seeded is None:
+                    return None
+                rows = conn.execute(
+                    "SELECT role_name, definition FROM roles ORDER BY role_name"
+                ).fetchall()
+        except sqlite3.Error as damaged:
+            # NAMED, BECAUSE "no such table: role_store_meta" tells an
+            # operator nothing about what to do. The refusal is the
+            # point; the message is what makes it actionable.
+            raise RoleStoreUnreadable(
+                f"{self._db_path} exists but is not a readable role store "
+                f"({damaged}). Elysium will NOT fall back to policy.yaml: "
+                f"that would silently restore grants this store may have "
+                f"deliberately withdrawn.\n"
+                f"\n"
+                f"A zero-length or truncated file is what a full disk or an "
+                f"interrupted copy leaves behind. Restore it from backup, or "
+                f"DELETE it to start from policy.yaml deliberately."
+            ) from damaged
+
         return {row["role_name"]: json.loads(row["definition"]) for row in rows}
 
     def save(self, roles: dict) -> None:
