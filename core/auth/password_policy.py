@@ -72,6 +72,46 @@ def _is_sequence(password: str) -> bool:
     return steps in ({1}, {-1})
 
 
+def _is_the_username_or_a_derivative(lowered: str, username: str) -> bool:
+    """The password IS the username, or BEGINS with it.
+
+    NOT "contains it anywhere", WHICH IS WHAT THIS USED TO DO. SEC-22,
+    raised by the security agent: any password holding the username as
+    a substring was refused, so `my-alice-in-wonderland-quote` --
+    twenty-eight characters -- was rejected for the user `alice`, as
+    was `malice-in-the-palace`, which contains those letters by
+    accident of English.
+
+    NIST SP 800-63B objects to the substring scan in normative
+    language: "the entire password SHALL be subject to comparison, NOT
+    SUBSTRINGS OR WORDS THAT MIGHT BE CONTAINED THEREIN", and its own
+    reasoning is that an over-broad blocklist "is likely to frustrate
+    users that attempt to choose a memorable password" -- a frustrated
+    user picks something shorter.
+
+    BUT THE SAME DOCUMENT LISTS "the username, AND DERIVATIVES
+    THEREOF", and a password BEGINNING with the username is a
+    derivative in the way one merely containing it is not: it is what
+    somebody types when asked to make a password out of their name.
+    Two tests in this project encoded exactly that case deliberately --
+    `alice-has-a-long-secret` and `cyrus-and-a-long-tail` -- and I
+    nearly loosened both before reading why they were there.
+
+    So: refuse the username itself, the username with characters
+    appended or padded around it, and a password that STARTS with it.
+    Accept one that happens to contain it somewhere else.
+    """
+    import re
+
+    if lowered == username or lowered.startswith(username):
+        return True
+    # A derivative with punctuation woven through it: strip everything
+    # that is not a letter and see whether the username is what is
+    # left. "a.l.i.c.e!!" reduces to "alice"; a real passphrase does
+    # not.
+    return re.sub(r"[^a-z]", "", lowered) == username
+
+
 def password_problem(password: str, username: str) -> str | None:
     """Why this password may not be chosen, or None.
 
@@ -96,8 +136,9 @@ def password_problem(password: str, username: str) -> str | None:
     squeezed = "".join(ch for ch in lowered if ch.isalnum())
     if lowered in _COMMON or squeezed in _COMMON:
         return "That password is too common to use. Choose something less predictable."
-    if username and username.lower() in lowered:
-        return "A password must not contain your username."
+    if username and _is_the_username_or_a_derivative(lowered, username.lower()):
+        return "A password must not be your username, or your username with "\
+               "characters added."
     for name in _SERVICE_NAMES:
         if name in lowered:
             return f"A password must not contain {name!r}."
