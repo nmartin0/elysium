@@ -69,9 +69,8 @@ class TestWhatTheStandardLibraryWasDoingForUs:
     def test_the_atexit_hook_is_real(self):
         """The finding said "incidentally", and this is the incident:
         the behaviour was correct and came from somewhere else."""
-        import inspect
-
         import concurrent.futures.thread as thread_module
+        import inspect
 
         source = inspect.getsource(thread_module)
 
@@ -81,8 +80,7 @@ class TestWhatTheStandardLibraryWasDoingForUs:
         """Daemon threads would be killed at exit and work WOULD be
         lost. They are not, which is why this was never a data-loss
         bug and is a shutdown-control one."""
-        import inspect
-
         import concurrent.futures.thread as thread_module
+        import inspect
 
         assert "daemon=True" not in inspect.getsource(thread_module)
