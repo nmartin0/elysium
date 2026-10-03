@@ -24,6 +24,7 @@ costs that and no more.
 
 import contextlib
 import io
+import shutil
 from pathlib import Path
 
 import pytest
@@ -39,8 +40,21 @@ CONFIG_DIR = Path(__file__).resolve().parents[2] / "deployment" / "etc"
 
 @pytest.fixture
 def synced_deployment(tmp_path) -> RuntimePaths:
+    # A CONFIG OF ITS OWN, BECAUSE THE SHIPPED ONE REFUSES WRITES.
+    # `write_targets: []` is the shipped default -- a deployment that
+    # has not said where writes may go does not send them anywhere --
+    # and a fixture exercising writes has to opt in exactly as a real
+    # deployment would. Copying rather than editing the repository's
+    # config keeps that opt-in inside the test.
+    config_dir = tmp_path / "synced" / "etc"
+    shutil.copytree(CONFIG_DIR, config_dir)
+    config_file = config_dir / "config.yaml"
+    config_file.write_text(
+        config_file.read_text().replace(
+            "write_targets: []",
+            "write_targets:\n  - primary_sql"))
     paths = RuntimePaths(
-        config_dir=CONFIG_DIR,
+        config_dir=config_dir,
         data_dir=tmp_path / "synced" / "data",
         log_dir=tmp_path / "synced" / "log",
     )

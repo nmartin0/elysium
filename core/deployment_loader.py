@@ -170,6 +170,14 @@ class DeploymentConfig:
                                    # Bounds the LIST, not the disk -- see gold.py.
     identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
                                    # approval is not configurable.
+    write_targets: "tuple[str, ...] | None"
+                                  # WHICH SILOS A CONFIRMED WRITE MAY REACH.
+                                  # None means the key is ABSENT, which is a
+                                  # deployment predating this and keeps its
+                                  # old behaviour with a warning; an empty
+                                  # tuple means declared-and-empty, which is
+                                  # the new default and refuses every external
+                                  # write. See _resolve_write_targets.
     read_from_mirror: bool        # ALWAYS TRUE since GOLD-9: live reads are gone, and a
                                    # deployment that asks for them is refused at load. Kept
                                    # as a field because the API reports it, and because a
@@ -631,6 +639,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # a secondary option on the way to deprecation, and its
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.
+            write_targets=_resolve_write_targets(config),
             read_from_mirror=_refuse_live_reads(config),
 
             # GOLD-6: may the pipeline PROPOSE merges it inferred?
@@ -851,6 +860,85 @@ def _retain_publications(config: dict) -> int:
 
     return int((config.get("mirror") or {}).get(
         "retain_publications", DEFAULT_RETAINED_PUBLICATIONS))
+
+
+def _writable_silo_configs(config: "DeploymentConfig",
+                            resolved: dict) -> dict:
+    """The silo configs a confirmed write may reach.
+
+    THE DEPLOYMENT THAT HAS NEVER HEARD OF THIS KEEPS WRITING, and
+    says so once at startup. Every project that ships a
+    secure-by-default flip does it this way -- the new default applies
+    to fresh installations, existing ones keep their setting until an
+    operator changes it -- and the alternative is breaking a working
+    deployment on upgrade to make a point it has not been told about.
+
+    A DECLARED NAME THAT IS NOT A SILO IS AN ERROR, not an empty
+    writable set. Silently writing nowhere because of a typo is the
+    failure this whole feature exists to prevent, inverted.
+    """
+    targets = config.write_targets
+    if targets is None:
+        logger.warning(
+            "NO write_targets DECLARED, so confirmed writes still reach "
+            "every configured silo -- which is this deployment's existing "
+            "behaviour and is kept deliberately. To make it explicit, add "
+            "to config.yaml:\n"
+            "\n    write_targets: []            # refuse all external writes"
+            "\n\nor name the silos a write may reach:\n"
+            "\n    write_targets:\n      - %s",
+            next(iter(resolved), "your_silo"),
+        )
+        return resolved
+
+    unknown = [name for name in targets if name not in resolved]
+    if unknown:
+        raise ValueError(
+            f"write_targets names {unknown}, which is not a configured "
+            f"silo. Configured silos: {sorted(resolved)}"
+        )
+    return {name: resolved[name] for name in targets}
+
+
+def _resolve_write_targets(config: dict) -> "tuple[str, ...] | None":
+    """Which silos a confirmed write may reach, as declared.
+
+    OFF BY DEFAULT, AND NOT EVEN POINTING ANYWHERE. Today every
+    deployment writes to the customer's real database with no toggle at
+    all: `write_adapters` are built from the same silo entries the
+    readers use, so a deployment installed to LOOK at data can be made
+    to CHANGE it, and nothing in the configuration says so.
+
+    A SEPARATE BLOCK rather than a `writable:` flag on each silo, which
+    is the owner's decision and the stronger shape: a silo you only
+    meant to read cannot become writable by someone editing the entry
+    you read it through. The write target has to be named on purpose,
+    in its own place.
+
+        write_targets:
+          - primary_sql
+
+    THREE STATES, NOT TWO, and the third is the one the precedent
+    demands. Absent means a deployment written before this existed:
+    it keeps writing, because secure-by-default is applied to NEW
+    installations and existing ones keep their behaviour until an
+    operator changes it -- that is what every project shipping this
+    kind of flip does, and flipping it silently would break a working
+    deployment to make a point. Declared-and-empty means off. Declared
+    with names means those silos and no others.
+    """
+    if "write_targets" not in config:
+        return None
+    declared = config.get("write_targets") or []
+    if isinstance(declared, str):
+        # ONE NAME UNQUOTED IS THE OBVIOUS TYPO, and silently treating a
+        # string as a list of characters would make every single-letter
+        # silo name writable.
+        raise ValueError(
+            "write_targets must be a list of silo names, not a string. "
+            f"Write it as:\n\n    write_targets:\n      - {declared}"
+        )
+    return tuple(str(name) for name in declared)
 
 
 def _refuse_live_reads(config: dict) -> bool:
@@ -1389,8 +1477,15 @@ def load_deployment_bundle(
     # first use, keeps this function's own real behavior simple and
     # predictable regardless of what a given caller goes on to do with
     # it.
+    # ONLY THE SILOS DECLARED AS WRITE TARGETS get a write adapter, and
+    # a silo with no adapter cannot be written to by any path: the
+    # WriteMediator looks one up by silo name and there is nothing to
+    # find. The refusal is the ABSENCE rather than a check somebody
+    # could forget to call.
+    writable = _writable_silo_configs(config, resolved_silo_configs)
     write_adapters = cast(
-        "dict[str, ExternalWriteAdapter]", _build_adapters(resolved_silo_configs, _WRITE_ADAPTER_REGISTRY)
+        "dict[str, ExternalWriteAdapter]",
+        _build_adapters(writable, _WRITE_ADAPTER_REGISTRY),
     )
     silo_for_type = _build_silo_for_type(config.schema)
     # DataMediator no longer takes users/security_attribute -- identity

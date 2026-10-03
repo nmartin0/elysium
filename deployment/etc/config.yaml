@@ -108,3 +108,27 @@ tools:
 #       type: RecategorizeTransactions  # it waits in Approvals
 #       parameter: transaction_ids    # receives what matched
 #       values: {new_category: review}
+
+# WHICH SILOS A CONFIRMED WRITE MAY REACH. Empty means none: an action
+# still applies to Elysium's own state -- the pending-write store, the
+# audit log, read-your-writes -- and simply does not push to the
+# customer's database.
+#
+# OFF BY DEFAULT, AND NOT POINTING ANYWHERE. Before this key existed
+# every deployment wrote to the real database with no toggle at all, so
+# one installed to LOOK at data could be made to CHANGE it with nothing
+# in the configuration saying so.
+#
+# A SEPARATE BLOCK rather than a flag on each silo, deliberately: a
+# silo you only meant to read cannot become writable by someone editing
+# the entry you read it through.
+#
+# To allow external writes, name the silos:
+#
+#     write_targets:
+#       - primary_sql
+#
+# DELETING THIS KEY IS NOT THE SAME AS EMPTYING IT. An absent key means
+# "a deployment written before this existed", and keeps the old
+# behaviour of writing everywhere, with a warning at startup.
+write_targets: []
