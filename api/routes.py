@@ -656,7 +656,7 @@ def change_own_password_route(
     if tracker.is_locked_out(username):
         raise HTTPException(status_code=429, detail="Too many failed attempts; try again later.")
     if not request.app.state.credential_store.verify_credential(username, body.current_password):
-        tracker.record_failure(username)
+        tracker.record_failure(username, source=_client_source(request))
         _audit_account(request, current_user, "change_password", username,
                        detail="refused: current password wrong")
         raise HTTPException(status_code=400, detail="The current password is not right.")
@@ -1068,7 +1068,8 @@ def login(body: LoginRequest, request: Request, response: Response) -> None:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     if not credentials_valid:
-        login_attempt_tracker.record_failure(body.username)
+        login_attempt_tracker.record_failure(
+            body.username, source=_client_source(request))
         # Generic on purpose -- see module docstring.
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -2439,6 +2440,19 @@ class PublishedChangeResponse(BaseModel):
     changed_at: str
     publication: "str | None" = None
     values: dict
+
+
+def _client_source(request: Request) -> str:
+    """What the login-attempt bound counts this caller as.
+
+    E-02's residual answered: both call sites below passed nothing,
+    because there was no correct value. There is one -- the TCP peer,
+    unless the deployment has declared the peer a proxy it trusts.
+    """
+    from core.auth.client_source import client_source
+
+    config = getattr(_generation(request), "config", None)
+    return client_source(request, getattr(config, "trusted_proxies", ()) or ())
 
 
 @router.get("/objects/{object_type}/{object_id}/published-history",

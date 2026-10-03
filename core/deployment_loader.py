@@ -170,6 +170,14 @@ class DeploymentConfig:
                                    # Bounds the LIST, not the disk -- see gold.py.
     identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
                                    # approval is not configurable.
+    trusted_proxies: "tuple[str, ...]"
+                                  # PEERS WHOSE `X-Forwarded-For` IS BELIEVED,
+                                  # as addresses or CIDRs. EMPTY BY DEFAULT: a
+                                  # deployment that has not said it sits behind
+                                  # a proxy ignores the header entirely, so a
+                                  # client cannot pick its own rate-limit
+                                  # bucket by sending one. See
+                                  # core/auth/client_source.py.
     write_targets: "tuple[str, ...] | None"
                                   # WHICH SILOS A CONFIRMED WRITE MAY REACH.
                                   # None means the key is ABSENT, which is a
@@ -639,6 +647,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # a secondary option on the way to deprecation, and its
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.
+            trusted_proxies=_resolve_trusted_proxies(config),
             write_targets=_resolve_write_targets(config),
             read_from_mirror=_refuse_live_reads(config),
 
@@ -898,6 +907,31 @@ def _writable_silo_configs(config: "DeploymentConfig",
             f"silo. Configured silos: {sorted(resolved)}"
         )
     return {name: resolved[name] for name in targets}
+
+
+def _resolve_trusted_proxies(config: dict) -> "tuple[str, ...]":
+    """Peers whose forwarded-for header may be believed.
+
+    EMPTY BY DEFAULT, and that is the whole safety property. Without
+    it, "any client can send `X-Forwarded-For: 1.2.3.4` to be
+    rate-limited as 1.2.3.4 instead of their real IP", and worse, can
+    "spoof a victim's IP address and intentionally trigger rate
+    limits, causing a Denial of Service for innocent users behind
+    corporate NATs".
+
+    A STRING IS REFUSED rather than iterated, the same trap
+    `write_targets` has: one unquoted entry read as a list of
+    characters would trust a list of single-character CIDRs, each of
+    which parses as nothing and silently trusts no one -- a fail-open
+    by way of a fail-closed, which is the hardest kind to notice.
+    """
+    declared = config.get("trusted_proxies") or []
+    if isinstance(declared, str):
+        raise ValueError(
+            "trusted_proxies must be a list of addresses or CIDRs, not a "
+            f"string. Write it as:\n\n    trusted_proxies:\n      - {declared}"
+        )
+    return tuple(str(entry) for entry in declared)
 
 
 def _resolve_write_targets(config: dict) -> "tuple[str, ...] | None":

@@ -132,3 +132,20 @@ tools:
 # "a deployment written before this existed", and keeps the old
 # behaviour of writing everywhere, with a warning at startup.
 write_targets: []
+
+# PEERS WHOSE `X-Forwarded-For` HEADER IS BELIEVED, as addresses or
+# CIDRs. Empty means none, which is the safe default: a client that
+# sends its own header is ignored and counted by its real address.
+#
+# WITHOUT THIS, a caller picks its own rate-limit bucket. Rotating the
+# header value evades a per-source bound entirely; putting someone
+# else's address in it gets THEM locked out, which needs no account.
+#
+# If Elysium sits behind nginx or a load balancer, name it:
+#
+#     trusted_proxies:
+#       - 10.0.0.0/8
+#
+# The RIGHTMOST hop is used -- the one your proxy appended. The
+# leftmost is whatever the client sent.
+trusted_proxies: []
