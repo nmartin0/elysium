@@ -47,6 +47,23 @@ from core.mirror.lineage import LINEAGE_COLUMNS
 def source(tmp_path):
     path = tmp_path / "source.db"
     conn = sqlite3.connect(path)
+    # WAL, BECAUSE PRODUCTION RUNS WAL AND FAILS LOUDLY IF IT CANNOT.
+    # `core/sqlite_connection.py` sets `PRAGMA journal_mode=WAL` on every
+    # connection it opens; a test source built with a bare connect()
+    # exercises ROLLBACK-JOURNAL mode, where a writer blocks readers
+    # outright rather than letting them read the last committed state.
+    #
+    # That is a fidelity gap on its own: this file's whole subject is
+    # what a reader sees while a writer is working, and it was asking
+    # that question of a configuration the product never runs.
+    #
+    # SEC-10 says this file "fails intermittently under full-tier load,
+    # passes 3/3 alone", and reader-blocking under contention is the
+    # obvious candidate -- but I could not reproduce the failure (6/6
+    # alone, and 12/12 under four busy cores), so this is NOT presented
+    # as a fix for it. It is a correctness change that happens to
+    # remove the most plausible cause.
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("CREATE TABLE widgets (widget_id TEXT PRIMARY KEY, label TEXT)")
     conn.executemany(
         "INSERT INTO widgets VALUES (?, ?)", [(f"w{i}", f"label{i}") for i in range(5)]
@@ -223,6 +240,23 @@ def test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_writes(tmp
 
     path = tmp_path / "churn.db"
     conn = sqlite3.connect(path)
+    # WAL, BECAUSE PRODUCTION RUNS WAL AND FAILS LOUDLY IF IT CANNOT.
+    # `core/sqlite_connection.py` sets `PRAGMA journal_mode=WAL` on every
+    # connection it opens; a test source built with a bare connect()
+    # exercises ROLLBACK-JOURNAL mode, where a writer blocks readers
+    # outright rather than letting them read the last committed state.
+    #
+    # That is a fidelity gap on its own: this file's whole subject is
+    # what a reader sees while a writer is working, and it was asking
+    # that question of a configuration the product never runs.
+    #
+    # SEC-10 says this file "fails intermittently under full-tier load,
+    # passes 3/3 alone", and reader-blocking under contention is the
+    # obvious candidate -- but I could not reproduce the failure (6/6
+    # alone, and 12/12 under four busy cores), so this is NOT presented
+    # as a fix for it. It is a correctness change that happens to
+    # remove the most plausible cause.
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("CREATE TABLE widgets (widget_id TEXT PRIMARY KEY, v INTEGER)")
     conn.executemany(
         "INSERT INTO widgets VALUES (?, ?)", [(f"w{i}", 0) for i in range(2000)]
@@ -353,3 +387,38 @@ def test_an_existing_namespace_is_still_tolerated(tmp_path, source):
     _sync(sync)
 
     assert _mirror(sync).num_rows == 5
+
+
+def test_the_test_source_runs_the_mode_production_runs(tmp_path, source):
+    """The fixtures above are WAL, like every connection the product
+    opens.
+
+    WHY THIS IS ASSERTED RATHER THAN ASSUMED. The databases in this
+    file were built with a bare `sqlite3.connect`, which is
+    ROLLBACK-JOURNAL mode -- a writer blocks readers outright. This
+    file's whole subject is what a reader sees while a writer is
+    working, so it was asking that question of a configuration
+    `core/sqlite_connection.py` never allows: it sets
+    `PRAGMA journal_mode=WAL` on every connection and fails LOUDLY when
+    it cannot.
+
+    MEASURED: a bare connect reports journal_mode = delete; with the
+    pragma, wal.
+
+    NOT PRESENTED AS A FIX FOR SEC-10. That finding says this file
+    "fails intermittently under full-tier load, passes 3/3 alone", and
+    I could not reproduce it -- six runs alone and twelve tests under
+    four busy cores, all green. Reader-blocking under contention is the
+    obvious candidate and this removes it, but removing a plausible
+    cause is not the same as demonstrating it was the cause.
+    """
+    import sqlite3
+
+    mode = sqlite3.connect(source).execute(
+        "PRAGMA journal_mode").fetchone()[0]
+
+    assert mode == "wal", (
+        f"the test source is in {mode!r} mode; production is WAL, and a "
+        f"concurrency test in rollback-journal mode is asking about a "
+        f"configuration this product never runs")
+
