@@ -31,14 +31,6 @@ places, which is what `edit_history` refused.
 import pytest
 
 
-class _Roles:
-    def __init__(self, grants):
-        self._grants = grants
-
-    def grants_for(self, role_name):
-        return self._grants.get(role_name, [])
-
-
 @pytest.fixture
 def entries():
     return [
