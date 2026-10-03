@@ -82,6 +82,7 @@ still runs correctly as a pure API backend; only a real install
 import logging
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
@@ -163,7 +164,33 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # a custom auth check is possible but meaningfully more involved
     # than this app genuinely needs, for a feature with no real
     # audience here at all.
-    app = FastAPI(title="LLM Data Mediator", docs_url=None, redoc_url=None, openapi_url=None)
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        """Shut the executor down on the way out, on purpose.
+
+        SEC-09, raised by the security agent and inherited when it was
+        destroyed: "the executor drained only incidentally". Verified
+        rather than taken on trust -- `app.state.executor` was created
+        and `shutdown()` appeared nowhere, and there was no lifespan
+        handler at all.
+
+        IT DID DRAIN, AND THAT IS THE POINT. `concurrent.futures`
+        registers an atexit hook and its worker threads are not
+        daemons, so in-flight work was joined at INTERPRETER EXIT by
+        the standard library. Nothing in this application asked for
+        that, nothing could bound how long it took, and a graceful
+        shutdown that is not interpreter exit -- a reload, a signal
+        handled by the server -- did not drain it at all.
+
+        `wait=True` keeps the behaviour that was already happening by
+        accident and makes it the application's own.
+        """
+        yield
+        executor = getattr(_app.state, "executor", None)
+        if executor is not None:
+            executor.shutdown(wait=True)
+
+    app = FastAPI(lifespan=_lifespan, title="LLM Data Mediator", docs_url=None, redoc_url=None, openapi_url=None)
 
     # VALIDATION ERRORS WITHOUT THE VALUES (E-01). FastAPI's default 422
     # returns each error's `input` -- the value that failed -- and `ctx`.
