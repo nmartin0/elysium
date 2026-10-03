@@ -103,3 +103,39 @@ class TestEveryItemSaysWhatItWaitsOn:
                    if "Blocked on:" not in body]
 
         assert missing == [], f"items with no 'Blocked on:': {missing}"
+
+
+class TestCrossReferencesPointSomewhere:
+    """`item N` in the prose must name an item that exists.
+
+    WHY THIS WAS ADDED. Removing a resolved item renumbers everything
+    after it, and every `item N` written before the removal then points
+    one place too high. Nothing caught that; the structural checks pass
+    on a file whose internal references are all off by one.
+
+    IT ALSO FOUND ONE THAT WAS WRONG FROM THE DAY IT WAS WRITTEN.
+    Object Explorer's entry said "saving and acting on a selection ...
+    the last of those is the same thing as item 23 below", and item 23
+    was the plugin API. It had never pointed at Saved SELECTIONS.
+
+    This cannot tell whether a reference points at the RIGHT item, only
+    that it points at one. The wrong-from-birth case was found by
+    reading what each number resolved to, which is the step this test
+    makes cheap rather than the one it replaces.
+    """
+
+    def test_every_referenced_item_exists(self):
+        numbers = {number for number, _ in _numbered()}
+        body = TEXT.split("# Blocked on a decision", 1)[1]
+        referenced = {int(m) for m in re.findall(r"item (\d+)", body)}
+        missing = sorted(referenced - numbers)
+
+        assert missing == [], f"references to items that do not exist: {missing}"
+
+    def test_no_item_refers_to_itself(self):
+        """A self-reference is what an off-by-one renumbering produces
+        when an item is removed immediately before it."""
+        parts = re.split(r"^## (\d+)\. ", TEXT, flags=re.M)[1:]
+        for number, body in zip(parts[::2], parts[1::2], strict=True):
+            assert f"item {number}" not in body, f"item {number} refers to itself"
+
