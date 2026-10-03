@@ -31,8 +31,11 @@ jobs:
       - uses: actions/checkout@v4
 
       # 3.12: what the lock files were generated for and every test has
-      # run on. INSTALL.md claims 3.10 or later; nothing tests that yet
-      # (recorded in UNIFIED_ROADMAP.md rather than asserted here).
+      # run on. INSTALL.md said "3.10 or later" when this was written and
+      # nothing tested it; it says 3.12 now, which is what pyproject had
+      # required all along, and a test holds the two files together.
+      # Twenty-six modules import `datetime.UTC`, so 3.10 could never
+      # have imported the package at all.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -68,6 +71,37 @@ jobs:
             echo "$created"
             exit 1
           fi
+
+  # THE DECLARED CONTROLS, in their own job because they are slow.
+  #
+  # MEASURED, not guessed: a control takes between 2 and 18 seconds
+  # depending on how large a test slice it runs, so seventy of them is
+  # on the order of ten minutes. That is why this is a separate job
+  # running beside the others rather than steps appended to `backend`.
+  #
+  # Each one breaks a guarantee on purpose and runs the tests that must
+  # notice. A control that PASSES is the finding: either the break was
+  # not the break it claimed, or the tests do not check what they
+  # appear to.
+  #
+  # DELIBERATELY NOT IN lint.sh, which has to stay fast enough that
+  # people run it. CI is where a minutes-long check belongs, and until
+  # this ran nothing invoked the seventy controls at all -- they
+  # worked and no mechanism exercised them.
+  controls:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --require-hashes -r requirements-dev.lock
+
+      - name: The controls fire
+        run: python -m scripts.check_controls
 
   frontend:
     runs-on: ubuntu-24.04
