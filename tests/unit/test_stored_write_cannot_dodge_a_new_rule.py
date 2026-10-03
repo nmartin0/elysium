@@ -139,3 +139,55 @@ class TestWhatMustStillGetThrough:
         mediator = _mediator(_declared(amount={"type": "number", "required": True}))
 
         mediator._refuse_criteria_this_write_cannot_answer(_Pending({}), [])
+
+
+class TestTheRefusalIsActuallyReached:
+    """Every test above calls
+    `_refuse_criteria_this_write_cannot_answer` DIRECTLY.
+
+    THE THIRD REAL INSTANCE of this shape, after SEC-27 and SEC-14, and
+    the second found by the whole-suite method. Measured across ALL 337
+    unit files in three passes: deleting the call from
+    `_check_approver_criteria` leaves 1287, 1390 and 1255 tests passing
+    -- 3,932, every one.
+
+    WHY IT MATTERS HERE PARTICULARLY. This is the concrete half of
+    SEC-04, "a criterion added after a write, skipped". A `parameter`
+    criterion is silently SKIPPED when its field is absent from the
+    call's parameters, which is RIGHT at propose time -- a rule about
+    `amount` has nothing to say about an action never given one. At
+    CONFIRM it is not right: the rule exists now, the stored write
+    cannot answer it, and skipping means approving a write that the
+    current rules were never able to test.
+
+    So the guard turns a silent skip into a refusal, and nothing held
+    its call in place.
+    """
+
+    def test_approver_criteria_calls_it(self):
+        import re
+        from pathlib import Path
+
+        lines = Path("core/ontology/write_mediator.py").read_text().splitlines()
+        call = next(n for n, line in enumerate(lines)
+                    if "self._refuse_criteria_this_write_cannot_answer(" in line)
+        enclosing = None
+        for n in range(call, 0, -1):
+            match = re.match(r"    def (\w+)", lines[n])
+            if match:
+                enclosing = match.group(1)
+                break
+
+        assert enclosing == "_check_approver_criteria", enclosing
+
+    def test_it_runs_BEFORE_the_criteria_are_evaluated(self):
+        """Order is the whole point. Refusing after evaluating would
+        mean the skipped criterion had already been treated as passed."""
+        from pathlib import Path
+
+        source = Path("core/ontology/write_mediator.py").read_text()
+        i = source.index("self._refuse_criteria_this_write_cannot_answer(")
+        after = source[i:i + 400]
+
+        assert "_read_current_state_for_criteria" in after
+
