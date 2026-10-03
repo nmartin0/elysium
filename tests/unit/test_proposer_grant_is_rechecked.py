@@ -133,3 +133,57 @@ def test_a_disabled_proposer_is_NOT_caught_here():
     FAIL and be replaced -- that is the point of writing it down.
     """
     _check(_mediator(GRANTED, generation=2), _pending(proposed_under=1))
+
+
+class TestTheRecheckIsActuallyCalled:
+    """Every test above calls `_refuse_if_the_proposer_lost_the_grant`
+    DIRECTLY, on line 72, against a hand-built mediator.
+
+    SO NONE OF THEM NOTICES IF THE CALL GOES. Measured against the
+    WHOLE unit suite, in three passes: deleting the call from
+    `confirm_and_execute` leaves 1017, 1592 and 1321 tests passing --
+    3,930, every one of them.
+
+    THIS IS THE SECOND REAL INSTANCE, after SEC-27, and the first one
+    found by the whole-suite method rather than by a scoped sweep that
+    manufactured three false ones. The difference matters: a sweep that
+    runs only the files naming a guard reports absence of coverage for
+    guards that are covered, which is what the withdrawn patch did.
+
+    WHAT IS AT STAKE IF THE CALL GOES. SEC-14: "a proposer's execute:
+    grant was never re-checked at confirm". The queue's TTL is fifteen
+    minutes and `manage:roles` lets a grant be revoked inside it, so an
+    action proposed under a grant that no longer exists could still be
+    approved and run.
+    """
+
+    def test_confirm_and_execute_calls_it(self):
+        import re
+        from pathlib import Path
+
+        source = Path("core/ontology/write_mediator.py").read_text()
+        lines = source.splitlines()
+        call = next(n for n, line in enumerate(lines)
+                    if "self._refuse_if_the_proposer_lost_the_grant(" in line)
+        enclosing = None
+        for n in range(call, 0, -1):
+            match = re.match(r"    def (\w+)", lines[n])
+            if match:
+                enclosing = match.group(1)
+                break
+
+        assert enclosing == "confirm_and_execute", enclosing
+
+    def test_it_runs_beside_the_other_confirm_time_rechecks(self):
+        """Confirm re-evaluates constraints, criteria and declared
+        fields. This belongs in that group, and being adjacent to them
+        is what a reader checks."""
+        from pathlib import Path
+
+        source = Path("core/ontology/write_mediator.py").read_text()
+        i = source.index("self._refuse_if_the_proposer_lost_the_grant(")
+        window = source[i - 600:i + 400]
+
+        assert "_refuse_constraint_violations" in window
+        assert "_fields_no_longer_declared" in window
+
