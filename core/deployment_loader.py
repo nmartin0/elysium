@@ -1410,6 +1410,22 @@ def build_generation(
     from core.ontology.write_mediator import WriteMediator
 
     config, mediator, write_adapters = load_deployment_bundle(config_dir, data_dir, log_dir, serving=serving)
+
+    # A STARTER QUESTION MAY NOT NAME AN OBJECT. Checked at load, on
+    # the SHAPE of the text rather than against the data: an example
+    # naming `cust_999` is safe today and a leak the day somebody
+    # creates that customer, so existence is the wrong test.
+    #
+    # Only examples marked `display: true`. The demo runner's queries
+    # execute AS a named user with MAC applied, where naming a real
+    # object is a query rather than a disclosure.
+    from core.display_safety import refuse_unsafe_display_examples
+
+    try:
+        examples = load_example_queries(config_dir)
+    except (FileNotFoundError, KeyError, TypeError):
+        examples = []
+    refuse_unsafe_display_examples(examples)
     write_mediator = WriteMediator(
         mediator, write_adapters, config.roles, config.action_types, config.generation,
         # WRITES DESCRIBE THE SOURCE (D3), whatever reads are bound to.

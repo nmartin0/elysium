@@ -217,6 +217,12 @@ layers = [
     # today: core.ontology.constraints declares the rule, and the
     # mirror reports it. A leaf both can reach without a cycle.
     "invisible_text",
+    # What may be shown to somebody who did not ask for it. Sits beside
+    # invisible_text and misleading_text: all three answer "is this
+    # string safe to put in front of a person", and none of them knows
+    # about callers, grants or storage. It takes a mediator as an
+    # argument rather than importing one, so it stays a leaf.
+    "display_safety",
     # misleading_text, its sibling and the same shape: a leaf that
     # knows which characters lie about what they are, and nothing
     # about fields or rows.
