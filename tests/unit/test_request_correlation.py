@@ -25,7 +25,7 @@ from core.request_context import RequestContext
 
 
 @pytest.fixture
-def mediator(tmp_path, private_deployment):
+def mediator(tmp_path, synced_deployment):
     """Built against the SHIPPED deployment, deliberately.
 
     Correlation is a property of the real wiring -- mediator, audit
@@ -35,9 +35,22 @@ def mediator(tmp_path, private_deployment):
     """
     from core.deployment_loader import build_generation
 
-    paths = private_deployment  # E-08: never the developer's deployment
+    # THE DEPLOYMENT'S OWN DATA DIRECTORY, not a bare tmp_path.
+    #
+    # It built against `data_dir=tmp_path` -- an EMPTY directory, not
+    # the one the fixture had just synced into. So every read in this
+    # file returned `{'field': None}` from a lake with no tables, and
+    # `assert get_object(...) is not None` passed on a dict whose every
+    # value was None.
+    #
+    # The correlation this file tests is real either way, since audit
+    # entries are written for a read that finds nothing. But a test
+    # that reads an empty lake proves less than its name claims, and
+    # the next person to extend it would have been debugging why their
+    # new assertion saw no data.
+    paths = synced_deployment  # E-08: never the developer's deployment
     generation = build_generation(
-        paths.config_dir, data_dir=tmp_path, log_dir=tmp_path / "log",
+        paths.config_dir, data_dir=paths.data_dir, log_dir=tmp_path / "log",
     )
     return generation.mediator
 
