@@ -152,7 +152,34 @@ class GoldConnector:
             row_filter=EqualTo(term=id_column, literal=str(object_id)),  # type: ignore[call-arg]
             limit=1,
         )
-        if arrow is None or arrow.num_rows == 0:
+        if arrow is None:
+            # NO TABLE IS NOT NO ROW -- `NEW-4`. `_scan` catches
+            # NoSuchTableError and returns None, and this returned that
+            # same None for a row that simply is not there. A caller
+            # could not tell a type whose gold was never published from
+            # one where the object does not exist.
+            #
+            # S3 draws the same line, and the cost of not drawing it is
+            # documented: a bucket that does not exist "is
+            # indistinguishable from a cold cache: every job fetches
+            # cold and nothing reports a fault". Here it was every read
+            # of an unpublished type answering as if every object were
+            # absent.
+            #
+            # THE EXCEPTION ALREADY EXISTED. `find_ids` three methods up
+            # has raised this on exactly this condition all along; the
+            # two methods simply disagreed. I wrote a new exception type
+            # before noticing, which would have been a third name for
+            # one fault.
+            raise GoldPublicationMissing(
+                f"{object_type} has no published gold table. "
+                f"Run a sync to build it."
+            )
+        if arrow.num_rows == 0:
+            # THE ROW CASE STILL RETURNS None, deliberately. The caller
+            # that needs it is `write_mediator`'s uniqueness check at
+            # line 857, where "nothing is there" is the answer it wants
+            # and an exception would be wrong.
             return None
         return arrow.to_pylist()[0].get(field_name)
 
