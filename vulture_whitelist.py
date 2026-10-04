@@ -35,6 +35,21 @@ login
 logout
 logout_all
 request_trace_route
+# core/change_hints.py HAS NO CONSUMER, AND THAT IS DELIBERATE RATHER
+# THAN AN OVERSIGHT -- which is a sentence this codebase has earned the
+# right to be suspicious of, having shipped a guard wired to nothing
+# eight times.
+#
+# The difference: the transport does not exist. There is no SSE and no
+# streaming endpoint anywhere in api/, and whether live updates are
+# wanted is BLOCKING.md's item 17, waiting on the owner. What is here
+# is the half that must be right before that decision rather than
+# invented under deadline after it.
+#
+# IF LIVE UPDATES ARE DECLINED, DELETE THIS MODULE. It has no other
+# purpose and should not sit here looking load-bearing.
+hints_for
+describe_hint
 published_history_route
 list_notes_route
 create_note_route

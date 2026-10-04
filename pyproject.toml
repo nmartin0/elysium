@@ -223,6 +223,11 @@ layers = [
     # about callers, grants or storage. It takes a mediator as an
     # argument rather than importing one, so it stays a leaf.
     "display_safety",
+    # Which "something changed" hints a caller may receive. A LEAF: it
+    # takes the caller's own visible_schema as an argument rather than
+    # deciding anything, so it imports nothing from core and knows
+    # nothing about transports or about what changed.
+    "change_hints",
     # misleading_text, its sibling and the same shape: a leaf that
     # knows which characters lie about what they are, and nothing
     # about fields or rows.

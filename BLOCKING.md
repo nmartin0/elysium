@@ -370,9 +370,33 @@ alert could arrive as MAIL. SSE cannot do that -- it pushes to an open
 browser -- and Elysium has NO SMTP SUPPORT OF ANY KIND today. Mail is
 a separate delivery channel, not a variation on this.
 
+**THE SECURITY HALF IS BUILT**, `core/change_hints.py`, because it has
+to be right before the transport exists rather than invented under
+deadline after it. `hints_for` filters changed types by the caller's
+own `visible_schema` -- deferring to the rule that already decides
+which types a caller may know exist, rather than asking `discover:`
+a second time -- and `describe_hint` refuses any payload beyond a type
+and a verb. A count is the tempting one: "4 Customers changed" looks
+harmless and maps the size and rhythm of a compartment somebody
+cannot see.
+
+**THE PRECEDENT VALIDATES THE DECISION rather than merely permitting
+it.** "Rich payloads bypass authorization -- data in events is
+accessible to all subscribers regardless of permission levels", while
+"notification events preserve security". For regulated data the
+guidance is "never in events, API with authorization only"; for
+consumers with different authorization levels, "notification + API
+required". Elysium authorises per field and per row.
+
+The usual criticism of thin events -- that a consumer receiving an id
+and immediately refetching "has not been decoupled from you" -- does
+not apply, because here the refetch IS where authorization happens.
+
 **Blocked on:** whether live updates are wanted enough to carry a
 streaming endpoint, and separately whether mail delivery is in scope
-at all.
+at all. IF DECLINED, DELETE `core/change_hints.py` -- it has no other
+purpose and should not sit there looking load-bearing. The vulture
+whitelist says so too.
 
 ## 18. Three questions triggers raise and nobody has answered
 
