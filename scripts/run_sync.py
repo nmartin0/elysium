@@ -631,6 +631,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
             # THE ROW OR THE TABLE, from the deployment rather than a
             # default buried in the sync. Absent keeps refusing.
             on_type_mismatch=config.on_type_mismatch,
+            ingest_undeclared_columns=config.ingest_undeclared_columns,
         )
 
         failures = 0

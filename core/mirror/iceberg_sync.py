@@ -389,7 +389,8 @@ class IcebergMirrorSync(MirrorSync):
     def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter],
                  write_log=None, storage: dict | None = None,
                  run_id: "str | None" = None,
-                 on_type_mismatch: "str | None" = None):
+                 on_type_mismatch: "str | None" = None,
+                 ingest_undeclared_columns: "bool | None" = None):
         # WHICH RUN THIS SYNC BELONGS TO (PR001-R9). None for a
         # script or a test outside a run, in which case the property
         # is not written rather than invented.
@@ -397,6 +398,10 @@ class IcebergMirrorSync(MirrorSync):
         # None means the deployment has not said, which keeps the old
         # behaviour of refusing -- see _resolve_type_mismatch_policy.
         self._on_type_mismatch = on_type_mismatch
+        # WHETHER BRONZE HOLDS COLUMNS NOBODY DECLARED. None means the
+        # deployment has not said, which keeps the old behaviour and
+        # warns -- see _resolve_undeclared_columns.
+        self._ingest_undeclared_columns = ingest_undeclared_columns
         self._run_id = run_id
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
@@ -1206,6 +1211,38 @@ class IcebergMirrorSync(MirrorSync):
             # back to the declared set, which is no worse than before.
             present = adapter.columns_present(table_name)
             columns = sorted(present) if present else list(declared)
+            # UNDECLARED COLUMNS, WHICH BRONZE HOLDS BY DEFAULT TODAY.
+            #
+            # Keeping them is what makes a column declared next year
+            # re-derivable from history rather than starting empty.
+            # The cost is an undeclared SSN sitting in Parquet with no
+            # field grant and no read path -- unreachable THROUGH
+            # Elysium, since the mediator reads the silo a type names
+            # and `bronze_` is a reserved prefix, and readable by
+            # anyone with access to the lake's files.
+            #
+            # The owner chose minimisation for new deployments. An
+            # absent key keeps the old behaviour and warns, because an
+            # existing deployment has history the new default would
+            # stop extending.
+            undeclared = [column for column in columns if column not in declared]
+            if undeclared:
+                if self._ingest_undeclared_columns is False:
+                    columns = [column for column in columns if column in declared]
+                    logger.info(
+                        "%s.%s: %d undeclared column(s) not ingested: %s",
+                        silo_name, table_name, len(undeclared),
+                        ", ".join(sorted(undeclared)[:8]))
+                elif self._ingest_undeclared_columns is None:
+                    logger.warning(
+                        "%s.%s: bronze is holding %d column(s) this ontology "
+                        "never declared: %s. They have no field grant and no "
+                        "read path, and are readable by anyone with access to "
+                        "the lake's files. Set `ingest_undeclared_columns: "
+                        "false` to stop keeping them, or `true` to say this "
+                        "is intended.",
+                        silo_name, table_name, len(undeclared),
+                        ", ".join(sorted(undeclared)[:8]))
             raw_rows = self._read_source_rows(adapter, table_name, id_column, columns)
             # BEFORE ANY LAYER IS WRITTEN (PA001-F4). Checking after
             # bronze had already been overwritten would leave the raw

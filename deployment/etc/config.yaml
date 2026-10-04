@@ -168,3 +168,22 @@ trusted_proxies: []
 # DELETING THIS KEY IS NOT THE SAME AS SETTING IT TO refuse. An absent
 # key means a deployment written before this existed.
 on_type_mismatch: quarantine
+
+# WHETHER BRONZE HOLDS COLUMNS THE ONTOLOGY NEVER DECLARED.
+#
+# false (the shipped default) keeps only declared columns.
+# true keeps everything the source has, which was the behaviour
+# before this key existed.
+#
+# THE TRADE. Holding everything makes a column declared NEXT YEAR
+# re-derivable from history instead of starting empty. The cost is
+# that an undeclared SSN sits in Parquet with no field grant and no
+# read path: unreachable through Elysium -- the mediator reads the
+# silo a type names, and `bronze_` is a reserved prefix -- and
+# readable by anyone with access to the lake's files.
+#
+# DELETING THIS KEY IS NOT THE SAME AS SETTING IT true. An absent key
+# means a deployment written before this existed: it keeps everything
+# AND warns at each sync naming the columns, because an existing
+# deployment has history the new default would stop extending.
+ingest_undeclared_columns: false

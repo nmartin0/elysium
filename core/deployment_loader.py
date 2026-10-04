@@ -170,6 +170,12 @@ class DeploymentConfig:
                                    # Bounds the LIST, not the disk -- see gold.py.
     identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
                                    # approval is not configurable.
+    ingest_undeclared_columns: "bool | None"
+                                  # WHETHER BRONZE HOLDS COLUMNS NOBODY
+                                  # DECLARED. None means the key is absent,
+                                  # which keeps today's behaviour (hold them)
+                                  # and warns at sync naming them. False is
+                                  # the shipped default for new deployments.
     on_type_mismatch: "str | None"
                                   # WHAT A VALUE THAT WILL NOT COERCE COSTS:
                                   # "refuse" stops the whole table, "quarantine"
@@ -654,6 +660,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # a secondary option on the way to deprecation, and its
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.
+            ingest_undeclared_columns=_resolve_undeclared_columns(config),
             on_type_mismatch=_resolve_type_mismatch_policy(config),
             trusted_proxies=_resolve_trusted_proxies(config),
             write_targets=_resolve_write_targets(config),
@@ -918,6 +925,37 @@ def _writable_silo_configs(config: "DeploymentConfig",
 
 
 ON_TYPE_MISMATCH = ("refuse", "quarantine")
+
+
+def _resolve_undeclared_columns(config: dict) -> "bool | None":
+    """Whether bronze holds columns the ontology never declared.
+
+    IT HOLDS THEM TODAY, deliberately and documented -- bronze keeps
+    every raw value so a column declared next year can be re-derived
+    from history rather than starting empty.
+
+    THE COST IS AN UNDECLARED SSN IN PARQUET with no field grant and
+    no read path, and nothing saying so. Not reachable through
+    Elysium: the mediator reads from the silo a type names, which is
+    silver or gold, and `bronze_` is a reserved prefix no silo may
+    use. Reachable by anyone with access to the lake's files.
+
+    SO THE TRADE IS MINIMISATION AGAINST RECOVERABILITY, and the
+    owner chose minimisation for new deployments. The precedent is on
+    that side -- schema-on-read "directly undermines the GDPR
+    principles of data minimization and purpose limitation", and the
+    consistent advice is to "control data before it lands" because
+    "doing this at ingestion time is dramatically easier than
+    remediating sensitive data later across petabytes".
+
+    ABSENT KEEPS TODAY'S BEHAVIOUR AND WARNS, naming the columns. An
+    existing deployment has history in bronze that the new default
+    would stop extending, and silently narrowing what it keeps would
+    destroy exactly the recoverability the old default was for.
+    """
+    if "ingest_undeclared_columns" not in config:
+        return None
+    return bool(config.get("ingest_undeclared_columns"))
 
 
 def _resolve_type_mismatch_policy(config: dict) -> "str | None":
