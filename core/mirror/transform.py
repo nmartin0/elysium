@@ -90,6 +90,18 @@ class TransformResult:
 
     rows: list[dict]
     drift: list[DriftedColumn] = field(default_factory=list)
+    #: Indices into `rows` of rows holding at least one value that
+    #: would not coerce. WHICH ROWS, not just which columns -- the
+    #: column-level `drift` above answers "is this table's schema
+    #: wrong", which is a different question from "which records
+    #: cannot be trusted". Without this, the only available response
+    #: to one bad cell is refusing the whole table.
+    #:
+    #: Databricks draws the same line in the parser: "only incomplete
+    #: and malformed CSV records are considered corrupt", while a type
+    #: mismatch is rescued rather than failed. An `N/A` in an integer
+    #: column is a type mismatch.
+    mismatched_row_indices: list[int] = field(default_factory=list)
 
     @property
     def has_drift(self) -> bool:
@@ -115,9 +127,10 @@ def transform_rows(rows: list[dict], columns: list[str],
 
     drift: list[DriftedColumn] = []
     drifted_columns: set[str] = set()
+    mismatched: set[int] = set()
     cleaned: list[dict] = []
 
-    for row in rows:
+    for index, row in enumerate(rows):
         cleaned_row = {}
         for column in columns:
             declared = resolved[column]
@@ -143,13 +156,15 @@ def transform_rows(rows: list[dict], columns: list[str],
                             row_count_checked=len(rows),
                         )
                     )
+                mismatched.add(index)
                 # The raw value is kept rather than dropped or defaulted:
                 # the caller decides what to do about a drifted table,
                 # and silently substituting would destroy the evidence.
                 cleaned_row[column] = row[column]
         cleaned.append(cleaned_row)
 
-    return TransformResult(rows=cleaned, drift=drift)
+    return TransformResult(rows=cleaned, drift=drift,
+                           mismatched_row_indices=sorted(mismatched))
 
 
 def describe_drift(silo_name: str, table_name: str, drift: list[DriftedColumn]) -> str:

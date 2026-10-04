@@ -149,3 +149,22 @@ write_targets: []
 # The RIGHTMOST hop is used -- the one your proxy appended. The
 # leftmost is whatever the client sent.
 trusted_proxies: []
+
+# WHAT ONE VALUE THAT WILL NOT COERCE COSTS: the row, or the table.
+#
+#   refuse      stop the whole table (the behaviour before this key
+#               existed, and still what an ABSENT key means)
+#   quarantine  set the offending ROWS aside and sync the rest
+#
+# QUARANTINE IS NOT A DROP. The rows go to quarantine_<silo>.<table>
+# with the column, the value and the reason, and the sync says how
+# many. An operator can read them; nothing is lost silently.
+#
+# An `N/A` in an integer column is a TYPE MISMATCH, which is a
+# different thing from a malformed record -- the distinction every
+# mature ingest parser draws, and the reason refusing the table for
+# one bad cell is heavier than it looks.
+#
+# DELETING THIS KEY IS NOT THE SAME AS SETTING IT TO refuse. An absent
+# key means a deployment written before this existed.
+on_type_mismatch: quarantine

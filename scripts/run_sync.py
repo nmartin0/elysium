@@ -628,6 +628,9 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
             # built and tested end to end against a real S3 endpoint while
             # nothing passed it.
             storage=dict(config.mirror_storage),
+            # THE ROW OR THE TABLE, from the deployment rather than a
+            # default buried in the sync. Absent keeps refusing.
+            on_type_mismatch=config.on_type_mismatch,
         )
 
         failures = 0

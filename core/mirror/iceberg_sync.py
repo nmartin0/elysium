@@ -44,6 +44,7 @@ Used by: scripts/run_sync.py
 import json
 import logging
 import warnings
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -64,7 +65,7 @@ from core.mirror.drift_policy import (
 )
 from core.mirror.duplicates import DuplicatePolicy, split_duplicates
 from core.mirror.durability import force_table_metadata_to_disk
-from core.mirror.expectations import Violation, apply_expectations
+from core.mirror.expectations import QUARANTINE, Violation, apply_expectations
 from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.lake_permissions import make_private
@@ -387,10 +388,15 @@ class SuspectedPartialRead(ValueError):
 class IcebergMirrorSync(MirrorSync):
     def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter],
                  write_log=None, storage: dict | None = None,
-                 run_id: "str | None" = None):
+                 run_id: "str | None" = None,
+                 on_type_mismatch: "str | None" = None):
         # WHICH RUN THIS SYNC BELONGS TO (PR001-R9). None for a
         # script or a test outside a run, in which case the property
         # is not written rather than invented.
+        # WHAT ONE UNCOERCIBLE VALUE COSTS: the row, or the table.
+        # None means the deployment has not said, which keeps the old
+        # behaviour of refusing -- see _resolve_type_mismatch_policy.
+        self._on_type_mismatch = on_type_mismatch
         self._run_id = run_id
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
@@ -645,6 +651,42 @@ class IcebergMirrorSync(MirrorSync):
             columns = [*columns, LINK_ID_COLUMN]
 
         transformed = transform_rows(source_rows, columns, column_types, standardisation)
+        if transformed.has_drift and self._on_type_mismatch == "quarantine":
+            # THE ROW, NOT THE TABLE. Databricks separates a MALFORMED
+            # RECORD from a TYPE MISMATCH -- "only incomplete and
+            # malformed CSV records are considered corrupt" -- and
+            # rescues the mismatch rather than failing the read. An
+            # `N/A` in an integer column is a mismatch.
+            #
+            # QUARANTINE IS NOT A DROP: the rows go to the quarantine
+            # table where an operator can see them, which is the whole
+            # reason this is an acceptable default at all.
+            mismatched = set(transformed.mismatched_row_indices)
+            held_back = [
+                (row, Violation(
+                    column=transformed.drift[0].column,
+                    field_name=transformed.drift[0].column,
+                    reason=("does not match the declared type "
+                            f"{transformed.drift[0].declared_type}"),
+                    value=row.get(transformed.drift[0].column),
+                    policy=QUARANTINE))
+                for index, row in enumerate(transformed.rows)
+                if index in mismatched
+            ]
+            if held_back:
+                self._write_quarantine(silo_name, table_name, id_column,
+                                       held_back)
+            logger.warning(
+                "%s.%s: %d row(s) quarantined for type mismatch; %d synced. "
+                "Set on_type_mismatch: refuse to stop the table instead.",
+                silo_name, table_name, len(held_back),
+                len(transformed.rows) - len(held_back))
+            transformed = replace(
+                transformed,
+                rows=[row for index, row in enumerate(transformed.rows)
+                      if index not in mismatched],
+                drift=[])
+
         if transformed.has_drift:
             # THROUGH THE POLICY, not straight to a raise. The outcome
             # is the same -- refuse -- but it now comes from a module

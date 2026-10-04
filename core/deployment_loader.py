@@ -170,6 +170,13 @@ class DeploymentConfig:
                                    # Bounds the LIST, not the disk -- see gold.py.
     identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
                                    # approval is not configurable.
+    on_type_mismatch: "str | None"
+                                  # WHAT A VALUE THAT WILL NOT COERCE COSTS:
+                                  # "refuse" stops the whole table, "quarantine"
+                                  # sets the offending ROWS aside and syncs the
+                                  # rest. None means the key is absent, which
+                                  # keeps the old behaviour (refuse) and warns.
+                                  # See core/mirror/transform.py.
     trusted_proxies: "tuple[str, ...]"
                                   # PEERS WHOSE `X-Forwarded-For` IS BELIEVED,
                                   # as addresses or CIDRs. EMPTY BY DEFAULT: a
@@ -647,6 +654,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # a secondary option on the way to deprecation, and its
             # likely future is as the refresh mechanism behind a
             # read-through cache rather than as a serving path.
+            on_type_mismatch=_resolve_type_mismatch_policy(config),
             trusted_proxies=_resolve_trusted_proxies(config),
             write_targets=_resolve_write_targets(config),
             read_from_mirror=_refuse_live_reads(config),
@@ -907,6 +915,46 @@ def _writable_silo_configs(config: "DeploymentConfig",
             f"silo. Configured silos: {sorted(resolved)}"
         )
     return {name: resolved[name] for name in targets}
+
+
+ON_TYPE_MISMATCH = ("refuse", "quarantine")
+
+
+def _resolve_type_mismatch_policy(config: dict) -> "str | None":
+    """What one uncoercible value costs: the row, or the table.
+
+    TODAY IT COSTS THE TABLE. An `N/A` in an integer column stops the
+    whole sync, which is the behaviour seven ZOO findings collapse
+    into.
+
+    THE PRECEDENT SEPARATES TWO THINGS this does not. Databricks'
+    parsers treat a MALFORMED RECORD and a TYPE MISMATCH differently --
+    "only incomplete and malformed CSV records are considered corrupt",
+    while a type mismatch is rescued into a column rather than failing
+    the read. Their default is PERMISSIVE, and the guidance is explicit:
+    "use PERMISSIVE + audit the corrupt record column instead of
+    failing the pipeline."
+
+    QUARANTINE IS NOT DROPPING, which is the objection this answers.
+    The row is set aside where an operator can see it, counted, and
+    reported -- the machinery already exists in
+    `core/mirror/duplicates.py` and the expectations policy.
+
+    ABSENT KEEPS THE OLD BEHAVIOUR. An existing deployment that has
+    never heard of this keeps refusing and is told how to change it,
+    for the same reason `write_targets` does: a secure-by-default flip
+    applies to new installations, and breaking a working pipeline to
+    make a point it has not been told about is not an upgrade.
+    """
+    if "on_type_mismatch" not in config:
+        return None
+    declared = str(config.get("on_type_mismatch") or "").strip().lower()
+    if declared not in ON_TYPE_MISMATCH:
+        raise ValueError(
+            f"on_type_mismatch must be one of {list(ON_TYPE_MISMATCH)}, "
+            f"not {declared!r}"
+        )
+    return declared
 
 
 def _resolve_trusted_proxies(config: dict) -> "tuple[str, ...]":
