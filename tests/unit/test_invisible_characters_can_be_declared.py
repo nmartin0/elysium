@@ -110,13 +110,38 @@ class TestTheDeclaredRule:
     def test_ordinary_text_passes(self, value):
         assert violation(DECLARED, value) is None
 
-    def test_a_field_that_does_NOT_declare_it_is_unaffected(self):
-        """The rule is opt-in. A deployment that says nothing sees no
-        change at all, which is why the default is the owner's
-        decision rather than mine."""
+    def test_a_field_that_does_NOT_declare_it_is_STILL_protected(self):
+        """CHANGED, AND THE OWNER MADE THE CALL this test asked for.
+
+        It used to say "the rule is opt-in... which is why the default
+        is the owner's decision rather than mine", and asserted that an
+        undeclared field accepted tag characters. NEW-6 put that
+        decision to the owner and the answer was to default it on, in
+        the tiered form the compilers already use.
+
+        TAG CHARACTERS AND BIDI CONTROLS ONLY -- the smuggling channel
+        and Trojan Source (CVE-2021-42574). A deployment that does not
+        know to ask is exactly the one at risk."""
         undeclared = {"data_type": "string"}
 
-        assert violation(undeclared, f"Acme Ltd{TAGS}") is None
+        assert violation(undeclared, f"Acme Ltd{TAGS}") is not None
+
+    def test_zero_width_is_STILL_opt_in_on_an_undeclared_field(self):
+        """The half that did NOT change, and the reason the new default
+        is narrow enough to be safe: emoji sequences and several
+        scripts join with zero-width characters legitimately."""
+        undeclared = {"data_type": "string"}
+
+        assert violation(undeclared, "Ac\u200bme Ltd") is None
+        assert violation(undeclared, "\U0001f468\u200d\U0001f469") is None
+
+    def test_a_field_may_opt_OUT_of_the_new_default(self):
+        """A deployment with a real reason to hold such a value says
+        so, rather than having no way to."""
+        allowed = {"data_type": "string",
+                   "constraints": {"allow_invisible_characters": True}}
+
+        assert violation(allowed, f"Acme Ltd{TAGS}") is None
 
 
 class TestThroughARealSync:

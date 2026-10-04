@@ -129,6 +129,17 @@ class TestTheDeclaredRule:
         smuggled = "Acme" + "".join(chr(0xE0000 + ord(c)) for c in "HI")
 
         assert violation(INVISIBLE, smuggled) is not None
-        assert violation(DECLARED, smuggled) is None
+        # NEW-6 CHANGED THE SECOND HALF. A field declaring only
+        # `no_misleading_text` used to accept smuggled tag characters,
+        # because the invisible rule was opt-in. Tag characters are
+        # refused by default now, so isolating the misleading rule
+        # means opting out of the new default explicitly.
+        misleading_only = {
+            **DECLARED,
+            "constraints": {**DECLARED.get("constraints", {}),
+                            "allow_invisible_characters": True},
+        }
+
+        assert violation(misleading_only, smuggled) is None
         assert violation(DECLARED, "Tom &amp; Jerry") is not None
         assert violation(INVISIBLE, "Tom &amp; Jerry") is None

@@ -61,6 +61,49 @@ C0_CONTROLS = tuple(point for point in range(0x00, 0x20)
                      if point not in _LAYOUT) + (0x7F,)
 
 
+#: The families refused WITHOUT a deployment asking, because a
+#: deployment that does not know to ask is exactly the one at risk.
+#:
+#: TAG CHARACTERS AND BIDI CONTROLS ONLY. They are the smuggling
+#: channel and the Trojan Source attack (CVE-2021-42574), they have
+#: essentially no legitimate use in a customer name or an address, and
+#: the compilers already made this call: GCC 12 ships
+#: `-Wbidi-chars=unpaired` as the DEFAULT and Rust warns by default.
+#:
+#: ZERO-WIDTH IS DELIBERATELY NOT HERE, and that is the whole reason
+#: this is a safe default rather than a disruptive one. Zero-width
+#: joiners are how emoji sequences are built and how several scripts
+#: join letters, so refusing them by default would reject real data.
+#: Tools that scan for these draw the same line -- bidi controls are
+#: "worth flagging even in small numbers", while general invisible
+#: characters need a threshold like "10+ consecutive" to avoid noise.
+#:
+#: The per-field `no_invisible_characters` constraint still covers
+#: every family, for a deployment that wants the stricter rule.
+DANGEROUS_BY_DEFAULT = ("a Unicode tag character", "a bidirectional control")
+
+
+def dangerous_characters(value) -> list[str]:
+    """The invisible characters refused even when nobody asked.
+
+    A SUBSET OF `invisible_characters`, filtered by family rather than
+    recomputed, so the two can never disagree about what is present --
+    only about what is acceptable.
+    """
+    return [found for found in invisible_characters(value)
+            if found.startswith(DANGEROUS_BY_DEFAULT)]
+
+
+def describe_dangerous(value) -> "str | None":
+    """One sentence naming what is hiding, or None."""
+    found = dangerous_characters(value)
+    if not found:
+        return None
+    return (f"holds {len(found)} character(s) that are not visible and "
+            f"not legitimate here: {', '.join(found[:3])}"
+            + (" and others" if len(found) > 3 else ""))
+
+
 def invisible_characters(value) -> list[str]:
     """The names of the invisible characters in this value, in order.
 

@@ -144,8 +144,33 @@ def violation(field_def: dict, value) -> str | None:
     THE MESSAGE NAMES THE RULE AND THE VALUE, because the person reading
     it is the one who has to choose a different value.
     """
-    constraints = field_def.get("constraints")
-    if not constraints or value is None:
+    constraints = field_def.get("constraints") or {}
+    if value is None:
+        return None
+
+    # REFUSED WITHOUT BEING ASKED, and only these two families.
+    #
+    # NEW-6: `no_invisible_characters` is opt-in per field, so a
+    # deployment that does not know to ask gets no protection -- and
+    # not knowing to ask is exactly the condition that makes a
+    # deployment vulnerable. This runs BEFORE the "no constraints
+    # declared, nothing to check" return below, because a field with
+    # no constraints block is precisely the unprotected case.
+    #
+    # TAG CHARACTERS AND BIDI CONTROLS ONLY. The compilers settled
+    # this: GCC 12 ships `-Wbidi-chars=unpaired` as the DEFAULT and
+    # Rust warns by default, both after CVE-2021-42574. Zero-width
+    # stays opt-in because emoji sequences and several scripts join
+    # with it legitimately -- which is what makes this a narrow
+    # default rather than a disruptive one.
+    if not constraints.get("allow_invisible_characters"):
+        from core.invisible_text import describe_dangerous
+
+        hiding = describe_dangerous(value)
+        if hiding is not None:
+            return hiding
+
+    if not constraints:
         return None
     data_type = _data_type(field_def)
     try:
