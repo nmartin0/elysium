@@ -228,6 +228,11 @@ layers = [
     # deciding anything, so it imports nothing from core and knows
     # nothing about transports or about what changed.
     "change_hints",
+    # What a merge reviewer is shown when they may not read the fields
+    # that decide the match. A LEAF for the same reason: it takes the
+    # readable field names as an argument and decides no access
+    # question itself.
+    "masked_review",
     # misleading_text, its sibling and the same shape: a leaf that
     # knows which characters lie about what they are, and nothing
     # about fields or rows.

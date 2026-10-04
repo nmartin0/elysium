@@ -459,6 +459,25 @@ The document argues this is "a genuinely good fit for a MAC system and
 worth building rather than working around", and it is right: the
 comparison a reviewer needs is usually agreement, not the value.
 
+**THE BACKEND HALF IS BUILT**, `core/masked_review.py`.
+`masked_comparison` gives a verdict for every compared field and the
+values only for fields the caller may read; `agreement_pattern` is the
+pattern in one line; `withheld_fields` records what the reviewer
+judged blind, because an approval made with three of five deciding
+fields masked is a weaker artifact than one made with all five.
+
+**WHAT IS WITHHELD IS ABSENT, not masked.** The literature states the
+requirement -- "the facility responsible for the (masked) clerical
+review should only have access to those plaintext attributes that are
+displayed" -- so the structure never holds the hidden value at all.
+The difference is invisible on a screen and total in a log, a cache or
+a future refactor. A test asserts the withheld string does not appear
+anywhere in the output's `repr`.
+
+**Still blocked on:** the screen, and a route to feed it. If identity
+inference is dropped, DELETE `core/masked_review.py` -- the vulture
+whitelist says so.
+
 **Blocked on:** the frontend, and on whether masked review is built
 properly or the feature waits. Showing the fields would be the easy
 version and would quietly defeat MAC.

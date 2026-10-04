@@ -50,6 +50,16 @@ request_trace_route
 # purpose and should not sit here looking load-bearing.
 hints_for
 describe_hint
+# core/masked_review.py, same position and the same instruction. Its
+# consumer is the merge reviewer's SCREEN, which is not built -- the
+# backend half of BLOCKING.md item 19. The next step toward wiring it
+# is a route serving one proposal masked for the caller; until that
+# exists this is tested and unused.
+#
+# IF IDENTITY INFERENCE IS DROPPED, DELETE THIS MODULE TOO.
+masked_comparison
+agreement_pattern
+withheld_fields
 published_history_route
 list_notes_route
 create_note_route
