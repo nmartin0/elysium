@@ -1397,14 +1397,31 @@ class WriteMediator:
         # with EVERY type it touches than with any one of them.
         affected_types = {sw["object_type"] for sw in sub_write_defs}
         if len(affected_types) > 1:
-            for sw_def in sub_write_defs:
-                for mutation in sw_def["mutations"]:
-                    write_action_id = f"write:{sw_def['object_type']}.{mutation['set']['property']}"
-                    if not authorize(user_record, self.roles, write_action_id):
-                        raise PermissionError(
-                            f"{user_record.user_id!r} is not authorized for: {write_action_id!r} "
-                            f"(required because {action_type_name!r} touches more than one object type)"
-                        )
+            # PER TYPE, NOT PER FIELD -- `F-02` option C, which is
+            # Foundry's: "you must hold edit permissions on the action
+            # type AND on all ontology resource types edited by the
+            # action".
+            #
+            # THIS DEMANDED `write:<Type>.<field>` PER MUTATION while
+            # policy_validation rejected every `write:` grant, so no
+            # valid policy could authorise a cross-type action at all.
+            # Reproduced 24 September; the two halves had never agreed.
+            #
+            # AND IT READ `sw_def["mutations"]`, which a DELETE sub-write
+            # does not have -- `F-03`'s KeyError. Asking per type rather
+            # than per mutation removes the key access entirely, which
+            # is why one change closes both.
+            for affected_type in sorted(affected_types):
+                write_action_id = f"write:{affected_type}"
+                if not authorize(user_record, self.roles, write_action_id):
+                    raise PermissionError(
+                        f"{user_record.user_id!r} is not authorized for: "
+                        f"{write_action_id} (required because "
+                        f"{action_type_name!r} touches more than one object "
+                        f"type, and a cross-type action has no more inherent "
+                        f"reason to be trusted with every type it touches "
+                        f"than with any one of them)"
+                    )
 
         # Resolve, MAC-check, and validate EACH sub_write independently.
         resolved_sub_writes = []

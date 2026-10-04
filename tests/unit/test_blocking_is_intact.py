@@ -51,12 +51,18 @@ class TestTheSectionsExist:
 
     def test_item_1_is_the_first_numbered_item(self):
         """It outranks the rest, and it is the one patch 493
-        beheaded."""
+        beheaded.
+
+        IT NAMED `F-02` UNTIL THAT WAS BUILT. Pinning the identity of
+        whatever happens to be first was pinning a fact with a
+        lifetime, and it expired the moment the top item shipped. What
+        this file is for is the SHAPE -- that there is a first item and
+        the numbering starts at one -- so that is what it checks now."""
         numbered = _numbered()
 
         assert numbered, "no numbered items at all"
         assert numbered[0][0] == 1
-        assert "F-02" in numbered[0][1]
+        assert numbered[0][1].strip(), "item 1 has no title"
 
 
 class TestTheNumberingIsSound:

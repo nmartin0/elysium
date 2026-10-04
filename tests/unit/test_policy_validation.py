@@ -111,8 +111,9 @@ def test_a_write_grant_is_rejected_outright():
     Rejected now rather than accepted as a no-op: a grant that reads as
     a permission and grants nothing is worse than one that fails.
     """
-    with pytest.raises(ValueError, match="not enforced anywhere"):
-        validate_roles(_role("write:Widget.name"), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
+    with pytest.raises(ValueError, match="names a FIELD"):
+        validate_roles(_role("write:Widget.name"), OBJECT_TYPES, ACTION_TYPES,
+                       ENABLED_TOOLS)
 
 
 def test_the_write_rejection_names_the_real_alternative():
@@ -126,9 +127,20 @@ def test_the_write_rejection_names_the_real_alternative():
 def test_a_write_grant_is_rejected_whatever_it_names():
     # Including one whose type and field are perfectly real -- the
     # prefix is the problem, not what follows it.
-    for grant in ("write:Widget", "write:Widget.name", "write:Nonexistent.field"):
-        with pytest.raises(ValueError, match="not enforced anywhere"):
-            validate_roles(_role(grant), OBJECT_TYPES, ACTION_TYPES, ENABLED_TOOLS)
+    # `write:Widget` IS VALID NOW -- `F-02` option C, which is
+    # Foundry's model: edit permission on the action type AND on every
+    # object type the action edits. What stays rejected is the FIELD
+    # form, because nothing checks it.
+    validate_roles(_role("write:Widget"), OBJECT_TYPES, ACTION_TYPES,
+                   ENABLED_TOOLS)
+
+    with pytest.raises(ValueError, match="names a FIELD"):
+        validate_roles(_role("write:Widget.name"), OBJECT_TYPES,
+                       ACTION_TYPES, ENABLED_TOOLS)
+
+    with pytest.raises(ValueError, match="not a declared object type"):
+        validate_roles(_role("write:Nonexistent"), OBJECT_TYPES,
+                       ACTION_TYPES, ENABLED_TOOLS)
 
 
 def test_completely_unrecognized_grant_pattern_is_rejected():

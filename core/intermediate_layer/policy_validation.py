@@ -236,18 +236,44 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
         return
 
     if grant.startswith("write:"):
-        # REMOVED as a valid grant, not merely unenforced. No
-        # authorize() call anywhere checked it -- writes are authorized
-        # by "execute:<ActionType>" -- so a policy granting
-        # write:Order.total validated cleanly and authorized nothing.
-        # Rejecting it with the real alternative is better than
-        # accepting a no-op that reads as a permission.
-        raise ValueError(
-            f"Role {role_name!r}: grant {grant!r} uses the 'write:' prefix, which is not "
-            f"enforced anywhere. Writes are authorized per action type -- use "
-            f"'execute:<ActionType>' instead."
-        )
-
+        # TYPE-LEVEL ONLY, which is `F-02` option C and Foundry's
+        # model: "you must hold edit permissions on the action type
+        # AND on all ontology resource types edited by the action".
+        #
+        # WHAT WAS BROKEN. This rejected EVERY `write:` grant while
+        # write_mediator demanded `write:<Type>.<field>` for each
+        # mutation of a cross-type action -- so no valid policy could
+        # authorise one AT ALL. Reproduced 24 September.
+        #
+        # THE PER-FIELD FORM STAYS REJECTED and for the original
+        # reason: no authorize() call ever checked it, so a policy
+        # granting write:Order.total validated cleanly and permitted
+        # nothing. A no-op that reads as a permission is worse than
+        # a refusal.
+        #
+        # `F-12c` went with it: the old message claimed write: is
+        # "not enforced anywhere", which was false then (the write
+        # path demanded it) and is false now (the type-level form is
+        # checked).
+        target = grant.removeprefix("write:")
+        if "." in target:
+            raise ValueError(
+                f"Role {role_name!r}: grant {grant!r} names a FIELD. "
+                f"Writes are authorized per action type and per object "
+                f"TYPE, never per field -- nothing checks a per-field "
+                f"write grant, so this would permit nothing while "
+                f"reading as a permission.\n"
+                f"\n"
+                f"Use 'write:{target.split('.')[0]}' for the type, and "
+                f"'execute:<ActionType>' for the action."
+            )
+        if target not in object_types:
+            raise ValueError(
+                f"Role {role_name!r}: grant {grant!r} names "
+                f"{target!r}, which is not a declared object type. "
+                f"Declared: {sorted(object_types)}"
+            )
+        return
     if grant.startswith("read:"):
         _validate_type_or_field_grant(role_name, grant, object_types)
         return
