@@ -202,8 +202,47 @@ class TestItIsTheSiteForElysiumNotElysium:
         chosen to."""
         site_tokens = (SITE / "css/tokens.css").read_text(encoding="utf-8")
 
-        assert "--blue-400" in site_tokens
+        assert "--navy-950" in site_tokens
+        assert "--bone-50" in site_tokens
         assert "@layer" not in site_tokens, "product cascade detail does not belong here"
+
+    def test_there_is_exactly_one_accent(self):
+        """ONE ACCENT, SPENT CAREFULLY. The sites in this category that
+        read as serious hold near-monochrome and let "the only colour
+        contribution come from their products". An accent that appears
+        everywhere stops meaning anything.
+
+        `--live` and `--refused` are not decoration -- they are the two
+        states the product is about -- and they appear only in the
+        diagram and the approval snippet."""
+        # COUNT THE DECLARATIONS, not one spelling of one of them. A
+        # first version asserted `--accent: var(--signal)` appeared
+        # once, which a control defeated by adding a SECOND `--accent:`
+        # line beside it -- the test passed while the page had two.
+        css = (SITE / "css/site.css").read_text(encoding="utf-8")
+        default = css[css.index(":root {"):css.index("@media (prefers-color-scheme")]
+
+        assert default.count("--accent:") == 1, "one accent, spent carefully"
+
+    def test_it_is_dark_by_default(self):
+        """It shipped LIGHT for a day because this file had grown three
+        competing `:root` blocks across two sittings and the last match
+        won. One block now, `color-scheme: dark` on it, and light as an
+        explicit adaptation."""
+        css = (SITE / "css/site.css").read_text(encoding="utf-8")
+        first_root = css.index(":root {")
+        first_media = css.index("@media (prefers-color-scheme")
+
+        assert "color-scheme: dark" in css[first_root:first_media]
+        assert "prefers-color-scheme: light" in css
+        assert "prefers-color-scheme: dark" not in css, (
+            "a dark media query means dark is the exception, not the default")
+
+    def test_one_root_block_only(self):
+        """The bug that caused it, pinned."""
+        css = (SITE / "css/site.css").read_text(encoding="utf-8")
+
+        assert css.count(":root {") == 2, "one default plus one light adaptation"
 
     def test_nothing_under_site_reaches_into_the_product(self):
         """The isolation, asserted rather than assumed. A relative path
@@ -274,21 +313,34 @@ class TestItIsAboutElysiumSpecifically:
 
     LANDING = (SITE / "index.html").read_text(encoding="utf-8")
 
-    def test_the_ontology_is_shown_not_described(self):
-        """A prospect for this product wants to see the YAML, not a
-        paragraph about how declarative it is."""
-        assert "object_types:" in self.LANDING
-        assert "id_field:" in self.LANDING
-        assert "security:" in self.LANDING
+    def test_the_ontology_is_shown_in_the_diagram(self):
+        """IT MOVED, and the move was the point. A YAML fragment listing
+        field types is true and dull -- the owner's words were that the
+        examples highlighted "insignificant parts".
 
-    def test_the_security_field_is_what_is_highlighted(self):
-        """Of everything in that fragment, the line that distinguishes
-        Elysium from a schema file is the one naming who may see a
-        row."""
-        i = self.LANDING.index("object_types:")
-        snippet = self.LANDING[i:i + 900]
+        The ontology now appears in the diagram, where it can be shown
+        sitting ON something: object types with their links, the grant
+        each field needs, and the security rule set apart."""
+        assert "Ontology" in self.LANDING
+        assert "security" in self.LANDING
+        assert "READ:CUSTOMER.EMAIL" in self.LANDING
 
-        assert "<b>security:" in snippet
+    def test_the_security_rule_is_what_the_diagram_emphasises(self):
+        """Of everything in an ontology, the line that distinguishes it
+        from a schema file is the one naming who may see a row. It is
+        the only box in the top layer drawn in the accent."""
+        i = self.LANDING.index("WHO MAY SEE A ROW")
+        box = self.LANDING[i - 600:i]
+
+        assert "diagram-accent" in box
+
+    def test_the_snippet_shows_a_refusal_rather_than_a_schema(self):
+        """The useful thing to show is not what you can declare -- it
+        is two people asking one question and getting different
+        answers, with the second told nothing rather than told
+        'forbidden'."""
+        assert "no customers match" in self.LANDING
+        assert "that would tell bob they exist" in self.LANDING
 
     def test_the_approval_flow_is_shown(self):
         """A write being a proposal somebody approves, with the
@@ -312,3 +364,63 @@ class TestItIsAboutElysiumSpecifically:
         database access and is never trusted to judge what it may see.
         A page that only lists capabilities is selling a chatbot."""
         assert "never" in self.LANDING.lower()
+
+
+class TestTheDiagram:
+    """The hero image, and the only thing on the page that explains the
+    whole product at a glance: an ontology sitting on a pipeline
+    sitting on the customer's own databases.
+
+    DRAWN BY HAND IN SVG. Six kilobytes rather than a 300 kB render,
+    readable as text in the repository, every label real selectable
+    text, and it inherits the page's palette so one file serves light
+    and dark."""
+
+    LANDING = (SITE / "index.html").read_text(encoding="utf-8")
+
+    def test_all_three_layers_are_there(self):
+        for layer in ("Ontology", "Mirror", "PostgreSQL"):
+            assert layer in self.LANDING, layer
+
+    def test_the_pipeline_stages_are_named(self):
+        """bronze, silver, gold -- the real stage names from
+        core/mirror/, not invented ones."""
+        for stage in (">bronze<", ">silver<", ">gold<"):
+            assert stage in self.LANDING, stage
+
+    def test_it_is_described_for_a_screen_reader(self):
+        """A diagram carrying the page's whole argument cannot be
+        decorative. The description says what the picture says, in
+        sentences."""
+        i = self.LANDING.index('id="arch-desc"')
+        description = self.LANDING[i:i + 1200]
+
+        assert "bronze" in description
+        assert "proposal a person approves" in description
+        assert len(description) > 400
+
+    def test_it_is_inlined_rather_than_an_img(self):
+        """So it follows light and dark through CSS variables without a
+        second file or a line of JavaScript."""
+        assert "<svg" in self.LANDING
+        assert "architecture.svg" not in self.LANDING
+
+    def test_no_gradients_or_filters(self):
+        """The subject is a layered system; the clearest way to draw one
+        is layers, stacked and labelled. Gradients, glows and isometric
+        slabs make a reader work harder to learn less -- and are the
+        tell of a picture generated rather than drawn."""
+        i = self.LANDING.index("<svg")
+        svg = self.LANDING[i:self.LANDING.index("</svg>")]
+
+        for tell in ("linearGradient", "radialGradient", "feGaussianBlur",
+                     "filter=", "opacity=\"0."):
+            assert tell not in svg, tell
+
+    def test_the_direction_of_both_flows_is_drawn(self):
+        """A question goes down and is answered from gold; a write goes
+        the other way and lands only after a person approves. A diagram
+        without the arrows is a parts list."""
+        assert "a question, asked as a named user" in self.LANDING
+        assert "an approved write," in self.LANDING
+        assert "read-only sync" in self.LANDING

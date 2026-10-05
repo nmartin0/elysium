@@ -1,53 +1,59 @@
-/* The site's own palette.
+/* The site's palette: navy and off-white.
  *
- * OWNED HERE, NOT COPIED FROM THE PRODUCT. An earlier version of this
- * file was a byte-for-byte copy of ui/packages/shell-api/src/tokens.css
- * with a test asserting they stayed identical. That made the marketing
- * site break when somebody changed a colour in the application, which
- * is backwards: this directory is meant to be separable from both the
- * product and its UI, and a test enforcing sameness is a coupling
- * whatever the file layout says.
+ * OWNED HERE, NOT COPIED FROM THE PRODUCT. This is the website FOR
+ * Elysium, not Elysium. A family resemblance is wanted -- a prospect
+ * clicking into the demo should not be startled -- and nothing more.
  *
- * It also carried paragraphs about Blueprint's cascade layers and a
- * checkbox stacking bug -- true of the application, meaningless here,
- * and exactly the kind of thing that rots in a file nobody reads.
+ * NAVY RATHER THAN NEUTRAL GREY. The application's greys are tuned for
+ * dense tabular reading under long sessions. A landing page is read
+ * once, briefly, often on a phone, and a navy ground reads as
+ * considered where a flat grey reads as unfinished.
  *
- * A FAMILY RESEMBLANCE, NOT A UNIFORM. This is the website FOR
- * Elysium, not Elysium. It shares the product's neutral greys and its
- * one blue so a prospect clicking into the demo is not startled, and
- * it is free to differ everywhere else -- a marketing page and an
- * application screen have different jobs, and a landing page that
- * looks like a settings panel sells nothing.
- *
- * Concretely: the site sets its own type scale, its own rhythm, and a
- * display face the product does not use. If the application rebrands,
- * this is a deliberate edit rather than a broken test.
+ * ONE ACCENT, USED SPARINGLY, which is the discipline the best sites
+ * in this category hold to: near-monochrome, "where the only colour
+ * contribution comes from their products". An accent that appears
+ * everywhere stops meaning anything -- it belongs on the primary
+ * action, the live value in a diagram, and almost nothing else.
  */
 
 :root {
-  /* Greys, dark to light. */
-  --grey-900: #111418;
-  --grey-800: #1c2127;
-  --grey-700: #252a31;
-  --grey-600: #2f343c;
-  --grey-500: #404854;
-  --grey-400: #5f6b7c;
-  --grey-300: #999999;
-  --grey-200: #abb3bf;
-  --grey-150: #d3d8de;
-  --grey-100: #edeff2;
-  --grey-50: #f6f7f9;
-  --white: #ffffff;
+  /* ---- navy, dark to light ----
+   * Hue held at 218 throughout so the ramp reads as one material
+   * rather than five colours that happen to be blue.
+   */
+  --navy-950: #080c14;  /* page ground */
+  --navy-900: #0d1320;  /* raised panel */
+  --navy-850: #121a2b;  /* panel, hovered */
+  --navy-800: #18223a;  /* tile ground */
+  --navy-700: #1f2d4d;  /* hairline on dark */
+  --navy-600: #2b3c63;
+  --navy-500: #3e5280;
 
-  /* One accent. A marketing site with two accent colours has two
-   * things competing to be the call to action. */
-  --blue-400: #2d72d2;
-  --blue-200: #8abbff;
+  /* ---- off-white, warm enough not to glare ---- */
+  --bone-50: #f7f6f3;   /* page ground, light */
+  --bone-100: #eceae5;
+  --bone-200: #d9d6ce;
+  --bone-300: #b4b0a6;
 
-  --green-400: #1c6e42;
-  --red-500: #b3261e;
+  /* ---- text ---- */
+  --ink-bright: #f7f6f3;
+  --ink-muted: #9aa5bb;
+  --ink-dim: #6b788f;
+
+  /* ---- the one accent ----
+   * A blue that sits in the navy family rather than fighting it: same
+   * hue, far higher chroma, so it reads as the SAME material lit up.
+   */
+  --signal: #4d8dff;
+  --signal-dim: #2f5fb5;
+
+  /* Used only where something must read as live or refused. Never
+   * decoration. */
+  --live: #3fb27f;
+  --refused: #d9534f;
 
   --font-sans:
-    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    'Helvetica Neue', Helvetica, Inter, system-ui, -apple-system, 'Segoe UI', Arial,
+    sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }

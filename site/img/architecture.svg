@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Three layers: the ontology you declare, the pipeline that keeps a
+  mirror current, and the databases that remain the source of truth.
+
+  DRAWN BY HAND, in plain SVG, for reasons that matter on this page:
+  it is 6 kB rather than a 300 kB render, it is readable as text in
+  the repository, every label is real selectable text for a screen
+  reader, and it inherits the page's palette through currentColor and
+  CSS variables -- so it follows light and dark without a second file.
+
+  THE SHAPES ARE RECTANGLES AND STRAIGHT LINES. No gradients, no
+  isometric projection, no glow, no floating 3-D slabs. The subject is
+  a layered system and the clearest way to draw a layered system is
+  layers, stacked, labelled, with arrows that say which way the data
+  moves. Anything more decorative makes a reader work harder to learn
+  less.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 960 560"
+  role="img"
+  aria-labelledby="arch-title arch-desc"
+  font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+>
+  <title id="arch-title">How Elysium is arranged</title>
+  <desc id="arch-desc">
+    Three stacked layers. At the top, an ontology you declare: object types with
+    fields, links between them, and the grant each field requires. In the middle, a
+    pipeline that copies your databases into a mirror in three stages — bronze keeps
+    every raw value, silver standardises and types it, gold is the single published
+    table each object type is read from. At the bottom, your own databases, which the
+    pipeline only ever reads. A question travels down through the ontology, which
+    decides what the asking user may see, and is answered from gold. A write travels
+    the other way, as a proposal a person approves, and lands in your database.
+  </desc>
+
+  <style>
+    .panel { fill: var(--diagram-panel, #0d1320); stroke: var(--diagram-line, #1f2d4d); }
+    .tile  { fill: var(--diagram-tile, #18223a); stroke: var(--diagram-line, #1f2d4d); }
+    .label { fill: var(--diagram-ink, #f7f6f3); font-size: 15px; font-weight: 500; }
+    .small { fill: var(--diagram-soft, #9aa5bb); font-size: 12.5px; }
+    .tiny  { fill: var(--diagram-faint, #6b788f); font-size: 11px; letter-spacing: .08em; }
+    .accent{ fill: var(--diagram-accent, #4d8dff); }
+    .wire  { stroke: var(--diagram-line-bright, #2b3c63); fill: none; stroke-width: 1.5; }
+    .flow  { stroke: var(--diagram-accent, #4d8dff); fill: none; stroke-width: 1.5; }
+  </style>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--diagram-accent, #4d8dff)" />
+    </marker>
+    <marker id="arrow-quiet" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--diagram-line-bright, #2b3c63)" />
+    </marker>
+  </defs>
+
+  <!-- ============ 1. THE ONTOLOGY ============ -->
+  <text x="40" y="34" class="tiny">YOU DECLARE</text>
+  <rect x="40" y="48" width="880" height="148" rx="4" class="panel" />
+
+  <text x="64" y="78" class="label">Ontology</text>
+  <text x="64" y="100" class="small">object types, fields, links — and the grant each field needs</text>
+
+  <!-- Customer -->
+  <rect x="64" y="116" width="250" height="62" rx="3" class="tile" />
+  <text x="80" y="138" class="label" font-size="13.5">Customer</text>
+  <text x="80" y="158" class="small" font-size="11.5">name · region · email</text>
+  <text x="80" y="172" class="tiny">READ:CUSTOMER.EMAIL</text>
+
+  <!-- link between the two types -->
+  <path d="M 314 147 L 374 147" class="wire" marker-end="url(#arrow-quiet)" />
+  <text x="322" y="140" class="tiny">LINK</text>
+
+  <!-- Transaction -->
+  <rect x="374" y="116" width="250" height="62" rx="3" class="tile" />
+  <text x="390" y="138" class="label" font-size="13.5">Transaction</text>
+  <text x="390" y="158" class="small" font-size="11.5">amount · currency · date</text>
+  <text x="390" y="172" class="tiny">READ:TRANSACTION.AMOUNT</text>
+
+  <!-- the security rule, set apart because it is the point -->
+  <rect x="664" y="116" width="232" height="62" rx="3" class="tile"
+        stroke="var(--diagram-accent, #4d8dff)" />
+  <text x="680" y="138" class="accent" font-size="13.5" font-weight="500">security</text>
+  <text x="680" y="158" class="small" font-size="11.5">field: region</text>
+  <text x="680" y="172" class="tiny">WHO MAY SEE A ROW</text>
+
+  <!-- ============ the question arrow, down the left ============ -->
+  <path d="M 40 196 L 40 236" class="flow" marker-end="url(#arrow)" />
+  <text x="56" y="222" class="small" font-size="11.5">a question, asked as a named user</text>
+
+  <!-- ============ 2. THE PIPELINE ============ -->
+  <text x="40" y="268" class="tiny">ELYSIUM KEEPS CURRENT</text>
+  <rect x="40" y="282" width="880" height="134" rx="4" class="panel" />
+
+  <text x="64" y="312" class="label">Mirror</text>
+  <text x="64" y="334" class="small">three stages, rebuilt on every sync</text>
+
+  <rect x="64" y="350" width="252" height="48" rx="3" class="tile" />
+  <text x="80" y="370" class="label" font-size="13">bronze</text>
+  <text x="80" y="388" class="small" font-size="11.5">every raw value, as the source wrote it</text>
+
+  <path d="M 316 374 L 340 374" class="wire" marker-end="url(#arrow-quiet)" />
+
+  <rect x="340" y="350" width="252" height="48" rx="3" class="tile" />
+  <text x="356" y="370" class="label" font-size="13">silver</text>
+  <text x="356" y="388" class="small" font-size="11.5">typed, standardised, deduplicated</text>
+
+  <path d="M 592 374 L 616 374" class="wire" marker-end="url(#arrow-quiet)" />
+
+  <rect x="616" y="350" width="280" height="48" rx="3" class="tile"
+        stroke="var(--diagram-accent, #4d8dff)" />
+  <text x="632" y="370" class="accent" font-size="13" font-weight="500">gold</text>
+  <text x="632" y="388" class="small" font-size="11.5">one published table per type — the read path</text>
+
+  <!-- the answer comes back up from gold -->
+  <path d="M 920 350 L 920 196" class="flow" marker-end="url(#arrow)" />
+  <text x="762" y="236" class="small" font-size="11.5" text-anchor="end">answered from gold,</text>
+  <text x="762" y="252" class="small" font-size="11.5" text-anchor="end">filtered to that user</text>
+
+  <!-- ============ the sync arrow ============ -->
+  <path d="M 40 416 L 40 456" class="wire" marker-end="url(#arrow-quiet)" />
+  <text x="56" y="442" class="small" font-size="11.5">read-only sync</text>
+
+  <!-- ============ 3. YOUR DATABASES ============ -->
+  <text x="40" y="488" class="tiny">YOU OWN, AND KEEP</text>
+  <rect x="40" y="502" width="880" height="46" rx="4" class="panel" />
+
+  <rect x="64" y="512" width="196" height="26" rx="3" class="tile" />
+  <text x="80" y="530" class="small" font-size="12">PostgreSQL</text>
+
+  <rect x="276" y="512" width="196" height="26" rx="3" class="tile" />
+  <text x="292" y="530" class="small" font-size="12">MySQL</text>
+
+  <rect x="488" y="512" width="196" height="26" rx="3" class="tile" />
+  <text x="504" y="530" class="small" font-size="12">SQLite</text>
+
+  <rect x="700" y="512" width="196" height="26" rx="3" class="tile" />
+  <text x="716" y="530" class="small" font-size="12">your warehouse</text>
+
+  <!-- ============ the write path, down the right ============ -->
+  <path d="M 896 456 L 896 502" class="flow" marker-end="url(#arrow)" />
+  <text x="880" y="442" class="small" font-size="11.5" text-anchor="end">an approved write,</text>
+  <text x="880" y="426" class="small" font-size="11.5" text-anchor="end">and only then</text>
+</svg>
