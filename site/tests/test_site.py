@@ -533,10 +533,13 @@ class TestTheFormattingIsSystematic:
     def test_headings_are_set_tighter_than_body(self):
         """1.1 to 1.3 for headings, 1.5 to 1.6 for body. A heading set
         at body leading looks like a paragraph in bold."""
-        i = self.CSS.rindex("h1 {")
+        # THE TYPE-SCALE BLOCK, not the last `h1 {` in the file --
+        # `rindex` found `.hero h1 { max-width }`, which sets no
+        # leading at all, so the assertion was testing the wrong rule.
+        i = self.CSS.index("h1 {", self.CSS.index("--t-3xl:"))
         h1 = self.CSS[i:self.CSS.index("}", i)]
 
-        assert "line-height: 1.0" in h1 or "line-height: 1.1" in h1
+        assert "line-height: 1.0" in h1 or "line-height: 1.1" in h1, h1
 
 
 class TestTheProofIsReal:
@@ -588,3 +591,98 @@ class TestTheProofIsReal:
 
         assert "ExternalReadAdapter" in (repo / "core/ontology/interface.py").read_text()
         assert "read:Transaction.amount" in (repo / "deployment/etc/policy.yaml").read_text()
+
+
+class TestTheCallToActionIsLegible:
+    """IT RENDERED GREY ON BLUE -- the one element on the page that had
+    to be readable.
+
+    `.masthead nav a` is specificity 0-1-2 and `.btn--primary` is
+    0-1-0, so the nav's muted grey won over the button's own colour
+    REGARDLESS of source order. Not a mistake anyone sees by reading
+    the file top to bottom.
+
+    Fixed by scoping the nav rule to links that are NOT buttons rather
+    than raising the button's specificity -- an arms race between two
+    selectors is how this happens a second time."""
+
+    CSS = (SITE / "css/site.css").read_text(encoding="utf-8")
+
+    def test_the_nav_rule_excludes_buttons(self):
+        assert ".masthead nav a:not(.btn)" in self.CSS
+
+    def test_no_bare_nav_colour_rule_remains(self):
+        """The one that caused it. A bare `.masthead nav a { color }`
+        would win again."""
+        import re
+
+        bare = re.search(r"\.masthead nav a \{[^}]*color:", self.CSS)
+
+        assert bare is None, bare.group(0) if bare else ""
+
+    def test_the_primary_button_states_its_own_colour(self):
+        i = self.CSS.rindex(".btn--primary,")
+        rule = self.CSS[i:self.CSS.index("}", i)]
+
+        assert "color: #05080e" in rule
+        assert "background: var(--accent)" in rule
+
+
+class TestTheNavigationIsNotRedundant:
+    LANDING = (SITE / "index.html").read_text(encoding="utf-8")
+
+    def test_the_bare_demo_link_is_gone(self):
+        """A "Demo" text link beside a "Try the demo" button is two
+        controls for one action, and the research is explicit that a
+        second CTA competing in the hero costs conversions."""
+        i = self.LANDING.index("<nav")
+        nav = self.LANDING[i:self.LANDING.index("</nav>")]
+
+        assert nav.count('href="/demo/"') == 1
+
+
+class TestAlignmentVariesBySection:
+    """"It's all left-aligned, and doesn't look appealing."
+
+    The fix is NOT centring the body text -- "left aligned text is
+    easier to read than centered text for paragraphs", because
+    centring moves the start of every line and leaves "no consistent
+    place where users can move their eyes to".
+
+    The real fault was that every section was identical: same edge,
+    same width, same shape, top to bottom. "Breaking alignment
+    intentionally draws attention -- if every element sits along the
+    same left edge except one, that outlier becomes the focal
+    point.
+    """
+
+    LANDING = (SITE / "index.html").read_text(encoding="utf-8")
+    CSS = (SITE / "css/site.css").read_text(encoding="utf-8")
+
+    def test_at_least_one_section_head_is_centred(self):
+        assert "section-head--centre" in self.LANDING
+        assert ".section-head--centre {" in self.CSS
+
+    def test_a_centred_head_centres_its_lede_too(self):
+        """"A centered headline should not go with a left aligned
+        paragraph" -- the paragraph's ragged lines make the heading
+        look off-centre."""
+        i = self.CSS.index(".section-head--centre p,")
+        rule = self.CSS[i:self.CSS.index("}", i)]
+
+        assert "margin-inline: auto" in rule
+
+    def test_the_page_alternates_rather_than_repeats(self):
+        """Hero puts copy left and the visual right; the split below
+        reverses it with the code on the left. Two identical layouts in
+        a row is what made the page read as one long column."""
+        assert 'class="split"' in self.LANDING
+        assert ".split {" in self.CSS
+
+    def test_body_text_is_never_centred(self):
+        """The rule that does not bend. Centring is for short headings
+        and calls to action only."""
+        import re
+
+        for block in re.findall(r"\.(?:tile|snippet|split__aside)[^{]*\{[^}]*\}", self.CSS):
+            assert "text-align: center" not in block, block[:80]

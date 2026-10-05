@@ -21,7 +21,6 @@
         <a href="#how">How it works</a>
         <a href="#security">Security</a>
         <a href="/trust/">Trust</a>
-        <a href="/demo/">Demo</a>
         <a class="btn btn--primary" href="/demo/">Try the demo</a>
       </nav>
     </header>
@@ -203,13 +202,16 @@
       </div>
 
       <section id="how" class="wrap">
+        <div class="section-head section-head--centre">
         <h2>You declare the ontology. It is the whole interface.</h2>
         <p>
           Object types, fields, links and who may see what — written once, in YAML, and
           resolved live against your real databases at the moment a question is asked.
         </p>
+        </div>
 
-        <pre class="snippet"><code><i># alice asks, and holds read:Customer.region</i>
+        <div class="split">
+          <pre class="snippet"><code><i># alice asks, and holds read:Customer.region</i>
 &gt; which customers are in us-east?
 
   <u>Ada Okafor      us-east</u>
@@ -222,6 +224,19 @@
   <s>no customers match</s>
 
 <i># not "forbidden" — that would tell bob they exist</i></code></pre>
+          <div class="split__aside">
+            <h3>Same question. Same instant. Different answers.</h3>
+            <p>
+              Alice holds <code class="mono">read:Customer.region</code>. Bob does not, and
+              his compartment is elsewhere. Neither of them configured this, and neither of
+              them can tell the other's result exists.
+            </p>
+            <p>
+              The model was not consulted about any of it. It asked for named fields of named
+              objects; the mediator decided what each caller could have.
+            </p>
+          </div>
+        </div>
 
         <p>
           A field this file does not declare does not exist, as far as any question is

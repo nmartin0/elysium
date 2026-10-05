@@ -204,13 +204,8 @@ code,
 }
 
 .masthead nav a {
-  color: var(--ink-soft);
   text-decoration: none;
   font-size: 0.9375rem;
-}
-
-.masthead nav a:hover {
-  color: var(--ink);
 }
 
 /* ---- buttons ---- */
@@ -886,4 +881,116 @@ section {
 
 .footer {
   padding-block: var(--s-8) var(--s-6);
+}
+
+/* ============================================================
+ * ALIGNMENT: VARIED BY SECTION, NOT UNIFORM.
+ *
+ * The owner's objection was that "it's all left-aligned, and doesn't
+ * look appealing". The research is clear that the fix is NOT to centre
+ * the body text -- "left aligned text is easier to read than centered
+ * text for paragraphs", because "when you center your text, the
+ * starting place of each line changes" and there is "no consistent
+ * place where users can move their eyes to".
+ *
+ * The real fault was that EVERY section was identical: same left edge,
+ * same width, same shape, top to bottom. No rhythm. The guidance that
+ * actually applies: "breaking alignment intentionally draws attention
+ * -- if every element on a page sits along the same left edge except
+ * one, that outlier becomes the focal point".
+ *
+ * So each band gets its own shape, and the page alternates:
+ *
+ *   hero      copy left, narrow measure         asymmetric
+ *   diagram   full width, centred               breaks the edge
+ *   how       section head CENTRED, then a      centred, then split
+ *             split with the code on the LEFT
+ *   bento     head left, grid full width        left
+ *   closer    entirely centred                  breaks the edge
+ *
+ * ONE ALIGNMENT PER SECTION, never mixed inside one: "a centered
+ * headline should not go with a left aligned paragraph", because the
+ * paragraph's ragged lines make the headline look off-centre.
+ * ============================================================ */
+
+/* Centred section heads: the heading AND its lede together, never one
+ * without the other. */
+.section-head--centre {
+  text-align: center;
+  margin-inline: auto;
+  max-width: 52ch;
+}
+
+.section-head--centre p,
+.section-head--centre .lede {
+  margin-inline: auto;
+}
+
+/* The split: code on the left, argument on the right. The hero puts
+ * copy left and the visual right, so this reverses it and the page
+ * reads as alternating rather than repeating. */
+.split {
+  display: grid;
+  gap: clamp(var(--s-4), 5vw, var(--s-8));
+  grid-template-columns: 1fr;
+  align-items: center;
+  margin-top: var(--s-6);
+}
+
+@media (min-width: 56rem) {
+  .split {
+    grid-template-columns: 1.1fr 0.9fr;
+  }
+}
+
+.split .snippet {
+  margin: 0;
+  max-width: none;
+}
+
+.split__aside h3 {
+  font-size: var(--t-lg);
+  line-height: 1.2;
+  margin-bottom: var(--s-2);
+  max-width: 20ch;
+}
+
+.split__aside p {
+  color: var(--ink-soft);
+}
+
+/* The hero stays asymmetric and left-biased -- "not everything
+ * centered, bias left or right" -- with a measure well short of the
+ * column so the right side stays open. */
+.hero h1 {
+  max-width: 15ch;
+}
+
+.hero .lede {
+  max-width: 44ch;
+}
+
+/* ---- the button bug ----
+ *
+ * `.masthead nav a` is specificity 0-1-2; `.btn--primary` is 0-1-0. So
+ * the nav's muted grey won over the button's own colour REGARDLESS of
+ * source order, and the call to action rendered grey on blue: the one
+ * element on the page that had to be legible.
+ *
+ * Fixed by scoping the nav rule to links that are not buttons, rather
+ * than by raising the button's specificity -- an arms race between two
+ * selectors is how this happens again.
+ */
+.masthead nav a:not(.btn) {
+  color: var(--ink-soft);
+}
+
+.masthead nav a:not(.btn):hover {
+  color: var(--ink);
+}
+
+.btn--primary,
+.masthead nav a.btn--primary {
+  background: var(--accent);
+  color: #05080e;
 }
