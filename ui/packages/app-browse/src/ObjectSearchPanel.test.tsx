@@ -1730,3 +1730,56 @@ describe('a view reached by following a link', () => {
     expect(screen.queryByRole('navigation', { name: 'How you got here' })).toBeNull()
   })
 })
+
+describe('the results list is one tab stop', () => {
+  /**
+   * THE HALF THAT MATTERS. `useRovingFocus` has its own tests; these
+   * assert the panel WIRES it, which is the thing this project has
+   * shipped unwired ten times.
+   */
+  const twoResults = () =>
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } },
+        { id: 'cust_002', fields: { name: 'Bo Mensah', region: 'us-east' } },
+      ]),
+    )
+
+  it('renders the list as a grid with exactly one tab stop', async () => {
+    twoResults()
+    renderPanel(CUSTOMER_SCHEMA)
+
+    // WAIT FOR A ROW, not for the grid. The grid renders empty while
+    // the search is in flight, so `findByRole('grid')` resolves before
+    // there is anything in it -- `aria-rowcount="0"`, no cells.
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+    const grid = screen.getByRole('grid')
+    const cells = grid.querySelectorAll('[data-roving-cell]')
+    const stops = [...cells].filter((cell) => cell.getAttribute('tabindex') === '0')
+
+    expect(cells.length).toBeGreaterThan(1)
+    expect(stops).toHaveLength(1)
+  })
+
+  it('moves the tab stop with ArrowDown', async () => {
+    twoResults()
+    renderPanel(CUSTOMER_SCHEMA)
+
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+    const grid = screen.getByRole('grid')
+    const before = grid.querySelector('[data-roving-cell][tabindex="0"]')
+    fireEvent.keyDown(grid, { key: 'ArrowDown' })
+    const after = grid.querySelector('[data-roving-cell][tabindex="0"]')
+
+    expect(before).not.toBe(after)
+  })
+
+  it('says how many rows it has', async () => {
+    twoResults()
+    renderPanel(CUSTOMER_SCHEMA)
+
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+
+    expect(screen.getByRole('grid').getAttribute('aria-rowcount')).toBe('2')
+  })
+})

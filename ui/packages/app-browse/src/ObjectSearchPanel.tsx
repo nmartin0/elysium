@@ -25,6 +25,7 @@ import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/Vie
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
 
+import { useRovingFocus } from './useRovingFocus'
 import ActiveFilters from './ActiveFilters'
 import BulkActionForm from './BulkActionForm'
 import BulkActionsMenu, { type BulkAction } from './BulkActionsMenu'
@@ -95,6 +96,11 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const setSelectedType = (next: string | null) => setUrlType(next ?? '')
   const [queryText, setQueryText] = useUrlValue('q', '')
   const [results, setResults] = useState<SearchResult[]>([])
+
+  // ONE TAB STOP FOR THE WHOLE LIST, two cells per row: the select
+  // checkbox and the title link. Without it a hundred results is two
+  // hundred Tab presses to reach whatever follows the list.
+  const roving = useRovingFocus(results.length, 2)
   // Page tokens are OPAQUE and kept as a stack, so Back returns to the
   // exact page you came from. Reconstructing a previous token by
   // arithmetic would assume an encoding the server does not promise.
@@ -787,8 +793,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         ))}
 
       {view === 'table' && (
-        <CardList className="object-search__results">
-          {results.map((result) => {
+        <CardList className="object-search__results" {...roving.containerProps}>
+          {results.map((result, rowIndex) => {
             const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
             return (
               // interactive -- real hover feedback, matching every other
@@ -797,7 +803,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               // own comment on .object-search__link::after) is what
               // makes the WHOLE card clickable/keyboard-focusable, not
               // just interactive's own hover styling on its own.
-              <Card key={result.id} interactive className="object-search__result">
+              <Card key={result.id} interactive className="object-search__result" {...roving.rowProps(rowIndex)}>
                 {/* BESIDE THE LINK, not beneath an overlay. The card
                     used to stretch its link across the whole surface,
                     which is a good pattern for a card that is ONLY a
@@ -851,11 +857,20 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   <input
                     type="checkbox"
                     className="object-search__select"
+                    // CELL 0 OF THIS ROW. `data-roving-cell` is what the hook moves
+                    // focus to; `tabIndex` is what keeps the list to ONE tab stop.
+                    data-roving-cell=""
+                    tabIndex={roving.isTabStop(rowIndex, 0) ? 0 : -1}
                     checked={selectedIds.has(result.id)}
                     aria-label={`Select ${String(titleValue)}`}
                     onChange={(event) => toggleSelected(result.id, (event.nativeEvent as MouseEvent).shiftKey === true)}
                   />
-                  <Link to={`/objects/${currentType}/${encodeURIComponent(result.id)}`} className="object-search__link">
+                  <Link
+                    to={`/objects/${currentType}/${encodeURIComponent(result.id)}`}
+                    className="object-search__link"
+                    data-roving-cell=""
+                    tabIndex={roving.isTabStop(rowIndex, 1) ? 0 : -1}
+                  >
                     <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
                   </Link>
                   {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
