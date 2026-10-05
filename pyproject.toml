@@ -216,6 +216,10 @@ layers = [
     # else -- not what a field is, not what a row is. Two callers
     # today: core.ontology.constraints declares the rule, and the
     # mirror reports it. A leaf both can reach without a cycle.
+    # The columns Elysium writes into every row. A LEAF because
+    # core/mirror writes them and core/ontology reads one, and the
+    # contract forbids ontology reaching into mirror.
+    "carried_columns",
     "invisible_text",
     # What may be shown to somebody who did not ask for it. Sits beside
     # invisible_text and misleading_text: all three answer "is this

@@ -38,7 +38,20 @@ class TestConform:
     def test_columns_become_property_names(self):
         rows = conform(CUSTOMER, [{"customer_id": "c1", "name": "Ada", "cust_region": "us-west"}])
 
-        assert rows == [{"customer_id": "c1", "name": "Ada", "region": "us-west"}]
+        # THE CARRIED COLUMNS ARE ALWAYS PRESENT NOW, None where
+        # silver had no value. They used to be included only `if
+        # column in row`, which left the KEY ABSENT -- while the
+        # published table has the column and reads it back as None.
+        # The changelog diffs those dicts, so an unchanged row looked
+        # like an UPDATE on every publication. Four history tests said
+        # so the moment `_security` joined the set, it being the first
+        # carried column that can legitimately be missing.
+        declared = {name: value for name, value in rows[0].items()
+                    if not name.startswith("_")}
+
+        assert declared == {"customer_id": "c1", "name": "Ada",
+                            "region": "us-west"}
+        assert rows[0]["_security"] is None
 
     def test_a_reverse_link_is_not_a_column(self):
         """Computed from the other table; nothing on this row holds it."""

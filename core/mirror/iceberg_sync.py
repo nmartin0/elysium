@@ -69,7 +69,7 @@ from core.mirror.expectations import QUARANTINE, Violation, apply_expectations
 from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.lake_permissions import make_private
-from core.mirror.lineage import BRONZE_SNAPSHOT_PROPERTY, LINEAGE_COLUMNS, with_lineage
+from core.mirror.lineage import BRONZE_SNAPSHOT_PROPERTY, LINEAGE_COLUMNS, SECURITY_COLUMN, with_lineage
 from core.mirror.sync_targets import LINK_ID_COLUMN
 from core.mirror.transform import describe_drift, transform_rows
 from core.ontology.field_types import (
@@ -748,9 +748,17 @@ class IcebergMirrorSync(MirrorSync):
         # and only the STABLE facts, since the "source unchanged, no new
         # snapshot" skip compares the rows -- see lineage.py.
         arrow_table = self._to_arrow(
-            with_lineage(kept_rows, columns, silo_name, table_name),
-            [*columns, *LINEAGE_COLUMNS],
-            {**(column_types or {}), **{column: "string" for column in LINEAGE_COLUMNS}},
+            # THE MAC VALUE TRAVELS WITH THE LINEAGE, in the namespace
+            # the pipeline cannot rewrite. Declared as a string like the
+            # lineage columns: it is compared to a caller's own value,
+            # never arithmetic.
+            with_lineage(kept_rows, columns, silo_name, table_name,
+                         security_column=security_column),
+            [*columns, *LINEAGE_COLUMNS,
+             *([SECURITY_COLUMN] if security_column else [])],
+            {**(column_types or {}),
+             **{column: "string" for column in LINEAGE_COLUMNS},
+             **({SECURITY_COLUMN: "string"} if security_column else {})},
         )
 
         self._ensure_namespace(silo_name)

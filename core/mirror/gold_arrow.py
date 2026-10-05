@@ -31,7 +31,7 @@ batch that has not seen the others.
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from core.mirror.lineage import LINEAGE_COLUMNS
+from core.mirror.lineage import CARRIED_COLUMNS
 from core.ontology.field_types import arrow_type_for
 from core.ontology.link_types import is_reverse_link
 
@@ -72,7 +72,7 @@ def conform_arrow(type_def: dict, silver: pa.Table) -> pa.Table:
             # where a required one becomes a refusal.
             columns.append(pa.nulls(silver.num_rows, type=wanted))
         names.append(field_name)
-    for column in LINEAGE_COLUMNS:
+    for column in CARRIED_COLUMNS:
         # EVERY LINEAGE COLUMN, NULL WHERE SILVER LACKS IT -- which is
         # what the dict path produces, and the parity test caught the
         # difference: a gold table whose columns depend on which

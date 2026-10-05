@@ -28,17 +28,19 @@ so it would defeat the skip and grow the mirror on every sync forever.
 import hashlib
 import json
 
-SILO_COLUMN = "_silo"
-SOURCE_TABLE_COLUMN = "_source_table"
-ROW_HASH_COLUMN = "_row_hash"
-LINEAGE_COLUMNS = (SILO_COLUMN, SOURCE_TABLE_COLUMN, ROW_HASH_COLUMN)
+# THE NAMES LIVE IN A LEAF, because core/ontology reads one of them
+# and the import contract forbids ontology reaching into mirror. See
+# core/carried_columns.py for what each is and why.
+from core.carried_columns import (  # noqa: E402
+    CARRIED_COLUMNS,
+    LINEAGE_COLUMNS,
+    ROW_HASH_COLUMN,
+    SECURITY_COLUMN,
+    SILO_COLUMN,
+    SOURCE_TABLE_COLUMN,
+)
 
-# EVERY COLUMN THE PIPELINE WRITES FOR ITSELF, in one place so the
-# check that refuses a collision cannot drift from the set it guards.
-# The fusion and link-id columns are declared in their own modules;
-# importing them here would make lineage depend on both, so they are
-# named and a test asserts the two lists agree.
-SYSTEM_COLUMNS = (*LINEAGE_COLUMNS, "_fused_from", "_link_id")
+SYSTEM_COLUMNS = (*CARRIED_COLUMNS, "_fused_from", "_link_id")
 
 
 def collides_with_a_system_column(names) -> list[str]:
@@ -98,7 +100,8 @@ def _encodable(value):
     return str(value)
 
 
-def with_lineage(rows: list[dict], columns, silo_name: str, table_name: str) -> list[dict]:
+def with_lineage(rows: list[dict], columns, silo_name: str, table_name: str,
+                  security_column: "str | None" = None) -> list[dict]:
     """Each row, carrying where it came from and what it held.
 
     REFUSES A SOURCE COLUMN OF ITS OWN NAME rather than overwriting
@@ -138,6 +141,20 @@ def with_lineage(rows: list[dict], columns, silo_name: str, table_name: str) -> 
             SILO_COLUMN: silo_name,
             SOURCE_TABLE_COLUMN: table_name,
             ROW_HASH_COLUMN: row_hash(row, columns),
+            # THE MAC VALUE, COPIED ONCE INTO A COLUMN THE PIPELINE
+            # CANNOT REWRITE -- `LLM3-3`.
+            #
+            # Taken from the row BEFORE any later stage sees it, and
+            # carried by the same convention as the lineage columns
+            # beside it. A stage added next year inherits that without
+            # being told.
+            #
+            # `None` WHEN THE TYPE HAS NO SECURITY FIELD, which is most
+            # of them: a type secured through `via_field` reads its
+            # value from a different type's row, and a type with no
+            # security block has none to carry.
+            **({SECURITY_COLUMN: row.get(security_column)}
+               if security_column else {}),
         }
         for row in rows
     ]

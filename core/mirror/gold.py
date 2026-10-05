@@ -48,7 +48,7 @@ from core.mirror.fusion import FUSED_FROM_COLUMN, fuse
 from core.mirror.gold_arrow import audit_arrow, conform_arrow
 from core.mirror.gold_stream import StreamingAudit, conformed_batches
 from core.mirror.identity import resolve, rule_for
-from core.mirror.lineage import LINEAGE_COLUMNS
+from core.mirror.lineage import CARRIED_COLUMNS
 from core.mirror.survivorship import fuse_entities
 from core.ontology.field_types import arrow_type_for
 from core.ontology.gold_view import GOLD_NAMESPACE
@@ -110,7 +110,19 @@ def conform(type_def: dict, silver_rows: list[dict]) -> list[dict]:
     conformed = []
     for row in silver_rows:
         shaped = {field_name: row.get(column) for column, field_name in mapping.items()}
-        shaped.update({column: row.get(column) for column in LINEAGE_COLUMNS if column in row})
+        # EVERY CARRIED COLUMN, PRESENT OR NOT.
+        #
+        # `if column in row` left the key ABSENT when silver had no
+        # value, while the published table has the column and reads it
+        # back as None. The changelog diffs the two dicts, so an
+        # UNCHANGED row looked like an UPDATE on every publication --
+        # four tests said so the moment `_security` joined the set,
+        # because it is the first carried column that can legitimately
+        # be missing.
+        #
+        # The schema names all of them unconditionally, so the row
+        # matching the schema is the consistent shape.
+        shaped.update({column: row.get(column) for column in CARRIED_COLUMNS})
         conformed.append(shaped)
     return conformed
 
@@ -193,14 +205,14 @@ def _arrow(rows: list[dict], type_def: dict) -> pa.Table:
         if field_name != id_field
         and not (field_config.get("type") == "link" and is_reverse_link(field_config))
     ]
-    names += list(LINEAGE_COLUMNS)
+    names += list(CARRIED_COLUMNS)
     # Present only on a fused type, naming the storages that
     # contributed to each row (GOLD-5).
     if type_def.get("additional_storage") or type_def.get("identity"):
         names.append(FUSED_FROM_COLUMN)
 
     def _type_for(name: str) -> pa.DataType:
-        if name in LINEAGE_COLUMNS or name == FUSED_FROM_COLUMN:
+        if name in CARRIED_COLUMNS or name == FUSED_FROM_COLUMN:
             return pa.string()
         field_config = declared.get(name) or {}
         # A LINK IS A KEY, and a key is whatever the target's id is --
