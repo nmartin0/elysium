@@ -734,3 +734,156 @@ section .lede {
   padding-block: clamp(4rem, 8vw, 6rem) 4rem;
   border-top: var(--rule);
 }
+
+/* ============================================================
+ * A TYPE SCALE AND A RHYTHM, rather than numbers chosen one at a time.
+ *
+ * The owner's objection was that "the formatting of everything is not
+ * adequate", and the fault was systematic: sizes and spacings had been
+ * picked individually as each section was written. Ad hoc values are
+ * what "separates professional layouts from chaotic ones", and no
+ * amount of adjusting individual numbers fixes it.
+ *
+ * ONE RATIO. A modular scale of 1.25 from a 17px base, rounded to
+ * practical values. Nothing on this page may use a size outside it.
+ *
+ * ONE SPACING UNIT. 8px, with everything a multiple -- the convention
+ * every design system converges on, and what makes blocks line up
+ * without anybody aligning them.
+ *
+ * THE MEASURE IS 45 TO 75 CHARACTERS, 65 being "the widely cited sweet
+ * spot". A 1440px text column "is physically painful to read".
+ *
+ * LEADING FOLLOWS LENGTH: 1.5 to 1.6 for body, 1.1 to 1.3 for
+ * headings, because a long line needs more leading for the eye to find
+ * the next one.
+ * ============================================================ */
+
+:root {
+  /* modular scale, ratio 1.25, base 17px */
+  --t-xs: 0.6875rem;   /* 11   labels, mono */
+  --t-sm: 0.8125rem;   /* 13   captions */
+  --t-base: 1.0625rem; /* 17   body */
+  --t-md: 1.3125rem;   /* 21   lede */
+  --t-lg: 1.625rem;    /* 26   h3 */
+  --t-xl: 2.0625rem;   /* 33   h2 */
+  --t-2xl: 2.5625rem;  /* 41 */
+  --t-3xl: 4rem;       /* 64   h1 */
+
+  /* 8-point rhythm */
+  --s-1: 0.5rem;
+  --s-2: 1rem;
+  --s-3: 1.5rem;
+  --s-4: 2rem;
+  --s-6: 3rem;
+  --s-8: 4rem;
+  --s-12: 6rem;
+  --s-16: 8rem;
+
+  --measure: 34rem;    /* ~65 characters at 17px */
+}
+
+body {
+  font-size: var(--t-base);
+  line-height: 1.6;
+}
+
+h1 {
+  font-size: clamp(var(--t-2xl), 6vw, var(--t-3xl));
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  margin-block: 0 var(--s-3);
+}
+
+h2 {
+  font-size: clamp(var(--t-lg), 3.5vw, var(--t-xl));
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  margin-block: 0 var(--s-2);
+}
+
+h3 {
+  font-size: var(--t-base);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin-block: 0 var(--s-1);
+}
+
+p {
+  margin-block: 0 var(--s-2);
+  max-width: var(--measure);
+}
+
+.lede {
+  font-size: var(--t-md);
+  line-height: 1.5;
+  max-width: 32rem;
+}
+
+.eyebrow,
+.col,
+.tile__kicker,
+.proof dd {
+  font-size: var(--t-xs);
+}
+
+.tile p,
+.consent p,
+.footer {
+  font-size: var(--t-sm);
+  line-height: 1.55;
+}
+
+/* ---- macro whitespace ----
+ *
+ * "A distinctive and NOTICEABLE amount of additional whitespace
+ * between two different sections." The band is four times the gap
+ * inside a section, which is what makes the boundary read without a
+ * rule.
+ */
+section {
+  padding-block: clamp(var(--s-12), 10vw, var(--s-16));
+}
+
+.section-head {
+  margin-bottom: var(--s-8);
+  max-width: 40ch;
+}
+
+.hero {
+  padding-block: clamp(var(--s-12), 12vw, 10rem) var(--s-8);
+}
+
+.hero .actions {
+  margin-top: var(--s-6);
+}
+
+.stage {
+  margin-top: 0;
+  padding-block: clamp(var(--s-8), 7vw, var(--s-12));
+}
+
+.proof {
+  padding-block: var(--s-4);
+}
+
+.bento {
+  margin-top: var(--s-6);
+}
+
+.tile {
+  padding: var(--s-4);
+}
+
+.snippet {
+  padding: var(--s-3);
+  margin-top: var(--s-6);
+}
+
+.closer {
+  padding-block: clamp(var(--s-12), 12vw, 10rem);
+}
+
+.footer {
+  padding-block: var(--s-8) var(--s-6);
+}
