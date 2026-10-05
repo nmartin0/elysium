@@ -1821,7 +1821,18 @@ class SavedViewResponse(BaseModel):
     name: str
     object_type: str
     query_text: str
+    #: The conditions this caller may actually run -- re-authorised at
+    #: read time, not as they were written. See `_reauthorized`.
     conditions: list[dict[str, Any]]
+    #: FIELD NAMES the caller can no longer filter on. Named rather
+    #: than dropped silently: "the user sees more rows than the search
+    #: promised and concludes their data changed".
+    #:
+    #: DECLARED HERE OR IT DISAPPEARS. Every route carries a
+    #: `response_model`, and pydantic drops what the model does not
+    #: name -- so the route could have returned this faithfully and the
+    #: client would never have seen it.
+    disabled_conditions: list[str] = []
     presentation: dict[str, Any]
     created_at: str
 
@@ -1846,6 +1857,57 @@ def _saved_view_store(request: Request):
     )
 
 
+def _reauthorized(request: Request, current_user: UserRecord, view):
+    """A saved view's conditions, re-checked against this caller.
+
+    THE MEDIATOR DECIDES, not this route. `reauthorize_conditions`
+    walks the caller's own visible schema; asking the question here
+    would be a second place deciding it, which is what the
+    published-history route refused to be.
+
+    A VIEW WHOSE TYPE THE CALLER CANNOT SEE AT ALL yields nothing
+    runnable and names nothing disabled -- there is no field to name
+    without saying the type exists, and the caller may not know it
+    does.
+    """
+    from core.filters import FilterError, parse_filters
+    from core.ontology.mediator import ReauthorizedConditions
+
+    mediator = _generation(request).mediator
+    # THE STORE HOLDS DICTS; THE METHOD WANTS FieldFilters. That gap is
+    # part of why this was never wired -- it is not drop-in, and the
+    # mismatch only shows up at the call site that did not exist.
+    #
+    # `parse_filters` is the one place that already turns saved
+    # condition dicts into filters, including rejecting an unknown
+    # operator. Writing a second conversion here would be a second
+    # place deciding what a stored condition means.
+    try:
+        conditions = parse_filters(view.conditions or [])
+    except FilterError:
+        # A SAVED VIEW CAN HOLD A CONDITION THAT NO LONGER PARSES --
+        # an operator removed since it was saved. Treating that as
+        # "nothing runnable" is the same answer as "you may not run
+        # it", which is what the caller needs; raising would make one
+        # bad saved view break the whole list.
+        return ReauthorizedConditions(runnable=[], disabled=[])
+    checked = mediator.reauthorize_conditions(
+        current_user, view.object_type, conditions)
+    # BACK TO THE STORED SHAPE. `runnable` holds FieldFilters; the
+    # response has always carried the saved dicts, and changing that
+    # would be a second, unannounced change to the same endpoint.
+    #
+    # Filtering the ORIGINAL dicts by what survived keeps every key the
+    # caller saved -- a presentation hint, a label, anything a future
+    # version adds -- rather than reconstructing a dict from the
+    # filter and quietly losing the rest.
+    disabled = set(checked.disabled)
+    runnable = [condition for condition in (view.conditions or [])
+                if condition.get("field") not in disabled]
+    return ReauthorizedConditions(runnable=runnable,
+                                  disabled=checked.disabled)
+
+
 @router.get("/saved-views", dependencies=[Depends(_no_store)],
             response_model=SavedViewsResponse)
 def saved_views_route(
@@ -1858,22 +1920,45 @@ def saved_views_route(
     store scopes by owner IN THE QUERY. There is no call that returns
     everybody's.
     """
-    return {
-        "views": [
-            {
-                "view_id": view.view_id,
-                "name": view.name,
-                "object_type": view.object_type,
-                "query_text": view.query_text,
-                "conditions": view.conditions,
-                "presentation": view.presentation,
-                "created_at": view.created_at,
-            }
-            for view in _saved_view_store(request).for_owner(
-                current_user.user_id,
-            )
-        ],
-    }
+    # ONE RE-AUTHORISATION PER VIEW. The comprehension this replaced
+    # called it twice -- once for the runnable conditions and once for
+    # the disabled names -- which is the same schema walk done twice
+    # for every saved view the caller owns.
+    views = []
+    for view in _saved_view_store(request).for_owner(current_user.user_id):
+        checked = _reauthorized(request, current_user, view)
+        views.append({
+            "view_id": view.view_id,
+            "name": view.name,
+            "object_type": view.object_type,
+            "query_text": view.query_text,
+            # RE-AUTHORISED, NOT RETURNED VERBATIM -- `WIRED-1`.
+            #
+            # A saved view holds conditions written when it was saved.
+            # Between then and now the author may have lost read access
+            # to a field they filtered on, or the opener may be a
+            # colleague it was shared with who never had it.
+            # `reauthorize_conditions` checks each against the OPENER's
+            # own visible schema and says which it cannot run.
+            #
+            # It existed, was tested, and was called by nothing -- this
+            # route returned `view.conditions` as written. Its own
+            # docstring is the rule: "a saved artifact is a request,
+            # never an authority."
+            #
+            # THE PRECEDENT IS UNANIMOUS that this belongs at read time:
+            # a row-level rule "is evaluated at query time using the
+            # current user's identity", so "a change to the table is
+            # visible on the very next query, there is no sync delay".
+            "conditions": checked.runnable,
+            # NAMED, NOT DROPPED SILENTLY. Dropping silently is the
+            # worst option, because "the user sees more rows than the
+            # search promised and concludes their data changed".
+            "disabled_conditions": checked.disabled,
+            "presentation": view.presentation,
+            "created_at": view.created_at,
+        })
+    return {"views": views}
 
 
 @router.post("/saved-views", dependencies=[Depends(_no_store)])

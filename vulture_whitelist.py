@@ -347,6 +347,10 @@ above
 gained
 fell
 enabled
+# A pydantic field read only as a dict key, like `created_at` and
+# `presentation` above it. WIRED-1: the FIELD NAMES a caller can no
+# longer filter on, named rather than dropped silently.
+disabled_conditions
 presentation
 action_parameter
 action_values

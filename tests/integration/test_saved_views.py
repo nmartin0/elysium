@@ -48,13 +48,46 @@ class TestSavingAndListing:
         match everything, which is the failure that looks like
         working."""
         _as(client, "alice")
-        _save(client, "Big ones", conditions=[
+        # `amount` IS A Transaction FIELD, and this was a Customer
+        # view. The original passed because the route returned stored
+        # conditions VERBATIM -- a condition that could never have run
+        # came back looking live.
+        #
+        # WIRED-1 re-authorises at read time, so a filter now has to
+        # name a field the type actually has and the caller may read.
+        _save(client, "Big ones", object_type="Transaction", conditions=[
             {"field": "amount", "operator": "range", "value": {"min": 100}},
         ])
 
         view = client.get("/api/saved-views").json()["views"][0]
 
         assert view["conditions"][0]["field"] == "amount"
+        assert view["disabled_conditions"] == []
+
+    def test_a_condition_the_caller_cannot_run_is_disabled_and_named(
+            self, client):
+        """WIRED-1, and the case the old round-trip test was hitting
+        by accident -- it filtered a Customer view on `amount`, a
+        Transaction field, and the route returned it verbatim so a
+        condition that could never run came back looking live.
+
+        DISABLED AND NAMED, not dropped silently. The method's own
+        reasoning: dropping silently is the worst option, because "the
+        user sees more rows than the search promised and concludes
+        their data changed".
+        """
+        _as(client, "bob")
+        _save(client, "Mixed", object_type="Customer", conditions=[
+            {"field": "region", "operator": "equals", "value": "us-west"},
+            {"field": "amount", "operator": "range", "value": {"min": 100}},
+        ])
+
+        view = client.get("/api/saved-views").json()["views"][0]
+
+        # The runnable one survives, keyed by its own field name.
+        assert [c["field"] for c in view["conditions"]] == ["region"]
+        # The impossible one is NAMED rather than vanishing.
+        assert view["disabled_conditions"] == ["amount"]
 
     def test_saving_the_same_name_replaces(self, client):
         """BY NAME, NOT BY ID, because that is how a person thinks
