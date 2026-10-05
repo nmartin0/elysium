@@ -1,121 +1,91 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 440"
-  role="img" aria-labelledby="arch-title arch-desc">
-  <title id="arch-title">From your databases to a question</title>
-  <desc id="arch-desc">
-    A left-to-right flow in five columns. On the left, your own data silos drawn as
-    databases: primary_sql holding customers and transactions, risk_db holding risk_scores.
-    Elysium reads them and never writes to them. Next, bronze mirrors each source table
-    one-to-one, as the source wrote it. Next, silver holds the same tables at the same
-    grain with values typed and standardised. Next, gold, where the shape changes: one
-    table per object type using the ontology's property names, joining the silos a type
-    spans, so Customer is assembled from customers in primary_sql and risk_scores in
-    risk_db. At the end of the line, the ontology — the distillation everything feeds. It
-    names the object types, their fields and links, and the grant each field requires, and
-    it is what a question is asked against. A write travels back the other way as a
-    proposal a person approves.
-  </desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20 1240 400"
+          role="img" aria-labelledby="arch-title arch-desc">
+          <title id="arch-title">From your databases to the ontology</title>
+          <desc id="arch-desc">
+          A left-to-right flow. On the left, your own databases: primary_sql holding customers
+          and transactions, risk_db holding risk_scores. Elysium reads them and never writes to them. Elysium reads them and never writes to
+          them. Each source table keeps its own horizontal lane through two stages — bronze,
+          which mirrors it exactly as the source wrote it, and silver, where values are typed
+          and standardised. Then gold, where the shape changes: one table per object type using
+          the ontology's property names. Customer is assembled from the customers table and the
+          risk_scores table, which is the single place two lanes join. At the end sits the
+          ontology: the object types, their fields and links, and the grant each field requires.
+          It is what a question is asked against, and the only thing on this diagram you write.
+          </desc>
+          <style>
+          .box { fill: var(--d-box, #141d30); stroke: var(--d-line, #26324d); stroke-width: 1; }
+          .box--accent { fill: var(--d-onto, #121c33); stroke: var(--d-accent, #4d8dff); }
+          .cyl { fill: var(--d-silo, #101828); stroke: var(--d-line, #26324d); }
+          .cyl-top { fill: var(--d-silo-top, #1a2742); stroke: var(--d-line, #26324d); }
+          .cyl-line { fill: none; stroke: var(--d-line, #26324d); }
+          .name { fill: var(--d-ink, #f7f6f3); font-size: 13px; font-weight: 500;
+          font-family: var(--font-sans, sans-serif); }
+          .sub { fill: var(--d-faint, #6b788f); font-size: 10px;
+          font-family: var(--font-mono, monospace); }
+          .silo-name { fill: var(--d-soft, #9aa5bb); font-size: 11px;
+          font-family: var(--font-mono, monospace); }
+          .col { fill: var(--d-faint, #6b788f); font-size: 10.5px; letter-spacing: .14em;
+          font-family: var(--font-mono, monospace); }
+          .wire { fill: none; stroke: var(--d-line-bright, #2f3e63); stroke-width: 1.25; }
+          .wire--in { stroke: var(--d-accent, #4d8dff); }
+          .onto-h { fill: var(--d-ink, #f7f6f3); font-size: 14px; font-weight: 600;
+          font-family: var(--font-sans, sans-serif); }
+          .onto-l { fill: var(--d-soft, #9aa5bb); font-size: 11px;
+          font-family: var(--font-mono, monospace); }
+          </style>
+          
+          <text class="col" x="36" y="62">SOURCES</text>
+          <text class="col" x="330" y="62">BRONZE</text>
+          <text class="col" x="560" y="62">SILVER</text>
+          <text class="col" x="790" y="62">GOLD</text>
+          <text class="col" x="1020" y="62">ONTOLOGY</text>
 
-  <style>
-    .box { fill: var(--d-box, #141d30); stroke: var(--d-line, #243352); stroke-width: 1; }
-    .box--gold { stroke: var(--d-accent, #4d8dff); fill: var(--d-gold, #16233f); }
-    .cyl { fill: var(--d-silo, #101828); stroke: var(--d-line-bright, #2b3c63); }
-    .cyl-top { fill: var(--d-silo-top, #1a2742); stroke: var(--d-line-bright, #2b3c63); }
-    .cyl-line { fill: none; stroke: var(--d-line, #243352); stroke-width: 1; }
-    .onto { fill: var(--d-onto, #16233f); stroke: var(--d-accent, #4d8dff); stroke-width: 1.5; }
-    .name { fill: var(--d-ink, #f7f6f3); font-size: 12.5px; font-weight: 500;
-            font-family: var(--font-sans, sans-serif); }
-    .sub  { fill: var(--d-faint, #6b788f); font-size: 10px;
-            font-family: var(--font-mono, monospace); }
-    .col  { fill: var(--d-ink, #f7f6f3); font-size: 11.5px; font-weight: 600;
-            letter-spacing: .12em; font-family: var(--font-mono, monospace); }
-    .colsub { fill: var(--d-faint, #6b788f); font-size: 10px;
-              font-family: var(--font-mono, monospace); }
-    .wire { fill: none; stroke: var(--d-line-bright, #2b3c63); stroke-width: 1.25; }
-    .wire--gold { stroke: var(--d-accent, #4d8dff); }
-    .onto-name { fill: var(--d-ink, #f7f6f3); font-size: 15px; font-weight: 600;
-                 font-family: var(--font-sans, sans-serif); }
-    .onto-line { fill: var(--d-soft, #9aa5bb); font-size: 11px;
-                 font-family: var(--font-mono, monospace); }
-    .foot { fill: var(--d-faint, #6b788f); font-size: 10.5px;
-            font-family: var(--font-mono, monospace); }
-  </style>
+          <path class="cyl" d="M 62.0 139.0 L 62.0 197.0 A 46.0 10 0 0 0 154.0 197.0 L 154.0 139.0 Z"/>
+          <ellipse class="cyl-top" cx="108" cy="139.0" rx="46.0" ry="10"/>
+          <path class="cyl-line" d="M 62.0 174.24 A 46.0 10 0 0 0 154.0 174.24"/>
+          <text class="silo-name" x="108" y="227.0" text-anchor="middle">primary_sql</text>
+          <path class="cyl" d="M 62.0 274.0 L 62.0 308.0 A 46.0 10 0 0 0 154.0 308.0 L 154.0 274.0 Z"/>
+          <ellipse class="cyl-top" cx="108" cy="274.0" rx="46.0" ry="10"/>
+          <path class="cyl-line" d="M 62.0 295.32 A 46.0 10 0 0 0 154.0 295.32"/>
+          <text class="silo-name" x="108" y="338.0" text-anchor="middle">risk_db</text>
+          <rect class="box" x="330" y="104" width="160" height="46" rx="2"/>
+          <text class="name" x="344" y="132">transactions</text>
+          <rect class="box" x="560" y="104" width="160" height="46" rx="2"/>
+          <text class="name" x="574" y="132">transactions</text>
+          <path class="wire" d="M 158 127 L 330 127"/>
+          <path class="wire" d="M 490 127 L 560 127"/>
+          <rect class="box" x="330" y="186" width="160" height="46" rx="2"/>
+          <text class="name" x="344" y="214">customers</text>
+          <rect class="box" x="560" y="186" width="160" height="46" rx="2"/>
+          <text class="name" x="574" y="214">customers</text>
+          <path class="wire" d="M 158 209 L 330 209"/>
+          <path class="wire" d="M 490 209 L 560 209"/>
+          <rect class="box" x="330" y="268" width="160" height="46" rx="2"/>
+          <text class="name" x="344" y="296">risk_scores</text>
+          <rect class="box" x="560" y="268" width="160" height="46" rx="2"/>
+          <text class="name" x="574" y="296">risk_scores</text>
+          <path class="wire" d="M 158 291 L 330 291"/>
+          <path class="wire" d="M 490 291 L 560 291"/>
+          <rect class="box" x="790" y="104" width="160" height="46" rx="2"/>
+          <text class="name" x="804" y="132">Transaction</text>
+          <rect class="box" x="790" y="186" width="160" height="46" rx="2"/>
+          <text class="name" x="804" y="214">Customer</text>
+          <path class="wire" d="M 720 127 L 790 127"/>
+          <path class="wire" d="M 720 209 L 790 209"/>
+          <path class="wire" d="M 720 291 L 755 291 L 755 209 L 790 209"/>
+          <rect class="box box--accent" x="1020" y="88" width="196" height="242" rx="3"/>
+          <path class="wire wire--in" d="M 950 127 L 1020 127"/>
+          <path class="wire wire--in" d="M 950 209 L 1020 209"/>
 
-  <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5"
-            orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 z" fill="var(--d-line-bright, #2b3c63)"/>
-    </marker>
-  </defs>
-
-  <text class="col" x="40" y="64">YOUR SILOS</text>
-  <text class="colsub" x="40" y="84">data_silos.yaml</text>
-  <text class="col" x="330" y="64">BRONZE</text>
-  <text class="colsub" x="330" y="84">ingested as-is, 1:1</text>
-  <text class="col" x="560" y="64">SILVER</text>
-  <text class="colsub" x="560" y="84">typed, standardised</text>
-  <text class="col" x="790" y="64">GOLD</text>
-  <text class="colsub" x="790" y="84">one per object type</text>
-  <text class="col" x="1030" y="64">ONTOLOGY</text>
-  <text class="colsub" x="1030" y="84">what you ask</text>
-  <path class="cyl" d="M 40 129 L 40 193 A 54.0 11 0 0 0 148 193 L 148 129 Z"/>
-  <ellipse class="cyl-top" cx="94.0" cy="129" rx="54.0" ry="11"/>
-  <path class="cyl-line" d="M 40 150.33333333333334 A 54.0 11 0 0 0 148 150.33333333333334"/>
-  <path class="cyl-line" d="M 40 171.66666666666666 A 54.0 11 0 0 0 148 171.66666666666666"/>
-  <text class="name" x="94.0" y="226" text-anchor="middle">primary_sql</text>
-  <text class="sub" x="94.0" y="242" text-anchor="middle">customers, transactions</text>
-  <path class="cyl" d="M 172 129 L 172 193 A 54.0 11 0 0 0 280 193 L 280 129 Z"/>
-  <ellipse class="cyl-top" cx="226.0" cy="129" rx="54.0" ry="11"/>
-  <path class="cyl-line" d="M 172 150.33333333333334 A 54.0 11 0 0 0 280 150.33333333333334"/>
-  <path class="cyl-line" d="M 172 171.66666666666666 A 54.0 11 0 0 0 280 171.66666666666666"/>
-  <text class="name" x="226.0" y="226" text-anchor="middle">risk_db</text>
-  <text class="sub" x="226.0" y="242" text-anchor="middle">risk_scores</text>
-  <rect class="box" x="330" y="132" width="170" height="54" rx="2"/>
-  <text class="name" x="344" y="155">customers</text>
-  <text class="sub" x="344" y="172">as the source wrote it</text>
-  <rect class="box" x="560" y="132" width="170" height="54" rx="2"/>
-  <text class="name" x="574" y="155">customers</text>
-  <text class="sub" x="574" y="172">typed</text>
-  <rect class="box" x="330" y="224" width="170" height="54" rx="2"/>
-  <text class="name" x="344" y="247">transactions</text>
-  <text class="sub" x="344" y="264">as the source wrote it</text>
-  <rect class="box" x="560" y="224" width="170" height="54" rx="2"/>
-  <text class="name" x="574" y="247">transactions</text>
-  <text class="sub" x="574" y="264">typed</text>
-  <rect class="box" x="330" y="316" width="170" height="54" rx="2"/>
-  <text class="name" x="344" y="339">risk_scores</text>
-  <text class="sub" x="344" y="356">as the source wrote it</text>
-  <rect class="box" x="560" y="316" width="170" height="54" rx="2"/>
-  <text class="name" x="574" y="339">risk_scores</text>
-  <text class="sub" x="574" y="356">typed</text>
-  <rect class="box box--gold" x="790" y="132" width="170" height="76" rx="2"/>
-  <text class="name" x="804" y="155">Customer</text>
-  <text class="sub" x="804" y="172">joined from 2 silos</text>
-  <rect class="box box--gold" x="790" y="270" width="170" height="54" rx="2"/>
-  <text class="name" x="804" y="293">Transaction</text>
-  <text class="sub" x="804" y="310">ontology's names</text>
-  <path class="wire" d="M 148 161 C 239.0 161, 239.0 159, 330 159" marker-end="url(#a)"/>
-  <path class="wire" d="M 500 159 C 530.0 159, 530.0 159, 560 159" marker-end="url(#a)"/>
-  <path class="wire" d="M 148 161 C 239.0 161, 239.0 251, 330 251" marker-end="url(#a)"/>
-  <path class="wire" d="M 500 251 C 530.0 251, 530.0 251, 560 251" marker-end="url(#a)"/>
-  <path class="wire" d="M 280 161 C 305.0 161, 305.0 343, 330 343" marker-end="url(#a)"/>
-  <path class="wire" d="M 500 343 C 530.0 343, 530.0 343, 560 343" marker-end="url(#a)"/>
-  <path class="wire wire--gold" d="M 730 159 C 760.0 159, 760.0 170.0, 790 170.0" marker-end="url(#a)"/>
-  <path class="wire wire--gold" d="M 730 343 C 760.0 343, 760.0 170.0, 790 170.0" marker-end="url(#a)"/>
-  <path class="wire wire--gold" d="M 730 251 C 760.0 251, 760.0 297.0, 790 297.0" marker-end="url(#a)"/>
-  <rect class="onto" x="1030" y="118" width="186" height="268" rx="3"/>
-  <path class="wire wire--gold" d="M 960 170.0 C 995.0 170.0, 995.0 252, 1030 252" marker-end="url(#a)"/>
-  <path class="wire wire--gold" d="M 960 297.0 C 995.0 297.0, 995.0 252, 1030 252" marker-end="url(#a)"/>
-
-  <text class="onto-name" x="1050" y="152">Ontology</text>
-  <text class="onto-line" x="1050" y="182">Customer</text>
-  <text class="onto-line" x="1050" y="200">  name  region  email</text>
-  <text class="onto-line" x="1050" y="218">  transactions &#8594;</text>
-  <text class="onto-line" x="1050" y="246">Transaction</text>
-  <text class="onto-line" x="1050" y="264">  amount  currency</text>
-  <text class="onto-line" x="1050" y="296">security: region</text>
-  <text class="onto-line" x="1050" y="314">read:Customer.email</text>
-  <text class="onto-line" x="1050" y="348">a question is asked</text>
-  <text class="onto-line" x="1050" y="366">against this, as you</text>
-
-  <text class="foot" x="40" y="422">Elysium only ever READS your silos &#183; a write is a proposal a person approves, and lands back where it came from</text>
-</svg>
+          <text class="onto-h" x="1038" y="112">Ontology</text>
+          <text class="onto-l" x="1038" y="140">Customer</text>
+          <text class="onto-l" x="1038" y="158">  name  region  email</text>
+          <text class="onto-l" x="1038" y="182">Transaction</text>
+          <text class="onto-l" x="1038" y="200">  amount  currency</text>
+          <text class="onto-l" x="1038" y="232">security: region</text>
+          <text class="onto-l" x="1038" y="250">read:Customer.email</text>
+          <text class="onto-l" x="1038" y="282">what a question is</text>
+          <text class="onto-l" x="1038" y="300">asked against</text>
+          
+          <text class="sub" x="36" y="372">Elysium only ever reads your databases. A write is a proposal a person approves.</text>
+          </svg>

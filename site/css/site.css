@@ -354,10 +354,14 @@ section {
     grid-template-columns: repeat(3, 1fr);
   }
 
-  .bento > :first-child,
-  .bento > :nth-child(4) {
-    grid-column: span 2;
-  }
+  /* NO SPANS. These rules assumed six tiles; each grid on this page
+   * holds THREE, so a first child spanning two columns needed four
+   * columns of room and wrapped, leaving a dead rectangle beside the
+   * third tile. A screenshot showed it; nothing else could.
+   *
+   * Three equal columns for three tiles is the honest layout. The
+   * bento's value is modular blocks of equal weight, not asymmetry
+   * for its own sake. */
 }
 
 /* Hairline gaps rather than rounded floating cards: the grid reads as
@@ -1281,4 +1285,40 @@ section {
 .split .snippet,
 .split .snippet code {
   font-size: 0.8125rem;
+}
+
+/* ---- the closing call is the one fully centred band ----
+ *
+ * It was left-aligned like everything above it, so the page simply
+ * stopped rather than closing. A centred final call is the one place
+ * the research is unanimous that centring belongs: short, isolated,
+ * and the last thing read.
+ */
+.closer,
+.closer h2,
+.closer p {
+  text-align: center;
+}
+
+.closer h2,
+.closer p {
+  margin-inline: auto;
+}
+
+/* ---- the diagram is the product, so give it the room ----
+ *
+ * "Reimagining what a hero section could be, we put our products and
+ * their core benefits as high up on the page as possible." For this
+ * product the thing to show is the flow, and it was rendering at
+ * two-thirds the width of the text above it -- which made the page's
+ * most important object look like a footnote.
+ */
+.stage {
+  max-width: none;
+  padding-block: clamp(var(--s-8), 8vw, var(--s-16));
+  border-block: var(--rule);
+}
+
+.stage svg {
+  max-width: 76rem;
 }
