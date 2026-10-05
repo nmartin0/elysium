@@ -310,14 +310,15 @@ class TestItIsAboutElysiumSpecifically:
         assert "security" in self.LANDING
         assert "Customer" in self.LANDING and "Transaction" in self.LANDING
 
-    def test_the_security_rule_is_what_the_diagram_emphasises(self):
+    def test_the_security_rule_is_named_in_the_ontology_band(self):
         """Of everything in an ontology, the line that distinguishes it
         from a schema file is the one naming who may see a row. It is
-        the only box in the top layer drawn in the accent."""
-        i = self.LANDING.index("who may see a row")
-        box = self.LANDING[max(0, i - 400):i]
+        named in the band, beside the field-level grant."""
+        i = self.LANDING.index("security: region")
+        band = self.LANDING[max(0, i - 700):i + 200]
 
-        assert "chip--accent" in box
+        assert "read:Customer.email" in band
+        assert "never the model" in band
 
     def test_the_snippet_shows_a_refusal_rather_than_a_schema(self):
         """The useful thing to show is not what you can declare -- it
@@ -352,56 +353,78 @@ class TestItIsAboutElysiumSpecifically:
 
 
 class TestTheDiagram:
-    """The hero image, and the only thing on the page that explains the
-    whole product at a glance: an ontology sitting on a pipeline
-    sitting on the customer's own databases.
+    """The hero image, and it had to be rebuilt from the code rather
+    than from a mental model of a generic data lake.
 
-    DRAWN BY HAND IN SVG. Six kilobytes rather than a 300 kB render,
-    readable as text in the repository, every label real selectable
-    text, and it inherits the page's palette so one file serves light
-    and dark."""
+    WHAT ELYSIUM ACTUALLY DOES, read out of core/mirror/ and
+    data_silos.yaml:
+
+      SILOS    the customer's own databases, named in
+               data_silos.yaml. Each object type says which silo it
+               lives in, so a deployment can span several.
+      BRONZE   one Iceberg table per REAL SOURCE TABLE, 1:1,
+               "ingest as-is, with no external preprocessing".
+      SILVER   the SAME tables at the source's grain with the
+               source's column names, typed and standardised.
+      GOLD     THE SHAPE CHANGES. One table per OBJECT TYPE, keyed
+               by the object's id, using the ONTOLOGY'S property
+               names, JOINING the storages a type spans.
+      ONTOLOGY what a question is asked against; reads gold.
+
+    So the picture is a narrowing: three source tables across two
+    silos become two object types. My previous version drew three
+    equal stacked slabs, which said none of that."""
 
     LANDING = (SITE / "index.html").read_text(encoding="utf-8")
 
-    def test_all_three_layers_are_there(self):
-        for layer in ("Ontology", "Mirror", "Your databases", "PostgreSQL"):
-            assert layer in self.LANDING, layer
+    def test_the_four_columns_are_named(self):
+        for column in ("YOUR SILOS", "BRONZE", "SILVER", "GOLD"):
+            assert column in self.LANDING, column
 
-    def test_the_pipeline_stages_are_named(self):
-        """bronze, silver, gold -- the real stage names from
-        core/mirror/, not invented ones."""
-        for stage in (">bronze<", ">silver<", ">gold<"):
-            assert stage in self.LANDING, stage
+    def test_the_silos_are_named_as_the_customer_names_them(self):
+        """Not "database" -- a silo is a named instance in
+        data_silos.yaml, and a deployment spans more than one."""
+        assert "primary_sql" in self.LANDING
+        assert "risk_db" in self.LANDING
+        assert "data_silos.yaml" in self.LANDING
+
+    def test_bronze_and_silver_are_one_to_one_with_source_tables(self):
+        """Three source tables in, three bronze, three silver. Drawing
+        bronze as one box would say Elysium flattens them, which it
+        does not."""
+        assert self.LANDING.count(">customers<") >= 3
+        assert self.LANDING.count(">risk_scores<") >= 3
+
+    def test_gold_is_where_the_shape_changes(self):
+        """One table per object TYPE rather than per source table, and
+        a type joining two silos is the whole reason gold is a separate
+        stage."""
+        assert "one table per object type" in self.LANDING
+        assert "joined from 2 silos" in self.LANDING
+
+    def test_the_ontology_sits_above_gold_and_is_what_is_asked(self):
+        assert "Ontology — object types, fields, links" in self.LANDING
+        assert "a question is asked against this" in self.LANDING
+
+    def test_the_sync_is_said_to_be_read_only(self):
+        """The claim a prospect most needs from the picture."""
+        assert "only ever READS your silos" in self.LANDING
 
     def test_it_is_described_for_a_screen_reader(self):
-        """A diagram carrying the page's whole argument cannot be
-        decorative. The description says what the picture says, in
-        sentences."""
         i = self.LANDING.index('id="arch-desc"')
-        description = self.LANDING[i:i + 1200]
+        description = self.LANDING[i:i + 1800]
 
         assert "bronze" in description
-        assert "proposal a person approves" in description
-        assert len(description) > 400
+        assert "one table per object type" in description
+        assert len(description) > 600
 
     def test_it_is_inlined_rather_than_an_img(self):
-        """So it follows light and dark through CSS variables without a
-        second file or a line of JavaScript."""
         assert "<svg" in self.LANDING
         assert "architecture.svg" not in self.LANDING
 
     def test_no_gradients_blurs_or_fake_depth(self):
-        """I BANNED TOO MUCH THE FIRST TIME. The original rule also
-        forbade isometric projection, which is not an AI tell -- it is
-        how layered systems have been drawn since axonometric
-        engineering drawings, and banning it left a flat picture the
-        owner fairly called shit.
-
-        What actually reads as generated: gradient fills everywhere,
-        gaussian blur standing in for depth, and translucency used to
-        fake lighting. Those stay out. Flat fills at three values do
-        the depth instead, which is the axonometric convention and
-        also what keeps the file at 6 kB."""
+        """What reads as generated: gradient fills everywhere, blur
+        standing in for depth, translucency faking light."""
         i = self.LANDING.index("<svg")
         svg = self.LANDING[i:self.LANDING.index("</svg>")]
 
@@ -409,26 +432,13 @@ class TestTheDiagram:
                      "filter=", "fill-opacity"):
             assert tell not in svg, tell
 
-    def test_the_geometry_is_computed_not_eyeballed(self):
-        """Hand-placed isometric points are what make a diagram look
-        subtly wrong in a way nobody can name. Every coordinate here
-        comes from one projection at 30 degrees with a single squash
-        factor, and the three planes therefore share an exact vertical
-        spacing."""
-        import re
-
+    def test_every_wire_has_a_direction(self):
+        """A flow diagram without arrowheads is a parts list."""
         i = self.LANDING.index("<svg")
         svg = self.LANDING[i:self.LANDING.index("</svg>")]
-        tops = sorted({round(float(m)) for m in
-                       re.findall(r'class="slab" points="[\d.]+,([\d.-]+)', svg)})
 
-        assert len(tops) == 3, tops
-        gaps = [b - a for a, b in zip(tops, tops[1:], strict=False)]
-        assert len(set(gaps)) == 1, f"planes are not evenly stacked: {gaps}"
+        wires = svg.count('class="wire')
+        arrows = svg.count("marker-end")
 
-    def test_the_direction_of_both_flows_is_drawn(self):
-        """A question goes down and is answered from gold; a write goes
-        the other way and lands only after a person approves. A diagram
-        without the arrows is a parts list."""
-        assert "a question, as a named user" in self.LANDING
-        assert "an approved write, only then" in self.LANDING
+        assert wires > 0
+        assert arrows >= wires

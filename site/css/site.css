@@ -288,11 +288,16 @@ code,
 }
 
 .stage svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-width: 60rem;
-  margin-inline: auto;
+  --d-box: #141d30;
+  --d-silo: #0f1626;
+  --d-gold: #16233f;
+  --d-onto: #16233f;
+  --d-line: #243352;
+  --d-line-bright: #2b3c63;
+  --d-ink: var(--ink);
+  --d-soft: var(--ink-soft);
+  --d-faint: var(--ink-faint);
+  --d-accent: var(--accent);
 }
 
 /* ---- proof ---- */
