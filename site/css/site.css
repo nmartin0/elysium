@@ -395,3 +395,50 @@ section {
   color: var(--ink-soft);
   margin-bottom: 1.25rem;
 }
+
+/* ---- the site's own voice ----
+ *
+ * A FAMILY RESEMBLANCE, NOT A UNIFORM. The greys and the one blue come
+ * from the product so the demo is not a jolt. Everything about the
+ * TYPE is the site's own: a marketing page and an application screen
+ * have different jobs, and a landing page that reads like a settings
+ * panel sells nothing.
+ */
+
+h1,
+h2,
+.wordmark {
+  /* Tighter and heavier than the application, which optimises for
+   * dense tabular reading. A headline is read once, from further
+   * away. */
+  letter-spacing: -0.035em;
+  font-weight: 700;
+}
+
+.hero h1 {
+  max-width: 18ch;
+  text-wrap: balance;
+}
+
+.hero p.lede {
+  text-wrap: pretty;
+}
+
+/* MORE AIR THAN THE PRODUCT. Blueprint packs controls; a page that
+ * has to be read does the opposite. */
+section {
+  padding-block: clamp(3rem, 8vw, 6rem);
+}
+
+.wordmark::after {
+  /* A quiet mark the application does not carry, so the site reads as
+   * itself rather than as a page that escaped from the app. */
+  content: '';
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 0.35em;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 0.1em;
+}

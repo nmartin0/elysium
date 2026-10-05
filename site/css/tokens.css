@@ -12,10 +12,16 @@
  * checkbox stacking bug -- true of the application, meaningless here,
  * and exactly the kind of thing that rots in a file nobody reads.
  *
- * The VALUES still match the product, because a prospect clicking from
- * here into the demo should not watch the colours change. They match
- * by being chosen to, not by being enforced to. If the application
- * rebrands, this is a deliberate edit rather than a broken test.
+ * A FAMILY RESEMBLANCE, NOT A UNIFORM. This is the website FOR
+ * Elysium, not Elysium. It shares the product's neutral greys and its
+ * one blue so a prospect clicking into the demo is not startled, and
+ * it is free to differ everywhere else -- a marketing page and an
+ * application screen have different jobs, and a landing page that
+ * looks like a settings panel sells nothing.
+ *
+ * Concretely: the site sets its own type scale, its own rhythm, and a
+ * display face the product does not use. If the application rebrands,
+ * this is a deliberate edit rather than a broken test.
  */
 
 :root {

@@ -57,10 +57,6 @@ describe_hint
 # exists this is tested and unused.
 #
 # IF IDENTITY INFERENCE IS DROPPED, DELETE THIS MODULE TOO.
-# An HTMLParser override. The base class calls it; vulture sees a
-# method nobody names. The marketing-site test uses it to walk every
-# link and anchor on every page.
-handle_starttag
 masked_comparison
 agreement_pattern
 withheld_fields

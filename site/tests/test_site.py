@@ -27,8 +27,8 @@ from pathlib import Path
 
 import pytest
 
-SITE = Path("site")
-PAGES = sorted(SITE.rglob("*.html"))
+SITE = Path(__file__).resolve().parent.parent
+PAGES = sorted(p for p in SITE.rglob("*.html") if "tests" not in p.parts)
 
 
 def _text(path: Path) -> str:
@@ -138,7 +138,7 @@ class TestTheConsentBannerMeetsTheRules:
 
 
 class TestTheConsentScript:
-    SCRIPT = Path("site/js/consent.js").read_text(encoding="utf-8")
+    SCRIPT = (SITE / "js/consent.js").read_text(encoding="utf-8")
 
     def test_it_records_when_the_choice_was_made(self):
         """The log is the proof. A stored boolean with no timestamp
@@ -172,7 +172,23 @@ class TestTheConsentScript:
         assert "allows:" in self.SCRIPT
 
 
-class TestItLooksLikeTheProduct:
+class TestItIsTheSiteForElysiumNotElysium:
+    def test_it_carries_nothing_of_elysiums_own_gates(self):
+        """THE WEBSITE TAKES RESPONSIBILITY FOR ITSELF.
+
+        These tests lived in Elysium's tests/unit/ and its HTMLParser
+        override needed a line in Elysium's vulture whitelist -- so a
+        typo in a headline could fail the product's suite, and the
+        product carried configuration that existed only for a web page.
+
+        They run from here now, through site/check.sh. This asserts the
+        product has not been handed anything back."""
+        repo = SITE.parent
+
+        assert not (repo / "tests/unit/test_the_marketing_site_is_sound.py").exists()
+        assert "handle_starttag" not in (repo / "vulture_whitelist.py").read_text()
+        assert (SITE / "check.sh").exists()
+
     def test_the_site_owns_its_palette(self):
         """NOT A COPY OF THE PRODUCT'S, and this test used to assert
         the opposite. Enforcing byte-equality with
@@ -198,9 +214,13 @@ class TestItLooksLikeTheProduct:
         # name `ui/packages/shell-api` precisely to say the site no
         # longer copies from it. What matters is whether anything
         # RESOLVES outside this directory.
+        # THE SERVED FILES ONLY. `rglob("*")` picked up this test's
+        # own __pycache__ and died on a binary -- the test moved INTO
+        # the directory it inspects, which is the right place for it
+        # and one more thing to skip.
         reaching = []
         for path in SITE.rglob("*"):
-            if not path.is_file():
+            if not path.is_file() or path.suffix not in {".html", ".css", ".js"}:
                 continue
             source = path.read_text(encoding="utf-8")
             for match in re.findall(r'(?:href|src)="([^"]+)"', source):
