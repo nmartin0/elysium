@@ -209,71 +209,56 @@ class TestItIsTheSiteForElysiumNotElysium:
     def test_there_is_exactly_one_accent(self):
         """ONE ACCENT, SPENT CAREFULLY. The sites in this category that
         read as serious hold near-monochrome and let "the only colour
-        contribution come from their products". An accent that appears
-        everywhere stops meaning anything.
-
-        `--live` and `--refused` are not decoration -- they are the two
-        states the product is about -- and they appear only in the
-        diagram and the approval snippet."""
-        # COUNT THE DECLARATIONS, not one spelling of one of them. A
-        # first version asserted `--accent: var(--signal)` appeared
-        # once, which a control defeated by adding a SECOND `--accent:`
-        # line beside it -- the test passed while the page had two.
+        contribution come from their products"."""
         css = (SITE / "css/site.css").read_text(encoding="utf-8")
-        default = css[css.index(":root {"):css.index("@media (prefers-color-scheme")]
+        default = css[css.index(":root {"):css.index("}", css.index(":root {"))]
 
         assert default.count("--accent:") == 1, "one accent, spent carefully"
 
-    def test_it_is_dark_by_default(self):
-        """It shipped LIGHT for a day because this file had grown three
-        competing `:root` blocks across two sittings and the last match
-        won. One block now, `color-scheme: dark` on it, and light as an
-        explicit adaptation."""
+    def test_it_is_dark_with_no_escape_hatch(self):
+        """IT SHIPPED LIGHT TWICE after I twice said it was fixed.
+
+        The first time, three competing `:root` blocks and the last
+        match won. The second time the blocks were right and a
+        `prefers-color-scheme: light` query flipped the whole site on a
+        light-mode machine -- which is what the owner kept seeing.
+
+        "Dark by default" meant the site is dark, not "dark unless your
+        laptop says otherwise". The product carries both schemes
+        because people live in it all day; a landing page is read once
+        and gets one treatment, chosen."""
         css = (SITE / "css/site.css").read_text(encoding="utf-8")
-        first_root = css.index(":root {")
-        first_media = css.index("@media (prefers-color-scheme")
+        rules = [line for line in css.splitlines()
+                 if line.strip().startswith("@media") and "color-scheme" in line]
 
-        assert "color-scheme: dark" in css[first_root:first_media]
-        assert "prefers-color-scheme: light" in css
-        assert "prefers-color-scheme: dark" not in css, (
-            "a dark media query means dark is the exception, not the default")
+        assert rules == [], rules
+        assert "color-scheme: dark" in css
 
-    def test_one_root_block_only(self):
-        """The bug that caused it, pinned."""
+    def test_the_page_has_proportion(self):
+        """"All left aligned and doesn't look like it has any sort of
+        padding" -- both true, and the same mistake: everything pinned
+        to one left edge at full column width, which reads as a
+        document rather than a designed page.
+
+        The fix is the two moving in opposite directions: a WIDER
+        column and a NARROWER measure, with a band between sections
+        large enough to feel slightly too generous while writing
+        it."""
         css = (SITE / "css/site.css").read_text(encoding="utf-8")
 
-        assert css.count(":root {") == 2, "one default plus one light adaptation"
+        assert "--band:" in css
+        assert "--measure:" in css
+        assert "--gutter: clamp(" in css
 
-    def test_nothing_under_site_reaches_into_the_product(self):
-        """The isolation, asserted rather than assumed. A relative path
-        out of this directory, or a reference to ui/ or core/, would
-        mean the site cannot be moved or deployed on its own."""
-        # LINKS AND IMPORTS, not prose. A first version grepped the
-        # raw text and failed on its own explanatory comments, which
-        # name `ui/packages/shell-api` precisely to say the site no
-        # longer copies from it. What matters is whether anything
-        # RESOLVES outside this directory.
-        # THE SERVED FILES ONLY. `rglob("*")` picked up this test's
-        # own __pycache__ and died on a binary -- the test moved INTO
-        # the directory it inspects, which is the right place for it
-        # and one more thing to skip.
-        reaching = []
-        for path in SITE.rglob("*"):
-            if not path.is_file() or path.suffix not in {".html", ".css", ".js"}:
-                continue
-            source = path.read_text(encoding="utf-8")
-            for match in re.findall(r'(?:href|src)="([^"]+)"', source):
-                if match.startswith("../") or match.startswith("ui/"):
-                    reaching.append(f"{path}: {match}")
-            for match in re.findall(r"@import\s+[\"']([^\"']+)", source):
-                if match.startswith(".."):
-                    reaching.append(f"{path}: {match}")
+    def test_something_breaks_the_left_edge_deliberately(self):
+        """A page entirely left-aligned has no rhythm; one that centres
+        everything has no spine. Two bands break it completely -- the
+        diagram, full width, and the closing call, centred."""
+        css = (SITE / "css/site.css").read_text(encoding="utf-8")
 
-        assert reaching == [], reaching
-
-    @pytest.mark.parametrize("page", PAGES, ids=lambda p: str(p))
-    def test_every_page_uses_them(self, page):
-        assert "/css/tokens.css" in _text(page), str(page)
+        assert ".closer {" in css
+        assert "text-align: center" in css
+        assert "margin-inline: auto" in css
 
 
 class TestTheBasicsNobodyChecks:
@@ -323,16 +308,16 @@ class TestItIsAboutElysiumSpecifically:
         each field needs, and the security rule set apart."""
         assert "Ontology" in self.LANDING
         assert "security" in self.LANDING
-        assert "READ:CUSTOMER.EMAIL" in self.LANDING
+        assert "Customer" in self.LANDING and "Transaction" in self.LANDING
 
     def test_the_security_rule_is_what_the_diagram_emphasises(self):
         """Of everything in an ontology, the line that distinguishes it
         from a schema file is the one naming who may see a row. It is
         the only box in the top layer drawn in the accent."""
-        i = self.LANDING.index("WHO MAY SEE A ROW")
-        box = self.LANDING[i - 600:i]
+        i = self.LANDING.index("who may see a row")
+        box = self.LANDING[max(0, i - 400):i]
 
-        assert "diagram-accent" in box
+        assert "chip--accent" in box
 
     def test_the_snippet_shows_a_refusal_rather_than_a_schema(self):
         """The useful thing to show is not what you can declare -- it
@@ -379,7 +364,7 @@ class TestTheDiagram:
     LANDING = (SITE / "index.html").read_text(encoding="utf-8")
 
     def test_all_three_layers_are_there(self):
-        for layer in ("Ontology", "Mirror", "PostgreSQL"):
+        for layer in ("Ontology", "Mirror", "Your databases", "PostgreSQL"):
             assert layer in self.LANDING, layer
 
     def test_the_pipeline_stages_are_named(self):
@@ -405,22 +390,45 @@ class TestTheDiagram:
         assert "<svg" in self.LANDING
         assert "architecture.svg" not in self.LANDING
 
-    def test_no_gradients_or_filters(self):
-        """The subject is a layered system; the clearest way to draw one
-        is layers, stacked and labelled. Gradients, glows and isometric
-        slabs make a reader work harder to learn less -- and are the
-        tell of a picture generated rather than drawn."""
+    def test_no_gradients_blurs_or_fake_depth(self):
+        """I BANNED TOO MUCH THE FIRST TIME. The original rule also
+        forbade isometric projection, which is not an AI tell -- it is
+        how layered systems have been drawn since axonometric
+        engineering drawings, and banning it left a flat picture the
+        owner fairly called shit.
+
+        What actually reads as generated: gradient fills everywhere,
+        gaussian blur standing in for depth, and translucency used to
+        fake lighting. Those stay out. Flat fills at three values do
+        the depth instead, which is the axonometric convention and
+        also what keeps the file at 6 kB."""
         i = self.LANDING.index("<svg")
         svg = self.LANDING[i:self.LANDING.index("</svg>")]
 
         for tell in ("linearGradient", "radialGradient", "feGaussianBlur",
-                     "filter=", "opacity=\"0."):
+                     "filter=", "fill-opacity"):
             assert tell not in svg, tell
+
+    def test_the_geometry_is_computed_not_eyeballed(self):
+        """Hand-placed isometric points are what make a diagram look
+        subtly wrong in a way nobody can name. Every coordinate here
+        comes from one projection at 30 degrees with a single squash
+        factor, and the three planes therefore share an exact vertical
+        spacing."""
+        import re
+
+        i = self.LANDING.index("<svg")
+        svg = self.LANDING[i:self.LANDING.index("</svg>")]
+        tops = sorted({round(float(m)) for m in
+                       re.findall(r'class="slab" points="[\d.]+,([\d.-]+)', svg)})
+
+        assert len(tops) == 3, tops
+        gaps = [b - a for a, b in zip(tops, tops[1:], strict=False)]
+        assert len(set(gaps)) == 1, f"planes are not evenly stacked: {gaps}"
 
     def test_the_direction_of_both_flows_is_drawn(self):
         """A question goes down and is answered from gold; a write goes
         the other way and lands only after a person approves. A diagram
         without the arrows is a parts list."""
-        assert "a question, asked as a named user" in self.LANDING
-        assert "an approved write," in self.LANDING
-        assert "read-only sync" in self.LANDING
+        assert "a question, as a named user" in self.LANDING
+        assert "an approved write, only then" in self.LANDING

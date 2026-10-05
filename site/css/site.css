@@ -44,24 +44,18 @@
   --rule: 1px solid var(--line);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-
-    --page: var(--bone-50);
-    --panel: var(--white, #fff);
-    --panel-raised: var(--bone-100);
-    --tile: var(--white, #fff);
-    --line: var(--bone-200);
-    --line-bright: var(--bone-300);
-
-    --ink: #0d1320;
-    --ink-soft: #4a556b;
-    --ink-faint: #7b8699;
-
-    --accent: #1f5fd0;
-  }
-}
+/* DARK, FULL STOP.
+ *
+ * There was a `prefers-color-scheme: light` block here that flipped
+ * the whole site on a light-mode machine -- which is what the owner
+ * kept seeing, twice, after I twice said it was fixed. "Dark by
+ * default" meant the site is dark, not "dark unless your laptop says
+ * otherwise".
+ *
+ * The product has both schemes because people live in it all day. A
+ * landing page is read once; it gets one treatment, chosen, and the
+ * diagram inherits it.
+ */
 
 *,
 *::before,
@@ -575,18 +569,163 @@ section {
   }
 }
 
-/* ---- the diagram follows the page ----
+/* ---- the diagram's own variables ----
  *
- * Its own variables, mapped onto the page's, so one inlined SVG works
- * in both schemes without a second copy and without JavaScript.
+ * Three fill values and one accent, mapped onto the page. Flat fills
+ * at three values are what give an axonometric drawing its depth --
+ * top face lightest, front face darker, side face darkest -- which is
+ * the convention, and also why this needs no gradient and stays at
+ * 6 kB.
  */
 .stage svg {
-  --diagram-panel: var(--panel);
-  --diagram-tile: var(--tile);
-  --diagram-line: var(--line);
-  --diagram-line-bright: var(--line-bright);
-  --diagram-ink: var(--ink);
-  --diagram-soft: var(--ink-soft);
-  --diagram-faint: var(--ink-faint);
-  --diagram-accent: var(--accent);
+  --d-slab: var(--navy-850);
+  --d-side: var(--navy-900);
+  --d-side-dark: var(--navy-950);
+  --d-chip: #1b2740;
+  --d-chip-accent: #16233f;
+  --d-line: #243352;
+  --d-ink: var(--ink);
+  --d-soft: var(--ink-soft);
+  --d-faint: var(--ink-faint);
+  --d-accent: var(--accent);
+}
+
+/* ============================================================
+ * PROPORTION.
+ *
+ * The owner's words: "all left aligned and doesn't look like it has
+ * any sort of padding". Both true, and both the same mistake --
+ * everything was pinned to one left edge at the full column width,
+ * so the page read as a document rather than a designed thing.
+ *
+ * What the sites in this category actually do:
+ *
+ *   SPACE IS THE DESIGN. The band between sections is larger than
+ *   feels comfortable while writing it. If the spacing looks slightly
+ *   too generous in the editor it is probably right on a screen.
+ *
+ *   TEXT IS NARROWER THAN THE PAGE. A measure of 60 to 70 characters
+ *   reads; a measure of 110 does not. The column being wide does not
+ *   mean the paragraph should be.
+ *
+ *   THE GRID IS VISIBLE IN THE ALIGNMENT, not in rules. Headings,
+ *   body and labels share a left edge, and the things that break it
+ *   break it deliberately and completely -- centred, or full width --
+ *   never by forty pixels.
+ * ============================================================ */
+
+:root {
+  /* Wider page, narrower text. The two move in opposite directions. */
+  --column: 78rem;
+  --measure: 32rem;
+  --gutter: clamp(1.5rem, 6vw, 5rem);
+  --band: clamp(5rem, 11vw, 10rem);
+}
+
+/* ---- vertical rhythm ----
+ *
+ * One band between sections, and the first section after the hero
+ * gets the same, so nothing bunches against the fold. */
+section {
+  padding-block: var(--band);
+}
+
+section > .wrap > :first-child {
+  margin-top: 0;
+}
+
+/* A section's heading and its lede form a block with real space under
+ * it, rather than running straight into the content. */
+section h2 + .lede,
+section h2 + p {
+  margin-bottom: 0;
+}
+
+section .lede {
+  margin-bottom: 0;
+}
+
+.section-head {
+  max-width: 44ch;
+  margin-bottom: clamp(2.5rem, 5vw, 4rem);
+}
+
+/* ---- the hero gets air ----
+ *
+ * Top space above the headline is what makes a page feel considered
+ * rather than dumped at the top of the viewport. */
+.hero {
+  padding-block: clamp(5rem, 12vw, 9rem) clamp(1rem, 3vw, 2rem);
+}
+
+.hero .lede {
+  margin-top: 1.5rem;
+}
+
+.hero .actions {
+  margin-top: 2.75rem;
+}
+
+/* ---- the diagram is full width and centred ----
+ *
+ * It breaks the text column deliberately and completely: edge to
+ * edge inside the gutter, centred, with its own generous band. Half
+ * measures here are what made it look like an afterthought beside the
+ * paragraph. */
+.stage {
+  margin-block: clamp(3.5rem, 8vw, 6rem) 0;
+  padding-block: clamp(3rem, 7vw, 5rem);
+}
+
+.stage svg {
+  max-width: 68rem;
+}
+
+/* ---- centred bands ----
+ *
+ * Two of them, deliberately: the diagram and the closing call. A page
+ * that is entirely left-aligned has no rhythm, and one that centres
+ * everything has no spine. */
+.closer {
+  padding-block: clamp(6rem, 13vw, 11rem);
+}
+
+.closer h2 {
+  max-width: 18ch;
+}
+
+.closer .lede {
+  max-width: 48ch;
+  margin-inline: auto;
+}
+
+/* ---- proof row ----
+ *
+ * Spread across the column rather than bunched left, with the band
+ * above and below doing the separating instead of a border alone. */
+.proof {
+  justify-content: space-between;
+  padding-block: 2.5rem;
+  border-top: var(--rule);
+}
+
+/* ---- bento breathes ---- */
+.bento {
+  margin-top: clamp(2.5rem, 5vw, 4rem);
+}
+
+.tile {
+  padding: clamp(1.75rem, 3vw, 2.5rem);
+}
+
+/* ---- snippets sit in the column, not against the edge ---- */
+.snippet {
+  padding: clamp(1.5rem, 3vw, 2.25rem);
+  margin-top: clamp(2rem, 4vw, 3rem);
+}
+
+/* ---- footer ---- */
+.footer {
+  padding-block: clamp(4rem, 8vw, 6rem) 4rem;
+  border-top: var(--rule);
 }
