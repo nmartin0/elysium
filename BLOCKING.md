@@ -47,66 +47,37 @@ numbers themselves.
 | `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |# Blocked on a decision
 | `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
 | `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
-| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 10. Its three unanswered risks are item 12 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
+| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 9. Its three unanswered risks are item 11 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 | `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
-| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 13 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
+| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 12 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
 | `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |validator rejects every `write:` grant, while the write path demands
 | `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |one per field. So no valid policy can authorise a cross-type action at
-| `DEV_UI.md` | 1,271 lines of interface design, none of it buildable without a front-end agent. Its diagnosis, its refusals and its palette reasoning are item 14 |
-| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 15 |
-| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 16, with the code evidence |
-| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 15, section 2's one open piece is item 17, section 5 pointed here already |---
-| `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, is item 18 |
-| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 32-35; its one correction to me is in item 16 |# Blocked on a decision
+| `DEV_UI.md` | 1,271 lines of interface design, none of it buildable without a front-end agent. Its diagnosis, its refusals and its palette reasoning are item 13 |
+| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 14 |
+| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 15, with the code evidence |
+| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 14, section 2's one open piece is item 16, section 5 pointed here already |---
+| `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, is item 17 |
+| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 32-35; its one correction to me is in item 15 |# Blocked on a decision
 | `gold_history` (was item 1) | DECIDED and BUILT, patches 507-509: the owner wanted both a reader and a route. It leaves this file by its own rule -- the decision survives in the code, the `NEW-7` checklist row and the commits |
-| `write_targets` (was item 18) | DECIDED and BUILT: off by default, a separate block, existing deployments warned rather than broken |
-| `check_controls` in CI (was item 5) | the 70 controls now run as their own CI job. Inert until Actions is enabled, which only the owner can do -- but the mechanism exists rather than being a suggestion |
-| `AUDIT_CHECKLIST.csv`'s SEC rows (was item 4) | all 25 inherited findings closed. Three real and fixed (SEC-09, SEC-19, SEC-22), three were guards whose call sites nothing held (SEC-14, SEC-27, and the one behind SEC-04), the rest covered, moot or unactionable |
+| `write_targets` (was item 17) | DECIDED and BUILT: off by default, a separate block, existing deployments warned rather than broken |
+| `check_controls` in CI (was item 4) | the 70 controls now run as their own CI job. Inert until Actions is enabled, which only the owner can do -- but the mechanism exists rather than being a suggestion |
+| `AUDIT_CHECKLIST.csv`'s SEC rows (was item 3) | all 25 inherited findings closed. Three real and fixed (SEC-09, SEC-19, SEC-22), three were guards whose call sites nothing held (SEC-14, SEC-27, and the one behind SEC-04), the rest covered, moot or unactionable |
 | `E-02` residual (was item 1) | BUILT from settled precedent: the peer address by default, `X-Forwarded-For` believed only from a declared proxy, rightmost hop, malformed falls back loudly. `trusted_proxies` is empty in the template |
 | `on_type_mismatch`, Batch C (was item 1) | BUILT from precedent: a type mismatch quarantines the ROW and syncs the rest; an absent key keeps refusing. Measured on a real deployment -- 2 rows quarantined, 5 synced, where before the table was refused entirely. Closes ZOO-11, -12, -15, -17, -18, -21, -22, R22, R27 |
 | `NEW-6` (was item 1) | BUILT, tiered: tag characters and bidi controls refused without being asked, zero-width still opt-in because emoji and several scripts use it. The compilers made the same call -- GCC ships `-Wbidi-chars=unpaired` as the default, not `any` |
-| `display_safety` (was item 7) | BUILT: an example marked `display: true` may not hold an identifier-shaped token, checked at deployment load. SHAPE not existence -- an example naming `cust_999` is safe today and a leak the day that customer exists |
+| `display_safety` (was item 6) | BUILT: an example marked `display: true` may not hold an identifier-shaped token, checked at deployment load. SHAPE not existence -- an example naming `cust_999` is safe today and a leak the day that customer exists |
 | `NEW-5` (was item 1) | DECIDED and BUILT: new deployments keep only declared columns; an absent key keeps everything and WARNS, naming them. Measured -- an undeclared SSN is absent from bronze under the shipped default and kept under an absent key |
 | `F-02`, `F-03`, `F-12c` (item 1) | DECIDED and BUILT, option C: `execute:<Action>` plus `write:<Type>` for every type the action edits, which is Foundry's. The per-field form stays rejected because nothing checks it. `F-03`'s KeyError goes with it -- asking per type removed the `["mutations"]` access |
 | `NEW-4` (was item 1) | DECIDED and BUILT: a missing gold TABLE raises `GoldPublicationMissing`, matching what `find_ids` has always done; a missing ROW still returns None, which `write_mediator`'s uniqueness check needs |
-| `WIRED-1` (was item 2) | DECIDED and BUILT: `/api/saved-views` re-authorises at read time and names what it disabled. It caught a test asserting the bug on its first run -- a Customer view filtering on `amount`, a Transaction field |
+| `WIRED-1` (was item 1) | DECIDED and BUILT: `/api/saved-views` re-authorises at read time and names what it disabled. It caught a test asserting the bug on its first run -- a Customer view filtering on `amount`, a Transaction field |
 | `LLM3-3` (was item 1) | DECIDED and BUILT, a third option the entry did not contain: the value is COPIED into `_security` at sync and MAC reads that, so no later stage can change who sees what by touching the data. Proven by overwriting every `region` in gold and watching MAC partition unchanged. NOT the side table -- four stages had to be told to carry the column, which is the cost a side table would not have |
-| `manifest` bootstrap (was item 7) | CLOSED PERMANENTLY: the lake's manifest is read-only input and must never become configuration. The reason now lives in `read_manifests`' own docstring, where somebody would reach for it, because planning documents get consumed and a reason in a deleted list is rediscovered the hard way |
+| `manifest` bootstrap (was item 6) | CLOSED PERMANENTLY: the lake's manifest is read-only input and must never become configuration. The reason now lives in `read_manifests`' own docstring, where somebody would reach for it, because planning documents get consumed and a reason in a deleted list is rediscovered the hard way |
+| `A6` (was item 1) | RESOLVED, not deferred: leave it. Cross-table snapshot consistency is a CATALOG feature and a REST catalog is a service to run, back up and secure for a property no wrong answer has been observed from. THE TRIGGER, recorded so it is not re-argued: when a SECOND process writes to the lake |
 ---
 
 # Blocked on a decision
 
-## 1. `A6` -- one generation serving two ages
-
-A pinned type sees an old snapshot while an unpinned type sees the
-current one, within one generation. Three options were recorded:
-leave it, build an authoritative pin map including link tables, or pin
-per request.
-
-**THE CATALOG ANSWER, AND WHEN IT BECOMES RIGHT.** Iceberg's position
-is that snapshot isolation is PER TABLE and cross-table consistency is
-a CATALOG feature -- a REST catalog such as Nessie provides "atomic
-multi-table time travel: query consistent snapshots across multiple
-related tables". Building a pin map across link tables by hand
-reimplements that.
-
-**NOT NOW, AND THE REASON IS OPERATIONAL.** A REST catalog is a
-separate service to run, back up and secure, and the only thing it
-buys today is this property -- which is theoretical: no wrong answer
-has been observed from it.
-
-**THE TRIGGER, WRITTEN DOWN SO IT IS NOT RE-ARGUED: WHEN A SECOND
-PROCESS WRITES TO THE LAKE.** Today `run_sync` is the sole writer,
-which is why per-table snapshots have been sufficient. The moment
-anything else publishes -- a second deployment, a scheduled job, a
-user-triggered rebuild -- multi-table consistency stops being
-theoretical and the catalog becomes the right answer rather than an
-addition.
-
-**Blocked on:** nothing, deliberately. Leave it, and revisit when a
-second writer appears.
-
-## 2. `DEP-1` to `DEP-6` -- five dependency adoptions
+## 1. `DEP-1` to `DEP-6` -- five dependency adoptions
 
 Each is a yes or no about a named library. Cheap to answer, and not
 mine to answer.
@@ -115,7 +86,7 @@ mine to answer.
 round trip because it needs `ruamel.yaml`. THAT IS FALSE. `DEP-4` is
 phonenumbers, holidays, email-validator and ftfy; `ruamel` is not a
 `DEP` item at all. I invented the link in an earlier patch and it has
-sat here since, making this item look like a blocker for item 8 when
+sat here since, making this item look like a blocker for item 7 when
 it is not.
 
 **ALL SIX ALREADY CARRY VERDICTS** in the checklist -- ADOPT, ADOPT,
@@ -139,7 +110,7 @@ consideration rather than one in use.
 
 # Blocked on a machine or a person running something
 
-## 3. `--workers` for real
+## 2. `--workers` for real
 
 Patches 292-295 fixed all four blockers. It has only ever run as two
 apps inside one test process.
@@ -169,7 +140,7 @@ work now that they are on the list. Named here only because their
 provenance matters: a finding whose author is gone cannot be
 clarified, only reproduced or dropped.
 
-## 4. `pgserver` on Python 3.13
+## 3. `pgserver` on Python 3.13
 
 There is no wheel. The only real-PostgreSQL tests cannot run on the
 machine that gates every patch, and the SQLAlchemy adapter is the
@@ -182,7 +153,7 @@ PostgreSQL fixture.
 
 # Blocked because it is product direction
 
-## 5. Thirty-odd recommendations that are not engineering questions
+## 4. Thirty-odd recommendations that are not engineering questions
 
 `R41`, `R42`, `R45`, `R48`, `R51`, `R53`, `R56` to `R62` and their
 neighbours are LLM enrichment, embeddings, model predictions,
@@ -194,7 +165,7 @@ and they should not be picked off a list by whoever is next.
 is buildable -- but on whether this is the product at all, which is
 why picking one off would be the wrong move rather than a slow one.
 
-## 6. What the Query screen should contain
+## 5. What the Query screen should contain
 
 Four features, none built, from `QUERY_PLAN.md`. They are product
 direction rather than engineering: what a question box should offer
@@ -222,7 +193,7 @@ generation answered this" much harder to state).
 
 **Blocked on:** product design, and there is no front-end agent now.
 
-## 7. Grant by TAG rather than by field name
+## 6. Grant by TAG rather than by field name
 
 From `ACCESS_CONTROL_PROPOSAL.md`. Declare a vocabulary -- `pii`,
 `financial`, `internal`, `restricted` -- tag FIELDS with it, and let a
@@ -269,7 +240,7 @@ measures. The two are complementary, not alternatives.
 trigger stands: a deployment whose per-field grants are large enough
 that nobody reads them before editing.
 
-## 8. Writing configuration from the UI
+## 7. Writing configuration from the UI
 
 From `CONFIG_ROUND_TRIP_AND_UI_KIT.md`. Its own finding is why it is
 hard: **the configuration files are mostly COMMENTS**, so a naive
@@ -283,7 +254,7 @@ answers before it is even possible.
 **Blocked on:** that dependency call, and on whether configuration
 should be editable from the UI at all.
 
-## 9. Object Explorer phases 3 to 5
+## 8. Object Explorer phases 3 to 5
 
 Phases 1 and 2 are built. **The blocker they existed to remove is
 gone:** the plan opens with "our filter is equality only ... so
@@ -292,11 +263,11 @@ clicking two bars on a chart cannot be expressed either." `core/filters.py`
 now has `in` and `not_in`, so it is.
 
 What remains is frontend: the table, the charts, and saving and acting
-on a selection. The last of those is the same thing as item 22.
+on a selection. The last of those is the same thing as item 21.
 
 **Blocked on:** product design, and there is no front-end agent.
 
-## 10. A plugin API, and the reason module federation is not it
+## 9. A plugin API, and the reason module federation is not it
 
 `THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
 is built, and whether Elysium should have them at all is a product
@@ -320,7 +291,7 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 11. Live updates, and the decision that shapes them
+## 10. Live updates, and the decision that shapes them
 
 Nothing is built -- no SSE, no `EventSource`, no streaming response
 anywhere in `api/`. What makes the design worth keeping is its
@@ -374,7 +345,7 @@ at all. IF DECLINED, DELETE `core/change_hints.py` -- it has no other
 purpose and should not sit there looking load-bearing. The vulture
 whitelist says so too.
 
-## 12. Three questions triggers raise and nobody has answered
+## 11. Three questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
@@ -404,7 +375,7 @@ second is a product decision about how much friction an automation
 should carry, and the third is a design choice with cost on both
 sides.
 
-## 13. The merge reviewer's screen, and the MAC problem under it
+## 12. The merge reviewer's screen, and the MAC problem under it
 
 Identity inference is built and OFF by default, with every proposal
 requiring approval. What is not built is the screen a reviewer uses,
@@ -458,7 +429,7 @@ whitelist says so.
 properly or the feature waits. Showing the fields would be the easy
 version and would quietly defeat MAC.
 
-## 14. What the interface should be
+## 13. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -493,7 +464,7 @@ contrast is not a target.
 **Blocked on:** a front-end agent, and the owner's appetite for a
 redesign rather than more features.
 
-## 15. Agent-loop efficiency, which needs a machine with a model
+## 14. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -536,7 +507,7 @@ lacks is the machine.
 **Blocked on:** a machine with a capable model, and about an hour of
 someone's time on it.
 
-## 16. Context rot, and a 10,000-id search behind it
+## 15. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -574,7 +545,7 @@ capped and the output side is not.
 
 **Two things are wanted, and only one is mine to do.** Item 17 is
 measurement -- task completion rate against context size at the
-midpoint of a task, which needs a capable model and is item 15's
+midpoint of a task, which needs a capable model and is item 14's
 blocker too. Item 18 is the cap itself.
 
 **Blocked on:** a model to validate the cap against, and the
@@ -584,7 +555,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 17. The keyboard model's roving-focus half
+## 16. The keyboard model's roving-focus half
 
 Gated rather than unstarted, and `BACKLOG.md` recorded both the
 condition and the reason it sharpened:
@@ -613,13 +584,13 @@ second half stands: a partial contract is worse than none.
 `ui/src/` is a shell -- App, Shell, and tests. The only rendered list
 is the navigation rail, three items, where plain links are the
 convention and tabbing is not painful. The hundred-result grid this
-pattern is for is Object Explorer's table, which is item 9.
+pattern is for is Object Explorer's table, which is item 8.
 
 **Blocked on:** the results list existing. It lands with Object
 Explorer, not before, and the keyboard contract should be designed in
 rather than retrofitted.
 
-## 18. PostgreSQL row-level security for MAC
+## 17. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -632,28 +603,47 @@ row-level-security guidance is "keep predicates join-free", and
 Databricks' SecureView barrier forces full scans for the same reason.
 
 **Blocked on:** PostgreSQL being a supported silo in production, which
-it is not. `pgserver` has no wheel for Python 3.13 (item 4), so the
+it is not. `pgserver` has no wheel for Python 3.13 (item 3), so the
 real-PostgreSQL tests cannot run on the machine that gates patches.
 
-## 19. The help assistant
+## 18. The help assistant
 
 A larger design, written and unbuilt. It would be an agent explaining
 Elysium itself rather than a customer's data.
+
+**THE SHAPE IS DECIDED, 5 October.** It answers from `visible_schema`
+and the caller's own grants -- not from the documentation, and not
+from `config`.
+
+Reading configuration directly would be the failure the precedent
+documents repeatedly: assistants that "tried (and failed) to mirror or
+enforce fine-grained enterprise permissions". Elysium already has the
+non-mirrored path, and `visible_schema` already answers "which types
+may this caller know exist".
+
+The warning that applies anyway: an assistant "doesn't bypass
+permissions", but "overly broad, inherited, or poorly reviewed
+permissions create the risk", because it "queries faster than any
+human user ever could manually". One documented incident surfaced
+"workplace investigation details when a user asked Copilot about a
+specific employee". So it amplifies whatever the grants already allow,
+which is an argument for building it ON the existing checks rather
+than beside them.
 
 **Blocked on:** whether it is wanted. It is the one feature on the
 list that competes with documentation rather than extending the
 product.
 
-## 20. The search bar's five unbuilt operators
+## 19. The search bar's five unbuilt operators
 
 Front-end work on a bar whose backend vocabulary is already closed and
 built -- `core/filters.py` has seven operators, `in` and `not_in`
 among them.
 
-**Blocked on:** a front-end agent, and on item 9, since the operators
+**Blocked on:** a front-end agent, and on item 8, since the operators
 and Object Explorer's filter UI are the same surface.
 
-## 21. The watch layout check, never seen to pass
+## 20. The watch layout check, never seen to pass
 
 Rewritten in patch 290 and never once observed passing:
 
@@ -665,7 +655,7 @@ watched run is not evidence.
 
 **Blocked on:** somebody running it. One command.
 
-## 22. Saved SELECTIONS
+## 21. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must
