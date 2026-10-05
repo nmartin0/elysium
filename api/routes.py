@@ -1141,6 +1141,19 @@ class DeploymentConfigResponse(BaseModel):
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
     max_concurrent_requests: int
+    # THE FOUR OPERATIONAL TOGGLES ADDED IN OCTOBER, and the reason
+    # `F-06` matters rather than a tidiness complaint: each was added to
+    # DeploymentConfig and NOT here, so the panel that answers "why is
+    # it behaving like that" could not answer it for any of them.
+    #
+    # Pydantic drops what the model does not name, so the omission was
+    # silent four times running. A test now forces every new config
+    # field to be listed here or named in WITHHELD_FROM_CONFIG_RESPONSE
+    # with a reason.
+    write_targets: "tuple[str, ...] | None" = None
+    trusted_proxies: "tuple[str, ...]" = ()
+    on_type_mismatch: "str | None" = None
+    ingest_undeclared_columns: "bool | None" = None
     # WHICH configuration this is, not just what it says. Answers a
     # question the rest of this response cannot: two deployments with
     # identical settings below may still be different loads of
@@ -2389,6 +2402,15 @@ def deployment_config_route(request: Request,
         "synthesis_model": config.synthesis_model,
         "max_hops": config.max_hops,
         "max_consecutive_duplicates": config.max_consecutive_duplicates,
+        # THE OPERATIONAL TOGGLES. Each answers "why is it behaving
+        # like that" for a behaviour that is otherwise invisible: where
+        # writes may land, whose forwarded-for header is believed, what
+        # one bad cell costs, and whether bronze keeps undeclared
+        # columns.
+        "write_targets": config.write_targets,
+        "trusted_proxies": config.trusted_proxies,
+        "on_type_mismatch": config.on_type_mismatch,
+        "ingest_undeclared_columns": config.ingest_undeclared_columns,
         "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
         "max_concurrent_requests": config.max_concurrent_requests,
         "security_attribute": config.security_attribute,
