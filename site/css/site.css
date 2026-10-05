@@ -1118,3 +1118,167 @@ section {
   padding-top: var(--s-2);
   border-top: var(--rule);
 }
+
+/* ============================================================
+ * WHAT A SCREENSHOT SHOWED, after eight patches of writing CSS blind.
+ *
+ * I had never looked at this page. Every test asserted that strings
+ * existed in a file; none of them could see that the code block was
+ * CLIPPED MID-LINE and the prose beside it was four words wide.
+ *
+ * The cause: a two-column `.split` nested inside a two-column
+ * `.band`. The band gives its body `1fr` of a 64rem frame minus a
+ * 20rem heading column; the split then halved that again. Two
+ * compounding grids, and everything inside them crushed.
+ *
+ * THE RULE: a band's body is ONE column. Anything that wants two
+ * columns of its own is a sibling of the band, not a child.
+ * ============================================================ */
+
+/* A split inside a band stops being a split. */
+.band__body .split {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 54rem) {
+  .band__body .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* And the code block gets room to breathe rather than being clipped.
+ * `overflow-x: auto` hid the failure: the lines were there, just
+ * unreachable without a scrollbar nobody would find. */
+.snippet {
+  max-width: 100%;
+  font-size: 0.8125rem;
+}
+
+.band__body .snippet {
+  width: 100%;
+}
+
+/* ---- the consent panel was open on first paint ----
+ *
+ * `[hidden]` is a UA rule at specificity 0-1-0 and `.consent__inner`
+ * sets `display: flex` at 0-1-0 too -- later in the cascade, so it
+ * won. The preferences panel rendered expanded over the hero on every
+ * first visit, which is the first thing anybody saw.
+ *
+ * The same class-beats-attribute shape as the grey button. Fixed at
+ * the source rather than by raising specificity on each offender.
+ */
+[hidden] {
+  display: none !important;
+}
+
+/* ---- the hero's right column was floating ----
+ *
+ * `align-items: end` pushed it to the bottom of a very tall row, so it
+ * sat alone in the middle of the page with nothing near it. Both
+ * columns start at the top now and the eye has one line to follow.
+ */
+@media (min-width: 54rem) {
+  .hero {
+    align-items: start;
+  }
+
+  .hero__aside {
+    padding-top: 0.75rem;
+  }
+}
+
+/* The fold had 245px of nothing above the eyebrow. */
+.hero {
+  padding-block: clamp(var(--s-6), 6vw, var(--s-12)) var(--s-8);
+}
+
+/* ---- the proof row orphaned its fourth item ----
+ *
+ * `space-between` with four items that do not fit put three on one
+ * line and one alone on the next. A four-column grid keeps them in one
+ * row and makes the labels line up, which `space-between` never did.
+ */
+.proof {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s-4) var(--s-3);
+}
+
+@media (min-width: 60rem) {
+  .proof {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.proof dt {
+  font-size: clamp(1.25rem, 2.2vw, 1.625rem);
+}
+
+/* ============================================================
+ * THE LEFT COLUMN WENT BLANK, which a screenshot showed and no
+ * string-matching test could.
+ *
+ * `.band__head` is sticky and short; once its body runs long the left
+ * third of the screen is empty for hundreds of pixels while the right
+ * keeps going. That is the owner's original complaint -- a barren side
+ * -- reappearing on the other edge.
+ *
+ * THE BAND IS RIGHT FOR SHORT BODIES AND WRONG FOR LONG ONES. Rather
+ * than keep two layouts fighting, a band whose body is long stops
+ * being two columns: the head sits above, full width, and the content
+ * uses the whole frame underneath.
+ * ============================================================ */
+
+@media (min-width: 54rem) {
+  /* A band marked long lays its head across the top instead. */
+  .band--long {
+    grid-template-columns: 1fr;
+  }
+
+  .band--long .band__head {
+    position: static;
+    max-width: 44ch;
+    margin-bottom: var(--s-4);
+  }
+
+  .band--long .band__head p {
+    max-width: 52ch;
+  }
+
+  /* And its body can then use real two-column layouts of its own,
+   * because nothing is subdividing it any more. */
+  .band--long .band__body .split {
+    grid-template-columns: 1.05fr 0.95fr;
+    align-items: start;
+  }
+}
+
+/* The hero's right column was too narrow to read -- five words a line.
+ * A 0.75fr column of a 64rem frame is about 17rem; this gives it the
+ * 24rem a 30-character measure actually needs. */
+@media (min-width: 54rem) {
+  .hero {
+    grid-template-columns: 1.15fr 0.85fr;
+  }
+
+  .hero h1 {
+    max-width: 17ch;
+  }
+}
+
+/* The refusal snippet's longest line is 72 monospace characters and
+ * it overflowed its column by 10px -- found by a rendered test, not by
+ * reading. Dropping to 0.78rem fits it with room, and keeps the two
+ * snippets on the page the same size as each other. */
+.split .snippet,
+.split .snippet code {
+  font-size: 0.78rem;
+}
+
+/* Back to the page's own scale once the lines were shortened: the fix
+ * was the content, not the type size. */
+.split .snippet,
+.split .snippet code {
+  font-size: 0.8125rem;
+}

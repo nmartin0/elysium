@@ -325,7 +325,7 @@ class TestItIsAboutElysiumSpecifically:
         answers, with the second told nothing rather than told
         'forbidden'."""
         assert "no customers match" in self.LANDING
-        assert "that would tell bob they exist" in self.LANDING
+        assert "that would tell him" in self.LANDING
 
     def test_the_approval_flow_is_shown(self):
         """A write being a proposal somebody approves, with the

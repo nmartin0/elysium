@@ -18,6 +18,9 @@ echo "--- site: lint ---"
 ruff check tests --line-length 100
 
 echo "--- site: tests ---"
+# tests/test_rendered.py runs a real browser and measures the page.
+# It skips cleanly where none is installed. Everything it checks
+# shipped broken once and was invisible to the string tests.
 python -m pytest tests -q
 
 echo
