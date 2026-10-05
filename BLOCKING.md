@@ -146,11 +146,25 @@ There is no wheel. The only real-PostgreSQL tests cannot run on the
 machine that gates every patch, and the SQLAlchemy adapter is the
 production read path.
 
-**Blocked on:** a 3.12 environment for those tests, or a different
-PostgreSQL fixture.
+**OBSERVED PASSING, 5 October.** The container that gates every patch
+runs Python 3.12, so `pgserver` installs here and the tests are NOT
+skipping: `test_sqlalchemy_adapter.py` 19 passed, `test_source_type_drift.py`
+13 passed, with `pgserver`, `psycopg` and `sqlalchemy` all importable
+and zero SKIPPED.
 
----
+Started one directly to be sure the suite was not passing vacuously:
+**PostgreSQL 16.2**, a real server, over a unix socket.
 
+So the SQLAlchemy adapter -- the production read path -- has real
+PostgreSQL coverage every time the suite runs here. What is not
+established is the 3.13 question: there is still no cp313 wheel, so a
+3.13 environment would skip these silently.
+
+**Blocked on:** whether the project must support Python 3.13. If 3.12
+is the supported runtime, this item is CLOSED and the only change
+worth making is a guard that fails rather than skips when `pgserver`
+is absent -- so a 3.13 machine reports lost coverage instead of a
+green suite.
 # Blocked because it is product direction
 
 ## 4. Thirty-odd recommendations that are not engineering questions
