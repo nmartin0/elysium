@@ -123,17 +123,57 @@ current one, within one generation. Three options were recorded:
 leave it, build an authoritative pin map including link tables, or pin
 per request.
 
-**Blocked on:** the choice. The first option is defensible and should
-be taken explicitly rather than by default.
+**THE CATALOG ANSWER, AND WHEN IT BECOMES RIGHT.** Iceberg's position
+is that snapshot isolation is PER TABLE and cross-table consistency is
+a CATALOG feature -- a REST catalog such as Nessie provides "atomic
+multi-table time travel: query consistent snapshots across multiple
+related tables". Building a pin map across link tables by hand
+reimplements that.
+
+**NOT NOW, AND THE REASON IS OPERATIONAL.** A REST catalog is a
+separate service to run, back up and secure, and the only thing it
+buys today is this property -- which is theoretical: no wrong answer
+has been observed from it.
+
+**THE TRIGGER, WRITTEN DOWN SO IT IS NOT RE-ARGUED: WHEN A SECOND
+PROCESS WRITES TO THE LAKE.** Today `run_sync` is the sole writer,
+which is why per-table snapshots have been sufficient. The moment
+anything else publishes -- a second deployment, a scheduled job, a
+user-triggered rebuild -- multi-table consistency stops being
+theoretical and the catalog becomes the right answer rather than an
+addition.
+
+**Blocked on:** nothing, deliberately. Leave it, and revisit when a
+second writer appears.
 
 ## 3. `DEP-1` to `DEP-6` -- five dependency adoptions
 
 Each is a yes or no about a named library. Cheap to answer, and not
 mine to answer.
 
-**Blocked on:** six yes-or-nos. `DEP-4` gates item 10, because the
-configuration round trip needs `ruamel.yaml` and it is not a
-dependency today.
+**CORRECTED 4 OCTOBER.** This said `DEP-4` gates the configuration
+round trip because it needs `ruamel.yaml`. THAT IS FALSE. `DEP-4` is
+phonenumbers, holidays, email-validator and ftfy; `ruamel` is not a
+`DEP` item at all. I invented the link in an earlier patch and it has
+sat here since, making this item look like a blocker for item 10 when
+it is not.
+
+**ALL SIX ALREADY CARRY VERDICTS** in the checklist -- ADOPT, ADOPT,
+ADOPT, CONDITIONAL, AVOID, REJECT. The analysis was done; what is
+missing is a decision to act on it.
+
+**`DEP-5` IS RESOLVED WITHOUT COUNSEL.** It reads "AVOID: pycountry
+(LGPL); python-stdnum pending counsel". pycountry is LGPL-2.1-only on
+PyPI, listed as LGPL-3.0 by one aggregator, and described as "a
+permissive MIT-style license" by a third-party site that is simply
+wrong -- a dependency whose licence is misreported in public is one
+that must be re-explained at every audit. Permissive replacements
+cover the same standards: `pycountries` (MIT, ISO 3166/4217/639),
+`py-country-codes` (MIT, zero dependencies), `countrywrangler` (MIT).
+Nothing imports any of them today, so this is a dependency under
+consideration rather than one in use.
+
+**Blocked on:** five yes-or-nos, `DEP-5` having answered itself.
 
 ---
 
@@ -591,9 +631,30 @@ condition and the reason it sharpened:
 > cards with links, not a grid, so `role="grid"` without the full
 > keyboard contract would be worse than native semantics.
 
-**Blocked on:** knowing whether anyone uses this daily. A partial grid
-contract is worse than none, so the trigger is real rather than an
-excuse.
+**THE GATE IS ANSWERED: THE OWNER WANTS IT.** Asked directly on 4
+October, the answer was unambiguous -- quality-of-life functionality
+for people who live in the tool is wanted. So "does anyone use this
+daily" is no longer what holds it.
+
+**AND THE QUOTED REASONING ABOVE IS HALF WRONG.** The ARIA Authoring
+Practices Guide says the grid pattern is FOR exactly this case: "when
+data elements are links to more information, rather than presenting
+them in a static table and including the links in the tab sequence,
+implementing the grid pattern provides users with intuitive and
+efficient keyboard navigation of the grid contents as well as a
+shorter tab sequence" -- and its own first worked example is "Simple
+List of Links". Cards-with-links does not disqualify the pattern. The
+second half stands: a partial contract is worse than none.
+
+**WHAT ACTUALLY HOLDS IT IS THAT THE LIST DOES NOT EXIST.** Checked:
+`ui/src/` is a shell -- App, Shell, and tests. The only rendered list
+is the navigation rail, three items, where plain links are the
+convention and tabbing is not painful. The hundred-result grid this
+pattern is for is Object Explorer's table, which is item 11.
+
+**Blocked on:** the results list existing. It lands with Object
+Explorer, not before, and the keyboard contract should be designed in
+rather than retrofitted.
 
 ## 20. PostgreSQL row-level security for MAC
 
