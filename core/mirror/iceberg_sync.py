@@ -497,7 +497,13 @@ class IcebergMirrorSync(MirrorSync):
                     object_types: frozenset | None = None,
                     link_pair: tuple = (),
                     accept_deletions: bool = False,
-                    rebuild: set | None = None) -> SyncResult:
+                    rebuild: set | None = None,
+                    # THE COLUMN A TYPE'S MAC VALUE LIVES IN, so transform can
+                    # leave it alone -- standardising it changes who may see the
+                    # row. LAST, and keyword-only in practice: inserting it among
+                    # the existing parameters shifted every positional argument
+                    # at the one call site that passes them that way.
+                    security_column: "str | None" = None) -> SyncResult:
         # HELD FOR THIS CALL so the drift check can ask the write log
         # by OBJECT TYPE (PA001-A1). Per-call rather than per-instance
         # because one IcebergMirrorSync syncs every table in turn.
@@ -655,7 +661,8 @@ class IcebergMirrorSync(MirrorSync):
             ]
             columns = [*columns, LINK_ID_COLUMN]
 
-        transformed = transform_rows(source_rows, columns, column_types, standardisation)
+        transformed = transform_rows(source_rows, columns, column_types, standardisation,
+                                     security_column=security_column)
         if transformed.has_drift and self._on_type_mismatch == "quarantine":
             # THE ROW, NOT THE TABLE. Databricks separates a MALFORMED
             # RECORD from a TYPE MISMATCH -- "only incomplete and

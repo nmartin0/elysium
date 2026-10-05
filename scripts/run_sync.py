@@ -656,6 +656,11 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                     target.object_types, target.link_pair,
                     f"{target.silo_name}.{target.table_name}" in accepted,
                     rebuilding,
+                    # THE COLUMN SILVER MUST NOT CANONICALISE -- LLM3-3.
+                    # Standardising a MAC value changes who may see the
+                    # row: measured, "N/A" becomes None and the object
+                    # belongs to no compartment at all.
+                    security_column=target.security_column,
                 )
             except Exception as exc:
                 # Per-table, deliberately -- see this module's docstring.

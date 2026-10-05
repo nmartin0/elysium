@@ -110,7 +110,8 @@ class TransformResult:
 
 def transform_rows(rows: list[dict], columns: list[str],
                     column_types: dict[str, str] | None = None,
-                    standardisation: dict[str, dict] | None = None) -> TransformResult:
+                    standardisation: dict[str, dict] | None = None,
+                    security_column: "str | None" = None) -> TransformResult:
     """Casts every column to its ontology-declared type, reporting any
     column whose real data does not fit.
 
@@ -139,7 +140,25 @@ def transform_rows(rows: list[dict], columns: list[str],
             # is what lets it coerce as an integer at all, and a
             # declared sentinel becomes a real NULL rather than a
             # string that fails to coerce and reads as drift.
-            value = standardise(row[column], (standardisation or {}).get(column))
+            # THE SECURITY COLUMN IS NOT CANONICALISED -- `LLM3-3`.
+            #
+            # Standardisation makes values COMPARABLE, and a security
+            # value is not compared to other values: it is compared to
+            # the CALLER's own, and it decides who may see the row.
+            #
+            # MEASURED, not theorised. With the dev rules a region of
+            # "N/A" becomes None -- `null_if` reads it as a sentinel --
+            # and the object then belongs to no compartment at all.
+            # `" us-west "` becomes `"us-west"`, which stops matching a
+            # caller whose own value kept its spacing.
+            #
+            # Fail-closed in the first case, a silent mismatch in the
+            # second, and neither visible to anyone. The pipeline was
+            # rewriting the thing MAC reads.
+            if column == security_column:
+                value = row[column]
+            else:
+                value = standardise(row[column], (standardisation or {}).get(column))
             try:
                 cleaned_row[column] = coerce(value, declared, source_timezone)
             except (ValueError, TypeError):

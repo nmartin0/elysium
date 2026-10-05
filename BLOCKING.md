@@ -92,7 +92,29 @@ write-up.
 **Also closes:** `R50` and `R52`, both of which sit downstream of
 where the value lives.
 
-**Blocked on:** a design decision with migration consequences.
+**THE RISK IS MEASURED, AND HALF-FIXED.** Before building a migration
+I checked whether the pipeline actually rewrites the value MAC reads.
+It does: `transform_rows` standardised EVERY column, including that
+one. With the deployment's own rules a region of `"N/A"` became None
+and the object belonged to no compartment at all; `" us-west "` became
+`"us-west"` and stopped matching a caller whose value kept its
+spacing. Fail-closed in the first case, a silent mismatch in the
+second, neither visible to anyone.
+
+Silver now leaves the security column exactly as the source wrote it,
+resolved from the type's own declaration and refusing when two types
+sharing a table disagree about where their value lives. Verified
+end-to-end on a real sync: both values survive.
+
+**THAT IS NOT THE SIDE TABLE**, which the owner chose. It stops the
+pipeline rewriting the column that exists today, and it produces the
+evidence the migration needed. What remains of the argument for moving
+the value is the one recorded above: every FUTURE pipeline stage must
+remember the same rule, and a rule that must be remembered is the
+thing the side table removes.
+
+**Blocked on:** whether the side table is still worth the migration
+now the column is no longer rewritten.
 
 ## 2. `A6` -- one generation serving two ages
 

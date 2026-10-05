@@ -103,6 +103,20 @@ class SyncTarget:
     # the storage block, because it is a property of the TABLE.
     duplicate_policy: DuplicatePolicy = field(default_factory=DuplicatePolicy)
 
+    # THE COLUMN HOLDING THIS TABLE'S MAC VALUE, or None.
+    #
+    # Silver must NOT canonicalise it -- `LLM3-3`. Standardisation
+    # makes values comparable, and a security value is compared to
+    # the CALLER's own, not to other rows. Measured with the dev
+    # rules: a region of "N/A" becomes None and the object belongs
+    # to no compartment at all; `" us-west "` becomes `"us-west"`
+    # and stops matching a caller whose value kept its spacing.
+    #
+    # ONE PER TABLE, not per type. Two types sharing a table must
+    # agree about where their security value lives, and if they do
+    # not, this is the place that notices.
+    security_column: "str | None" = None
+
 
 # The column a join table is keyed by, synthesised from its pair.
 LINK_ID_COLUMN = "_link_id"
@@ -130,7 +144,31 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
                              "fields_by_column": {}, "object_types": set(),
                              "standardisation": {},
                              "expectations": {},
-                             "duplicate_policy": duplicate_policy}
+                             "duplicate_policy": duplicate_policy,
+                             "security_column": None}
+            # THE SECURITY COLUMN, taken from the type's own declaration
+            # in the SAME walk the other per-column facts come from.
+            #
+            # `via_field` is deliberately not handled: that security value
+            # lives on a DIFFERENT type's row, so this table has no column
+            # to protect and the protection belongs to the table that
+            # does.
+            declared_security = (type_def.get("security") or {}).get("field")
+            if declared_security and declared_security in columns:
+                held = by_table[key]["security_column"]
+                if held is None:
+                    by_table[key]["security_column"] = declared_security
+                elif held != declared_security:
+                    # TWO TYPES SHARING A TABLE DISAGREE about where their
+                    # MAC value lives. Refusing beats picking one: the
+                    # wrong choice means a column nobody protects.
+                    raise ValueError(
+                        f"{silo_name}.{table_name} is used by object types that declare "
+                        f"different security fields ({held!r} and "
+                        f"{declared_security!r}). Silver must leave the security "
+                        f"column uncanonicalised, and it cannot leave two."
+                    )
+
             existing = by_table[key]["columns"]
             for column in columns:
                 if column not in existing:
@@ -188,6 +226,7 @@ def resolve_sync_targets(schema: dict) -> list[SyncTarget]:
             standardisation=entry["standardisation"],
             expectations=entry["expectations"],
             duplicate_policy=entry["duplicate_policy"],
+            security_column=entry["security_column"],
         )
         for (silo_name, table_name), entry in by_table.items()
     ] + _join_table_targets(schema, set(by_table))
