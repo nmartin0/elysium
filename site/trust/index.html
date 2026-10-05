@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Trust centre — Elysium</title>
+    <meta name="description" content="Elysium's security posture, subprocessors and data handling." />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/site.css" />
+    <script src="/js/consent.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="wrap masthead">
+      <a class="wordmark" href="/">Elysium</a>
+      <nav aria-label="Main">
+        <a href="/trust/">Trust</a>
+        <a href="/demo/">Demo</a>
+        <a class="btn btn--primary" href="/demo/">Try the demo</a>
+      </nav>
+    </header>
+
+    <main id="main" class="wrap prose">
+      <h1>Trust centre</h1>
+      <p class="updated">
+        <strong>NOT YET WRITTEN.</strong> This page is a placeholder with the right
+        structure and the wrong content. This is the highest-value page on the site for a product that sells access control, and the one that most needs real content: certifications, a subprocessor list with a changelog, data residency, incident history, and a signable DPA. The convention is public posture with the SOC 2 report gated behind an NDA.
+      </p>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <ul>
+          <li><a href="/trust/">Trust centre</a></li>
+          <li><a href="/legal/privacy/">Privacy</a></li>
+          <li><a href="/legal/terms/">Terms</a></li>
+          <li><a href="/legal/cookies/">Cookies</a></li>
+          <li><a href="/legal/accessibility/">Accessibility</a></li>
+          <li><a href="#" data-consent-reopen>Cookie settings</a></li>
+        </ul>
+        <p>© Elysium. Built in the open.</p>
+      </div>
+    </footer>
+
+    <aside class="consent" data-consent hidden aria-label="Cookie settings">
+      <div class="consent__inner">
+        <p>
+          We use cookies that are necessary to make this site work. With your permission we
+          would also like to use optional ones — see our
+          <a href="/legal/cookies/">cookie policy</a>.
+        </p>
+        <div class="actions">
+          <button class="btn btn--quiet btn--consent" type="button" data-consent-action="reject">
+            Reject all
+          </button>
+          <button class="btn btn--primary btn--consent" type="button" data-consent-action="accept">
+            Accept all
+          </button>
+          <button class="btn btn--quiet" type="button" data-consent-action="customise">
+            Customise
+          </button>
+        </div>
+      </div>
+
+      <div class="consent__inner" data-consent-panel hidden>
+        <div class="consent__categories">
+          <div class="consent__category">
+            <input type="checkbox" id="consent-necessary" checked disabled />
+            <span><label for="consent-necessary"><strong>Necessary</strong></label> — sign-in
+              and security. Always on, and cannot be switched off.</span>
+          </div>
+          <div class="consent__category">
+            <input type="checkbox" id="consent-analytics" data-consent-category="analytics" />
+            <span><label for="consent-analytics"><strong>Analytics</strong></label> — how the
+              site is used, so we can improve it.</span>
+          </div>
+          <div class="consent__category">
+            <input type="checkbox" id="consent-marketing" data-consent-category="marketing" />
+            <span><label for="consent-marketing"><strong>Marketing</strong></label> — measuring
+              whether our advertising reaches anyone.</span>
+          </div>
+          <div class="actions">
+            <button class="btn btn--primary" type="button" data-consent-action="save">
+              Save choices
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </body>
+</html>

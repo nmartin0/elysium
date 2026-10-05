@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Elysium — ask your data questions, safely</title>
+    <meta
+      name="description"
+      content="Elysium answers questions against your organisation's data through a declared ontology. The model never gets database access, and is never trusted to judge what it may see."
+    />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/site.css" />
+    <script src="/js/consent.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="wrap masthead">
+      <a class="wordmark" href="/">Elysium</a>
+      <nav aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="#security">Security</a>
+        <a href="/trust/">Trust</a>
+        <a href="/demo/">Demo</a>
+        <a class="btn btn--primary" href="/demo/">Try the demo</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <div class="wrap hero">
+        <h1>Ask your data questions.<br />Without handing it over.</h1>
+        <p class="lede">
+          Elysium answers questions — and, with permission, makes changes — against your
+          organisation's data through a declared ontology. The model never gets direct
+          database access, and is never trusted to judge what it is allowed to see.
+        </p>
+        <div class="actions">
+          <a class="btn btn--primary" href="/demo/">Try the demo</a>
+          <a class="btn btn--quiet" href="#how">How it works</a>
+        </div>
+      </div>
+
+      <section id="how" class="wrap">
+        <h2>An ontology, not a connection string</h2>
+        <p>
+          Object types, fields and links are declared once in YAML and resolved live against
+          your real databases at the moment they are needed. Nothing is copied into a vector
+          store, and nothing is answered from a snapshot the model happens to remember.
+        </p>
+        <div class="grid">
+          <div class="card">
+            <h3>Declared, not inferred</h3>
+            <p>
+              A field the ontology does not declare does not exist, as far as any question is
+              concerned.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Resolved live</h3>
+            <p>
+              Answers come from your databases at the moment the question is asked, through
+              adapters that are structurally unable to write.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Writes are proposals</h3>
+            <p>
+              A change the model suggests is a proposal a person approves. The approver's own
+              permissions are re-checked at the moment they approve.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="security" class="wrap">
+        <h2>The model is never the thing deciding</h2>
+        <p>
+          Every read is checked against the asking user's grants before it is served, and
+          mandatory access control runs underneath that: an object in a compartment you
+          cannot see is indistinguishable from an object that does not exist.
+        </p>
+        <div class="grid">
+          <div class="card">
+            <h3>Per field, per row</h3>
+            <p>
+              Permissions are granted per object type and per field. Two colleagues asking the
+              same question can correctly get different answers.
+            </p>
+          </div>
+          <div class="card">
+            <h3>One organisation per instance</h3>
+            <p>
+              A server instance runs one organisation's data. There is no multi-tenant store to
+              get wrong.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Everything is logged</h3>
+            <p>
+              Every field access, every refusal and every approved write, with the request that
+              caused it.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="wrap">
+        <h2>See it working</h2>
+        <p>
+          The demo is a real Elysium instance with synthetic data. Ask it questions, propose a
+          change, approve it as somebody else, and watch the audit log fill in.
+        </p>
+        <div class="actions">
+          <a class="btn btn--primary" href="/demo/">Try the demo</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <ul>
+          <li><a href="/trust/">Trust centre</a></li>
+          <li><a href="/legal/privacy/">Privacy</a></li>
+          <li><a href="/legal/terms/">Terms</a></li>
+          <li><a href="/legal/cookies/">Cookies</a></li>
+          <li><a href="/legal/accessibility/">Accessibility</a></li>
+          <li><a href="#" data-consent-reopen>Cookie settings</a></li>
+        </ul>
+        <p>© Elysium. Built in the open.</p>
+      </div>
+    </footer>
+
+    <!-- PRIOR CONSENT: nothing non-essential loads above this point.
+         "Reject all" is at the first layer and the same size as
+         "Accept all" -- an unequal pair is a dark pattern and the
+         current enforcement priority. -->
+    <aside class="consent" data-consent hidden aria-label="Cookie settings">
+      <div class="consent__inner">
+        <p>
+          We use cookies that are necessary to make this site work. With your permission we
+          would also like to use optional ones — see our
+          <a href="/legal/cookies/">cookie policy</a>.
+        </p>
+        <div class="actions">
+          <button class="btn btn--quiet btn--consent" type="button" data-consent-action="reject">
+            Reject all
+          </button>
+          <button
+            class="btn btn--primary btn--consent"
+            type="button"
+            data-consent-action="accept"
+          >
+            Accept all
+          </button>
+          <button class="btn btn--quiet" type="button" data-consent-action="customise">
+            Customise
+          </button>
+        </div>
+      </div>
+
+      <div class="consent__inner" data-consent-panel hidden>
+        <div class="consent__categories">
+          <div class="consent__category">
+            <input type="checkbox" id="consent-necessary" checked disabled />
+            <span
+              ><label for="consent-necessary"><strong>Necessary</strong></label> — sign-in and
+              security. Always on, and cannot be switched off.</span
+            >
+          </div>
+          <div class="consent__category">
+            <input type="checkbox" id="consent-analytics" data-consent-category="analytics" />
+            <span
+              ><label for="consent-analytics"><strong>Analytics</strong></label> — how the site
+              is used, so we can improve it.</span
+            >
+          </div>
+          <div class="consent__category">
+            <input type="checkbox" id="consent-marketing" data-consent-category="marketing" />
+            <span
+              ><label for="consent-marketing"><strong>Marketing</strong></label> — measuring
+              whether our advertising reaches anyone.</span
+            >
+          </div>
+          <div class="actions">
+            <button class="btn btn--primary" type="button" data-consent-action="save">
+              Save choices
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </body>
+</html>
