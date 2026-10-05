@@ -994,3 +994,127 @@ section {
   background: var(--accent);
   color: #05080e;
 }
+
+/* ============================================================
+ * THE RIGHT HALF OF THE PAGE WAS EMPTY.
+ *
+ * The owner, after I twice misread this as a text-align question:
+ * "the whole fucking text of the site is hugging the left side of the
+ * site, where the right side looks barren like a fucking desert."
+ *
+ * Measured: a 78rem container holding a 34rem measure, with nothing
+ * in the other 44rem. Every block pinned to the left edge of a page
+ * twice its width. That is not an alignment problem -- the text was
+ * correctly left-aligned the whole time -- it is a LAYOUT problem.
+ * There was no second column, so the measure sat alone in a wide
+ * frame.
+ *
+ * TWO FIXES, TOGETHER:
+ *
+ * 1. THE CONTAINER COMES IN. 78rem was chosen so the diagram had
+ *    room; the diagram can break out on its own instead. 64rem means
+ *    a 34rem measure occupies half the frame rather than a third.
+ *
+ * 2. SECTIONS BECOME TWO COLUMNS. The heading and its lede sit in a
+ *    narrow left column; the content fills the right. This is the
+ *    editorial pattern every documentation site converges on, and it
+ *    fills the width WITHOUT widening the measure past the readable
+ *    45-75 characters.
+ * ============================================================ */
+
+:root {
+  --column: 64rem;
+}
+
+/* The diagram is the exception and breaks out to its own width. */
+.stage {
+  max-width: 82rem;
+  margin-inline: auto;
+}
+
+/* ---- the two-column section ----
+ *
+ * Left: what this section is. Right: the thing itself. On one column
+ * they stack in the same order, so the narrative survives on a phone.
+ */
+.band {
+  display: grid;
+  gap: clamp(var(--s-3), 4vw, var(--s-8));
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 54rem) {
+  .band {
+    grid-template-columns: minmax(14rem, 20rem) 1fr;
+  }
+
+  /* The heading column sticks while its content scrolls past -- the
+   * reader always knows which section they are in, and the left
+   * column stops looking abandoned once the right one is long. */
+  .band__head {
+    position: sticky;
+    top: 6rem;
+  }
+}
+
+.band__head h2 {
+  margin-bottom: var(--s-2);
+}
+
+.band__head p {
+  color: var(--ink-soft);
+  font-size: var(--t-sm);
+  max-width: 28ch;
+  margin-bottom: 0;
+}
+
+.band__body > :first-child {
+  margin-top: 0;
+}
+
+/* ---- the hero fills the frame ----
+ *
+ * Copy left, a short at-a-glance list right. The split hero is "the
+ * most versatile pattern -- the asymmetry is intentional and reads as
+ * designed", and it is the thing that stops the first screen being
+ * half empty.
+ */
+@media (min-width: 54rem) {
+  .hero {
+    display: grid;
+    grid-template-columns: 1.25fr 0.75fr;
+    gap: clamp(var(--s-4), 5vw, var(--s-8));
+    align-items: end;
+  }
+
+  .hero__aside {
+    padding-bottom: var(--s-1);
+  }
+}
+
+.hero__aside dl {
+  margin: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.hero__aside dt {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.hero__aside dd {
+  margin: 0.25rem 0 0;
+  font-size: var(--t-sm);
+  color: var(--ink-soft);
+  max-width: 28ch;
+}
+
+.hero__aside div + div {
+  padding-top: var(--s-2);
+  border-top: var(--rule);
+}

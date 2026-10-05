@@ -659,9 +659,38 @@ class TestAlignmentVariesBySection:
     LANDING = (SITE / "index.html").read_text(encoding="utf-8")
     CSS = (SITE / "css/site.css").read_text(encoding="utf-8")
 
-    def test_at_least_one_section_head_is_centred(self):
-        assert "section-head--centre" in self.LANDING
-        assert ".section-head--centre {" in self.CSS
+    def test_the_right_half_of_the_page_is_not_empty(self):
+        """THE ACTUAL COMPLAINT, which I twice misread as a text-align
+        question: "the whole text of the site is hugging the left side,
+        where the right side looks barren".
+
+        Measured at the time: a 78rem container holding a 34rem
+        measure, with nothing in the other 44rem. The text was
+        correctly left-aligned throughout -- there was simply no second
+        column, so every block sat alone in a frame twice its width.
+
+        Sections are two columns now: what this section is on the left,
+        the thing itself on the right."""
+        assert 'class="band"' in self.LANDING
+        assert 'class="band__head"' in self.LANDING
+        assert 'class="band__body"' in self.LANDING
+
+    def test_the_hero_fills_the_frame(self):
+        """The first screen was the worst of it -- a headline and one
+        paragraph in the left third."""
+        assert 'class="hero__aside"' in self.LANDING
+
+    def test_the_container_is_not_far_wider_than_the_measure(self):
+        """78rem around a 34rem measure leaves 44rem of nothing. The
+        container came in to 64rem and the diagram breaks out on its
+        own instead."""
+        import re
+
+        column = float(re.findall(r"--column: ([\d.]+)rem", self.CSS)[-1])
+        measure = float(re.findall(r"--measure: ([\d.]+)rem", self.CSS)[-1])
+
+        assert column - measure <= 32, (
+            f"{column - measure:.0f}rem of the frame has nothing in it")
 
     def test_a_centred_head_centres_its_lede_too(self):
         """"A centered headline should not go with a left aligned

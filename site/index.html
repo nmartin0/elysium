@@ -27,6 +27,7 @@
 
     <main id="main">
       <div class="wrap hero">
+        <div>
         <p class="eyebrow">An ontology between the model and your data</p>
         <h1>Ask your data questions. Without handing it over.</h1>
         <p class="lede">
@@ -38,6 +39,29 @@
           <a class="btn btn--primary" href="/demo/">Try the live demo</a>
           <a class="btn btn--quiet" href="#how">or see how it works</a>
         </div>
+        </div>
+
+        <!-- THE RIGHT COLUMN. Without it the first screen was a
+             34rem measure alone in a 78rem frame, which is what the
+             owner meant by the right side looking barren. -->
+        <div class="hero__aside">
+          <dl>
+            <div>
+              <dt>Declared</dt>
+              <dd>Object types, fields and links in one YAML file. Nothing is inferred.</dd>
+            </div>
+            <div>
+              <dt>Resolved live</dt>
+              <dd>Answered from your databases at the moment you ask, never from a copy the
+                model remembers.</dd>
+            </div>
+            <div>
+              <dt>Checked per field</dt>
+              <dd>Two colleagues asking one question correctly get different answers.</dd>
+            </div>
+          </dl>
+        </div>
+
       </div>
 
       <!-- THE DIAGRAM IS THE HERO IMAGE. It is the only thing on the
@@ -202,13 +226,15 @@
       </div>
 
       <section id="how" class="wrap">
-        <div class="section-head section-head--centre">
+        <div class="band">
+          <div class="band__head">
         <h2>You declare the ontology. It is the whole interface.</h2>
         <p>
           Object types, fields, links and who may see what — written once, in YAML, and
           resolved live against your real databases at the moment a question is asked.
         </p>
         </div>
+          <div class="band__body">
 
         <div class="split">
           <pre class="snippet"><code><i># alice asks, and holds read:Customer.region</i>
@@ -268,15 +294,20 @@
             </p>
           </div>
         </div>
+      </div>
+        </div>
       </section>
 
       <section id="security" class="wrap">
+        <div class="band">
+          <div class="band__head">
         <h2>A write is a proposal, not an action</h2>
         <p>
           When the model concludes something should change, the run stops and a person
           decides. The approver's own permissions are re-checked at the moment they approve —
           not the asker's, and not the ones anybody held when the proposal was made.
-        </p>
+        </p></div>
+          <div class="band__body">
 
         <pre class="snippet"><code><b>PROPOSED</b>  UpdateCustomerRegion
   customer   Ada Okafor
@@ -311,6 +342,8 @@
               declared action type and a human decision.
             </p>
           </div>
+        </div>
+      </div>
         </div>
       </section>
 
