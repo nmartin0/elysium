@@ -113,6 +113,7 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Any, cast
 
+from core.carried_columns import SECURITY_COLUMN
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.filters import FieldFilter, row_matches, validate_filter
 from core.intermediate_layer.access_control import check_access
@@ -607,6 +608,52 @@ class DataMediator:
 
         if "field" in security:
             field_name = security["field"]
+
+            # THE CARRIED COLUMN FIRST -- `LLM3-3`.
+            #
+            # `_security` holds this value copied once, at sync, into the
+            # namespace every pipeline stage carries forward unchanged.
+            # Reading it rather than the declared column makes MAC's input
+            # immune to whatever a later stage does to the data: an
+            # enrichment that rewrites `region`, a redaction that blanks
+            # it, a standardisation that folds its case.
+            #
+            # MEASURED DAMAGE BEFORE THE COLUMN EXISTED: a region of
+            # "N/A" became None and the object belonged to no compartment
+            # at all; `" us-west "` became `"us-west"` and stopped
+            # matching a caller whose own value kept its spacing.
+            #
+            # RESOLVED ON THE DECLARED FIELD, deliberately. `_security`
+            # is not a declared field and has no storage of its own --
+            # `with_lineage` writes it into the SAME table the declared
+            # field lives in, so that field is what says which adapter
+            # holds it.
+            #
+            # NO NEW STALENESS, which was the objection and it does not
+            # survive checking: the mediator reads through GoldConnector,
+            # so MAC has always seen a PUBLISHED snapshot rather than
+            # live data. A write reaches MAC at the next sync either way,
+            # and `_security` is republished in the same sync as the
+            # column it came from.
+            adapter, resolved = self._resolve_shared_storage(
+                object_type, [field_name])
+            try:
+                carried = self._read_field_with_log_check(
+                    object_type, object_id, SECURITY_COLUMN,
+                    adapter, resolved)
+            except Exception:  # noqa: BLE001 - no such column, by design
+                # A DEPLOYMENT READING LIVE SOURCES HAS NO `_security`,
+                # and that is not a weakening: no sync means no pipeline,
+                # so nothing can rewrite the value between the source and
+                # this read. The thing the column protects against does
+                # not exist there.
+                #
+                # Measured: reading it unconditionally failed 146 tests,
+                # every one a fixture reading an adapter directly.
+                carried = None
+            if carried is not None:
+                return carried
+
             adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
             # Checks the write log FIRST, via the SAME shared
             # _read_field_with_log_check() get_field() and
