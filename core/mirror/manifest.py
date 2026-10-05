@@ -286,6 +286,31 @@ def publish(catalog, generation: int, loaded_at: str, source_digest: str,
 def read_manifests(catalog) -> list[dict[str, Any]]:
     """Every manifest in the lake, newest generation first.
 
+    READ-ONLY INPUT, AND IT MUST NEVER BECOME CONFIGURATION. This is
+    the function somebody reaches for when they want to bootstrap a
+    deployment from the lake -- "the config is gone, rebuild it from
+    what the mirror knows" -- and the answer is no, permanently,
+    decided 5 October.
+
+    A COPY THAT CAN BECOME A SOURCE OF TRUTH IS A COPY THAT CAN
+    DISAGREE WITH ONE, and the whole reason this is a copy is to avoid
+    that. Configuration produces the lake. If the lake could also
+    produce configuration there would be a cycle with no authority at
+    either end, and the failure is quiet: a deployment that boots from
+    a stale manifest and serves an ontology nobody declared.
+
+    THE SCENARIO THAT TEMPTS IT IS DISASTER RECOVERY, and the answer
+    there is backing up the configuration, which
+    `scripts/backup_deployment.py` already does. A manifest is for
+    answering "what does the lake think it holds", which is a question
+    an operator asks, not a question a loader asks.
+
+    This note is here rather than only in BLOCKING.md because planning
+    documents get consumed -- thirty-five of them this month -- and a
+    reason that lives only in a list someone will delete is a reason
+    that gets rediscovered the hard way.
+
+
     RETURNS WHAT IT CAN RATHER THAN RAISING. A manifest that cannot be
     parsed is a finding to report, not a reason to hide the ones that
     can.
