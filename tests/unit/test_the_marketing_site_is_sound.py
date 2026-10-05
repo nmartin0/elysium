@@ -173,14 +173,44 @@ class TestTheConsentScript:
 
 
 class TestItLooksLikeTheProduct:
-    def test_the_tokens_are_the_product_tokens(self):
-        """A prospect clicking through to the demo should not watch the
-        colours change. Copied rather than imported, because the site
-        has no build step -- so this asserts the copy is current."""
-        site_tokens = (SITE / "css/tokens.css").read_text(encoding="utf-8")
-        product = Path("ui/packages/shell-api/src/tokens.css").read_text(encoding="utf-8")
+    def test_the_site_owns_its_palette(self):
+        """NOT A COPY OF THE PRODUCT'S, and this test used to assert
+        the opposite. Enforcing byte-equality with
+        ui/packages/shell-api/src/tokens.css meant a colour change in
+        the application broke the marketing site -- a coupling between
+        two things that are meant to be separable, whatever the
+        directory layout says.
 
-        assert site_tokens == product
+        The VALUES still match, because a prospect clicking into the
+        demo should not watch the colours change. They match by being
+        chosen to."""
+        site_tokens = (SITE / "css/tokens.css").read_text(encoding="utf-8")
+
+        assert "--blue-400" in site_tokens
+        assert "@layer" not in site_tokens, "product cascade detail does not belong here"
+
+    def test_nothing_under_site_reaches_into_the_product(self):
+        """The isolation, asserted rather than assumed. A relative path
+        out of this directory, or a reference to ui/ or core/, would
+        mean the site cannot be moved or deployed on its own."""
+        # LINKS AND IMPORTS, not prose. A first version grepped the
+        # raw text and failed on its own explanatory comments, which
+        # name `ui/packages/shell-api` precisely to say the site no
+        # longer copies from it. What matters is whether anything
+        # RESOLVES outside this directory.
+        reaching = []
+        for path in SITE.rglob("*"):
+            if not path.is_file():
+                continue
+            source = path.read_text(encoding="utf-8")
+            for match in re.findall(r'(?:href|src)="([^"]+)"', source):
+                if match.startswith("../") or match.startswith("ui/"):
+                    reaching.append(f"{path}: {match}")
+            for match in re.findall(r"@import\s+[\"']([^\"']+)", source):
+                if match.startswith(".."):
+                    reaching.append(f"{path}: {match}")
+
+        assert reaching == [], reaching
 
     @pytest.mark.parametrize("page", PAGES, ids=lambda p: str(p))
     def test_every_page_uses_them(self, page):
@@ -210,3 +240,55 @@ class TestTheBasicsNobodyChecks:
 
         assert 'class="skip"' in source, str(page)
         assert 'id="main"' in source, str(page)
+
+
+class TestItIsAboutElysiumSpecifically:
+    """The first version of this page could have described any data
+    tool: three cards saying "fast", "secure", "live". The owner's
+    words were that it was "its own thing", not Elysium.
+
+    What makes it Elysium is the ONTOLOGY -- a declared YAML file that
+    is the whole interface -- and a write being a PROPOSAL a person
+    approves. Both are now on the page as the thing itself rather than
+    a claim about it, and these tests stop that drifting back."""
+
+    LANDING = (SITE / "index.html").read_text(encoding="utf-8")
+
+    def test_the_ontology_is_shown_not_described(self):
+        """A prospect for this product wants to see the YAML, not a
+        paragraph about how declarative it is."""
+        assert "object_types:" in self.LANDING
+        assert "id_field:" in self.LANDING
+        assert "security:" in self.LANDING
+
+    def test_the_security_field_is_what_is_highlighted(self):
+        """Of everything in that fragment, the line that distinguishes
+        Elysium from a schema file is the one naming who may see a
+        row."""
+        i = self.LANDING.index("object_types:")
+        snippet = self.LANDING[i:i + 900]
+
+        assert "<b>security:" in snippet
+
+    def test_the_approval_flow_is_shown(self):
+        """A write being a proposal somebody approves, with the
+        APPROVER's grants re-checked, is the other thing only this
+        product does."""
+        assert "PROPOSED" in self.LANDING
+        assert "APPROVED" in self.LANDING
+        assert "re-checked" in self.LANDING
+
+    def test_no_syntax_highlighting_library(self):
+        """Forty kilobytes to colour nine lines, on the page that must
+        load fastest. The two things worth an eye are marked in the
+        markup."""
+        for page in PAGES:
+            source = _text(page)
+            assert "prism" not in source.lower(), str(page)
+            assert "highlight.js" not in source.lower(), str(page)
+
+    def test_it_says_what_the_model_cannot_do(self):
+        """The product's claim is negative -- the model never gets
+        database access and is never trusted to judge what it may see.
+        A page that only lists capabilities is selling a chatbot."""
+        assert "never" in self.LANDING.lower()

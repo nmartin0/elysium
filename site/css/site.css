@@ -337,3 +337,61 @@ section {
     scroll-behavior: smooth;
   }
 }
+
+/* ---- code snippets ----
+ *
+ * THE MOST IMPORTANT THING ON THE PAGE. A prospect for this product
+ * wants to see the ontology, not a stock photograph of a dashboard --
+ * the declared YAML is the thing that distinguishes Elysium from a
+ * chatbot with database credentials.
+ */
+
+.snippet {
+  background: var(--grey-900);
+  color: var(--grey-100);
+  border-radius: 10px;
+  padding: 1.35rem 1.5rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.65;
+  margin: 2rem 0;
+  max-width: 44rem;
+  border: 1px solid var(--grey-700);
+}
+
+.snippet code {
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+
+/* Highlighted without a syntax highlighter: the two things worth
+ * drawing an eye to are marked in the markup itself. A 40 kB
+ * highlighting library to colour nine lines is not a trade worth
+ * making on a page that must load fast. */
+.snippet b {
+  color: var(--blue-200);
+  font-weight: 600;
+}
+
+.snippet i {
+  color: var(--grey-400);
+  font-style: normal;
+}
+
+@media (prefers-color-scheme: dark) {
+  .snippet {
+    background: var(--grey-800);
+    border-color: var(--grey-600);
+  }
+}
+
+/* ---- a quiet, product-true hero mark ---- */
+
+.hero__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 1.25rem;
+}

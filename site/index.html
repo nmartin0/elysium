@@ -28,6 +28,7 @@
 
     <main id="main">
       <div class="wrap hero">
+        <p class="hero__eyebrow">An ontology between the model and your data</p>
         <h1>Ask your data questions.<br />Without handing it over.</h1>
         <p class="lede">
           Elysium answers questions — and, with permission, makes changes — against your
@@ -41,64 +42,97 @@
       </div>
 
       <section id="how" class="wrap">
-        <h2>An ontology, not a connection string</h2>
+        <h2>You declare the ontology. It is the whole interface.</h2>
         <p>
-          Object types, fields and links are declared once in YAML and resolved live against
-          your real databases at the moment they are needed. Nothing is copied into a vector
-          store, and nothing is answered from a snapshot the model happens to remember.
+          Object types, fields, links and who may see what — written once, in YAML, and
+          resolved live against your real databases at the moment a question is asked.
         </p>
+
+        <pre class="snippet"><code>object_types:
+  Customer:
+    id_field: customer_id
+    title_field: name
+    <b>security:
+      field: region</b>          <i># who may see a row</i>
+    fields:
+      name:    { type: data }
+      region:  { type: data }
+      email:   { type: data }
+      transactions:
+        type: link          <i># resolved, not joined by the model</i>
+        target: Transaction</code></pre>
+
+        <p>
+          A field this file does not declare does not exist, as far as any question is
+          concerned. There is no schema introspection, no "SELECT *", and nothing for a model
+          to discover on its own.
+        </p>
+
         <div class="grid">
           <div class="card">
-            <h3>Declared, not inferred</h3>
+            <h3>The model never sees a database</h3>
             <p>
-              A field the ontology does not declare does not exist, as far as any question is
-              concerned.
+              It asks for named fields of named objects. The mediator decides whether that
+              caller may have them, then fetches. No SQL is generated, so none can be
+              injected.
             </p>
           </div>
           <div class="card">
-            <h3>Resolved live</h3>
+            <h3>Reads are checked per field</h3>
             <p>
-              Answers come from your databases at the moment the question is asked, through
-              adapters that are structurally unable to write.
+              <code class="mono">read:Customer.email</code> is a grant somebody holds or does
+              not. Two colleagues asking the same question correctly get different answers.
             </p>
           </div>
           <div class="card">
-            <h3>Writes are proposals</h3>
+            <h3>Hidden is indistinguishable from absent</h3>
             <p>
-              A change the model suggests is a proposal a person approves. The approver's own
-              permissions are re-checked at the moment they approve.
+              An object in a compartment you cannot see does not return "forbidden". It
+              returns nothing — because "forbidden" tells you it exists.
             </p>
           </div>
         </div>
       </section>
 
       <section id="security" class="wrap">
-        <h2>The model is never the thing deciding</h2>
+        <h2>A write is a proposal, not an action</h2>
         <p>
-          Every read is checked against the asking user's grants before it is served, and
-          mandatory access control runs underneath that: an object in a compartment you
-          cannot see is indistinguishable from an object that does not exist.
+          When the model concludes something should change, the run stops and a person
+          decides. The approver's own permissions are re-checked at the moment they approve —
+          not the asker's, and not the ones anybody held when the proposal was made.
         </p>
+
+        <pre class="snippet"><code><b>PROPOSED</b>  UpdateCustomerRegion
+  customer   Ada Okafor
+  region     us-west → us-east
+  asked by   alice   <i># whose question caused it</i>
+  <b>awaiting approval</b>
+
+<b>APPROVED</b>  by carol, 14:22:08Z
+  re-checked carol's grants, re-evaluated the criteria,
+  confirmed the proposal still applies
+  <i>written to primary_sql.customers</i></code></pre>
+
         <div class="grid">
-          <div class="card">
-            <h3>Per field, per row</h3>
-            <p>
-              Permissions are granted per object type and per field. Two colleagues asking the
-              same question can correctly get different answers.
-            </p>
-          </div>
           <div class="card">
             <h3>One organisation per instance</h3>
             <p>
-              A server instance runs one organisation's data. There is no multi-tenant store to
-              get wrong.
+              A server runs one organisation's data. There is no multi-tenant store to get
+              wrong, and no row-level tenancy filter to forget.
             </p>
           </div>
           <div class="card">
-            <h3>Everything is logged</h3>
+            <h3>Every access is logged</h3>
             <p>
-              Every field access, every refusal and every approved write, with the request that
-              caused it.
+              Each field read, each refusal and each approved write, tied to the request that
+              caused it and the person who asked.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Your databases stay yours</h3>
+            <p>
+              Read adapters are structurally unable to write. Writing requires a separate,
+              declared action type and a human decision.
             </p>
           </div>
         </div>
