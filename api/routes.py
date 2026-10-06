@@ -137,8 +137,10 @@ from core.auth.auth_cookies import (
 from core.auth.limits import MAX_LOGIN_PASSWORD_LENGTH, MAX_USERNAME_LENGTH
 from core.deployment_loader import build_live_read_adapters
 from core.filters import FieldFilter, as_equality_conditions, parse_filters
+from core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
+from core.masked_review import agreement_pattern, masked_comparison, withheld_fields
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import _row_count, check_mirror
 from core.mirror.quarantine_report import quarantine_for
@@ -395,6 +397,53 @@ class UserSummaryResponse(BaseModel):
 class CreateUserResponse(BaseModel):
     status: str
     username: str
+
+
+class MergeFieldResponse(BaseModel):
+    """One field of a proposed merge, as the reviewer may see it.
+
+    `left` and `right` are OPTIONAL AND ABSENT when the caller may not
+    read that field -- not null, not masked, absent. The literature on
+    masked clerical review is explicit that the reviewing facility
+    "should only have access to those plaintext attributes that are
+    displayed", so a value the reviewer cannot see is never put in the
+    response at all. `response_model_exclude_none` would turn a None
+    into an absent key, which looks the same and is not: the value
+    would still have been serialised into this process, logged on an
+    error, and held in whatever cached it.
+    """
+
+    field: str
+    verdict: str
+    left: str | None = None
+    right: str | None = None
+
+
+class MergeProposalResponse(BaseModel):
+    """A proposed merge awaiting somebody's judgement."""
+
+    proposal_id: str
+    object_type: str
+    left_id: str
+    right_id: str
+    proposed_at: str
+    decision: str
+    decided_by: str | None = None
+    #: The agreement pattern -- what the reviewer actually decides on.
+    #: FUSION_AND_IDENTITY.md: "the reviewer's decision is made on the
+    #: agreement PATTERN, not the score". The score is deliberately NOT
+    #: here: a number invites deference to the matcher, which is the
+    #: thing a human review exists to prevent.
+    pattern: str
+    fields: list[MergeFieldResponse]
+    #: Named so the reviewer knows the comparison was wider than what
+    #: they can see, rather than believing they saw all of it.
+    withheld: list[str]
+
+
+class MergeDecisionRequest(BaseModel):
+    decision: str
+    note: str | None = None
 
 
 class MatchingIdsResponse(BaseModel):
@@ -3175,6 +3224,137 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
         key=lambda object_id: (sort_key(values[object_id]), sort_key(object_id)),
         reverse=descending,
     )
+
+
+def _merge_store(request: Request) -> MergeDecisionStore:
+    return MergeDecisionStore(
+        request.app.state.runtime_paths.data_dir / "identity_decisions.db")
+
+
+def _readable_fields(request: Request, user: UserRecord, object_type: str) -> set[str]:
+    """Which fields of this type THIS caller may read.
+
+    Taken from visible_schema rather than from the policy directly,
+    because that is already "what can this user see" computed once and
+    correctly -- including the mandatory-access half, which a grant
+    check alone would miss.
+    """
+    schema = _generation(request).mediator.visible_schema(user)
+    type_def = (schema or {}).get("object_types", {}).get(object_type) or {}
+    return {
+        name for name, field in (type_def.get("fields") or {}).items()
+        if field.get("readable", True)
+    }
+
+
+@router.get("/merge-proposals", response_model=list[MergeProposalResponse],
+            response_model_exclude_none=True,
+            dependencies=[Depends(_no_store)])
+def merge_proposals_route(request: Request, object_type: str | None = None,
+                          decision: str | None = None,
+                          current_user: UserRecord = Depends(get_current_user)):
+    """Proposed merges, masked to what the caller may read.
+
+    WHY THIS ROUTE EXISTS AT ALL. core/mirror/matching.py proposes that
+    two entities might be one, core/identity_decisions.py stores what
+    was decided, and core/masked_review.py shows a reviewer the verdict
+    without the value. All three were built, tested, and reached by
+    nothing -- 580 lines of finished feature with no way to use it.
+
+    THE MASKING IS NOT COSMETIC. "A reviewer may not be cleared to see
+    the fields that decide the match": the person best placed to judge
+    whether two customers are the same may not be permitted to read the
+    email address that settles it. Every field carries a verdict; only
+    readable fields carry values, and the rest are ABSENT from the
+    response rather than nulled.
+
+    APPROVING A MERGE IS NOT A READ. It requires `write:<Type>`, the
+    same grant any other change to that type needs, because an approved
+    inference "becomes STORED DATA, not edited config" -- it changes
+    what the ontology returns. Seeing the queue needs only read access
+    to the type, so a clerical reviewer can work without being able to
+    rewrite the data they are judging.
+    """
+    generation = _generation(request)
+    roles = generation.config.roles
+    mediator = generation.mediator
+    store = _merge_store(request)
+
+    out = []
+    for proposal in store.proposals(object_type=object_type, decision=decision):
+        if not authorize(current_user, roles, f"read:{proposal.object_type}"):
+            continue
+        readable = _readable_fields(request, current_user, proposal.object_type)
+        try:
+            agreement = json.loads(proposal.agreement or "{}")
+        except (TypeError, ValueError):
+            agreement = {}
+        if not isinstance(agreement, dict):
+            agreement = {}
+        # ONLY THE READABLE FIELDS ARE FETCHED. `masked_comparison`
+        # already withholds by absence, so the RESPONSE is identical
+        # either way -- this is defence in depth, not the mechanism: a
+        # value never retrieved cannot leak through an exception, a
+        # trace, or a future caller that forgets to mask.
+        #
+        # I CLAIMED MORE THAN THIS AND IT WAS NOT TRUE. The comment here
+        # said the audit log would then record no access to a field the
+        # caller may not read. A control removed the intersection and
+        # every test still passed; a test written specifically to catch
+        # it also passed, because the mediator does not name a refused
+        # field in the log either way. The narrower claim is the one
+        # that survives.
+        wanted = sorted(readable & set(agreement))
+        left = mediator.get_object(current_user, proposal.object_type,
+                                   proposal.left_id, wanted) or {}
+        right = mediator.get_object(current_user, proposal.object_type,
+                                    proposal.right_id, wanted) or {}
+        entries = masked_comparison(agreement, left, right, readable)
+        out.append(MergeProposalResponse(
+            proposal_id=proposal.proposal_id,
+            object_type=proposal.object_type,
+            left_id=proposal.left_id,
+            right_id=proposal.right_id,
+            proposed_at=proposal.proposed_at,
+            decision=proposal.decision,
+            decided_by=getattr(proposal, "decided_by", None),
+            pattern=agreement_pattern(entries),
+            fields=[MergeFieldResponse(**entry) for entry in entries],
+            withheld=withheld_fields(entries),
+        ))
+    return out
+
+
+@router.post("/merge-proposals/{proposal_id}/decide", status_code=204)
+def decide_merge_route(proposal_id: str, body: MergeDecisionRequest,
+                       request: Request,
+                       current_user: UserRecord = Depends(get_current_user)):
+    """Approve or reject one proposed merge.
+
+    THE DECISION IS RECORDED, NEVER APPLIED HERE. The store keeps
+    decisions as rows and `approved_pairs` is what the gold build
+    consults; nothing in this path edits an object. A reviewer saying
+    "yes" is evidence for the next build, not a write to a silo.
+    """
+    if body.decision not in (APPROVED, REJECTED):
+        raise HTTPException(
+            status_code=422,
+            detail=f"decision must be {APPROVED!r} or {REJECTED!r}")
+
+    store = _merge_store(request)
+    found = [p for p in store.proposals() if p.proposal_id == proposal_id]
+    if not found:
+        raise HTTPException(status_code=404, detail="Unknown proposal")
+    proposal = found[0]
+
+    roles = _generation(request).config.roles
+    if not authorize(current_user, roles, f"write:{proposal.object_type}"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Deciding a {proposal.object_type} merge needs "
+                   f"write:{proposal.object_type}")
+
+    store.decide(proposal_id, body.decision, current_user.user_id, body.note)
 
 
 @router.get("/objects/{object_type}/matching-ids",

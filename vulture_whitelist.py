@@ -387,6 +387,13 @@ reset_password_route
 current_password
 new_password
 
+# merge_proposals_route / decide_merge_route (api/routes.py) -- FastAPI
+# route handlers, called by the framework through the decorator rather
+# than by name. Every other route in the file is reached the same way;
+# vulture sees a function nobody calls.
+merge_proposals_route
+decide_merge_route
+
 # security_cache_per_request (api/app.py) -- registered by @app.middleware.
 security_cache_per_request
 
