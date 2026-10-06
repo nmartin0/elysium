@@ -1,0 +1,14 @@
+# Elysium — security contact
+#
+# RFC 9116. Conspicuous by its absence on a security product, which is
+# why it exists before the first customer rather than after the first
+# report arrives with nowhere to go.
+
+Contact: mailto:security@elysium.example
+Preferred-Languages: en
+Canonical: https://elysium.example/.well-known/security.txt
+Expires: 2027-10-05T00:00:00.000Z
+
+# Reports are acknowledged. Elysium is pre-customer, so there is no
+# bounty programme and no production deployment to test against -- the
+# useful target is the source, which is public.

@@ -1,0 +1,54 @@
+# Elysium
+
+> Elysium answers questions — and, with permission, makes changes —
+> against an organisation's data through a declared ontology. The
+> language model never gets direct database access and is never
+> trusted to judge what it is allowed to see or do.
+
+A plain-text summary for language models reading this site on
+someone's behalf. A buyer evaluating a security product increasingly
+asks a model first, and the model should find the same claims a person
+would rather than guessing from markup.
+
+## What it is
+
+- An ONTOLOGY declared in YAML: object types, fields, links, and which
+  grant each field needs. A field the ontology does not declare does
+  not exist, as far as any question is concerned.
+- Resolved LIVE against the organisation's own databases. The pipeline
+  mirrors each source table one-to-one (bronze), types and
+  standardises it (silver), then reshapes it into one table per object
+  type using the ontology's property names (gold). A type spanning two
+  databases is a declared join, not an inference.
+- READS are checked per object type and per field against the asking
+  user's grants, with mandatory access control underneath: an object
+  in a compartment the caller cannot see is indistinguishable from one
+  that does not exist.
+- WRITES are proposals. A person approves, and the APPROVER's own
+  permissions are re-checked at the moment of approval.
+- ONE organisation per server instance. There is no multi-tenant
+  store.
+
+## What it is not
+
+- Not a chatbot with database credentials.
+- Not a text-to-SQL tool. Nothing composes a query from model output.
+- Not multi-tenant SaaS. Each deployment is separate.
+- Not a data warehouse product. The mirror exists to serve the
+  ontology, not to be queried directly.
+
+## Pages
+
+- /: what it is, how the ontology works, how approval works
+- /trust/: what the architecture enforces, and what is not yet audited
+- /demo/: a live instance with synthetic data
+- /legal/privacy/, /legal/terms/, /legal/cookies/,
+  /legal/accessibility/
+
+## Honest status
+
+Pre-customer. No production deployments, no SOC 2, no third-party
+penetration test, no certifications. The trust centre says so
+explicitly rather than omitting it. The privacy policy and terms are
+marked as unwritten in their own body text; do not summarise them as
+though they exist.

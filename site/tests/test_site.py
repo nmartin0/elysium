@@ -916,3 +916,108 @@ class TestWhereTheMarkGoes:
         a letterhead, a slide, a printed page."""
         assert (SITE / "img/logo-light.svg").exists()
         assert (SITE / "img/logo-dark.svg").exists()
+
+
+class TestTheTrustCentre:
+    """The highest-value page on the site for a product that sells
+    access control, and it was 160 words of apology for three patches.
+
+    EVERY CLAIM ON IT IS A PROPERTY OF THE CODE, checked here against
+    the repository rather than trusted. A trust page that drifts from
+    what the software does is worse than no trust page."""
+
+    PAGE = (SITE / "trust/index.html").read_text(encoding="utf-8")
+
+    def test_it_is_no_longer_a_placeholder(self):
+        assert "NOT YET WRITTEN" not in self.PAGE
+        assert len(self.PAGE.split()) > 500
+
+    def test_the_read_only_claim_matches_the_code(self):
+        interface = (SITE.parent / "core/ontology/interface.py").read_text(encoding="utf-8")
+
+        assert "Reads cannot write" in self.PAGE
+        assert "class ExternalReadAdapter(ReadAdapter)" in interface
+
+    def test_the_per_field_claim_matches_the_policy(self):
+        policy = (SITE.parent / "deployment/etc/policy.yaml").read_text(encoding="utf-8")
+
+        assert "read:Customer.email" in self.PAGE
+        assert "read:" in policy and "." in policy
+
+    def test_the_secrets_claim_matches_the_code(self):
+        """"A plaintext password in a config file is rejected at load
+        rather than warned about" -- there is a specific exception for
+        it, which is the difference between a claim and a feature."""
+        secrets = (SITE.parent / "core/secret_references.py").read_text(encoding="utf-8")
+
+        assert "Credentials are never in config" in self.PAGE
+        assert "class PlaintextSecret" in secrets
+
+    def test_it_says_what_has_not_been_done(self):
+        """A trust page listing only strengths is not a trust page. The
+        absence of a SOC 2 is the first thing an enterprise buyer looks
+        for, and finding it stated is worth more than finding it
+        omitted."""
+        for gap in ("No SOC 2", "No penetration test", "No ISO 27001",
+                    "No signed DPA", "No incident history"):
+            assert gap in self.PAGE, gap
+
+    def test_it_is_honest_about_the_language_model(self):
+        """The one place data can leave the customer's network. Omitting
+        it would make every other claim on the page suspect."""
+        assert "hosted model" in self.PAGE
+        assert "local model sends nothing" in self.PAGE
+
+
+class TestTheSiteIsFoundAndShared:
+    """A link to this site pasted into Slack, LinkedIn or a DM rendered
+    as a bare URL -- no title, no description, no image. That is the
+    first thing a prospect sees, before the site itself."""
+
+    @pytest.mark.parametrize("page", PAGES, ids=lambda p: str(p))
+    def test_every_page_has_a_share_card(self, page):
+        source = _text(page)
+
+        for tag in ("og:title", "og:description", "og:image",
+                    "twitter:card", 'rel="canonical"'):
+            assert tag in source, f"{page}: {tag}"
+
+    @pytest.mark.parametrize("page", PAGES, ids=lambda p: str(p))
+    def test_the_share_title_matches_the_page_title(self, page):
+        """A card that says something different from the page is worse
+        than no card."""
+        import re
+
+        source = _text(page)
+        title = " ".join(re.search(r"<title>(.*?)</title>", source, re.S).group(1).split())
+        og = re.search(r'property="og:title" content="(.*?)"', source, re.S).group(1)
+
+        assert og == title, f"{page}: {og!r} vs {title!r}"
+
+    def test_the_share_card_image_exists(self):
+        assert (SITE / "img/share-card.svg").exists()
+
+    def test_there_is_a_sitemap_and_it_lists_every_page(self):
+        sitemap = (SITE / "sitemap.xml").read_text(encoding="utf-8")
+
+        for page in PAGES:
+            path = "/" + str(page.relative_to(SITE)).replace("index.html", "")
+            assert path in sitemap, path
+
+    def test_there_is_a_security_contact(self):
+        """Conspicuous by its absence on a security product. RFC 9116
+        asks for a Contact and an Expires field."""
+        security = (SITE / ".well-known/security.txt").read_text(encoding="utf-8")
+
+        assert "Contact:" in security
+        assert "Expires:" in security
+
+    def test_the_model_summary_is_current(self):
+        """llms.txt went missing in an earlier patch. It is what a model
+        repeats to a buyer, so it must not imply certifications or a
+        privacy policy that do not exist."""
+        summary = (SITE / "llms.txt").read_text(encoding="utf-8")
+
+        assert "pre-customer" in summary.lower()
+        assert "no soc 2" in summary.lower()
+        assert "marked as unwritten" in summary.lower()

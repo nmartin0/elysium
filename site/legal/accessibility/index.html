@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Accessibility — Elysium</title>
     <meta name="description" content="Elysium's accessibility conformance and how to report a barrier." />
+    <link rel="canonical" href="https://elysium.example/legal/accessibility/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Elysium" />
+    <meta property="og:url" content="https://elysium.example/legal/accessibility/" />
+    <meta property="og:title" content="Accessibility — Elysium" />
+    <meta property="og:description" content="Elysium's accessibility conformance and how to report a barrier." />
+    <meta property="og:image" content="https://elysium.example/img/share-card.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Accessibility — Elysium" />
+    <meta name="twitter:description" content="Elysium's accessibility conformance and how to report a barrier." />
+    <meta name="twitter:image" content="https://elysium.example/img/share-card.svg" />
     <link rel="icon" href="/img/logo-dark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/site.css" />
@@ -24,11 +35,57 @@
     </header>
 
     <main id="main" class="wrap prose">
-      <h1>Accessibility</h1>
-      <p class="updated">
-        <strong>NOT YET WRITTEN.</strong> This page is a placeholder with the right
-        structure and the wrong content. A conformance statement should follow an audit rather than an intention. What is true already: the product's results list implements the ARIA grid keyboard contract, and this site has skip links, visible focus and respects reduced motion.
-      </p>
+      <div class="band band--long">
+        <div class="band__head">
+          <h1>Accessibility</h1>
+          <p class="lede">
+            What this site and the Elysium application do today, and what has not been
+            audited.
+          </p>
+        </div>
+        <div class="band__body">
+          <p class="updated">
+            <strong>Target: WCAG 2.2 level AA.</strong> No third-party audit has been carried
+            out, so this is a statement of what is built rather than a conformance claim.
+          </p>
+
+          <h2>This site</h2>
+          <ul>
+            <li>A skip link to the main content on every page.</li>
+            <li>A visible focus ring at 2px against the page, not a hairline that disappears
+              into a border.</li>
+            <li>Every image either carries alternative text or is marked decorative.</li>
+            <li>The architecture diagram has a written description of what it shows, in
+              sentences, not a label.</li>
+            <li>Motion respects <code class="mono">prefers-reduced-motion</code>.</li>
+            <li>Text reflows to a 390px viewport without horizontal scrolling.</li>
+            <li>No colour is the only carrier of meaning.</li>
+          </ul>
+
+          <h2>The Elysium application</h2>
+          <ul>
+            <li>The object search results implement the ARIA grid keyboard contract: one tab
+              stop for the whole list, arrow keys to move within it, Home and End to the ends.
+              A hundred results is one Tab press to pass, not two hundred.</li>
+            <li>Keyboard focus is visible throughout and never trapped.</li>
+            <li>Colour contrast meets AA for text in both the light and dark themes.</li>
+          </ul>
+
+          <h2>Known gaps</h2>
+          <ul>
+            <li>No screen-reader testing with JAWS, NVDA or VoiceOver has been done.</li>
+            <li>The roving-focus contract covers the results list; other lists in the
+              application have not been converted.</li>
+            <li>No automated accessibility suite runs in CI yet.</li>
+          </ul>
+
+          <h2>Reporting a barrier</h2>
+          <p>
+            If something here or in the application is unusable for you, say so and it will be
+            treated as a defect rather than a request.
+          </p>
+        </div>
+      </div>
     </main>
 
     <footer class="footer">

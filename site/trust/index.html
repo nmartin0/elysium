@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Trust centre — Elysium</title>
     <meta name="description" content="Elysium's security posture, subprocessors and data handling." />
+    <link rel="canonical" href="https://elysium.example/trust/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Elysium" />
+    <meta property="og:url" content="https://elysium.example/trust/" />
+    <meta property="og:title" content="Trust centre — Elysium" />
+    <meta property="og:description" content="Elysium's security posture, subprocessors and data handling." />
+    <meta property="og:image" content="https://elysium.example/img/share-card.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Trust centre — Elysium" />
+    <meta name="twitter:description" content="Elysium's security posture, subprocessors and data handling." />
+    <meta name="twitter:image" content="https://elysium.example/img/share-card.svg" />
     <link rel="icon" href="/img/logo-dark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/site.css" />
@@ -24,11 +35,117 @@
     </header>
 
     <main id="main" class="wrap prose">
-      <h1>Trust centre</h1>
-      <p class="updated">
-        <strong>NOT YET WRITTEN.</strong> This page is a placeholder with the right
-        structure and the wrong content. This is the highest-value page on the site for a product that sells access control, and the one that most needs real content: certifications, a subprocessor list with a changelog, data residency, incident history, and a signable DPA. The convention is public posture with the SOC 2 report gated behind an NDA.
-      </p>
+      <div class="band band--long">
+        <div class="band__head">
+          <h1>Trust centre</h1>
+          <p class="lede">
+            What Elysium does with your data, what it refuses to do, and what we have not
+            yet proved to a third party.
+          </p>
+        </div>
+
+        <div class="band__body">
+          <p class="updated">
+            <strong>Pre-customer.</strong> Elysium has no production deployments yet, so this
+            page states what the architecture enforces and is honest about what is still
+            unaudited. Every claim below is a property of the code, not a policy we intend to
+            follow.
+          </p>
+
+          <h2>What the architecture enforces</h2>
+          <div class="bento">
+            <div class="tile">
+              <h3>Your data stays in your databases</h3>
+              <p>
+                Elysium reads from your silos and keeps a mirror inside your own deployment.
+                Nothing is copied to us. There is no vector store, no embedding of your rows,
+                and no model fine-tuned on your content.
+              </p>
+            </div>
+            <div class="tile">
+              <h3>Reads cannot write</h3>
+              <p>
+                The adapters that answer questions implement a read-only interface. Changing
+                anything requires a separately declared action type and a human approval, on a
+                different code path.
+              </p>
+            </div>
+            <div class="tile">
+              <h3>Permissions are per field</h3>
+              <p>
+                <code class="mono">read:Customer.email</code> is a grant somebody holds or does
+                not, checked before the value is fetched rather than filtered from a result.
+              </p>
+            </div>
+            <div class="tile">
+              <h3>Mandatory access control underneath</h3>
+              <p>
+                An object in a compartment you cannot see returns nothing, not a refusal —
+                because a refusal tells you the object exists.
+              </p>
+            </div>
+            <div class="tile">
+              <h3>One organisation per instance</h3>
+              <p>
+                A server runs one organisation's data. There is no shared store to
+                misconfigure and no tenancy filter to forget.
+              </p>
+            </div>
+            <div class="tile">
+              <h3>Credentials are never in config</h3>
+              <p>
+                Connection settings carry references, not secrets. A plaintext password in a
+                config file is rejected at load rather than warned about.
+              </p>
+            </div>
+          </div>
+
+          <h2>What is logged</h2>
+          <p>
+            Every field access, every refusal, and every approved write, tied to the request
+            that caused it and the person who asked. The log lives in your deployment and is
+            yours; we never see it.
+          </p>
+
+          <h2>Where your data goes</h2>
+          <p>
+            Nowhere. Elysium runs on infrastructure you control and reads databases you
+            control. There is no Elysium-operated service in the path of a question, and so
+            there is no subprocessor list for your data — if that changes, this page will say
+            so before it does, with a dated changelog.
+          </p>
+          <p>
+            The exception is the language model. If you point a deployment at a hosted model,
+            prompts leave your network to that provider. A deployment configured against a
+            local model sends nothing anywhere. Which one you run is your choice, declared in
+            your own config.
+          </p>
+
+          <h2>What we have not done yet</h2>
+          <p>
+            Stated plainly, because a trust page that lists only strengths is not a trust
+            page.
+          </p>
+          <ul>
+            <li><strong>No SOC 2.</strong> No audit has been started. Typical first scope would
+              be Security, Availability and Confidentiality.</li>
+            <li><strong>No penetration test</strong> by an outside firm.</li>
+            <li><strong>No ISO 27001</strong> or other certification.</li>
+            <li><strong>No signed DPA template</strong> yet. One is needed before any customer
+              in the EU or UK.</li>
+            <li><strong>Encryption at rest</strong> is whatever your storage provides; Elysium
+              does not add a layer of its own.</li>
+            <li><strong>No incident history</strong>, because there have been no deployments.
+              This section will carry every incident once there are.</li>
+          </ul>
+
+          <h2>Reporting a vulnerability</h2>
+          <p>
+            Security reports are welcome and will be acknowledged. See
+            <a href="/.well-known/security.txt">security.txt</a> for where to send them.
+          </p>
+        </div>
+      </div>
     </main>
 
     <footer class="footer">

@@ -1692,3 +1692,34 @@ body > footer {
   max-width: none;
   padding-inline: max(var(--gutter), calc((100% - var(--column)) / 2 + var(--gutter)));
 }
+
+/* ---- headings inside a body ----
+ *
+ * `h2` carries `max-width: 20ch` so a section title breaks into two
+ * or three deliberate lines. Inside a band's BODY that is wrong: "What
+ * the architecture enforces" wrapped after "the", which reads as a
+ * mistake rather than a break somebody chose.
+ */
+.band__body h2 {
+  max-width: 34ch;
+  margin-top: var(--s-8);
+}
+
+.band__body h2:first-child {
+  margin-top: 0;
+}
+
+.band__body ul {
+  max-width: 62ch;
+  padding-left: 1.2rem;
+  color: var(--ink-soft);
+}
+
+.band__body li {
+  margin-bottom: var(--s-1);
+}
+
+.band__body li strong {
+  color: var(--ink);
+  font-weight: 560;
+}

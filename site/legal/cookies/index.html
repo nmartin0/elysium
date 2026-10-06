@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Cookies — Elysium</title>
     <meta name="description" content="Which cookies this site sets, why, and how to change your choice." />
+    <link rel="canonical" href="https://elysium.example/legal/cookies/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Elysium" />
+    <meta property="og:url" content="https://elysium.example/legal/cookies/" />
+    <meta property="og:title" content="Cookies — Elysium" />
+    <meta property="og:description" content="Which cookies this site sets, why, and how to change your choice." />
+    <meta property="og:image" content="https://elysium.example/img/share-card.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Cookies — Elysium" />
+    <meta name="twitter:description" content="Which cookies this site sets, why, and how to change your choice." />
+    <meta name="twitter:image" content="https://elysium.example/img/share-card.svg" />
     <link rel="icon" href="/img/logo-dark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/site.css" />
@@ -24,11 +35,59 @@
     </header>
 
     <main id="main" class="wrap prose">
-      <h1>Cookies</h1>
-      <p class="updated">
-        <strong>NOT YET WRITTEN.</strong> This page is a placeholder with the right
-        structure and the wrong content. The banner's categories and this page have to agree, so it should be written alongside the first analytics tag rather than before it. TODAY THIS SITE SETS NO NON-ESSENTIAL COOKIES.
-      </p>
+      <div class="band band--long">
+        <div class="band__head">
+          <h1>Cookies</h1>
+          <p class="lede">
+            This site sets no non-essential cookies at all. The consent machinery exists
+            anyway, and this page explains why.
+          </p>
+        </div>
+        <div class="band__body">
+          <h2>What is stored today</h2>
+          <p>
+            One entry in your browser's local storage, named
+            <code class="mono">elysium.consent</code>, recording the choice you made and when
+            you made it. Nothing else — no analytics, no advertising, no third-party script of
+            any kind.
+          </p>
+          <p>
+            That entry is not sent anywhere. It stays in your browser so the banner does not
+            ask again on your next visit.
+          </p>
+
+          <h2>Why there is a banner with nothing to consent to</h2>
+          <p>
+            The machinery has to exist before the first analytics tag does, or that tag fires
+            before anybody is asked. Consent must be obtained <em>before</em> a non-essential
+            cookie is set, not shortly after.
+          </p>
+
+          <h2>The categories</h2>
+          <ul>
+            <li><strong>Necessary</strong> — sign-in and security. Always on, and shown
+              disabled rather than offered as a choice nobody would honour.</li>
+            <li><strong>Analytics</strong> — how the site is used. Nothing in this category is
+              in use today.</li>
+            <li><strong>Marketing</strong> — advertising measurement. Nothing in this category
+              is in use today.</li>
+          </ul>
+
+          <h2>Changing or withdrawing your choice</h2>
+          <p>
+            The <a href="#" data-consent-reopen>Cookie settings</a> link in the footer of every
+            page reopens the panel with your current choices loaded. Withdrawing is as easy as
+            giving, which is a requirement rather than a courtesy.
+          </p>
+
+          <h2>When this page changes</h2>
+          <p>
+            Adding a category invalidates consent given under the old set, so the banner asks
+            again rather than treating an old answer as covering something nobody saw. This
+            page will be updated in the same change that adds the tag.
+          </p>
+        </div>
+      </div>
     </main>
 
     <footer class="footer">
