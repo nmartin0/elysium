@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 128"
+  role="img" aria-label="Elysium">
+  <style>
+    .band { fill: #f7f6f3; }
+    .mouth { fill: #080c14; }
+  </style>
+  <rect class="band" x="18.0" y="107.9" width="104.0" height="10.1" rx="5.0"/>
+  <rect class="band" x="18.1" y="96.7" width="103.9" height="10.1" rx="5.0"/>
+  <rect class="band" x="18.4" y="85.5" width="103.1" height="10.1" rx="5.0"/>
+  <rect class="band" x="19.3" y="74.3" width="101.4" height="10.1" rx="5.0"/>
+  <rect class="band" x="20.9" y="63.1" width="98.3" height="10.1" rx="5.0"/>
+  <rect class="band" x="23.3" y="51.9" width="93.3" height="10.1" rx="5.0"/>
+  <rect class="band" x="27.1" y="40.7" width="85.9" height="10.1" rx="5.0"/>
+  <rect class="band" x="32.5" y="29.5" width="75.0" height="10.1" rx="5.0"/>
+  <rect class="band" x="40.8" y="18.3" width="58.4" height="10.1" rx="5.0"/>
+  <rect class="band" x="56.1" y="7.1" width="27.8" height="10.1" rx="5.0"/>
+  <path class="mouth" d="M 61 118 a 9 12 0 0 1 18 0 z"/>
+</svg>

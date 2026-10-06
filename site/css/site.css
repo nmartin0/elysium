@@ -1508,3 +1508,22 @@ section {
 .consent p {
   max-width: 34rem;
 }
+
+/* ---- the mark ----
+ *
+ * The glitched skep in the masthead, the clean one as the favicon: a
+ * 16px browser tab cannot carry a three-coil slip, and a mark that
+ * turns to mush at favicon size is a mark with two jobs and one form.
+ */
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.wordmark img {
+  display: block;
+  /* Optically centred: the skep's visual mass sits below its bounding
+   * box's centre because the crown is narrow. */
+  margin-top: -2px;
+}

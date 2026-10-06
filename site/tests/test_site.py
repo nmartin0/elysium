@@ -728,3 +728,94 @@ class TestAlignmentVariesBySection:
 
         for block in re.findall(r"\.(?:tile|snippet|split__aside)[^{]*\{[^}]*\}", self.CSS):
             assert "text-align: center" not in block, block[:80]
+
+
+class TestTheMark:
+    """A bee skep: coiled straw bands, a small crown, an entrance arch.
+
+    The first attempt tapered linearly and read as a pagoda -- a stack
+    of pancakes rather than a dome. A skep is close to a paraboloid:
+    near-vertical for the bottom third, then turning over. The profile
+    is generated from that curve rather than drawn by hand, which is
+    why the coils narrow smoothly instead of in steps somebody chose.
+
+    FIVE FILES, TWO JOBS. The clean mark is the professional one and
+    the favicon; the glitched one carries the character. A 16px browser
+    tab cannot hold a three-coil slip, so a single form doing both jobs
+    would do one of them badly."""
+
+    MARKS = ("logo.svg", "logo-light.svg", "logo-dark.svg",
+             "logo-glitch-light.svg", "logo-glitch-dark.svg")
+
+    def test_every_variant_exists(self):
+        for name in self.MARKS:
+            assert (SITE / "img" / name).exists(), name
+
+    def test_there_is_a_light_and_a_dark_of_each(self):
+        """Off-white on navy, or navy on off-white. Both, for both
+        forms, so neither ground needs an inverted copy made by hand."""
+        for form in ("logo", "logo-glitch"):
+            light = (SITE / f"img/{form}-light.svg").read_text(encoding="utf-8")
+            dark = (SITE / f"img/{form}-dark.svg").read_text(encoding="utf-8")
+
+            assert "#080c14" in light and "#f7f6f3" in light, f"{form}-light"
+            assert "#f7f6f3" in dark and "#080c14" in dark, f"{form}-dark"
+
+    def test_the_glitch_is_light(self):
+        """"Light visual glitching on purpose." Three coils slipped,
+        never two adjacent in the same direction. A slip on every band
+        reads as a mistake rather than as style."""
+        import re
+
+        clean = (SITE / "img/logo-dark.svg").read_text(encoding="utf-8")
+        glitch = (SITE / "img/logo-glitch-dark.svg").read_text(encoding="utf-8")
+
+        def lefts(svg):
+            return [float(x) for x in re.findall(r'<rect class="band" x="([\d.-]+)"', svg)]
+
+        slipped = [i for i, (a, b) in enumerate(zip(lefts(clean), lefts(glitch), strict=True))
+                   if abs(a - b) > 0.5]
+
+        assert len(slipped) == 3, f"{len(slipped)} coils slipped"
+        assert all(b - a > 1 for a, b in zip(slipped, slipped[1:], strict=False)), slipped
+
+    def test_the_clean_mark_has_no_slip_at_all(self):
+        """It is the favicon and the formal one. Any slip here and the
+        two forms stop being distinguishable."""
+        import re
+
+        clean = (SITE / "img/logo-dark.svg").read_text(encoding="utf-8")
+        widths = [(float(x), float(w)) for x, w in
+                  re.findall(r'<rect class="band" x="([\d.-]+)" y="[\d.-]+" width="([\d.]+)"',
+                             clean)]
+        # SUB-PIXEL, not exact. Coordinates are written to one decimal,
+        # so concentric coils land on 69.9, 70.0 and 70.1 -- a tenth of
+        # a pixel apart, which is rounding rather than a slip. The real
+        # glitch moves a coil by two and a half pixels or more.
+        centres = [x + w / 2 for x, w in widths]
+        spread = max(centres) - min(centres)
+
+        assert spread < 0.5, f"coils are not concentric: spread {spread:.2f}"
+
+    def test_it_reads_as_a_dome_not_a_cone(self):
+        """The fault in the first attempt, pinned. A skep is still
+        nearly full width a third of the way up and narrows sharply
+        near the crown; a cone narrows evenly."""
+        import re
+
+        clean = (SITE / "img/logo-dark.svg").read_text(encoding="utf-8")
+        widths = [float(w) for w in
+                  re.findall(r'<rect class="band"[^>]*width="([\d.]+)"', clean)]
+
+        third = widths[len(widths) // 3] / widths[0]
+        crown = widths[-1] / widths[0]
+
+        assert third > 0.85, f"too conical: {third:.2f} of base width a third up"
+        assert crown < 0.35, f"no crown: top coil is {crown:.2f} of the base"
+
+    def test_the_mark_is_in_the_masthead_of_every_page(self):
+        for page in PAGES:
+            source = _text(page)
+
+            assert "logo-glitch-dark.svg" in source, str(page)
+            assert 'rel="icon"' in source, str(page)
