@@ -144,3 +144,92 @@ describe('FilterBar', () => {
     expect(screen.getByRole('button', { name: /Add/ })).toBeDisabled()
   })
 })
+
+describe('the set operators, which were formatted but never offerable', () => {
+  /**
+   * `in` and `not_in` had a line each in describeFilter and no way to
+   * build one. A saved view could carry a set filter and nobody could
+   * create one -- the worse half of a missing control: the vocabulary
+   * exists, the server accepts it, and the only way in was somebody
+   * else's link.
+   */
+
+  it('offers them on every type, as core/filters.py does', () => {
+    /** Both are listed there with `None` for allowed types, the same as
+     *  equals -- so they are not in a type branch. */
+    for (const type of ['string', 'number', 'integer', undefined]) {
+      expect(operatorsFor(type)).toEqual(expect.arrayContaining(['in', 'not_in']))
+    }
+  })
+
+  it('sends a LIST, not a comma string', () => {
+    const onChange = vi.fn()
+    render(<FilterBar fields={FIELDS} filters={[]} onChange={onChange} />)
+
+    fireEvent.change(screen.getByLabelText('Field to filter'), {
+      target: { value: 'name' },
+    })
+    fireEvent.change(screen.getByLabelText('Operator'), { target: { value: 'in' } })
+    fireEvent.change(screen.getByLabelText('Value'), {
+      target: { value: 'us-east, us-west' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Add/ }))
+
+    expect(onChange).toHaveBeenCalledWith([{ field: 'name', operator: 'in', value: ['us-east', 'us-west'] }])
+  })
+
+  it('drops blanks rather than sending an empty member', () => {
+    const onChange = vi.fn()
+    render(<FilterBar fields={FIELDS} filters={[]} onChange={onChange} />)
+
+    fireEvent.change(screen.getByLabelText('Field to filter'), {
+      target: { value: 'name' },
+    })
+    fireEvent.change(screen.getByLabelText('Operator'), { target: { value: 'in' } })
+    fireEvent.change(screen.getByLabelText('Value'), {
+      target: { value: 'us-east, , us-west,' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Add/ }))
+
+    expect(onChange).toHaveBeenCalledWith([{ field: 'name', operator: 'in', value: ['us-east', 'us-west'] }])
+  })
+
+  it('refuses to add a set that would end up empty', () => {
+    /** The server refuses one for a reason worth honouring here: "an
+     *  empty set would mean 'match nothing' for `in` and 'match
+     *  everything' for `not_in` -- opposite outcomes from the same
+     *  mistake". */
+    const onChange = vi.fn()
+    render(<FilterBar fields={FIELDS} filters={[]} onChange={onChange} />)
+
+    fireEvent.change(screen.getByLabelText('Field to filter'), {
+      target: { value: 'name' },
+    })
+    fireEvent.change(screen.getByLabelText('Operator'), { target: { value: 'in' } })
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: ' , , ' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add/ }))
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('every operator it offers can be described', () => {
+    /** An operator that renders as a raw key in the applied-filter list
+     *  is one somebody added here and nowhere else. */
+    for (const operator of ALL_OPERATORS) {
+      const value =
+        operator === 'range' || operator === 'date_range'
+          ? ['1', '2']
+          : operator === 'in' || operator === 'not_in'
+            ? ['a', 'b']
+            : 'x'
+      const described = describeFilter({ field: 'name', operator, value })
+
+      // AN UNDERSCORE IS THE TELL, not the operator word itself: "name
+      // contains \"x\"" legitimately contains "contains", while
+      // "name not_in [...]" would mean describeFilter had no case for
+      // it and fell through to printing the raw key.
+      expect(described).not.toContain('_')
+      expect(described.length).toBeGreaterThan(0)
+    }
+  })
+})

@@ -37,7 +37,7 @@ export interface FieldFilter {
  * dropdown may contain, and the server still validates -- this only
  * decides what to OFFER.
  */
-export const ALL_OPERATORS = ['equals', 'range', 'contains', 'date_range', 'relative_date']
+export const ALL_OPERATORS = ['equals', 'in', 'not_in', 'range', 'contains', 'date_range', 'relative_date']
 
 export function operatorsFor(type: string | undefined): string[] {
   // NO declared type means NO restriction, which is the server's own
@@ -54,6 +54,16 @@ export function operatorsFor(type: string | undefined): string[] {
   const numeric = type === 'integer' || type === 'number'
   return [
     'equals',
+    // `in` and `not_in` APPLY TO ANY TYPE, which is why they sit
+    // beside equals rather than in a type branch -- core/filters.py
+    // lists both with `None` for allowed types, exactly as equals.
+    //
+    // They had a line each in describeFilter and no way to build
+    // one, so a saved view could carry a set filter and nobody could
+    // create one: the vocabulary existed, the server accepted it,
+    // and the only way in was somebody else's link.
+    'in',
+    'not_in',
     ...(numeric ? ['range'] : []),
     ...(type === 'string' ? ['contains', 'date_range', 'relative_date'] : []),
   ]
@@ -92,18 +102,31 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
   // semantic type the filter vocabulary validates against.
   const operators = operatorsFor(chosen?.data_type)
   const needsTwo = operator === 'range' || operator === 'date_range'
+  /**
+   * A SET OPERATOR TAKES A LIST, and an EMPTY one is refused by the
+   * server for a reason worth honouring here: "an empty set would mean
+   * 'match nothing' for `in` and 'match everything' for `not_in` --
+   * opposite outcomes from the same mistake". So this splits on commas,
+   * drops blanks, and will not add a filter that ends up empty.
+   */
+  const isSet = operator === 'in' || operator === 'not_in'
+  const setValues = value
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
 
   function add() {
     if (!field || value === '') return
+    if (isSet && setValues.length === 0) return
     onChange([
       ...filters,
       {
         field,
         operator,
-        // A two-part operator takes a pair; everything else takes one
-        // value. Sending a bare string for a range is the shape error
-        // the server would reject, so it is not constructible here.
-        value: needsTwo ? [value, upper] : value,
+        // A two-part operator takes a pair, a SET takes a list, and
+        // everything else one value. Sending the wrong shape is what
+        // the server rejects, so none of them is constructible here.
+        value: needsTwo ? [value, upper] : isSet ? setValues : value,
       },
     ])
     setValue('')
@@ -164,7 +187,20 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
 
             <InputGroup
               aria-label={needsTwo ? 'From' : 'Value'}
-              placeholder={operator === 'relative_date' ? 'e.g. 7d' : needsTwo ? 'From' : 'Value'}
+              placeholder={
+                operator === 'relative_date'
+                  ? 'e.g. 7d'
+                  : // A SET NEEDS THE SEPARATOR SAYING SO. Typing one
+                    // value into a field marked "Value" and getting a
+                    // one-element set is correct but teaches nothing;
+                    // the placeholder is where somebody learns that
+                    // several are allowed.
+                    isSet
+                    ? 'us-east, us-west'
+                    : needsTwo
+                      ? 'From'
+                      : 'Value'
+              }
               value={value}
               onChange={(e) => setValue(e.currentTarget.value)}
             />
