@@ -62,6 +62,7 @@ const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPan
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
 const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'))
+const IdentityPanel = lazy(() => import('@elysium/app-identity/IdentityPanel'))
 const NotificationsPanel = lazy(() => import('@elysium/app-notifications/NotificationsPanel'))
 
 // mustChangePassword: logged in, after an administrator's reset, and not
@@ -428,6 +429,7 @@ export default function App() {
           />
           <Route path="/admin" element={<AdminPanel onSessionExpired={handleSessionExpired} />} />
           <Route path="/approvals" element={<ApprovalsPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/identity" element={<IdentityPanel onSessionExpired={handleSessionExpired} />} />
           <Route path="/notifications" element={<NotificationsPanel onSessionExpired={handleSessionExpired} />} />
           <Route path="*" element={<Navigate to="/query" replace />} />
         </Route>

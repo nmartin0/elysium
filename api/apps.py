@@ -35,6 +35,16 @@ VISIBLE_APPS: list[dict[str, str | None]] = [
     # an empty ontology rather than a forbidden page, which is the same
     # uniform denial every other read path uses.
     {"name": "Schema", "path": "/schema", "gating_permission": None},
+    # UNGATED, for the same reason Approvals is.
+    #
+    # There is no single grant meaning "you review merges". Seeing the
+    # queue needs read on the type; DECIDING needs write on it, which
+    # the route enforces per proposal. Gating the app on any one
+    # permission would hide it from a reviewer who holds a different
+    # one -- and from a clerical reviewer who is meant to work the
+    # queue WITHOUT being able to decide, which is the whole point of
+    # masked review.
+    {"name": "Identity", "path": "/identity", "gating_permission": None},
     {"name": "Admin", "path": "/admin", "gating_permission": "manage:users"},
     # UNGATED, like Query and Browse, and that needs saying because it
     # looks like it should be gated.

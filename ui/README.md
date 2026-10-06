@@ -49,6 +49,10 @@ ui/packages/app-schema/    The ontology as a reference: object types,
                             graph.
 ui/packages/app-approvals/ The write inbox -- review and decide a
                             proposed write.
+ui/packages/app-identity/  Proposed merges -- decide whether two
+                           records are the same thing, on the agreement
+                           pattern rather than on values the reviewer
+                           may not be cleared to read.
 ui/packages/app-notifications/
                            Notifications and the watch list.
 ui/packages/app-admin/     Users, roles, silos, mirror status, metrics

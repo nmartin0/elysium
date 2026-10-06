@@ -1,0 +1,17 @@
+{
+  "name": "@elysium/app-identity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./IdentityPanel": "./src/IdentityPanel.tsx",
+    "./ProposalCard": "./src/ProposalCard.tsx"
+  },
+  "dependencies": {
+    "@elysium/shell-api": "*"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

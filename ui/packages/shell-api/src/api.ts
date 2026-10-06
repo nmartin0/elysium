@@ -762,6 +762,59 @@ export interface ServerSavedView {
   created_at: string
 }
 
+/**
+ * One field of a proposed merge, as this caller may see it.
+ *
+ * `left` and `right` ARE OPTIONAL BECAUSE THEY ARE ABSENT, not because
+ * they may be null. The route never serialises a value the caller is
+ * not cleared to read -- masked clerical review requires that the
+ * reviewing facility "only have access to those plaintext attributes
+ * that are displayed". Typing them `string | undefined` rather than
+ * `string | null` is what stops a screen rendering "null" where a
+ * withheld value would be.
+ */
+export interface MergeField {
+  field: string
+  verdict: string
+  left?: string
+  right?: string
+}
+
+export interface MergeProposal {
+  proposal_id: string
+  object_type: string
+  left_id: string
+  right_id: string
+  proposed_at: string
+  decision: string
+  decided_by?: string
+  /** What the reviewer decides on. There is deliberately no score:
+   *  "the reviewer's decision is made on the agreement PATTERN, not
+   *  the score". */
+  pattern: string
+  fields: MergeField[]
+  /** Named so a reviewer knows the comparison was wider than what they
+   *  can see, rather than believing they saw all of it. */
+  withheld: string[]
+}
+
+export async function getMergeProposals(decision?: string): Promise<MergeProposal[]> {
+  const query = decision ? `?decision=${encodeURIComponent(decision)}` : ''
+  const response = await apiFetchOrThrow(`/merge-proposals${query}`)
+  return (await response.json()) as MergeProposal[]
+}
+
+export async function decideMergeProposal(
+  proposalId: string,
+  decision: 'approved' | 'rejected',
+  note?: string,
+): Promise<void> {
+  await apiFetchOrThrow(`/merge-proposals/${encodeURIComponent(proposalId)}/decide`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, note }),
+  })
+}
+
 export async function getSavedViews(): Promise<ServerSavedView[]> {
   const response = await apiFetchOrThrow('/saved-views')
   return (await response.json()).views as ServerSavedView[]
