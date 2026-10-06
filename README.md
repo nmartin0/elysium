@@ -10,34 +10,40 @@ allowed to see or do on its own — see "The security model" below for
 how that's actually enforced.
 
 **One server instance runs one organization's data.** This is a
-single-tenant system.
+single-tenant design: there is no shared store to misconfigure and no
+row-level tenancy filter to forget.
 
-**Getting this installed and running is covered separately, in
-`INSTALL.md`** — prerequisites, local setup, running the tests, code
-quality tooling, and a real production install. This file is
-architecture, configuration, and the reasoning behind both.
+## What a question actually does
 
-**What is left is ONE file: `BLOCKING.md`.** Everything in it needs a
-person -- a decision, a product judgement, a machine nobody has.
-Anything that could be done has been done, and the document it came
-from has been deleted; thirty-five planning documents were worked to
-exhaustion and removed, their reasoning moved into the code it
-describes.
+A question travels down through four stages and comes back as an
+answer the asking user was allowed to receive:
 
-It is one file deliberately. Every second copy of a list in this
-project has drifted from the first, and the roadmap that preceded this
-one found seven built things still described as open.
+```
+your databases          primary_sql, risk_db, ... — declared in
+    |                   data_silos.yaml. Elysium only ever READS them.
+    v
+bronze                  one Iceberg table per real source table, 1:1,
+    |                   ingested as-is with no preprocessing.
+    v
+silver                  the same tables at the same grain with the
+    |                   source's column names — typed, standardised,
+    |                   and schema drift reported.
+    v
+gold                    THE SHAPE CHANGES. One table per OBJECT TYPE,
+    |                   keyed by the object's id, using the ontology's
+    |                   property names. A type spanning two silos is a
+    |                   declared join. Written to a branch, audited,
+    |                   published by one commit — a reader never sees
+    v                   half a build.
+the ontology            object types, fields, links, and the grant
+                        each field requires. This is what a question
+                        is asked against, and the only layer you write.
+```
 
-**The real, recurring engineering principles this project has
-actually developed by** — verification discipline, testing
-philosophy, security posture, commit and collaboration discipline —
-are written down separately in `PRINCIPLES.md`, not repeated here.
-
-**Planned future sub-apps** — modeled on Palantir Foundry's own
-ontology-aware application suite, scoped down to this project's own
-much smaller architecture — are tracked separately in `the roadmap (consumed)`.
-
----
+A write travels the other way: the model proposes, a person approves,
+and the **approver's** own permissions are re-checked at the moment of
+approval — not the asker's, and not the ones anybody held when the
+proposal was made.
 
 ## 1. How the system is organized
 
@@ -518,11 +524,73 @@ is explicit, fail-safe, and never inferred" section.
 
 ## 7. Known limitations, honestly
 
-- **Memory security infrastructure exists but isn't wired into the live query path.** `core/memory/guard.py`'s `MemoryGuard` is built and tested, but `AgentLoop` doesn't currently construct or use one.
-- **Cross-silo links aren't supported.** Linked object types must currently share a data silo.
-- **Single OS process.** Concurrency protections coordinate threads within one process, not across separate processes. The pending-write store is also in-process memory — a multi-worker deployment would need a shared store instead.
-- **`install.sh` is a fresh-install script, not an upgrade mechanism.**
-- **TLS termination is a deployment responsibility, not this application's own code.** A real, production install sits behind a reverse proxy handling HTTPS -- this project's own security headers (`Content-Security-Policy` etc., see `api/app.py`) and cookie flags (`Secure`, see `core/auth/auth_cookies.py`) assume that proxy exists and is configured correctly; neither `Strict-Transport-Security` nor TLS certificate management is set up by this codebase itself.
+- **Memory security infrastructure exists but isn't wired into the
+  live query path.** `core/memory/` is built and tested; the agent
+  loop does not yet consult it.
+- **Single OS process.** Concurrency protections coordinate threads
+  within one process. Running two workers against one deployment is
+  not supported and has not been tested.
+- **`install.sh` is a fresh-install script, not an upgrade
+  mechanism.**
+- **TLS termination is a deployment responsibility**, not this
+  application's own.
+- **No encryption at rest beyond what your storage provides.** Elysium
+  does not add a layer of its own.
+- **Pre-customer.** No production deployments, no SOC 2, no
+  third-party penetration test, no certifications.
 
-None of these are silent gaps — each is a deliberate, documented scope
-decision.
+Each is a deliberate, documented scope decision rather than a silent
+gap.
+
+### What this list used to say, and no longer does
+
+**"Cross-silo links aren't supported."** They are. `core/mirror/
+fusion.py` assembles one object type from several storages — a
+`Customer` built from `primary_sql.customers` and
+`risk_db.risk_scores` is a declared join, because every property has
+exactly one authoritative home and no two storages offer a competing
+value for the same property. The deterministic path came first and is
+the primary one; the gold layer works with zero inference.
+
+This line survived in the README long after the code contradicted it,
+which is the ordinary fate of a limitations section nobody rereads. If
+you find another, it is a bug in this file.
+
+## 8. The front end
+
+Seven packages under `ui/packages/`, 45 components, each with its own
+test file:
+
+| package | what it is |
+| --- | --- |
+| `app-browse` | Object Explorer — search, filters, charts, bulk actions, saved views |
+| `app-admin` | users, roles, grants, deployment configuration |
+| `app-schema` | the visible schema, as the asking user may see it |
+| `app-approvals` | pending writes and the approval flow |
+| `app-notifications` | triggers and what they fired on |
+| `app-query` | ask a question, read the answer and its trace |
+| `shell-api` | fetch, session, CSRF, and the design tokens |
+
+`npm run lint` runs oxlint, `tsc --noEmit`, oxfmt and knip. The suite
+is vitest.
+
+## 9. The marketing site
+
+`site/` is the public website — static HTML and CSS, no build step. It
+is **separable**: nothing under it links or imports outside itself,
+and it runs its own gate with `bash site/check.sh`. Elysium's lint
+excludes it. Lift the directory into its own repository and nothing is
+left behind.
+
+## 10. Tests
+
+| suite | how to run | size |
+| --- | --- | --- |
+| unit | `pytest tests/unit` | 351 files |
+| integration | `pytest tests/integration` | 46 files |
+| controls | declared in CI | 70 |
+| front end | `cd ui && npm run test` | vitest |
+| site | `bash site/check.sh` | ruff + pytest, some in a real browser |
+
+`./lint.sh` runs ruff, mypy and vulture over the Python, and keeps 16
+declared contracts.
