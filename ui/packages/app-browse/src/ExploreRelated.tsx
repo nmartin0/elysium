@@ -20,6 +20,7 @@
  */
 
 import { Tag } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -159,7 +160,7 @@ export default function ExploreRelated({ objectType, objectId, visibleSchema, on
               // not keep -- and without a reverse field there is no
               // filter to express the question, so the count is shown
               // plainly rather than made to look navigable.
-              <Tag minimal>{link.count === 0 ? 'None' : label}</Tag>
+              <StatusTag>{link.count === 0 ? 'None' : label}</StatusTag>
             ) : (
               <Link
                 className="explore-related__go"

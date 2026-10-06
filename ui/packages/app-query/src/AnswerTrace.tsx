@@ -12,7 +12,8 @@
  */
 
 import { useState } from 'react'
-import { Button, HTMLTable, Tag } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
+import { Button, HTMLTable } from '@blueprintjs/core'
 import { getErrorMessage, getRequestTrace, handleIfSessionExpired } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 
@@ -93,13 +94,9 @@ export default function AnswerTrace({
                         and exactly what someone auditing wants to
                         see rather than have hidden. */}
                     {entry.rbac_allowed && entry.mac_allowed !== false ? (
-                      <Tag minimal intent="success">
-                        yes
-                      </Tag>
+                      <StatusTag state="granted">yes</StatusTag>
                     ) : (
-                      <Tag minimal intent="warning">
-                        refused
-                      </Tag>
+                      <StatusTag state="pending">refused</StatusTag>
                     )}
                   </td>
                 </tr>

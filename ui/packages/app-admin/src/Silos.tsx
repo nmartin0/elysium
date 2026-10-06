@@ -13,7 +13,9 @@
  */
 
 import { useState } from 'react'
-import { Button, Callout, HTMLTable, Tag } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
+import { Button, HTMLTable } from '@blueprintjs/core'
 import { getSilos } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
@@ -81,13 +83,7 @@ function Publication({ silos, freshness }: { silos: SiloStatus[]; freshness: Dat
                 <tr key={type}>
                   <td>{type}</td>
                   <td>
-                    {published[type] ? (
-                      formatTimestamp(published[type])
-                    ) : (
-                      <Tag minimal intent="warning">
-                        never
-                      </Tag>
-                    )}
+                    {published[type] ? formatTimestamp(published[type]) : <StatusTag state="pending">never</StatusTag>}
                   </td>
                 </tr>
               ))}
@@ -149,11 +145,11 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                 {unreachable.map((silo) => silo.name).join(', ')}
               </ErrorState>
             ) : (
-              <Callout intent="success">
+              <Notice state="granted">
                 {/* "All 1 silos are reachable" -- the verb has to
                       agree too, not just the noun. */}
                 {silos.length === 1 ? 'The one silo is reachable.' : `All ${silos.length} silos are reachable.`}
-              </Callout>
+              </Notice>
             )}
 
             {freshness !== null && <Publication silos={silos} freshness={freshness} />}
@@ -182,18 +178,14 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                       {silo.name}
                     </td>
                     <td>
-                      <Tag minimal>{silo.adapter}</Tag>
+                      <StatusTag>{silo.adapter}</StatusTag>
                     </td>
                     <td>
                       {silo.reachable ? (
-                        <Tag minimal intent="success">
-                          reachable
-                        </Tag>
+                        <StatusTag state="granted">reachable</StatusTag>
                       ) : (
                         <>
-                          <Tag minimal intent="danger">
-                            unreachable
-                          </Tag>{' '}
+                          <StatusTag state="refused">unreachable</StatusTag>{' '}
                           <span className="silos__failure">{silo.failure}</span>
                         </>
                       )}
@@ -236,9 +228,7 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                                         {field.is_identifier && (
                                           <>
                                             {' '}
-                                            <Tag minimal className="silos__id-tag">
-                                              identifier
-                                            </Tag>
+                                            <StatusTag className="silos__id-tag">identifier</StatusTag>
                                           </>
                                         )}
                                       </td>

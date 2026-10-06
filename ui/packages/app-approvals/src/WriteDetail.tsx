@@ -14,7 +14,9 @@
  * permissions to view that item".
  */
 
-import { Callout, HTMLTable, Tag } from '@blueprintjs/core'
+import { HTMLTable } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useEffect, useRef, useState } from 'react'
 
 import {
@@ -74,10 +76,10 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
         // SAID ONCE, PROMINENTLY, as well as marked per row. A
         // reviewer scanning a table can miss a tag; the one thing they
         // must not miss is that they are deciding on a partial view.
-        <Callout intent="warning" title="You cannot see all of this change">
+        <Notice state="pending" title="You cannot see all of this change">
           Some fields below are hidden by your permissions. Approving applies every change, including the ones you
           cannot read.
-        </Callout>
+        </Notice>
       )}
 
       {detail.objects.map((object) => (
@@ -107,9 +109,7 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
                     // Empty cells read as "no value"; this reads as
                     // "withheld", which is a different fact.
                     <td colSpan={2}>
-                      <Tag minimal intent="warning">
-                        Hidden by your permissions
-                      </Tag>
+                      <StatusTag state="pending">Hidden by your permissions</StatusTag>
                     </td>
                   )}
                 </tr>

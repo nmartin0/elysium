@@ -16,7 +16,8 @@
  * relationship with one known end rather than hidden entirely.
  */
 
-import { Button, HTMLTable, Tag } from '@blueprintjs/core'
+import { Button, HTMLTable } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 // Not exported: used only within this file. Exporting a type nothing
@@ -98,7 +99,7 @@ export default function LinkTypes({ schema, filter, onOpenObjectType }: LinkType
                   {side.objectType}
                 </Button>
                 <div className="schema-panel__api-name">
-                  {side.apiName} &rarr; <Tag minimal>{side.cardinality}</Tag> {side.target}
+                  {side.apiName} &rarr; <StatusTag>{side.cardinality}</StatusTag> {side.target}
                 </div>
               </td>
             ))}

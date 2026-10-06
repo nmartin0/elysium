@@ -727,3 +727,103 @@ Write-path first, with the existing tests as the parity check. 75
 files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
+
+## 22. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+
+**Blocked on:** the owner, and on money and calendar time rather than
+engineering.
+
+Asked for directly. Four of the five things named are not engineering
+deliverables and saying so once, here, is cheaper than saying it again
+each time:
+
+- **SOC 2** is an attestation a licensed CPA firm issues after
+  observing controls operating. Type II needs a 3-12 month window.
+  Most of what it tests is not code -- onboarding and offboarding,
+  vendor management, risk assessment, incident response, change
+  management.
+- **ISO 27001** is a certificate from an accredited body and requires
+  an ISMS: scope statement, risk assessment, Statement of
+  Applicability against 93 Annex A controls, internal audit,
+  management review. Roughly a fifth of it is technical.
+- **A penetration test cannot be done by whoever wrote the code.** The
+  value is an adversary who did not.
+- **HIPAA has no certification.** There is no issuing body; "HIPAA
+  compliant" means the Security Rule safeguards are implemented and
+  the vendor will sign a BAA. The obligation attaches to the operator.
+
+**The fifth is real engineering and is not blocked:** encryption at
+rest. `core/mirror/lake_permissions.py` says it is out of scope today.
+`cryptography` is available; SQLCipher is not installed, which shapes
+the design.
+
+ONE DESIGN DECISION IS NEEDED BEFORE STARTING. SQLCipher encrypts the
+SQLite stores transparently but adds a C dependency and a build step.
+Application-level column encryption plus volume encryption for the
+rest has fewer dependencies, more code, and leaves file metadata
+visible. Also undecided: whether the mirror is in scope or only the
+control-plane databases.
+
+All four frameworks test an overlapping set of technical controls, and
+building them is worth doing on its own merits regardless of whether
+an audit is ever bought:
+
+    encryption at rest       Elysium's own stores, and the mirror
+    key management           where keys come from, rotation
+    session controls         idle timeout, absolute timeout, revocation
+    password policy          enforced rather than advised
+    access review            export who holds what grant, as of when
+    audit integrity          tamper-evidence on the existing log
+    backup verification      restore tested rather than assumed
+
+Months, not a patch.
+
+## 23. Owning the UI kit, and when to start
+
+**Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
+here so the next person does not reopen it from scratch.
+
+The question was whether to move off Blueprint to avoid depending on
+one company. `CONFIG_ROUND_TRIP_AND_UI_KIT.md` Part 2 -- consumed in
+patch f55eee5 -- answered it: the risk is abandonment rather than
+capture, because Blueprint is Apache-2.0 and a granted licence cannot
+be revoked; and a BIGGER vendor is the wrong direction. Its proposal
+stands: own the twelve simple components, vendor headless primitives
+for the six behavioural ones.
+
+**WHAT WAS DONE INSTEAD, AND WHY NOT THE REST.** Three wrappers now
+sit in `shell-api/components` -- `Action`, `StatusTag`, `Notice` --
+covering the 97 call sites with the most repetition. They deliver the
+benefit the literature actually credits to wrapping: "the gained
+consistency of reducing the used API surface", not swappability, which
+it names as the weak argument.
+
+`Dialog` at two uses and `InputGroup` at three were LEFT ALONE
+deliberately. A wrapper over a component used twice "will just become
+a copy of the component and thus not be helpful at all".
+
+**WHY NOT FINISH THE MIGRATION NOW.** The plan's strongest argument
+was drift -- the surface widened from 22 components to 33 in a
+fortnight "and nothing noticed, because nothing was looking".
+`ui/src/blueprintSurface.test.ts` closed that: growth is now a diff
+someone justifies, and it caught the three wrappers' type imports the
+day they were written. The urgency is gone; the option is not.
+
+Against spending the month now: Blueprint 6.20.0 shipped 2026-09-17,
+so abandonment is not near. Radix, the obvious destination, has slowed
+since WorkOS acquired it and shadcn/ui has already moved its default
+foundation away from it. And the plan is honest that "the six
+behavioural ones are the real work ... it is easy to build a dialog
+that looks right and traps nobody" -- which would risk the keyboard
+work just paid for.
+
+**THE TRIGGERS THAT CHANGE THE ANSWER**, either one on its own:
+
+1. Blueprint misses a React major release, or goes six months without
+   a security fix.
+2. The design language becomes a constraint -- a screen that cannot be
+   built because Blueprint's components will not do it.
+
+When either fires, the wrappers are already the call-site layer: the
+implementation changes underneath them and the 97 call sites do not
+move.

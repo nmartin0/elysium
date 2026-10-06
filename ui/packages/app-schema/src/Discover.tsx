@@ -15,7 +15,9 @@
  * rather than a stored reconciliation.
  */
 
-import { Button, Callout, Tag } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import { getFavourites, getRecent, isFavourite, toggleFavourite } from './discoverStorage'
@@ -82,7 +84,7 @@ export default function Discover({ schema, username, onOpen, version, onFavourit
     .sort((a, b) => (schema[a]?.display_name ?? a).localeCompare(schema[b]?.display_name ?? b))
 
   if (visibleTypes.length === 0) {
-    return <Callout intent="none">You do not have read access to any object type in this ontology.</Callout>
+    return <Notice state="neutral">You do not have read access to any object type in this ontology.</Notice>
   }
 
   return (
@@ -120,10 +122,7 @@ export default function Discover({ schema, username, onOpen, version, onFavourit
       {deprecated.length > 0 && (
         <>
           <h4>
-            Deprecated{' '}
-            <Tag minimal intent="danger">
-              {deprecated.length}
-            </Tag>
+            Deprecated <StatusTag state="refused">{deprecated.length}</StatusTag>
           </h4>
           <TypeList
             names={deprecated}

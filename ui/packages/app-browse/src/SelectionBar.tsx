@@ -23,7 +23,8 @@
  * form, not after.
  */
 
-import { Button, Tag } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 
 /** Matches MAX_BULK_OBJECTS in core/ontology/write_mediator.py. Declared
  *  rather than fetched: the server refuses regardless, so this is a
@@ -72,16 +73,16 @@ export default function SelectionBar({
 
   return (
     <div className="selection-bar" aria-live="polite">
-      <Tag minimal intent={overCeiling ? 'warning' : 'none'}>
+      <StatusTag state={overCeiling ? 'pending' : 'neutral'}>
         {selectedCount > 0 ? `${selectedCount} selected` : `No selection — actions apply to the ${pageCount} shown`}
-      </Tag>
+      </StatusTag>
 
       {pagedBeyondView && (
         // SAID OUT LOUD, because the gap is invisible otherwise: the
         // count says 20 and the filter matched 500, and nothing on
         // screen connects the two.
         <>
-          <Tag minimal>{matchCount - pageCount} more match the filter</Tag>
+          <StatusTag>{matchCount - pageCount} more match the filter</StatusTag>
           {onSelectAllMatching !== undefined && (
             // AN EXPLICIT CONTROL, not an overloaded checkbox. The
             // guidance is to "make it explicit (e.g. 'Select all 3,200
@@ -104,9 +105,7 @@ export default function SelectionBar({
         // enforces this regardless; the point of saying it here is
         // that a person can narrow the filter while they still
         // remember what they were doing.
-        <Tag minimal intent="warning">
-          Over the {MAX_BULK_OBJECTS} limit — narrow the filter to act on these
-        </Tag>
+        <StatusTag state="pending">Over the {MAX_BULK_OBJECTS} limit — narrow the filter to act on these</StatusTag>
       )}
 
       {selectedCount > 0 && (

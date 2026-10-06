@@ -15,6 +15,7 @@
  */
 
 import { Button, HTMLTable, Tag } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import {
   getConfigDiff,
   getConfigHistory,
@@ -133,9 +134,9 @@ function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => vo
               <td>
                 {row.generation}
                 {row.generation === history.current_generation && (
-                  <Tag minimal intent="primary" style={{ marginInlineStart: '0.5rem' }}>
+                  <StatusTag state="active" style={{ marginInlineStart: '0.5rem' }}>
                     running now
-                  </Tag>
+                  </StatusTag>
                 )}
               </td>
               <td>{formatTimestamp(row.loaded_at)}</td>

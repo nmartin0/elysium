@@ -21,7 +21,8 @@
  * the same click.
  */
 
-import { Button, Callout, FormGroup, InputGroup } from '@blueprintjs/core'
+import { Button, FormGroup, InputGroup } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
 import { getErrorMessage, proposeAction } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { formatFieldName } from '@elysium/shell-api/format'
@@ -109,9 +110,9 @@ export default function BulkActionForm({ action, objectType, objectIds, onDone }
 
   return (
     <div className="bulk-action-form">
-      <Callout intent="primary">
+      <Notice state="active">
         This will be proposed for {objectIds.length} {objectIds.length === 1 ? objectType : `${objectType} objects`}.
-      </Callout>
+      </Notice>
 
       {typed.map(([name, spec]) => {
         const parameter = spec as ParameterSpec

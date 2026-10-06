@@ -15,8 +15,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import Notice from '@elysium/shell-api/components/Notice'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Callout, HTMLTable, Icon, Tag } from '@blueprintjs/core'
+import { Button, HTMLTable, Icon } from '@blueprintjs/core'
 import { IconNames, type IconName } from '@blueprintjs/icons'
 
 import LoadingState from '@elysium/shell-api/components/LoadingState'
@@ -76,10 +78,15 @@ function iconOrNone(name: string | null | undefined): IconName | undefined {
 const PROMINENT = 'prominent'
 const HIDDEN = 'hidden'
 
-function statusIntent(status: string | undefined) {
-  if (status === 'deprecated') return 'danger' as const
-  if (status === 'experimental') return 'warning' as const
-  return 'none' as const
+/** A field's lifecycle, as a tag state. The names moved from
+ *  Blueprint's intents to the application's own vocabulary when the
+ *  tag was wrapped: `danger` and `warning` describe a colour, while
+ *  `refused` and `pending` describe what the tag MEANS, which is what
+ *  the next person reading this needs. */
+function statusState(status: string | undefined) {
+  if (status === 'deprecated') return 'refused' as const
+  if (status === 'experimental') return 'pending' as const
+  return 'neutral' as const
 }
 
 function FieldTable({
@@ -121,10 +128,10 @@ function FieldTable({
                       filter by hand is the tedious version of that. */}
                   {field.link_type ? (
                     <Button minimal small onClick={() => onOpenLinkType(field.link_type as string)}>
-                      <Tag minimal>link</Tag>
+                      <StatusTag>link</StatusTag>
                     </Button>
                   ) : (
-                    <Tag minimal>link</Tag>
+                    <StatusTag>link</StatusTag>
                   )}{' '}
                   <span>{field.cardinality === 'many' ? 'many' : 'one'}</span>{' '}
                   {field.target ? (
@@ -136,14 +143,12 @@ function FieldTable({
                   )}
                 </>
               ) : (
-                <Tag minimal>{field.type}</Tag>
+                <StatusTag>{field.type}</StatusTag>
               )}
               {field.status && field.status !== 'active' && (
                 <>
                   {' '}
-                  <Tag minimal intent={statusIntent(field.status)}>
-                    {field.status}
-                  </Tag>
+                  <StatusTag state={statusState(field.status)}>{field.status}</StatusTag>
                 </>
               )}
             </td>
@@ -177,15 +182,13 @@ function ObjectTypeCard({
         {type.status && type.status !== 'active' && (
           <>
             {' '}
-            <Tag minimal intent={statusIntent(type.status)}>
-              {type.status}
-            </Tag>
+            <StatusTag state={statusState(type.status)}>{type.status}</StatusTag>
           </>
         )}
         {type.group && (
           <>
             {' '}
-            <Tag minimal>{type.group}</Tag>
+            <StatusTag>{type.group}</StatusTag>
           </>
         )}
       </h3>
@@ -200,7 +203,7 @@ function ObjectTypeCard({
       )}
       <h4>Properties</h4>
       <FieldTable fields={normal} onOpenObjectType={onOpenObjectType} onOpenLinkType={onOpenLinkType} />
-      {entries.length === 0 && <Callout intent="none">No fields are visible to you on this object type.</Callout>}
+      {entries.length === 0 && <Notice state="neutral">No fields are visible to you on this object type.</Notice>}
     </section>
   )
 }
@@ -422,9 +425,9 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       {selectedTab === 'object-types' && (
         <>
           {Object.keys(schema).length === 0 ? (
-            <Callout intent="none">You do not have read access to any object type in this ontology.</Callout>
+            <Notice state="neutral">You do not have read access to any object type in this ontology.</Notice>
           ) : matches.length === 0 ? (
-            <Callout intent="none">No object type matches {filter}.</Callout>
+            <Notice state="neutral">No object type matches {filter}.</Notice>
           ) : (
             matches.map(([apiName, type]) => (
               <ObjectTypeCard

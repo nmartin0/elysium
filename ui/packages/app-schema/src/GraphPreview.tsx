@@ -12,7 +12,8 @@
  * when someone wants it, rather than deciding for them that they do.
  */
 
-import { Button, Tag } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import { formatFieldName } from '@elysium/shell-api/format'
@@ -92,7 +93,7 @@ export default function GraphPreview({ selection, schema, actionTypes, onOpenFul
         <p className="graph-preview__kind">Link type</p>
         <h3>{selection.name}</h3>
         <p className="graph-preview__joins">
-          {selection.source} <Tag minimal>{selection.label}</Tag> {selection.target}
+          {selection.source} <StatusTag>{selection.label}</StatusTag> {selection.target}
         </p>
 
         <h4>Fields</h4>
@@ -137,9 +138,9 @@ export default function GraphPreview({ selection, schema, actionTypes, onOpenFul
               {formatFieldName(parameter.display_name ?? name)}
               <span className="graph-preview__type"> {parameter.object_type ?? parameter.type}</span>
               {parameter.required && (
-                <Tag minimal intent="primary" className="graph-preview__visibility">
+                <StatusTag state="active" className="graph-preview__visibility">
                   required
-                </Tag>
+                </StatusTag>
               )}
             </li>
           ))}
@@ -177,9 +178,7 @@ export default function GraphPreview({ selection, schema, actionTypes, onOpenFul
                 fixture ontology declares none, so this path is
                 exercised by tests rather than by the dev deployment. */}
             {field.visibility && field.visibility !== 'normal' && (
-              <Tag minimal className="graph-preview__visibility">
-                {field.visibility}
-              </Tag>
+              <StatusTag className="graph-preview__visibility">{field.visibility}</StatusTag>
             )}
           </li>
         ))}

@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Callout } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
 import Chart from '@elysium/shell-api/components/Chart'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
@@ -207,10 +207,10 @@ export default function ChartsPanel({
           // every field has one distinct value, which is a true answer
           // and needs saying rather than showing an empty box.
           charts.length === 0 ? (
-            <Callout intent="none">
+            <Notice state="neutral">
               No field in this object type has more than one distinct value in the current results, so there is nothing
               to chart.
-            </Callout>
+            </Notice>
           ) : (
             <div className="charts-panel">
               {charts.map((chart) => (

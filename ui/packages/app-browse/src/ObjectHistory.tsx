@@ -21,7 +21,9 @@
  * the entry the rule exists to preserve.
  */
 
-import { Callout, HTMLTable, Tag } from '@blueprintjs/core'
+import { HTMLTable } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { getObjectHistory } from '@elysium/shell-api/api'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
@@ -57,7 +59,7 @@ export default function ObjectHistory({
         body.entries.length === 0 ? (
           // An object nobody has edited is the ordinary case, and it
           // deserves a sentence rather than an empty table.
-          <Callout intent="none">No recorded changes to this object.</Callout>
+          <Notice state="neutral">No recorded changes to this object.</Notice>
         ) : (
           <HTMLTable compact striped className="object-history">
             <thead>
@@ -77,7 +79,7 @@ export default function ObjectHistory({
                   <td className="object-history__when">{entry.created_at}</td>
                   <td>{entry.user_id}</td>
                   <td>
-                    <Tag minimal>{entry.operation}</Tag>{' '}
+                    <StatusTag>{entry.operation}</StatusTag>{' '}
                     {Object.keys(entry.changes).length > 0 ? (
                       Object.keys(entry.changes).map(formatFieldName).join(', ')
                     ) : (

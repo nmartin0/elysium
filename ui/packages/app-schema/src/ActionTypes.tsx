@@ -17,7 +17,8 @@
  * browser should.
  */
 
-import { Button, HTMLTable, Tag } from '@blueprintjs/core'
+import { Button, HTMLTable } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useEffect, useState } from 'react'
 import { getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
@@ -115,14 +116,12 @@ export default function ActionTypes({ onSessionExpired, filter, onOpenObjectType
                           )}
                         </td>
                         <td>
-                          <Tag minimal>{parameter.type}</Tag>
+                          <StatusTag>{parameter.type}</StatusTag>
                           {parameter.object_type && <> {parameter.object_type}</>}
                           {parameter.required && (
                             <>
                               {' '}
-                              <Tag minimal intent="primary">
-                                required
-                              </Tag>
+                              <StatusTag state="active">required</StatusTag>
                             </>
                           )}
                         </td>

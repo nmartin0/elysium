@@ -1,4 +1,5 @@
 import { pluralise } from '@elysium/shell-api/format'
+import Notice from '@elysium/shell-api/components/Notice'
 /**
  * SchemaGraph -- the ontology as a picture rather than three lists.
  *
@@ -18,7 +19,6 @@ import { pluralise } from '@elysium/shell-api/format'
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Callout } from '@blueprintjs/core'
 import Chart from '@elysium/shell-api/components/Chart'
 import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -225,7 +225,7 @@ export default function SchemaGraph({ schema, onSelect }: SchemaGraphProps) {
   const model = useMemo(() => buildGraph(schema, actionTypes), [schema, actionTypes])
 
   if (model.nodes.length === 0) {
-    return <Callout intent="none">You do not have read access to any object type in this ontology.</Callout>
+    return <Notice state="neutral">You do not have read access to any object type in this ontology.</Notice>
   }
 
   const option = {

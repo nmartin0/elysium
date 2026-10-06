@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Button, Callout } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
+import { Button } from '@blueprintjs/core'
 import { messageFromErrorBody, query } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 
@@ -125,7 +126,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
           outcomes elsewhere (see PendingWriteCard's own Callout usage
           for that real contrast). */}
       {error && <ErrorState>{error}</ErrorState>}
-      {answer && <Callout>{answer}</Callout>}
+      {answer && <Notice>{answer}</Notice>}
       {/* Under the answer, and only when there IS one. A trace with
           nothing to explain is a control that raises a question the
           screen cannot answer. */}

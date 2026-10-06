@@ -23,7 +23,8 @@
  * complain about.
  */
 
-import { Callout, HTMLTable } from '@blueprintjs/core'
+import { HTMLTable } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
 import { getErrorMessage, getMetrics, handleIfSessionExpired } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
@@ -120,11 +121,11 @@ export default function MetricsPanel({ onSessionExpired }: MetricsPanelProps) {
       {/* SAID OUT LOUD RATHER THAN OMITTED. Someone reading four
           numbers and seeing no mention of the fifth would reasonably
           conclude this was the whole picture. */}
-      <Callout intent="none" title="Saturation is not shown">
+      <Notice state="neutral" title="Saturation is not shown">
         The fourth signal — how close the machine is to its limits — is a property of the host, not of this process.
         Elysium cannot measure it without guessing at limits it does not know, so whatever watches the machine should
         answer it.
-      </Callout>
+      </Notice>
 
       <h3>Slowest routes</h3>
       {metrics.slowest_routes.length === 0 ? (

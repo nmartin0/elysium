@@ -1,5 +1,7 @@
 import React from 'react'
-import { Button, Callout, HTMLTable, Tag } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
+import { Button, HTMLTable, Tag } from '@blueprintjs/core'
 import {
   getErrorMessage,
   getMirrorState,
@@ -102,10 +104,10 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
     // reading live has no mirror state, and saying so beats a blank
     // page that looks like a broken sync.
     return (
-      <Callout intent="primary" title="This deployment reads live">
+      <Notice state="active" title="This deployment reads live">
         Reads go straight to the configured silos, so there is no mirror to report on. Set{' '}
         <code>read_from_mirror: true</code> to change that.
-      </Callout>
+      </Notice>
     )
   }
 
@@ -120,24 +122,24 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
       {state.tables
         .filter((each) => each.last_attempt_outcome === 'refused')
         .map((each) => (
-          <Callout
+          <Notice
+            state="pending"
             key={`${each.silo}.${each.table}`}
-            intent="warning"
             title={`Last sync of ${each.silo}.${each.table} was refused`}
           >
             <pre className="mirror__refusal">{each.last_attempt_detail}</pre>
             Elysium is still serving the snapshot from before it.
-          </Callout>
+          </Notice>
         ))}
 
       {state.problems.length > 0 && (
-        <Callout intent="warning" title="Integrity check found problems">
+        <Notice state="pending" title="Integrity check found problems">
           <ul>
             {state.problems.map((problem) => (
               <li key={problem}>{problem}</li>
             ))}
           </ul>
-        </Callout>
+        </Notice>
       )}
 
       <div className="mirror__actions">
@@ -198,9 +200,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                     {table.last_synced_at ? (
                       formatTimestamp(table.last_synced_at)
                     ) : (
-                      <Tag minimal intent="warning">
-                        never synced
-                      </Tag>
+                      <StatusTag state="pending">never synced</StatusTag>
                     )}
                   </td>
                   <td>
@@ -227,9 +227,9 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                          this is the difference between "we lost rows"
                          and "we refused rows", and an admin reading a
                          row count needs it at the same moment. */
-                      <Tag minimal intent="primary" style={{ marginInlineStart: '0.5rem' }}>
+                      <StatusTag state="active" style={{ marginInlineStart: '0.5rem' }}>
                         {held} held back{table.quarantine_reason ? ` — ${table.quarantine_reason}` : ''}
-                      </Tag>
+                      </StatusTag>
                     )}
                     {behind && (
                       /* THE GAP, NAMED. Bronze took rows that silver
@@ -238,7 +238,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                        snapshot before it. A number alone would leave a
                        reader to spot the difference and guess what it
                        meant. */
-                      <Tag minimal intent="warning" style={{ marginInlineStart: '0.5rem' }}>
+                      <StatusTag state="pending" style={{ marginInlineStart: '0.5rem' }}>
                         {/* THE DIRECTION SAYS WHICH FAULT IT IS. A first
                           version said "fetched but not served" for
                           both, which is right when bronze has MORE and
@@ -249,7 +249,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                         {gap > 0
                           ? 'fetched but not served — the last sync was refused'
                           : 'serving more than was last fetched — silver is out of date'}
-                      </Tag>
+                      </StatusTag>
                     )}
                   </td>
                 </tr>
@@ -288,9 +288,9 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
       </HTMLTable>
 
       {state.tables.length === 0 && (
-        <Callout intent="primary" title="Nothing synced yet">
+        <Notice state="active" title="Nothing synced yet">
           Run <code>python -m scripts.run_sync</code> to copy from the configured silos.
-        </Callout>
+        </Notice>
       )}
     </>
   )

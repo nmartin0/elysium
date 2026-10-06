@@ -1,4 +1,6 @@
 import type React from 'react'
+import Notice from '@elysium/shell-api/components/Notice'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 /**
  * NotificationsPanel -- what the deployment has told this person.
  *
@@ -17,7 +19,7 @@ import type React from 'react'
  * glanced at the tab would lose the one thing it is for.
  */
 
-import { Button, Callout, Card, CardList, NonIdealState, Tab, Tabs, Tag } from '@blueprintjs/core'
+import { Button, Card, CardList, NonIdealState, Tab, Tabs } from '@blueprintjs/core'
 import {
   getErrorMessage,
   getNotifications,
@@ -133,9 +135,9 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
         {notifications.map((notification) => (
           <Card key={notification.notification_id} className="notifications__item">
             <div className="notifications__head">
-              <Tag minimal intent={notification.seen ? 'none' : 'primary'}>
+              <StatusTag state={notification.seen ? 'neutral' : 'active'}>
                 {KIND_LABELS[notification.kind] ?? notification.kind}
-              </Tag>
+              </StatusTag>
               <span className="notifications__when">{formatTimestamp(notification.created_at)}</span>
               {!notification.seen && (
                 <Button minimal small onClick={() => void handleSeen(notification.notification_id)}>
@@ -144,7 +146,7 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
               )}
             </div>
             <p className="notifications__summary">{notification.summary}</p>
-            {notification.detail !== null && <Callout className="notifications__detail">{notification.detail}</Callout>}
+            {notification.detail !== null && <Notice className="notifications__detail">{notification.detail}</Notice>}
           </Card>
         ))}
       </CardList>

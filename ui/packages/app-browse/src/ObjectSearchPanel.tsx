@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Callout, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
+import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 
 // THE SERVER'S OWN CEILING, spelled for a reader rather than imported.
 // The number lives in core/ontology/mediator.py and the UI cannot see
@@ -702,10 +703,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           already distinguishes them -- source 'mirror' with a null
           last_synced_at -- and only the freshness line used it. */}
       {scanTruncated && (
-        <Callout intent="warning" className="object-search__truncated">
+        <Notice state="pending" className="object-search__truncated">
           This search stopped after reading {MAX_SCAN_LABEL} rows, so these results are incomplete. Narrowing the
           filters will find the rest.
-        </Callout>
+        </Notice>
       )}
 
       {/* WHEN THIS TYPE WAS PUBLISHED, not when its source was read.

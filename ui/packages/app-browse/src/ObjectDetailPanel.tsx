@@ -1,4 +1,5 @@
-import { Button, Tag } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
@@ -162,11 +163,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
     // deliberately: two surfaces showing the same state differently is
     // what the ladder exists to end.
     if (fieldSchema?.readable === false) {
-      return (
-        <Tag minimal intent="warning">
-          Hidden by your permissions
-        </Tag>
-      )
+      return <StatusTag state="pending">Hidden by your permissions</StatusTag>
     }
 
     const isLink = fieldSchema?.type === 'link'
@@ -213,9 +210,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
             earlier on the silo identifier tag, and reintroduced here
             hours later, which is why it is now a test rather than a
             habit. */}
-        <Tag minimal className="object-detail__link-count">
-          {linkedIds.length}
-        </Tag>{' '}
+        <StatusTag className="object-detail__link-count">{linkedIds.length}</StatusTag>{' '}
         {shown.map((linkedId, index) => (
           <span key={String(linkedId)}>
             {index > 0 && ', '}

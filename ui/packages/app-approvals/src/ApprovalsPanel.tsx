@@ -24,6 +24,7 @@
  */
 
 import { Button, Card, CardList, NonIdealState, Tag } from '@blueprintjs/core'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
@@ -160,7 +161,7 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                     ) : (
                       write.awaiting_your_review && <Tag intent="primary">Awaiting your review</Tag>
                     )}
-                    {write.proposed_by_you && <Tag minimal>Proposed by you</Tag>}
+                    {write.proposed_by_you && <StatusTag>Proposed by you</StatusTag>}
                     {/* WHAT THIS REVIEWER CAN ACTUALLY DECIDE, shown only when
                         it differs from the whole request.
 
@@ -175,29 +176,29 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                         would be noise on every row and ignored by the time it
                         mattered. */}
                     {write.tasks_you_may_decide < write.tasks_total && (
-                      <Tag minimal intent="primary">
+                      <StatusTag state="active">
                         {write.tasks_you_may_decide} of {write.tasks_total} tasks are yours to decide
-                      </Tag>
+                      </StatusTag>
                     )}
                     {/* PROGRESS, so a reviewer can tell a request waiting on
                         others from one nobody has touched. Approved rather than
                         decided: a rejected task is not progress, and counting it
                         would show a blocked request as nearly ready. */}
                     {write.tasks_approved > 0 && write.tasks_approved < write.tasks_total && (
-                      <Tag minimal>
+                      <StatusTag>
                         {write.tasks_approved} of {write.tasks_total} approved so far
-                      </Tag>
+                      </StatusTag>
                     )}
                     {/* SAID PLAINLY, because the reviewer is the one
                         who can tell a double-click from a deliberate
                         re-request. Without it, identical rows look
                         like a rendering fault. */}
                     {write.duplicate_count > 0 && (
-                      <Tag minimal intent="warning">
+                      <StatusTag state="pending">
                         {write.duplicate_count === 1
                           ? '1 identical proposal'
                           : `${write.duplicate_count} identical proposals`}
-                      </Tag>
+                      </StatusTag>
                     )}
                   </div>
 

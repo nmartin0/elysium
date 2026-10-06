@@ -17,7 +17,9 @@
  * an administrator learns that.
  */
 
-import { Button, Callout, Card, Checkbox, H5, HTMLSelect, InputGroup, Tag } from '@blueprintjs/core'
+import { Button, Card, Checkbox, H5, HTMLSelect, InputGroup } from '@blueprintjs/core'
+import Notice from '@elysium/shell-api/components/Notice'
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import {
   approveRoleChange,
   getCurrentUser,
@@ -155,14 +157,14 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
 
   return (
     <div className="roles">
-      <Callout intent={view.source === 'role store' ? 'primary' : 'none'}>
+      <Notice state={view.source === 'role store' ? 'active' : 'neutral'}>
         {view.source === 'role store'
           ? 'Roles come from the role store. Editing policy.yaml’s roles has no effect.'
           : 'Roles come from policy.yaml until the first approved change.'}
-      </Callout>
+      </Notice>
 
       {error !== null && <ErrorState>{error}</ErrorState>}
-      {notice !== null && <Callout intent="success">{notice}</Callout>}
+      {notice !== null && <Notice state="granted">{notice}</Notice>}
 
       <H5>Waiting for a decision</H5>
       {changes.length === 0 && <p className="roles__empty">Nothing is waiting.</p>}
@@ -173,9 +175,9 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
           <Card key={change.change_id} className="roles__change">
             <div className="roles__change-head">
               <strong>{change.role_name}</strong>
-              <Tag minimal>
+              <StatusTag>
                 {summary.kind === 'create' ? 'new role' : summary.kind === 'delete' ? 'delete role' : 'edit'}
-              </Tag>
+              </StatusTag>
               <span className="roles__by">proposed by {change.proposed_by}</span>
             </div>
             {summary.added.map((grant) => (

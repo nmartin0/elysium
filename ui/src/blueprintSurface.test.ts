@@ -65,6 +65,20 @@ const PINNED = [
   'Spinner',
   'Tag',
   'TextArea',
+  // TYPES, not components, and the distinction matters. `ButtonProps`
+  // and `TagProps` are imported by the two shell-api wrappers so they
+  // can say `Omit<ButtonProps, 'intent' | 'minimal'>` -- deriving their
+  // own prop surface FROM Blueprint's while subtracting the parts the
+  // house style fixes.
+  //
+  // THIS IS THE COUPLING SHRINKING, NOT WIDENING. The wrappers removed
+  // 43 direct `<Tag>` sites, 36 `<Button>` sites and 18 `<Callout>`
+  // sites, replacing them with three files that know about Blueprint.
+  // When the kit owns Button, Tag and Callout outright, these three
+  // names go rather than being the last to leave.
+  'ButtonProps',
+  'CalloutProps',
+  'TagProps',
   // Behaviour -- the six the plan vendors rather than writes.
   'Alert',
   'Checkbox',
