@@ -798,6 +798,18 @@ export interface MergeProposal {
   withheld: string[]
 }
 
+/**
+ * Questions this deployment shows in an empty query box.
+ *
+ * Only those marked `display: true` in example_queries.yaml, which the
+ * server refuses at load if any names an identifier-shaped token. They
+ * are safe to render to anybody, so there is nothing to filter here.
+ */
+export async function getExampleQuestions(): Promise<string[]> {
+  const response = await apiFetchOrThrow('/example-questions')
+  return (await response.json()) as string[]
+}
+
 export async function getMergeProposals(decision?: string): Promise<MergeProposal[]> {
   const query = decision ? `?decision=${encodeURIComponent(decision)}` : ''
   const response = await apiFetchOrThrow(`/merge-proposals${query}`)

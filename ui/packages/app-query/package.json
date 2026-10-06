@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./AskedBefore": "./src/AskedBefore.tsx",
+    "./ExampleQuestions": "./src/ExampleQuestions.tsx",
     "./QueryPanel": "./src/QueryPanel.tsx"
   },
   "dependencies": {

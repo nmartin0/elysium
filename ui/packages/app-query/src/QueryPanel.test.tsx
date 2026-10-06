@@ -17,6 +17,22 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     query: vi.fn(),
+    // DELIBERATELY NEVER SETTLES, in this file.
+    //
+    // QueryPanel fetches example questions on mount. Every test here
+    // is synchronous -- render, assert on the markup, finish -- so a
+    // promise that resolves lands a state update after the test has
+    // stopped watching, which setupTests.ts turns into a thrown act()
+    // warning. Resolving it immediately does not help: a microtask
+    // still runs after the test body and before cleanup, so the
+    // component's own unmount guard cannot catch it either.
+    //
+    // A promise that never settles means no state update ever lands,
+    // which is exactly right for tests that are not about examples.
+    // ExampleQuestions.test.tsx covers the rendering, and the examples
+    // are a separate component precisely so this file does not have to
+    // become asynchronous to test a textarea.
+    getExampleQuestions: vi.fn(() => new Promise<string[]>(() => {})),
   }
 })
 vi.mock('@elysium/shell-api/components/PendingWriteCard', () => ({

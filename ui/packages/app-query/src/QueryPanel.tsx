@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
 import { Button } from '@blueprintjs/core'
 import { messageFromErrorBody, query } from '@elysium/shell-api/api'
@@ -8,6 +8,10 @@ import AnswerTrace from './AnswerTrace'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 import Workspace from '@elysium/shell-api/components/Workspace'
+import { getExampleQuestions } from '@elysium/shell-api/api'
+
+import AskedBefore from './AskedBefore'
+import ExampleQuestions from './ExampleQuestions'
 
 interface QueryResponseBody {
   pending_write?: PendingWrite
@@ -36,6 +40,47 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [examples, setExamples] = useState<string[]>([])
+  /**
+   * IN MEMORY, FOR THIS SESSION. A question is not sensitive but the
+   * answer to it can be, and persisting either would outlive the
+   * grants it was answered under. The server keeps the audit trail,
+   * which is the record that should survive.
+   */
+  const [asked, setAsked] = useState<string[]>([])
+
+  useEffect(() => {
+    /**
+     * CANCELLED ON UNMOUNT, which the first version was not and which
+     * broke a test on a slower machine rather than on mine.
+     *
+     * `setupTests.ts` throws on an act() warning from our own
+     * components -- "a state update landed after the test stopped
+     * watching". QueryPanel's existing tests are synchronous: they
+     * render, assert on the markup, and finish. This fetch then
+     * resolved into a component nobody was watching any more.
+     *
+     * It is a race, so it passed here and failed there. The flag makes
+     * the outcome the same either way, and is the correct shape for a
+     * fetch-on-mount regardless of tests: a panel the user navigated
+     * away from should not set state.
+     *
+     * A deployment marking nothing for display gets an empty list and
+     * renders no examples section. A failure must not stop somebody
+     * asking a question, so it is swallowed rather than shown.
+     */
+    let cancelled = false
+    getExampleQuestions()
+      .then((questions) => {
+        if (!cancelled) setExamples(questions)
+      })
+      .catch(() => {
+        if (!cancelled) setExamples([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -43,6 +88,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
     setAnswer(null)
     setPendingWrite(null)
     setSubmitting(true)
+    setAsked((previous) => [queryText, ...previous.filter((question) => question !== queryText)].slice(0, 10))
 
     try {
       // query() itself returns a real, typed Response (not
@@ -117,6 +163,9 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
             showing a real, centered spinner. */}
         <Button type="submit" text={submitting ? 'Thinking…' : 'Ask'} loading={submitting} />
       </form>
+
+      <ExampleQuestions questions={examples} onPick={(q) => setQueryText(q)} />
+      <AskedBefore questions={asked} onPick={(q) => setQueryText(q)} />
 
       {/* intent="danger" for the error, deliberately no intent at all
           for the answer (a plain, neutral Callout) -- the answer isn't

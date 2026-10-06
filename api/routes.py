@@ -3247,6 +3247,35 @@ def _readable_fields(request: Request, user: UserRecord, object_type: str) -> se
     }
 
 
+@router.get("/example-questions", response_model=list[str],
+            dependencies=[Depends(_no_store)])
+def example_questions_route(request: Request,
+                            current_user: UserRecord = Depends(get_current_user)):
+    """Questions this deployment chooses to show in an empty query box.
+
+    WHY THE SCREEN NEEDED THIS. A first-time user met a text field and
+    nothing else: no indication of what the ontology accepts, what a
+    question may ask for, or that refusals are a normal answer. The
+    file was already loaded and validated on every start and then
+    thrown away.
+
+    ONLY THOSE MARKED `display: true`, and the distinction is a
+    security one rather than editorial. An example without the flag
+    belongs to the demo runner, executes as a named user with MAC
+    applied, and may name a real object -- which is a query. The same
+    text rendered as placeholder text to anybody who opens the screen
+    would be a disclosure, so core/display_safety.py refuses a
+    displayable example naming an identifier-shaped token, and refuses
+    it at LOAD rather than at render.
+
+    NOT FILTERED PER CALLER. These name no objects by construction, so
+    there is nothing in them to withhold -- and a user whose grants
+    would refuse the question still learns the SHAPE of what can be
+    asked, which is what an empty box fails to teach.
+    """
+    return list(_generation(request).display_examples)
+
+
 @router.get("/merge-proposals", response_model=list[MergeProposalResponse],
             response_model_exclude_none=True,
             dependencies=[Depends(_no_store)])

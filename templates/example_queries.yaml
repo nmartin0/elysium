@@ -7,3 +7,28 @@
 examples:
   - user_id: alice
     query: "What is Alice's own department?"
+
+# ---------------------------------------------------------------------
+# SHOWN IN THE QUERY SCREEN: `display: true`
+#
+# An example WITHOUT this flag is the demo runner's. It executes as a
+# named user through the mediator with MAC applied, so naming a real
+# object there is a query rather than a disclosure.
+#
+# An example WITH it is rendered to anybody who opens the query screen,
+# before they have asked anything and whatever they are cleared to see.
+# `core/display_safety.py` refuses any that names an identifier-shaped
+# token, and refuses it at LOAD so a deployment cannot start with a
+# leak in its placeholder text.
+#
+# So a displayed example asks a SHAPE of question -- what the ontology
+# can be asked -- never about a particular row.
+# ---------------------------------------------------------------------
+  - query: "Which customers are in the us-east region?"
+    display: true
+  - query: "How many transactions were there last month?"
+    display: true
+  - query: "Show me the customers with the largest total transaction value"
+    display: true
+  - query: "Which accounts have no transactions at all?"
+    display: true

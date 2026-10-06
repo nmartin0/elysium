@@ -393,6 +393,7 @@ new_password
 # vulture sees a function nobody calls.
 merge_proposals_route
 decide_merge_route
+example_questions_route
 
 # security_cache_per_request (api/app.py) -- registered by @app.middleware.
 security_cache_per_request

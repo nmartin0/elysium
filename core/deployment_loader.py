@@ -1373,6 +1373,18 @@ class DeploymentGeneration:
     # tells a caller which layer it is looking at (GOLD-3).
     gold_published_at: Mapping[str, str] = MappingProxyType({})
 
+    #: Example questions a deployment chooses to SHOW in the query
+    #: screen -- those marked `display: true`. They are kept here
+    #: because an empty query box tells a first-time user nothing about
+    #: what the ontology accepts, and the file was being loaded,
+    #: validated and thrown away.
+    #:
+    #: Only the displayable ones. An example without the flag is the
+    #: demo runner's, executes as a named user with MAC applied, and
+    #: may legitimately name a real object -- which is exactly why it
+    #: must not appear as placeholder text.
+    display_examples: tuple[str, ...] = ()
+
 
 def repointed_silos(before: DeploymentConfig, after: DeploymentConfig) -> list[str]:
     """Silos whose CONNECTION changed between two configurations.
@@ -1464,6 +1476,11 @@ def build_generation(
     except (FileNotFoundError, KeyError, TypeError):
         examples = []
     refuse_unsafe_display_examples(examples)
+    display_examples = tuple(
+        str(example.get("query", ""))
+        for example in examples
+        if isinstance(example, dict) and example.get("display")
+    )
     write_mediator = WriteMediator(
         mediator, write_adapters, config.roles, config.action_types, config.generation,
         # WRITES DESCRIBE THE SOURCE (D3), whatever reads are bound to.
@@ -1480,6 +1497,7 @@ def build_generation(
         loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator),
         synthesis_client=build_llm_adapter(config, config.synthesis_model),
         write_adapters=write_adapters,
+        display_examples=display_examples,
         mirror_snapshots=_mirror_snapshot_ids(mediator),
         gold_published_at=_gold_published_at(mediator),
     )

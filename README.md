@@ -567,6 +567,7 @@ test file:
 | `app-admin` | users, roles, grants, deployment configuration |
 | `app-schema` | the visible schema, as the asking user may see it |
 | `app-approvals` | pending writes and the approval flow |
+| `app-identity` | proposed merges — decide whether two records are one, on the agreement pattern rather than on values the reviewer may not read |
 | `app-notifications` | triggers and what they fired on |
 | `app-query` | ask a question, read the answer and its trace |
 | `shell-api` | fetch, session, CSRF, and the design tokens |

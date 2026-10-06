@@ -123,4 +123,11 @@ def test_every_field_is_declared(generation):
         # each was published. Added deliberately and declared here, so
         # the shape stays decided in one place.
         "gold_published_at",
+        # Added for the query screen's example questions. The file was
+        # loaded and validated on every start and then discarded, so an
+        # empty query box could not tell a first-time user what the
+        # ontology accepts. Only `display: true` examples are kept, and
+        # core/display_safety.py refuses at load any that names an
+        # identifier-shaped token.
+        "display_examples",
     }
