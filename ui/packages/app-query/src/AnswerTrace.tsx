@@ -17,6 +17,8 @@ import { Button, HTMLTable } from '@blueprintjs/core'
 import { getErrorMessage, getRequestTrace, handleIfSessionExpired } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 
+import TraceSummary from './TraceSummary'
+
 interface TraceEntry {
   object_type: string
   object_id: string | null
@@ -66,6 +68,7 @@ export default function AnswerTrace({
 
       {open && error && <ErrorState>{error}</ErrorState>}
 
+      {open && entries !== null && <TraceSummary entries={entries} />}
       {open &&
         entries !== null &&
         (entries.length === 0 ? (

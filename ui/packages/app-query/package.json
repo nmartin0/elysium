@@ -6,7 +6,8 @@
   "exports": {
     "./AskedBefore": "./src/AskedBefore.tsx",
     "./ExampleQuestions": "./src/ExampleQuestions.tsx",
-    "./QueryPanel": "./src/QueryPanel.tsx"
+    "./QueryPanel": "./src/QueryPanel.tsx",
+    "./TraceSummary": "./src/TraceSummary.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*"
