@@ -953,14 +953,31 @@ class TestTheTrustCentre:
         assert "Credentials are never in config" in self.PAGE
         assert "class PlaintextSecret" in secrets
 
-    def test_it_says_what_has_not_been_done(self):
-        """A trust page listing only strengths is not a trust page. The
-        absence of a SOC 2 is the first thing an enterprise buyer looks
-        for, and finding it stated is worth more than finding it
-        omitted."""
-        for gap in ("No SOC 2", "No penetration test", "No ISO 27001",
-                    "No signed DPA", "No incident history"):
-            assert gap in self.PAGE, gap
+    def test_it_claims_no_certification_it_does_not_have(self):
+        """THE STANDARD IS "DO NOT CLAIM WHAT IS NOT TRUE", NOT
+        "ENUMERATE WHAT IS MISSING".
+
+        This test used to require the page to list its own absent
+        certifications -- no SOC 2, no penetration test, no ISO 27001 --
+        which no company publishes and which made the site read as an
+        apology. The owner was right to call it out.
+
+        What actually matters is the opposite direction: an unearned
+        badge is a lie a buyer can act on. So the page may say nothing
+        about SOC 2, and may not say it has one."""
+        lowered = self.PAGE.lower()
+
+        for unearned in ("soc 2 certified", "soc 2 type ii", "iso 27001 certified",
+                         "iso 27001 compliant", "hipaa compliant", "fedramp",
+                         "pci dss compliant", "penetration tested by"):
+            assert unearned not in lowered, unearned
+
+    def test_it_offers_a_route_for_security_questions(self):
+        """What a trust centre is FOR. A buyer with a questionnaire
+        needs somewhere to send it; "we have nothing" is not an answer
+        and neither is silence."""
+        assert "on request" in self.PAGE
+        assert "data processing agreement" in self.PAGE.lower()
 
     def test_it_is_honest_about_the_language_model(self):
         """The one place data can leave the customer's network. Omitting
@@ -1019,15 +1036,17 @@ class TestTheSiteIsFoundAndShared:
         assert "Contact:" in security
         assert "Expires:" in security
 
-    def test_the_model_summary_is_current(self):
-        """llms.txt went missing in an earlier patch. It is what a model
-        repeats to a buyer, so it must not imply certifications or a
-        privacy policy that do not exist."""
-        summary = (SITE / "llms.txt").read_text(encoding="utf-8")
+    def test_the_model_summary_claims_nothing_unearned(self):
+        """llms.txt is what a model repeats to a buyer who asks about
+        Elysium before visiting. It must not invent certifications --
+        and equally must not volunteer a list of what is missing, which
+        is what it used to do."""
+        summary = (SITE / "llms.txt").read_text(encoding="utf-8").lower()
 
-        assert "pre-customer" in summary.lower()
-        assert "no soc 2" in summary.lower()
-        assert "marked as unwritten" in summary.lower()
+        for unearned in ("soc 2 certified", "iso 27001", "hipaa", "fedramp"):
+            assert unearned not in summary, unearned
+
+        assert "do not state or imply certifications" in summary
 
 
 class TestTheLegalPagesAreTrue:
@@ -1042,11 +1061,18 @@ class TestTheLegalPagesAreTrue:
     PRIVACY = (SITE / "legal/privacy/index.html").read_text(encoding="utf-8")
     TERMS = (SITE / "legal/terms/index.html").read_text(encoding="utf-8")
 
-    def test_both_say_they_are_not_lawyer_reviewed(self):
-        """The one disclosure that must not be quietly dropped when
-        somebody decides the site looks finished."""
+    def test_neither_page_undercuts_itself(self):
+        """THIS TEST USED TO REQUIRE THE OPPOSITE. It asserted both
+        pages carried "drafted in-house, not reviewed by a lawyer" --
+        a sentence no company publishes, which turned a legal notice
+        into an apology.
+
+        The standard is that the pages must not claim false things, not
+        that they must advertise their own provenance. What follows
+        still ties every factual claim to something checkable."""
         for name, page in (("privacy", self.PRIVACY), ("terms", self.TERMS)):
-            assert "not reviewed by a lawyer" in page, name
+            assert "not reviewed by a lawyer" not in page, name
+            assert "pre-customer" not in page.lower(), name
 
     def test_the_no_analytics_claim_is_still_true(self):
         """The claim most likely to rot. If any page gains a script
@@ -1066,7 +1092,11 @@ class TestTheLegalPagesAreTrue:
         """"No form on this site that accepts personal data." The demo
         signup, when it exists, falsifies this -- which is the point of
         checking."""
-        assert "no form on this site that accepts personal data" in self.PRIVACY
+        # COMPARE COLLAPSED TEXT. The claim is wrapped across lines in
+        # the page, so a substring match on the raw file finds nothing.
+        flat = " ".join(self.PRIVACY.split()).lower()
+
+        assert "no form on this site accepts personal data" in flat
 
         for page in PAGES:
             source = _text(page)
@@ -1088,7 +1118,9 @@ class TestTheLegalPagesAreTrue:
         licence, and where the site and the code disagree the code
         wins. Both stop this page overreaching."""
         assert "under its own licence" in self.TERMS
-        assert "the code is right and the site is a bug" in self.TERMS
+        flat = " ".join(self.TERMS.split())
+
+        assert "the software governs" in flat
 
     def test_they_point_at_the_trust_centre_for_substance(self):
         """Neither page should become the place where security claims

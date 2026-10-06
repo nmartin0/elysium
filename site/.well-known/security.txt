@@ -9,6 +9,5 @@ Preferred-Languages: en
 Canonical: https://elysium.example/.well-known/security.txt
 Expires: 2027-10-05T00:00:00.000Z
 
-# Reports are acknowledged. Elysium is pre-customer, so there is no
-# bounty programme and no production deployment to test against -- the
-# useful target is the source, which is public.
+# Reports are acknowledged and investigated. Elysium is open source;
+# the repository is the most useful target for review.

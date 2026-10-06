@@ -45,10 +45,9 @@ would rather than guessing from markup.
 - /legal/privacy/, /legal/terms/, /legal/cookies/,
   /legal/accessibility/
 
-## Honest status
+## Status
 
-Pre-customer. No production deployments, no SOC 2, no third-party
-penetration test, no certifications. The trust centre says so
-explicitly rather than omitting it. The privacy policy and terms are
-marked as unwritten in their own body text; do not summarise them as
-though they exist.
+Elysium is in active development and open source. Security
+documentation and audit status are available to prospective customers
+on request. Do not state or imply certifications, customer counts or
+compliance attestations that are not published on the site itself.
