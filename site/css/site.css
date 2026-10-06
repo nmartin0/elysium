@@ -1322,3 +1322,189 @@ section {
 .stage svg {
   max-width: 76rem;
 }
+
+/* ============================================================
+ * PLACEMENT, measured rather than eyeballed.
+ *
+ * I extracted every text block's left edge, width and size from the
+ * rendered page. The result explains "doesn't look natural" exactly:
+ *
+ *   TEN DISTINCT LEFT EDGES: 288, 321, 510, 555, 609, 732, 772, 812,
+ *   896, 954. Only ONE of those is the page margin. The eye reads a
+ *   layout by its edges, and this page offered ten.
+ *
+ *   FOUR BODY SIZES: 22px, 17px, 13px and 13px-again-for-a-different
+ *   reason. A reader cannot tell which text is the same KIND of text,
+ *   because size is how that is signalled.
+ *
+ *   A SECTION LEDE SET AT 13px under a 33px heading -- a jump of 20px
+ *   with nothing between. That is a caption pretending to be an
+ *   introduction.
+ *
+ *   TEXT NOT FILLING ITS OWN COLUMN: the hero's right column is 340px
+ *   wide and its prose was capped at 202, so a third of a column I had
+ *   just added to fill the page was itself empty.
+ *
+ * THE RULES, applied everywhere below:
+ *
+ *   ONE PROSE SIZE. All running text is --t-base. Captions under
+ *   labels are --t-sm. Nothing else.
+ *
+ *   A LEDE IS A LEDE. Every section's opening paragraph is the same
+ *   size, in the same place, at the same measure.
+ *
+ *   TEXT FILLS ITS CONTAINER. A column's measure is set by the
+ *   COLUMN's width, not by a cap invented per block.
+ *
+ *   EDGES ARE SHARED. A block either starts at the page margin or at
+ *   its container's edge. Padding inside a tile is the only inset,
+ *   and it is the same for every tile.
+ * ============================================================ */
+
+/* ---- one prose size ---- */
+.band__head p,
+.split__aside p,
+.band__body > p,
+.tile p,
+.hero__aside dd {
+  font-size: var(--t-base);
+  line-height: 1.6;
+}
+
+/* ---- a lede is a lede, wherever it appears ---- */
+.band__head p {
+  font-size: var(--t-md);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  max-width: 34ch;
+}
+
+/* ---- text fills its column ----
+ *
+ * These caps were invented block by block. The container already
+ * constrains the measure; a second cap inside it just leaves the
+ * column half empty.
+ */
+.hero__aside dd,
+.tile p,
+.split__aside p {
+  max-width: none;
+}
+
+/* ---- the orphan paragraph ----
+ *
+ * One 17px paragraph at 544px sat alone between the code split and the
+ * tiles, at a width shared with nothing. It belongs with the lede
+ * above it.
+ */
+.band__body > p:first-of-type {
+  max-width: 34ch;
+  font-size: var(--t-md);
+  color: var(--ink-soft);
+}
+
+/* ---- tiles ----
+ *
+ * Padding is the ONLY inset on this page, and it is identical across
+ * tiles so their text shares three edges rather than inventing new
+ * ones per section.
+ */
+.tile {
+  padding: var(--s-3);
+}
+
+.tile h3 {
+  font-size: var(--t-base);
+  margin-bottom: var(--s-1);
+}
+
+.tile p {
+  font-size: var(--t-sm);
+  line-height: 1.55;
+}
+
+/* ---- the hero's right column ----
+ *
+ * Its label and its prose now share one edge and one measure, and the
+ * prose uses the column it was given.
+ */
+.hero__aside dt {
+  margin-bottom: 0.35rem;
+}
+
+.hero__aside dd {
+  font-size: var(--t-sm);
+  line-height: 1.55;
+}
+
+/* ---- ONE LEDE SIZE, which the measurement caught ----
+ *
+ * The hero's lede rendered at 22px and every other section's at 21px.
+ * A one-pixel difference between two things that are the same KIND of
+ * text is the clearest tell of a page assembled block by block: too
+ * close to read as deliberate, too far to be the same.
+ *
+ * Four steps for text, and nothing between them:
+ *
+ *   21px  lede        the opening sentence of a section
+ *   17px  prose       running text
+ *   13px  caption     text inside a tile, a footer, a banner
+ *   11px  label       mono, uppercase, spaced -- eyebrows and keys
+ */
+.hero .lede,
+.lede {
+  font-size: var(--t-md);
+  line-height: 1.5;
+}
+
+/* And the paragraph after a code block is PROSE, not a second lede.
+ * It had been promoted to 21px, so a section opened at lede size,
+ * dropped to prose, then rose to lede size again halfway down. */
+.band__body > p:first-of-type {
+  font-size: var(--t-base);
+  max-width: 62ch;
+  color: var(--ink);
+}
+
+/* ---- a section's heading and its lede sit side by side ----
+ *
+ * Stacked, they made a narrow column with the right half of the band
+ * empty beside them -- the same fault as the original page, now
+ * one block smaller. Side by side they fill the width, the heading
+ * holds the left edge every section shares, and the lede gets a
+ * measure wide enough not to wrap every four words.
+ *
+ * This is the oldest editorial arrangement there is: a title and a
+ * standfirst, set across the top of what follows.
+ */
+@media (min-width: 54rem) {
+  .band--long .band__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: clamp(var(--s-3), 4vw, var(--s-8));
+    align-items: baseline;
+    max-width: none;
+  }
+
+  .band--long .band__head h2 {
+    margin-bottom: 0;
+    max-width: 16ch;
+  }
+
+  .band--long .band__head p {
+    max-width: 46ch;
+    margin-bottom: 0;
+  }
+}
+
+/* The consent banner's own text ran 108 characters -- found by the
+ * placement test, which measures every paragraph and does not care
+ * that this one lives in a fixed bar.
+ *
+ * It was ALREADY capped at 44rem, which is where my first fix went
+ * wrong: 44rem is 704px, and 704px at 13px is those same 108
+ * characters. The cap was not missing, it was set from a number I had
+ * not checked. 34rem is about 66. */
+.consent p {
+  max-width: 34rem;
+}

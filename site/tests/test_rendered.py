@@ -128,3 +128,65 @@ class TestTheLayoutUsesTheWidth:
                 assert body["height"] < head["height"] * 4, (
                     f"band {i}: a {head['height']:.0f}px head beside a "
                     f"{body['height']:.0f}px body leaves the left blank")
+
+
+class TestTextPlacementIsSystematic:
+    """"The text placement within the pages is still poor. It doesn't
+    look natural."
+
+    I measured every text block in the rendered page rather than
+    guessing, and the numbers said exactly what was wrong: TEN distinct
+    left edges where only one was the page margin, and FOUR body sizes
+    including a 22px lede beside a 21px one -- a one-pixel difference
+    between two things that are the same kind of text, which is the
+    clearest tell of a page assembled block by block.
+
+    These assert the system rather than any particular number, so the
+    next block added has to join it."""
+
+    def test_prose_uses_one_size_per_role(self, page):
+        """Four steps and nothing between them: lede, prose, caption,
+        label. Five sizes means two of them are doing one job."""
+        sizes = page.evaluate("""() => [...document.querySelectorAll('p,dd')]
+            .filter(e => e.getBoundingClientRect().width > 2)
+            .map(e => getComputedStyle(e).fontSize)""")
+
+        assert len(set(sizes)) <= 4, f"{len(set(sizes))} prose sizes: {sorted(set(sizes))}"
+
+    def test_no_two_prose_sizes_are_within_two_pixels(self, page):
+        """The 22px-beside-21px fault, stated as a rule. Two sizes that
+        close read as a mistake rather than a decision."""
+        sizes = sorted({float(s[:-2]) for s in page.evaluate(
+            """() => [...document.querySelectorAll('p,dd')]
+                .filter(e => e.getBoundingClientRect().width > 2)
+                .map(e => getComputedStyle(e).fontSize)""")})
+        # RATIOS, NOT PIXELS. A first version demanded a gap of more
+        # than 2px and rejected 11-to-13 -- a label and a caption,
+        # which are different roles and legitimately close at small
+        # sizes. What actually reads as a mistake is two sizes within
+        # about a tenth of each other, like the 22px lede that sat
+        # beside a 21px one.
+        ratios = [b / a for a, b in zip(sizes, sizes[1:], strict=False)]
+
+        assert all(ratio > 1.12 for ratio in ratios), f"sizes too close: {sizes}"
+
+    def test_every_paragraph_is_readable_width(self, page):
+        """45 to 75 characters is the published range for running
+        text. The floor here is 34, not 45, because text inside a card
+        is legitimately narrower -- a three-up grid gives each tile
+        about 37 characters and that is normal for the form.
+
+        What this catches is the real failure: a paragraph four words
+        wide, which is what the nested grids produced and what made
+        the split unreadable."""
+        bad = page.evaluate("""() => [...document.querySelectorAll('p')]
+            .filter(e => e.getBoundingClientRect().width > 2)
+            .map(e => {
+              const r = e.getBoundingClientRect();
+              const size = parseFloat(getComputedStyle(e).fontSize);
+              return {chars: Math.round(r.width / (size * 0.5)),
+                      text: e.textContent.trim().slice(0, 30)};
+            })
+            .filter(p => p.chars < 34 || p.chars > 85)""")
+
+        assert bad == [], bad
