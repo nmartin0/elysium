@@ -3,18 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Cookies — Elysium</title>
-    <meta name="description" content="Which cookies this site sets, why, and how to change your choice." />
-    <link rel="canonical" href="https://elysium.example/legal/cookies/" />
+    <title>Run it yourself — Elysium</title>
+    <meta name="description" content="Elysium is open source. Clone it, point it at a database, and ask it a question." />
+    <link rel="canonical" href="https://elysium.example/run/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Elysium" />
-    <meta property="og:url" content="https://elysium.example/legal/cookies/" />
-    <meta property="og:title" content="Cookies — Elysium" />
-    <meta property="og:description" content="Which cookies this site sets, why, and how to change your choice." />
+    <meta property="og:url" content="https://elysium.example/run/" />
+    <meta property="og:title" content="Run it yourself — Elysium" />
+    <meta property="og:description" content="Elysium is open source. Clone it, point it at a database, and ask it a question." />
     <meta property="og:image" content="https://elysium.example/img/share-card.svg" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Cookies — Elysium" />
-    <meta name="twitter:description" content="Which cookies this site sets, why, and how to change your choice." />
+    <meta name="twitter:title" content="Run it yourself — Elysium" />
+    <meta name="twitter:description" content="Elysium is open source. Clone it, point it at a database, and ask it a question." />
     <meta name="twitter:image" content="https://elysium.example/img/share-card.svg" />
     <link rel="icon" href="/img/logo-dark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/css/tokens.css" />
@@ -38,54 +38,71 @@
     <main id="main" class="wrap prose">
       <div class="band band--long">
         <div class="band__head">
-          <h1>Cookies</h1>
+          <h1>Run it yourself</h1>
           <p class="lede">
-            This site sets no non-essential cookies at all. The consent machinery exists
-            anyway, and this page explains why.
+            Elysium is open source. There is no sales call between you and a working
+            instance.
           </p>
         </div>
+
         <div class="band__body">
-          <h2>What is stored today</h2>
           <p>
-            One entry in your browser's local storage, named
-            <code class="mono">elysium.consent</code>, recording the choice you made and when
-            you made it. Nothing else — no analytics, no advertising, no third-party script of
-            any kind.
-          </p>
-          <p>
-            That entry is not sent anywhere. It stays in your browser so the banner does not
-            ask again on your next visit.
+            It ships with a worked example — two SQLite silos, an ontology over them, three
+            users with different grants — so the first question you ask returns a real answer
+            and the second one gets refused for a real reason.
           </p>
 
-          <h2>Why there is a banner with nothing to consent to</h2>
-          <p>
-            The machinery has to exist before the first analytics tag does, or that tag fires
-            before anybody is asked. Consent must be obtained <em>before</em> a non-essential
-            cookie is set, not shortly after.
-          </p>
-
-          <h2>The categories</h2>
+          <h2>What you need</h2>
           <ul>
-            <li><strong>Necessary</strong> — sign-in and security. Always on, and shown
-              disabled rather than offered as a choice nobody would honour.</li>
-            <li><strong>Analytics</strong> — how the site is used. Nothing in this category is
-              in use today.</li>
-            <li><strong>Marketing</strong> — advertising measurement. Nothing in this category
-              is in use today.</li>
+            <li><strong>Python 3.12 or later.</strong></li>
+            <li><strong>Node.js 22.22.2 or later</strong>, for the front end.</li>
+            <li><strong>Ollama</strong>, running locally, and enough free RAM for whichever
+              model you choose. Nothing leaves your machine.</li>
           </ul>
 
-          <h2>Changing or withdrawing your choice</h2>
+          <h2>The short version</h2>
+          <pre class="snippet"><code>git clone https://github.com/nmartin0/elysium
+cd elysium
+<i># INSTALL.md has the full version, including the service install</i>
+<i># and how to keep the mirror in sync</i></code></pre>
+
           <p>
-            The <a href="#" data-consent-reopen>Cookie settings</a> link in the footer of every
-            page reopens the panel with your current choices loaded. Withdrawing is as easy as
-            giving, which is a requirement rather than a courtesy.
+            <a href="https://github.com/nmartin0/elysium">The source</a> and
+            <a href="https://github.com/nmartin0/elysium/blob/dev/INSTALL.md">INSTALL.md</a>
+            are the authority; this page is a summary and will go stale before they do.
           </p>
 
-          <h2>When this page changes</h2>
+          <h2>What you are getting into</h2>
+          <div class="bento">
+            <div class="tile">
+              <h3>A worked example, not an empty shell</h3>
+              <p>
+                The repository ships fixtures, an ontology, a policy with three users and a
+                set of example questions. You are not writing YAML from a blank file to see
+                whether it works.
+              </p>
+            </div>
+            <div class="tile">
+              <h3>It is pre-customer</h3>
+              <p>
+                No production deployments, no SOC 2, no outside penetration test. The
+                <a href="/trust/">trust centre</a> says exactly what has and has not been
+                done.
+              </p>
+            </div>
+            <div class="tile">
+              <h3>One process, one organisation</h3>
+              <p>
+                A server instance runs one organisation's data, in one OS process. Running
+                two workers against one deployment is not supported.
+              </p>
+            </div>
+          </div>
+
+          <h2>If something is wrong</h2>
           <p>
-            Adding a category invalidates consent given under the old set, so the banner asks
-            again rather than treating an old answer as covering something nobody saw. This
-            page will be updated in the same change that adds the tag.
+            Open an issue. Security reports go to the address in
+            <a href="/.well-known/security.txt">security.txt</a> rather than a public issue.
           </p>
         </div>
       </div>

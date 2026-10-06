@@ -1002,6 +1002,13 @@ class TestTheSiteIsFoundAndShared:
 
         for page in PAGES:
             path = "/" + str(page.relative_to(SITE)).replace("index.html", "")
+            # THE 404 IS THE ONE EXCLUSION. A search result pointing at
+            # a "page not found" is the clearest signal nobody is
+            # maintaining a site, so it carries `noindex` and stays out
+            # of the sitemap rather than being listed and ignored.
+            if path == "/404/":
+                assert 'content="noindex"' in _text(page)
+                continue
             assert path in sitemap, path
 
     def test_there_is_a_security_contact(self):
