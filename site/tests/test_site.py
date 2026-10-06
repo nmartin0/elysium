@@ -1028,3 +1028,82 @@ class TestTheSiteIsFoundAndShared:
         assert "pre-customer" in summary.lower()
         assert "no soc 2" in summary.lower()
         assert "marked as unwritten" in summary.lower()
+
+
+class TestTheLegalPagesAreTrue:
+    """Drafted in-house for a pre-customer test site, which is a
+    reasonable thing to do and a dangerous thing to leave unchecked.
+
+    THE RISK IS NOT THAT THEY ARE BADLY WRITTEN. It is that they stop
+    being TRUE: a privacy notice saying "no analytics" survives the
+    commit that adds analytics, because nobody rereads it. These tests
+    tie each factual claim to something checkable in the site."""
+
+    PRIVACY = (SITE / "legal/privacy/index.html").read_text(encoding="utf-8")
+    TERMS = (SITE / "legal/terms/index.html").read_text(encoding="utf-8")
+
+    def test_both_say_they_are_not_lawyer_reviewed(self):
+        """The one disclosure that must not be quietly dropped when
+        somebody decides the site looks finished."""
+        for name, page in (("privacy", self.PRIVACY), ("terms", self.TERMS)):
+            assert "not reviewed by a lawyer" in page, name
+
+    def test_the_no_analytics_claim_is_still_true(self):
+        """The claim most likely to rot. If any page gains a script
+        beyond the consent one, or a third-party host appears, this
+        fails and the notice has to be rewritten before the tag
+        ships."""
+        assert "no analytics" in self.PRIVACY.lower()
+
+        for page in PAGES:
+            source = _text(page)
+            assert source.count("<script") <= 1, f"{page} has extra scripts"
+            for host in ("google-analytics", "googletagmanager", "plausible",
+                         "segment.com", "hotjar", "mixpanel"):
+                assert host not in source, f"{page}: {host}"
+
+    def test_the_no_forms_claim_is_still_true(self):
+        """"No form on this site that accepts personal data." The demo
+        signup, when it exists, falsifies this -- which is the point of
+        checking."""
+        assert "no form on this site that accepts personal data" in self.PRIVACY
+
+        for page in PAGES:
+            source = _text(page)
+            assert "<form" not in source, f"{page} has a form"
+            assert 'type="email"' not in source, f"{page} collects an email"
+
+    def test_the_storage_key_it_names_is_the_real_one(self):
+        """A privacy notice naming a key that does not exist is worse
+        than one naming none."""
+        import re
+
+        script = (SITE / "js/consent.js").read_text(encoding="utf-8")
+        key = re.search(r"KEY = '([^']+)'", script).group(1)
+
+        assert key in self.PRIVACY, f"the notice does not name {key}"
+
+    def test_the_terms_defer_to_the_licence_and_the_code(self):
+        """Two things that must stay said: the software has its own
+        licence, and where the site and the code disagree the code
+        wins. Both stop this page overreaching."""
+        assert "under its own licence" in self.TERMS
+        assert "the code is right and the site is a bug" in self.TERMS
+
+    def test_they_point_at_the_trust_centre_for_substance(self):
+        """Neither page should become the place where security claims
+        live -- those belong somewhere that is tested against the
+        code."""
+        assert 'href="/trust/"' in self.PRIVACY
+        assert 'href="/trust/"' in self.TERMS
+
+    def test_only_the_demo_page_is_still_unwritten(self):
+        """THE DEMO IS THE HONEST EXCEPTION. It describes an instance
+        that does not exist yet, and a page inventing one would be the
+        worst lie on the site. Every other page is written, and this
+        asserts the list of exceptions is exactly one -- so a future
+        placeholder cannot slip in unnoticed."""
+        unwritten = [str(page.relative_to(SITE)) for page in PAGES
+                     if "NOT YET WRITTEN" in _text(page)]
+
+        assert unwritten == ["demo/index.html"], unwritten
