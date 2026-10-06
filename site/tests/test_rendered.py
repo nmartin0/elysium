@@ -30,7 +30,7 @@ pytest.importorskip("playwright.sync_api")
 
 
 @pytest.fixture(scope="module")
-def page():
+def browser_page():
     from playwright.sync_api import sync_playwright
 
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
@@ -44,13 +44,26 @@ def page():
                 browser = playwright.chromium.launch()
             except Exception as error:  # noqa: BLE001 - no browser installed
                 pytest.skip(f"no chromium: {error}")
-            rendered = browser.new_page(viewport={"width": 1440, "height": 900})
-            rendered.goto(f"http://127.0.0.1:{port}/")
-            rendered.wait_for_timeout(300)
-            yield rendered
+            def open_at(width, path="/"):
+                opened = browser.new_page(viewport={"width": width, "height": 900})
+                opened.goto(f"http://127.0.0.1:{port}{path}")
+                opened.wait_for_timeout(300)
+                return opened
+
+            yield open_at
             browser.close()
     finally:
         server.shutdown()
+
+
+@pytest.fixture(scope="module")
+def page(browser_page):
+    """The desktop view, which is what every test below assumed and
+    which is exactly why two bugs survived: the page overflowed its
+    viewport by 71px on a phone and the footer floated mid-screen on
+    the short pages. A fixture that only ever opened one window at one
+    width could not see either."""
+    return browser_page(1440)
 
 
 class TestNothingIsHiddenOrClipped:
@@ -190,3 +203,69 @@ class TestTextPlacementIsSystematic:
             .filter(p => p.chars < 34 || p.chars > 85)""")
 
         assert bad == [], bad
+
+
+class TestSmallScreens:
+    """THE PAGE WAS 461px WIDE IN A 390px VIEWPORT and every rendered
+    test passed, because they all opened a 1440px window.
+
+    The cause is the classic one: a grid item's default `min-width` is
+    `auto`, so a child that cannot shrink -- a <pre> of monospace code
+    -- forces its column wider than the frame, and every block in that
+    band inherits the width. `overflow-x: auto` did not save it, since
+    that lets the box scroll only once the box may be narrower than its
+    contents."""
+
+    def test_nothing_overflows_a_phone(self, browser_page):
+        phone = browser_page(390)
+        width = phone.evaluate("document.documentElement.scrollWidth")
+
+        assert width <= 390, f"page is {width}px wide in a 390px window"
+
+    def test_the_mark_comes_before_the_navigation_on_a_phone(self, browser_page):
+        """It wrapped with the links ABOVE the wordmark -- putting the
+        mark second on exactly the device where top-left placement
+        matters most."""
+        phone = browser_page(390)
+        mark = phone.locator(".wordmark").bounding_box()
+        nav = phone.locator(".masthead nav").bounding_box()
+
+        assert mark["y"] < nav["y"], "the navigation sits above the mark"
+
+
+class TestShortPages:
+    """The trust and legal pages are a heading and a paragraph, so the
+    footer landed two thirds up the window with a third of the screen
+    empty beneath it. A footer floating mid-viewport is the clearest
+    signal a page is unfinished."""
+
+    def test_the_footer_sits_on_the_bottom_of_a_short_page(self, browser_page):
+        short = browser_page(1440, "/trust/")
+        footer = short.locator(".footer").bounding_box()
+
+        assert footer["y"] + footer["height"] >= 880, (
+            f"footer ends at {footer['y'] + footer['height']:.0f} in a 900px window")
+
+    def test_the_header_still_spans_the_full_width(self, browser_page):
+        """Making the body a flex column grounded the footer and broke
+        the header: `margin-inline: auto` on a flex item makes it
+        shrink to its contents instead of stretching, so the bar lost
+        its full width and the navigation bunched against the mark."""
+        short = browser_page(1440, "/trust/")
+        head = short.locator(".masthead").bounding_box()
+
+        assert head["width"] >= 1430, f"masthead is only {head['width']:.0f}px wide"
+
+    def test_the_navigation_matches_the_homepage(self, browser_page):
+        """Inner pages kept a "Demo" text link beside the "Try the
+        demo" button, removed from the homepage three patches earlier.
+        Navigation that differs between pages reads as unfinished
+        before anybody reads a word."""
+        home = browser_page(1440, "/")
+        inner = browser_page(1440, "/trust/")
+
+        def links(target):
+            return target.eval_on_selector_all(
+                ".masthead nav a", "els => els.map(e => e.textContent.trim())")
+
+        assert links(home) == links(inner)

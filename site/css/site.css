@@ -1527,3 +1527,168 @@ section {
    * box's centre because the crown is narrow. */
   margin-top: -2px;
 }
+
+/* ---- where the mark goes ----
+ *
+ * TOP-LEFT OF THE HEADER, linked to the homepage. The research is
+ * unanimous and quantified: Nielsen Norman found an 89% higher brand
+ * recall for a top-left mark than a top-right one, and 96% of users
+ * reached the homepage in one click when it sat there. Centred, people
+ * found the homepage about six times harder to get back to.
+ *
+ * So the header is the conventional arrangement and not an experiment:
+ * mark and wordmark left, navigation centre-right, the call to action
+ * hard right where "users often look to the end of menus for action
+ * links".
+ *
+ * THE CLEAN MARK, NOT THE GLITCHED ONE. The glitch is for places the
+ * brand is being shown -- a title card, a deck, social. The header is
+ * somewhere people look fifty times a session to find their way home,
+ * and furniture should not flicker.
+ *
+ * REPEATED IN THE FOOTER, which is the standard secondary placement,
+ * and there the mark goes WITHOUT the wordmark: a reader who has got
+ * that far knows the name, so the mark alone is the stronger move.
+ */
+.footer__sig {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--ink-faint);
+}
+
+.footer__sig a {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.footer__mark {
+  display: block;
+  opacity: 0.75;
+}
+
+.footer__sig a:hover .footer__mark {
+  opacity: 1;
+}
+
+/* ============================================================
+ * MOBILE. The page was 461px wide in a 390px viewport, and the render
+ * test never caught it because it only ever opened a 1440px window.
+ *
+ * THE CAUSE IS THE CLASSIC ONE. A grid item's default `min-width` is
+ * `auto`, not zero, so a child that cannot shrink -- here a <pre> of
+ * monospace code -- forces its whole column wider than the frame.
+ * Every block inside the band then inherited that width, which is why
+ * eight unrelated elements all measured 437px.
+ *
+ * `overflow-x: auto` on the snippet did not save it: the rule lets the
+ * BOX scroll, but only once the box has been told it may be narrower
+ * than its contents.
+ * ============================================================ */
+
+.band > *,
+.split > *,
+.bento > *,
+.hero > * {
+  min-width: 0;
+}
+
+/* ---- the header on a small screen ----
+ *
+ * It wrapped with the navigation ABOVE the wordmark, which puts the
+ * mark second on exactly the device where the convention matters
+ * most. The mark takes the first row on its own; the links follow.
+ */
+@media (max-width: 46rem) {
+  .masthead {
+    flex-wrap: wrap;
+    row-gap: 0.75rem;
+  }
+
+  .wordmark {
+    flex: 1 0 100%;
+    order: -1;
+  }
+
+  .masthead nav {
+    flex: 1 1 100%;
+    gap: 1rem;
+  }
+
+  .masthead nav .btn {
+    margin-left: auto;
+  }
+
+  /* The hero's right column needs air once it stacks under the
+   * buttons; it was butting straight against them. */
+  .hero__aside {
+    margin-top: var(--s-4);
+    padding-top: var(--s-4);
+    border-top: var(--rule);
+  }
+}
+
+/* ---- short pages ----
+ *
+ * The trust and legal pages are a heading and a paragraph, so the
+ * footer landed two thirds up the screen with a third of the window
+ * empty beneath it. A footer floating in the middle of a viewport is
+ * the clearest signal a page is unfinished -- which these are, but
+ * they should not announce it through a layout bug as well.
+ *
+ * The body becomes a column; main takes the slack; the footer sits on
+ * the bottom edge whatever the content length.
+ */
+body {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1 0 auto;
+}
+
+.footer {
+  flex-shrink: 0;
+}
+
+/* A page that is one heading and one paragraph still needs a
+ * reasonable band of content before the footer, or the heading sits
+ * alone against the masthead. */
+.prose {
+  padding-block: clamp(var(--s-8), 9vw, var(--s-16));
+}
+
+/* Making the body a flex column grounded the footer and broke the
+ * header: `.masthead` is a `.wrap`, and `margin-inline: auto` on a
+ * flex item makes it shrink to its contents and centre rather than
+ * stretch. The bar lost its full-width rule and the navigation
+ * bunched against the wordmark.
+ *
+ * Direct children take the full width; the measure still comes from
+ * `.wrap`'s max-width inside them. */
+body > header,
+body > main,
+body > footer {
+  width: 100%;
+}
+
+/* ---- the bars span the window, the content stays on the grid ----
+ *
+ * `.masthead` was itself a `.wrap`, so its background, its blur and
+ * its bottom rule all stopped at 64rem -- a sticky bar floating in the
+ * middle of a wider window with bare page either side. The footer's
+ * top rule had the same problem.
+ *
+ * The bar now takes the full width and its padding does the centring,
+ * so the content still lands on exactly the same left edge as every
+ * section below it.
+ */
+.masthead,
+.footer {
+  width: 100%;
+  max-width: none;
+  padding-inline: max(var(--gutter), calc((100% - var(--column)) / 2 + var(--gutter)));
+}

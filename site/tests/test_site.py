@@ -85,6 +85,21 @@ class TestEveryInternalLinkResolves:
                 if href != "#" and href[1:] not in parsed.ids:
                     broken.append(href)
                 continue
+            # A CROSS-PAGE ANCHOR like "/#how" points at the homepage,
+            # not at this one. The inner pages link back to the
+            # homepage's sections so their navigation matches it, and
+            # checking those ids against the CURRENT page's would fail
+            # every one.
+            if "#" in href:
+                target_path, _, fragment = href.partition("#")
+                target = SITE / (target_path.lstrip("/") or "")
+                if target.is_dir() or target_path.endswith("/") or not target_path:
+                    target = target / "index.html"
+                if not target.exists():
+                    broken.append(href)
+                elif fragment and f'id="{fragment}"' not in target.read_text(encoding="utf-8"):
+                    broken.append(href)
+                continue
             target = SITE / href.lstrip("/")
             if target.is_dir() or href.endswith("/"):
                 target = target / "index.html"
@@ -761,41 +776,42 @@ class TestTheMark:
             assert "#080c14" in light and "#f7f6f3" in light, f"{form}-light"
             assert "#f7f6f3" in dark and "#080c14" in dark, f"{form}-dark"
 
-    def test_the_glitch_is_light(self):
-        """"Light visual glitching on purpose." Three coils slipped,
-        never two adjacent in the same direction. A slip on every band
-        reads as a mistake rather than as style."""
+    def test_the_glitch_changes_colour_and_not_shape(self):
+        """THE BRIEF, AND A CORRECTION. The first version slipped three
+        coils sideways, which changes the silhouette -- the owner asked
+        instead for "glitches that still preserve the shape of the
+        skep, just changing the coloring".
+
+        So the coils are byte-identical between the two files and the
+        glitch is three thin slices painted across a clip path cut from
+        the silhouette. The outline cannot move, because it is the same
+        geometry."""
         import re
 
         clean = (SITE / "img/logo-dark.svg").read_text(encoding="utf-8")
         glitch = (SITE / "img/logo-glitch-dark.svg").read_text(encoding="utf-8")
 
-        def lefts(svg):
-            return [float(x) for x in re.findall(r'<rect class="band" x="([\d.-]+)"', svg)]
+        def coils(svg):
+            return re.findall(r'<rect x="[\d.]+" y="[\d.]+" width="[\d.]+" height="[\d.]+"', svg)
 
-        slipped = [i for i, (a, b) in enumerate(zip(lefts(clean), lefts(glitch), strict=True))
-                   if abs(a - b) > 0.5]
+        assert coils(clean), "no coils found"
+        assert coils(glitch)[:len(coils(clean))] == coils(clean), "the shape moved"
+        assert "clipPath" in glitch
+        assert "clipPath" not in clean
 
-        assert len(slipped) == 3, f"{len(slipped)} coils slipped"
-        assert all(b - a > 1 for a, b in zip(slipped, slipped[1:], strict=False)), slipped
-
-    def test_the_clean_mark_has_no_slip_at_all(self):
-        """It is the favicon and the formal one. Any slip here and the
-        two forms stop being distinguishable."""
+    def test_the_glitch_is_light(self):
+        """Three slices, each about half a coil's height. An earlier
+        version used nine-pixel slices in the background colour, which
+        cut holes and read as damage rather than as style."""
         import re
 
-        clean = (SITE / "img/logo-dark.svg").read_text(encoding="utf-8")
-        widths = [(float(x), float(w)) for x, w in
-                  re.findall(r'<rect class="band" x="([\d.-]+)" y="[\d.-]+" width="([\d.]+)"',
-                             clean)]
-        # SUB-PIXEL, not exact. Coordinates are written to one decimal,
-        # so concentric coils land on 69.9, 70.0 and 70.1 -- a tenth of
-        # a pixel apart, which is rounding rather than a slip. The real
-        # glitch moves a coil by two and a half pixels or more.
-        centres = [x + w / 2 for x, w in widths]
-        spread = max(centres) - min(centres)
+        glitch = (SITE / "img/logo-glitch-dark.svg").read_text(encoding="utf-8")
+        slices = re.findall(r'<rect x="[\d.]+" y="[\d.]+" width="[\d.]+" '
+                            r'height="([\d.]+)" fill="(#[0-9a-f]{6})"', glitch)
 
-        assert spread < 0.5, f"coils are not concentric: spread {spread:.2f}"
+        assert len(slices) == 3, f"{len(slices)} slices"
+        assert all(float(h) <= 6 for h, _ in slices), slices
+        assert {c for _, c in slices} == {"#4d8dff"}, "a slice is not the accent"
 
     def test_it_reads_as_a_dome_not_a_cone(self):
         """The fault in the first attempt, pinned. A skep is still
@@ -805,17 +821,98 @@ class TestTheMark:
 
         clean = (SITE / "img/logo-dark.svg").read_text(encoding="utf-8")
         widths = [float(w) for w in
-                  re.findall(r'<rect class="band"[^>]*width="([\d.]+)"', clean)]
+        # THE CLASS IS GONE from the markup: the coils are plain rects
+        # inside one filled group now, which is smaller and lets the
+        # clip path reuse them. This read a `class="band"` that no
+        # longer exists and matched nothing, so the test raised
+        # IndexError instead of failing with a reason.
+                  re.findall(r'<rect x="[\d.]+" y="[\d.]+" width="([\d.]+)"', clean)]
 
+        # THE THRESHOLDS WERE FROM THE WRONG SHAPE. This demanded a top
+        # coil under 35% of the base, which is a tepee. The sources are
+        # consistent that a skep is "the shape of a thimble or an
+        # upside-down flowerpot, with a rounded top", "wider at the
+        # bottom than the top" -- so the top coil is around two thirds
+        # of the base and a separate rounded cap closes it.
         third = widths[len(widths) // 3] / widths[0]
-        crown = widths[-1] / widths[0]
+        # widths[-1], not [-2]. The cap is a <path>, not a rect, so it
+        # is not in this list at all -- the last rect IS the top coil.
+        top_coil = widths[-1] / widths[0]
 
-        assert third > 0.85, f"too conical: {third:.2f} of base width a third up"
-        assert crown < 0.35, f"no crown: top coil is {crown:.2f} of the base"
+        assert third > 0.9, f"too conical: {third:.2f} of base width a third up"
+        assert 0.5 < top_coil < 0.8, f"not a thimble: top coil is {top_coil:.2f} of the base"
+        assert "a 36 " in clean or "a 36." in clean, "the rounded cap is missing"
 
     def test_the_mark_is_in_the_masthead_of_every_page(self):
         for page in PAGES:
             source = _text(page)
 
-            assert "logo-glitch-dark.svg" in source, str(page)
+            assert "logo-dark.svg" in source, str(page)
             assert 'rel="icon"' in source, str(page)
+
+
+class TestWhereTheMarkGoes:
+    """TOP-LEFT OF THE HEADER, LINKED HOME. The research is unanimous
+    and quantified: Nielsen Norman measured an 89% higher brand recall
+    for a top-left mark than a top-right one, and 96% of users reached
+    the homepage in one click when it sat there. Centred, people found
+    the homepage about six times harder to get back to.
+
+    So the header is the conventional arrangement rather than an
+    experiment -- mark and wordmark left, navigation centre-right, the
+    call to action hard right where "users often look to the end of
+    menus for action links".
+
+    REPEATED IN THE FOOTER, the standard secondary placement, and there
+    WITHOUT the wordmark: a reader who has got that far knows the name,
+    so the mark alone is the stronger move."""
+
+    LANDING = (SITE / "index.html").read_text(encoding="utf-8")
+
+    def test_the_mark_is_the_first_thing_in_the_header(self):
+        header = self.LANDING[self.LANDING.index("<header"):
+                              self.LANDING.index("</header>")]
+        mark = header.index("logo-dark.svg")
+        nav = header.index("<nav")
+
+        assert mark < nav, "the navigation comes before the mark"
+
+    def test_it_links_to_the_homepage(self):
+        """96% of users reached home in one click when it did. A mark
+        that is not a link is furniture."""
+        i = self.LANDING.index('class="wordmark"')
+        anchor = self.LANDING[i - 60:i + 60]
+
+        assert 'href="/"' in anchor
+
+    def test_the_call_to_action_is_the_last_thing_in_the_header(self):
+        header = self.LANDING[self.LANDING.index("<header"):
+                              self.LANDING.index("</header>")]
+
+        assert header.rindex("btn--primary") > header.rindex("logo-dark.svg")
+
+    @pytest.mark.parametrize("page", PAGES, ids=lambda p: str(p))
+    def test_the_footer_repeats_it_without_the_wordmark(self, page):
+        source = _text(page)
+        i = source.index('class="footer"')
+        footer = source[i:]
+
+        assert "footer__mark" in footer, str(page)
+        assert "<img" in footer, str(page)
+
+    def test_the_header_uses_the_clean_mark_not_the_glitched_one(self):
+        """The glitch is for places the brand is being SHOWN -- a title
+        card, a deck, social. The header is somewhere people look fifty
+        times a session to find their way home, and furniture should
+        not flicker."""
+        header = self.LANDING[self.LANDING.index("<header"):
+                              self.LANDING.index("</header>")]
+
+        assert "logo-glitch" not in header
+
+    def test_both_grounds_are_still_shipped(self):
+        """The site is dark, so it uses the off-white-on-navy mark. The
+        navy-on-off-white one exists for everywhere the site is not:
+        a letterhead, a slide, a printed page."""
+        assert (SITE / "img/logo-light.svg").exists()
+        assert (SITE / "img/logo-dark.svg").exists()
