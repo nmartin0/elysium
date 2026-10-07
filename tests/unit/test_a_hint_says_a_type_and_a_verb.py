@@ -5,7 +5,7 @@ already know that type exists.
 THE TRANSPORT IS NOT BUILT. There is no SSE, no `EventSource`, no
 streaming response anywhere in `api/`, and whether live updates are
 wanted enough to carry a streaming endpoint is the owner's decision --
-BLOCKING.md item 17. This is the half that has to be right BEFORE
+BLOCKING.md item 10. This is the half that has to be right BEFORE
 that, not invented under deadline after it.
 
 THE DESIGN DECISION, quoted because the wording is the point:

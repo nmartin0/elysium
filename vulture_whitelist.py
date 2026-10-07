@@ -42,7 +42,7 @@ request_trace_route
 #
 # The difference: the transport does not exist. There is no SSE and no
 # streaming endpoint anywhere in api/, and whether live updates are
-# wanted is BLOCKING.md's item 17, waiting on the owner. What is here
+# wanted is BLOCKING.md's item 10, waiting on the owner. What is here
 # is the half that must be right before that decision rather than
 # invented under deadline after it.
 #
@@ -50,16 +50,6 @@ request_trace_route
 # purpose and should not sit here looking load-bearing.
 hints_for
 describe_hint
-# core/masked_review.py, same position and the same instruction. Its
-# consumer is the merge reviewer's SCREEN, which is not built -- the
-# backend half of BLOCKING.md item 19. The next step toward wiring it
-# is a route serving one proposal masked for the caller; until that
-# exists this is tested and unused.
-#
-# IF IDENTITY INFERENCE IS DROPPED, DELETE THIS MODULE TOO.
-masked_comparison
-agreement_pattern
-withheld_fields
 published_history_route
 list_notes_route
 create_note_route

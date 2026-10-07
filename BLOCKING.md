@@ -277,7 +277,7 @@ clicking two bars on a chart cannot be expressed either." `core/filters.py`
 now has `in` and `not_in`, so it is.
 
 What remains is frontend: the table, the charts, and saving and acting
-on a selection. The last of those is the same thing as item 21.
+on a selection. The last of those is the same thing as item 18.
 
 **Blocked on:** product design, and there is no front-end agent.
 
@@ -389,61 +389,7 @@ second is a product decision about how much friction an automation
 should carry, and the third is a design choice with cost on both
 sides.
 
-## 12. The merge reviewer's screen, and the MAC problem under it
-
-Identity inference is built and OFF by default, with every proposal
-requiring approval. What is not built is the screen a reviewer uses,
-and `FUSION_AND_IDENTITY.md` is specific about what it must show:
-
-- **The two records side by side**, field by field, with agreements
-  and disagreements marked -- "the reviewer's decision is made on the
-  agreement PATTERN, not the score".
-- **The score, and what drove it**: which fields contributed and how
-  much. "A number alone cannot be argued with."
-- **Provenance per field**, which silver's lineage already carries.
-
-**AND THE PROBLEM THAT IS OURS SPECIFICALLY**, kept whole because it
-is a security design rather than a UI preference:
-
-> A REVIEWER MAY NOT BE CLEARED TO SEE THE FIELDS THAT DECIDE THE
-> MATCH. Elysium is MAC-governed; the person best placed to judge
-> whether two customers are the same may not be permitted to read the
-> email address that settles it.
-
-Its answer comes from privacy-preserving record linkage: **masked
-clerical review**, where the display conceals the plaintext by
-default, presents categorical value frequencies, and gradually
-discloses selected information. A reviewer can be told that two values
-AGREE, or that a value is RARE, without being shown it.
-
-The document argues this is "a genuinely good fit for a MAC system and
-worth building rather than working around", and it is right: the
-comparison a reviewer needs is usually agreement, not the value.
-
-**THE BACKEND HALF IS BUILT**, `core/masked_review.py`.
-`masked_comparison` gives a verdict for every compared field and the
-values only for fields the caller may read; `agreement_pattern` is the
-pattern in one line; `withheld_fields` records what the reviewer
-judged blind, because an approval made with three of five deciding
-fields masked is a weaker artifact than one made with all five.
-
-**WHAT IS WITHHELD IS ABSENT, not masked.** The literature states the
-requirement -- "the facility responsible for the (masked) clerical
-review should only have access to those plaintext attributes that are
-displayed" -- so the structure never holds the hidden value at all.
-The difference is invisible on a screen and total in a log, a cache or
-a future refactor. A test asserts the withheld string does not appear
-anywhere in the output's `repr`.
-
-**Still blocked on:** the screen, and a route to feed it. If identity
-inference is dropped, DELETE `core/masked_review.py` -- the vulture
-whitelist says so.
-
-**Blocked on:** the frontend, and on whether masked review is built
-properly or the feature waits. Showing the fields would be the easy
-version and would quietly defeat MAC.
-
-## 13. What the interface should be
+## 12. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -478,7 +424,7 @@ contrast is not a target.
 **Blocked on:** a front-end agent, and the owner's appetite for a
 redesign rather than more features.
 
-## 14. Agent-loop efficiency, which needs a machine with a model
+## 13. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -521,7 +467,7 @@ lacks is the machine.
 **Blocked on:** a machine with a capable model, and about an hour of
 someone's time on it.
 
-## 15. Context rot, and a 10,000-id search behind it
+## 14. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -559,7 +505,7 @@ capped and the output side is not.
 
 **Two things are wanted, and only one is mine to do.** Item 17 is
 measurement -- task completion rate against context size at the
-midpoint of a task, which needs a capable model and is item 14's
+midpoint of a task, which needs a capable model and is item 15's
 blocker too. Item 18 is the cap itself.
 
 **Blocked on:** a model to validate the cap against, and the
@@ -569,42 +515,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 16. The keyboard model's roving-focus half
-
-Gated rather than unstarted, and `BACKLOG.md` recorded both the
-condition and the reason it sharpened:
-
-> the recorded condition is that "nobody has established who uses
-> Elysium daily", and the precedent sharpens it -- our results are
-> cards with links, not a grid, so `role="grid"` without the full
-> keyboard contract would be worse than native semantics.
-
-**THE GATE IS ANSWERED: THE OWNER WANTS IT.** Asked directly on 4
-October, the answer was unambiguous -- quality-of-life functionality
-for people who live in the tool is wanted. So "does anyone use this
-daily" is no longer what holds it.
-
-**AND THE QUOTED REASONING ABOVE IS HALF WRONG.** The ARIA Authoring
-Practices Guide says the grid pattern is FOR exactly this case: "when
-data elements are links to more information, rather than presenting
-them in a static table and including the links in the tab sequence,
-implementing the grid pattern provides users with intuitive and
-efficient keyboard navigation of the grid contents as well as a
-shorter tab sequence" -- and its own first worked example is "Simple
-List of Links". Cards-with-links does not disqualify the pattern. The
-second half stands: a partial contract is worse than none.
-
-**WHAT ACTUALLY HOLDS IT IS THAT THE LIST DOES NOT EXIST.** Checked:
-`ui/src/` is a shell -- App, Shell, and tests. The only rendered list
-is the navigation rail, three items, where plain links are the
-convention and tabbing is not painful. The hundred-result grid this
-pattern is for is Object Explorer's table, which is item 8.
-
-**Blocked on:** the results list existing. It lands with Object
-Explorer, not before, and the keyboard contract should be designed in
-rather than retrofitted.
-
-## 17. PostgreSQL row-level security for MAC
+## 15. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -620,7 +531,7 @@ Databricks' SecureView barrier forces full scans for the same reason.
 it is not. `pgserver` has no wheel for Python 3.13 (item 3), so the
 real-PostgreSQL tests cannot run on the machine that gates patches.
 
-## 18. The help assistant
+## 16. The help assistant
 
 A larger design, written and unbuilt. It would be an agent explaining
 Elysium itself rather than a customer's data.
@@ -648,16 +559,7 @@ than beside them.
 list that competes with documentation rather than extending the
 product.
 
-## 19. The search bar's five unbuilt operators
-
-Front-end work on a bar whose backend vocabulary is already closed and
-built -- `core/filters.py` has seven operators, `in` and `not_in`
-among them.
-
-**Blocked on:** a front-end agent, and on item 8, since the operators
-and Object Explorer's filter UI are the same surface.
-
-## 20. The watch layout check, never seen to pass
+## 17. The watch layout check, never seen to pass
 
 Rewritten in patch 290 and never once observed passing:
 
@@ -669,7 +571,7 @@ watched run is not evidence.
 
 **Blocked on:** somebody running it. One command.
 
-## 21. Saved SELECTIONS
+## 18. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must
@@ -728,7 +630,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 22. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 19. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -778,7 +680,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 23. Owning the UI kit, and when to start
+## 20. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.
