@@ -47,7 +47,22 @@ function backendSource(): { file: string; source: string }[] {
 }
 
 describe('claims the UI roadmap made about the backend', () => {
-  it('reads the backend at all, so an empty walk cannot pass', () => {
+  /**
+   * TWENTY SECONDS, NOT THE DEFAULT FIVE, and this is a diagnosis
+   * rather than a papering-over.
+   *
+   * This test failed intermittently in full runs and passed every time
+   * in isolation. The timing said why: 6269ms against 17ms and 5ms for
+   * its siblings in the same file. It walks `core`, `api` and `scripts`
+   * and reads every .py file -- a few hundred synchronous reads --
+   * while eighty other test files compete for the same disk. Five
+   * seconds is vitest's default, not a budget anybody chose for this.
+   *
+   * The work is the point: an assertion about what the backend does
+   * has to read the backend. Making it cheaper would mean sampling,
+   * and a sampled walk cannot support "an empty walk cannot pass".
+   */
+  it('reads the backend at all, so an empty walk cannot pass', { timeout: 20_000 }, () => {
     // THE CONTROL INSIDE THE TEST. Every assertion below is over a
     // walk of directories this package does not own; if that walk
     // ever returns nothing -- a move, a rename, a restructure -- the

@@ -760,6 +760,21 @@ export interface ServerSavedView {
   conditions: Array<Record<string, unknown>>
   presentation: Record<string, unknown>
   created_at: string
+  /**
+   * Conditions this view carries that the viewer may NO LONGER run.
+   *
+   * A saved view is re-authorised at read time, every time: a filter on
+   * a field whose grant has since been revoked is DISABLED rather than
+   * applied. The server names which ones, for the reason it states --
+   * dropping them silently is the worst option, because "the user sees
+   * more rows than the search promised and concludes their data
+   * changed".
+   *
+   * It was absent from this interface, so the field arrived and was
+   * discarded before any screen could show it. The server did the
+   * careful half and the client threw it away.
+   */
+  disabled_conditions?: string[]
 }
 
 /**

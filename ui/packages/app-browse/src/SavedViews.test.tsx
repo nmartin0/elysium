@@ -262,3 +262,59 @@ describe('opening the watch dialog a second time', () => {
     expect(((await screen.findByLabelText('How many')) as HTMLInputElement).value).toBe('10')
   })
 })
+
+describe('a view whose filters are no longer all authorised', () => {
+  /**
+   * The server re-authorises a saved view at read time, every time, and
+   * names the conditions it had to disable. Its own reason for naming
+   * them rather than dropping them quietly: "the user sees more rows
+   * than the search promised and concludes their data changed".
+   *
+   * The client did not declare the field, so it arrived and was
+   * discarded before any screen could use it. The careful half was
+   * done on the server and thrown away here.
+   */
+
+  it('marks the view in the list, before it is opened', async () => {
+    mockedList.mockResolvedValue([aView({ disabled_conditions: ['region'] })])
+    renderAt('/browse')
+
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    expect(await screen.findByText(/1 filter off/)).toBeTruthy()
+  })
+
+  it('counts more than one', async () => {
+    mockedList.mockResolvedValue([aView({ disabled_conditions: ['region', 'email'] })])
+    renderAt('/browse')
+
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    expect(await screen.findByText(/2 filters off/)).toBeTruthy()
+  })
+
+  it('says nothing when every filter still runs', async () => {
+    /** A badge on every view would be noise, and noise is how a real
+     *  warning gets ignored. */
+    mockedList.mockResolvedValue([aView({ disabled_conditions: [] })])
+    renderAt('/browse')
+
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    await screen.findByText('High value')
+    expect(screen.queryByText(/filter/)).toBeNull()
+  })
+
+  it('says nothing when the server sends no such field', async () => {
+    /** An older server, or a response that predates the field. Absent
+     *  must mean "nothing disabled", not "unknown" rendered as a
+     *  warning. */
+    mockedList.mockResolvedValue([aView()])
+    renderAt('/browse')
+
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+
+    await screen.findByText('High value')
+    expect(screen.queryByText(/filter/)).toBeNull()
+  })
+})

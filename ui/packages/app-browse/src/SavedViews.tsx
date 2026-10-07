@@ -17,6 +17,7 @@
  * where something lives should not move where somebody clicks.
  */
 
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { Button, InputGroup, Menu, MenuDivider, MenuItem, Popover } from '@blueprintjs/core'
 import {
   deleteSavedView,
@@ -235,6 +236,24 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
                 }}
                 labelElement={
                   <>
+                    {/* SAY SO BEFORE IT IS OPENED, not after.
+                
+                      A saved view is re-authorised at read time, every time,
+                      and a condition on a field whose grant has since been
+                      revoked is DISABLED rather than applied. The server names
+                      which ones, for a reason it states: dropping them silently
+                      is the worst option, because "the user sees more rows than
+                      the search promised and concludes their data changed".
+                
+                      It named them and this client discarded the field before
+                      any screen could use it -- the careful half done on the
+                      server and thrown away here. */}
+                    {(view.disabled_conditions?.length ?? 0) > 0 && (
+                      <StatusTag state="pending">
+                        {view.disabled_conditions?.length} filter
+                        {view.disabled_conditions?.length === 1 ? '' : 's'} off
+                      </StatusTag>
+                    )}
                     <Button
                       minimal
                       small
