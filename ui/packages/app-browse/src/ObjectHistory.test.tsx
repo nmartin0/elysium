@@ -120,3 +120,65 @@ describe('an entry whose fields are all unreadable', () => {
     expect(screen.getByText(/cannot read/)).toBeInTheDocument()
   })
 })
+
+describe('an edit that was part of a bulk action', () => {
+  /**
+   * The server sends `batch_id` for a stated reason -- "so a UI can
+   * group the writes that happened together; Foundry links a single
+   * action log to every object it edited for the same reason" -- and no
+   * UI used it. `getObjectHistory` returns `Promise<unknown>`, so this
+   * component's local interface was the only declaration of the shape,
+   * and it simply omitted the field.
+   */
+
+  it('says so, rather than reading as an isolated edit', async () => {
+    /** Without this, a sweep touching fifty objects leaves fifty
+     *  unrelated-looking rows in fifty histories, and "why did this
+     *  change" cannot distinguish a deliberate bulk action from
+     *  somebody editing records one at a time. */
+    getObjectHistory.mockResolvedValue({
+      ...BODY,
+      entries: [{ ...BODY.entries[0], batch_id: 'b-42' }],
+    })
+    render(<ObjectHistory {...props} />)
+
+    expect(await screen.findByText('part of a bulk action')).toBeInTheDocument()
+  })
+
+  it('says nothing for an ordinary single edit', async () => {
+    /** A marker on every row would be noise, and noise is how a real
+     *  signal gets ignored. */
+    render(<ObjectHistory {...props} />)
+
+    await screen.findByText('alice')
+    expect(screen.queryByText('part of a bulk action')).not.toBeInTheDocument()
+  })
+
+  it('treats a null batch_id as no batch', async () => {
+    /** The field is `str | None` on the server. Null must mean "not part
+     *  of one", not an unknown rendered as a marker. */
+    getObjectHistory.mockResolvedValue({
+      ...BODY,
+      entries: [{ ...BODY.entries[0], batch_id: null }],
+    })
+    render(<ObjectHistory {...props} />)
+
+    await screen.findByText('alice')
+    expect(screen.queryByText('part of a bulk action')).not.toBeInTheDocument()
+  })
+
+  it('does not claim how many other objects were touched', async () => {
+    /** The history endpoint answers for ONE object. Counting the rest
+     *  would mean counting objects this reader may not be allowed to
+     *  see, so the marker states the fact and stops. */
+    getObjectHistory.mockResolvedValue({
+      ...BODY,
+      entries: [{ ...BODY.entries[0], batch_id: 'b-42' }],
+    })
+    const { container } = render(<ObjectHistory {...props} />)
+
+    await screen.findByText('part of a bulk action')
+    expect(container.textContent).not.toContain('b-42')
+    expect(container.textContent).not.toMatch(/\d+ other/)
+  })
+})

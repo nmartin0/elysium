@@ -36,6 +36,22 @@ interface HistoryEntry {
   user_id: string
   description: string
   created_at: string
+  /**
+   * Set when this edit was part of a MULTI-OBJECT ACTION.
+   *
+   * The server sends it for a stated reason -- "so a UI can group the
+   * writes that happened together; Foundry links a single action log
+   * to every object it edited for the same reason" -- and no UI did.
+   * `getObjectHistory` returns `Promise<unknown>`, so this interface
+   * is the only declaration of the shape, and it simply omitted the
+   * field.
+   *
+   * WITHOUT IT ONE ACTION READS AS MANY. A bulk change touching fifty
+   * objects left fifty unrelated-looking rows in fifty histories, and
+   * a reader asking "why did this change" could not tell a deliberate
+   * sweep from somebody editing records one at a time.
+   */
+  batch_id?: string | null
 }
 
 interface HistoryBody {
@@ -80,6 +96,17 @@ export default function ObjectHistory({
                   <td>{entry.user_id}</td>
                   <td>
                     <StatusTag>{entry.operation}</StatusTag>{' '}
+                    {entry.batch_id && (
+                      <>
+                        {/* MARKED, NOT EXPANDED. This row cannot say how many other
+                            objects the action touched -- the history endpoint
+                            answers for ONE object, and asking it to count the rest
+                            would mean counting objects this reader may not be
+                            allowed to see. Saying the edit was part of a bulk
+                            action is the honest half and the useful half. */}
+                        <StatusTag state="active">part of a bulk action</StatusTag>{' '}
+                      </>
+                    )}
                     {Object.keys(entry.changes).length > 0 ? (
                       Object.keys(entry.changes).map(formatFieldName).join(', ')
                     ) : (
