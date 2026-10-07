@@ -220,3 +220,68 @@ describe('what this deployment has run before', () => {
     expect(screen.queryByRole('heading', { name: /configuration history/i })).not.toBeInTheDocument()
   })
 })
+
+describe('the four operational toggles', () => {
+  /**
+   * Each was added to DeploymentConfig, then to the config response,
+   * and none reached this panel -- the one that exists to answer "why
+   * is it behaving like that". The response model's own comment says
+   * the omission "was silent four times running"; this is the other
+   * end of that.
+   */
+
+  it('shows which silos a confirmed write may reach', async () => {
+    getDeploymentConfig.mockResolvedValue({ ...BODY, write_targets: ['primary_sql'] })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    expect(await screen.findByText('Write targets')).toBeInTheDocument()
+    expect(screen.getByText('primary_sql')).toBeInTheDocument()
+  })
+
+  it('says "none" rather than nothing when writes reach no silo', async () => {
+    /** A deployment that answers questions and cannot change anything
+     *  is a real and deliberate configuration. An empty cell would read
+     *  as a missing value. */
+    getDeploymentConfig.mockResolvedValue({ ...BODY, write_targets: [] })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    await screen.findByText('Write targets')
+    expect(screen.getByText('none')).toBeInTheDocument()
+  })
+
+  it('says what an empty proxy list MEANS, not just that it is empty', async () => {
+    /** Empty is not an absence here: it means the TCP peer is used for
+     *  rate-limit bucketing, which is correct unless something sits in
+     *  front. "none" alone would leave a reader guessing. */
+    getDeploymentConfig.mockResolvedValue({ ...BODY, trusted_proxies: [] })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    await screen.findByText('Trusted proxies')
+    expect(screen.getByText('none (TCP peer)')).toBeInTheDocument()
+  })
+
+  it('shows the mismatch policy and the undeclared-column setting', async () => {
+    getDeploymentConfig.mockResolvedValue({
+      ...BODY,
+      on_type_mismatch: 'quarantine',
+      ingest_undeclared_columns: false,
+    })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    expect(await screen.findByText('On type mismatch')).toBeInTheDocument()
+    expect(screen.getByText('quarantine')).toBeInTheDocument()
+    expect(screen.getByText('Ingest undeclared columns')).toBeInTheDocument()
+  })
+
+  it('distinguishes "not set" from a value', async () => {
+    /** THE DISTINCTION THAT MATTERS. A deployment that never set these
+     *  sends nothing. Rendering absent as "no" would assert a setting
+     *  nobody chose -- and for `ingest_undeclared_columns` the two
+     *  answers have opposite consequences for what reaches bronze. */
+    getDeploymentConfig.mockResolvedValue(BODY)
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    await screen.findByText('Write targets')
+    expect(screen.getAllByText('not reported').length).toBeGreaterThanOrEqual(3)
+  })
+})

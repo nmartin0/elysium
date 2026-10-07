@@ -48,6 +48,19 @@ interface DeploymentConfigBody {
   max_concurrent_requests: number
   security_attribute: string
   read_from_mirror: boolean
+  /**
+   * THE FOUR OPERATIONAL TOGGLES. Each was added to DeploymentConfig
+   * and then to the config response, and none reached this panel --
+   * the one that answers "why is it behaving like that".
+   *
+   * OPTIONAL because a deployment that never set them sends nothing.
+   * Absent means "this deployment does not say", which is not the same
+   * as a value and must not render as one.
+   */
+  write_targets?: string[] | null
+  trusted_proxies?: string[]
+  on_type_mismatch?: string | null
+  ingest_undeclared_columns?: boolean | null
   enabled_tools: string[]
   silo_names: string[]
   object_type_count: number
@@ -231,6 +244,45 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
               ['Action types', config.action_type_count],
               ['Security attribute', config.security_attribute],
               ['Reading from mirror', config.read_from_mirror ? 'yes' : 'no'],
+            ],
+          ],
+          [
+            'Operational',
+            [
+              // WHAT EACH ANSWERS, because a label alone does not.
+              //
+              // `write_targets` -- which silos a confirmed write may reach.
+              // Empty means none: a deployment that answers questions and
+              // cannot change anything.
+              //
+              // `trusted_proxies` -- whose forwarded-for header is believed
+              // when rate-limiting a login. Empty means the TCP peer is
+              // used, which is right unless something sits in front.
+              //
+              // `on_type_mismatch` -- what a bad cell costs. The shipped
+              // default quarantines the ROW rather than failing the table.
+              //
+              // `ingest_undeclared_columns` -- whether a column the ontology
+              // never mentioned reaches bronze at all.
+              [
+                'Write targets',
+                config.write_targets === undefined ? 'not reported' : (config.write_targets ?? []).join(', ') || 'none',
+              ],
+              [
+                'Trusted proxies',
+                config.trusted_proxies === undefined
+                  ? 'not reported'
+                  : config.trusted_proxies.join(', ') || 'none (TCP peer)',
+              ],
+              ['On type mismatch', config.on_type_mismatch ?? 'not reported'],
+              [
+                'Ingest undeclared columns',
+                config.ingest_undeclared_columns === undefined || config.ingest_undeclared_columns === null
+                  ? 'not reported'
+                  : config.ingest_undeclared_columns
+                    ? 'yes'
+                    : 'no',
+              ],
             ],
           ],
           [
