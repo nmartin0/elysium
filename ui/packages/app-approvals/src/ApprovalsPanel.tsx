@@ -137,6 +137,26 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                 <Card key={write.write_id} className="approvals__item">
                   <div className="approvals__summary">
                     <p className="approvals__description">{write.description}</p>
+                    {/* THE ACTION TYPE AND THE SCALE, both sent by the server and
+                        neither rendered until now.
+                    
+                        `object_count` is the one that changes a decision:
+                        approving a change that touches one object and approving
+                        one that touches four thousand are different acts, and the
+                        number was computed, serialised and thrown away. A
+                        description like "update region" reads the same either way.
+                    
+                        The action type says what KIND of change this is, which is
+                        also what the approver's grant is checked against --
+                        `execute:<Action>` -- so a reviewer wondering why they may
+                        decide one write and not another can see the answer rather
+                        than infer it. */}
+                    <p className="approvals__scope">
+                      <StatusTag state="neutral">{write.action_type_name}</StatusTag>{' '}
+                      <span className="approvals__count">
+                        {write.object_count} {write.object_count === 1 ? 'object' : 'objects'}
+                      </span>
+                    </p>
                     <p className="approvals__meta">
                       {/* Relative under 24h, absolute with a named zone
                       beyond it -- the shared formatter, so an expiry

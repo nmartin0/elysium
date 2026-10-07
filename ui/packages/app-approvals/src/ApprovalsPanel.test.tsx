@@ -302,3 +302,39 @@ describe('ApprovalsPanel -- the shell re-rendering', () => {
     expect(first).not.toHaveBeenCalled()
   })
 })
+
+describe('what is being decided, and at what scale', () => {
+  /**
+   * Both fields were computed by the server, serialised into every
+   * response, and rendered nowhere. A reviewer saw a description and a
+   * proposer and had to open the write to learn either.
+   */
+
+  it('names the action type on the card', async () => {
+    /** It is also what the approver's grant is checked against --
+     *  `execute:<Action>` -- so a reviewer wondering why they may
+     *  decide one write and not another can see the answer. */
+    mockedList.mockResolvedValue([write()])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('RecategorizeTransaction')).toBeTruthy()
+  })
+
+  it('says how many objects a write touches', async () => {
+    /** THE FIELD THAT CHANGES A DECISION. Approving a change that
+     *  touches one object and one that touches four thousand are
+     *  different acts, and "update region" reads the same either
+     *  way. */
+    mockedList.mockResolvedValue([write({ object_count: 4000 })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/4000 objects/)).toBeTruthy()
+  })
+
+  it('says "object" rather than "objects" for one', async () => {
+    mockedList.mockResolvedValue([write({ object_count: 1 })])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/1 object$/)).toBeTruthy()
+  })
+})
