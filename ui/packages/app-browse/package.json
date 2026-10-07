@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./ObjectDetailPanel": "./src/ObjectDetailPanel.tsx",
     "./ObjectSearchPanel": "./src/ObjectSearchPanel.tsx",
-    "./ObjectDetailPanel": "./src/ObjectDetailPanel.tsx"
+    "./PublishedHistory": "./src/PublishedHistory.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*"

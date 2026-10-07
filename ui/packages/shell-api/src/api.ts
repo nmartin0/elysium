@@ -1260,6 +1260,31 @@ export async function createObjectNote(objectType: string, objectId: string, tex
   return response.json()
 }
 
+/**
+ * One change the MIRROR recorded about an object.
+ *
+ * DISTINCT FROM EDIT HISTORY, and both are wanted. Edit history answers
+ * "who changed this through Elysium"; this answers "what changed in the
+ * SOURCE between publications". A row edited directly in the customer's
+ * own database appears here and never there.
+ */
+export interface PublishedChange {
+  /** What the mirror saw: an insert, an update, a delete. */
+  change: string
+  changed_at: string
+  /** Which publication carried it, when the lake records one. */
+  publication?: string | null
+  /** The values as published. Only fields this caller may read. */
+  values: Record<string, unknown>
+}
+
+export async function getPublishedHistory(objectType: string, objectId: string): Promise<PublishedChange[]> {
+  const response = await apiFetchOrThrow(
+    `/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}` + '/published-history',
+  )
+  return (await response.json()) as PublishedChange[]
+}
+
 export async function getObjectHistory(objectType: string, objectId: string): Promise<unknown> {
   const response = await apiFetchOrThrow(`/objects/${objectType}/${encodeURIComponent(objectId)}/history`)
   return response.json()

@@ -7,6 +7,7 @@ import ErrorState from '@elysium/shell-api/components/ErrorState'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ObjectHistory from './ObjectHistory'
+import PublishedHistory from './PublishedHistory'
 import ExploreRelated from './ExploreRelated'
 import ObjectNotes from './ObjectNotes'
 import {
@@ -304,6 +305,21 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       <section className="object-detail__history">
         <h3>History</h3>
         <ObjectHistory objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
+      </section>
+
+      {/* THE OTHER HALF OF THE SAME QUESTION, and the reason both
+          sections exist. The block above answers "who changed this
+          through Elysium". This answers "what changed in the source
+          between publications" -- a row edited directly in the
+          customer's own database appears here and never there.
+      
+          Below it rather than beside it: a reader reaches for the
+          source history after the Elysium one has not explained
+          something, so the order matches the order of the
+          questions. */}
+      <section className="object-detail__published-history">
+        <h3>Changed at the source</h3>
+        <PublishedHistory objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
       </section>
 
       {availableActions.length > 0 && !activeAction && (
