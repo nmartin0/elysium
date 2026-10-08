@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import type { PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
 // Partial mock via importOriginal, not a hand-duplicated module shape
@@ -77,13 +78,21 @@ function submit(queryText: string) {
 
 describe('QueryPanel -- rendering', () => {
   it('renders a textarea and an Ask button', () => {
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
     expect(screen.getByPlaceholderText('Ask a question…')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ask' })).toBeInTheDocument()
   })
 
   it('shows no answer, error, or pending write on first render', () => {
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
     expect(screen.queryByTestId('pending-write-card')).not.toBeInTheDocument()
   })
 })
@@ -91,7 +100,11 @@ describe('QueryPanel -- rendering', () => {
 describe('QueryPanel -- submitting', () => {
   it('calls query() with exactly what was typed', async () => {
     mockedQuery.mockResolvedValue(fakeResponse(200, { answer: '42' }))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('how many customers do we have?')
 
@@ -105,7 +118,11 @@ describe('QueryPanel -- submitting', () => {
         resolveQuery = resolve
       }),
     )
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('a question')
 
@@ -120,7 +137,11 @@ describe('QueryPanel -- submitting', () => {
 describe('QueryPanel -- a real 200 answer', () => {
   it('shows the answer text', async () => {
     mockedQuery.mockResolvedValue(fakeResponse(200, { answer: 'There are 42 customers.' }))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('how many customers?')
 
@@ -131,7 +152,11 @@ describe('QueryPanel -- a real 200 answer', () => {
 describe('QueryPanel -- a 202 proposed write', () => {
   it('renders PendingWriteCard with the real pending_write from the response', async () => {
     mockedQuery.mockResolvedValue(fakeResponse(202, { pending_write: { id: 'write-77' } }))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('update the customer name')
 
@@ -140,7 +165,11 @@ describe('QueryPanel -- a 202 proposed write', () => {
 
   it('does not show an answer or error alongside a pending write', async () => {
     mockedQuery.mockResolvedValue(fakeResponse(202, { pending_write: { id: 'write-77' } }))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('update the customer name')
 
@@ -153,7 +182,11 @@ describe('QueryPanel -- a 401 mid-query', () => {
   it('calls onSessionExpired and shows no answer, error, or pending write', async () => {
     mockedQuery.mockResolvedValue(fakeResponse(401, {}))
     const onSessionExpired = vi.fn()
-    render(<QueryPanel onSessionExpired={onSessionExpired} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={onSessionExpired} />
+      </MemoryRouter>,
+    )
 
     submit('a question')
 
@@ -165,7 +198,11 @@ describe('QueryPanel -- a 401 mid-query', () => {
 describe('QueryPanel -- other failure statuses', () => {
   it("shows the backend's own detail message for e.g. a 409 (permissions changed mid-query)", async () => {
     mockedQuery.mockResolvedValue(fakeResponse(409, { detail: 'Permissions changed since this query started.' }))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('a question')
 
@@ -189,7 +226,11 @@ describe('QueryPanel -- other failure statuses', () => {
     mockedQuery.mockResolvedValue(
       fakeResponse(422, { detail: [{ type: 'missing', loc: ['body', 'query'], msg: 'Field required' }] }),
     )
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('a question')
 
@@ -199,7 +240,11 @@ describe('QueryPanel -- other failure statuses', () => {
 
   it('falls back to the generic message for a detail shape we do not know', async () => {
     mockedQuery.mockResolvedValue(fakeResponse(400, { detail: { code: 17 } }))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('a question')
 
@@ -208,7 +253,11 @@ describe('QueryPanel -- other failure statuses', () => {
 
   it('falls back to a generic "Request failed (status)" when the body has no detail', async () => {
     mockedQuery.mockResolvedValue(fakeResponse(500, {}))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('a question')
 
@@ -217,7 +266,11 @@ describe('QueryPanel -- other failure statuses', () => {
 
   it('shows "Could not reach the server." on a genuine network failure', async () => {
     mockedQuery.mockRejectedValue(new Error('network down'))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('a question')
 
@@ -228,7 +281,11 @@ describe('QueryPanel -- other failure statuses', () => {
 describe('QueryPanel -- a new submit clears stale state from the previous one', () => {
   it('clears a previous answer once a new query is submitted', async () => {
     mockedQuery.mockResolvedValueOnce(fakeResponse(200, { answer: 'first answer' }))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('first question')
     await waitFor(() => expect(screen.getByText('first answer')).toBeInTheDocument())
@@ -241,7 +298,11 @@ describe('QueryPanel -- a new submit clears stale state from the previous one', 
 
   it('clears a previous error once a new query is submitted', async () => {
     mockedQuery.mockResolvedValueOnce(fakeResponse(500, {}))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('first question')
     await waitFor(() => expect(screen.getByText('Request failed (500)')).toBeInTheDocument())
@@ -254,7 +315,11 @@ describe('QueryPanel -- a new submit clears stale state from the previous one', 
 
   it('clears a previous pending write once a new query is submitted', async () => {
     mockedQuery.mockResolvedValueOnce(fakeResponse(202, { pending_write: { id: 'write-1' } }))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('first question')
     await waitFor(() => expect(screen.getByTestId('pending-write-card')).toBeInTheDocument())
@@ -285,7 +350,11 @@ describe('the backend wrote these messages to be read', () => {
         detail: "Unknown aggregate 'median' -- valid: count, sum, avg, min, max",
       }),
     )
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('what is the median transaction')
 
@@ -300,7 +369,11 @@ describe('the backend wrote these messages to be read', () => {
         detail: 'Your permissions changed while this request was processing -- please try again',
       }),
     )
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('anything')
 
@@ -311,7 +384,11 @@ describe('the backend wrote these messages to be read', () => {
     // A real response with nothing to surface. The status is the most
     // that can honestly be said.
     mockedQuery.mockResolvedValue(fakeResponse(500, {}))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('anything')
 
@@ -324,7 +401,11 @@ describe('the backend wrote these messages to be read', () => {
     // widening this to cover HTTP errors would swallow every message
     // above.
     mockedQuery.mockRejectedValue(new TypeError('Failed to fetch'))
-    render(<QueryPanel onSessionExpired={vi.fn()} />)
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
 
     submit('anything')
 

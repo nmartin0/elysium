@@ -36,6 +36,8 @@
 
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 
+import AskAboutSet from './AskAboutSet'
+
 export default function SetName({
   objectType,
   filterCount,
@@ -74,6 +76,10 @@ export default function SetName({
         </>
       )}
       <StatusTag state="active">Live</StatusTag>
+      {/* The agent, where the subject is. DEV_UI.md 5.4 wants it "inside
+          Browse, seeded with what is on screen" rather than in its own
+          app -- and the set's name is exactly what is on screen. */}
+      {!loading && <AskAboutSet objectType={objectType} filterCount={filterCount} total={total} />}
     </p>
   )
 }

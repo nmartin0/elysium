@@ -1718,6 +1718,16 @@
     margin: 0 0 var(--space-normal);
   }
 
+  /* The agent's way in, beside the subject rather than in a toolbar.
+   * A link, not a button: it goes somewhere, and the destination is a
+   * URL somebody can send. */
+  .ask-about-set {
+    margin-left: auto;
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+  }
+
   .set-name__type {
     font-size: var(--type-section-size);
     line-height: var(--type-section-line);

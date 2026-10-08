@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useUrlValue } from '@elysium/shell-api/useUrlState'
 import Notice from '@elysium/shell-api/components/Notice'
 import { Button } from '@blueprintjs/core'
 import { messageFromErrorBody, query } from '@elysium/shell-api/api'
@@ -34,7 +35,24 @@ type QueryPanelProps = SubAppProps
 // ever observes a resolved response carrying status 499. The generic
 // catch block below already covers it.
 export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
-  const [queryText, setQueryText] = useState('')
+  /**
+   * SEEDED FROM THE URL, so another screen can hand the agent a
+   * question about what was on it.
+   *
+   * DEV_UI.md section 5 item 4: "THE AGENT EVERYWHERE: 'ask about this
+   * set' inside Browse, seeded with what is on screen. Elysium's actual
+   * edge over the prior art, where AI sits alongside rather than
+   * inside." And section 4's symptom it answers: "the agent lives in
+   * its own app, so a question about what you are looking at means
+   * starting again in another tab, describing in words what was already
+   * on screen."
+   *
+   * THE URL IS THE CARRIER because a question about a set is a link --
+   * which is the same reason the set's own filters live there. Nothing
+   * is stored, nothing is coordinated between apps, and the state is
+   * shareable by construction.
+   */
+  const [queryText, setQueryText] = useUrlValue('q', '')
   const [answer, setAnswer] = useState<string | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)

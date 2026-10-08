@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./AskAboutSet": "./src/AskAboutSet.tsx",
     "./Facets": "./src/Facets.tsx",
     "./ObjectDetailPanel": "./src/ObjectDetailPanel.tsx",
     "./ObjectSearchPanel": "./src/ObjectSearchPanel.tsx",

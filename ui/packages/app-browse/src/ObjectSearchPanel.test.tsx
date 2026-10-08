@@ -256,14 +256,14 @@ describe('ObjectSearchPanel -- results rendering', () => {
     )
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() => expect(screen.getByRole('link')).toHaveAttribute('href', '/objects/Customer/cust_001'))
+    await waitFor(() => expect(results().getByRole('link')).toHaveAttribute('href', '/objects/Customer/cust_001'))
   })
 
   it('encodes an id containing a slash in the link, so it cannot split the URL path', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'weird/id', fields: { name: 'Weird', region: 'us' } }]))
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() => expect(screen.getByRole('link')).toHaveAttribute('href', '/objects/Customer/weird%2Fid'))
+    await waitFor(() => expect(results().getByRole('link')).toHaveAttribute('href', '/objects/Customer/weird%2Fid'))
   })
 
   it('shows an empty state only once loading has finished and nothing came back', async () => {
