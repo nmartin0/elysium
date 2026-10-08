@@ -45,6 +45,23 @@ deployment/var/lib/**/*.db-journal
 # are the real source.
 # a curl session jar, written while testing by hand
 deployment/var/lib/mirror/
+
+# AND THE OTHER TWO DIRECTORIES THE RUNNING SERVER CREATES, found the
+# same way the mirror was: `git status` on a developer's machine after
+# an ordinary session, showing files nobody wrote.
+#
+# `limits/` is flock slot files -- core/concurrency.py makes one folder
+# per rate-limited name, hashed "because a name carries a URL and a URL
+# is not a path", with a `slot-N.lock` inside. Pure runtime state, and
+# a lock file committed to a repository is a lock somebody else's
+# checkout will contend with.
+#
+# `secrets/` is where credential REFERENCES resolve to material.
+# core/secret_references.py exists so a password never sits in a config
+# file; tracking the directory it resolves into would undo that
+# completely, and would do it quietly, which is worse.
+deployment/var/lib/limits/
+deployment/var/lib/secrets/
 cookies.txt
 # secrets, if you ever add a .env for a real API key
 .env
