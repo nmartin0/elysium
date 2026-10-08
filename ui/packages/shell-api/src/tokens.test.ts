@@ -467,7 +467,18 @@ describe('bare element selectors, which silently outrank Blueprint', () => {
    * ADDING one is a decision someone makes on purpose, with this
    * comment in front of them.
    */
-  const shell = read('packages/shell-api/src/index.css')
+  /**
+   * KEYFRAME STEPS ARE NOT SELECTORS, and the scan below cannot tell
+   * the difference on its own: `from {` and `to {` match its pattern
+   * for a bare element selector exactly. They match nothing in the
+   * document, sit inside an at-rule, and cannot outrank anything --
+   * the hazard this test guards against does not apply to them.
+   *
+   * Stripping the blocks beats adding `from` and `to` to the
+   * allowlist, which would also excuse a real rule somebody wrote
+   * against a hypothetical <from> element.
+   */
+  const shell = read('packages/shell-api/src/index.css').replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
 
   const ALLOWED = new Set(['body', 'form', 'label:not(.bp6-control)', 'label.bp6-control', 'button.danger'])
 

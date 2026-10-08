@@ -1,7 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { describe, it, expect } from 'vitest'
+import { render, screen } from '@testing-library/react'
 
-import { REVEAL_DELAY_MS } from '../useSettledSpinner'
 import AsyncPanel from './AsyncPanel'
 
 describe('AsyncPanel', () => {
@@ -46,27 +45,30 @@ describe('AsyncPanel', () => {
       </AsyncPanel>,
     )
 
-    expect(container.querySelector('.bp6-spinner')).toBeNull()
+    expect(container.querySelector('.spinner-delayed')).not.toBeNull()
     expect(screen.queryByText('content')).not.toBeInTheDocument()
   })
 
-  it('shows a spinner once the wait is long enough to need one', async () => {
-    vi.useFakeTimers()
-    try {
-      const { container } = render(
-        <AsyncPanel error={null} data={null}>
-          {() => <p>content</p>}
-        </AsyncPanel>,
-      )
+  it('wraps the spinner in the class that delays it', () => {
+    /** THE DELAY IS CSS NOW, not a timer. `.spinner-delayed` holds
+     *  opacity 0 with a fade starting at 200ms, so a spinner unmounting
+     *  before then was never visible and one unmounting shortly after
+     *  is still nearly transparent.
+     *
+     *  A first attempt did this with setTimeout in a hook and landed
+     *  state updates after tests had stopped watching -- three thrown
+     *  act() warnings in a race-condition test. Asserting the class is
+     *  the whole contract; there is no timing left to test here. */
+    const { container } = render(
+      <AsyncPanel error={null} data={null}>
+        {() => <p>content</p>}
+      </AsyncPanel>,
+    )
 
-      await act(async () => {
-        vi.advanceTimersByTime(REVEAL_DELAY_MS)
-      })
+    const wrapper = container.querySelector('.spinner-delayed')
 
-      expect(container.querySelector('.bp6-spinner')).not.toBeNull()
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(wrapper).not.toBeNull()
+    expect(wrapper?.querySelector('.bp6-spinner')).not.toBeNull()
   })
 
   it('hands the content its data, already narrowed', () => {
@@ -100,7 +102,7 @@ describe('AsyncPanel', () => {
       </AsyncPanel>,
     )
 
-    expect(container.querySelector('.bp6-spinner')).toBeNull()
+    expect(container.querySelector('.spinner-delayed')).not.toBeNull()
   })
 
   it('shows an empty array as content, not as a wait', () => {

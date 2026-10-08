@@ -23,8 +23,6 @@
  */
 
 import type { ReactNode } from 'react'
-
-import { useSettledSpinner } from '../useSettledSpinner'
 import { Callout, Spinner } from '@blueprintjs/core'
 
 interface AsyncPanelProps<T> {
@@ -54,21 +52,36 @@ interface AsyncPanelProps<T> {
 
 export default function AsyncPanel<T>({ error, data, children }: AsyncPanelProps<T>) {
   /**
-   * THE SPINNER IS DELAYED, AND HELD ONCE SHOWN. It used to mount the
-   * instant `data` was null, so a request answering in 90ms produced a
-   * few frames of grey and vanished -- read as the screen flinching
-   * rather than as loading. See useSettledSpinner for both rules and
-   * why one of them is not enough.
+   * THE SPINNER FADES IN AFTER A DELAY, IN CSS, WITH NO TIMER HERE.
    *
-   * NOTHING ELSE RENDERS IN ITS PLACE while the delay runs. An empty
-   * region for 200ms is what a fast response should look like; filling
-   * it with a placeholder would reintroduce exactly the flicker this
-   * removes.
+   * It used to mount the instant `data` was null, so a request
+   * answering in 90ms produced a few frames of grey and vanished --
+   * read as the screen flinching rather than as loading. Elysium's
+   * reads come from a local mirror, so the fast case is the common one.
+   *
+   * A FIRST ATTEMPT DID THIS IN JAVASCRIPT and it was wrong. A hook
+   * holding `setTimeout` for a reveal delay and a minimum visible time
+   * lands a state update after a test has stopped watching, which
+   * setupTests.ts turns into a thrown act() warning -- three of them,
+   * in a race-condition test that deliberately leaves promises
+   * unresolved across `waitFor`. Pushing timer-flushing into every
+   * panel test to pay for a spinner is the wrong trade.
+   *
+   * `.spinner-delayed` carries the whole behaviour: opacity 0, a
+   * fade-in that starts at 200ms and runs for 600. A spinner that
+   * unmounts before 200ms was never visible, and one that unmounts
+   * shortly after is still almost transparent -- which is the second
+   * rule the sources give, that a spinner appearing for 30ms is "a
+   * two-frame flash, which is worse", handled by never reaching full
+   * opacity rather than by holding it on screen.
    */
-  const waiting = data === null || data === undefined
-  const showSpinner = useSettledSpinner(waiting)
-
   if (error !== null) return <Callout intent="danger">{error}</Callout>
-  if (waiting) return showSpinner ? <Spinner /> : null
+  if (data === null || data === undefined) {
+    return (
+      <div className="spinner-delayed">
+        <Spinner />
+      </div>
+    )
+  }
   return <>{children(data)}</>
 }

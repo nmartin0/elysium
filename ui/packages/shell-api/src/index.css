@@ -1576,6 +1576,60 @@
     font-style: italic;
   }
 
+  /* ---- A SPINNER THAT DOES NOT FLASH --------------------------------
+   *
+   * Nielsen's response-time limits put 0.1s as the threshold below
+   * which an action feels instantaneous, and the implication most
+   * implementations miss is that below about 100ms "showing progress
+   * is worse than showing nothing, because the feedback itself becomes
+   * the disruption". AsyncPanel used to mount a spinner the instant its
+   * data was null, so a 90ms read produced a few frames of grey.
+   *
+   * IN CSS RATHER THAN IN A HOOK, and that is the second attempt. The
+   * first held `setTimeout` for a reveal delay and a minimum visible
+   * time, which landed state updates after tests had stopped watching
+   * -- three thrown act() warnings in a race-condition test that
+   * deliberately leaves promises unresolved. A fade needs no timer, no
+   * state, and no test anywhere has to know it exists.
+   *
+   * 200ms before anything starts, then a 600ms fade. A spinner that
+   * unmounts before 200ms was never visible; one unmounting shortly
+   * after is still nearly transparent, which answers the companion rule
+   * -- a spinner shown for 30ms is "a two-frame flash, which is worse"
+   * -- by never reaching full opacity rather than by holding it there.
+   *
+   * `prefers-reduced-motion` gets the delay without the fade: the point
+   * of the delay is to suppress noise, which that reader wants more
+   * than most, while an animating opacity is the thing they asked not
+   * to have.
+   */
+  .spinner-delayed {
+    opacity: 0;
+    animation: spinner-reveal 600ms ease 200ms forwards;
+  }
+
+  @keyframes spinner-reveal {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner-delayed {
+      animation: spinner-appear 1ms linear 200ms forwards;
+    }
+
+    @keyframes spinner-appear {
+      to {
+        opacity: 1;
+      }
+    }
+  }
+
   /* ---- THE PAGE FRAME ------------------------------------------------
    *
    * Every screen's outermost element. The padding lives here and
