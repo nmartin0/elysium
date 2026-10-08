@@ -93,11 +93,7 @@
    * which they experience as the app being twitchy rather than as a
    * bug they could report. */
     overflow-anchor: auto;
-    font-family:
-      system-ui,
-      -apple-system,
-      'Segoe UI',
-      sans-serif;
+    font-family: var(--font-sans);
     background: var(--surface-sunken);
     color: var(--text-primary);
   }
@@ -201,8 +197,9 @@
 
   .app__header-title {
     margin: 0;
-    font-size: 15px;
-    font-weight: 600;
+    font-size: var(--type-heading-size);
+    line-height: var(--type-heading-line);
+    font-weight: var(--type-heading-weight);
     letter-spacing: 0.01em;
   }
 
@@ -338,8 +335,9 @@
     height: 1.5rem;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.1);
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
   }
 
   .user-menu__profile {
@@ -356,7 +354,9 @@
   .user-menu__role {
     margin: 0.15rem 0 0;
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
   }
 
   .app__content {
@@ -541,8 +541,9 @@
  * :not(.bp6-control) excludes Blueprint's own controls, which bring
  * their own layout and should keep it. */
   .workspace__filter > label:not(.bp6-control) {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -621,7 +622,9 @@
   }
 
   .app__pre-auth-header h1 {
-    font-size: 1.4rem;
+    font-size: var(--type-title-size);
+    line-height: var(--type-title-line);
+    font-weight: var(--type-title-weight);
     margin: 0;
   }
 
@@ -664,7 +667,9 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    font-size: 0.9rem;
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
   }
 
   /* Blueprint's controls, restored to the layout Blueprint gives them.
@@ -678,7 +683,9 @@
     display: flex;
     align-items: center;
     gap: var(--space-snug);
-    font-size: 0.9rem;
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
   }
 
   /* SCOPED to the plain controls that still exist, not every input in
@@ -698,7 +705,9 @@
     padding: 0.5rem 0.6rem;
     border: 1px solid var(--border-subtle);
     border-radius: 6px;
-    font-size: 1rem;
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
     font-family: inherit;
   }
 
@@ -755,7 +764,9 @@
   .pending-write__description {
     margin: 0 0 0.85rem;
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     word-break: break-word;
   }
 
@@ -787,7 +798,9 @@
     gap: 0.5rem 0.75rem;
     padding: 0.3rem 0;
     border-bottom: 1px solid var(--border-subtle);
-    font-size: 0.9rem;
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
   }
 
   .pending-write__field:last-child {
@@ -831,7 +844,9 @@
 
   .create-user-form h3 {
     margin-top: 0;
-    font-size: 1rem;
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
   }
 
   .user-table {
@@ -847,7 +862,9 @@
     text-align: left;
     padding: 0.5rem 0.6rem;
     border-bottom: 1px solid var(--border-subtle);
-    font-size: 0.9rem;
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
   }
 
   .user-table__actions {
@@ -858,14 +875,18 @@
 
   .user-table__actions button {
     padding: 0.3rem 0.5rem;
-    font-size: 0.8rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
   }
 
   .user-table pre {
     background: var(--surface-sunken);
     padding: 0.6rem;
     border-radius: 6px;
-    font-size: 0.8rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     overflow-x: auto;
   }
 
@@ -875,7 +896,9 @@
   .object-search__freshness {
     margin: 0 0 0.75rem;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
   }
 
   .object-search__status,
@@ -1038,7 +1061,9 @@
   .object-detail__type {
     margin: 0;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -1059,7 +1084,9 @@
     user-select: all;
     margin: 0 0 1rem;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
   }
 
   .object-detail__fields {
@@ -1150,7 +1177,9 @@
 
   .object-search__result-subtitle {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1166,7 +1195,9 @@
   .object-search__result-field {
     display: flex;
     gap: var(--space-hair);
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
   }
 
   .object-search__result-field dt {
@@ -1192,7 +1223,9 @@
   }
 
   .object-search__more {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1215,8 +1248,9 @@
 
   .charts-panel__chart h4 {
     margin: 0 0 var(--space-tight);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1379,8 +1413,9 @@
 
   .deployment-config h3 {
     margin: 0 0 var(--space-tight);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1420,7 +1455,9 @@
   /* The failure KIND, never a message -- an exception class name, shown
  * quietly beside the status rather than as the headline. */
   .silos__failure {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1440,7 +1477,9 @@
   /* A column whose name differs from its field is the case worth
  * noticing, so it is marked rather than left to be spotted. */
   .silos__renamed {
-    font-size: 11px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1483,7 +1522,9 @@
   }
 
   .object-detail__link-more {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1504,8 +1545,9 @@
   .object-detail__history h3,
   .object-detail__published-history h3 {
     margin: 0 0 var(--space-tight);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1527,7 +1569,9 @@
  * the fact of the edit is what an audit trail is for. Said plainly,
  * because a blank cell reads as a rendering fault. */
   .object-history__withheld {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -1551,14 +1595,18 @@
   }
 
   .published-history__publication {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
   /* Said plainly, for the same reason the edit history says it: a blank
    * cell reads as a rendering fault rather than a disclosure boundary. */
   .published-history__withheld {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -1579,8 +1627,9 @@
   .query__examples-lede,
   .query__history-lede {
     margin: 0 0 6px;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-secondary);
@@ -1615,7 +1664,9 @@
   }
 
   .answer-trace__summary-note {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1647,7 +1698,9 @@
   /* The pattern is what the reviewer decides on, so it is given its own
    * line and set in mono -- it is read character by character. */
   .identity__pattern {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1663,7 +1716,9 @@
   }
 
   .identity__decided {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
     margin: 10px 0 0;
   }
@@ -1678,7 +1733,9 @@
   }
 
   .approvals__count {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1692,8 +1749,9 @@
 
   .object-detail__notes h3 {
     margin: 0 0 var(--space-tight);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1714,7 +1772,9 @@
   .object-notes__meta,
   .object-notes__empty {
     margin: var(--space-hair) 0 0;
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1734,7 +1794,9 @@
 
   .answer-trace__empty {
     margin: var(--space-tight) 0 0;
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1786,8 +1848,9 @@
 
   .graph-preview h4 {
     margin: var(--space-normal) 0 var(--space-hair);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1795,7 +1858,9 @@
 
   .graph-preview__kind {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1809,7 +1874,9 @@
   .graph-preview__type,
   .graph-preview__joins,
   .graph-preview__affects {
-    font-size: 12px;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1856,7 +1923,9 @@
   }
 
   .metrics-panel__figures dt {
-    font-size: 0.8rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     color: var(--text-secondary);
   }
 
@@ -1864,14 +1933,18 @@
  * exists to be scanned, not studied. */
   .metrics-panel__figures dd {
     margin: 0;
-    font-size: 1.4rem;
+    font-size: var(--type-title-size);
+    line-height: var(--type-title-line);
+    font-weight: var(--type-title-weight);
     font-variant-numeric: tabular-nums;
   }
 
   .metrics-panel__window,
   .metrics-panel__empty {
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
     margin: 0;
   }
 
@@ -1977,7 +2050,9 @@
   .approvals__meta {
     margin: 0;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--type-small-size);
+    line-height: var(--type-small-line);
+    font-weight: var(--type-small-weight);
   }
 
   .approvals__tags {
@@ -2005,7 +2080,9 @@
   .write-detail__object-title {
     margin: 0;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }

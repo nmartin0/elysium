@@ -156,6 +156,61 @@
     --space-loose: 24px;
     --space-section: 32px;
 
+    /* THE FAMILY, AS A TOKEN, because the `font:` shorthand below is
+     * invalid without one -- `font: 600 20px/28px inherit` is dropped
+     * by the parser entirely, taking the size and weight with it. The
+     * stack is the one body already used, moved here so the scale can
+     * name it. */
+    --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+    /* ---- TYPE, ASSIGNED BY PURPOSE -----------------------------------
+     *
+     * THERE WAS NO TYPE SCALE AT ALL. The only font token was
+     * `--font-mono`, and the stylesheet carried SEVEN separate `h3`
+     * rules using four sizes -- 1.4rem, 1rem, 12px, 11px -- mixing rem
+     * and px, with several setting no size and inheriting whatever was
+     * nearest. That is why the object page showed three different
+     * heading treatments in one column and nothing looked decided.
+     *
+     * SIX TOKENS, STRICTLY BY PURPOSE rather than by size. A rule picks
+     * the one matching what the text IS, never the one that happens to
+     * look right -- which is how four sizes became seven rules.
+     *
+     * EVERY LINE-HEIGHT IS DIVISIBLE BY 4, so text lands on the same
+     * 4px rhythm the spacing scale uses. A 13px body on a 20px line is
+     * on the grid; 13 on 19 is not, and the misses accumulate down a
+     * long page.
+     *
+     * The base is Blueprint's 14px, untouched. These sit around it.
+     */
+
+    /* One per screen. The page's title and nothing else. */
+    --type-title-size: 20px;
+    --type-title-line: 28px;
+    --type-title-weight: 600;
+
+    /* A section within a page that earns a visible heading. */
+    --type-heading-size: 15px;
+    --type-heading-line: 20px;
+    --type-heading-weight: 600;
+
+    /* The small uppercase label above a block -- NOTES, HISTORY,
+     * OPERATIONAL. Letter-spacing is set beside it where used, since
+     * the shorthand cannot carry it. */
+    --type-label-size: 12px;
+    --type-label-line: 16px;
+    --type-label-weight: 600;
+
+    /* Default reading text. */
+    --type-body-size: 13px;
+    --type-body-line: 20px;
+    --type-body-weight: 400;
+
+    /* Secondary text: captions, hints, the note beside a figure. */
+    --type-small-size: 12px;
+    --type-small-line: 16px;
+    --type-small-weight: 400;
+
     /* 2px, which is Blueprint's own $pt-border-radius. A 3px radius
    * sits a pixel off every Blueprint surface next to it -- close
    * enough to look like a mistake rather than a choice. */
