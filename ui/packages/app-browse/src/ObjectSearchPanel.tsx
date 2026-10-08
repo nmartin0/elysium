@@ -1,3 +1,5 @@
+import { chartableFields } from './ChartsPanel'
+import Facets from './Facets'
 import SetName from './SetName'
 import { Fragment, useEffect, useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
@@ -509,6 +511,42 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   setPageToken(null)
                 }}
               />
+            </WorkspaceFilter>
+          )}
+          {/* FACETS, BELOW THE FILTER BAR AND NOT REPLACING IT.
+          
+              DEV_UI.md 5.2 asks for pills and counts "replacing
+              form-style filtering". The bar stays because it reaches
+              operators a facet cannot -- ranges, contains, the set
+              operators -- and removing it would lose capability to gain
+              a pattern. The facets are the common case made one click;
+              the bar is the uncommon one still possible.
+          
+              ONE HEADING FOR ALL OF THEM, not one per field. A
+              WorkspaceFilter per facet repeated every field's display
+              name in the pane, which collided with the column headers
+              of the same name in ten existing tests -- and read as ten
+              separate controls rather than one way of narrowing. */}
+          {/* NOT BELOW TWO OBJECTS. With one object every field has one
+            distinct value, so the ratio test suppresses all of them
+            correctly and the heading would sit above nothing. The
+            count is the one part of the decision the panel already
+            knows without fetching a distribution. */}
+          {currentType && totalMatches > 1 && (
+            <WorkspaceFilter label="Narrow by">
+              {chartableFields(currentType, visibleSchema).map(({ field, label }: { field: string; label: string }) => (
+                <Facets
+                  key={field}
+                  objectType={currentType}
+                  field={field}
+                  label={label}
+                  filters={crossFilter}
+                  onFilter={(next) => {
+                    setCrossFilter([...crossFilter.filter((f) => f.field !== next.field), next])
+                    setPageToken(null)
+                  }}
+                />
+              ))}
             </WorkspaceFilter>
           )}
           <WorkspaceFilter label="Search" htmlFor="object-search-text">

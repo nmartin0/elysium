@@ -1734,6 +1734,23 @@
    * dropdown, because it tells you what narrowing will cost before you
    * narrow.
    */
+  /* The field's name above its values. A label rather than a section
+   * heading: these sit inside one "Narrow by" control, and ten of them
+   * at section weight would read as ten controls. */
+  .facets__field {
+    margin: var(--space-snug) 0 var(--space-hair);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .facets__field:first-child {
+    margin-top: 0;
+  }
+
   .facets {
     list-style: none;
     margin: 0;

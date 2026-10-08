@@ -41,6 +41,12 @@ import { type ChartFilter, conditionsExcluding } from './aggregateCharts'
  *  for the same reason: beyond it the labels crowd each other out. */
 const MAX_FACET_VALUES = 12
 
+/** Past this fraction of distinct values to objects, a field names
+ *  things rather than grouping them. Two thirds leaves room for a
+ *  genuinely sparse category on a small set without admitting a
+ *  column of identifiers. */
+const IDENTIFIER_RATIO = 0.66
+
 interface Bucket {
   value: string
   count: number
@@ -49,11 +55,16 @@ interface Bucket {
 export default function Facets({
   objectType,
   field,
+  label,
   filters,
   onFilter,
 }: {
   objectType: string
   field: string
+  /** The field's display name. Rendered INSIDE the component so a
+   *  facet suppressed for high cardinality takes its heading with it --
+   *  a heading above nothing is the worst of both. */
+  label: string
   filters: ChartFilter[]
   onFilter: (filter: ChartFilter) => void
 }) {
@@ -109,56 +120,63 @@ export default function Facets({
     }
   }, [objectType, field, key])
 
-  if (failed) return <p className="facets__failed">Counts unavailable.</p>
-  if (buckets === null || buckets.length === 0) return null
-
   /**
-   * A FACET WITH ONE ROW PER OBJECT IS NOT A FACET.
+   * WHETHER THIS FACET HAS ANYTHING WORTH SHOWING, decided once and
+   * before any return, because a hook cannot follow a conditional one.
    *
-   * `chartableFields` offers every field a chart could group by, which
-   * includes names and email addresses -- and a distribution over those
-   * is the result list again, in a narrower column, with every count at
-   * 1. It tells a reader nothing and makes the pane longer than the
-   * results beside it.
-   *
-   * The test is the distribution itself rather than a declared
-   * cardinality, because the ontology does not say which fields are
-   * identifiers and the data answers the question directly. Anything
-   * past this many distinct values is a field you search, not one you
-   * facet.
+   * Two rules, and the second is the one a count alone misses. A field
+   * past MAX_FACET_VALUES distinct values is a list, not a set of
+   * categories. And a field whose distinct values approach the number
+   * of objects IDENTIFIES them rather than grouping them -- four
+   * regions among a thousand customers is a facet; four names among
+   * four customers is the result list again. Both have four buckets,
+   * which is why the ceiling alone let NAME and EMAIL through and a
+   * rendered pane showed them with every count at 1.
    */
-  if (buckets.length > MAX_FACET_VALUES) return null
+  const total = (buckets ?? []).reduce((sum, bucket) => sum + bucket.count, 0)
+  const visible =
+    !failed &&
+    buckets !== null &&
+    buckets.length > 0 &&
+    buckets.length <= MAX_FACET_VALUES &&
+    !(total > 0 && buckets.length / total > IDENTIFIER_RATIO)
+
+  if (failed) return <p className="facets__failed">Counts unavailable.</p>
+  if (!visible) return null
 
   const active = filters.find((filter) => filter.field === field)
 
   return (
-    <ul className="facets">
-      {buckets.map((bucket) => {
-        const kept = active?.mode === 'keep' && active.values.includes(bucket.value)
-        const excluded = active?.mode === 'exclude' && active.values.includes(bucket.value)
-        return (
-          <li key={bucket.value} className="facets__row">
-            <Action
-              className="facets__value"
-              text={bucket.value}
-              active={kept}
-              onClick={() => onFilter({ field, values: [bucket.value], mode: 'keep' })}
-            />
-            {/* FILTER-OUT IS ITS OWN CONTROL, not a modifier key. A
+    <>
+      <p className="facets__field">{label}</p>
+      <ul className="facets">
+        {buckets.map((bucket) => {
+          const kept = active?.mode === 'keep' && active.values.includes(bucket.value)
+          const excluded = active?.mode === 'exclude' && active.values.includes(bucket.value)
+          return (
+            <li key={bucket.value} className="facets__row">
+              <Action
+                className="facets__value"
+                text={bucket.value}
+                active={kept}
+                onClick={() => onFilter({ field, values: [bucket.value], mode: 'keep' })}
+              />
+              {/* FILTER-OUT IS ITS OWN CONTROL, not a modifier key. A
                 shift-click is invisible: nothing on screen says it
                 exists, and this is the pane a person is reading to
                 learn what they can do. */}
-            <Action
-              className="facets__exclude"
-              icon="small-cross"
-              aria-label={`Exclude ${bucket.value}`}
-              active={excluded}
-              onClick={() => onFilter({ field, values: [bucket.value], mode: 'exclude' })}
-            />
-            <StatusTag>{bucket.count.toLocaleString()}</StatusTag>
-          </li>
-        )
-      })}
-    </ul>
+              <Action
+                className="facets__exclude"
+                icon="small-cross"
+                aria-label={`Exclude ${bucket.value}`}
+                active={excluded}
+                onClick={() => onFilter({ field, values: [bucket.value], mode: 'exclude' })}
+              />
+              <StatusTag>{bucket.count.toLocaleString()}</StatusTag>
+            </li>
+          )
+        })}
+      </ul>
+    </>
   )
 }

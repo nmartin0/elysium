@@ -100,6 +100,20 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+/**
+ * THE RESULTS, NOT THE WHOLE PAGE.
+ *
+ * Facets list the values a field holds, so every value shown in a
+ * result is now also shown in the configuration pane. That is what a
+ * facet IS -- and it makes `results().getByText('us-west')` ambiguous.
+ * These assertions are about what the RESULTS show, and now say so.
+ */
+function results() {
+  const region = document.querySelector('.object-search__results')
+  if (!region) throw new Error('no results region on screen')
+  return within(region as HTMLElement)
+}
+
 describe('ObjectSearchPanel -- loading and empty states', () => {
   it('shows "Loading…" while visibleSchema has not arrived yet (null)', () => {
     renderPanel(null)
@@ -185,7 +199,7 @@ describe('ObjectSearchPanel -- results rendering', () => {
     await waitFor(() =>
       expect(screen.getByText('Ada Okafor', { selector: '.object-search__result-title' })).toBeInTheDocument(),
     )
-    expect(screen.getByText('us-west')).toBeInTheDocument()
+    expect(results().getByText('us-west')).toBeInTheDocument()
   })
 
   it("each real Card is a DIRECT child of CardList -- a real, structural regression guard, not a stylistic preference: found and fixed as a genuine, hard-to-find live-browser-only CSS bug (Blueprint's own .bp6-card-list > .bp6-card selector applies display:flex, silently breaking this card's own multi-line layout unless the specificity-matching override in index.css keeps matching, which itself depends ENTIRELY on this exact DOM structure never changing -- jsdom cannot catch the visual bug itself, but this at least catches the structural change that would silently reintroduce it)", async () => {
@@ -716,7 +730,7 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
     mockedSearchObjects.mockResolvedValue(RESULT)
     renderPanel(WITH_VISIBILITY)
 
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
 
     // The NORMAL field must be absent, not merely the hidden one.
     // A first version asserted only that `internal` was missing, which
@@ -744,7 +758,7 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
     // `name` is also the title, so it renders twice -- getAllByText,
     // and the point of this test is the HIDDEN field being absent
     // while a plain one is present.
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
 
     expect(screen.getAllByText('Ada').length).toBeGreaterThan(1)
     expect(screen.queryByText('note')).not.toBeInTheDocument()
@@ -756,7 +770,7 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
     // it is a default, not a denial.
     mockedSearchObjects.mockResolvedValue(RESULT)
     renderPanel(WITH_VISIBILITY)
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
 
     fireEvent.click(screen.getByLabelText('Internal'))
 
@@ -766,11 +780,11 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
   it('lets a shown field be turned off', async () => {
     mockedSearchObjects.mockResolvedValue(RESULT)
     renderPanel(WITH_VISIBILITY)
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
 
     fireEvent.click(screen.getByLabelText('Region'))
 
-    expect(screen.queryByText('us-west')).not.toBeInTheDocument()
+    expect(results().queryByText('us-west')).not.toBeInTheDocument()
   })
 
   it('offers only fields the results actually contain', async () => {
@@ -780,7 +794,7 @@ describe('ObjectSearchPanel -- which columns a result shows', () => {
     mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { region: 'us-west' } }]))
     renderPanel(WITH_VISIBILITY)
 
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
 
     expect(screen.getByLabelText('Region')).toBeInTheDocument()
     expect(screen.queryByLabelText('Internal')).not.toBeInTheDocument()
@@ -806,9 +820,9 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
     // a choice that silently reset survived every one of them.
     mockedSearchObjects.mockResolvedValue(RESULT)
     const first = renderPanel(SCHEMA)
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
     fireEvent.click(screen.getByLabelText('Region'))
-    expect(screen.queryByText('us-west')).not.toBeInTheDocument()
+    expect(results().queryByText('us-west')).not.toBeInTheDocument()
 
     // Leaving and coming back, as clicking a result does.
     first.unmount()
@@ -817,7 +831,7 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
     // The Region checkbox is what proves the choice was restored --
     // 'Ada' is also the title and renders twice.
     await waitFor(() => expect(screen.getByLabelText('Region')).not.toBeChecked())
-    expect(screen.queryByText('us-west')).not.toBeInTheDocument()
+    expect(results().queryByText('us-west')).not.toBeInTheDocument()
   })
 
   it('keeps one user\u2019s choices away from another\u2019s', async () => {
@@ -829,7 +843,7 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
         <ObjectSearchPanel visibleSchema={SCHEMA} username="alice" onSessionExpired={vi.fn()} />
       </MemoryRouter>,
     )
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
     fireEvent.click(screen.getByLabelText('Region'))
     alice.unmount()
 
@@ -839,7 +853,7 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
   })
 
   it('degrades to defaults when storage is unavailable', async () => {
@@ -852,7 +866,7 @@ describe('ObjectSearchPanel -- column choices survive navigation', () => {
 
     renderPanel(SCHEMA)
 
-    await waitFor(() => expect(screen.getByText('us-west')).toBeInTheDocument())
+    await waitFor(() => expect(results().getByText('us-west')).toBeInTheDocument())
     broken.mockRestore()
   })
 })
