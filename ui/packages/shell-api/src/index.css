@@ -1727,6 +1727,41 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* ---- FACETS ------------------------------------------------------
+   *
+   * A value, a way to exclude it, and how many. The count is the point:
+   * "distributions to filter by" is what separates a facet from a
+   * dropdown, because it tells you what narrowing will cost before you
+   * narrow.
+   */
+  .facets {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .facets__row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-hair);
+  }
+
+  /* The value takes the room; the exclude button and the count keep
+   * their own width so the counts line up down the column. */
+  .facets__value {
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .facets__failed {
+    margin: 0;
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    color: var(--text-secondary);
+  }
+
   /* ---- THE PAGE FRAME ------------------------------------------------
    *
    * Every screen's outermost element. The padding lives here and

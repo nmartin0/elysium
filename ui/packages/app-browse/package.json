@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./Facets": "./src/Facets.tsx",
     "./ObjectDetailPanel": "./src/ObjectDetailPanel.tsx",
     "./ObjectSearchPanel": "./src/ObjectSearchPanel.tsx",
     "./PublishedHistory": "./src/PublishedHistory.tsx",
