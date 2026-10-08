@@ -1,3 +1,7 @@
+// @vitest-environment node
+//
+// NO DOM IS TOUCHED HERE, so this file does not pay for one.
+// See src/setupTests.ts for the measurement.
 import { describe, expect, it } from 'vitest'
 
 import { formatTemporal, formatValue } from './format'

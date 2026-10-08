@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * The trail exists only while the filter it describes is untouched.
  *

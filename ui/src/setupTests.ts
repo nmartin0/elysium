@@ -44,19 +44,32 @@ configure({ asyncUtilTimeout: 5_000 })
 // per-test matchMedia mocks already had to match by hand; expressing
 // it here, once, with real types, is what would catch a shape
 // mismatch at compile time instead of only at runtime.
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: (query: string): MediaQueryList => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  }),
-})
+// ONLY WHERE THERE IS A DOM TO PATCH.
+//
+// Twenty-five of this suite's eighty-five test files exercise pure
+// functions -- formatters, selectors, parsers -- and pay for a jsdom
+// environment they never touch. Measured on a full run: 72s standing
+// up environments and 50s importing, against 75s actually running
+// tests.
+//
+// A file opting out with `// @vitest-environment node` has no
+// `window`, and this setup file runs for every file regardless.
+// Guarding is what makes the opt-out possible at all.
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  })
+}
 
 /**
  * An act() warning from OUR OWN components fails the test, unless its

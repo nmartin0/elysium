@@ -65,6 +65,32 @@ export default defineConfig({
     env: { TZ: 'America/New_York' },
     globals: true,
     setupFiles: './src/setupTests.ts',
+    /**
+     * THREADS, NOT FORKS, measured rather than assumed: 208s against
+     * 215s on the same tree and machine, with the environment phase
+     * falling from 62s to 58s. A thread shares the process, so the
+     * per-file cost of standing up a jsdom is lower than forking for
+     * it.
+     *
+     * WHAT WAS TRIED AND REJECTED, so nobody spends the afternoon again:
+     *
+     *   isolate: false   TIMED OUT past 285s. In principle it reuses
+     *                    one environment across a worker's files; in
+     *                    practice this suite does not survive it, and
+     *                    the tests that lean on a clean DOM are the
+     *                    reason the isolation is there.
+     *
+     *   deps.optimizer   Failed to start. Pre-bundling Blueprint ought
+     *                    to help the 51s import phase, which is the
+     *                    single largest cost after the environments.
+     *                    Worth revisiting; it is not a config line.
+     *
+     * THE HONEST NUMBER IS ABOUT 6%. The suite is 85 files, 60 of which
+     * genuinely need a DOM, and standing those up is most of the run.
+     * No flag changes that -- only having fewer files that need one
+     * would, which is a design question rather than a config one.
+     */
+    pool: 'threads',
     // TIMEOUTS SIZED FOR THE SLOWEST MACHINE THAT RUNS THIS, not the
     // fastest, and these numbers come from measurement rather than
     // taste.

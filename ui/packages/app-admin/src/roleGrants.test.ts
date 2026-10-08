@@ -1,3 +1,7 @@
+// @vitest-environment node
+//
+// NO DOM IS TOUCHED HERE, so this file does not pay for one.
+// See src/setupTests.ts for the measurement.
 /**
  * Grants arranged for reading, and a change as its difference.
  *

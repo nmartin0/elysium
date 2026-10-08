@@ -1,3 +1,7 @@
+// @vitest-environment node
+//
+// NO DOM IS TOUCHED HERE, so this file does not pay for one.
+// See src/setupTests.ts for the measurement.
 // workspace-boundaries.test.ts -- structural tests on the workspace
 // itself, not any one package's runtime behavior. Reads the real
 // package.json files from disk and asserts on their actual content --
