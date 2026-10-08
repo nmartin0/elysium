@@ -23,6 +23,8 @@
  */
 
 import type { ReactNode } from 'react'
+
+import { useSettledSpinner } from '../useSettledSpinner'
 import { Callout, Spinner } from '@blueprintjs/core'
 
 interface AsyncPanelProps<T> {
@@ -51,7 +53,22 @@ interface AsyncPanelProps<T> {
 }
 
 export default function AsyncPanel<T>({ error, data, children }: AsyncPanelProps<T>) {
+  /**
+   * THE SPINNER IS DELAYED, AND HELD ONCE SHOWN. It used to mount the
+   * instant `data` was null, so a request answering in 90ms produced a
+   * few frames of grey and vanished -- read as the screen flinching
+   * rather than as loading. See useSettledSpinner for both rules and
+   * why one of them is not enough.
+   *
+   * NOTHING ELSE RENDERS IN ITS PLACE while the delay runs. An empty
+   * region for 200ms is what a fast response should look like; filling
+   * it with a placeholder would reintroduce exactly the flicker this
+   * removes.
+   */
+  const waiting = data === null || data === undefined
+  const showSpinner = useSettledSpinner(waiting)
+
   if (error !== null) return <Callout intent="danger">{error}</Callout>
-  if (data === null || data === undefined) return <Spinner />
+  if (waiting) return showSpinner ? <Spinner /> : null
   return <>{children(data)}</>
 }

@@ -30,6 +30,7 @@
     "./useDeferredValue": "./src/useDeferredValue.ts",
     "./useFetchOnce": "./src/useFetchOnce.ts",
     "./useLatestRequestGuard": "./src/useLatestRequestGuard.ts",
+    "./useSettledSpinner": "./src/useSettledSpinner.ts",
     "./useUrlState": "./src/useUrlState.ts"
   },
   "peerDependencies": {

@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
 
+import { REVEAL_DELAY_MS } from '../useSettledSpinner'
 import AsyncPanel from './AsyncPanel'
 
 describe('AsyncPanel', () => {
@@ -30,15 +31,42 @@ describe('AsyncPanel', () => {
     expect(screen.getByText('it broke')).toBeInTheDocument()
   })
 
-  it('waits when there is nothing yet', () => {
+  it('waits when there is nothing yet, showing nothing at first', () => {
+    /** THE SPINNER IS DELAYED NOW, and this test changed with it. It
+     *  used to assert a spinner on the first frame; a request answering
+     *  in 90ms then mounted one, painted a few frames and unmounted it,
+     *  which reads as the screen flinching rather than as loading.
+     *
+     *  An empty region for 200ms is what a fast response should look
+     *  like. What must still hold is that the CONTENT is withheld --
+     *  that part never depended on the spinner. */
     const { container } = render(
       <AsyncPanel error={null} data={null}>
         {() => <p>content</p>}
       </AsyncPanel>,
     )
 
-    expect(container.querySelector('.bp6-spinner')).not.toBeNull()
+    expect(container.querySelector('.bp6-spinner')).toBeNull()
     expect(screen.queryByText('content')).not.toBeInTheDocument()
+  })
+
+  it('shows a spinner once the wait is long enough to need one', async () => {
+    vi.useFakeTimers()
+    try {
+      const { container } = render(
+        <AsyncPanel error={null} data={null}>
+          {() => <p>content</p>}
+        </AsyncPanel>,
+      )
+
+      await act(async () => {
+        vi.advanceTimersByTime(REVEAL_DELAY_MS)
+      })
+
+      expect(container.querySelector('.bp6-spinner')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('hands the content its data, already narrowed', () => {
@@ -59,6 +87,10 @@ describe('AsyncPanel', () => {
   })
 
   it('treats undefined as not-here-yet, the same as null', () => {
+    // THE SPINNER IS DELAYED NOW, so the first frame shows nothing at
+    // all. What this test is actually about survives unchanged: an
+    // `undefined` data value must be treated as not-yet-arrived and
+    // the children must NOT be called with it.
     // A fetch that resolves to undefined is indistinguishable from one
     // that has not resolved, and rendering content against it would
     // crash the caller rather than wait.
@@ -68,7 +100,7 @@ describe('AsyncPanel', () => {
       </AsyncPanel>,
     )
 
-    expect(container.querySelector('.bp6-spinner')).not.toBeNull()
+    expect(container.querySelector('.bp6-spinner')).toBeNull()
   })
 
   it('shows an empty array as content, not as a wait', () => {
