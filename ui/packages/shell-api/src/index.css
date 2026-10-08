@@ -1273,6 +1273,20 @@
     overflow: hidden;
   }
 
+  /* THE SUBJECT HEADINGS GO WITH THE LABELS, and this is the bug the
+   * owner found: the rule below hid `.app__nav-label` only, so the
+   * headings I added stayed at their full 172px inside a 56px rail and
+   * were CLIPPED -- "OBJE", "ONTO", "INBO", chopped mid-word.
+   *
+   * Clipped text is worse than either alternative. Hidden says the rail
+   * is in icon mode; full text says it is expanded; half a word says
+   * the page is broken.
+   *
+   * SAME TREATMENT, NOT display:none, for the reason stated below: a
+   * collapsed rail still has to tell a screen reader what each group
+   * is, and the grouping is most of what the rail now means.
+   */
+  .app-frame--sidebar-collapsed .app__nav-subject,
   .app-frame--sidebar-collapsed .app__nav-label {
     /* Not display:none -- that would take it out of the accessibility
    * tree along with the pixels. */
@@ -1648,6 +1662,30 @@
 
   /* The first heading needs no gap above it: the rail already has
    * padding, and a margin there pushes the whole list down. */
+  /* THE SEPARATOR GOES ON THE ITEM AFTER THE HEADING, not on the
+   * heading itself. The heading is `position: absolute` once clipped --
+   * that is how the visually-hidden pattern works -- so its own margin
+   * and border affect no layout at all. I wrote the rule there first
+   * and it rendered nothing, which a screenshot showed and a stylesheet
+   * never would.
+   *
+   * A hairline says what the heading said -- these belong together,
+   * those do not -- in the width a collapsed rail has.
+   */
+  .app-frame--sidebar-collapsed .app__nav-subject + li {
+    margin-top: var(--space-tight);
+    padding-top: var(--space-tight);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  /* Except the first group, which has nothing above it to separate
+   * from. */
+  .app-frame--sidebar-collapsed .app__nav-subject:first-child + li {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
   .app__nav-subject:first-child {
     margin-top: 0;
   }

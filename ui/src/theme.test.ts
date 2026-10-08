@@ -582,3 +582,47 @@ describe('the viewport lock is declared in one place', () => {
     expect(vh).toBeLessThan(dvh)
   })
 })
+
+describe('a collapsed rail shows icons, never half a word', () => {
+  /**
+   * THE OWNER FOUND THIS, which is the reason it is a test now. Adding
+   * subject headings to the rail left them at their full width inside
+   * a 56px rail when collapsed, so they rendered as "OBJE", "ONTO",
+   * "INBO" -- chopped mid-word.
+   *
+   * Clipped text is worse than either alternative. Hidden says the rail
+   * is in icon mode; full text says it is expanded; half a word says
+   * the page is broken.
+   */
+
+  const CSS = readFileSync(path.resolve(__dirname, '../packages/shell-api/src/index.css'), 'utf8')
+
+  it('hides every piece of rail text, not just the item labels', () => {
+    /** Any class carrying words in the rail has to appear in the
+     *  collapsed rule beside `.app__nav-label`. A new one added later
+     *  and forgotten is this bug again. */
+    const hidden = CSS.match(/\.app-frame--sidebar-collapsed[^{]*\.app__nav-label[^{]*\{/)
+
+    expect(hidden).not.toBeNull()
+    expect(hidden?.[0]).toContain('.app__nav-subject')
+  })
+
+  it('hides it by clipping, never by display:none', () => {
+    /** The existing rule says why: "Not display:none -- that would take
+     *  it out of the accessibility tree along with the pixels." A
+     *  collapsed rail still has to tell a screen reader what each group
+     *  is, and the grouping is most of what the rail now means. */
+    const rule = CSS.slice(CSS.indexOf('.app-frame--sidebar-collapsed .app__nav-subject,')).slice(0, 400)
+
+    expect(rule).toContain('clip-path')
+    expect(rule).not.toContain('display: none')
+  })
+
+  it('puts the group separator on the item AFTER the heading', () => {
+    /** The heading is `position: absolute` once clipped, so its own
+     *  margin and border affect no layout at all. I wrote the rule
+     *  there first and it rendered nothing -- a screenshot showed it
+     *  and a stylesheet never would. */
+    expect(CSS).toContain('.app-frame--sidebar-collapsed .app__nav-subject + li')
+  })
+})
