@@ -222,7 +222,7 @@ export default function ActionForm({
             migration. variant="outlined" for Cancel -- the same de-
             emphasized styling already established for every other
             former className="secondary" button. */}
-        <Button type="submit" text="Propose" loading={submitting} />
+        <Button type="submit" intent="primary" text="Propose" loading={submitting} />
         <Button type="button" variant="outlined" text="Cancel" onClick={onCancel} disabled={submitting} />
       </div>
     </form>

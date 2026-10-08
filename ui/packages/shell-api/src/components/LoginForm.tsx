@@ -83,7 +83,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           false) while also showing a real, centered spinner, strictly
           more informative than the original's own plain text-swap for
           the same one prop. */}
-      <Button type="submit" text={submitting ? 'Logging in…' : 'Log in'} loading={submitting} />
+      <Button type="submit" intent="primary" text={submitting ? 'Logging in…' : 'Log in'} loading={submitting} />
     </form>
   )
 }

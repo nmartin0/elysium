@@ -161,7 +161,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
             type definition that loading alone already disables the
             button (even if disabled were explicitly false) while also
             showing a real, centered spinner. */}
-        <Button type="submit" text={submitting ? 'Thinking…' : 'Ask'} loading={submitting} />
+        <Button type="submit" intent="primary" text={submitting ? 'Thinking…' : 'Ask'} loading={submitting} />
       </form>
 
       <ExampleQuestions questions={examples} onPick={(q) => setQueryText(q)} />

@@ -378,7 +378,7 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
           spinner in place of the text -- strictly more informative
           than the original's own plain disabled + text-swap, for the
           same one prop. */}
-      <Button type="submit" text={submitting ? 'Creating…' : 'Create user'} loading={submitting} />
+      <Button type="submit" intent="primary" text={submitting ? 'Creating…' : 'Create user'} loading={submitting} />
     </form>
   )
 }
