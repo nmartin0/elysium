@@ -1588,6 +1588,25 @@
     max-width: 100%;
   }
 
+  /* PAGE OWNS THE PADDING, AND ONLY ONE OF THEM MAY.
+   *
+   * `.app__content main` already pads any sub-app that does not use
+   * `.workspace`, for a reason recorded beside it: setting `padding: 0`
+   * unconditionally for Browse's flush layout "was a regression that
+   * stripped every other sub-app's breathing room".
+   *
+   * So a panel adopting Page was getting BOTH -- measured in a browser
+   * at 24px from main and another 24px from .page, putting Identity's
+   * content 48px from the rail while every other screen sat at 24.
+   *
+   * `:has()` lets the shell stand down exactly where Page takes over,
+   * without touching the panels that still rely on main's padding.
+   * That keeps the regression the comment warns about from coming
+   * back through the other door. */
+  .app__content main:has(.page) {
+    padding: 0;
+  }
+
   /* Title and action on one line, baseline-aligned so the button sits
    * on the title's baseline rather than floating beside its box. */
   .page__head {
@@ -1717,6 +1736,18 @@
 
   /* --- Identity review -------------------------------------------------
    */
+
+  /* The panel keeps its own lede because the page TITLE is the route's
+   * now and a one-line description of what a proposal IS belongs to
+   * the screen rather than to the frame. */
+  .identity__lede {
+    margin: 0 0 var(--space-loose);
+    max-width: 68ch;
+    color: var(--text-secondary);
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
+  }
 
   .identity__proposal {
     border: 1px solid var(--border-subtle, rgb(0 0 0 / 15%));

@@ -34,7 +34,6 @@
 import { useState } from 'react'
 
 import { getMergeProposals, type MergeProposal } from '@elysium/shell-api/api'
-import Page from '@elysium/shell-api/components/Page'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import Notice from '@elysium/shell-api/components/Notice'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
@@ -67,10 +66,11 @@ function IdentityQueue({ onSessionExpired, onDecided }: { onSessionExpired: () =
       {(proposals) => {
         const pending = proposals.filter((proposal) => proposal.decision === 'pending')
         return (
-          <Page
-            title="Identity review"
-            description="Pairs the matcher believes may be the same thing. Nothing here has changed any data: a decision is recorded, and the next build consults it."
-          >
+          <>
+            <p className="identity__lede">
+              Pairs the matcher believes may be the same thing. Nothing here has changed any data: a decision is
+              recorded, and the next build consults it.
+            </p>
             {proposals.length === 0 && <Notice state="neutral">No proposed merges.</Notice>}
             {proposals.length > 0 && pending.length === 0 && (
               <Notice state="granted">Every proposal has been decided.</Notice>
@@ -84,7 +84,7 @@ function IdentityQueue({ onSessionExpired, onDecided }: { onSessionExpired: () =
                 onSessionExpired={onSessionExpired}
               />
             ))}
-          </Page>
+          </>
         )
       }}
     </AsyncPanel>
