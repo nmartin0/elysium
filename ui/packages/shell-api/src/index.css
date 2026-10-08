@@ -1690,6 +1690,19 @@
     margin-top: 0;
   }
 
+  /* "Not permitted", in words.
+   *
+   * DEV_UI.md 9.7: "plain words chosen over a hatched chip: at 13px the
+   * hatching reads as a rendering fault." Italic and secondary so it
+   * reads as a note about the field rather than as its value -- a
+   * reader scanning the column must not take it for a string somebody
+   * stored.
+   */
+  .object-detail__withheld {
+    font-style: italic;
+    color: var(--text-secondary);
+  }
+
   /* ---- THE SET'S NAME -----------------------------------------------
    *
    * DEV_UI.md 11.1: "everything on screen IS a set, named by how it was

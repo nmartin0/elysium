@@ -268,12 +268,44 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       <h2 className="object-detail__title">{titleValue as React.ReactNode}</h2>
       {titleValue !== objectId && <p className="object-detail__subtitle">{objectId}</p>}
       <dl className="object-detail__fields">
-        {Object.entries(fields).map(([fieldName, value]) => (
-          <div key={fieldName} className="object-detail__field">
-            <dt>{formatFieldName(fieldName)}</dt>
-            <dd>{renderFieldValue(fieldName, value)}</dd>
-          </div>
-        ))}
+        {/* THE SCHEMA, NOT THE RESPONSE, and this is the fourth state
+              DEV_UI.md 9.7 calls ours alone: "'Not permitted',
+              'restricted' and a real NULL must look like three different
+              things. A hidden field is not an empty field, and neither is
+              an absent one."
+          
+              Two of the three were already right. A real NULL renders as
+              an em dash. A field the caller may not read is OMITTED from
+              the response entirely rather than nulled -- uniform denial,
+              and correct.
+          
+              But iterating the RESPONSE made the third state invisible:
+              the row simply did not appear, which is indistinguishable
+              from a type that has no such field. A reader comparing two
+              customers could not tell that one of them has an email they
+              are not cleared to see.
+          
+              Iterating the schema the caller CAN see restores it. The
+              schema itself is already filtered per caller -- visible_schema
+              omits a field they may not know exists -- so this cannot
+              reveal a field whose EXISTENCE is secret. It distinguishes
+              only the case where the field is declared, visible in the
+              schema, and withheld for this object. */}
+        {Object.keys(typeSchema?.fields ?? fields).map((fieldName) => {
+          const withheld = !(fieldName in fields)
+          return (
+            <div key={fieldName} className="object-detail__field">
+              <dt>{formatFieldName(fieldName)}</dt>
+              <dd>
+                {withheld ? (
+                  <span className="object-detail__withheld">Not permitted</span>
+                ) : (
+                  renderFieldValue(fieldName, fields[fieldName])
+                )}
+              </dd>
+            </div>
+          )
+        })}
       </dl>
 
       {/* RELATED BEFORE NOTES, and well before history. "What else is

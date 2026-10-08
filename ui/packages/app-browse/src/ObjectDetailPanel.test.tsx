@@ -536,3 +536,61 @@ describe('a field on the middle rung of the grant ladder', () => {
     expect(screen.queryByText('Hidden by your permissions')).toBeNull()
   })
 })
+
+describe('three kinds of nothing, which must not look alike', () => {
+  /**
+   * DEV_UI.md 9.7's fourth state, "the state that is ours alone":
+   * "'Not permitted', 'restricted' and a real NULL must look like three
+   * different things. A hidden field is not an empty field, and neither
+   * is an absent one."
+   *
+   * Two were already right. A real NULL renders as an em dash, and a
+   * field the caller may not read is OMITTED from the response rather
+   * than nulled -- uniform denial, and correct.
+   *
+   * The panel iterated the RESPONSE, which made the third invisible:
+   * the row did not appear at all, indistinguishable from a type with
+   * no such field. A reader comparing two customers could not tell
+   * that one has an email they are not cleared to see.
+   */
+
+  it('says so when a declared field is withheld', () => {
+    mockedGetObjectDetail.mockResolvedValue({
+      fields: { name: 'Ada Okafor' },
+    } as never)
+    renderPanel('Customer', 'c1')
+
+    return screen.findByText('Not permitted').then((node) => {
+      expect(node).toBeInTheDocument()
+    })
+  })
+
+  it('shows an em dash for a field that is genuinely null', async () => {
+    /** A NULL is a fact about the object; "not permitted" is a fact
+     *  about the reader. Collapsing them loses which. */
+    mockedGetObjectDetail.mockResolvedValue({
+      // The title comes from a field, so nulling every one of them
+      // tests the title derivation rather than the em dash. Only the
+      // field under test is null.
+      fields: { name: 'Ada Okafor', account_id: null },
+    } as never)
+    renderPanel('Customer', 'c1')
+
+    await screen.findByText('Account id')
+
+    expect(screen.queryByText('Not permitted')).not.toBeInTheDocument()
+  })
+
+  it('names the field even when it cannot show the value', async () => {
+    /** The row has to exist, or there is nothing to attach the state
+     *  to. The schema is already filtered per caller, so this cannot
+     *  reveal a field whose EXISTENCE is secret -- only one that is
+     *  declared, visible, and withheld for this object. */
+    mockedGetObjectDetail.mockResolvedValue({
+      fields: { name: 'Ada Okafor' },
+    } as never)
+    renderPanel('Customer', 'c1')
+
+    expect(await screen.findByText('Account id')).toBeInTheDocument()
+  })
+})
