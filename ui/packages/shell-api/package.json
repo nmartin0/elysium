@@ -17,6 +17,7 @@
     "./components/LoadingState": "./src/components/LoadingState.tsx",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
     "./components/Notice": "./src/components/Notice.tsx",
+    "./components/Page": "./src/components/Page.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",
     "./components/StatusTag": "./src/components/StatusTag.tsx",
     "./components/UserMenu": "./src/components/UserMenu.tsx",

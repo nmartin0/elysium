@@ -1576,6 +1576,51 @@
     font-style: italic;
   }
 
+  /* ---- THE PAGE FRAME ------------------------------------------------
+   *
+   * Every screen's outermost element. The padding lives here and
+   * nowhere else, so a panel cannot quietly choose its own margin --
+   * which is how ten panels came to open ten different distances from
+   * the rail.
+   */
+  .page {
+    padding: var(--space-loose);
+    max-width: 100%;
+  }
+
+  /* Title and action on one line, baseline-aligned so the button sits
+   * on the title's baseline rather than floating beside its box. */
+  .page__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-normal);
+    margin-bottom: var(--space-loose);
+  }
+
+  .page__title {
+    margin: 0;
+    font-size: var(--type-title-size);
+    line-height: var(--type-title-line);
+    font-weight: var(--type-title-weight);
+  }
+
+  .page__description {
+    margin: var(--space-hair) 0 0;
+    max-width: 68ch;
+    color: var(--text-secondary);
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
+  }
+
+  /* `flex-shrink: 0` so a long title never squeezes the action into
+   * two lines -- the title wraps instead, which is the right thing to
+   * give up. */
+  .page__action {
+    flex-shrink: 0;
+  }
+
   /* --- What changed in the source ------------------------------------
    *
    * Sits below the Elysium history and answers the other half of the
@@ -1672,10 +1717,6 @@
 
   /* --- Identity review -------------------------------------------------
    */
-  .identity__lede {
-    color: var(--text-secondary);
-    max-width: 60ch;
-  }
 
   .identity__proposal {
     border: 1px solid var(--border-subtle, rgb(0 0 0 / 15%));
