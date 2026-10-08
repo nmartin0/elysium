@@ -1690,6 +1690,43 @@
     margin-top: 0;
   }
 
+  /* ---- THE SET'S NAME -----------------------------------------------
+   *
+   * DEV_UI.md 11.1: "everything on screen IS a set, named by how it was
+   * built (`Customer · 3 filters · 1,284`)". 11.6 puts it where a
+   * document's name sits, so it reads as the subject rather than as a
+   * status line -- the type at the page-title step, the rest beside it
+   * and quieter.
+   */
+  .set-name {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-tight);
+    margin: 0 0 var(--space-normal);
+  }
+
+  .set-name__type {
+    font-size: var(--type-section-size);
+    line-height: var(--type-section-line);
+    font-weight: var(--type-section-weight);
+  }
+
+  /* The count and the filters describe the type; they are not peers of
+   * it, so they take the body step and the secondary colour. */
+  .set-name__filters,
+  .set-name__total,
+  .set-name__dot {
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
+    color: var(--text-secondary);
+  }
+
+  /* Tabular figures so the number does not jump as a search narrows. */
+  .set-name__total {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* ---- THE PAGE FRAME ------------------------------------------------
    *
    * Every screen's outermost element. The padding lives here and

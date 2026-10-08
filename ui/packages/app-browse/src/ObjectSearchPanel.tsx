@@ -1,3 +1,4 @@
+import SetName from './SetName'
 import { Fragment, useEffect, useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
 import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
@@ -566,6 +567,12 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         </>
       }
     >
+      {/* THE SUBJECT, ABOVE EVERYTHING THAT IS ABOUT IT. DEV_UI.md
+          11.6: "the set is the SUBJECT, so it belongs in the top bar,
+          where a document's name sits. Everything else is about it:
+          left is ways to change the set, centre is the set viewed
+          somehow, right is about one member." */}
+      <SetName objectType={selectedType} filterCount={crossFilter.length} total={totalMatches} loading={loading} />
       {error && <ErrorState>{error}</ErrorState>}
       {/* Two views of ONE object set. The filter is shared, so
           switching does not change what is being described -- only

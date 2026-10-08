@@ -6,7 +6,8 @@
   "exports": {
     "./ObjectDetailPanel": "./src/ObjectDetailPanel.tsx",
     "./ObjectSearchPanel": "./src/ObjectSearchPanel.tsx",
-    "./PublishedHistory": "./src/PublishedHistory.tsx"
+    "./PublishedHistory": "./src/PublishedHistory.tsx",
+    "./SetName": "./src/SetName.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*"

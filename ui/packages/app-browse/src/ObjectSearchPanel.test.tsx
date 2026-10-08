@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 // Partial mock via importOriginal, not a hand-duplicated module shape
@@ -1649,8 +1649,15 @@ describe('the panel knows no ontology nouns of its own', () => {
     mockedSearchObjects.mockResolvedValue(searchResult([]))
     renderPanel(FLEET)
 
-    expect(await screen.findByText('Vessel')).toBeInTheDocument()
-    expect(screen.queryByText('Customer')).toBeNull()
+    // THE SELECT, NOT ANY ELEMENT SAYING 'Vessel'. The set's name now
+    // renders the object type too -- DEV_UI.md 11.1's
+    // `Customer · 3 filters · 1,284` -- so a bare text query matches
+    // twice. This test is about what the DROPDOWN offers, which is
+    // what the option asserts.
+    const select = await screen.findByLabelText(/object type/i)
+
+    expect(within(select).getByText('Vessel')).toBeInTheDocument()
+    expect(within(select).queryByText('Customer')).toBeNull()
   })
 
   it('titles a result with the declared title_field', async () => {
