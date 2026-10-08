@@ -341,7 +341,7 @@
   }
 
   .user-menu__profile {
-    padding: 0.7rem 0.85rem;
+    padding: var(--space-snug) var(--space-snug);
     border-bottom: 1px solid var(--border-subtle);
   }
 
@@ -352,7 +352,7 @@
   }
 
   .user-menu__role {
-    margin: 0.15rem 0 0;
+    margin: var(--space-hair) 0 0;
     color: var(--text-secondary);
     font-size: var(--type-small-size);
     line-height: var(--type-small-line);
@@ -702,9 +702,9 @@
  * a control that had stopped existing, and the comment kept counting
  * it. */
   .query-panel__input {
-    padding: 0.5rem 0.6rem;
+    padding: 0.5rem var(--space-tight);
     border: 1px solid var(--border-subtle);
-    border-radius: 6px;
+    border-radius: var(--space-tight);
     font-size: var(--type-body-size);
     line-height: var(--type-body-line);
     font-weight: var(--type-body-weight);
@@ -753,16 +753,16 @@
 
   .pending-write h3 {
     margin-top: 0;
-    margin-bottom: 0.4rem;
+    margin-bottom: var(--space-tight);
   }
 
   .pending-write__action-name {
-    margin: 0 0 0.3rem;
+    margin: 0 0 var(--space-hair);
     font-weight: 600;
   }
 
   .pending-write__description {
-    margin: 0 0 0.85rem;
+    margin: 0 0 var(--space-snug);
     color: var(--text-secondary);
     font-size: var(--type-small-size);
     line-height: var(--type-small-line);
@@ -771,11 +771,11 @@
   }
 
   .pending-write__object {
-    margin-bottom: 0.6rem;
-    padding: 0.7rem 0.8rem;
+    margin-bottom: var(--space-tight);
+    padding: var(--space-snug) var(--space-snug);
     background: var(--surface-sunken);
     border: 1px solid var(--border-subtle);
-    border-radius: 6px;
+    border-radius: var(--space-tight);
   }
 
   .pending-write__object:last-of-type {
@@ -783,7 +783,7 @@
   }
 
   .pending-write__object-label {
-    margin: 0 0 0.4rem;
+    margin: 0 0 var(--space-tight);
     font-weight: 600;
   }
 
@@ -796,7 +796,7 @@
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 0.5rem 0.75rem;
-    padding: 0.3rem 0;
+    padding: var(--space-hair) 0;
     border-bottom: 1px solid var(--border-subtle);
     font-size: var(--type-body-size);
     line-height: var(--type-body-line);
@@ -825,7 +825,7 @@
 
   .pending-write__actions {
     display: flex;
-    gap: 0.6rem;
+    gap: var(--space-tight);
     margin-top: 0.75rem;
   }
 
@@ -860,7 +860,7 @@
   .user-table th,
   .user-table td {
     text-align: left;
-    padding: 0.5rem 0.6rem;
+    padding: 0.5rem var(--space-tight);
     border-bottom: 1px solid var(--border-subtle);
     font-size: var(--type-body-size);
     line-height: var(--type-body-line);
@@ -870,11 +870,11 @@
   .user-table__actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: var(--space-tight);
   }
 
   .user-table__actions button {
-    padding: 0.3rem 0.5rem;
+    padding: var(--space-hair) 0.5rem;
     font-size: var(--type-small-size);
     line-height: var(--type-small-line);
     font-weight: var(--type-small-weight);
@@ -882,8 +882,8 @@
 
   .user-table pre {
     background: var(--surface-sunken);
-    padding: 0.6rem;
-    border-radius: 6px;
+    padding: var(--space-tight);
+    border-radius: var(--space-tight);
     font-size: var(--type-small-size);
     line-height: var(--type-small-line);
     font-weight: var(--type-small-weight);
@@ -1069,7 +1069,7 @@
   }
 
   .object-detail__title {
-    margin: 0.15rem 0 0.15rem;
+    margin: var(--space-hair) 0 var(--space-hair);
   }
 
   /* THE OBJECT ID, in monospace. It is read to compare and to copy, and
@@ -1690,7 +1690,7 @@
 
   .query__examples-lede,
   .query__history-lede {
-    margin: 0 0 6px;
+    margin: 0 0 var(--space-tight);
     font-size: var(--type-label-size);
     line-height: var(--type-label-line);
     font-weight: var(--type-label-weight);
@@ -1720,11 +1720,11 @@
    * rows are what they consult afterwards.
    */
   .answer-trace__summary {
-    margin: 0 0 10px;
+    margin: 0 0 var(--space-snug);
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-tight);
   }
 
   .answer-trace__summary-note {
@@ -1752,8 +1752,8 @@
   .identity__proposal {
     border: 1px solid var(--border-subtle, rgb(0 0 0 / 15%));
     border-radius: 4px;
-    padding: 14px 16px;
-    margin-bottom: 14px;
+    padding: var(--space-normal);
+    margin-bottom: var(--space-normal);
   }
 
   .identity__head {
@@ -1778,13 +1778,13 @@
 
   .identity__fields {
     width: 100%;
-    margin: 10px 0;
+    margin: var(--space-snug) 0;
   }
 
   .identity__actions {
     display: flex;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: var(--space-snug);
   }
 
   .identity__decided {
@@ -1792,7 +1792,7 @@
     line-height: var(--type-small-line);
     font-weight: var(--type-small-weight);
     color: var(--text-secondary);
-    margin: 10px 0 0;
+    margin: var(--space-snug) 0 0;
   }
 
   /* --- The approvals card's scope --------------------------------------
