@@ -48,8 +48,8 @@ function backendSource(): { file: string; source: string }[] {
 
 describe('claims the UI roadmap made about the backend', () => {
   /**
-   * TWENTY SECONDS, NOT THE DEFAULT FIVE, and this is a diagnosis
-   * rather than a papering-over.
+   * THE PER-TEST OVERRIDE IS GONE, because the cause was general and
+   * the fix should have been too.
    *
    * This test failed intermittently in full runs and passed every time
    * in isolation. The timing said why: 6269ms against 17ms and 5ms for
@@ -61,8 +61,13 @@ describe('claims the UI roadmap made about the backend', () => {
    * The work is the point: an assertion about what the backend does
    * has to read the backend. Making it cheaper would mean sampling,
    * and a sampled walk cannot support "an empty walk cannot pass".
+   *
+   * The 30-second budget now set in vite.config.ts covers this and the
+   * two tests that failed on the owner's machine for the same reason.
+   * Patching one test at a time was treating a property of the SUITE
+   * as a property of the test.
    */
-  it('reads the backend at all, so an empty walk cannot pass', { timeout: 20_000 }, () => {
+  it('reads the backend at all, so an empty walk cannot pass', () => {
     // THE CONTROL INSIDE THE TEST. Every assertion below is over a
     // walk of directories this package does not own; if that walk
     // ever returns nothing -- a move, a rename, a restructure -- the

@@ -65,6 +65,36 @@ export default defineConfig({
     env: { TZ: 'America/New_York' },
     globals: true,
     setupFiles: './src/setupTests.ts',
+    // TIMEOUTS SIZED FOR THE SLOWEST MACHINE THAT RUNS THIS, not the
+    // fastest, and these numbers come from measurement rather than
+    // taste.
+    //
+    // The owner's full run took 1,942 SECONDS where mine takes about
+    // 280 -- a seven-fold difference on the same tree. At that speed
+    // vitest's 5,000ms default failed `Shell.test.tsx`, which is a
+    // SYNCHRONOUS test: `renderShell()` then three `getByRole` calls,
+    // no await anywhere. A synchronous test can only exceed five
+    // seconds if the render itself did, which is a statement about the
+    // machine and not about the component. Both files passed in
+    // isolation in ten seconds.
+    //
+    // `testTimeout` is the whole-test budget; `hookTimeout` covers
+    // beforeEach, which does the same work under the same load.
+    // Testing Library's own `waitFor` default of 1,000ms is set
+    // separately in setupTests.ts, because it is RTL's knob and not
+    // vitest's -- that is what `SchemaPanel`'s debounced filter
+    // overran.
+    //
+    // RAISING A TIMEOUT HIDES A SLOW TEST, which is the objection worth
+    // answering: a test that genuinely hangs now takes 30 seconds to
+    // say so instead of 5. That is the price of a suite that does not
+    // fail differently on different machines, and a hang is still a
+    // hang. What this must NOT become is the first move whenever
+    // something goes red -- `roadmapClaims` earned its 20 seconds by
+    // measurement too, and that one turned out to be a real cost
+    // (reading a few hundred Python files), not a flake.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     include: ['src/**/*.test.{js,jsx,ts,tsx}', 'packages/*/src/**/*.test.{js,jsx,ts,tsx}'],
   },
 })

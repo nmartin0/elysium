@@ -4,6 +4,22 @@
 // before adopting it, not assumed from memory.
 import { expect } from 'vitest'
 import '@testing-library/jest-dom'
+import { configure } from '@testing-library/dom'
+
+// RTL'S OWN TIMEOUT, WHICH VITEST'S DOES NOT COVER.
+//
+// `waitFor` and every `findBy*` built on it default to 1,000ms --
+// Testing Library's knob, not vitest's, so raising `testTimeout` in
+// vite.config.ts does nothing for them. SchemaPanel's "filters object
+// types by name" overran it on the owner's machine: the filter box
+// debounces through useDeferredValue, and a debounce plus a re-render
+// exceeded a second under a run that took 1,942 seconds where mine
+// takes 280.
+//
+// Five seconds, not thirty. A findBy that needs longer than that is
+// waiting for something that is not coming, and the failure should
+// arrive while somebody still remembers what they changed.
+configure({ asyncUtilTimeout: 5_000 })
 
 // window.matchMedia -- jsdom itself does not implement this API at
 // all (a real, well-known, longstanding gap, confirmed directly by
