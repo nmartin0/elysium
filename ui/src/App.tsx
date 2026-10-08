@@ -62,8 +62,6 @@ const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPan
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
 const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'))
-import Page from '@elysium/shell-api/components/Page'
-
 const IdentityPanel = lazy(() => import('@elysium/app-identity/IdentityPanel'))
 const NotificationsPanel = lazy(() => import('@elysium/app-notifications/NotificationsPanel'))
 
@@ -404,74 +402,35 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<Shell visibleApps={visibleApps} currentUser={currentUser} onLogout={handleLogout} />}>
-          <Route
-            path="/query"
-            element={
-              <Page title="Query">
-                <QueryPanel onSessionExpired={handleSessionExpired} />
-              </Page>
-            }
-          />
+          <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
           <Route
             path="/schema"
             element={
-              <Page title="Schema">
-                <SchemaPanel
-                  visibleSchema={visibleSchema}
-                  username={currentUser?.username ?? ''}
-                  onSessionExpired={handleSessionExpired}
-                />
-              </Page>
+              <SchemaPanel
+                visibleSchema={visibleSchema}
+                username={currentUser?.username ?? ''}
+                onSessionExpired={handleSessionExpired}
+              />
             }
           />
           <Route
             path="/browse"
             element={
-              <Page title="Browse">
-                <ObjectSearchPanel
-                  visibleSchema={visibleSchema}
-                  username={currentUser?.username ?? ''}
-                  onSessionExpired={handleSessionExpired}
-                />
-              </Page>
+              <ObjectSearchPanel
+                visibleSchema={visibleSchema}
+                username={currentUser?.username ?? ''}
+                onSessionExpired={handleSessionExpired}
+              />
             }
           />
           <Route
             path="/objects/:objectType/:objectId"
             element={<ObjectDetailPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
           />
-          <Route
-            path="/admin"
-            element={
-              <Page title="Admin">
-                <AdminPanel onSessionExpired={handleSessionExpired} />
-              </Page>
-            }
-          />
-          <Route
-            path="/approvals"
-            element={
-              <Page title="Approvals">
-                <ApprovalsPanel onSessionExpired={handleSessionExpired} />
-              </Page>
-            }
-          />
-          <Route
-            path="/identity"
-            element={
-              <Page title="Identity review">
-                <IdentityPanel onSessionExpired={handleSessionExpired} />
-              </Page>
-            }
-          />
-          <Route
-            path="/notifications"
-            element={
-              <Page title="Notifications">
-                <NotificationsPanel onSessionExpired={handleSessionExpired} />
-              </Page>
-            }
-          />
+          <Route path="/admin" element={<AdminPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/approvals" element={<ApprovalsPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/identity" element={<IdentityPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/notifications" element={<NotificationsPanel onSessionExpired={handleSessionExpired} />} />
           <Route path="*" element={<Navigate to="/query" replace />} />
         </Route>
       </Routes>

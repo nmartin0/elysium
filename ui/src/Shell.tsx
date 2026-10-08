@@ -86,6 +86,18 @@ import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMe
 export interface VisibleApp {
   path: string
   name: string
+  /**
+   * WHAT A PERSON IS WORKING ON, from api/apps.py.
+   *
+   * DEV_UI.md 12: six apps is "a decomposition BY FEATURE, the way
+   * software gets built, not BY WHAT THE USER IS WORKING ON. That is
+   * why moving between them feels like changing tools rather than
+   * changing view." The rail groups by this instead of listing apps.
+   *
+   * Optional because a server that predates the field sends none, and
+   * an ungrouped rail is the old behaviour rather than a broken one.
+   */
+  subject?: string
 }
 
 interface ShellProps {
@@ -494,38 +506,61 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
    * announces as nothing useful". A tooltip covers the sighted user;
    * the surviving text covers everyone else.
    */
-  const navItems = visibleApps.map((app) => (
-    <MenuItem
-      key={app.path}
-      icon={iconForApp(app.path)}
-      text={<span className="app__nav-label">{app.name}</span>}
-      href={app.path}
-      active={location.pathname === app.path}
-      aria-current={location.pathname === app.path ? 'page' : undefined}
-      /**
-       * A NATIVE title, not a Blueprint <Tooltip> wrapper.
-       *
-       * Wrapping each MenuItem in a Tooltip put a popover target
-       * between the <ul> and its <li> children, which broke the list
-       * layout: all three items rendered at the same y, stacked on top
-       * of each other, so the rail appeared to contain one app.
-       *
-       * Confirmed from the live DOM -- every item reported top: 44 --
-       * after three rounds of guessing at CSS. jsdom never showed it
-       * because the tests render the EXPANDED state, where the wrapper
-       * is absent.
-       *
-       * title works in every browser, needs no wrapper, and the
-       * accessible name still comes from the label text that
-       * clip-path keeps in the tree.
-       */
-      title={collapsed ? app.name : undefined}
-      onClick={(event) => {
-        event.preventDefault()
-        navigate(app.path)
-      }}
-    />
-  ))
+  /**
+   * GROUPED, NOT LISTED. Apps arrive from the server already ordered by
+   * subject; this walks them in order and emits a heading whenever the
+   * subject changes, so the grouping needs no second pass and cannot
+   * disagree with the order.
+   *
+   * An app with no subject gets no heading, which is what an older
+   * server produces -- the rail degrades to the flat list it was.
+   */
+  let lastSubject: string | undefined
+  const navItems = visibleApps.flatMap((app) => {
+    const heading =
+      app.subject && app.subject !== lastSubject ? (
+        <li className="app__nav-subject" key={`subject-${app.subject}`} role="presentation">
+          {app.subject}
+        </li>
+      ) : null
+    lastSubject = app.subject
+    return [heading, renderNavItem(app)].filter(Boolean)
+  })
+
+  function renderNavItem(app: VisibleApp) {
+    return (
+      <MenuItem
+        key={app.path}
+        icon={iconForApp(app.path)}
+        text={<span className="app__nav-label">{app.name}</span>}
+        href={app.path}
+        active={location.pathname === app.path}
+        aria-current={location.pathname === app.path ? 'page' : undefined}
+        /**
+         * A NATIVE title, not a Blueprint <Tooltip> wrapper.
+         *
+         * Wrapping each MenuItem in a Tooltip put a popover target
+         * between the <ul> and its <li> children, which broke the list
+         * layout: all three items rendered at the same y, stacked on top
+         * of each other, so the rail appeared to contain one app.
+         *
+         * Confirmed from the live DOM -- every item reported top: 44 --
+         * after three rounds of guessing at CSS. jsdom never showed it
+         * because the tests render the EXPANDED state, where the wrapper
+         * is absent.
+         *
+         * title works in every browser, needs no wrapper, and the
+         * accessible name still comes from the label text that
+         * clip-path keeps in the tree.
+         */
+        title={collapsed ? app.name : undefined}
+        onClick={(event) => {
+          event.preventDefault()
+          navigate(app.path)
+        }}
+      />
+    )
+  }
 
   /**
    * The rail holds SUB-APP NAVIGATION and nothing else.

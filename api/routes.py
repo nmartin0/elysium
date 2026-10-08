@@ -264,6 +264,18 @@ class DataFreshnessResponse(BaseModel):
 class VisibleAppResponse(BaseModel):
     name: str
     path: str
+    #: WHAT A PERSON IS WORKING ON, so the rail can group rather than
+    #: list. DEV_UI.md 12: the rail "is not an app switcher. It is a
+    #: SUBJECT switcher".
+    #:
+    #: DECLARED HERE OR IT DISAPPEARS. Pydantic drops what the model
+    #: does not name, so api/apps.py grew a `subject` on every entry,
+    #: the rail was reordered by it, and the headings rendered nowhere
+    #: -- the field never left the server. That is the fourth time this
+    #: exact omission has happened, which is why there is a test
+    #: forcing every new config field into the config response; this
+    #: model has no such test.
+    subject: str | None = None
 
 
 class SchemaFieldResponse(BaseModel):
@@ -3089,7 +3101,16 @@ def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(g
     # HTTP-facing shape excludes it, same "filter at the boundary, not
     # the shared internal source" pattern as both prior fixes.
     roles = _generation(request).config.roles
-    return [{"name": app["name"], "path": app["path"]} for app in visible_apps_for(current_user, roles)]
+    # `subject` travels, `gating_permission` does not. The projection
+    # above is deliberate -- it exists to keep the internal permission
+    # string off the wire -- and that is exactly why a new field has to
+    # be added here as well as to the response model. I added it to
+    # both api/apps.py and VisibleAppResponse, rebuilt, and watched the
+    # rail reorder correctly while every heading rendered nothing:
+    # `subject: None` on every entry, because this line still named two
+    # keys.
+    return [{"name": app["name"], "path": app["path"],
+             "subject": app.get("subject")} for app in visible_apps_for(current_user, roles)]
 
 
 @router.get("/me/visible-schema", dependencies=[Depends(_no_store)],

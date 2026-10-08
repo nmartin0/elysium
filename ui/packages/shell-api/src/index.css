@@ -1630,6 +1630,28 @@
     }
   }
 
+  /* A SUBJECT HEADING IN THE RAIL. DEV_UI.md 12: the rail "is not an
+   * app switcher. It is a SUBJECT switcher". These are labels, so they
+   * take the label step -- 11px semibold uppercase with the document's
+   * 0.06em tracking -- and sit on the chrome, which has its own text
+   * colour. */
+  .app__nav-subject {
+    margin: var(--space-normal) 0 var(--space-hair);
+    padding: 0 var(--space-snug);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-on-chrome-dim);
+  }
+
+  /* The first heading needs no gap above it: the rail already has
+   * padding, and a margin there pushes the whole list down. */
+  .app__nav-subject:first-child {
+    margin-top: 0;
+  }
+
   /* ---- THE PAGE FRAME ------------------------------------------------
    *
    * Every screen's outermost element. The padding lives here and

@@ -26,64 +26,59 @@ Used by: api/routes.py's my_visible_apps_route()
 
 from core.intermediate_layer.auth import UserRecord, authorize
 
+#: WHAT A PERSON IS WORKING ON, not which feature built the screen.
+#:
+#: DEV_UI.md 12: "Elysium has six apps -- browse, query, approvals,
+#: notifications, schema, admin -- which is a decomposition BY FEATURE,
+#: the way software gets built, not BY WHAT THE USER IS WORKING ON.
+#: That is why moving between them feels like changing tools rather
+#: than changing view."
+#:
+#: Sorted by subject there are three things, plus two that are not
+#: subjects at all:
+#:
+#:   OBJECTS    instances. Narrow, understand, act. Today this is split
+#:              across browse and query, which 12 says should become one
+#:              workspace with MODES -- table, graph, chart -- where
+#:              switching mode does not lose the set. Not merged yet;
+#:              grouped so the rail stops claiming they are unrelated.
+#:   ONTOLOGY   types, not instances. "Going from '1,284 customers' to
+#:              'the Customer type' is a change of KIND, not of filter."
+#:   PIPELINE   the process producing both. Not built.
+#:
+#:   INBOX      approvals, notifications, merge proposals: "EVENTS THAT
+#:              ARRIVED, not something being explored". Every row should
+#:              be a DOOR into a subject, which they are not yet.
+#:   SETTINGS   "the system's own configuration, visited rarely, and
+#:              fine where it is."
+SUBJECTS: tuple[str, ...] = ("Objects", "Ontology", "Inbox", "Settings")
+
 VISIBLE_APPS: list[dict[str, str | None]] = [
-    {"name": "Query", "path": "/query", "gating_permission": None},
-    {"name": "Browse", "path": "/browse", "gating_permission": None},
-    # Schema is read-only and shows only what visible-schema already
-    # returns, which is filtered per caller -- so it needs no grant of
-    # its own beyond being logged in. A user with no read: grants sees
-    # an empty ontology rather than a forbidden page, which is the same
-    # uniform denial every other read path uses.
-    {"name": "Schema", "path": "/schema", "gating_permission": None},
-    # UNGATED, for the same reason Approvals is.
-    #
-    # There is no single grant meaning "you review merges". Seeing the
-    # queue needs read on the type; DECIDING needs write on it, which
-    # the route enforces per proposal. Gating the app on any one
-    # permission would hide it from a reviewer who holds a different
-    # one -- and from a clerical reviewer who is meant to work the
-    # queue WITHOUT being able to decide, which is the whole point of
-    # masked review.
-    {"name": "Identity", "path": "/identity", "gating_permission": None},
-    {"name": "Admin", "path": "/admin", "gating_permission": "manage:users"},
-    # UNGATED, like Query and Browse, and that needs saying because it
-    # looks like it should be gated.
-    #
-    # An approvals inbox is not an administrative surface. Foundry's
-    # equivalent consolidates "compliance, governance, and PEER-REVIEW
-    # workflows" and is reachable directly rather than only through
-    # their admin console -- peer review being ordinary users deciding
-    # on each other's work.
-    #
-    # There is no single grant that means "you review things" here
-    # either. Eligibility is per-action: whoever may EXECUTE an action
-    # may decide on a proposal of it, so a user's inbox is non-empty
-    # exactly when somebody has proposed something they could have done
-    # themselves. Gating the app on any one permission would hide it
-    # from reviewers who hold a different one.
-    #
-    # The page is self-gating in the way that matters: it lists only
-    # what /writes/awaiting returns, which is already filtered to
-    # writes this caller may decide on or proposed. Someone with
-    # neither relationship sees an empty inbox, not a forbidden page --
-    # the same uniform denial every read path uses.
-    {"name": "Approvals", "path": "/approvals", "gating_permission": None},
-    # UNGATED, FOR THE SAME REASON AS APPROVALS. These are the
-    # caller's OWN notifications, scoped by user in the query, so
-    # somebody with none sees an empty page rather than a forbidden
-    # one -- the uniform denial every read path here uses.
-    #
-    # AND GATING WOULD BE WRONG RATHER THAN MERELY UNNECESSARY. A
-    # notification is sent to whoever a condition names, and that is
-    # decided per condition; a single permission could not describe
-    # who should be able to read theirs.
-    {"name": "Notifications", "path": "/notifications",
+    {"name": "Browse", "path": "/browse", "subject": "Objects",
      "gating_permission": None},
+    {"name": "Query", "path": "/query", "subject": "Objects",
+     "gating_permission": None},
+    {"name": "Schema", "path": "/schema", "subject": "Ontology",
+     "gating_permission": None},
+    {"name": "Approvals", "path": "/approvals", "subject": "Inbox",
+     "gating_permission": None},
+    {"name": "Notifications", "path": "/notifications", "subject": "Inbox",
+     "gating_permission": None},
+    {"name": "Identity", "path": "/identity", "subject": "Inbox",
+     "gating_permission": None},
+    {"name": "Admin", "path": "/admin", "subject": "Settings",
+     "gating_permission": "manage:users"},
 ]
 
 
 def visible_apps_for(user_record: UserRecord, roles: dict) -> list[dict[str, str | None]]:
-    return [
+    # ORDERED BY SUBJECT, so the rail groups rather than lists. The
+    # order of SUBJECTS is the order a person meets them: the objects
+    # they work on, the ontology those objects are instances of, the
+    # events that arrived, and the settings they rarely touch.
+    permitted = [
         app for app in VISIBLE_APPS
-        if app["gating_permission"] is None or authorize(user_record, roles, app["gating_permission"])
+        if app["gating_permission"] is None
+        or authorize(user_record, roles, app["gating_permission"])
     ]
+    return sorted(permitted, key=lambda app: SUBJECTS.index(str(app["subject"])))
