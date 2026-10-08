@@ -89,7 +89,7 @@
    * what every platform already renders code in -- a webfont for an
    * id would be weight paid on the first paint of every page.
    */
-    --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
     /* --- LAYER 2: SEMANTIC -------------------------------------------
    * Role names: what a thing IS in this interface, not which colour it
@@ -161,55 +161,63 @@
      * by the parser entirely, taking the size and weight with it. The
      * stack is the one body already used, moved here so the scale can
      * name it. */
-    --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    /* IBM PLEX SANS, per DEV_UI.md 9.1, chosen because "it separates
+     * 1 / l / I and 0 / O at 13px, which is the size our tables
+     * actually run at". The fallbacks carry the stack until the woff2
+     * files are bundled -- SELF-HOSTED when they are, never a CDN,
+     * since Elysium runs on customer infrastructure "sometimes with no
+     * outbound internet" and a CDN font is both a dependency and a
+     * privacy leak on every page load. */
+    --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
-    /* ---- TYPE, ASSIGNED BY PURPOSE -----------------------------------
+    /* ---- TYPE: DEV_UI.md 9.2, NOT INVENTED HERE --------------------
      *
-     * THERE WAS NO TYPE SCALE AT ALL. The only font token was
-     * `--font-mono`, and the stylesheet carried SEVEN separate `h3`
-     * rules using four sizes -- 1.4rem, 1rem, 12px, 11px -- mixing rem
-     * and px, with several setting no size and inheriting whatever was
-     * nearest. That is why the object page showed three different
-     * heading treatments in one column and nothing looked decided.
+     * A 1.2 scale on a 14px base, capped at 28px: "a tool that shows
+     * tables does not need display type, and every heading step costs
+     * rows."
      *
-     * SIX TOKENS, STRICTLY BY PURPOSE rather than by size. A rule picks
-     * the one matching what the text IS, never the one that happens to
-     * look right -- which is how four sizes became seven rules.
+     * THE PREVIOUS VERSION OF THIS BLOCK WAS WRONG AT EVERY STEP.
+     * DEV_UI.md had been deleted after being "consumed", so a later
+     * session found the diagnosis without the answers and derived a
+     * scale from scratch: 20px titles where 28 was specified, 15px
+     * headings where 17 was, 12px labels where 11 was, and no `section`
+     * step at all. Each value below is the document's.
      *
-     * EVERY LINE-HEIGHT IS DIVISIBLE BY 4, so text lands on the same
-     * 4px rhythm the spacing scale uses. A 13px body on a 20px line is
-     * on the grid; 13 on 19 is not, and the misses accumulate down a
-     * long page.
-     *
-     * The base is Blueprint's 14px, untouched. These sit around it.
+     * LINE HEIGHTS BY CONTEXT, which 9.2 calls "the part most systems
+     * get wrong by using one number": 1.5 body, 1.4 table rows, 1.25
+     * headings.
      */
 
-    /* One per screen. The page's title and nothing else. */
-    --type-title-size: 20px;
-    --type-title-line: 28px;
+    /* One per screen. 1.2^5, rounded. */
+    --type-title-size: 28px;
+    --type-title-line: 35px; /* 1.25 */
     --type-title-weight: 600;
 
-    /* A section within a page that earns a visible heading. */
-    --type-heading-size: 15px;
-    --type-heading-line: 20px;
+    /* A division within a page. */
+    --type-section-size: 20px;
+    --type-section-line: 25px; /* 1.25 */
+    --type-section-weight: 600;
+
+    /* The heading on a panel inside a section. */
+    --type-heading-size: 17px;
+    --type-heading-line: 21px; /* 1.25 */
     --type-heading-weight: 600;
 
-    /* The small uppercase label above a block -- NOTES, HISTORY,
-     * OPERATIONAL. Letter-spacing is set beside it where used, since
-     * the shorthand cannot carry it. */
-    --type-label-size: 12px;
-    --type-label-line: 16px;
-    --type-label-weight: 600;
-
-    /* Default reading text. */
-    --type-body-size: 13px;
-    --type-body-line: 20px;
+    /* Body, and table cells at the default density. */
+    --type-body-size: 14px;
+    --type-body-line: 21px; /* 1.5 */
     --type-body-weight: 400;
 
-    /* Secondary text: captions, hints, the note beside a figure. */
-    --type-small-size: 12px;
-    --type-small-line: 16px;
-    --type-small-weight: 400;
+    /* Table cells at compact density. 1.4, per 9.2's row figure. */
+    --type-dense-size: 13px;
+    --type-dense-line: 18px;
+    --type-dense-weight: 400;
+
+    /* The uppercase label above a block. The letter-spacing is 0.06em
+     * and is set beside each use, since a shorthand cannot carry it. */
+    --type-label-size: 11px;
+    --type-label-line: 16px;
+    --type-label-weight: 600;
 
     /* 2px, which is Blueprint's own $pt-border-radius. A 3px radius
    * sits a pixel off every Blueprint surface next to it -- close

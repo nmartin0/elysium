@@ -335,9 +335,9 @@
     height: 1.5rem;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.1);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
   }
 
   .user-menu__profile {
@@ -354,9 +354,9 @@
   .user-menu__role {
     margin: var(--space-hair) 0 0;
     color: var(--text-secondary);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
   }
 
   .app__content {
@@ -764,9 +764,9 @@
   .pending-write__description {
     margin: 0 0 var(--space-snug);
     color: var(--text-secondary);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     word-break: break-word;
   }
 
@@ -875,18 +875,18 @@
 
   .user-table__actions button {
     padding: var(--space-hair) 0.5rem;
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
   }
 
   .user-table pre {
     background: var(--surface-sunken);
     padding: var(--space-tight);
     border-radius: var(--space-tight);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     overflow-x: auto;
   }
 
@@ -896,9 +896,9 @@
   .object-search__freshness {
     margin: 0 0 0.75rem;
     color: var(--text-secondary);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
   }
 
   .object-search__status,
@@ -1084,9 +1084,9 @@
     user-select: all;
     margin: 0 0 1rem;
     color: var(--text-secondary);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
   }
 
   .object-detail__fields {
@@ -1177,9 +1177,9 @@
 
   .object-search__result-subtitle {
     margin: 0;
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1195,9 +1195,9 @@
   .object-search__result-field {
     display: flex;
     gap: var(--space-hair);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
   }
 
   .object-search__result-field dt {
@@ -1223,9 +1223,9 @@
   }
 
   .object-search__more {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1455,9 +1455,9 @@
   /* The failure KIND, never a message -- an exception class name, shown
  * quietly beside the status rather than as the headline. */
   .silos__failure {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1477,9 +1477,9 @@
   /* A column whose name differs from its field is the case worth
  * noticing, so it is marked rather than left to be spotted. */
   .silos__renamed {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1522,9 +1522,9 @@
   }
 
   .object-detail__link-more {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1569,9 +1569,9 @@
  * the fact of the edit is what an audit trail is for. Said plainly,
  * because a blank cell reads as a rendering fault. */
   .object-history__withheld {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -1713,18 +1713,18 @@
   }
 
   .published-history__publication {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
   /* Said plainly, for the same reason the edit history says it: a blank
    * cell reads as a rendering fault rather than a disclosure boundary. */
   .published-history__withheld {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -1782,9 +1782,9 @@
   }
 
   .answer-trace__summary-note {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1824,9 +1824,9 @@
   /* The pattern is what the reviewer decides on, so it is given its own
    * line and set in mono -- it is read character by character. */
   .identity__pattern {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1842,9 +1842,9 @@
   }
 
   .identity__decided {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
     margin: var(--space-snug) 0 0;
   }
@@ -1859,9 +1859,9 @@
   }
 
   .approvals__count {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1898,9 +1898,9 @@
   .object-notes__meta,
   .object-notes__empty {
     margin: var(--space-hair) 0 0;
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -1920,9 +1920,9 @@
 
   .answer-trace__empty {
     margin: var(--space-tight) 0 0;
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -2000,9 +2000,9 @@
   .graph-preview__type,
   .graph-preview__joins,
   .graph-preview__affects {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -2049,9 +2049,9 @@
   }
 
   .metrics-panel__figures dt {
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
   }
 
@@ -2068,9 +2068,9 @@
   .metrics-panel__window,
   .metrics-panel__empty {
     color: var(--text-secondary);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
     margin: 0;
   }
 
@@ -2095,6 +2095,22 @@
   /* Explore related -- where each link leads, and how far. A list rather
  * than a canvas: one hop at a time is the whole design, and a layout
  * engine is the "full Vertex" item. */
+  /* A SECTION WITHIN A PAGE, which is the step DEV_UI.md 9.2 specifies
+   * between the page title and a panel heading. "Related" had no rule
+   * at all and was rendering at whatever Blueprint gives an h3 -- which
+   * is how it ended up visually louder than NOTES and HISTORY beside
+   * it, both of which are labels rather than sections.
+   *
+   * The distinction is real and worth keeping: Related is a division of
+   * the page holding its own content; NOTES and HISTORY are labels on
+   * blocks within it. */
+  .object-detail__related h3 {
+    margin: 0 0 var(--space-snug);
+    font-size: var(--type-section-size);
+    line-height: var(--type-section-line);
+    font-weight: var(--type-section-weight);
+  }
+
   .explore-related {
     display: flex;
     flex-direction: column;
@@ -2176,9 +2192,9 @@
   .approvals__meta {
     margin: 0;
     color: var(--text-secondary);
-    font-size: var(--type-small-size);
-    line-height: var(--type-small-line);
-    font-weight: var(--type-small-weight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
   }
 
   .approvals__tags {
