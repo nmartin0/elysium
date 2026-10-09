@@ -8,6 +8,7 @@
     "./Facets": "./src/Facets.tsx",
     "./ObjectDetailPanel": "./src/ObjectDetailPanel.tsx",
     "./ObjectSearchPanel": "./src/ObjectSearchPanel.tsx",
+    "./Provenance": "./src/Provenance.tsx",
     "./PublishedHistory": "./src/PublishedHistory.tsx",
     "./SetName": "./src/SetName.tsx"
   },

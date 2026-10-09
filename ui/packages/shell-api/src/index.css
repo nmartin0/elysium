@@ -1703,6 +1703,53 @@
     color: var(--text-secondary);
   }
 
+  /* ---- WHERE A ROW CAME FROM --------------------------------------
+   *
+   * The heading takes the same label treatment as HISTORY and CHANGED
+   * AT THE SOURCE beside it, because it is the same kind of thing: a
+   * block within the object page rather than a division of it.
+   */
+  .object-detail__provenance {
+    margin-top: var(--space-section);
+  }
+
+  .object-detail__provenance h3 {
+    margin: 0 0 var(--space-tight);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .provenance {
+    margin: 0;
+  }
+
+  .provenance__row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-normal);
+    padding: var(--space-hair) 0;
+  }
+
+  .provenance__row dt {
+    color: var(--text-secondary);
+  }
+
+  /* MONOSPACE, because every one of these is an identifier somebody
+   * compares against another system by eye -- a silo name against a
+   * connection string, a snapshot id against a sync log. The object
+   * id above uses the same family for the same reason. */
+  .provenance__value {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    user-select: all;
+  }
+
   /* ---- THE SET'S NAME -----------------------------------------------
    *
    * DEV_UI.md 11.1: "everything on screen IS a set, named by how it was

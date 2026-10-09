@@ -1278,6 +1278,35 @@ export interface PublishedChange {
   values: Record<string, unknown>
 }
 
+/**
+ * Where one object's row came from.
+ *
+ * DEV_UI.md 5.5: "which source, which bronze snapshot, which
+ * publication, when". The lineage has been written for months;
+ * `/provenance` is the reader for it.
+ *
+ * ADMIN ONLY, and a 403 here is ordinary rather than exceptional. The
+ * silo and source-table names identify the customer's own systems, and
+ * `/silos` already treats those as `manage:users`-gated, so most
+ * callers of this will be refused and the screen has to be fine with
+ * that.
+ */
+export interface ObjectProvenance {
+  silo?: string | null
+  source_table?: string | null
+  /** What this row's declared values were. */
+  row_hash?: string | null
+  /** Which bronze snapshot silver was derived from. */
+  bronze_snapshot_id?: string | null
+}
+
+export async function getObjectProvenance(objectType: string, objectId: string): Promise<ObjectProvenance | null> {
+  const response = await apiFetchOrThrow(
+    `/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}` + '/provenance',
+  )
+  return (await response.json()) as ObjectProvenance | null
+}
+
 export async function getPublishedHistory(objectType: string, objectId: string): Promise<PublishedChange[]> {
   const response = await apiFetchOrThrow(
     `/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}` + '/published-history',

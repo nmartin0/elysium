@@ -7,6 +7,7 @@ import ErrorState from '@elysium/shell-api/components/ErrorState'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import ObjectHistory from './ObjectHistory'
+import Provenance from './Provenance'
 import PublishedHistory from './PublishedHistory'
 import ExploreRelated from './ExploreRelated'
 import ObjectNotes from './ObjectNotes'
@@ -353,6 +354,15 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
         <h3>Changed at the source</h3>
         <PublishedHistory objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
       </section>
+
+      {/* PROVENANCE LAST, after everything about the object itself.
+          DEV_UI.md 5.3 wants it on the hub -- "properties, links,
+          history, notes, provenance and the actions available on THIS
+          object, together" -- and this is the end of that list for a
+          reason: it answers a question about the DEPLOYMENT rather
+          than about the object, and most readers are not permitted to
+          ask it at all. For them the section renders nothing. */}
+      <Provenance objectType={objectType} objectId={objectId} />
 
       {availableActions.length > 0 && !activeAction && (
         <div className="object-detail__actions">
