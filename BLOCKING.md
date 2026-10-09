@@ -27,6 +27,22 @@ Step 4 is the one that costs. `SCALABILITY.md` was cited six times
 from `core/`, `adapters/` and `tests/`; those citations now carry the
 numbers themselves.
 
+## Run, and therefore closed
+
+| was | what was observed |
+| --- | --- |
+| 17. The watch layout check | RUN AND PASSES. The item said it was "not known to be broken ... known to be unobserved, which is a different thing -- a test nobody has watched run is not evidence". It has now been watched: the recipient control computes `flexDirection: row` and measures 21px tall, against the spec's limits of `row` and under 40. A screenshot confirms the checkbox and `customer_service` sit on one line with the label. |
+
+NOT BY THE COMMAND THE ITEM GAVE, and that is worth recording rather
+than glossing. `npx playwright test` could not run: the pinned
+@playwright/test wants a Chromium revision this environment cannot
+download, and the one present is older. The spec's assertions were
+run instead through the Python binding against the same built bundle
+served by the same uvicorn -- same page, same selectors, same two
+measurements. Somebody with a working `npx playwright install` should
+still run the file itself; this closes the question the item asked,
+which was whether the layout holds.
+
 ## Consumed so far
 
 | document | outcome |
@@ -559,19 +575,7 @@ than beside them.
 list that competes with documentation rather than extending the
 product.
 
-## 17. The watch layout check, never seen to pass
-
-Rewritten in patch 290 and never once observed passing:
-
-    cd ui && npx playwright test -g "Watch recipient"
-
-It is not known to be broken. It is known to be unobserved, which is a
-different thing and worth keeping separate -- a test nobody has
-watched run is not evidence.
-
-**Blocked on:** somebody running it. One command.
-
-## 18. Saved SELECTIONS
+## 17. Saved SELECTIONS
 
 A set of chosen OBJECTS rather than a saved question, and what bulk
 actions would operate on. `BACKLOG.md` is explicit that the UI must
@@ -630,7 +634,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 19. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 18. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -680,7 +684,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 20. Owning the UI kit, and when to start
+## 19. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.
