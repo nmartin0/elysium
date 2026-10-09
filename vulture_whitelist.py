@@ -51,6 +51,11 @@ request_trace_route
 hints_for
 describe_hint
 published_history_route
+object_provenance_route
+# The response model's fields: pydantic reads them by reflection, so
+# every one of them looks unreferenced from here, the same way every
+# route above looks uncalled.
+bronze_snapshot_id
 list_notes_route
 create_note_route
 silos_route

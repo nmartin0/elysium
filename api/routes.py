@@ -2623,6 +2623,92 @@ def _client_source(request: Request) -> str:
     return client_source(request, getattr(config, "trusted_proxies", ()) or ())
 
 
+class ObjectProvenanceResponse(BaseModel):
+    """Where one object's row came from.
+
+    DEV_UI.md 5.5 asks for "which source, which bronze snapshot, which
+    publication, when", and notes the lineage already exists. It does --
+    core/mirror/lineage.py has written it for months and nothing could
+    read it back for a single object.
+    """
+    silo: str | None = None
+    source_table: str | None = None
+    #: What this row's declared values were, so a change can be
+    #: recognised without comparing every column.
+    row_hash: str | None = None
+    #: Which bronze snapshot silver was derived from, "so any row traces
+    #: back to what the source said".
+    bronze_snapshot_id: str | None = None
+
+
+@router.get("/objects/{object_type}/{object_id}/provenance",
+            response_model=ObjectProvenanceResponse | None)
+def object_provenance_route(
+    object_type: str, object_id: str, request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> "dict | None":
+    """Where this object's row came from, for somebody who may ask.
+
+    GATED ON manage:users, DELIBERATELY, AND THIS IS THE WHOLE DESIGN
+    QUESTION. `_silo` and `_source_table` name the customer's own
+    systems. `/silos` already treats those names as admin-only -- "the
+    authenticated counterpart, gated on manage:users like the rest of
+    Admin" -- so serving them to every reader here would widen that
+    disclosure through a side door, and would do it quietly, which is
+    worse than doing it loudly.
+
+    The cost is real and worth stating: the analyst who most wants to
+    know why a value says what it says is the one who cannot see this.
+    Narrowing it later -- a grant that says "may see lineage" without
+    "may administer" -- is a policy change rather than a code one, and
+    is the right shape for it. Widening a route after people rely on it
+    is not.
+
+    NO ROW IS AN EMPTY ANSWER, not a 404. "No such object" and "an
+    object outside your compartment" must look the same, and an
+    administrator asking about an id that does not exist learns nothing
+    either way.
+    """
+    from core.mirror.gold_provenance import (
+        ProvenanceNotRecorded,
+        read_provenance,
+    )
+
+    _require_manage_users(request, current_user)
+    # THE GENERATION'S MEDIATOR, not app.state's. Configuration reloads
+    # swap a whole generation, and a route reading app.state directly
+    # answers from whichever one happened to be there at startup. The
+    # sibling route beside this one settled that; I copied the wrong
+    # line and three tests said so.
+    mediator = _generation(request).mediator
+
+    type_def = (mediator.schema.get(object_type) or {})
+    id_field = type_def.get("id_field")
+    if id_field is None:
+        return None
+
+    # THE CATALOG COMES FROM AN ADAPTER THAT ALREADY HOLDS ONE, the same
+    # way published-history finds it: every MirrorReadAdapter is handed
+    # the same catalog at construction, so asking one is asking the
+    # deployment's. A live-read deployment has none, and has published
+    # nothing to have provenance for.
+    catalog = next(
+        (getattr(adapter, "_catalog", None)
+         for adapter in mediator.adapters.values()
+         if getattr(adapter, "_catalog", None) is not None),
+        None,
+    )
+    if catalog is None:
+        return None
+
+    try:
+        return read_provenance(catalog, object_type, id_field, object_id)
+    except ProvenanceNotRecorded:
+        # Nothing published for this type yet. An absent answer, not a
+        # fault: the same shape a deployment that reads live gives.
+        return None
+
+
 @router.get("/objects/{object_type}/{object_id}/published-history",
             response_model=list[PublishedChangeResponse])
 def published_history_route(
