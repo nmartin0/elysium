@@ -734,6 +734,15 @@ export interface MirrorTableState {
   /** When a rule last fired. A standing count and a new one call for
    *  different responses, and the count cannot tell them apart. */
   quarantine_last_detected_at?: string | null
+  /** Rules that fired and let the row through anyway, from the last
+   *  run.
+   *
+   *  THE PERMISSIVE POLICY WAS THE INVISIBLE ONE. A quarantined row is
+   *  absent and the absence is explained; a warned row is PRESENT, in
+   *  silver, in gold and on screen, identical to one that broke no
+   *  rule -- and a rule was declared about it precisely because
+   *  somebody wanted to know. */
+  expectation_warnings?: ExpectationWarning[]
   /** When the last sync ATTEMPT ran, as distinct from when the data
    *  last changed.
    *
@@ -751,6 +760,17 @@ export interface MirrorTableState {
   /** When the data changed, newest first. Iceberg keeps a snapshot
    *  per commit, so this is history the mirror already holds. */
   snapshots?: MirrorSnapshot[]
+}
+
+/** One rule that fired and let the row through anyway.
+ *
+ *  SEPARATE FROM `QuarantineRule` though the shape matches, because
+ *  the two mean opposite things about the row: one is why it is
+ *  missing, the other is why it is present and suspect. */
+export interface ExpectationWarning {
+  column: string
+  reason: string
+  rows: number
 }
 
 /** One rule, on one column, and how many rows it held back.

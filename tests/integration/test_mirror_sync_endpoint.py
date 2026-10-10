@@ -135,6 +135,11 @@ class TestWhoMayStartOne:
         assert client.post("/api/admin/mirror/sync").status_code in (401, 403)
 
 
+def _mirror_dir(client):
+    """The same directory the route builds its stores from."""
+    return client.app.state.runtime_paths.data_dir / "mirror"
+
+
 def _mirror_catalog(client):
     """The same lake the route reads."""
     from pyiceberg.catalog.sql import SqlCatalog
@@ -302,6 +307,54 @@ class TestWhatWasHeldBack:
         body = client.get("/api/admin/mirror").json()
 
         assert "QQ123456C" not in json.dumps(body)
+
+    def test_a_RULE_THAT_WARNED_reaches_the_panel(self, client):
+        """`warn` keeps the row, so unlike a quarantined one it leaves
+        no trace in the lake -- the finding reached a log line on
+        whatever ran the sync and stopped there. DEV_UI.md 5.6 asks
+        for "failing expectations" beside the quarantined rows, and
+        this is where that half comes from."""
+        from core.mirror.expectation_warnings import ExpectationWarnings
+        from core.mirror.expectations import RuleCount
+        _as_admin(client)
+        store = ExpectationWarnings(
+            _mirror_dir(client) / "expectation_warnings.db")
+        store.record("primary_sql", "customers", [
+            RuleCount("email", "does not match the declared pattern", 4),
+            RuleCount("region", "is not one of the declared values", 1),
+        ])
+
+        body = client.get("/api/admin/mirror").json()
+
+        customers = next(row for row in body["tables"] if row["table"] == "customers")
+        assert [(each["column"], each["rows"]) for each in customers["expectation_warnings"]] == [
+            ("email", 4), ("region", 1)]
+
+    def test_no_warnings_when_no_rule_warned(self, client):
+        _as_admin(client)
+
+        body = client.get("/api/admin/mirror").json()
+
+        for table in body["tables"]:
+            assert table["expectation_warnings"] == []
+
+    def test_a_warning_is_NOT_counted_as_a_held_row(self, client):
+        """The two are different things and the panel must not merge
+        them. A warned row is in silver; a quarantined one is not, and
+        `quarantined_rows` is what explains a bronze/silver gap."""
+        from core.mirror.expectation_warnings import ExpectationWarnings
+        from core.mirror.expectations import RuleCount
+        _as_admin(client)
+        store = ExpectationWarnings(
+            _mirror_dir(client) / "expectation_warnings.db")
+        store.record("primary_sql", "customers", [RuleCount("email", "is odd", 4)])
+
+        body = client.get("/api/admin/mirror").json()
+
+        customers = next(row for row in body["tables"] if row["table"] == "customers")
+        assert customers["expectation_warnings"]
+        assert customers["quarantined_rows"] == 0
+        assert customers["quarantine_rules"] == []
 
     def test_the_count_is_the_REPORT_S_count(self, client):
         """WRITTEN BECAUSE A CONTROL PROVED NOTHING: this fixture

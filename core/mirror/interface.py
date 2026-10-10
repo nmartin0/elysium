@@ -65,6 +65,15 @@ class SyncResult:
     # to answer "when did this last actually move?".
     unchanged: bool = False
     violations: dict = dataclass_field(default_factory=dict)
+    # THE WARN-POLICY FINDINGS ALONE, structured, as `RuleCount`s.
+    #
+    # `violations` above cannot answer this. It mixes both policies
+    # into one dict and flattens the column into the key, which is
+    # right for the log line it feeds and useless to a caller that has
+    # to tell them apart -- and telling them apart is the whole point:
+    # a quarantined finding is written to the lake, a warned one had
+    # nowhere to go.
+    warnings: list = dataclass_field(default_factory=list)
 
 
 class MirrorSync(ABC):

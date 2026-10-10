@@ -430,6 +430,10 @@ quarantine_reason
 # TypeScript.
 quarantine_rules
 quarantine_last_detected_at
+# The rules that WARNED rather than held, from the last run. Same
+# reason vulture cannot see them: set by name in the route's dict,
+# read in TypeScript.
+expectation_warnings
 
 
 # tests/unit/test_snapshot_expiry.py -- an autouse fixture, called by

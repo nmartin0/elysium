@@ -66,6 +66,16 @@ OWNED_DATABASES = (
     "artifacts.db",
     "mirror/catalog.db",
     "mirror/sync_attempts.db",
+    # THE RULES THAT WARNED AND LET THE ROW THROUGH. Backed up rather
+    # than excluded, for the reason sync_attempts beside it is: the
+    # NEXT sync re-derives what is warning now, but not what was
+    # warning last week. "Has this been firing all month" is a question
+    # about the thirty-day window this store keeps, and a restore that
+    # silently emptied it would answer "no" for a month.
+    #
+    # Small by construction -- counts per rule per run, and nothing at
+    # all written for a clean run.
+    "mirror/expectation_warnings.db",
     # The approvals queue -- database-authoritative since patch 276,
     # so there is no other copy of a waiting decision.
     "pending_writes.db",

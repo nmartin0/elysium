@@ -360,6 +360,45 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                     </td>
                   </tr>
                 )}
+                {(table.expectation_warnings ?? []).length > 0 && (
+                  <tr>
+                    {/* THE RULES THAT DID NOT HOLD ANYTHING BACK, which
+                        is the half that had nowhere to come from. A
+                        `warn` rule keeps the row, so unlike a
+                        quarantined one it leaves no gap in the counts
+                        above and no finding in the lake -- it reached
+                        a log line on whatever ran the sync and stopped
+                        there.
+
+                        ITS OWN ROW, NOT MIXED WITH THE HELD ONES. The
+                        two mean opposite things about a row: one is
+                        why it is missing, the other is why it is
+                        present and suspect. Merging them would make
+                        "how many rows are not here" unanswerable.
+
+                        AND NO SHARE. A rate exists to say whether an
+                        absence is a data problem or a pipeline one
+                        (DEV_UI.md 16.4's D4 reading); nothing is
+                        absent here, so the question does not arise and
+                        a percentage would invite it. */}
+                    <td colSpan={5} className="mirror__warnings">
+                      <details>
+                        <summary>
+                          {(table.expectation_warnings ?? []).length} rule
+                          {(table.expectation_warnings ?? []).length === 1 ? '' : 's'} warned on the last sync
+                        </summary>
+                        <ul>
+                          {(table.expectation_warnings ?? []).map((warning) => (
+                            <li key={`${warning.column}:${warning.reason}`}>
+                              <code>{warning.column}</code> {warning.reason} — {warning.rows} row
+                              {warning.rows === 1 ? '' : 's'} kept
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </td>
+                  </tr>
+                )}
                 {(table.snapshots ?? []).length > 0 && (
                   <tr>
                     {/* SPANNING THE ROW, because a history is about

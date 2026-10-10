@@ -950,6 +950,7 @@ class IcebergMirrorSync(MirrorSync):
             synced_at=datetime.now(UTC),
             quarantined=len(checked.quarantined) + len(duplicated),
             violations=checked.counts,
+            warnings=checked.warnings,
             unchanged=unchanged,
         )
 

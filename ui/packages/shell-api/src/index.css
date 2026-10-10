@@ -2517,6 +2517,25 @@
     font-size: var(--type-dense-size);
   }
 
+  /* THE RULES THAT WARNED, laid out exactly like the held-back ones
+   above and the history below. Three collapsible rows under one table
+   that looked different would read as three unrelated things rather
+   than as three kinds of detail about the same table. */
+  .mirror__warnings {
+    padding-inline-start: var(--space-loose);
+    color: var(--text-secondary);
+  }
+
+  .mirror__warnings ul {
+    margin-block: var(--space-tight) 0;
+    color: var(--text-primary);
+  }
+
+  .mirror__warnings code {
+    font-family: var(--font-mono);
+    font-size: var(--type-dense-size);
+  }
+
   /* THE SYNC CONTROL, above the table it affects. The message beside it
    reports what the SERVER said rather than a state this panel tracks:
    the request returns before the sync finishes, so the panel never

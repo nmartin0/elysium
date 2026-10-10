@@ -53,6 +53,28 @@ class Violation:
     policy: str
 
 
+@dataclass(frozen=True)
+class RuleCount:
+    """One rule, on one column, and how many rows failed it.
+
+    THE SAME SHAPE `quarantine_report.QuarantineRule` USES, and for the
+    same reason: a count keyed on the reason text alone cannot be
+    divided by anything, because two columns failing the same way in
+    one row are counted twice under one key. Column and reason
+    together name a rule a row fails at most once.
+
+    SEPARATE TYPES RATHER THAN A SHARED ONE, deliberately. That one is
+    read back out of the lake and this one is produced during a sync;
+    they agree today and a common type would make them agree by
+    construction, which is the wrong guarantee -- one is a record of
+    what WAS held, the other a count of what was let through.
+    """
+
+    column: str
+    reason: str
+    rows: int
+
+
 @dataclass
 class ExpectationResult:
     kept: list[dict] = field(default_factory=list)
@@ -68,6 +90,33 @@ class ExpectationResult:
                 counts.get(f"{entry.column}: {entry.reason}", 0) + 1
             )
         return counts
+
+    @property
+    def warnings(self) -> list[RuleCount]:
+        """Only the WARN-policy findings, structured, loudest first.
+
+        WHY NOT `counts`. That one mixes both policies into a single
+        dict and flattens the column into the key, which is right for
+        the log line it was written for and useless to anything that
+        has to tell the two apart. A quarantined row is recorded in the
+        lake with its rule; a warned row is recorded nowhere, which is
+        what this exists to fix.
+
+        AND WHY THE WARNED ONES ARE THE LOST ONES. `warn` means let the
+        row through and say something -- so the row is in silver, in
+        gold and on screen, indistinguishable from one that broke no
+        rule. The finding lived in a log line on whatever ran the sync
+        and nowhere a person looks.
+        """
+        tally: dict[tuple[str, str], int] = {}
+        for entry in self.warned:
+            key = (entry.column, entry.reason)
+            tally[key] = tally.get(key, 0) + 1
+        return sorted(
+            (RuleCount(column=column, reason=reason, rows=rows)
+             for (column, reason), rows in tally.items()),
+            key=lambda rule: (-rule.rows, rule.column, rule.reason),
+        )
 
 
 def policy_for(field_config: dict) -> str:

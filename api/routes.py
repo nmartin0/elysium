@@ -141,6 +141,7 @@ from core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
 from core.masked_review import agreement_pattern, masked_comparison, withheld_fields
+from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import _row_count, check_mirror
 from core.mirror.quarantine_report import quarantine_for
@@ -1423,6 +1424,24 @@ class QuarantineRuleResponse(BaseModel):
     rows: int
 
 
+class ExpectationWarningResponse(BaseModel):
+    """One rule that fired and let the row through anyway.
+
+    THE PERMISSIVE POLICY WAS THE INVISIBLE ONE, which is the wrong
+    way round. A quarantined row is absent and the absence is
+    explained; a warned row is PRESENT, in silver, in gold and on
+    screen, identical to a row that broke no rule -- and a rule was
+    declared about it precisely because somebody wanted to know.
+
+    FROM THE LAST RUN ONLY, not summed over the retention window. A
+    rule fixed on Tuesday should stop being reported on Wednesday.
+    """
+
+    column: str
+    reason: str
+    rows: int
+
+
 class MirrorTableState(BaseModel):
     silo: str
     table: str
@@ -1449,6 +1468,12 @@ class MirrorTableState(BaseModel):
     # per-rule row count and a table size, and both sides of that
     # division are now in this response.
     quarantine_rules: list[QuarantineRuleResponse] = []
+    # THE RULES THAT WARNED RATHER THAN HELD, from the last run.
+    # DEV_UI.md 5.6 asks for "failing expectations" beside the
+    # quarantined rows, and this is the half that had nowhere to come
+    # from: `warn` keeps the row, so the finding reached a log line and
+    # stopped there.
+    expectation_warnings: list[ExpectationWarningResponse] = []
     # WHEN, because a standing count and a new one need different
     # responses and the count alone cannot tell them apart.
     quarantine_last_detected_at: str | None = None
@@ -2327,6 +2352,7 @@ def admin_mirror_route(request: Request,
         mirror_dir, dict(_generation(request).config.mirror_storage or {}))
     sync = IcebergMirrorSync(mirror_dir, {})
     attempts = SyncAttempts(mirror_dir / "sync_attempts.db")
+    warnings = ExpectationWarnings(mirror_dir / "expectation_warnings.db")
     tables = []
     for target in resolve_sync_targets({"object_types": generation.config.schema}):
         synced_at = sync.last_synced_at(target.silo_name, target.table_name)
@@ -2353,6 +2379,10 @@ def admin_mirror_route(request: Request,
                 for rule in quarantine.rules
             ],
             "quarantine_last_detected_at": quarantine.last_detected_at,
+            "expectation_warnings": [
+                {"column": each.column, "reason": each.reason, "rows": each.rows}
+                for each in warnings.latest_for(target.silo_name, target.table_name)
+            ],
             "last_attempt_at": attempt.at.isoformat() if attempt else None,
             "last_attempt_outcome": attempt.outcome if attempt else None,
             "last_attempt_detail": attempt.detail if attempt else None,

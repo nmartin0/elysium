@@ -60,6 +60,7 @@ from core.deployment_loader import (
     load_deployment_bundle,
     resolve_runtime_paths,
 )
+from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
@@ -645,6 +646,14 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # can happen without inventing a scheduler -- the same
         # argument api/reload.py makes about keeping one out.
         attempts.forget_older_than()
+        # THE RULES THAT WARNED, which nothing kept until now. `warn`
+        # lets the row through, so unlike a quarantined one it leaves
+        # no trace in the lake -- the finding lived in a log line on
+        # whatever process ran this, which on an unattended deployment
+        # is a file nobody opens.
+        warned = ExpectationWarnings(
+            runtime_paths.data_dir / "mirror" / "expectation_warnings.db")
+        warned.forget_older_than()
         for target in targets:
             label = f"{target.silo_name}.{target.table_name}"
             try:
@@ -689,6 +698,11 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
             # to answer "when did this last actually move?".
             attempts.record(target.silo_name, target.table_name,
                             _outcome_for(result), run_id=run_id)
+            # AFTER THE ATTEMPT, because a warning is about rows that
+            # were read and an attempt may be recorded for a table that
+            # never got that far. Writes nothing when no rule warned.
+            warned.record(target.silo_name, target.table_name,
+                          result.warnings, run_id=run_id)
             print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")

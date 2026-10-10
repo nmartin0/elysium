@@ -637,3 +637,118 @@ describe('the rules that held rows back, on screen', () => {
    * process that holds it.
    */
 })
+
+describe('the rules that warned rather than held', () => {
+  function warned(overrides = {}) {
+    return table({
+      silver_rows: 12,
+      bronze_rows: 12,
+      expectation_warnings: [
+        { column: 'email', reason: 'does not match the declared pattern', rows: 4 },
+        { column: 'region', reason: 'is not one of the declared values', rows: 1 },
+      ],
+      ...overrides,
+    })
+  }
+
+  function show(rows = [warned()]) {
+    mocked.mockResolvedValue({ reading_from_mirror: true, tables: rows, problems: [] })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+  }
+
+  /**
+   * THE GAP THIS CLOSES. `warn` keeps the row, so unlike a quarantined
+   * one it leaves no gap in the counts and no finding in the lake --
+   * the rule reached a log line on whatever ran the sync and stopped
+   * there. DEV_UI.md 5.6 asks for "failing expectations" beside the
+   * quarantined rows.
+   */
+  it('names every rule that warned', async () => {
+    show()
+
+    expect(await screen.findByText('email')).toBeInTheDocument()
+    expect(screen.getByText('region')).toBeInTheDocument()
+  })
+
+  it('says how many rows each kept', async () => {
+    show()
+    await screen.findByText('email')
+
+    const warnings = document.querySelector('.mirror__warnings')?.textContent ?? ''
+
+    expect(warnings).toContain('4 rows kept')
+    expect(warnings).toContain('1 row kept')
+  })
+
+  /**
+   * KEPT, NOT HELD, and the word carries the whole distinction. A
+   * reader who takes a warning for a quarantine will go looking for
+   * rows that are not missing.
+   */
+  it('says the rows were KEPT, since that is what warn means', async () => {
+    show()
+    await screen.findByText('email')
+
+    const warnings = document.querySelector('.mirror__warnings')?.textContent ?? ''
+
+    expect(warnings).toContain('kept')
+    expect(warnings).not.toContain('held back')
+  })
+
+  /**
+   * NO SHARE. A rate exists to say whether an absence is a data
+   * problem or a pipeline one; nothing is absent here, so the question
+   * does not arise and a percentage would invite it.
+   */
+  it('puts no percentage on a rule that took nothing away', async () => {
+    show()
+    await screen.findByText('email')
+
+    expect(document.querySelector('.mirror__warnings')?.textContent ?? '').not.toContain('%')
+  })
+
+  it('says it was the last sync, not all time', async () => {
+    show()
+
+    expect(await screen.findByText(/warned on the last sync/)).toBeInTheDocument()
+  })
+
+  it('says rule, singular, when there is one', async () => {
+    show([warned({ expectation_warnings: [{ column: 'email', reason: 'is odd', rows: 4 }] })])
+
+    expect(await screen.findByText(/1 rule warned on the last sync/)).toBeInTheDocument()
+  })
+
+  /** THE CONTROL. A healthy deployment must not look like a sick one. */
+  it('renders nothing at all when no rule warned', async () => {
+    show([table()])
+    await screen.findByText('primary_sql.transactions')
+
+    expect(document.querySelector('.mirror__warnings')).toBeNull()
+  })
+
+  /**
+   * THE TWO ARE DIFFERENT THINGS AND THE PANEL KEEPS THEM APART. One
+   * says why a row is missing, the other why a row is present and
+   * suspect -- merging them would make "how many rows are not here"
+   * unanswerable.
+   */
+  it('keeps the warned rules in a separate section from the held ones', async () => {
+    show([
+      warned({
+        quarantined_rows: 2,
+        quarantine_reason: 'is required, and missing',
+        quarantine_rules: [{ column: 'name', reason: 'is required, and missing', rows: 2 }],
+      }),
+    ])
+    await screen.findByText('email')
+
+    const held = document.querySelector('.mirror__quarantine')?.textContent ?? ''
+    const warnings = document.querySelector('.mirror__warnings')?.textContent ?? ''
+
+    expect(held).toContain('name')
+    expect(held).not.toContain('email')
+    expect(warnings).toContain('email')
+    expect(warnings).not.toContain('name')
+  })
+})
