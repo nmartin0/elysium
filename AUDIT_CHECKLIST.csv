@@ -221,7 +221,7 @@ R31,R,PR001 II,P2,suggest never infer: rule proposals for approval,new,-,unverif
 R32,R,PR001 II,P2,value clustering to approved value mappings,new,-,unverified
 R33,R,PR001 II,P2,per-cell cleaning provenance and replayable history,new,-,unverified
 R34,R,PR001 II,P3,correct at the source: owner reports and proposals,new,-,unverified
-R35,R,PR001 II,P3,export-time formula escaping,new,-,"NOT APPLICABLE YET, verified: there is no CSV or spreadsheet export anywhere in api/ or ui/. Nothing produces a file a formula could execute in. Becomes live the moment an export is built, and should be built WITH the escaping rather than after"
+R35,R,PR001 II,P3,export-time formula escaping,done,core/export.py,"BUILT WITH THE EXPORT, as this row asked. core/export.py escapes every cell against OWASP's list -- =, +, -, @, tab, CR, LF and the full-width variants -- by prefixing a single quote, and quotes every field. Quoting ALONE is not enough: OWASP records that it 'is not reliable in Microsoft Excel after saving and re-opening the CSV file', so the prefix is the mechanism. ONE EXEMPTION, measured on live data: a cell that is a plain number is left alone, because '-20 reads as TEXT in Excel and a SUM over an amount column would silently skip every refund. tests/unit/test_an_export_is_not_code.py, 38 cases, each controlled"
 R36,R,PR001 II,P1,fix the decimal crash,field_types.py,-,"DONE patch 414 (= PA001-C1)"
 R37,R,PR001 III,P2,declared derived properties,ontology,-,unverified
 R38,R,PR001 III,P1,value kinds and per-value enrichment provenance,ontology + gold,-,unverified

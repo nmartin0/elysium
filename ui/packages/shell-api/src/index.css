@@ -1774,6 +1774,30 @@
    * whose other end is the subject, so `margin-left: auto` does the
    * same job in each, and a second rule would be the same rule under
    * another name. */
+  /* THE SET'S OWN VERBS, beside its name. Pushed to the end of the
+   row with the agent link, which `.ask-the-agent` already does with
+   `margin-left: auto` -- so this only needs to sit before it rather
+   than claim the space itself. */
+  .export-set {
+    margin-left: auto;
+  }
+
+  /* WHY AN EXPORT DID NOT HAPPEN, in the server's own words. Beside
+   the button rather than above the results: it is about the press,
+   not about the set, and a message where the rows go would read as
+   "your search failed". */
+  .export-set__problem {
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    color: var(--text-secondary);
+  }
+
+  /* WITH THE EXPORT BESIDE IT, the agent link no longer needs to claim
+   the gap -- the first of the two does. */
+  .export-set + .ask-the-agent {
+    margin-left: 0;
+  }
+
   .ask-the-agent {
     margin-left: auto;
     font-size: var(--type-dense-size);

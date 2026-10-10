@@ -126,6 +126,28 @@ roles:
   # technically searchable, since is_searchable_field() allows any
   # plain-data field) -- but practically unusable as a discovery path,
   # since it requires already knowing the exact value to search for.
+  # THE MIDDLE RUNG OF THE GRANT LADDER, which no other fixture role
+  # exercises: `discover:` WITHOUT `read:` on one field. Every other
+  # role here either holds both (read implies discover) or neither, so
+  # a field that is NAMED BUT WITHHELD never appeared in a
+  # visible_schema any test looked at.
+  #
+  # Found by a control: deleting the export route's `readable` check
+  # left every test green, because `customer_service_no_email` cannot
+  # DISCOVER email either, so it was never a candidate column.
+  #
+  # A DEDICATED ROLE, not a grant added to an existing one -- the
+  # discipline this file already states for `accountant`: a new grant
+  # on an already-tested user silently changes what every test relying
+  # on that user sees.
+  customer_service_sees_email_exists:
+    allowed_actions:
+      - read:Customer
+      - read:Customer.customer_id
+      - read:Customer.name
+      - read:Customer.region
+      - discover:Customer.email
+
   customer_service_link_only:
     allowed_actions:
       - read:Customer

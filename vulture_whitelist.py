@@ -262,6 +262,7 @@ links
 # reached the same way.
 link_counts_route
 matching_ids_route
+export_objects_route
 
 # SchemaFieldResponse.decimal_places (api/routes.py) -- serialised by
 # FastAPI from the returned dict, like every other response field.

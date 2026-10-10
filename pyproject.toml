@@ -292,6 +292,13 @@ layers = [
     # source_health imports nothing from core: it is handed the
     # adapters it checks (E-13).
     "source_health",
+    # ANOTHER TRUE LEAF, beside secret_references: export imports csv
+    # and io and nothing from core. It renders a list of dicts as a
+    # file and knows nothing about what an object is -- which is the
+    # point. Deciding WHICH rows and WHICH columns a caller may have
+    # needs the ontology and belongs to the route; this one only has
+    # to be certain that no cell it is handed can execute.
+    "export",
 ]
 containers = ["core"]
 exhaustive = true

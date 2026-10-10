@@ -695,6 +695,55 @@ export interface SearchOptions {
   conditions?: unknown[]
 }
 
+/**
+ * The set as a CSV, handed to the browser as a download.
+ *
+ * A POST, though it reads nothing: a set's conditions can be long --
+ * `in` with two hundred values is an ordinary facet selection -- and
+ * CSRF exempts safe methods, so a GET export would be one
+ * `<a download>` away from being triggered cross-site.
+ *
+ * THE RESPONSE IS A FILE, NOT JSON, which is why this is the one
+ * function here that does not call `.json()`. A failure still is
+ * JSON, and `apiFetchOrThrow` has already read and thrown on it
+ * before this sees a body.
+ *
+ * THE OBJECT URL IS REVOKED, and the omission would be a leak rather
+ * than an untidiness: a blob URL pins its blob in memory for the
+ * lifetime of the document, so a person exporting a dozen sets in an
+ * afternoon would hold a dozen files they can no longer reach.
+ */
+export async function exportObjects(objectType: string, queryText: string, conditions: unknown[] = []): Promise<void> {
+  const params = queryText ? `?q=${encodeURIComponent(queryText)}` : ''
+  const response = await apiFetchOrThrow(`/objects/${encodeURIComponent(objectType)}/export${params}`, {
+    method: 'POST',
+    body: JSON.stringify({ conditions }),
+  })
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    // THE SERVER NAMES THE FILE and this only falls back. Content-
+    // Disposition is where the name belongs -- it is the server that
+    // knows when the set was taken, and a name invented here would
+    // disagree with the one in the header.
+    anchor.download = filenameFrom(response.headers.get('content-disposition')) ?? `${objectType}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+/** The filename out of a Content-Disposition header, or null. */
+export function filenameFrom(header: string | null): string | null {
+  if (!header) return null
+  const match = /filename="([^"]+)"/.exec(header)
+  return match?.[1] ?? null
+}
+
 export async function searchObjects(
   objectType: string,
   queryText: string,

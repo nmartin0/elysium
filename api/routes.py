@@ -136,6 +136,7 @@ from core.auth.auth_cookies import (
 )
 from core.auth.limits import MAX_LOGIN_PASSWORD_LENGTH, MAX_USERNAME_LENGTH
 from core.deployment_loader import build_live_read_adapters
+from core.export import filename_for, to_csv
 from core.filters import FieldFilter, as_equality_conditions, parse_filters
 from core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
 from core.intermediate_layer.auth import UserRecord, authorize
@@ -3750,6 +3751,114 @@ def matching_ids_route(object_type: str, request: Request, q: str = "",
 
     return {"object_ids": [str(object_id) for object_id in matching_ids]}
 
+
+@router.post("/objects/{object_type}/export")
+def export_objects_route(object_type: str, body: ObjectSetQueryRequest, request: Request,
+                          q: str = "",
+                          current_user: UserRecord = Depends(get_current_user)):
+    """The set on screen, as a CSV.
+
+    DEV_UI.md section 5 item 1 lists "exported" among what makes a set
+    a real thing, and section 3 records what the prior art's object
+    explorer does: "search, filter, work with the resulting set, and
+    export it. Needs no pre-configuration."
+
+    A POST, THOUGH IT READS NOTHING. Two reasons, and neither is
+    ceremony. A set's conditions can be long -- `in` with two hundred
+    values is an ordinary facet selection -- and a GET would put that
+    in a URL with no stated length limit. And CSRF exempts safe
+    methods, so a GET export is one `<a download>` away from being
+    triggered cross-site; the response is not READABLE cross-origin,
+    but a file landing in somebody's downloads folder because they
+    visited a page is a thing worth not doing.
+
+    CAPPED AND REFUSED, NEVER TRUNCATED, at the same ceiling
+    /matching-ids uses. A file that silently held the first 1000 of
+    1500 rows is worse than no file: a spreadsheet gives no sign it is
+    short, and every total computed from it would be wrong in a way
+    nobody could see. The refusal names the real count.
+
+    ONLY COLUMNS THE CALLER MAY READ. A field they may discover but
+    not read is OMITTED rather than blanked -- DEV_UI.md 9.7 wants
+    "'Not permitted', 'restricted' and a real NULL" to look like three
+    different things, and a CSV has exactly one empty cell for all
+    three. Dropping the column is the one honest option left: the
+    reader can see the column is not there, where a column of blanks
+    would read as "nobody has an email address".
+
+    MAC APPLIES AS IT DOES EVERYWHERE, so two people exporting the
+    same set get different files, which is correct.
+
+    AUDITED BY THE PATH IT USES rather than by anything here. Every id
+    goes through `search_object_free_text` and every field through
+    `get_object`, both of which write their own access records, so an
+    export leaves the same trail as reading the same rows on screen --
+    which is what it is.
+    """
+    mediator = _generation(request).mediator
+    visible = mediator.visible_schema(current_user)
+    if object_type not in (visible or {}):
+        # THE SAME ANSWER AS A TYPE THAT DOES NOT EXIST. Saying "you
+        # may not export that" would confirm it does.
+        raise HTTPException(status_code=404, detail=f"No object type {object_type!r}")
+
+    try:
+        matching_ids = mediator.search_object_free_text(
+            current_user, object_type, q, conditions=body.as_conditions(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if len(matching_ids) > MAX_BULK_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{len(matching_ids)} objects match, and at most {MAX_BULK_OBJECTS} "
+                f"can be exported at once. Narrow the filter."
+            ),
+        )
+
+    type_def = visible[object_type]
+    # THE ID FIRST, because a row without one cannot be matched back to
+    # anything -- and it is what a person pastes into a filter when
+    # they come back to ask about one row.
+    id_field = type_def.get("id_field")
+    readable = [
+        name for name, field in (type_def.get("fields") or {}).items()
+        if field.get("readable") and field.get("type") == "data"
+    ]
+    columns = ([id_field] if id_field else []) + [
+        name for name in readable if name != id_field
+    ]
+
+    rows = []
+    request_context = RequestContext.new()
+    for object_id in matching_ids:
+        fields = mediator.get_object(
+            current_user, object_type, object_id,
+            [name for name in columns if name != id_field],
+            context=request_context,
+        )
+        row = dict(fields or {})
+        if id_field:
+            row[id_field] = object_id
+        rows.append(row)
+
+    from datetime import UTC, datetime
+
+    when = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    return Response(
+        content=to_csv(columns, rows),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="{filename_for(object_type, when)}"',
+            # THE SAME NO-STORE THE REST OF THE READ SURFACE CARRIES.
+            # A set is a live thing and a cached copy of one is a lie
+            # with a timestamp on it.
+            "Cache-Control": "no-store",
+        },
+    )
 
 @router.get("/objects/{object_type}/search", response_model=SearchResponse)
 def search_objects_route(object_type: str, request: Request, q: str = "",

@@ -1,5 +1,6 @@
 import { chartableFields } from './ChartsPanel'
 import Facets from './Facets'
+import ExportSet from './ExportSet'
 import SetName from './SetName'
 import { Fragment, useEffect, useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
@@ -639,7 +640,20 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           where a document's name sits. Everything else is about it:
           left is ways to change the set, centre is the set viewed
           somehow, right is about one member." */}
-      <SetName objectType={selectedType} filterCount={crossFilter.length} total={totalMatches} loading={loading} />
+      <SetName
+        objectType={selectedType}
+        filterCount={crossFilter.length}
+        total={totalMatches}
+        loading={loading}
+        actions={
+          <ExportSet
+            objectType={selectedType}
+            queryText={queryText}
+            conditions={asConditions(crossFilter)}
+            onSessionExpired={onSessionExpired}
+          />
+        }
+      />
       {error && <ErrorState>{error}</ErrorState>}
       {/* Two views of ONE object set. The filter is shared, so
           switching does not change what is being described -- only

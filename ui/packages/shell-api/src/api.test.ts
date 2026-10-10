@@ -27,6 +27,7 @@ import {
   worstFreshness,
   type TypeFreshness,
   type DataFreshness,
+  filenameFrom,
 } from './api'
 
 // A partial, Response-SHAPED fake, not a real Response -- confirmed
@@ -689,5 +690,24 @@ describe('worstFreshness', () => {
 
   it('reports nothing for a type the server said nothing about', () => {
     expect(worstFreshness(given({ Customer: state('fail') }), ['Unknown'])).toBeNull()
+  })
+})
+
+describe('filenameFrom', () => {
+  /**
+   * THE SERVER NAMES THE FILE. It is what knows when the set was
+   * taken, and a name invented in the browser would disagree with the
+   * one in the header.
+   */
+  it('reads the name the server chose', () => {
+    expect(filenameFrom('attachment; filename="Customer-20261010-120000.csv"')).toBe('Customer-20261010-120000.csv')
+  })
+
+  it('has no name when the server sent no header', () => {
+    expect(filenameFrom(null)).toBeNull()
+  })
+
+  it('has no name when the header carries none', () => {
+    expect(filenameFrom('attachment')).toBeNull()
   })
 })

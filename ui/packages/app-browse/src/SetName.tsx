@@ -43,6 +43,7 @@ export default function SetName({
   filterCount,
   total,
   loading,
+  actions,
 }: {
   objectType: string | null
   filterCount: number
@@ -51,6 +52,11 @@ export default function SetName({
   /** While a search is in flight the old count is a lie; the name keeps
    *  its shape and drops the number rather than flickering a stale one. */
   loading?: boolean
+  /** Anything that acts on the SET rather than on a row -- the export,
+   *  today. Passed in rather than imported here, because this
+   *  component is the subject's name and should not grow a dependency
+   *  on every verb somebody adds to it. */
+  actions?: React.ReactNode
 }) {
   if (!objectType) return null
 
@@ -79,6 +85,10 @@ export default function SetName({
       {/* The agent, where the subject is. DEV_UI.md 5.4 wants it "inside
           Browse, seeded with what is on screen" rather than in its own
           app -- and the set's name is exactly what is on screen. */}
+      {/* BOTH ACT ON THE SUBJECT, so both sit beside it. The export
+          comes first because it is the commoner verb; the agent link
+          is the one somebody goes looking for. */}
+      {!loading && actions}
       {!loading && <AskAboutSet objectType={objectType} filterCount={filterCount} total={total} />}
     </p>
   )
