@@ -1774,6 +1774,59 @@
    * whose other end is the subject, so `margin-left: auto` does the
    * same job in each, and a second rule would be the same rule under
    * another name. */
+  /* ---- THE GRAPH CANVAS ---------------------------------------------
+   *
+   * DEV_UI.md 12's third MODE of one workspace, so it sits in the
+   * canvas where the table and the charts do and takes no chrome of
+   * its own.
+   */
+  .object-graph {
+    position: relative;
+  }
+
+  /* THE CHOSEN OBJECT, over the canvas rather than beside it. A panel
+   that took a column would shrink the graph every time somebody
+   clicked a node -- and a force layout that reflows on selection
+   destroys the spatial memory the canvas exists to build (14.1). */
+  .object-graph__chosen {
+    position: absolute;
+    inset-block-start: var(--space-normal);
+    inset-inline-end: var(--space-normal);
+    inline-size: 15rem;
+    padding: var(--space-snug);
+    background: var(--surface-content);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    box-shadow: var(--elevate-raised);
+  }
+
+  .object-graph__chosen h3 {
+    margin: 0 0 var(--space-hair);
+    font-size: var(--type-heading-size);
+    line-height: var(--type-heading-line);
+    font-weight: var(--type-heading-weight);
+    overflow-wrap: anywhere;
+  }
+
+  /* WHICH TYPE IT IS, under its name. A graph mixes types by design,
+   so a node's own label does not say which one it is. */
+  .object-graph__kind {
+    margin: 0 0 var(--space-snug);
+    color: var(--text-secondary);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .object-graph__full {
+    margin: var(--space-tight) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+  }
+
   /* THE SET'S OWN VERBS, beside its name. Pushed to the end of the
    row with the agent link, which `.ask-the-agent` already does with
    `margin-left: auto` -- so this only needs to sit before it rather

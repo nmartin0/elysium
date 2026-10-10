@@ -1,6 +1,7 @@
 import { chartableFields } from './ChartsPanel'
 import Facets from './Facets'
 import ExportSet from './ExportSet'
+import ObjectGraph from './ObjectGraph'
 import SetName from './SetName'
 import { Fragment, useEffect, useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
@@ -108,6 +109,12 @@ interface ObjectSearchPanelProps extends SubAppProps {
 const BROWSE_VIEWS: readonly ViewOption[] = [
   { id: 'table', label: 'Table', icon: 'th' },
   { id: 'charts', label: 'Charts', icon: 'chart' },
+  // THE THIRD MODE DEV_UI.md 12 ASKS FOR: "one workspace with MODES --
+  // table, graph, chart -- and switching mode must not lose the set,
+  // which today it does, because they are different apps." Behind the
+  // same `view` key as the other two, so it inherits the set and the
+  // URL rather than being somewhere else to navigate to.
+  { id: 'graph', label: 'Graph', icon: 'graph' },
 ]
 
 export default function ObjectSearchPanel({ visibleSchema, username, onSessionExpired }: ObjectSearchPanelProps) {
@@ -671,6 +678,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           queryText={queryText}
           filters={crossFilter}
           onSelect={toggleChartValue}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
+
+      {view === 'graph' && selectedType && (
+        <ObjectGraph
+          objectType={selectedType}
+          results={results}
+          visibleSchema={visibleSchema}
           onSessionExpired={onSessionExpired}
         />
       )}
