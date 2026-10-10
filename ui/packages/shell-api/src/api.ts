@@ -719,6 +719,21 @@ export interface MirrorTableState {
   /** The worst reason among them, in the validator's own words.
    *  Null when nothing was held back. */
   quarantine_reason: string | null
+  /** Every rule that held something back, loudest first.
+   *
+   *  THE BREAKDOWN `quarantine_reason` SUMMARISES. One reason is
+   *  enough to know something is wrong and not enough to act: a table
+   *  declaring `required` on four columns reports the same sentence
+   *  whichever column is failing.
+   *
+   *  AND THESE ROWS DIVIDE, which the reason count does not. Two
+   *  columns failing the same way in one row are counted twice by
+   *  reason and once per rule, so a rate built on this is a rate and
+   *  a rate built on the other is nonsense. */
+  quarantine_rules?: QuarantineRule[]
+  /** When a rule last fired. A standing count and a new one call for
+   *  different responses, and the count cannot tell them apart. */
+  quarantine_last_detected_at?: string | null
   /** When the last sync ATTEMPT ran, as distinct from when the data
    *  last changed.
    *
@@ -736,6 +751,18 @@ export interface MirrorTableState {
   /** When the data changed, newest first. Iceberg keeps a snapshot
    *  per commit, so this is history the mirror already holds. */
   snapshots?: MirrorSnapshot[]
+}
+
+/** One rule, on one column, and how many rows it held back.
+ *
+ *  NO VALUE, and the server will not send one. A row quarantined for
+ *  its CONTENT often failed on the sensitive part of it -- a
+ *  malformed national insurance number is still a national insurance
+ *  number -- so counts and rule names travel and values do not. */
+export interface QuarantineRule {
+  column: string
+  reason: string
+  rows: number
 }
 
 /** One point the mirror could be rolled back to. */

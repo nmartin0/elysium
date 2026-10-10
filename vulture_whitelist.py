@@ -424,6 +424,12 @@ model_name
 # vulture sees neither side.
 quarantined_rows
 quarantine_reason
+# The per-rule breakdown beside them, added when DEV_UI.md 16.4's
+# DISTRIBUTION pillar needed a divisible row count. Same reason
+# vulture cannot see them: set by name in the route's dict, read in
+# TypeScript.
+quarantine_rules
+quarantine_last_detected_at
 
 
 # tests/unit/test_snapshot_expiry.py -- an autouse fixture, called by

@@ -35,6 +35,31 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 QUARANTINE_PREFIX = "quarantine_"
 
 
+@dataclass(frozen=True)
+class QuarantineRule:
+    """One rule, on one column, and how many rows it caught.
+
+    WHY THIS IS KEYED ON THE COLUMN AS WELL AS THE REASON, and the
+    distinction decides whether a RATE built from it means anything.
+
+    `by_reason` below counts FINDINGS keyed on the reason text alone.
+    Two different columns can fail the same way in one row -- `email`
+    and `name` both "is required, and missing" -- and that row is
+    counted twice. As a way of picking the loudest rule that is
+    harmless; as the numerator of a percentage it is wrong, and wrong
+    in the direction that looks precise.
+
+    A row can fail a given (column, rule) pair at most once, because
+    `check_row` evaluates each column's expectations once and each
+    rule yields one violation. So `rows` here IS a row count and can
+    be divided by a table's size.
+    """
+
+    column: str
+    reason: str
+    rows: int
+
+
 @dataclass
 class TableQuarantine:
     """What one source table had held back."""
@@ -45,6 +70,12 @@ class TableQuarantine:
     # rule -> how many rows it caught, so an operator sees WHICH rule
     # is rejecting rather than only that something is.
     by_reason: dict[str, int] = field(default_factory=dict)
+    # THE SAME FINDINGS, SPLIT BY COLUMN TOO. Kept beside `by_reason`
+    # rather than replacing it: `worst_reason` and the mirror route's
+    # `quarantine_reason` are built on that one and are correct for
+    # what they do, and a shape change would have rewritten two
+    # working things to add a third.
+    rules: list[QuarantineRule] = field(default_factory=list)
     last_detected_at: str | None = None
 
     @property
@@ -69,16 +100,41 @@ def quarantine_for(catalog, silo: str, table: str) -> TableQuarantine:
         return report
 
     held: set[str] = set()
-    for row in rows:
+    # (column, reason) -> the distinct ids that pair caught. A SET
+    # rather than a counter, because the same row can be written again
+    # by a later run -- the quarantine table is APPENDED, never
+    # overwritten, so counting findings would make a rule look worse
+    # every night without the data changing.
+    per_rule: dict[tuple[str, str], set[str]] = {}
+    for index, row in enumerate(rows):
         object_id = row.get("object_id")
         if object_id is not None:
             held.add(str(object_id))
         reason = row.get("reason") or "unknown"
         report.by_reason[reason] = report.by_reason.get(reason, 0) + 1
+        column = row.get("column") or row.get("field") or "unknown"
+        # A FINDING WITH NO ID COUNTS AS ITS OWN ROW. It happens: a row
+        # whose id column is itself empty fails "is required, and
+        # missing" with nothing to key on. Deduping those together
+        # would report one row when fifty came in; the sentinel keeps
+        # them distinct. `report.rows` below still omits them, which is
+        # a separate and older under-count -- noted rather than changed
+        # here, because it is what `quarantined_rows` has always meant.
+        identity = str(object_id) if object_id is not None else f"\x00no-id-{index}"
+        per_rule.setdefault((str(column), reason), set()).add(identity)
         detected = row.get("detected_at")
         if detected and (report.last_detected_at is None
                           or detected > report.last_detected_at):
             report.last_detected_at = detected
+
+    # LOUDEST FIRST, then alphabetically so the order is stable
+    # between requests -- a list that reshuffles on refresh is one
+    # nobody can compare against what they read a minute ago.
+    report.rules = sorted(
+        (QuarantineRule(column=column, reason=reason, rows=len(ids))
+         for (column, reason), ids in per_rule.items()),
+        key=lambda rule: (-rule.rows, rule.column, rule.reason),
+    )
     # ROWS, NOT FINDINGS. One row can fail two rules, and reporting
     # "2 rows quarantined" for one bad customer would make the number
     # mean nothing next to a row count.

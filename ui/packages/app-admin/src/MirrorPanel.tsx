@@ -27,6 +27,64 @@ import { useEffect, useRef, useState } from 'react'
  * It mattered less when the mirror was opt-in. It is now the read
  * path.
  */
+/**
+ * WHAT SHARE OF THE TABLE ONE RULE HELD BACK, or null when there is
+ * nothing to divide by.
+ *
+ * DEV_UI.md 16.4 names this as the DISTRIBUTION pillar and calls it
+ * the one Elysium is furthest from: "the quarantine RATE per rule:
+ * 0.1% is a data problem, 40% is a pipeline problem (the owner's D4
+ * decision)". The two numbers read completely differently with the
+ * same count in front of them -- 12 rows out of 12,000 is a handful
+ * of bad records, 12 out of 25 is a rule or a mapping that is wrong.
+ *
+ * BRONZE IS THE DENOMINATOR, NOT SILVER. Silver is what survived, so
+ * dividing by it would compare the held-back rows against the rows
+ * that were not held back and report more than 100% for a table
+ * mostly rejected. Bronze is everything the source gave.
+ *
+ * A pure function, because jsdom computes nothing and a wrong
+ * denominator is exactly the kind of mistake that renders fine.
+ */
+export function quarantineShare(rows: number, fetched: number | null | undefined): number | null {
+  if (fetched === null || fetched === undefined || fetched <= 0) return null
+  return rows / fetched
+}
+
+/**
+ * The share, written the way an operator reads it.
+ *
+ * TWO DECIMAL PLACES BELOW 1%, because D4's lower bound is 0.1% and
+ * rounding that to "0%" would erase the distinction the number exists
+ * to draw.
+ */
+export function formatShare(share: number): string {
+  const percent = share * 100
+  return percent < 1 ? `${percent.toFixed(2)}%` : `${Math.round(percent)}%`
+}
+
+/**
+ * The owner's D4 reading, where it applies, and silence where it does
+ * not.
+ *
+ * ONLY THE LOUD END IS LABELLED, deliberately. D4 decided two points
+ * -- 0.1% is a data problem, 40% is a pipeline problem -- and said
+ * nothing about the range between them. Putting a verdict on 12%
+ * would be inventing a threshold nobody set, which is the thing
+ * DEV_UI.md 16.2 warns produces a channel people stop reading.
+ *
+ * The low end gets no label either, for a different reason: an
+ * ordinary data problem is what a rule firing normally LOOKS like,
+ * and annotating it would make a working deployment read as a broken
+ * one.
+ */
+const PIPELINE_PROBLEM_SHARE = 0.4
+
+export function readingFor(share: number | null): string | null {
+  if (share === null || share < PIPELINE_PROBLEM_SHARE) return null
+  return 'most of the table — likely the rule or the mapping, not the data'
+}
+
 export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: () => void }) {
   const [state, setState] = useState<MirrorState | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -253,6 +311,55 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                     )}
                   </td>
                 </tr>
+                {(table.quarantine_rules ?? []).length > 0 && (
+                  <tr>
+                    {/* EVERY RULE, UNDER THE COUNT THAT SUMMARISES IT.
+                        The tag above names the loudest rule, which is
+                        enough to know something is firing and not
+                        enough to act: a table declaring `required` on
+                        four columns shows the same sentence whichever
+                        column is failing.
+
+                        COLLAPSED, like the history below it, because
+                        somebody opening this panel wants the health of
+                        every table before the detail of one. The
+                        summary carries the count and the time, so it
+                        does not have to be opened to be useful. */}
+                    <td colSpan={5} className="mirror__quarantine">
+                      <details>
+                        <summary>
+                          {(table.quarantine_rules ?? []).length} rule
+                          {(table.quarantine_rules ?? []).length === 1 ? '' : 's'} holding rows back
+                          {table.quarantine_last_detected_at
+                            ? `, last at ${formatTimestamp(table.quarantine_last_detected_at)}`
+                            : ''}
+                        </summary>
+                        <ul>
+                          {(table.quarantine_rules ?? []).map((rule) => {
+                            const share = quarantineShare(rule.rows, table.bronze_rows)
+                            const reading = readingFor(share)
+                            return (
+                              <li key={`${rule.column}:${rule.reason}`}>
+                                {/* THE COLUMN IN MONOSPACE, because it
+                                    is an identifier somebody will
+                                    match against their own schema by
+                                    eye. */}
+                                <code>{rule.column}</code> {rule.reason} — {rule.rows} row
+                                {rule.rows === 1 ? '' : 's'}
+                                {share !== null && ` (${formatShare(share)} of what was fetched)`}
+                                {reading && (
+                                  <StatusTag state="pending" style={{ marginInlineStart: '0.5rem' }}>
+                                    {reading}
+                                  </StatusTag>
+                                )}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </details>
+                    </td>
+                  </tr>
+                )}
                 {(table.snapshots ?? []).length > 0 && (
                   <tr>
                     {/* SPANNING THE ROW, because a history is about

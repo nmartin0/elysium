@@ -1401,6 +1401,28 @@ class MirrorSnapshot(BaseModel):
     current: bool
 
 
+class QuarantineRuleResponse(BaseModel):
+    """One rule, on one column, and how many rows it held back.
+
+    THE COLUMN IS WHAT MAKES THE NUMBER DIVISIBLE. `quarantine_reason`
+    below names the loudest rule by reason text alone, and two columns
+    failing the same way in one row count twice there -- fine for
+    picking the loudest, wrong as the numerator of a rate. A row fails
+    a given (column, rule) pair at most once, so these rows can be
+    read against the table's size.
+
+    NO VALUES, DELIBERATELY, and `quarantine_report.py` says why at
+    length: a row quarantined for its CONTENT often failed on the
+    sensitive part of it. A count and a rule name are safe for anyone
+    who may see the table at all; the value needs the same
+    authorisation as the object.
+    """
+
+    column: str
+    reason: str
+    rows: int
+
+
 class MirrorTableState(BaseModel):
     silo: str
     table: str
@@ -1415,6 +1437,21 @@ class MirrorTableState(BaseModel):
     # thing somebody can act on.
     quarantined_rows: int = 0
     quarantine_reason: str | None = None
+    # EVERY RULE, NOT ONLY THE LOUDEST, AND WHEN IT LAST FIRED. Both
+    # were computed by `quarantine_for` from the day it was written --
+    # its own comment says the breakdown exists "so an operator sees
+    # WHICH rule is rejecting rather than only that something is" --
+    # and both were dropped here, which made the intent unreachable.
+    #
+    # THIS IS DEV_UI.md 16.4's DISTRIBUTION PILLAR, the one it calls
+    # the furthest from built: "the quarantine RATE per rule: 0.1% is
+    # a data problem, 40% is a pipeline problem". The rate needs a
+    # per-rule row count and a table size, and both sides of that
+    # division are now in this response.
+    quarantine_rules: list[QuarantineRuleResponse] = []
+    # WHEN, because a standing count and a new one need different
+    # responses and the count alone cannot tell them apart.
+    quarantine_last_detected_at: str | None = None
     # THE LAST ATTEMPT, as distinct from the last CHANGE. Snapshots
     # record when data changed, so a sync that ran and was refused
     # leaves exactly what a sync that ran and found nothing leaves.
@@ -2311,6 +2348,11 @@ def admin_mirror_route(request: Request,
             # existed.
             "quarantined_rows": quarantine.rows,
             "quarantine_reason": quarantine.worst_reason,
+            "quarantine_rules": [
+                {"column": rule.column, "reason": rule.reason, "rows": rule.rows}
+                for rule in quarantine.rules
+            ],
+            "quarantine_last_detected_at": quarantine.last_detected_at,
             "last_attempt_at": attempt.at.isoformat() if attempt else None,
             "last_attempt_outcome": attempt.outcome if attempt else None,
             "last_attempt_detail": attempt.detail if attempt else None,

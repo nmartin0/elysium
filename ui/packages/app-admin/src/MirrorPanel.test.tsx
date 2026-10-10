@@ -16,7 +16,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import MirrorPanel from './MirrorPanel'
+import MirrorPanel, { formatShare, quarantineShare, readingFor } from './MirrorPanel'
 
 vi.mock('@elysium/shell-api/api', () => ({
   getMirrorState: vi.fn(),
@@ -443,4 +443,197 @@ describe('when the request fails', () => {
       expect(screen.getByText(/mirror unreachable/)).toBeInTheDocument()
     })
   })
+})
+
+describe('the quarantine rate per rule', () => {
+  /**
+   * DEV_UI.md 16.4's DISTRIBUTION pillar, which it calls the one
+   * Elysium is furthest from: "the quarantine RATE per rule: 0.1% is
+   * a data problem, 40% is a pipeline problem (the owner's D4
+   * decision)". Tested as arithmetic rather than through the DOM
+   * because jsdom computes nothing and a wrong denominator renders
+   * perfectly.
+   */
+  it('divides by what was FETCHED, not by what was served', () => {
+    /** Bronze is everything the source gave; silver is what survived.
+     *  Dividing by silver compares the held-back rows against the
+     *  ones that were not held back, and reports over 100% for a
+     *  table mostly rejected. */
+    expect(quarantineShare(12, 1200)).toBeCloseTo(0.01)
+    expect(quarantineShare(12, 12)).toBe(1)
+  })
+
+  it('has no rate when there is nothing to divide by', () => {
+    expect(quarantineShare(3, null)).toBeNull()
+    expect(quarantineShare(3, undefined)).toBeNull()
+    expect(quarantineShare(3, 0)).toBeNull()
+  })
+
+  it('keeps two decimals below one percent, because D4 turns on 0.1%', () => {
+    /** Rounding 0.1% to "0%" would erase the exact distinction the
+     *  number exists to draw. */
+    expect(formatShare(0.001)).toBe('0.10%')
+    expect(formatShare(0.004)).toBe('0.40%')
+  })
+
+  it('rounds to whole percents above one, where a decimal is noise', () => {
+    expect(formatShare(0.4)).toBe('40%')
+    expect(formatShare(0.125)).toBe('13%')
+  })
+})
+
+describe('the reading put on a rate', () => {
+  it('calls a rule that caught most of the table a pipeline problem', () => {
+    expect(readingFor(0.4)).toContain('not the data')
+    expect(readingFor(0.9)).toContain('not the data')
+  })
+
+  /**
+   * ONLY THE LOUD END IS LABELLED. D4 decided two points and said
+   * nothing between them, so a verdict on 12% would be a threshold
+   * nobody set -- and DEV_UI.md 16.2 is blunt that invented
+   * thresholds are how a channel stops being read.
+   */
+  it('says nothing about a rate in the range D4 did not decide', () => {
+    expect(readingFor(0.12)).toBeNull()
+    expect(readingFor(0.39)).toBeNull()
+  })
+
+  it('says nothing about an ordinary data problem, which is a rule working', () => {
+    /** Annotating the normal case would make a working deployment
+     *  read as a broken one. */
+    expect(readingFor(0.001)).toBeNull()
+  })
+
+  it('says nothing when there is no rate at all', () => {
+    expect(readingFor(null)).toBeNull()
+  })
+})
+
+describe('the rules that held rows back, on screen', () => {
+  function held(overrides = {}) {
+    return table({
+      silver_rows: 2,
+      bronze_rows: 12,
+      quarantined_rows: 10,
+      quarantine_reason: 'is required, and missing',
+      quarantine_rules: [
+        { column: 'email', reason: 'is required, and missing', rows: 7 },
+        { column: 'region', reason: 'is required, and missing', rows: 3 },
+      ],
+      quarantine_last_detected_at: '2026-09-24T00:00:00.000Z',
+      ...overrides,
+    })
+  }
+
+  function show(rows = [held()]) {
+    mocked.mockResolvedValue({ reading_from_mirror: true, tables: rows, problems: [] })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+  }
+
+  /**
+   * THE GAP THIS CLOSES. The tag beside the row count names the
+   * loudest rule, which is enough to know something is firing and not
+   * enough to act: this table declares the SAME rule on two columns,
+   * so that tag reads identically whichever one is at fault.
+   */
+  it('names every rule, not only the loudest', async () => {
+    show()
+
+    expect(await screen.findByText('email')).toBeInTheDocument()
+    expect(screen.getByText('region')).toBeInTheDocument()
+  })
+
+  it('says how many rows each rule caught', async () => {
+    show()
+    await screen.findByText('email')
+
+    const breakdown = document.querySelector('.mirror__quarantine')?.textContent ?? ''
+
+    expect(breakdown).toContain('7 rows')
+    expect(breakdown).toContain('3 rows')
+  })
+
+  it('says what share of the fetched rows each caught', async () => {
+    // 7 of 12 and 3 of 12. The count alone reads the same at any
+    // table size; the share is what separates a handful of bad
+    // records from a broken rule.
+    show()
+    await screen.findByText('email')
+
+    const breakdown = document.querySelector('.mirror__quarantine')?.textContent ?? ''
+
+    expect(breakdown).toContain('58%')
+    expect(breakdown).toContain('25%')
+  })
+
+  it('calls the loud one a pipeline problem, and leaves the other alone', async () => {
+    // 58% is past D4's 40%; 25% is in the range D4 did not decide.
+    show()
+    await screen.findByText('email')
+
+    expect(screen.getAllByText(/not the data/)).toHaveLength(1)
+  })
+
+  it('says when a rule last fired, so a standing count reads differently from a new one', async () => {
+    show()
+
+    expect(await screen.findByText(/rules holding rows back/)).toHaveTextContent('last at')
+  })
+
+  it('counts the rules in the summary, so it need not be opened to be useful', async () => {
+    show()
+
+    expect(await screen.findByText(/2 rules holding rows back/)).toBeInTheDocument()
+  })
+
+  it('says rule, singular, when there is one', async () => {
+    show([held({ quarantine_rules: [{ column: 'email', reason: 'is required, and missing', rows: 7 }] })])
+
+    expect(await screen.findByText(/1 rule holding rows back/)).toBeInTheDocument()
+  })
+
+  /**
+   * THE CONTROL. A breakdown on every row would be ignored by the time
+   * one mattered, and a healthy deployment must not look like a sick
+   * one.
+   */
+  it('renders no breakdown at all when nothing was held back', async () => {
+    show([table()])
+    await screen.findByText('primary_sql.transactions')
+
+    expect(document.querySelector('.mirror__quarantine')).toBeNull()
+  })
+
+  it('still lists the rules when the fetched count is unknown, just without a share', async () => {
+    // A rate needs a denominator; a rule name does not, and dropping
+    // the rule because the count is missing would hide the finding.
+    show([held({ bronze_rows: null })])
+    await screen.findByText('email')
+
+    const breakdown = document.querySelector('.mirror__quarantine')?.textContent ?? ''
+
+    expect(breakdown).toContain('7 rows')
+    expect(breakdown).not.toContain('%')
+  })
+
+  /**
+   * THERE IS NO TEST HERE THAT A VALUE DOES NOT REACH THE SCREEN, and
+   * the absence is deliberate rather than an oversight.
+   *
+   * A row quarantined for its CONTENT often failed on the sensitive
+   * part of it -- a malformed national insurance number is still a
+   * national insurance number -- so no value may be rendered. But
+   * `QuarantineRule` has no value field, so a test asserting one is
+   * absent from the DOM would pass against a fixture that never
+   * contained one. That is a test that cannot fail, which this
+   * project has shipped before and which proves nothing.
+   *
+   * THE GUARANTEE IS ENFORCED WHERE IT CAN FAIL: the server, by
+   * `test_no_VALUE_reaches_the_panel` in
+   * tests/integration/test_mirror_sync_endpoint.py, which puts a real
+   * value in the lake and asserts it is nowhere in the response. A
+   * value cannot reach this panel because it never leaves the
+   * process that holds it.
+   */
 })

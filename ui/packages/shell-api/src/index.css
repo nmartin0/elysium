@@ -2493,6 +2493,30 @@
     margin-block: var(--space-tight) 0;
   }
 
+  /* WHICH RULES HELD ROWS BACK, collapsed, and laid out exactly like
+   the history above it -- same indent, same muted colour. Two
+   collapsible rows under one table that looked different would read
+   as two unrelated things rather than as two kinds of detail about
+   the same table.
+
+   NOT MUTED ON THE TEXT ITSELF, though: a rule name is the answer
+   here rather than context, which is why only the container takes the
+   secondary colour and the list below it inherits the body colour. */
+  .mirror__quarantine {
+    padding-inline-start: var(--space-loose);
+    color: var(--text-secondary);
+  }
+
+  .mirror__quarantine ul {
+    margin-block: var(--space-tight) 0;
+    color: var(--text-primary);
+  }
+
+  .mirror__quarantine code {
+    font-family: var(--font-mono);
+    font-size: var(--type-dense-size);
+  }
+
   /* THE SYNC CONTROL, above the table it affects. The message beside it
    reports what the SERVER said rather than a state this panel tracks:
    the request returns before the sync finishes, so the panel never

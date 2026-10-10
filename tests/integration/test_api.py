@@ -617,14 +617,33 @@ def test_visible_apps_never_leaks_gating_permission(client):
     # code anywhere reads .gating_permission off a visible-apps entry
     # (confirmed by a direct grep, not assumed). Only name/path are
     # ever included now.
+    #
+    # THE KEY SET IS FROZEN RATHER THAN BLOCKLISTED, deliberately: a
+    # blocklist only catches the leak somebody already thought of, and
+    # this finding has now happened three times. Adding a field here
+    # has to be a decision, made with this comment in front of you.
+    #
+    # `subject` WAS SUCH A DECISION, and this test caught it late. It
+    # is "Objects", "Ontology", "Inbox" or "Settings" -- the rail's
+    # grouping label (DEV_UI.md 12: the rail "is not an app switcher.
+    # It is a SUBJECT switcher"), chosen from a fixed tuple in
+    # api/apps.py and carrying nothing about why the caller may see
+    # the app. The filtering still happens on the server: an app the
+    # caller cannot use is absent, subject and all.
     _make_admin(client)
 
     response = client.get("/api/me/visible-apps")
 
     assert response.status_code == 200
     for app in response.json():
-        assert set(app.keys()) == {"name", "path"}
+        assert set(app.keys()) == {"name", "path", "subject"}
         assert "gating_permission" not in app
+        # AND NO GRANT STRING IN ANY VALUE, whatever the key is
+        # called. The key set catches a field added under an innocent
+        # name; this catches a permission smuggled into one that
+        # already exists.
+        for value in app.values():
+            assert ":" not in str(value), f"{value!r} looks like a grant"
 
 
 def test_my_visible_schema_differs_by_role_not_a_static_response(client):

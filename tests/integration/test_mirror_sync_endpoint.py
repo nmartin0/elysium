@@ -19,6 +19,8 @@ AND NOTHING NEW GUARDS IT. `run_sync()` takes an exclusive flock and
 yields False if another holds it, so a second sync cannot start.
 """
 
+import json
+
 import pytest
 
 from tests.integration.test_api import (  # noqa: F401
@@ -194,6 +196,112 @@ class TestWhatWasHeldBack:
         customers = next(row for row in body["tables"] if row["table"] == "customers")
         assert customers["quarantined_rows"] == 1
         assert customers["quarantine_reason"] == "is required, and missing"
+
+    def test_EVERY_rule_reaches_the_panel_not_only_the_loudest(self, client):
+        """THE GAP THIS CLOSES. `quarantine_for` has computed a
+        per-rule breakdown since it was written -- its own comment
+        says it exists "so an operator sees WHICH rule is rejecting
+        rather than only that something is" -- and this response model
+        dropped it, so the intent was unreachable from any screen.
+
+        Two rules, catching different numbers of rows, because a
+        single-rule fixture cannot tell a list from a maximum."""
+        import pyarrow as pa
+        _as_admin(client)
+        catalog = _mirror_catalog(client)
+        catalog.create_namespace_if_not_exists("quarantine_primary_sql")
+        schema = pa.schema([("object_id", pa.string()), ("column", pa.string()),
+                             ("field", pa.string()), ("reason", pa.string()),
+                             ("value", pa.string()), ("detected_at", pa.string())])
+        table = catalog.create_table_if_not_exists(
+            "quarantine_primary_sql.customers", schema=schema)
+        table.append(pa.Table.from_pylist([
+            {"object_id": who, "column": column, "field": column,
+             "reason": "is required, and missing", "value": None,
+             "detected_at": "2026-09-24T00:00:00+00:00"}
+            for who, column in [("cust_001", "email"), ("cust_002", "email"),
+                                 ("cust_003", "region")]
+        ], schema=schema))
+
+        body = client.get("/api/admin/mirror").json()
+
+        customers = next(row for row in body["tables"] if row["table"] == "customers")
+        assert [(rule["column"], rule["rows"]) for rule in customers["quarantine_rules"]] == [
+            ("email", 2), ("region", 1)]
+
+    def test_the_panel_is_told_WHEN_the_rules_last_fired(self, client):
+        """A standing count and a new one need different responses,
+        and a count on its own cannot tell them apart."""
+        import pyarrow as pa
+        _as_admin(client)
+        catalog = _mirror_catalog(client)
+        catalog.create_namespace_if_not_exists("quarantine_primary_sql")
+        schema = pa.schema([("object_id", pa.string()), ("column", pa.string()),
+                             ("field", pa.string()), ("reason", pa.string()),
+                             ("value", pa.string()), ("detected_at", pa.string())])
+        table = catalog.create_table_if_not_exists(
+            "quarantine_primary_sql.customers", schema=schema)
+        table.append(pa.Table.from_pylist([{
+            "object_id": "cust_001", "column": "email", "field": "email",
+            "reason": "is required, and missing", "value": None,
+            "detected_at": "2026-09-24T00:00:00+00:00",
+        }], schema=schema))
+
+        body = client.get("/api/admin/mirror").json()
+
+        customers = next(row for row in body["tables"] if row["table"] == "customers")
+        assert customers["quarantine_last_detected_at"] == "2026-09-24T00:00:00+00:00"
+
+    def test_no_rules_and_no_time_when_nothing_is_held(self, client):
+        _as_admin(client)
+
+        body = client.get("/api/admin/mirror").json()
+
+        for table in body["tables"]:
+            assert table["quarantine_rules"] == []
+            assert table["quarantine_last_detected_at"] is None
+
+    def test_the_rules_are_the_REPORT_S_rules(self, client):
+        """Wired to the reader rather than agreeing by luck, which is
+        the same reason the count below is compared this way."""
+        from core.mirror.quarantine_report import quarantine_for
+        _as_admin(client)
+        catalog = _mirror_catalog(client)
+
+        body = client.get("/api/admin/mirror").json()
+
+        for table in body["tables"]:
+            expected = quarantine_for(catalog, table["silo"], table["table"])
+            assert table["quarantine_rules"] == [
+                {"column": rule.column, "reason": rule.reason, "rows": rule.rows}
+                for rule in expected.rules
+            ]
+
+    def test_no_VALUE_reaches_the_panel(self, client):
+        """`quarantine_report.py` is explicit about this and the route
+        must not quietly undo it: a row quarantined for its CONTENT
+        often failed on the sensitive part of it. A malformed national
+        insurance number is still a national insurance number. Counts
+        and rule names are safe for anyone who may see the table at
+        all; the value needs the same authorisation as the object."""
+        import pyarrow as pa
+        _as_admin(client)
+        catalog = _mirror_catalog(client)
+        catalog.create_namespace_if_not_exists("quarantine_primary_sql")
+        schema = pa.schema([("object_id", pa.string()), ("column", pa.string()),
+                             ("field", pa.string()), ("reason", pa.string()),
+                             ("value", pa.string()), ("detected_at", pa.string())])
+        table = catalog.create_table_if_not_exists(
+            "quarantine_primary_sql.customers", schema=schema)
+        table.append(pa.Table.from_pylist([{
+            "object_id": "cust_001", "column": "nino", "field": "nino",
+            "reason": "does not match the declared pattern",
+            "value": "QQ123456C", "detected_at": "2026-09-24T00:00:00+00:00",
+        }], schema=schema))
+
+        body = client.get("/api/admin/mirror").json()
+
+        assert "QQ123456C" not in json.dumps(body)
 
     def test_the_count_is_the_REPORT_S_count(self, client):
         """WRITTEN BECAUSE A CONTROL PROVED NOTHING: this fixture
