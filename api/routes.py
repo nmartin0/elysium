@@ -2689,6 +2689,21 @@ class SiloStatusResponse(BaseModel):
     name: str
     adapter: str
     object_types: list[str]
+    # OF THOSE, THE ONES THIS SILO IS THE PRIMARY STORAGE FOR.
+    #
+    # WHY IT IS A SECOND LIST RATHER THAN A FLAG PER TYPE. The route
+    # knows this -- `type_def["storage"]["silo"]` -- and the payload
+    # threw it away, which collapsed two different outages into one
+    # word. risk_sql backs exactly one thing, Customer.risk_score; when
+    # it stops answering, Customer keeps refreshing and ONE FIELD stops.
+    # When primary_sql stops answering, the whole of Customer stops,
+    # down to its identifier. A reader given only `object_types` sees
+    # "Customer" under both and cannot tell which happened.
+    #
+    # ADDITIVE, so an older client that ignores it is unaffected, and
+    # `object_types` keeps meaning what it meant: everything this silo
+    # backs, primarily or otherwise.
+    primary_for: list[str] = []
     fields: list[SiloBackedField]
     reachable: bool
     # The KIND of failure, never the message. See the route.
@@ -3079,10 +3094,16 @@ def silos_route(request: Request,
     # route answers "which of your databases holds what", and since
     # reads moved to gold the mediator's silo_for_type says "gold" for
     # every type -- which is true, and not what is being asked.
+    # AND THE SAME FACT KEPT SEPARATELY, because the merged list below
+    # cannot be unmerged. See SiloStatusResponse.primary_for: "this
+    # silo backs Customer" and "this silo IS Customer" are different
+    # outages, and only this loop knows which is which.
+    primary_by_silo: dict[str, list[str]] = {name: [] for name in config.silo_configs}
     for object_type, type_def in config.schema.items():
         silo_name = (type_def.get("storage") or {}).get("silo")
         if silo_name:
             types_by_silo.setdefault(silo_name, []).append(object_type)
+            primary_by_silo.setdefault(silo_name, []).append(object_type)
 
     # AND additional storage, which silo_for_type does not carry.
     #
@@ -3161,6 +3182,7 @@ def silos_route(request: Request,
             "name": silo_name,
             "adapter": config.silo_configs[silo_name].get("adapter", "unknown"),
             "object_types": sorted(types_by_silo.get(silo_name, [])),
+            "primary_for": sorted(primary_by_silo.get(silo_name, [])),
             "fields": sorted(
                 fields_by_silo.get(silo_name, []),
                 # Identifier FIRST within each object type. Sorting

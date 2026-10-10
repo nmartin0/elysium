@@ -173,6 +173,10 @@ mac_allowed
 timestamp
 author
 object_types
+# SiloStatusResponse.primary_for -- of the types a silo backs, the ones
+# it IS. R6: without it "one field of Customer stopped refreshing" and
+# "all of Customer did" arrive as the same word.
+primary_for
 reachable
 failure
 silo_names

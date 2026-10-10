@@ -16,6 +16,10 @@ const HEALTHY = [
     name: 'primary_sql',
     adapter: 'sqlite',
     object_types: ['Customer'],
+    // OF THOSE, THE ONES IT IS PRIMARY FOR. Carried since R6: "backs
+    // Customer" and "IS Customer" are different outages and the
+    // payload used to collapse them.
+    primary_for: ['Customer'],
     reachable: true,
     failure: null,
     fields: [
@@ -27,6 +31,7 @@ const HEALTHY = [
     name: 'support_crm',
     adapter: 'sqlite',
     object_types: ['Ticket'],
+    primary_for: ['Ticket'],
     reachable: true,
     failure: null,
     fields: [
@@ -59,7 +64,13 @@ describe('Silos', () => {
 
     render(<Silos onSessionExpired={() => {}} />)
 
-    expect(await screen.findByText(/not answering/)).toBeInTheDocument()
+    // SCOPED TO THE SUMMARY, for the reason the test below already
+    // records about 'Customer': a bare /not answering/ matched once
+    // when this was the only thing that said it. The per-type health
+    // column now says it too, about the same outage, which makes the
+    // unscoped query ambiguous rather than wrong -- it only ever had
+    // one possible answer.
+    expect(await screen.findByRole('heading', { name: 'Some silos are not answering' })).toBeInTheDocument()
     expect(screen.getByText('FileNotFoundError')).toBeInTheDocument()
   })
 
@@ -225,5 +236,145 @@ describe('what has been published, beside what it came from', () => {
 
     expect(await screen.findByText('primary_sql')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /published to gold/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('is THIS TYPE healthy -- R6, health indexed by object type', () => {
+  /**
+   * The silo table below has every input and indexes them by SILO, so
+   * "is Customer healthy" costs one expansion per silo and some
+   * arithmetic. This section is the same facts indexed by the thing
+   * the reader came in asking about.
+   *
+   * THE VERB IS REFRESH, NOT READ. Every read is served from published
+   * gold since GOLD-9 removed live reads, so a dead source breaks no
+   * query -- it stops the values being replaced while they go on being
+   * served.
+   */
+
+  /** risk_sql's real shape: primary for nothing, backing one field of
+   *  a type whose primary storage is elsewhere. */
+  const WITH_EXTRA_STORAGE = [
+    ...HEALTHY,
+    {
+      name: 'risk_sql',
+      adapter: 'sqlite',
+      object_types: ['Customer'],
+      primary_for: [],
+      reachable: true,
+      failure: null,
+      fields: [
+        {
+          object_type: 'Customer',
+          field: 'risk_score',
+          column: 'score_val',
+          table: 'customer_risk',
+          is_identifier: false,
+        },
+        {
+          object_type: 'Customer',
+          field: 'customer_id',
+          column: 'cust_ref',
+          table: 'customer_risk',
+          is_identifier: true,
+        },
+      ],
+    },
+  ]
+
+  it('says every type is refreshing when every silo answers', async () => {
+    // THE CONTROL. A column that always said "no" would pass the two
+    // tests below and fail this one.
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    const table = await screen.findByRole('table', { name: 'Object types and when each was published' })
+    expect(within(table).getAllByText('yes')).toHaveLength(2)
+    expect(within(table).queryByText(/stopped refreshing/)).not.toBeInTheDocument()
+  })
+
+  it('names the ONE FIELD that stopped when additional storage is down', async () => {
+    // THE CASE THE PAYLOAD COULD NOT EXPRESS. risk_sql backs Customer
+    // and is primary for nothing: Customer keeps refreshing and
+    // risk_score does not.
+    getSilos.mockResolvedValue(
+      WITH_EXTRA_STORAGE.map((silo) =>
+        silo.name === 'risk_sql' ? { ...silo, reachable: false, failure: 'FileNotFoundError' } : silo,
+      ),
+    )
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    const table = await screen.findByRole('table', { name: 'Object types and when each was published' })
+    expect(within(table).getByText('partly')).toBeInTheDocument()
+    expect(within(table).getByText(/risk_score — risk_sql is not answering/)).toBeInTheDocument()
+    // AND NOT THE JOIN KEY, which risk_sql also holds -- counting it
+    // would make a one-field outage look like it took the identifier.
+    expect(within(table).queryByText(/customer_id/)).not.toBeInTheDocument()
+  })
+
+  it('says the whole type stopped when its PRIMARY storage is down', async () => {
+    getSilos.mockResolvedValue(
+      WITH_EXTRA_STORAGE.map((silo) =>
+        silo.name === 'primary_sql' ? { ...silo, reachable: false, failure: 'FileNotFoundError' } : silo,
+      ),
+    )
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    const table = await screen.findByRole('table', { name: 'Object types and when each was published' })
+    expect(within(table).getByText('no')).toBeInTheDocument()
+    // THE ROW SAYS ONLY WHAT IS SPECIFIC TO IT. The explanation is
+    // identical for every affected type and is said once, above the
+    // table -- see the test below.
+    expect(within(table).getByText('primary_sql is not answering')).toBeInTheDocument()
+  })
+
+  it('says what is being served meanwhile, rather than that reads fail', async () => {
+    // THE FALSE ALARM THIS WORDING EXISTS TO AVOID. A dead source
+    // breaks no query -- gold still answers every one of them -- so
+    // "cannot be read" would send somebody hunting an outage their
+    // users are not experiencing.
+    getSilos.mockResolvedValue([{ ...HEALTHY[0], reachable: false, failure: 'FileNotFoundError' }, HEALTHY[1]])
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/Reads are still being served, from the last sync/)).toBeInTheDocument()
+    expect(screen.queryByText(/cannot be read/i)).not.toBeInTheDocument()
+  })
+
+  it('does not say that when nothing has stopped', async () => {
+    // THE CONTROL. A notice rendered unconditionally would pass the
+    // test above and fail this one.
+    render(<Silos onSessionExpired={vi.fn()} />)
+    await screen.findByRole('heading', { name: /published to gold/i })
+
+    expect(screen.queryByText(/Reads are still being served/)).not.toBeInTheDocument()
+  })
+
+  it('says when a sync CANNOT fix a type that was never published', async () => {
+    // Both facts were already on this screen in different sections.
+    // Apart, the first one's advice is "run a sync"; together that is
+    // advice nobody can take.
+    getSilos.mockResolvedValue([HEALTHY[0], { ...HEALTHY[1], reachable: false, failure: 'FileNotFoundError' }])
+    getDataFreshness.mockResolvedValue({
+      source: 'gold',
+      last_synced_at: null,
+      published_at: { Customer: new Date().toISOString() },
+    })
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/a sync cannot fix them yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/Ticket has never been published AND its source is not answering/)).toBeInTheDocument()
+  })
+
+  it("does not say that when the unpublished type's source is answering", async () => {
+    // THE CONTROL FOR THE TEST ABOVE. This one genuinely IS a sync
+    // away from working.
+    getDataFreshness.mockResolvedValue({
+      source: 'gold',
+      last_synced_at: null,
+      published_at: { Customer: new Date().toISOString() },
+    })
+    render(<Silos onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/Reads of Ticket will fail/)).toBeInTheDocument()
+    expect(screen.queryByText(/a sync cannot fix them yet/i)).not.toBeInTheDocument()
   })
 })

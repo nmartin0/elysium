@@ -2965,6 +2965,48 @@ def test_silos_route_credits_a_silo_that_only_backs_a_FIELD(client):
     assert risk["object_types"] == ["Customer"]
 
 
+def test_silos_route_SEPARATES_backing_a_type_from_BEING_it(client):
+    """`object_types` merges primary and additional storage, and the
+    merge cannot be undone by a reader.
+
+    `AUDIT_CHECKLIST` R6 wanted health per object type, and this is the
+    fact without which it cannot be stated honestly. risk_sql backs
+    Customer and is primary for NOTHING; primary_sql is primary for
+    Customer. Both list "Customer" under `object_types`, so a client
+    told only that cannot tell "one field of Customer stopped
+    refreshing" from "all of Customer did" -- and the second is a much
+    worse thing to claim when the first is what happened.
+
+    THE FIXTURE IS THE REAL ASYMMETRY, not one arranged for the test:
+    risk_sql exists because test_mdo_e2e.py needs a genuinely separate
+    silo behind one property.
+    """
+    _admin_user(client, "siloprimary")
+
+    body = client.get("/api/silos").json()
+
+    risk = next(silo for silo in body if silo["name"] == "risk_sql")
+    primary = next(silo for silo in body if silo["name"] == "primary_sql")
+
+    # The same type under object_types for both...
+    assert "Customer" in risk["object_types"]
+    assert "Customer" in primary["object_types"]
+    # ...and only one of them IS it.
+    assert risk["primary_for"] == []
+    assert "Customer" in primary["primary_for"]
+
+
+def test_silos_route_never_calls_a_silo_primary_for_what_it_does_not_back(client):
+    """THE CONTROL FOR THE TEST ABOVE. `primary_for` returning
+    `object_types` would satisfy every assertion there except
+    `risk["primary_for"] == []`, so this pins the other direction too:
+    primary_for is always a subset of what the silo backs at all."""
+    _admin_user(client, "siloprimarysubset")
+
+    for silo in client.get("/api/silos").json():
+        assert set(silo["primary_for"]) <= set(silo["object_types"]), silo["name"]
+
+
 # NO test for the de-duplication guard, deliberately.
 #
 # A first version asserted primary_sql lists Customer once. It passed

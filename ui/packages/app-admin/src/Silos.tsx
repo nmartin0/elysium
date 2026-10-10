@@ -23,6 +23,8 @@ import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import { getDataFreshness, type DataFreshness } from '@elysium/shell-api/api'
 import { formatTimestamp } from '@elysium/shell-api/format'
 
+import { type FrozenType, frozenTypes, unfixableTypes } from './typeHealth'
+
 interface SiloBackedField {
   object_type: string
   field: string
@@ -35,24 +37,65 @@ interface SiloStatus {
   name: string
   adapter: string
   object_types: string[]
+  /** Of those, the ones this silo is the PRIMARY storage for. Optional
+   *  because a server predating the field sends nothing, and
+   *  `frozenTypes` treats its absence as "not primary" rather than
+   *  guessing. */
+  primary_for?: string[]
   fields: SiloBackedField[]
   reachable: boolean
   failure: string | null
 }
 
 /**
- * Which object types have been published, and which have not.
+ * WHAT AN OUTAGE COSTS ONE TYPE, in a sentence.
+ *
+ * SAYS "STOPPED REFRESHING", NOT "CANNOT BE READ", and the difference
+ * is the whole reason this wording was written down rather than
+ * guessed. Every read is served from published gold (GOLD-9 removed
+ * live reads entirely), so a dead source does not break a single
+ * query -- it stops the values being replaced, and they go on being
+ * served while they age.
+ */
+function costOf(frozen: FrozenType): string {
+  const sources = `${frozen.silos.join(', ')} ${frozen.silos.length === 1 ? 'is' : 'are'} not answering`
+  // THE REASSURANCE IS NOT REPEATED PER ROW. "What is being served is
+  // the last sync" is the sentence that stops a false alarm, and it is
+  // the same sentence for every affected type -- on the dev
+  // deployment with primary_sql down it appeared verbatim on four
+  // rows and buried the one word that differed. It is said once,
+  // above the table; the row says only what is specific to it.
+  return frozen.whole ? sources : `${frozen.fields.join(', ')} — ${sources}`
+}
+
+/**
+ * Which object types have been published, which have not, and which
+ * have stopped refreshing.
  *
  * THE SECOND HALF IS THE POINT. A type backed by a silo but absent
  * from published_at is one whose reads FAIL -- the server logs it
  * loudly at startup and raises on read (GOLD-8) -- and nothing in the
  * UI said so. A table listing only what IS published would be a page
  * of reassuring green that omits the failure.
+ *
+ * AND THE THIRD HALF, which R6 asked for: health indexed BY OBJECT
+ * TYPE. The silo table below already carries every input -- which
+ * silos are down, and what each backs -- but indexed by SILO, so
+ * "is Customer healthy" costs one expansion per silo and some
+ * arithmetic. `typeHealth.ts` does the join; this renders it beside
+ * the publication state, because they are two answers to one
+ * question and a reader comparing them should not have to scroll.
  */
 function Publication({ silos, freshness }: { silos: SiloStatus[]; freshness: DataFreshness }) {
   const backed = [...new Set(silos.flatMap((silo) => silo.object_types))].sort()
   const published = freshness.published_at ?? {}
   const missing = backed.filter((type) => !(type in published))
+  const frozen = frozenTypes(silos)
+  const frozenByType = new Map(frozen.map((entry) => [entry.objectType, entry]))
+  // NEVER PUBLISHED AND NO WAY TO PUBLISH IT. Both halves were already
+  // on this screen, in different sections, and neither said that
+  // together they mean waiting will not help.
+  const unfixable = unfixableTypes(frozen, missing)
 
   return (
     <section className="silos__publication">
@@ -66,6 +109,33 @@ function Publication({ silos, freshness }: { silos: SiloStatus[]; freshness: Dat
               {`Reads of ${missing.join(', ')} will fail until a sync publishes them.`}
             </ErrorState>
           )}
+          {frozen.length > 0 && (
+            /* PENDING, NOT ERROR, and the reason is the correction
+               this whole section rests on: every read is served from
+               published gold (GOLD-9 removed live reads), so a dead
+               source is failing no queries. Rendering it red would
+               send somebody hunting an outage their users are not
+               experiencing.
+
+               ABOVE THE TABLE, because it is true of every row that
+               is not green and false of none of them. */
+            <Notice state="pending" title="Some types have stopped refreshing">
+              Reads are still being served, from the last sync — nothing below is failing. These types will go on
+              answering with values that no longer change until their sources do.
+            </Notice>
+          )}
+          {unfixable.length > 0 && (
+            /* WORSE THAN EITHER NOTICE ABOVE IT, and said separately
+               because "publish it" is the advice the first one gives
+               and it is advice nobody here can take. */
+            <ErrorState title="And a sync cannot fix them yet">
+              {`${unfixable.join(', ')} ${unfixable.length === 1 ? 'has' : 'have'} never been published AND ${
+                unfixable.length === 1 ? 'its source is' : 'their sources are'
+              } not answering, so the sync that would publish ${
+                unfixable.length === 1 ? 'it' : 'them'
+              } cannot read anything.`}
+            </ErrorState>
+          )}
           <HTMLTable
             compact
             striped
@@ -76,17 +146,43 @@ function Publication({ silos, freshness }: { silos: SiloStatus[]; freshness: Dat
               <tr>
                 <th>Object type</th>
                 <th>Published</th>
+                <th>Refreshing</th>
               </tr>
             </thead>
             <tbody>
-              {backed.map((type) => (
-                <tr key={type}>
-                  <td>{type}</td>
-                  <td>
-                    {published[type] ? formatTimestamp(published[type]) : <StatusTag state="pending">never</StatusTag>}
-                  </td>
-                </tr>
-              ))}
+              {backed.map((type) => {
+                const stopped = frozenByType.get(type)
+                return (
+                  <tr key={type}>
+                    <td>{type}</td>
+                    <td>
+                      {published[type] ? (
+                        formatTimestamp(published[type])
+                      ) : (
+                        <StatusTag state="pending">never</StatusTag>
+                      )}
+                    </td>
+                    <td>
+                      {stopped === undefined ? (
+                        <StatusTag state="granted">yes</StatusTag>
+                      ) : (
+                        <>
+                          {/* REFUSED FOR A WHOLE TYPE, PENDING FOR PART
+                              OF ONE. Three states need three looks:
+                              9.7's rule is that facts of different
+                              kinds must not be rendered alike, and
+                              "none of it" and "one field of it" are
+                              different facts. */}
+                          <StatusTag state={stopped.whole ? 'refused' : 'pending'}>
+                            {stopped.whole ? 'no' : 'partly'}
+                          </StatusTag>{' '}
+                          <span className="silos__cost">{costOf(stopped)}</span>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </HTMLTable>
         </>

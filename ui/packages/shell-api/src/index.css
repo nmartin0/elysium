@@ -1467,8 +1467,15 @@
   }
 
   /* The failure KIND, never a message -- an exception class name, shown
- * quietly beside the status rather than as the headline. */
-  .silos__failure {
+ * quietly beside the status rather than as the headline.
+ *
+ * AND WHAT THE OUTAGE COSTS ONE TYPE, which reads the same way: the
+ * TAG carries the verdict and this carries the explanation, so a
+ * reader scanning the column sees three shapes before they read a
+ * word. Secondary and dense for the same reason the failure kind is
+ * -- the thing to look at is which row is not green. */
+  .silos__failure,
+  .silos__cost {
     font-size: var(--type-dense-size);
     line-height: var(--type-dense-line);
     font-weight: var(--type-dense-weight);
