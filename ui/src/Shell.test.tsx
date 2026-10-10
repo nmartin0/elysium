@@ -709,3 +709,120 @@ describe('the collapse toggle belongs to the rail', () => {
     expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
   })
 })
+
+describe('Shell -- the command palette', () => {
+  /**
+   * WHAT IS BEING TESTED HERE AND NOT IN CommandPalette.test.tsx. The
+   * palette's own behaviour -- matching, the keyboard, disabled commands
+   * -- is tested beside the component. This covers only the wiring the
+   * SHELL owns: the binding, the guard that stops it firing mid-typing,
+   * and the fact that the commands come from the rail the server sent.
+   *
+   * THE SHELL IS WHERE IT LIVES because DEV_UI.md 10.1 quotes
+   * Superhuman's own guidance to make the palette available EVERYWHERE,
+   * and a palette that works on four screens out of seven is one people
+   * stop reaching for. Mounting it here is what makes that true, so it
+   * is worth a test that it is actually mounted here.
+   */
+  it('is closed until asked for -- no dialog on a fresh render', () => {
+    renderShell([{ name: 'Query', path: '/query' }])
+    expect(screen.queryByLabelText('Search commands')).not.toBeInTheDocument()
+  })
+
+  it('opens on Cmd-K', () => {
+    renderShell([{ name: 'Query', path: '/query' }])
+    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+    expect(screen.getByLabelText('Search commands')).toBeInTheDocument()
+  })
+
+  it('opens on Ctrl-K as well, so the binding does not depend on reading a user-agent string', () => {
+    renderShell([{ name: 'Query', path: '/query' }])
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    expect(screen.getByLabelText('Search commands')).toBeInTheDocument()
+  })
+
+  it('ignores a bare k, which is a letter somebody is typing', () => {
+    renderShell([{ name: 'Query', path: '/query' }])
+    fireEvent.keyDown(window, { key: 'k' })
+    expect(screen.queryByLabelText('Search commands')).not.toBeInTheDocument()
+  })
+
+  /**
+   * THE BUG A BROWSER FOUND AND JSDOM COULD NOT. The listener first
+   * refused every keystroke arriving from a field, applying 10.1's
+   * "never fire a global shortcut while the person is typing" to a
+   * binding the rule was never about. Query takes focus into its
+   * question box on arrival, so Cmd-K did nothing on the screen people
+   * land on -- "a palette that works on four screens out of seven is
+   * one people stop reaching for", caused by the rule meant to prevent
+   * something else.
+   *
+   * A MODIFIER-QUALIFIED BINDING CANNOT BE TYPED, which is why
+   * Cmd/Ctrl-K was the binding chosen. The typing guard still exists
+   * and still matters -- it is in `mayFireGlobally`, with its own tests
+   * for the unmodified case, waiting for the first binding it applies
+   * to.
+   */
+  it('opens from inside a text field, because a field is where people already are', () => {
+    renderShell([{ name: 'Query', path: '/query' }])
+    const typing = document.createElement('input')
+    document.body.appendChild(typing)
+
+    fireEvent.keyDown(typing, { key: 'k', metaKey: true })
+
+    expect(screen.getByLabelText('Search commands')).toBeInTheDocument()
+    typing.remove()
+  })
+
+  it('ignores an unmodified key from a field, which is somebody typing', () => {
+    renderShell([{ name: 'Query', path: '/query' }])
+    const typing = document.createElement('input')
+    document.body.appendChild(typing)
+
+    fireEvent.keyDown(typing, { key: 'k' })
+
+    expect(screen.queryByLabelText('Search commands')).not.toBeInTheDocument()
+    typing.remove()
+  })
+
+  it('offers the apps the server said this caller may see, and no others', () => {
+    renderShell([
+      { name: 'Query', path: '/query' },
+      { name: 'Admin', path: '/admin' },
+    ])
+    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+
+    const labels = screen.getAllByRole('option').map((node) => node.textContent)
+    expect(labels).toHaveLength(2)
+    expect(labels.join(' ')).toContain('Query')
+    expect(labels.join(' ')).toContain('Admin')
+  })
+
+  it('groups each command under the subject its app belongs to', () => {
+    // The rail is a SUBJECT switcher (DEV_UI.md 12), and the palette
+    // should say the same words the rail does rather than inventing a
+    // second vocabulary for the same screens.
+    renderShell([{ name: 'Admin', path: '/admin', subject: 'Settings' }])
+    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+
+    expect(screen.getByRole('option').textContent).toContain('Settings')
+  })
+
+  it('navigates when a command is chosen, and closes behind itself', async () => {
+    renderShell(
+      [
+        { name: 'Query', path: '/query' },
+        { name: 'Admin', path: '/admin' },
+      ],
+      vi.fn(),
+      '/query',
+    )
+    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+
+    const admin = screen.getAllByRole('option').find((node) => node.textContent?.includes('Admin'))!
+    fireEvent.click(admin)
+
+    expect(await screen.findByText('admin screen')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByLabelText('Search commands')).not.toBeInTheDocument())
+  })
+})

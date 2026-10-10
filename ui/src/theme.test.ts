@@ -462,7 +462,20 @@ describe('schema tables have fixed columns', () => {
 /** Every class token the app actually puts on an element. */
 function renderedClassNames(): Set<string> {
   const found = new Set<string>()
-  const attribute = /class(?:Name)?\s*=\s*(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\}|\{([^}]*)\})/g
+  /**
+   * THE PROP NAME IS LOOSE, THE VALUE IS NOT, and the distinction is
+   * the whole point. 09-S3-01 was caused by weakening what counts as a
+   * VALUE until anything matched; this widens only which PROP may carry
+   * one, and still demands a literal string or template.
+   *
+   * `[a-zA-Z]*ClassName` is React's own convention for passing a class
+   * to something a component renders internally, and Blueprint uses it
+   * throughout -- `portalClassName`, `popoverClassName`. The palette
+   * needs `portalClassName` to reach the container Blueprint centres a
+   * dialog with, and without this the class read as styled-but-never-
+   * rendered: a real rule, on real markup, reported as dead.
+   */
+  const attribute = /(?:[a-zA-Z]*[Cc]lassName|class)\s*=\s*(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\}|\{([^}]*)\})/g
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name)

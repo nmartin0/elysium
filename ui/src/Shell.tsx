@@ -1,4 +1,6 @@
-import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import CommandPalette from '@elysium/shell-api/components/CommandPalette'
+import { mayFireGlobally, opensPalette } from '@elysium/shell-api/commands'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Classes, Menu, MenuItem } from '@blueprintjs/core'
 import { iconForApp } from '@elysium/shell-api/appIcons'
@@ -240,6 +242,53 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   const isMobile = useSyncExternalStore(subscribeToMobileBreakpoint, getIsMobileSnapshot)
   const location = useLocation()
   const navigate = useNavigate()
+
+  /**
+   * THE COMMAND PALETTE LIVES IN THE SHELL, which is what makes it
+   * available everywhere. DEV_UI.md 10.1 quotes Superhuman's own
+   * guidance to "make the palette available EVERYWHERE"; one that works
+   * on four screens out of seven is one people stop reaching for.
+   */
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      // 10.1's first rule -- "never fire a global shortcut while the
+      // person is typing" -- asked of the registry rather than decided
+      // here, because the registry is where the next binding gets
+      // added. For a modifier-qualified one like this it answers yes
+      // inside a field, which is the whole reason Cmd/Ctrl-K was the
+      // binding chosen: Query takes focus into its question box on
+      // arrival, and a palette that will not open there is one people
+      // stop reaching for.
+      if (!mayFireGlobally(event, event.target)) return
+      if (!opensPalette(event)) return
+      event.preventDefault()
+      setPaletteOpen(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  /**
+   * NAVIGATION COMMANDS, FROM THE RAIL THE SERVER ALREADY SENT.
+   *
+   * Every one of these is a screen this caller may open, because
+   * `visibleApps` is already filtered per caller -- so none of them
+   * carries an `unavailable` reason. The field exists for the commands
+   * that come next: an action on an object type, which a reader may see
+   * and not be able to run.
+   */
+  const commands = useMemo(
+    () =>
+      visibleApps.map((app) => ({
+        id: `go:${app.path}`,
+        label: app.name,
+        group: app.subject ?? 'Go to',
+        run: () => navigate(app.path),
+      })),
+    [visibleApps, navigate],
+  )
 
   /**
    * Dark mode, which Blueprint provides per widget and nothing turned
@@ -637,6 +686,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   return (
     <div className={collapsed ? 'app-frame app-frame--sidebar-collapsed' : 'app-frame'}>
       {header}
+      <CommandPalette commands={commands} isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <div className="app">
         {/* NO Drawer branch any more, and the rail is why.
           

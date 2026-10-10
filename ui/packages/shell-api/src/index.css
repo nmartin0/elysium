@@ -2589,4 +2589,128 @@
     align-items: center;
     gap: var(--space-normal);
   }
+
+  /* ---- THE COMMAND PALETTE -----------------------------------------
+   *
+   * DEV_UI.md 10.1: "A palette turns the whole product into search --
+   * and people prefer search to menus, which only help if you already
+   * understand how the menus were organised."
+   *
+   * SIZED AND PLACED LIKE EVERY PALETTE PEOPLE ALREADY USE: narrow,
+   * near the top of the viewport rather than centred, and tall enough
+   * to show several hits without becoming a page. Centring it
+   * vertically would move the first hit as the list grows, which is
+   * how somebody arrows into the wrong row.
+   */
+  /* NEAR THE TOP, NOT CENTRED, and it takes reaching into Blueprint to
+   * get there: `.bp6-dialog-container` centres its dialog with flex, so
+   * a margin on the dialog only shifts the centre by half. Scoped to
+   * this palette's own portal, because every other dialog in the app
+   * should stay centred. */
+  .command-palette-portal .bp6-dialog-container {
+    align-items: flex-start;
+  }
+
+  .command-palette {
+    inline-size: min(32rem, calc(100vw - 2 * var(--space-loose)));
+    margin-block-start: 12vh;
+  }
+
+  /* THE QUERY FIELD IS THE PALETTE. It is not a form control beside a
+   * list; it is the one thing focused on open, so it takes the full
+   * width and the heading step rather than the body step. */
+  .command-palette__query {
+    inline-size: 100%;
+    box-sizing: border-box;
+    padding: var(--space-tight) var(--space-snug);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    background: var(--surface-content);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--type-heading-size);
+    line-height: var(--type-heading-line);
+    font-weight: var(--type-body-weight);
+  }
+
+  .command-palette__results {
+    list-style: none;
+    margin: var(--space-snug) 0 0;
+    padding: 0;
+    /* A CAP, NOT A SCROLLBAR WHEN SHORT. Eight dense rows is roughly
+     * where a list stops being scannable at a glance, and containing
+     * the scroll keeps the page behind it still. */
+    max-block-size: calc(8 * (var(--type-dense-line) + 2 * var(--space-tight)));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* THE GROUP, THEN THE LABEL, on one line. Two lines per hit would
+   * halve how many fit, and the group is a qualifier rather than a
+   * heading -- "Objects / Browse" reads the way the rail does. */
+  .command-palette__hit {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-tight);
+    padding: var(--space-tight) var(--space-snug);
+    min-height: var(--target-min);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+  }
+
+  .command-palette__group {
+    color: var(--text-secondary);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* THE HIGHLIGHT IS A FILL AND A BAR, NEITHER OF WHICH COSTS LAYOUT.
+   * A real border would change the row's height as it moves, making the
+   * list jitter under a held arrow key; an inset shadow draws the same
+   * bar inside the box the row already occupies.
+   *
+   * THE FILL ALONE WAS NOT ENOUGH, and dark mode is where it showed. A
+   * surface step reads clearly on white and nearly dissolves at
+   * #1c2127 against #2f343c -- and this row is not decoration, it is
+   * what Enter is about to run. The accent bar is the same mark in both
+   * themes, so the answer to "which one will it be" does not depend on
+   * which theme somebody chose. */
+  .command-palette__hit--on {
+    background: var(--surface-sunken);
+    box-shadow: inset 2px 0 0 var(--accent-focus);
+  }
+
+  /* GREYED, AND STILL LISTED -- 10.1's "shown disabled WITH THE REASON
+   * rather than hidden". The cursor says so too: a row you cannot run
+   * should not claim to be clickable. */
+  .command-palette__hit--off {
+    cursor: default;
+  }
+
+  .command-palette__hit--off .command-palette__label {
+    color: var(--text-secondary);
+  }
+
+  /* THE REASON, pushed to the far end so the labels stay in one
+   * column and the sentence reads as an annotation rather than as
+   * part of the command's name. */
+  .command-palette__why {
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-body-weight);
+    text-align: right;
+  }
+
+  .command-palette__empty {
+    margin: var(--space-snug) 0 0;
+    color: var(--text-secondary);
+  }
 }
